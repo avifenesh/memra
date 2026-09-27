@@ -901,3 +901,229 @@ refusal. Both caught on the local RTX 5090 before the target card's fault cell r
 demote's whole remaining owner-thread cost, priced per demote by the ledger line: about 6 ms at steady state (today's
 `owner in-completion` median 7.39), 40 to 45 ms on the first two demotes of a boot (first touch), 149 to 152 ms under
 the verify arm (the identity gate's `pre-submit 148.52` today). Items 2 to 4 unchanged.
+
+## Move 2, day 30: owed item 1, the D2H half landed, the recurrent f32 state rides the demote's ticket (`DAY30.md`)
+
+**What landed (`97a9e091f`, `fc637d26a`).** A new transfer class, the typed f32 D2H span: `CudaTransfers::submit_d2h_spans`
+attaches a batch of `D2hSpan { source: CudaSlice<f32>, destination: PinnedHostBuf }` to a live D2H ticket right after
+its submission (the copy stream waits on a fresh owner-stream event, one `cuMemcpyDtoHAsync` and one event per span, no
+host wait); the ticket is `producer_done` only when every KV item and every span event is observed; `take_d2h_spans`
+refuses `NotReady` before that; `retire` is `Busy` while spans are untaken; an enqueue or event error quarantines the
+ticket; an unretired ticket's drop forgets its spans (the engine context runs without cudarc's event tracking, so a
+copy-stream source must stay owned until its event). The rule is `crates/memra-tier/src/conformance/d2h_span.rs`
+(additive, unversioned, `WIRE_VERSION` stays 1; three schedules including the red arm) with a CPU binding and a native
+cell. The worker's `OffTick` demote moves every `dead.conv` / `dead.ssm` plane into a span after the KV ticket, into a
+per-context cached pinned staging set (lazy, exact-length pooled, cleared at the latch); the settle takes the spans back
+before the retire and puts each source back into the dead entry; the hash helper copies each landed staging buffer into
+the payload's heap `Vec` and hashes it with the same `host_hash_payload_digest` (same resident form, same bundle
+program). A refusal before any enqueue hands every span and source back and unwinds the ticket through
+`host_contract_abort` (`tier D2H spans refused: ...`). The D2H receipt line keeps `items=` as the KV count and gains
+`; 96 f32 spans landed under the ticket and taken back before the retire`; the copy-complete line gains `items=128 (32
+KV, 96 f32 spans)` (130 with the draft). No new `MEMRA_*` name, no new numeric program.
+
+**The receipt term, before and after.** Before: a KV plane carried the engine's landed checksum and the bind's
+re-hash compared; a recurrent plane carried no transfer receipt (a synchronous owner-stream `clone_dtoh`'s success) and
+the helper's digest of the heap `Vec` as its bundle share. After: KV unchanged; a recurrent plane carries its span
+completion under the ticket (event observed, `valid_bytes` equal to the submission, taken back exactly once before the
+retire, the ticket's quarantine on any error) and the helper's SHA-256 over the landed bytes as both its completion
+checksum and its bundle share. The strong form (a device digest of each source plus the CPU oracle) is named and not
+built.
+
+**The gates (target card, one sitting, `pro-single-day30/box/`).** Identity x4 `ALL GREEN (teeth=0)`, failure x2
+`ALL GREEN`, `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (123 ok), twin x2 `-> PASS`, hit OFF/ON `ALL GREEN (qwen)` with the
+day-24 census, unit 10 + 6 + 11 + 3, the double-park cell 20 of 20 replays. Local RTX 5090: fault default and plain
+`ALL GREEN`, hit OFF/ON `ALL GREEN (qwen)`, identity default ON `ALL GREEN (teeth=0)` on the rerun. **Pre-submit steady
+6.05 to 0.62 ms (N=80 each, max 1.10)**; `owner in-completion` 7.39 to 1.96 ms (N=100, max 3.03); stall ON against OFF
+`-8.3 / -8.6` (day 29 `-3.6 / -3.3`); e2e `+12.0 / +11.7` (day 29 `+16.8 / +16.9`); `DAY28 VERDICT clauses_failed=0 -> ALL
+PASS`. The first touch DAY28 could not place is the heap `Vec` pages: demotes 2 and 3 of a boot now read 1.26 / 1.27 ms
+(day 29 42.89 / 42.27) and the helper pays it (about 106 ms on demotes 1 to 3, 79.8 steady, day 29 73.1). Demote 1 of a
+boot pays the staging allocation, 29.69 ms.
+
+**What Move 2 still owes, in order.**
+
+1. **The recurrent f32 state off the tick**, the remaining halves: **the H2D half** (the promote's recurrent
+   `engine.htod` onto the copy stream under the ticket), **the D2D half** (the capture and restore recurrent
+   copies; the capture races the next decode, so its ordering needs its own rule), **the governor charge of the
+   staging** (157.9 MB per context on the 27B, outside the pinned ledger today), **the strong-form receipt**, **a
+   span-refusal cell in the fault gate** (covered today by a GPU unit cell only), and returning the staging to the pool
+   on the post-take abort (DAY30 finding 4).
+2. to 4. Unchanged.
+
+## Move 2, day 31: DAY30's small owed items closed, the H2D half pre-registered (`DAY31.md`)
+
+**What landed (`33b1285e0`).** Four of the day-30 owed items, one census each (DAY31 section 1). (1a) The settle
+builds a `StagedSpans` guard before `take_d2h_spans`; its `Drop` puts every landed staging buffer back into the
+context's set, and `StagedSpans::landed` (called once, on the `Done` return) is the only way out with the buffers, so
+every one of the 11 `return Err(` after the take returns the staging; the driver's two early exits of `Done` put the
+landed buffers back too. (1b) A fresh staging buffer is charged to the tier governor's pinned ledger on allocation
+(`ResidentCharge::reserve`, the staging tenant, `Priority::Backup`) and released only at the latch's `clear()`; a
+reused buffer is not charged again; a refused charge refuses the span attach through the existing typed arm (`tier D2H
+spans refused: a N-byte staging buffer: the governor's pinned ledger refused N bytes (Capacity) (k f32 spans handed
+back)`): sources back, staging back, the KV ticket unwound, the tier stays on. On one 27B demote the KV leases (about
+1.9 MB) and the pageable residency (159.8 MB) are unchanged; the 157.9 MB staging set moves from uncharged to charged
+once. (1c) A one-shot value of the existing door, `MEMRA_KV_HOST_FAULT=contract-spans`, refuses the served span attach
+before the submit, and the fault gate's `span-refusal` cell asserts the typed line, the tier on, the next demote
+completing and publishing, one staging fill per boot, and r1 to r4 byte-equal to a door-OFF boot. (1d) The
+`demote copy complete off the tick` line ends with `by slot class: conv C (B B), ssm S (B B), hidden H (B B), logits L
+(B B)`, log only. No new `MEMRA_*` name, no new numeric program.
+
+**The H2D half, pre-registered, not landed (DAY31 section 2).** Design H: the helper fills the promote's staging from
+the resident planes (`HostF32::Heap(Arc<[f32]>)`), the request parked; the owner submits the KV batch and 96 typed
+`H2dSpan`s on one ticket at the tick top; the settle takes the spans back before the retire; fail closed, with a new
+fault value `contract-promote-spans` and its gate cell. Options P (an owner memcpy into the staging, 8 to 16 ms, more
+than today's pageable htod) and R (pinned residency) priced and not taken. Acceptance B1 to B5 stated before any code;
+B2 is the promote's owner segment, predicted 5 to 8 ms steady before, median at most 1.5 ms and max at most 3.0 ms after,
+over at least 20 steady promotes.
+
+**The gates (target card, one sitting on `6d940a97c`, `pro-single-day31/box/`).** Identity x4 `ALL GREEN (teeth=0)`,
+failure x2 `ALL GREEN`, `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (142 ok, eleven cells with `span-refusal`: `refusal
+handed back 96 span(s); the next copy-complete carries 96`, `byte-unequal request(s): none`), twin x2 `-> PASS`, hit
+OFF/ON `ALL GREEN (qwen)` with the day-24 census, unit 13 + 6 + 13 + 3, the double-park cell 20 of 20 replays with
+`DAY30 A2 pre-submit steady N=80 median=0.63 ... -> PASS` and `DAY28 VERDICT clauses_failed=0 -> ALL PASS`. Local RTX
+5090: identity default ON `ALL GREEN (teeth=0)`, fault default and plain `ALL GREEN` (142 ok, 48 spans), hit OFF/ON
+`ALL GREEN (qwen)`. The `postpublish` cell's next demote reads `pre-submit 0.93` (day 30 28.71): DAY30 finding 4
+closed. The slot-class line puts the SSM state at 95.6 percent of the 27B image's heap bytes (93.7 to 93.8 on the 9B).
+
+**What Move 2 still owes, in order.**
+
+1. **The recurrent f32 state off the tick**, the remaining halves: **the H2D half** (pre-registered, DAY31 section 2;
+   in order: the log-only owner-segment field and its baseline read, `conformance/h2d_span.rs` and its binding,
+   `submit_h2d_spans` / `take_h2d_spans` with the native cell, the `Arc` resident form, the `Fill` job and the parked
+   state, the settle's take-back, the `contract-promote-spans` fault value and its gate cell, then the sitting against B1
+   to B5), **the D2D half** (the capture and restore recurrent copies; the capture races the next decode, so its
+   ordering needs its own rule), and **the strong-form receipt**. Closed on day 31: the governor charge of the staging,
+   the span-refusal cell in the fault gate, and returning the staging on every post-take refusal.
+2. to 4. Unchanged.
+
+## Move 2, day 32: owed item 1, the H2D half landed, the promote's recurrent state rides its ticket (`DAY32.md`)
+
+**What landed (`3cabdd4a3` to `4d1335cd6`).** In DAY31 section 2's order. The log-only `owner segment` field on the
+`promote submitted off the tick` line first (B2's measure, read on the pre-H2D binary at `71d21057c`). The tier rule
+`conformance/h2d_span.rs` (additive, unversioned, `WIRE_VERSION` stays 1; three schedules, the red arm an owner read
+before the reader wait). The engine class: `H2dSpan { source: PinnedHostBuf, destination: CudaSlice<f32> }`,
+`CudaTransfers::submit_h2d_spans` (the copy stream waits on a fresh owner-stream event; one `cuMemcpyHtoDAsync` and
+one event per span, no host wait) and `take_h2d_spans` (`NotReady` until the batch landed AND the owner stream waits
+on every span event); `retire` `Busy` while a span is untaken; an enqueue or event error quarantines. The resident form
+`HostF32::Heap(Arc<Vec<f32>>)` (`Arc<[f32]>` named and not taken: its conversion copies on the door-OFF demote's owner
+thread). The worker: the admission probe hands the resident recurrent planes (owned `Arc` clones) and one staging
+buffer each from the context's set to the hash helper as ONE `Fill` job and parks the request; the poll that lands the
+fill submits the KV batch and the 96 spans on one ticket through the unchanged route; the settle takes the spans back
+after the landing and the reader wait and before the receipt check, publication and the retire, each destination into
+its slot and each staging buffer back to the set through a guard. The H2D receipt line keeps `items=` and gains `; 96
+f32 spans landed under the ticket and taken back before the retire`. Fail closed: a staging refusal or a failed fill
+refuses typed with the tier on; a helper gone, a fill past the 10 s deadline or a reply that does not describe the fill
+latches; the tenant purge drops a Filling promote typed; a demote meeting one lands its fill and submits first. The
+red arm `MEMRA_KV_HOST_FAULT=contract-promote-spans` and the fault gate's `promote-span-refusal` cell (byte-compared
+with a door-OFF boot). No new `MEMRA_*` name, no new numeric program.
+
+**The receipt term, before and after.** Before: a promoted recurrent plane carried no transfer receipt (a synchronous
+owner-stream `clone_htod` from pageable memory). After: each carries its span completion under the promote's ticket
+(event observed, the destination's length equal to the submission, taken back exactly once before the retire, handed
+out only behind the owner stream's wait, the ticket's quarantine on any error); the KV items unchanged. The strong form
+(the helper's SHA-256 of the staged bytes against the demote's share) is named and not built.
+
+**The gates (target card, one sitting, `pro-single-day32/box/`; lane B's chain ended first).** B1: identity x4 `ALL
+GREEN (teeth=0)`, failure x2 `ALL GREEN`, `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (160 ok, twelve cells), twin x2 `->
+PASS`, hit OFF/ON `ALL GREEN (qwen)` with the day-24 census, unit 16 + 7 + 2 + 17 + 6. **B2: the promote's owner
+segment 4.58 ms (pre-H2D binary, N=90) to 0.70 ms (H2D binary, N=90, max 1.22) steady, one hold, `-> PASS`.** B3
+(reading): the promote end to end +10.3 ms (the helper's fill 6.4 ms, landed at the first poll); the copy's submission
+to completion 19.6 to 16.0 ms. B4: 109 of 109 H2D receipts name 96 spans, `items=` 32 / 34. B5: the identity digests
+unchanged in kind, `verify ok` on the ON arms, the native cell bitwise. Local RTX 5090: identity default ON, fault
+default and plain (160 ok), hit OFF/ON, all ALL GREEN; 13 of 13 receipts with 48 spans.
+
+**Finding.** DAY28's clause 1b (the double-park e2e ON minus OFF at most +20.0 ms) reads `+22.5` / `+22.2 -> FAIL`
+on the H2D binary against `+12.2` / `+12.1 -> PASS` on the pre-H2D binary in the same hold; the tenant stall ON minus
+OFF improves from -8.2 / -8.4 to -9.1 / -9.2. The parked request pays the fill and its poll; every peer's tick sheds
+about 3.9 ms of owner time per promote. Not a day-32 clause; stated for the lead's integration decision. A same-tick
+fill landing is the named lever, not built.
+
+**What Move 2 still owes, in order.**
+
+1. **The recurrent f32 state off the tick**, the remaining half: **the D2D half** (the capture and restore recurrent
+   copies; the capture races the next decode, so its ordering needs its own rule), and **the strong-form receipt**.
+   Closed on day 32: the H2D half.
+2. to 4. Unchanged.
+
+## Move 2, day 33: the day-32 lever, the fill on the copy stream (`DAY33.md`)
+
+**What landed (`f814af107`, `82472ff12`, `045ab57d4`, `d7d54c7a9`).** Design F, pre-registered before code: the
+promote's staging fill is ONE host function on the copy stream ahead of the span copies
+(`CudaTransfers::submit_h2d_spans_filled`, tier rule 6: the fill is ordered before its copies, red arm a copy before its
+fill), so the probe submits the KV batch and the spans in its own tick and the owner waits for nothing. The day-32
+Filling phase, the helper's Fill job and `HostHelperJob` are removed. A log-only timeline on the `promote published off
+the tick` line (tick, tick start and instant of the submission and of every settle step).
+
+**What the 5090 says.** The gate set holds (B1, B4, B5). The pre-registered stall reading showed no gain, and the cause
+was placed rather than guessed: the copy lands 6.3 ms after the probe, inside its tick; the landing poll then holds the
+owner about 8.4 ms, 16 steps of about 0.6 ms with 0.02 ms of CUDA calls: the H2D completion checksum of each KV item's
+host lease, write-combined on the 5090 (`PinnedKind::for_device`), cached on the PRO 6000. A host function does not
+hold the owner thread (its own cell). The target-card sitting is the test of the lever, pending the box.
+
+**What Move 2 still owes, in order.**
+
+1. The recurrent f32 state off the tick: the H2D lever's target-card sitting (DAY33 section 2), **the H2D completion
+   checksum on the hash helper** (the lead's day 34; the 5090's 8 ms), **the D2D half** (the restore's price cell
+   decides; the capture refuted by construction, DAY33 section 6), and **the strong-form receipt**.
+2. to 4. Unchanged.
+
+## Move 2, day 34: the promote's H2D completion checksums on the hash helper (`DAY34.md`)
+
+**What landed (`88b734bc9`, `e3424be24`, `100214477`).** Design K, pre-registered before code: the off-tick promote's
+KV completion checksums leave the owner thread. `CudaTransfers::defer_h2d_checksums` hands out raw views of the
+landed leases (no event wait), the hash helper digests them as a `Sources` job, `supply_h2d_checksums` returns the
+digests, and `progress` lands an item only with its supplied digest (tier rule `conformance/h2d_deferred_checksum.rs`,
+red arm a landing without its digest). The receipt names `N KV checksums on the hash helper (X MB in Y ms)`.
+
+**What the cards say.** RTX 5090 (write-combined leases): the landing poll's owner hold 8.50 to 0.12 ms, e2e within
+0.5 ms. BOX4 (cached leases): the helper takes 1.4 ms, the first (pending) poll's end moves 1.10 to 0.03 ms after its
+tick top, `promote_in` 28.40 to 27.40 ms, e2e -1.07 / -1.05. The same hold read the day-33 lever: every day-33 clause
+passes there, but the day-32 binary also meets DAY28 1b on BOX4 and design F's copy misses the probe's tick on that
+CPU (the fill 11.4 ms), so BOX4 cannot credit F with 1b.
+
+**What Move 2 still owes, in order.**
+
+1. The recurrent f32 state off the tick: **the demote's two owner KV hashes** (DAY34 section 1: the one in `progress`
+   and the bind's, about 10 to 13 ms per demote on the 5090), **the fill's speed** on CPUs where it outlasts the tick
+   (not pre-registered), **the D2D half** (the restore's price cell decides; the capture refuted by construction, DAY33
+   section 6), and **the strong-form receipt**.
+2. to 4. Unchanged.
+
+## Move 2, day 35: design F settled; the demote's two KV hashes pre-registered (`DAY35.md`)
+
+**The decision.** On the 5090, with K on both arms, F against a revert of F (the day-32 helper fill, H): the promote
+publishes one tick earlier under F, `promote in` 16.2 / 16.5 ms against 23.8 / 24.1, and the promoting request's e2e is
+7.8 / 7.4 ms lower, each past the pre-registered pair noise in both orders (`DAY35 F DECISION -> KEEP`). BOX4 read F
+flat. F stays.
+
+**What Move 2 still owes, in order.**
+
+**Design M, refuted.** Both demote KV hashes on the helper (M1: the D2H receipts from a helper job before the
+completion check; M2: the bind's re-hash inside the `Hashing` job) cut the owner's two segments from 8.41 / 8.43 to
+0.15 / 0.07 ms on the 5090, but M1's reply adds a tick-top poll to the copy phase; behind a long prime tick the demote
+publishes late, a copy-phase hit does not park, and the gates' promote-after-demote never ran (identity default-on,
+failure-on, fault-default red), and the o2 wall read +26.50 ms against +25.0. M left the lane tip. M' (M2 alone) is
+pre-registered in DAY35 section 7.
+
+**Design M', landed** (DAY35 sections 7 and 8). The bind's re-hash (hash 2) runs on the helper inside the `Hashing`
+job over read views of the KV leases, which wait in a leak-on-drop guard on the owner thread; hash 1 stays in the
+engine's poll. On the 5090 the owner's `take-back` 8.25 to 0.06 ms, its hold per demote 17.98 to 9.55 ms, the demote's
+wall 8 ms shorter, the demoting request's e2e 8 ms lower; every gate green.
+
+## Move 2, day 36: the D2D half closed; M' on the target card (`DAY36.md`)
+
+**The D2D half closes as not worth a door** (DAY33 section 6's rule, pre-registered): on the target card the door
+restore's recurrent-state copy costs `owner-stream median=0.290` ms of GPU time and `host median=0.190` ms per restore
+(96 planes, 156.9 MB, 100 restores), under the 0.5 ms bound each: `DAY36 PRICE VERDICT (target card) .. -> CLOSES`. The
+capture half was refuted by construction on day 33. No code; the instrument (a log-only field on the restore lines)
+stays as the receipt's source. On the 5090 (a reading only) 0.170 and 0.130 ms.
+
+**M' on the target card**, with the guard fix from review on #711: `take-back` 0.54 to 0.11 ms, the wall -0.40 / -0.50
+ms, the e2e +0.09 / +0.01 ms, every gate green. On cached leases hash 2 is about 0.43 ms, so the card-level gain is small;
+the 5090's was 8 ms (write-combined reads).
+
+**What Move 2 still owes, in order.**
+
+1. The recurrent f32 state off the tick: **hash 1**, the D2H receipt, stays on the owner (the refuted M1: no
+   off-thread form found that keeps the copy phase at one poll), **the fill's speed** on CPUs where it outlasts the tick
+   (not pre-registered), and **the strong-form receipt**. The D2D half is closed (day 36).
+2. to 4. Unchanged.

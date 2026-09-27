@@ -341,7 +341,7 @@ fn main() {
         "ef41ad6a5caeebf4b5fb54b93d7054b628ace34892b59309b954e20d0d2fb81d",
         "frozen sampled stream"
     );
-    assert!(gpu.ep_calls() > 0 && gpu.sink_tiled_calls() > 0);
+    assert!(gpu.ep_calls() > 0 && gpu.sink_st_calls() > 0);
     println!(
         "PASS radix sampled plain profile with frozen 96-token stream; not a throughput measurement"
     );

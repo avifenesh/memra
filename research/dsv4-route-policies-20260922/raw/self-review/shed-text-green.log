@@ -1,0 +1,13 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-dsv4/crates/memra-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.77s
+     Running unittests src/lib.rs (target/debug/deps/memra_server-e53347545693156a)
+
+running 3 tests
+test tests::a_route_at_its_bound_sheds_alone_and_leaves_the_hybrid_lane_and_other_routes_alone ... ok
+test tests::a_route_prices_its_wait_from_the_fallback_times_its_waves_of_backlog ... ok
+test tests::an_idle_route_admits_a_lone_request_and_a_busy_one_judges_it_on_observed_service ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 879 filtered out; finished in 0.01s
+

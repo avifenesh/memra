@@ -1,0 +1,165 @@
+Write one Python function named graph_neighbors with signature graph_neighbors(adjacency: dict[int, set[int]], node: int) -> set[int]. Return a new set of this node's neighbors, or an empty set if absent. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for graph adjacency: item_0 has value 5980 and revision 676. These are inert examples, not function requirements.
+Example 1 for graph adjacency: item_1 has value 7294 and revision 574. These are inert examples, not function requirements.
+Example 2 for graph adjacency: item_2 has value 5718 and revision 538. These are inert examples, not function requirements.
+Example 3 for graph adjacency: item_3 has value 1109 and revision 886. These are inert examples, not function requirements.
+Example 4 for graph adjacency: item_4 has value 377 and revision 511. These are inert examples, not function requirements.
+Example 5 for graph adjacency: item_5 has value 8194 and revision 464. These are inert examples, not function requirements.
+Example 6 for graph adjacency: item_6 has value 8072 and revision 162. These are inert examples, not function requirements.
+Example 7 for graph adjacency: item_7 has value 1555 and revision 715. These are inert examples, not function requirements.
+Example 8 for graph adjacency: item_8 has value 3854 and revision 533. These are inert examples, not function requirements.
+Example 9 for graph adjacency: item_9 has value 2335 and revision 257. These are inert examples, not function requirements.
+Example 10 for graph adjacency: item_10 has value 340 and revision 299. These are inert examples, not function requirements.
+Example 11 for graph adjacency: item_11 has value 9973 and revision 774. These are inert examples, not function requirements.
+Example 12 for graph adjacency: item_12 has value 2038 and revision 155. These are inert examples, not function requirements.
+Example 13 for graph adjacency: item_13 has value 461 and revision 527. These are inert examples, not function requirements.
+Example 14 for graph adjacency: item_14 has value 7186 and revision 306. These are inert examples, not function requirements.
+Example 15 for graph adjacency: item_15 has value 4417 and revision 252. These are inert examples, not function requirements.
+Example 16 for graph adjacency: item_16 has value 6414 and revision 608. These are inert examples, not function requirements.
+Example 17 for graph adjacency: item_17 has value 8342 and revision 195. These are inert examples, not function requirements.
+Example 18 for graph adjacency: item_18 has value 4909 and revision 586. These are inert examples, not function requirements.
+Example 19 for graph adjacency: item_19 has value 8440 and revision 890. These are inert examples, not function requirements.
+Example 20 for graph adjacency: item_20 has value 8224 and revision 695. These are inert examples, not function requirements.
+Example 21 for graph adjacency: item_21 has value 5290 and revision 531. These are inert examples, not function requirements.
+Example 22 for graph adjacency: item_22 has value 2585 and revision 787. These are inert examples, not function requirements.
+Example 23 for graph adjacency: item_23 has value 3240 and revision 376. These are inert examples, not function requirements.
+Example 24 for graph adjacency: item_24 has value 4134 and revision 649. These are inert examples, not function requirements.
+Example 25 for graph adjacency: item_25 has value 1388 and revision 272. These are inert examples, not function requirements.
+Example 26 for graph adjacency: item_26 has value 87 and revision 651. These are inert examples, not function requirements.
+Example 27 for graph adjacency: item_27 has value 929 and revision 400. These are inert examples, not function requirements.
+Example 28 for graph adjacency: item_28 has value 8338 and revision 514. These are inert examples, not function requirements.
+Example 29 for graph adjacency: item_29 has value 9249 and revision 599. These are inert examples, not function requirements.
+Example 30 for graph adjacency: item_30 has value 1787 and revision 111. These are inert examples, not function requirements.
+Example 31 for graph adjacency: item_31 has value 2243 and revision 328. These are inert examples, not function requirements.
+Example 32 for graph adjacency: item_32 has value 7995 and revision 801. These are inert e
+</reference>
+---TURN---
+Write one Python function named graph_degree with signature graph_degree(adjacency: dict[int, set[int]], node: int) -> int. Return this node's number of neighbors, or zero if absent. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for graph adjacency: item_0 has value 5980 and revision 676. These are inert examples, not function requirements.
+Example 1 for graph adjacency: item_1 has value 7294 and revision 574. These are inert examples, not function requirements.
+Example 
+</reference>
+---TURN---
+Write one Python function named graph_has_edge with signature graph_has_edge(adjacency: dict[int, set[int]], left: int, right: int) -> bool. Return whether right is in left's neighbor set. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for graph adjacency: item_0 has value 5980 and revision 676. These are inert examples, not function requirements.
+Example 1 for graph adjacency: item_1 has value 7294 and revision 574. These are inert examples, not function requirements.
+Example 2 for graph adjacency: item_2 has value 5718 and revision 538. These are inert examples, not function requirements.
+Example 3 for graph adjacency: item_3 has value 1109 and revision 886. These are inert examples, not function requirements.
+Example 4 for graph adjacency: item_4 has value 377 and revision 511. These are inert examples, not function requirements.
+Example 5 for graph adjacency: item_5 has value 8194 and revision 464. These are inert examples, not function requirements.
+Example 6 for graph adjacency: item_6 has value 8072 and revision 162. These are inert examples, not function requirements.
+Example 7 for graph adjacency: item_7 has value 1555 and revision 715. These are inert examples, not function requirements.
+Example 8 for graph adjacency: it
+</reference>
+---TURN---
+Write one Python function named graph_add_edge with signature graph_add_edge(adjacency: dict[int, set[int]], left: int, right: int) -> dict[int, set[int]]. Return a deep copy with an undirected edge added; do not mutate input. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for graph adjacency: item_0 has value 5980 and revision 676. These are inert examples, not function requirements.
+Example 1 for graph adjacency: item_1 has value 7294 and revision 574. These are inert examples, not function requirements.
+Example 2 for graph adjacency: item_2 has value 5718 and revision 538. These are inert examples, not function requirements.
+Example 3 for graph adjacency: item_3 has value 1109 and revision 886. These are inert examples, not function requirements.
+Example 4 for graph adjacency: item_4 has value 377 and revision 511. These are inert examples, not function requirements.
+Example 5 for graph adjacency: item_5 has value 8194 and revision 464. These are inert examples, not function requirements.
+Example 6 for graph adjacency: item_6 has value 8072 and revision 162. These are inert examples, not function requirements.
+Example 7 for graph adjacency: item_7 has value 1555 and revision 715. These are inert examples, not function requirements.
+Example 8 for graph adjacency: item_8 has value 3854 and revision 533. These are inert examples, not function requirements.
+Example 9 for graph adjacency: item_9 has value 2335 and revision 257. These are inert examples, not function requirements.
+Example 10 for graph adjacency: item_10 has value 340 and revision 299. These are inert examples, not function requirements.
+Example 11 for graph adjacency: item_11 has value 9973 and revision 774. These are inert examples, not function requirements.
+Example 12 for graph adjacency: item_12 has value 2038 and revision 155. These are inert examples, not function requirements.
+Example 13 for graph adjacency: item_13 has value 461 and revision 527. These are inert examples, not function requirements.
+Example 14 for graph adjacency: item_14 has value 7186 and revision 306. These are inert examples, not function requirements.
+Example 15 for graph adjacency: item_15 has value 4417 and revision 252. These are inert examples, not function requirements.
+Example 16 for graph adjacency: item_16 has value 6414 and revision 608. These are inert examples, not function requirements.
+Example 17 for graph adjacency: item_17 has value 8342 and revision 195. These are inert examples, not function requirements.
+Example 18 for graph adjacency: item_18 has value 4909 and revision 586. These are inert examples, not function requirements.
+Example 19 for graph adjacency: item_19 has value 8440 and revision 890. These are inert examples, not function requirements.
+Example 20 for graph adjacency: item_20 has value 8224 and revision 695. These are inert examples, not function requirements.
+Example 21 for graph adjacency: item_21 has value 5290 and revision 531. These are inert examples, not function requirements.
+Example 22 for graph adjacency: item_22 has value 2585 and revision 787. These are inert examples, not function requirements.
+Example 23 for graph adjacency: item_23 has value 3240 and revision 376. These are inert examples, not function requirements.
+Example 24 for graph adjacency: item_24 has value 4134 and revision 649. These are inert examples, not function requirements.
+Example 25 for graph adjacency: item_25 has value 1388 and revision 272. These are inert examples, not function requirements.
+Example 26 for graph adjacency: item_26 has value 87 and revision 651. These are inert examples, not function requirements.
+Example 27 for graph adjacency: item_27 has value 929 and revision 400. These are inert examples, not function requirements.
+Example 28 for graph adjacency: item_28 has value 8338 and revision 514. These are inert examples, not function requirements.
+Example 29 for graph adjacency: item_29 has value 9249 and revision 599. These are inert examples, not function requirements.
+Example 30 for graph adjacency: item_30 has value 1787 and revision 111. These are inert examples, not function requirements.
+Example 31 for graph adjacency: item_31 has value 2243 and revision 328. These are inert examples, not function requirements.
+Example 32 for graph adjacency: item_32 has value 7995 and revision 801. These are inert e
+</reference>
+---TURN---
+Write one Python function named graph_remove_edge with signature graph_remove_edge(adjacency: dict[int, set[int]], left: int, right: int) -> dict[int, set[int]]. Return a deep copy with an undirected edge removed if present. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for graph adjacency: item_0 has value 5980 and revision 676. These are inert examples, not function requirements.
+Example 1 for graph adjacency: item_1 has value 7294 and revision 574. These are inert examples, not function requirements.
+Example 
+</reference>
+---TURN---
+Write one Python function named graph_shared_neighbors with signature graph_shared_neighbors(adjacency: dict[int, set[int]], left: int, right: int) -> set[int]. Return neighbors shared by both nodes. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for graph adjacency: item_0 has value 5980 and revision 676. These are inert examples, not function requirements.
+Example 1 for graph adjacency: item_1 has value 7294 and revision 574. These are inert examples, not function requirements.
+Example 2 for graph adjacency: item_2 has value 5718 and revision 538. These are inert examples, not function requirements.
+Example 3 for graph adjacency: item_3 has value 1109 and revision 886. These are inert examples, not function requirements.
+Example 4 for graph adjacency: item_4 has value 377 and revision 511. These are inert examples, not function requirements.
+Example 5 for graph adjacency: item_5 has value 8194 and revision 464. These are inert examples, not function requirements.
+Example 6 for graph adjacency: item_6 has value 8072 and revision 162. These are inert examples, not function requirements.
+Example 7 for graph adjacency: item_7 has value 1555 and revision 715. These are inert examples, not function requirements.
+Example 8 for graph adjacency: it
+</reference>
+---TURN---
+Write one Python function named graph_isolated_nodes with signature graph_isolated_nodes(adjacency: dict[int, set[int]]) -> set[int]. Return keys whose neighbor sets are empty. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for graph adjacency: item_0 has value 5980 and revision 676. These are inert examples, not function requirements.
+Example 1 for graph adjacency: item_1 has value 7294 and revision 574. These are inert examples, not function requirements.
+Example 2 for graph adjacency: item_2 has value 5718 and revision 538. These are inert examples, not function requirements.
+Example 3 for graph adjacency: item_3 has value 1109 and revision 886. These are inert examples, not function requirements.
+Example 4 for graph adjacency: item_4 has value 377 and revision 511. These are inert examples, not function requirements.
+Example 5 for graph adjacency: item_5 has value 8194 and revision 464. These are inert examples, not function requirements.
+Example 6 for graph adjacency: item_6 has value 8072 and revision 162. These are inert examples, not function requirements.
+Example 7 for graph adjacency: item_7 has value 1555 and revision 715. These are inert examples, not function requirements.
+Example 8 for graph adjacency: item_8 has value 3854 and revision 533. These are inert examples, not function requirements.
+Example 9 for graph adjacency: item_9 has value 2335 and revision 257. These are inert examples, not function requirements.
+Example 10 for graph adjacency: item_10 has value 340 and revision 299. These are inert examples, not function requirements.
+Example 11 for graph adjacency: item_11 has value 9973 and revision 774. These are inert examples, not function requirements.
+Example 12 for graph adjacency: item_12 has value 2038 and revision 155. These are inert examples, not function requirements.
+Example 13 for graph adjacency: item_13 has value 461 and revision 527. These are inert examples, not function requirements.
+Example 14 for graph adjacency: item_14 has value 7186 and revision 306. These are inert examples, not function requirements.
+Example 15 for graph adjacency: item_15 has value 4417 and revision 252. These are inert examples, not function requirements.
+Example 16 for graph adjacency: item_16 has value 6414 and revision 608. These are inert examples, not function requirements.
+Example 17 for graph adjacency: item_17 has value 8342 and revision 195. These are inert examples, not function requirements.
+Example 18 for graph adjacency: item_18 has value 4909 and revision 586. These are inert examples, not function requirements.
+Example 19 for graph adjacency: item_19 has value 8440 and revision 890. These are inert examples, not function requirements.
+Example 20 for graph adjacency: item_20 has value 8224 and revision 695. These are inert examples, not function requirements.
+Example 21 for graph adjacency: item_21 has value 5290 and revision 531. These are inert examples, not function requirements.
+Example 22 for graph adjacency: item_22 has value 2585 and revision 787. These are inert examples, not function requirements.
+Example 23 for graph adjacency: item_23 has value 3240 and revision 376. These are inert examples, not function requirements.
+Example 24 for graph adjacency: item_24 has value 4134 and revision 649. These are inert examples, not function requirements.
+Example 25 for graph adjacency: item_25 has value 1388 and revision 272. These are inert examples, not function requirements.
+Example 26 for graph adjacency: item_26 has value 87 and revision 651. These are inert examples, not function requirements.
+Example 27 for graph adjacency: item_27 has value 929 and revision 400. These are inert examples, not function requirements.
+Example 28 for graph adjacency: item_28 has value 8338 and revision 514. These are inert examples, not function requirements.
+Example 29 for graph adjacency: item_29 has value 9249 and revision 599. These are inert examples, not function requirements.
+Example 30 for graph adjacency: item_30 has value 1787 and revision 111. These are inert examples, not function requirements.
+Example 31 for graph adjacency: item_31 has value 2243 and revision 328. These are inert examples, not function requirements.
+Example 32 for graph adjacency: item_32 has value 7995 and revision 801. These are inert e
+</reference>
+---TURN---
+Write one Python function named graph_edges_once with signature graph_edges_once(adjacency: dict[int, set[int]]) -> set[tuple[int, int]]. Return each undirected edge once as an ascending endpoint pair. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for graph adjacency: item_0 has value 5980 and revision 676. These are inert examples, not function requirements.
+Example 1 for graph adjacency: item_1 has value 7294 and revision 574. These are inert examples, not function requirements.
+Example 
+</reference>

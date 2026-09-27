@@ -1,0 +1,61 @@
+{
+ "rounds": [
+  1
+ ],
+ "fallback_unclean_rule": true,
+ "visits_with_mmap_fallbacks": 3,
+ "cells": {
+  "1": "round-01"
+ },
+ "visits": 3,
+ "refused_arms": [],
+ "gpu_cotenant_unclean_visits": 0,
+ "registered": {
+  "regime_scored": true,
+  "contaminated_visits": {
+   "worker16": 1,
+   "bypass-staged": 1,
+   "bypass-mapped": 1
+  },
+  "arms": {
+   "bypass-staged": {
+    "verdict": "insufficient",
+    "n_pairs": 0,
+    "median_ratio": null,
+    "ratios_forward": [],
+    "ratios_reverse": []
+   },
+   "bypass-mapped": {
+    "verdict": "insufficient",
+    "n_pairs": 0,
+    "median_ratio": null,
+    "ratios_forward": [],
+    "ratios_reverse": []
+   }
+  }
+ },
+ "post_hoc_read_gate": {
+  "regime_scored": true,
+  "contaminated_visits": {
+   "worker16": 1,
+   "bypass-staged": 1,
+   "bypass-mapped": 1
+  },
+  "arms": {
+   "bypass-staged": {
+    "verdict": "insufficient",
+    "n_pairs": 0,
+    "median_ratio": null,
+    "ratios_forward": [],
+    "ratios_reverse": []
+   },
+   "bypass-mapped": {
+    "verdict": "insufficient",
+    "n_pairs": 0,
+    "median_ratio": null,
+    "ratios_forward": [],
+    "ratios_reverse": []
+   }
+  }
+ }
+}

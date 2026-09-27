@@ -1,0 +1,77 @@
+START utc=2026-09-23T09:46:38Z cmd=/root/lane/target-diet/release/dsv4-gpu-dspark-gate /data/dsv4f/nvfp4 /root/box/dspark-fx-tape416.json /root/rcpt/diet2/dspark-served/out 2 0,1 --served
+program: served defaults
+dsv4-gpu-dspark-gate | model /data/dsv4f/nvfp4 | variant ref | p0 256 | n_new 160 | runs 2 | devices [0, 1] | torch accept_mean 0.0000
+[load] plain sampler: Host
+[load] sampled candidate order: Radix
+[load] placement: split_at=23 trunk_layers=43 dspark_tail_reserve=10.83 GiB
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+[load] topology: PpEp | layers=43 per-rank-resident=PP-owned
+[load] indexer score: Scalar
+[load] prefill head: All
+[load] prefill DSpark prime: All
+[load] sampled DSpark proposal: Greedy
+[load] prefill MoE: reference
+[load] dspark exit-head dots arm: f32x (rung-4c fork; drafts only, never the emitted stream)
+[load] dspark selected-expert dispatch: per-expert reference
+[load] dense arm: fp8 (iteration-5; fp8 = FP8-blk linears as-stored on the device decode/verify paths, bit-identical twins)
+[load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 375.6ms
+[load] lane-8 peer transport enabled (1 boundaries)
+[load] layer 3 -> 1 rank copies done t=11s
+[load] layer 7 -> 1 rank copies done t=22s
+[load] layer 11 -> 1 rank copies done t=33s
+[load] layer 15 -> 1 rank copies done t=44s
+[load] layer 19 -> 1 rank copies done t=55s
+[load] layer 23 -> 1 rank copies done t=65s
+[load] layer 27 -> 1 rank copies done t=76s
+[load] layer 31 -> 1 rank copies done t=87s
+[load] layer 35 -> 1 rank copies done t=98s
+[load] layer 39 -> 1 rank copies done t=108s
+[load] layer 42 -> 1 rank copies done t=117s
+[load] drafter: DSpark (3 blocks, block_size 5, targets [40, 41, 42]) resident on stage 1
+[load] sink score: Scalar
+[load] expert program: matrix (grouped ModelOpt split-plane executor via dsv4_grouped; tensor-core MMA class, the loaded default since 2026-09-11), EP off
+[dsv4-doors] program=loaded door="replay cadence" env=MEMRA_DSV4_REPLAY_CADENCE merged=#374 declared_default=On resolved=NoServingCaller("full-token replay is armed per request by a gate binary only; no serving or eager request arms it, so the cadence choice has no caller") disposition=ReclassifyAsGateInput
+[dsv4-doors] program=loaded door="dense exact-tail transport" env=MEMRA_DSV4_DENSE_EXACT_TAIL merged=#374 declared_default=On resolved=On(DecodeOnlyM1) disposition=Engaged
+[dsv4-doors] program=loaded door="dense-fast" env=MEMRA_DSV4_DENSE_FAST merged=#404 declared_default=On resolved=On(DecodeOnlyM1) disposition=Engaged
+[dsv4-doors] program=loaded door="HC dot split S16" env=MEMRA_DSV4_HC_DOT_SPLIT merged=#418 declared_default=On resolved=On(AllRoutedShapes) disposition=Engaged
+loaded: split at layer 23, verify tmax 6, t=127s
+[vram post-load] dev0 used 83.99/94.97 GiB (resident 83.27) | dev1 used 84.08/94.97 GiB (resident 83.12)
+[dsv4-prefill-f16g] ENGAGED: t=1 pairs=6 expert_groups=256 max_rows_bound=6 device_routes=true FP8-QAT-mirrored half, split-plane ModelOpt NVFP4
+[moe-sk-form] dev=0 qt=108 sms=188 occ128=1 occ32=7 occt=3 cross=2147483647 xcross=2147483647 bdb=0 in_f=4096 out_f=2048 n_active=256 max_m=1530
+bit-gate cell warm=1 T=6 commit=1: BIT-IDENTICAL (6 logit rows, 229 cache classes) t=129s
+bit-gate cell warm=1 T=6 commit=5: BIT-IDENTICAL (6 logit rows, 229 cache classes) t=131s
+bit-gate cell warm=1 T=6 commit=6: BIT-IDENTICAL (6 logit rows, 229 cache classes) t=133s
+bit-gate cell warm=2 T=6 commit=1: BIT-IDENTICAL (6 logit rows, 229 cache classes) t=135s
+bit-gate cell warm=2 T=6 commit=5: BIT-IDENTICAL (6 logit rows, 229 cache classes) t=137s
+bit-gate cell warm=2 T=6 commit=6: BIT-IDENTICAL (6 logit rows, 229 cache classes) t=138s
+bit-gate cell warm=3 T=6 commit=1: BIT-IDENTICAL (6 logit rows, 229 cache classes) t=140s
+bit-gate cell warm=3 T=6 commit=5: BIT-IDENTICAL (6 logit rows, 229 cache classes) t=142s
+bit-gate cell warm=3 T=6 commit=6: BIT-IDENTICAL (6 logit rows, 229 cache classes) t=144s
+bit-gate cell warm=4 T=6 commit=1: BIT-IDENTICAL (6 logit rows, 229 cache classes) t=146s
+bit-gate cell warm=4 T=6 commit=5: BIT-IDENTICAL (6 logit rows, 229 cache classes) t=148s
+bit-gate cell warm=4 T=6 commit=6: BIT-IDENTICAL (6 logit rows, 229 cache classes) t=150s
+bit-gate cell warm=1 T=2 commit=1: BIT-IDENTICAL (2 logit rows, 229 cache classes) t=152s
+bit-gate cell warm=3 T=3 commit=2: BIT-IDENTICAL (3 logit rows, 229 cache classes) t=154s
+verdict (c) batched==sequential: 14 cells, 77 logit rows, 3206 cache-class comparisons — ALL BIT-IDENTICAL
+[vram post-bitgate] dev0 used 84.73/94.97 GiB (resident 83.27) | dev1 used 84.83/94.97 GiB (resident 83.12)
+arm P (plain device greedy): 160 tokens t=158s | m1 stream ON dispatches 20640
+arm P' (plain + a ring write at every position): 3 ring classes t=162s
+arm DS (drafted, sequential verify): 160 tokens | rounds 47 | accepted 125 (mean 2.6596/round) | verified 159 | accept sha 2b2ec5f43f6833e572f9ff763150117d75764faa4fe79ec4925b86556414f07f | t=166s
+arm DB run0 (drafted, BATCHED T=k+1 verify): 160 tokens | rounds 45 | accepted 115 (mean 2.5556/round) | verified 147 | mean T forwarded 6.0000 | accept sha 470ef0af3fa8e99cfc6b93e24eaad22d4760a796705292fcf033e3d3b560ce16 | t=169s
+arm DB run1 (drafted, BATCHED T=k+1 verify): 160 tokens | rounds 45 | accepted 115 (mean 2.5556/round) | verified 147 | mean T forwarded 6.0000 | accept sha 470ef0af3fa8e99cfc6b93e24eaad22d4760a796705292fcf033e3d3b560ce16 | t=173s
+[vram post-drafted] dev0 used 84.73/94.97 GiB (resident 83.27) | dev1 used 84.83/94.97 GiB (resident 83.12)
+verdict (d) accepted-position ring writes: 3 ring classes compared, 0 mismatching
+determinism across 2 batched runs: tokens IDENTICAL | per-round accepts BYTE-IDENTICAL | drafter rings BIT-IDENTICAL
+[REPORTED, not gated] arm P vs banked torch REF trajectory: 0/160 positions equal, common prefix 0 (torch-vs-GPU realization flips are the teacher-forcing gate's business, lane-6 in-band policy; the banked 0731 decode gate records an in-band argmax flip at s=54 in all three dots arms)
+
+*** ACCEPTANCE IS A CORRECTNESS OBSERVABLE ONLY — NOT A SPEED CLAIM ***
+batched arm: rounds 45 | accepted 115 | mean accepted/round 2.5556 | mean T forwarded 6.0000 | tokens per round 3.5556 | torch teacher-forced accept_mean 0.0000 (different loop: teacher-forced vs free-running, so these are not required to match)
+
+GPU DSPARK GATE [PASS]
+  (b) greedy spec==plain: 160/160 tokens LITERAL identity, sequential AND batched arms
+  (c) batched==sequential: 14 cells / 77 logit rows / 3206 cache classes, BIT for BIT
+  (d) accepted-position drafter ring writes: BIT-identical to per-position plain
+  (e) determinism x2
+  banked /root/rcpt/diet2/dspark-served/out/gpu_dspark_gate.json
+total elapsed 173s
+GATE_DONE rc=0 utc=2026-09-23T09:49:33Z

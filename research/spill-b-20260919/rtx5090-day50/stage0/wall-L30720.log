@@ -1,0 +1,8 @@
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers)
+callcost setup: L=30720 primed in 8611.6 ms
+callcost L=30720 R=32 N=5 wall_ms p50=55.30 min=55.20 max=55.40 all=[55.30,55.40,55.20,55.32,55.27]
+callcost L=30720 R=64 N=5 wall_ms p50=56.28 min=56.00 max=56.36 all=[56.00,56.36,56.28,56.34,56.23]
+callcost L=30720 R=288 N=5 wall_ms p50=103.51 min=103.06 max=103.84 all=[103.42,103.57,103.84,103.51,103.06]
+exit=0

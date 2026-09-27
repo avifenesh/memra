@@ -1,0 +1,12 @@
+SCE (on) r1 open request: http=500 finish_reason= prompt_tokens= completion_tokens= expected=64 -> FAIL
+SCE (on) r2 open request: http=500 finish_reason= prompt_tokens= completion_tokens= expected=64 -> FAIL
+SCE (on) r3 open request: http=500 finish_reason= prompt_tokens= completion_tokens= expected=64 -> FAIL
+SCE (on) r4 open request: http=500 finish_reason= prompt_tokens= completion_tokens= expected=64 -> FAIL
+SCE (on) bounded control: http=200 completion_tokens=16 expected=16 -> PASS
+SCE (on) boot census: alive=1 health=200 panicked=0 argmax_sentinel=4 worker_fatal=0 respawn=0 verify_refused=0 spec_acc_lines=9 (spec expected=1) -> FAIL
+SCE (plain) r1 open request: http=200 finish_reason=length completion_tokens=72 expected=64 -> FAIL
+SCE (plain) boot census: alive=1 health=200 panicked=0 argmax_sentinel=0 worker_fatal=0 respawn=0 verify_refused=0 spec_acc_lines=0 (spec expected=0) -> PASS
+SCE (off) r1 open request to the cap: http=500 finish_reason= prompt_tokens= completion_tokens= room=384 -> FAIL
+SCE (off) r2 open request to the cap: http=500 finish_reason= prompt_tokens= completion_tokens= room=384 -> FAIL
+SCE (off) r3 open request to the cap: http=500 finish_reason= prompt_tokens= completion_tokens= room=384 -> FAIL
+SCE (off) boot census: alive=1 health=200 panicked=0 argmax_sentinel=3 worker_fatal=0 respawn=0 verify_refused=0 spec_acc_lines=30 (spec expected=1) -> FAIL

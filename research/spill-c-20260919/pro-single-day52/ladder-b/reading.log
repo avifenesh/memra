@@ -1,0 +1,17 @@
+DAY52 VIEW day=44 reader=day44-mapped.py arms=off<-off,i6<-i6g,i9<-i9g rc=0
+DAY44 MAPPED CHECKS rig=pro-single runs=30 integrity=ok
+DAY44 CLAUSE census i9 mmap=120 (15219032064 bytes) pinned=0 (0) paged=0 (0) rule pinned=0 paged=0 mmap>0 on every i9 run -> PASS
+DAY44 ARM i6 window_door_ms_per_token pooled=20.70 o1=20.66 o2=20.75 window_s median=0.913 iqr=0.007 install_s median=61.38 iqr=0.06 loaded_s median=5.40 iqr=1.08
+DAY44 ARM i9 window_door_ms_per_token pooled=20.81 o1=20.81 o2=20.81 window_s median=0.917 iqr=0.003 install_s median=8.74 iqr=0.04 loaded_s median=0.65 iqr=0.07
+DAY44 CLAUSE (i) no_regression i9_minus_i6 window pooled=+0.004 o1=+0.005 o2=+0.002 noise=0.007 rule <=noise pooled and both orders -> PASS
+DAY44 READING (ii) install i9_minus_i6 o1=-52.63 o2=-52.67 noise=0.06 -> install_falls
+DAY44 READING (iii) load i9_minus_i6 o1=-5.23 o2=-4.24 noise=1.08 -> load_not_higher
+DAY44 MAPPED rig=pro-single integrity=ok census=PASS no_regression=PASS
+DAY52 VIEW day=45 reader=day45-fill.py arms=off<-off,i9g<-i9g,fill<-fill rc=0
+DAY45 FILL CHECKS rig=pro-single runs=30 integrity=ok
+DAY45 ARM i9g window_door_ms_per_token=20.81 gen_door_ms_per_token=52.44 window_s median=0.917 iqr=0.003 | per window token: gpu_misses=92.3 host_hits=40.5 host_misses=51.8 demand=17.726 verify=5.087 step=10.186 finish=0.111
+DAY45 ARM fill window_door_ms_per_token=4.77 gen_door_ms_per_token=12.64 window_s median=0.404 iqr=0.006 | per window token: gpu_misses=92.3 host_hits=92.3 host_misses=0.0 demand=0.967 verify=0.000 step=0.000 finish=0.093 fill_admitted gate=26714 warm=29682
+DAY45 CLAUSE (i) fill_minus_i9g window o1=-0.514 o2=-0.512 noise=0.006 rule < -noise both orders -> PASS
+DAY45 CLAUSE (ii) fill host_hits/gpu_misses per window token median=1.000 rule >=0.9 -> PASS
+DAY45 READING gen fill_minus_i9g=-1.274 s -> gen_lower
+DAY45 FILL rig=pro-single integrity=ok clause_i=PASS clause_ii=PASS

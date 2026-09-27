@@ -1,0 +1,6 @@
+START utc=2026-09-23T07:30:29Z bin=/root/lane/target-diet/release/memra-server env=MEMRA_DSV4_DIET_AB=0 MEMRA_ENV_AUDIT=warn
+READY after=119s port=35315
+CELL warmup c=1 ok=1/1 agg=30.38 tok/s decode_p50=38.42 tok/s ttft_p50=246 ms tpot_p50=26.03 ms errs=[]
+CELL greedy-c1 c=1 ok=8/8 agg=37.82 tok/s decode_p50=38.78 tok/s ttft_p50=206 ms tpot_p50=25.78 ms errs=[]
+CELLS_DONE utc=2026-09-23T07:33:24Z
+TERMINAL rc=0 utc=2026-09-23T07:33:26Z

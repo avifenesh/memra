@@ -1,0 +1,15 @@
+diff --git a/crates/memra-engine/src/tier_transfer.rs b/crates/memra-engine/src/tier_transfer.rs
+index 088d1c89b..ad994dc04 100644
+--- a/crates/memra-engine/src/tier_transfer.rs
++++ b/crates/memra-engine/src/tier_transfer.rs
+@@ -972,7 +972,9 @@ impl CudaTransfers {
+             cuda(unsafe { b.launch(cfg) })?;
+         }
+         let end = cuda(rs.record_event(timed))?;
+-        let mut flipped = None;
++        // diag5 x17: the copy stream waits on the digests before its copies (the kernel no longer
++        // overlaps the copy stream's DMA), the receipt still on its own stream.
++        let mut flipped = Some(cuda(rs.record_event(None))?);
+         if std::mem::take(&mut self.source_flip)
+             && let Some(&(ptr, len)) = sources.iter().find(|(p, n)| *p != 0 && *n > 0)
+         {

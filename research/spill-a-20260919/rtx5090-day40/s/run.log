@@ -1,0 +1,65 @@
+2026-09-24T22:56:49Z model sha256 (outside the hold): 52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+2026-09-24T22:58:49Z hold attempt 1: the lock stayed busy for 120 s
+2026-09-24T23:00:49Z hold attempt 2: the lock stayed busy for 120 s
+2026-09-24T23:02:49Z hold attempt 3: the lock stayed busy for 120 s
+2026-09-24T23:03:38Z hold taken (fd 9) tree=fede09e1cba518d322496d61ceab1ab83ad4bbfa
+2026-09-24T23:03:39Z unit server rc=0 test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 917 filtered out; finished in 0.87s
+2026-09-24T23:03:43Z unit engine rc=0 test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 582 filtered out; finished in 2.67s
+2026-09-24T23:04:15Z demote o1 g4 rc=0 STALL rule cell=stall-demote-g4 arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p9
+2026-09-24T23:04:46Z demote o1 s rc=0 STALL rule cell=stall-demote-s arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95
+2026-09-24T23:05:17Z demote o1 g4 rc=0 STALL rule cell=stall-demote-g4 arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p9
+2026-09-24T23:05:47Z demote o1 s rc=0 STALL rule cell=stall-demote-s arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95
+2026-09-24T23:06:18Z demote o1 g4 rc=0 STALL rule cell=stall-demote-g4 arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p9
+2026-09-24T23:06:49Z demote o1 s rc=0 STALL rule cell=stall-demote-s arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_p95
+2026-09-24T23:07:19Z demote o1 g4 rc=0 STALL rule cell=stall-demote-g4 arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p9
+2026-09-24T23:07:50Z demote o1 s rc=0 STALL rule cell=stall-demote-s arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95
+2026-09-24T23:08:21Z demote o1 g4 rc=0 STALL rule cell=stall-demote-g4 arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p9
+2026-09-24T23:08:52Z demote o1 s rc=0 STALL rule cell=stall-demote-s arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_p95
+2026-09-24T23:09:22Z demote o2 s rc=0 STALL rule cell=stall-demote-s arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95
+2026-09-24T23:09:53Z demote o2 g4 rc=0 STALL rule cell=stall-demote-g4 arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p9
+2026-09-24T23:10:24Z demote o2 s rc=0 STALL rule cell=stall-demote-s arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95
+2026-09-24T23:10:54Z demote o2 g4 rc=0 STALL rule cell=stall-demote-g4 arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p9
+2026-09-24T23:11:25Z demote o2 s rc=0 STALL rule cell=stall-demote-s arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_p95
+2026-09-24T23:11:56Z demote o2 g4 rc=0 STALL rule cell=stall-demote-g4 arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_p9
+2026-09-24T23:12:27Z demote o2 s rc=0 STALL rule cell=stall-demote-s arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_p95
+2026-09-24T23:12:57Z demote o2 g4 rc=0 STALL rule cell=stall-demote-g4 arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p9
+2026-09-24T23:13:28Z demote o2 s rc=0 STALL rule cell=stall-demote-s arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95
+2026-09-24T23:13:59Z demote o2 g4 rc=0 STALL rule cell=stall-demote-g4 arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p9
+2026-09-24T23:14:00Z demote reading DAY40 S DEMOTE -> FAIL
+2026-09-24T23:14:29Z promote o1 g4 rc=0 STALL rule cell=stall-promote-g4 arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_
+2026-09-24T23:15:00Z promote o1 s rc=0 STALL rule cell=stall-promote-s arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_p
+2026-09-24T23:15:30Z promote o1 g4 rc=0 STALL rule cell=stall-promote-g4 arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_
+2026-09-24T23:16:01Z promote o1 s rc=0 STALL rule cell=stall-promote-s arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_p
+2026-09-24T23:16:31Z promote o1 g4 rc=0 STALL rule cell=stall-promote-g4 arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_
+2026-09-24T23:17:02Z promote o1 s rc=0 STALL rule cell=stall-promote-s arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_p
+2026-09-24T23:17:33Z promote o1 g4 rc=0 STALL rule cell=stall-promote-g4 arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_
+2026-09-24T23:18:03Z promote o1 s rc=0 STALL rule cell=stall-promote-s arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_p
+2026-09-24T23:18:34Z promote o1 g4 rc=0 STALL rule cell=stall-promote-g4 arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_
+2026-09-24T23:19:04Z promote o1 s rc=0 STALL rule cell=stall-promote-s arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_p
+2026-09-24T23:19:35Z promote o2 s rc=0 STALL rule cell=stall-promote-s arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_p
+2026-09-24T23:20:05Z promote o2 g4 rc=0 STALL rule cell=stall-promote-g4 arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_
+2026-09-24T23:20:36Z promote o2 s rc=0 STALL rule cell=stall-promote-s arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_p
+2026-09-24T23:21:07Z promote o2 g4 rc=0 STALL rule cell=stall-promote-g4 arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_
+2026-09-24T23:21:37Z promote o2 s rc=0 STALL rule cell=stall-promote-s arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_p
+2026-09-24T23:22:08Z promote o2 g4 rc=0 STALL rule cell=stall-promote-g4 arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_
+2026-09-24T23:22:38Z promote o2 s rc=0 STALL rule cell=stall-promote-s arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_p
+2026-09-24T23:23:09Z promote o2 g4 rc=0 STALL rule cell=stall-promote-g4 arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_
+2026-09-24T23:23:40Z promote o2 s rc=0 STALL rule cell=stall-promote-s arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_p
+2026-09-24T23:24:10Z promote o2 g4 rc=0 STALL rule cell=stall-promote-g4 arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_
+2026-09-24T23:24:11Z promote reading DAY40 S PROMOTE -> FAIL
+2026-09-24T23:24:56Z hump xg4 rc=0 STALL rule cell=hump-xg4 arm=demote n_per_order=8 pooled=16 idle_runs=16 idle_p50=7.4 idle_p95=7.9 idle_p99=8.1 idle_max
+2026-09-24T23:25:43Z hump xs rc=0 STALL rule cell=hump-xs arm=demote n_per_order=8 pooled=16 idle_runs=16 idle_p50=7.4 idle_p95=8.0 idle_p99=8.2 idle_max=
+2026-09-24T23:26:29Z hump xs rc=0 STALL rule cell=hump-xs arm=demote n_per_order=8 pooled=16 idle_runs=16 idle_p50=7.4 idle_p95=8.0 idle_p99=8.2 idle_max=
+2026-09-24T23:27:15Z hump xg4 rc=0 STALL rule cell=hump-xg4 arm=demote n_per_order=8 pooled=16 idle_runs=16 idle_p50=7.4 idle_p95=8.0 idle_p99=8.2 idle_max
+2026-09-24T23:27:16Z hump reading HUMP arm=xg4 boots=2 median-hump=+0.157 humps=True HUMP arm=xs boots=2 median-hump=+0.210 humps=True 
+2026-09-24T23:27:30Z gate identity-default-off rc=0 KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+2026-09-24T23:27:45Z gate identity-default-on rc=0 KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+2026-09-24T23:27:55Z gate identity-plain-off rc=0 KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+2026-09-24T23:28:06Z gate identity-plain-on rc=0 KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+2026-09-24T23:28:25Z gate failure-off rc=0 KV-HOST-SPILL FAILURE GATE: ALL GREEN
+2026-09-24T23:28:51Z gate failure-on rc=0 KV-HOST-SPILL FAILURE GATE: ALL GREEN
+2026-09-24T23:33:07Z gate fault-default rc=1 KV-HOST-CONTRACT-FAULT GATE: 1 FAILURE(S)
+2026-09-24T23:36:39Z gate fault-plain rc=1 KV-HOST-CONTRACT-FAULT GATE: 1 FAILURE(S)
+2026-09-24T23:37:01Z gate hit-off rc=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+2026-09-24T23:37:27Z gate hit-on rc=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+2026-09-24T23:37:27Z hold released; DAY40-S-CARD-RUN-DONE

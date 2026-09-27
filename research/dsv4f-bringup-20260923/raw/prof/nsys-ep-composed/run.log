@@ -1,0 +1,91 @@
+INPUT count=8192 source_sha256=11e4bd80352f4a24504ffdee519b33bbc527b3b9bcfeb531815e5731b190cb8c chunk=512 active_C4=true sampler=radix capture_steps=32..64 arm=composed
+[load] plain sampler: Host
+[load] sampled candidate order: Radix
+[load] placement: split_at=23 trunk_layers=43 dspark_tail_reserve=10.83 GiB
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+[load] topology: PpEp | layers=43 per-rank-resident=PP-owned
+[load] indexer score: Tiled
+[load] prefill head: All
+[load] prefill DSpark prime: All
+[load] sampled DSpark proposal: Greedy
+[load] prefill MoE: reference
+[load] dspark exit-head dots arm: f32x (rung-4c fork; drafts only, never the emitted stream)
+[load] dspark selected-expert dispatch: per-expert reference
+[load] dense arm: fp8 (iteration-5; fp8 = FP8-blk linears as-stored on the device decode/verify paths, bit-identical twins)
+[load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 518.7ms
+[load] lane-8 peer transport enabled (1 boundaries)
+[load] layer 3 -> 1 rank copies done t=12s
+[load] layer 7 -> 1 rank copies done t=24s
+[load] layer 11 -> 1 rank copies done t=37s
+[load] layer 15 -> 1 rank copies done t=49s
+[load] layer 19 -> 1 rank copies done t=61s
+[load] layer 23 -> 1 rank copies done t=74s
+[load] layer 27 -> 1 rank copies done t=86s
+[load] layer 31 -> 1 rank copies done t=98s
+[load] layer 35 -> 1 rank copies done t=110s
+[load] layer 39 -> 1 rank copies done t=123s
+[load] layer 42 -> 1 rank copies done t=132s
+[load] drafter: DSpark (3 blocks, block_size 5, targets [40, 41, 42]) resident on stage 1
+[load] sink score: Tiled
+[EP load] layer=0 ids=0..128 local, 128..256 peer; all shard bytes verified
+[EP load] layer=23 ids=128..256 local, 0..128 peer; all shard bytes verified
+[EP load] layer=1 ids=0..128 local, 128..256 peer; all shard bytes verified
+[EP load] layer=24 ids=128..256 local, 0..128 peer; all shard bytes verified
+[EP load] layer=2 ids=0..128 local, 128..256 peer; all shard bytes verified
+[EP load] layer=25 ids=128..256 local, 0..128 peer; all shard bytes verified
+[EP load] layer=3 ids=0..128 local, 128..256 peer; all shard bytes verified
+[EP load] layer=26 ids=128..256 local, 0..128 peer; all shard bytes verified
+[EP load] layer=4 ids=0..128 local, 128..256 peer; all shard bytes verified
+[EP load] layer=27 ids=128..256 local, 0..128 peer; all shard bytes verified
+[EP load] layer=5 ids=0..128 local, 128..256 peer; all shard bytes verified
+[EP load] layer=28 ids=128..256 local, 0..128 peer; all shard bytes verified
+[EP load] layer=6 ids=0..128 local, 128..256 peer; all shard bytes verified
+[EP load] layer=29 ids=128..256 local, 0..128 peer; all shard bytes verified
+[EP load] layer=7 ids=0..128 local, 128..256 peer; all shard bytes verified
+[EP load] layer=30 ids=128..256 local, 0..128 peer; all shard bytes verified
+[EP load] layer=8 ids=0..128 local, 128..256 peer; all shard bytes verified
+[EP load] layer=31 ids=128..256 local, 0..128 peer; all shard bytes verified
+[EP load] layer=9 ids=0..128 local, 128..256 peer; all shard bytes verified
+[EP load] layer=32 ids=128..256 local, 0..128 peer; all shard bytes verified
+[EP load] layer=10 ids=0..128 local, 128..256 peer; all shard bytes verified
+[EP load] layer=33 ids=128..256 local, 0..128 peer; all shard bytes verified
+[EP load] layer=11 ids=0..128 local, 128..256 peer; all shard bytes verified
+[EP load] layer=34 ids=128..256 local, 0..128 peer; all shard bytes verified
+[EP load] layer=12 ids=0..128 local, 128..256 peer; all shard bytes verified
+[EP load] layer=35 ids=128..256 local, 0..128 peer; all shard bytes verified
+[EP load] layer=13 ids=0..128 local, 128..256 peer; all shard bytes verified
+[EP load] layer=36 ids=128..256 local, 0..128 peer; all shard bytes verified
+[EP load] layer=14 ids=0..128 local, 128..256 peer; all shard bytes verified
+[EP load] layer=37 ids=128..256 local, 0..128 peer; all shard bytes verified
+[EP load] layer=15 ids=0..128 local, 128..256 peer; all shard bytes verified
+[EP load] layer=38 ids=128..256 local, 0..128 peer; all shard bytes verified
+[EP load] layer=16 ids=0..128 local, 128..256 peer; all shard bytes verified
+[EP load] layer=39 ids=128..256 local, 0..128 peer; all shard bytes verified
+[EP load] layer=17 ids=0..128 local, 128..256 peer; all shard bytes verified
+[EP load] layer=40 ids=128..256 local, 0..128 peer; all shard bytes verified
+[EP load] layer=18 ids=0..128 local, 128..256 peer; all shard bytes verified
+[EP load] layer=41 ids=128..256 local, 0..128 peer; all shard bytes verified
+[EP load] layer=19 ids=0..128 local, 128..256 peer; all shard bytes verified
+[EP load] layer=42 ids=128..256 local, 0..128 peer; all shard bytes verified
+[EP load] layer=20 ids=0..128 local, 128..256 peer; all shard bytes verified
+[EP load] layer=21 ids=0..128 local, 128..256 peer; all shard bytes verified
+[EP load] layer=22 ids=0..128 local, 128..256 peer; all shard bytes verified
+[load] EP pair enabled for trunk routed experts; attention/shared experts and DSpark keep their layer owners
+[load] expert program: matrix (grouped ModelOpt split-plane executor via dsv4_grouped; tensor-core MMA class, the loaded default since 2026-09-11), EP pair (PP-2 expert-parallel banks)
+[dsv4-doors] program=loaded door="replay cadence" env=MEMRA_DSV4_REPLAY_CADENCE merged=#374 declared_default=On resolved=NoServingCaller("full-token replay is armed per request by a gate binary only; no serving or eager request arms it, so the cadence choice has no caller") disposition=ReclassifyAsGateInput
+[dsv4-doors] program=loaded door="dense exact-tail transport" env=MEMRA_DSV4_DENSE_EXACT_TAIL merged=#374 declared_default=On resolved=On(DecodeOnlyM1) disposition=Engaged
+[dsv4-doors] program=loaded door="dense-fast" env=MEMRA_DSV4_DENSE_FAST merged=#404 declared_default=On resolved=On(DecodeOnlyM1) disposition=Engaged
+[dsv4-doors] program=loaded door="HC dot split S16" env=MEMRA_DSV4_HC_DOT_SPLIT merged=#418 declared_default=On resolved=On(AllRoutedShapes) disposition=Engaged
+[moe-sk-form] dev=0 qt=108 sms=188 occ128=1 occ32=7 occt=3 cross=2147483647 xcross=2147483647 bdb=0 in_f=4096 out_f=2048 n_active=128 max_m=6
+PROFILE_ARM arm=composed gu_fuse=true m1_down=true gu_m1=true half2=true wo_a_grouped=true index_topk_radix=true route_validate=false mirror_validate=false c4_host_copy_elide=false
+[dsv4-prefill-f16g] GU_FUSE ENGAGED: rows=1 live_slots=6 hidden=4096 inter=2048 ModelOpt NVFP4 f16-MMA class
+Capture range started in the application.
+Capture range ended in the application.
+Generating '/tmp/nsys-report-439f.qdstrm'
+[1/1] [0%                          ] nsys.nsys-repProcessing events...
+[1/1] [0%                          ] nsys.nsys-rep[1/1] [7%                          ] nsys.nsys-rep[1/1] [10%                         ] nsys.nsys-rep[1/1] [14%                         ] nsys.nsys-rep[1/1] [=17%                        ] nsys.nsys-rep[1/1] [==21%                       ] nsys.nsys-rep[1/1] [===24%                      ] nsys.nsys-rep[1/1] [====28%                     ] nsys.nsys-rep[1/1] [=====31%                    ] nsys.nsys-rep[1/1] [======35%                   ] nsys.nsys-rep[1/1] [=======39%                  ] nsys.nsys-rep[1/1] [========42%                 ] nsys.nsys-rep[1/1] [=========46%                ] nsys.nsys-rep[1/1] [==========49%               ] nsys.nsys-rep[1/1] [===========53%              ] nsys.nsys-rep[1/1] [============56%             ] nsys.nsys-rep[1/1] [=============60%            ] nsys.nsys-rep[1/1] [==============63%           ] nsys.nsys-rep[1/1] [===============67%          ] nsys.nsys-rep[1/1] [================70%         ] nsys.nsys-rep[1/1] [=================74%        ] nsys.nsys-rep[1/1] [==================78%       ] nsys.nsys-rep[1/1] [===================81%      ] nsys.nsys-rep[1/1] [========================100%] nsys.nsys-rep[1/1] [========================100%] nsys.nsys-rep
+PROFILE_COMPLETE steps=32..64 absolute_positions=8224..8256 seconds=2.081893 both_stages_drained=true ep_calls=1376 gu_m1=2752 gu_half2=2752 down_half2=2752 wo_a=1376 index_topk=672
+PROFILE_RECEIPT arm=composed ep_calls=4128 trunk_layers=43 gu_m1=8256 gu_half2=8256 down_half2=8256 wo_a=4128 index_topk=2016
+PASS radix sampled plain profile with frozen 96-token stream; not a throughput measurement
+Generated:
+	/root/rcpt/prof/nsys-ep-composed/nsys.nsys-rep

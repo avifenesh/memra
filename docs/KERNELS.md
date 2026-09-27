@@ -20,8 +20,11 @@ fatbin (`MEMRA_TIER_RECEIPT_FATBIN`), loaded only by `tier_transfer::CudaTransfe
 
 | Symbol | Purpose | Types | Architecture | Door | Binding |
 | --- | --- | --- | --- | --- | --- |
-| `d2d_receipt_digest` | Four wrapping u64 lane sums of `mix64(w_j + (j + 1) * C_l)` over a byte span read as LE words (order-independent, so the block and atomic order cannot move the value); the host folds the byte count. CPU oracle `memra_tier::conformance::receipt_digest`. Issued on the copy stream for the source (behind the producer fence) and the destination (after the copy) of every D2D capture and restore item | u8 span, u64 lanes | any (no arch-specific instruction) | `MEMRA_KV_HOST_CONTRACTS=1` (the door's D2D classes; no flag of its own) | `CudaTransfers::digest_on`, read by `progress` and `d2d_receipt` |
-| `tier_delay_spin` | One thread spinning on `%globaltimer` for `ns` nanoseconds; the `MEMRA_KV_HOST_FAULT=d2d-delay-capture` / `d2d-delay-restore` fault's delay ahead of the copy so the early reader deterministically sees the fresh destination | u64 scalar | any | fault values only (diagnostics; `docs/FLAGS.md` `MEMRA_KV_HOST_FAULT`) | `CudaTransfers::delay_on`, armed by `inject_d2d_early_reader` |
+| `d2d_receipt_digest` | Four wrapping u64 lane sums of `mix64(w_j + (j + 1) * C_l)` over a byte span read as LE words (order-independent, so the block and atomic order cannot move the value); the host folds the byte count. CPU oracle `memra_tier::conformance::receipt_digest`. Issued on the copy stream, the one side stream (design G4, DAY38 section 17; G''' ran it on a receipt stream) for the source (behind the producer fence) and the destination (after the copy) of every D2D capture and restore item | u8 span, u64 lanes | any (no arch-specific instruction) | `MEMRA_KV_HOST_CONTRACTS=1` (the door's D2D classes; no flag of its own) | `CudaTransfers::digest_on`, read by `progress` and `d2d_receipt` |
+| `span_receipt_digests` | WP-A day 42 (`DAY42.md` design S2): the program of `d2d_receipt_digest` (one shared device function, `memra_receipt_lanes`) over up to 64 spans in ONE launch, passed by value (count, device addresses, byte lengths, and each span's lane address); span k is `blockIdx.y`, its words grid-strided over `blockIdx.x`. Issued on the copy stream for every D2H f32 span's device source (one launch ahead of the copies), every D2H span's landed pinned staging read through its device address (`cuMemHostGetDevicePointer`, one launch at the seal, after the landing and off it), and every H2D f32 span's device destination (one launch after the copies). CPU oracle `memra_tier::conformance::receipt_digest` span by span, bitwise in `span_receipt_digests_are_the_program_per_span` (70 spans, 1 B to 3 MiB + 3, offsets 0 to 7, device and pinned host memory). WP-A day 46 (`DAY46.md` design S3): the grid is bounded by `span_blocks` so a launch never fills the card (S2's 192 x 64 blocks held the owner stream's kernels for the landed launches' 3 ms on the target card): one block per span for pinned host reads, `SMs / spans` (at least one) for device reads | u8 spans, u64 lanes | any | `MEMRA_KV_HOST_CONTRACTS=1` (the door's span receipts; no flag of its own) | `CudaTransfers::span_digests_on`, read by `d2h_span_receipt` and `take_h2d_spans` |
+| `tier_delay_spin` | One thread spinning on `%globaltimer` for `ns` nanoseconds; the `MEMRA_KV_HOST_FAULT=d2d-delay-capture` / `d2d-delay-restore` fault's delay ahead of the copy so the early reader deterministically sees the fresh destination, on the copy stream with the D2D classes (the `d2h-delay` fault's spin of design G' is a host-side hold since G''') | u64 scalar | any | fault values only (diagnostics; `docs/FLAGS.md` `MEMRA_KV_HOST_FAULT`) | `CudaTransfers::delay_on`, armed by `inject_d2d_early_reader` and `inject_d2h_delay` |
+| `d2h_receipt_sha256` | WP-A day 38 (`DAY38.md` design G): the D2H receipt program `memra_tier::contracts::checksum` on the device, byte for byte: SHA-256 over the frame `memra-tier\0v1\0`, le64(11), `valid-bytes`, le64(len), then the payload; one thread per item (a sequential chain per item, the items in SIMT lockstep), up to 64 items per launch passed by value, 32 bytes out per item. Issued on the copy stream ahead of the batch's copies (design G4, DAY38 section 17: G' to G''' ran it on a receipt stream beside the copies, and a second side stream running kernels moved every later owner kernel boundary, sections 13e to 16) over every accepted D2H item's DEVICE source behind its producer fence; the host's re-hash of the landed bytes at the bind is the witness. Bitwise against the CPU program in the native cells and the day-38 survey (56 sizes and offsets) | u8 sources, 32-byte digests | any | `MEMRA_KV_HOST_CONTRACTS=1` (the door's D2H class on the copy stream; no flag of its own) | `CudaTransfers::seal_d2h_device_receipt`, read by `progress` |
+| `tier_flip_byte` | One thread XORing one byte with 0x40; the `MEMRA_KV_HOST_FAULT=d2h-source-flip` fault, queued on the copy stream after the digest and ahead of the batch's copies (design G4); and (WP-A day 40, design S; design S2 since day 42) the `span-flip-landed` fault's flip of one byte of the first D2H span's landed staging through its device address, after its copy and before its event | u8 pointer | any | fault values only (diagnostics) | `CudaTransfers::seal_d2h_device_receipt`, armed by `inject_d2h_source_flip`; `CudaTransfers::flip_staging_on`, armed by `inject_span_flip_landed` |
 
 ## DSV4 dense wide-prefill tiling, 2026-09-10 (memra #463, #468, #471)
 
@@ -37,6 +40,8 @@ there is no door.
 | `dsv4_gemv_bf16_m_kernel<M>` | Same shape for BF16 dense weights | BF16 weights and activations, f32 out | sm_120a | None | `memra_dsv4_gemv_bf16_m` |
 | `dsv4_dots_f32acc_mrow_kernel<M>` | f32-accumulated dense dots, `M` rows per launch | BF16 or f32 weights, f32 activations and out | sm_120a | None | `memra_dsv4_dots_f32acc_mrow` |
 | `dsv4_dots_f32_mrow_kernel<M>` | f64-accumulated dense dots, `M` rows per launch | BF16 or f32 weights, f32 activations and out | sm_120a | None | `memra_dsv4_dots_f32_mrow` |
+| `dsv4_gemm_fp8_tile_kernel<TT, TN, SUB, DEC, MINB>` | Prefill dense tile (#472, #700): TT token rows x TN output rows per 128-thread CTA, each output reduced over the GEMV's 128 k-slices in the same halving tree (smem for 64/32, shuffles below), so every output keeps the GEMV's bits. Committed (8, 4, 8, 1, 4) since 2026-09-27: 8 x 4, whole 8-element chunks, E4M3 decode by `cvt.rn.f16x2.e4m3x2` after clearing the NaN codes to +0, four blocks per SM, 128 registers against the 8 x 8 table form's 214, kernel -43% (`research/dsv4f-bringup-20260923/prefill-tile/`) | FP8 e4m3 weights with f32 block scales, BF16 activations, f32 out | sm_120a | None; `m > DSV4_TMAX` in `memra_dsv4_gemv_fp8_m`; `memra_dsv4_gemm_fp8_tile_set_for_gate` is the gate-only comparison seam | `memra_dsv4_gemv_fp8_m` |
+| `dsv4_dots_f32acc_tile_kernel<TT, TN, MINB>` | The same tile and tree for the compressor dots at prefill widths; committed (8, 8, 1), which the 2026-09-27 sweep found fastest and equal to the earlier form | BF16 or f32 weights, f32 activations and out | sm_120a | None; `s > DSV4_TMAX` in `memra_dsv4_dots_f32acc_mrow`; same gate seam | `memra_dsv4_dots_f32acc_mrow` |
 
 Numeric class SAME across every `M`: the per-row accumulation order and the
 128-leaf reduction tree are properties of the kernel body, not of `M`. Gated by
@@ -108,6 +113,7 @@ Measured f32 TP-2 receipt (combined door): prime improves 10.3% at 128k and 34.6
 | `memra_mla_kpool_candidates_f32` / `memra_mla_kpool_candidates_kernel` | Packs existing selector output as original f32 score bits plus global pool id; invalid slots use id -1. No arithmetic on scores. | `cu/mla_attn.cu`, `mla_ffi.rs::mla_kpool_candidates`; `MEMRA_GLM5_TP_INDEXER_SPLIT_PRIME`, default ON since 2026-09-10. |
 | `memra_mla_kpool_merge_f32` / `memra_mla_kpool_merge_kernel` | Exact score-desc/id-asc key ordering over both ranks' candidates, then ascending selected pool ids, raw-token expansion, causal tail and -1 padding. Canonical signed zero and nonfinite exclusion use the existing selector helper. One CTA/query, up to 2,048 candidates/rank. | `cu/mla_attn.cu`, `mla_ffi.rs::mla_kpool_merge`; same door. |
 | `memra_tp_ar_gather_i32` / `memra_tp_ar_gather_i32_kernel` | Opaque candidate words gathered in global rank order through `MemraArSignal` start/end barriers. Two distinct peer-access devices; timeout traps, no host synchronization. | `cu/tp_ar.cu`, `tp_ar.rs::ArLink::gather_i32`; same door. |
+| `memra_tp_ar_gather_rows_f32` / `memra_tp_ar_gather_rows_f32_kernel` | Exact attention TP2 join: rank r's `rows x width` f32 block lands at column `r*width` of each `2*width` output row on both ranks (token-major, the one-card layout). Pure bit movement on the one-shot `MemraArSignal` start/end barriers; timeout writes refusal words 40043/40044 like the 1-stage AR, no trap; optional replay fault word. | `cu/tp_ar.cu`, `dsv4_ep.rs::TpEpArState::gather_rows_into`; two per layer per step under `set_attention_tp_for_gate`. |
 
 Scoring reuses `memra_mla_kpool_score_f32` and `memra_mla_kpool_score_dsa_f32`, including
 the RP arm, through `mla_ffi.rs::mla_kpool_score_range`. Key-pointer offset and relative
@@ -117,14 +123,19 @@ Evidence: `research/glm5-tp-indexer-split-20260908/DESIGN.md`, and the 2026-09-1
 
 ## DSV4 small-kernel diet, 2026-09-07
 
-Both kernels live in `cu/dsv4_gpu.cu`, compiled with `-fmad=false`, and use
-`MEMRA_DSV4_SMALL_KERNEL_DIET` (default OFF). Gate status and receipt routing:
-`research/dsv4f-small-kernel-diet-20260907/README.md`.
+Both kernels live in `cu/dsv4_gpu.cu`, compiled with `-fmad=false`. Since 2026-09-23 (#339)
+they are the code on every device f32x HC4 / hidden 4096 load, PP-2 and TP/EP alike, with no
+door (`Dsv4Gpu::small_kernel_diet_shape`). Since the multi-row lane (2026-09-23) they take every
+row count, one block per row: plain steps, DSpark verify rows and prefill rows. Each row matches
+the unfused kernels and the same row launched alone, bit for bit. Kernel-boundary gate: `tests/dsv4_small_diet_gpu.rs`. Receipts:
+`research/dsv4f-small-kernel-diet-20260907/README.md` (TP/EP),
+`research/dsv4f-bringup-20260923/small-diet/RESULTS.md` (PP-2 served).
 
 | Kernel | Replaced launches and numeric contract | Geometry |
 | --- | --- | --- |
-| `dsv4_small_hc_f32_fixed_order_kernel` | rowsq f32x + Sinkhorn + collapse, 3 to 1. `dsv4_hc_f32_fixed_order`: same 128-thread rowsq tree, register Sinkhorn with ascending sums, same iteration count, ascending collapse. Bitwise gate required. | One block of 128, t=1, HC4, hidden4096. |
-| `dsv4_small_norm_pack_f32_fixed_order_kernel` | Q-LoRA RMSNorm f32x + bf16 conversion, 2 to 1. `dsv4_norm_pack_f32_fixed_order`: same 128-thread reduction tree and f32 intermediate, bf16 RNE. Retains normalized f32 Q as well as packed Q. Bitwise gate required. | One block of 128, t=1. |
+| `dsv4_small_hc_f32_fixed_order_kernel` | rowsq f32x + Sinkhorn + collapse, 3 to 1. `dsv4_hc_f32_fixed_order`: same 128-thread rowsq tree, register Sinkhorn with ascending sums, same iteration count, ascending collapse. Bitwise gate required. | One block of 128 per row, HC4, hidden4096. |
+| `dsv4_small_norm_pack_f32_fixed_order_kernel` | Q-LoRA RMSNorm f32x + bf16 conversion, 2 to 1. `dsv4_norm_pack_f32_fixed_order`: same 128-thread reduction tree and f32 intermediate, bf16 RNE. Retains normalized f32 Q as well as packed Q. Bitwise gate required. | One block of 128 per row. |
+| `dsv4_hc_finish_f32_fixed_order_kernel<S>` | HC24 split-dot slice sum + rowsq f32x + Sinkhorn + collapse + entry RMSNorm f32x + bf16 pack, 4 to 1 behind `dsv4_hc_dot_split_partial_kernel<S>` (6 launches to 2 per HC entry site). Same sums and trees as `dsv4_hc_dot_split_reduce_kernel<S>`, the small HC kernel, `dsv4_rmsnorm_f32acc_regs<32>` and `dsv4_cvt_bf16_kernel`; x is read once and y stays in registers. A fifth warp runs the Sinkhorn projection beside the collapse and RMSNorm (160 threads; the four row warps sync on named barrier 1), since only comb depends on it (memra #710). Dispatch: `hc_pre_norm_batch_dev` on the diet shape with the split class on, every row count, attention entry (packs x for wq_a, wkv and the indexer weights) and FFN entry (no pack); FFI `memra_dsv4_hc_finish_f32_fixed_order`, `memra_dsv4_hc_dot_split_partial`. Bitwise gate required: `tests/dsv4_hc_finish_gpu.rs`, `research/dsv4f-bringup-20260923/hc-finish/`. | One block of 128 per row, HC4, hidden4096, S=8/16/32. |
 
 The gate counts successful enqueues in the replaced families and requires 8 to
 3 launches per layer per rank. This counter excludes all other kernels; total
@@ -234,6 +245,7 @@ Header: "Stage-1 kernels: correctness-first, all f32, no tensor cores" (kernels.
 | `qwen4exp_route_topk_f32` | qwen4_exp DEVICE MoE router (devtwin lane): the full `host_route_softmax_topk` program per token row — softmax over `experts` (order-sensitive reductions SEQUENTIAL on thread 0, host op order verbatim; exp through double, the one non-bit-pinned op), top-`selected` under the pinned tie rule (weight desc, index asc — unsigned bit compare on the non-negative weight domain == total_cmp), renorm with the 6.1035156e-5 floor; writes sel/w rows + an optional slot->token map. Selection ids+order gated EXACT vs the host twin (tiny arm 0f + the `MEMRA_Q4E_ROUTER_AUDIT` live cross-check); weights ULP-documented | f32 (exp via f64) | — | qwen4exp_gpu (`set_router_dev`, **default ON** 2026-08-31 on receipts — pair with `set_idx_cache`) | fatbin/by-name |
 | `qmatvec_bf16w_sel_f32` | device-SELECTED expert twin of `qmatvec_bf16w_f32` over a DeviceBf16 bank (the card-1 draft): grid (out_f, 1, n_sel), slot s reads its expert id from the DEVICE sel array and its rows at sel[s]*out_f*in_f; per-row fmaf chain + reduce tree VERBATIM => BIT-IDENTICAL to the per-slot off_into chain (bf16 oracle sel mode, dup slots, shared-x + slot-x strides) | bf16 w / f32 x | — | qwen4exp_gpu (`set_router_dev` on the DeviceBf16 grouped arm) | fatbin/by-name |
 | `copy_rows_col_f32` | row-window column-slice copy (devtwin indexer cache): dst[dst_row+r] = src[r*stride+col..+width] — exact byte moves, appends idx_proj k-part rows to the DEVICE raw-key cache without a host round trip | f32 | — | qwen4exp_gpu (`set_idx_cache`, **default ON** 2026-08-31 on receipts) | fatbin/by-name |
+| `copy_batch_items_u8` | prefix snapshot and restore copies (WP-A design B1, `research/spill-a-20260919/DAY59.md` section 7): one launch over a `(src, dst, bytes)` item table plus i32 length sets; block row r grid-strides item r (16-byte vectors when both pointers are 16-byte aligned, bytes for the tail); replaces the per-plane memcpy, clone and length-set calls with the same bytes in the same destinations | bytes + i32 len | — | `prefix_snapshot` / `prefix_restore_at` (no door) | fatbin/by-name |
 | `copy_batch_uniform_kv_u8_set_len` | TP speculative-verify accepted-prefix repair: one block per uniform attention layer gathers strided full-width canonical K/V rows into the launching rank's contiguous quantized cache slice, then publishes that layer's device length; one launch per rank replaces per-layer K/V copies and len writes | q8_0 K / q5_1 V bytes + i32 len | — | native-P2P, uniform-geometry TP verify restore; per-layer repair fallback otherwise | fatbin/by-name |
 | `gdn_scan_naive_f32` | geometry-generic sequential GDN scan, in-kernel q/k l2 + sigmoid(beta); memra-reference twin (any hk/hv incl. tiny 4/4; z-gate composed by caller) | f32 | — | qwen4exp_gpu eager path only | fatbin/by-name |
 | `ssm_conv1d_fused_decode_tloop_f32` (lane/dspark-gdn-packed) | The per-row decode conv (`ssm_conv1d_fused_decode_b_f32`) iterated over T rows of ONE sequence inside one launch: state resolved from the replay-refreshed `[conv, canonical ssm, alternate ssm]` pointer table, window and taps in registers, the ring shifted per row exactly as the per-row kernel wrote it, optional post-row ring snapshots (`[T-1, conv_dim, pad]`, the verify-checkpoint slab layout). Bit-identical per row by construction; gate `gdn_packed_gpu`. Door `MEMRA_SPEC_GDN_PACKED` (default ON since 2026-09-08, `0` = per-row). | f32 | none | hybrid.cu |
@@ -347,10 +359,9 @@ variants; other dims fall back to `sdpa_naive` (flash_attn.cu:72).
 |---|---|---|---|---|---|
 | `append_quantize_kv_q8_0_q5_1*` (rows/dc/seqs/inc) | KV append+quantize | K=q8_0, V=q5_1 defaults; fp8/q4_0 via KV fatbin variants | — | MEMRA_KV_K / MEMRA_KV_V select fatbin | fatbin/by-name |
 | `fa_prefill_f32*`, `fa_prefill_w_f32*`, `_pp`, `_w2`, `_hd128` | f32 FA prefill | f32 | — | MEMRA_FA_FLOOR etc. | fatbin/by-name |
-| `fa_prefill_*bf16*` (p1, p1h2, pp, g4, g4o2, bf16kv_pp, bf16kv_vl, hd512, hd512_sp*) | bf16 FA prefill incl. hd512 | bf16 | — | MEMRA_FA_SPW, MEMRA_FA_SP512, MEMRA_FA512_MIN, MEMRA_FA_F16PV | fatbin/by-name |
+| `fa_prefill_*bf16*` (p1, p1h2, pp, g4, g4o2, bf16kv_pp, hd512, hd512_sp*) | bf16 FA prefill incl. hd512 | bf16 | — | MEMRA_FA_SPW, MEMRA_FA_SP512, MEMRA_FA512_MIN, MEMRA_FA_F16PV | fatbin/by-name |
 | `fa_prefill_q*`, `fa_prefill_qw*` (_hd128, _db*) | FA prefill over quantized KV | q8_0/q5_1 KV | — | MEMRA_PRIME_DEQW_DB | fatbin/by-name |
 | `fa_decode_f32`, `fa_decode_vec_q*` (~30 variants) + `fa_decode_combine*` | split-K FA decode + combine | q8_0/q5_1 KV, f32/q8_1 out | — | MEMRA_FA_V2/V3/V4, MEMRA_FA_V4_MAX, MEMRA_NO_FA_VEC, MEMRA_FA_SMEM_TKV, MEMRA_FA_SPLIT | fatbin/by-name |
-| VL family (`fa_mirror_vl`, `q_gate_split_vl`, `attn_rms_vl`, `attn_rope_vl`, `append_kv_vl`, `fa_prefill_bf16kv_vl*`) | varlen batched-attention pre/post | f32/bf16 | — | UNKNOWN | fatbin/by-name |
 | conversions (`f32_to_f16_flat`, `bf16_to_f16_flat`, `f32_to_bf16_flat`, `fa_dequant_kv_ws_*`) | KV workspace dequant / dtype flat converts | — | — | UNKNOWN | fatbin/by-name |
 
 ### cu/qmatvec_gemm.cu — 10 symbols (fatbin `MEMRA_GEMM_FATBIN`)
@@ -457,6 +468,11 @@ family is inventoried below (research/b200-sinkhorn-fusion-20260902); the remain
 | `dsv4_hc_pre_fused_kernel` (:3080) | `rowsq_scale` + `hc_sinkhorn_m` + `hc_collapse` as ONE launch per (site, token); BIT-IDENTICAL to the three-kernel chain by construction (verbatim per-stage bodies, shared-memory operand staging, bit-preserving Sinkhorn stationarity exit) | `MEMRA_HC_FUSED_PRE` (default OFF; lane/glm5-decode-diet 2026-08-31) | dsv4_ffi.rs |
 | `dsv4_hc_pre_fused_v2_kernel` (:3262) | same three stages as `dsv4_hc_pre_fused_kernel`, stage 1 and stage 3 VERBATIM; stage 2 (Sinkhorn) runs warp-0-only with `__syncwarp()` in place of `__syncthreads()` when hc<=4 (a synchronization-primitive substitution only — BIT-IDENTICAL to `=1` and the unfused chain by construction), falling back to `dsv4_hc_pre_fused_kernel` internally for hc>4 | `MEMRA_HC_FUSED_PRE=2` (default OFF; lane/b200-sinkhorn-fusion-20260902) | dsv4_ffi.rs |
 | `dsv4_hc_post_kernel` (:1053) | mHC post: `out[t,k,:] = post[t,k]*f[t,:] + sum_j comb[t,j,k]*residual[t,j,:]`. `f` is the SITE'S OWN attention or FFN branch output — a separate multi-kernel program (QKV/RoPE/attention core, or MoE/FFN) runs between the pre-chain's collapse write and this kernel's read, which is why no launch fuses this kernel with the pre-chain (research/b200-sinkhorn-fusion-20260902/LANE.md) | always | dsv4_ffi.rs |
+| `dsv4_moe_tail_hc_post_kernel` | The TP/EP joined MoE tail in one launch (memra #710, 2026-09-27): `dsv4_combine_rows_m_kernel`'s slot sum of the routed rows, the joined shared expert's rows added as `dsv4_add_inplace_kernel` adds them, then `dsv4_hc_post_kernel`'s expression for each hc copy. Every value is those kernels' op in their order, so y and out keep their bits; three launches per layer become one. | None; `moe_verify_common_tail` on a TP/EP step whose shared expert rode the expert join, with hc_post | `memra_dsv4_moe_tail_hc_post` |
+| `dsv4_headrms_rope_f32acc_kernel` | Per-head RMS then RoPE in one launch (memra #710, 2026-09-27): `dsv4_headrms_f32acc_kernel`'s register form over each (position, head) row, then `dsv4_rope_kernel`'s rotation of the row's last rd dims; each value is those kernels' op in their order, so the q rows keep their bits and two launches per layer become one | `attention_rows_dev` on the f32-chain arm, head dim up to 512 | `memra_dsv4_headrms_rope_f32acc` |
+| `dsv4_kv_norm_rope_quant_f32acc_kernel` | The shared K==V latent row's norm, RoPE and window QAT in one launch (memra #710, 2026-09-27): `dsv4_rmsnorm_f32acc_regs<8>` in place, `dsv4_rope_kernel`'s rotation of the last rd dims, `dsv4_act_quant_kernel`'s FP8 round trip of the prefix in 64-groups (the group max is exact in any order); three launches per layer become one | `attention_rows_dev` on the f32-chain arm, row up to 1024 | `memra_dsv4_kv_norm_rope_quant_f32acc` |
+| `dsv4_indexer_q_chain_kernel` | The indexer q chain in one launch (memra #710, 2026-09-27): `dsv4_rope_kernel` on the row's last rd dims, `dsv4_hadamard_kernel`'s butterflies and scale in shared memory, `dsv4_fp4_act_quant_kernel`'s per-32 QAT (the group max is exact in any order), and `dsv4_q_transpose_m_kernel`'s [hd][heads] staging; four launches per ratio-4 layer become one, same bits | `attention_rows_dev`, indexer head dim a power of two from 64 to 1024 | `memra_dsv4_indexer_q_chain` |
+| `dsv4_rope_inv_cvt_kernel` | The attention output's inverse RoPE and its bf16 pack in one launch (memra #710, 2026-09-27): each thread takes one element pair, rotates it with `dsv4_rope_kernel`'s inverse expression when it lies in the last rd dims, and writes the f32 row and `dsv4_cvt_bf16_kernel`'s pack; two launches per layer become one, same bits | `attention_rows_dev` | `memra_dsv4_rope_inv_cvt` |
 | `dsv4_hc_head_pre_kernel` (:1453) / `dsv4_hc_head_pre_m_kernel` (:3026) | dsv4's `HcCollapse::GatedHead` trunk-exit gate (sigmoid-gated pre-only collapse), single-position / batched twins — distinct from glm5_next's `Mean` exit (`dsv4_hc_mean_kernel`) | `HcCollapse::GatedHead` plans only | dsv4_ffi.rs |
 
 Selected-expert FP4 projection (same TU, `-fmad=false`):
@@ -469,7 +485,7 @@ DSV4 indexer candidate (same TU, separate multiply/add rounding):
 
 | symbol | purpose | dispatch flag | FFI binding |
 |---|---|---|---|
-| `dsv4_indexer_score_tiled_kernel` | 64-head, width-128 scorer; one thread owns a candidate and all heads, 128 candidates reuse 16-element query/key slabs. Ascending dimension and head sums use explicit separate round-to-nearest multiply/add, unlike the FMA-based MLA scorer. Absolute-position and fixed-limit masks share the same launch. | `MEMRA_DSV4_INDEXER_SCORE=scalar/tiled`, default scalar. Tiled is unqualified and opt-in; device f32x only. | `memra_dsv4_indexer_score_tiled`; `tools/dsv4-indexer-tiled-gate.cu` anchors to scalar CUDA and CPU witnesses, masks, write guards and a corruption control. Target-card component and one-load full-model parity pass; long-context serving remains unqualified. |
+| `dsv4_indexer_score_tiled_kernel` | 64-head, width-128 scorer; one thread owns a candidate and all heads, 128 candidates reuse 16-element query/key slabs. Ascending dimension and head sums use explicit separate round-to-nearest multiply/add, unlike the FMA-based MLA scorer. Absolute-position and fixed-limit masks share the same launch. | `MEMRA_DSV4_INDEXER_SCORE` unset = knee dispatch: tiled for one row at >= 1152 candidates or multi-row at >= 8192 row-candidates, scalar below; `scalar`/`tiled` force. Device f32x only. | `memra_dsv4_indexer_score_tiled`; `tools/dsv4-indexer-tiled-gate.cu` anchors to scalar CUDA and CPU witnesses, masks, write guards and a corruption control; `--knee` is the PRO 6000 timing sweep (`research/dsv4f-bringup-20260923/indexer-knee/`). Target-card component and one-load full-model parity pass. |
 
 Active-C4 residency experiment: `dsv4_c4_gather_kernel` /
 `memra_dsv4_c4_gather` copies selected logical rows from pinned host C4 or device
@@ -532,12 +548,20 @@ contribution bits into original slots, without a reassociated partial sum.
 both reductions, 1/6/32 rows and real 4096/2048 dimensions against the original
 full-bank launcher. Full-model and serving/performance gates are pending.
 
-Gate-only dense wo_a grouping: `dsv4_gemv_fp8_m_kernel<1,true>` shares the
-original FP8 GEMV dot/reduction body, using global grouped weight/scale rows
-and separate activation/output strides. `memra_dsv4_gemv_fp8_grouped_m1`
+Dense wo_a grouping (default ON since 2026-09-23): `memra_dsv4_gemv_fp8_grouped_m1`
 replaces eight t=1 FP8 wo_a launches with one; BF16, prefill and wider verify
-rows keep the old loop. The process-local grouped gate defaults OFF and
-counts successful submissions. The ignored
+rows keep the old loop. When the per-group slices would take dense fast (exact
+tail and dense fast on, operands admitted) it launches
+`dsv4_dense_fast_fp8_kernel<2,true>` over all groups' rows (flat weight row,
+activation/output planes offset by group); otherwise
+`dsv4_gemv_fp8_m_kernel<1,true>`, which shares the original FP8 GEMV
+dot/reduction body with global grouped weight/scale rows and separate
+activation/output strides. The process-local seam counts successful
+submissions; `false` selects the per-group launches. The ignored
+`cuda_gemv_fp8_grouped_dense_fast_matches_every_slice_program` test checks all
+nine (slice program, grouped program) pairs bitwise at 8x1024, 2x128 and 3x256
+and the dense-fast enqueue count; `dsv4_latency_kernels_gpu` times both at the
+served shape. The ignored
 `cuda_gemv_fp8_grouped_m1_matches_eight_slices_and_counts_one_enqueue` test
 compares the real 8x1024x4096 shape and padded two-group case bitwise and
 checks invalid-stride refusals. Full-model gate: `dsv4_plain_perf_gate wo-a`,
@@ -620,6 +644,22 @@ checks/synchronizes; it is not a production or graph-admission claim. Component 
 `tools/dsv4-grouped-route-gate.cu`; full-model gate:
 `dsv4_wide_prefill_gate` host/device/host routes at widths 32/128/512.
 
+Deferred checks (#670): `memra_dsv4_grouped_routes_fault` is the same full-bank route launch
+with `dsv4_grouped_prefix_kernel` also ORing a fault bit into a caller-owned device word when
+the placed count differs from `slots`, and `memra_dsv4_fp8_gather_half_fault` is the same
+mirror with a lossy row ORing its bit into that word. The served PP-2 matrix program and the
+grouped prefill give each stage one word per layer and read it once, before the verify
+transaction commits and before any token leaves the engine, instead of one status readback
+plus synchronize per route and per mirror. The TP/EP ranks defer too (#679):
+`memra_dsv4_grouped_routes_partition_fault` is the partition launch with
+`dsv4_grouped_partition_prefix_kernel` ORing the route bit on an out-of-range id, the host
+leaves the live count on the device and launches over every input slot, and the intermediate
+mirror takes `offsets[local_expert_count]` as its `live` bound so the inert tail is neither
+mirrored nor checked. Each rank reads its words with the one-shot refusal words, before
+either cache plane commits. Peer-dispatch EP keeps its synchronized live count for its
+coverage check. Components: `cuda_deferred_moe_faults_match_the_synchronous_checks` and
+`cuda_deferred_partition_faults_match_the_synchronous_checks` (`src/dsv4_grouped.rs`).
+
 The native matrix/EP preparation component adds
 `memra_dsv4_grouped_routes_partition` (`dsv4_ffi.rs`), using the partitioned
 count/scatter specializations plus `dsv4_grouped_partition_prefix_kernel`.
@@ -645,12 +685,17 @@ Full execution contract and candidate pins:
 
 | symbol | purpose | dispatch flag | FFI binding |
 |---|---|---|---|
-| `dsv4_fp8_gather_half_kernel` | Reorders the existing FP8-QAT codes and per-128 scales into a half matrix with a power-of-two row scale. Every value is round-tripped exactly; a row-status vector rejects nonrepresentable/NaN values before grouped GEMM. | `MEMRA_DSV4_PREFILL_MOE=grouped`, default OFF | `memra_dsv4_fp8_gather_half`; gate `tools/dsv4-fp8-half-mirror-gate.cu` covers duplicate row mapping, finite values, tails and underflow/NaN refusals. |
+| `dsv4_fp8_gather_half_kernel` | Reorders the existing FP8-QAT codes and per-128 scales into a half matrix with a power-of-two row scale. Every value is round-tripped exactly; a row-status vector rejects nonrepresentable/NaN values before grouped GEMM. | `MEMRA_DSV4_PREFILL_MOE=grouped`, default OFF | `memra_dsv4_fp8_gather_half`, `memra_dsv4_fp8_gather_half_fault` (#670: a lossy row also sets a bit in a device fault word; #679: an optional device `live` count zeroes rows past it without checking them); gate `tools/dsv4-fp8-half-mirror-gate.cu` covers duplicate row mapping, finite values, tails and underflow/NaN refusals. |
 | `moe_kq_sk{32,128,tail}v_kernel<QT_NVFP4_MODELOPT>` | Reads consecutive E2M1 codes and separate signed-E4M3/16 scales from six pointer planes, with FP32 macro weight scale applied after projection. No GGUF or duplicate weight bank. Grouped MMA changes reduction order; routed slot restoration, combine and the entire shared expert remain explicit common work. | `MEMRA_DSV4_PREFILL_MOE=grouped`, default OFF, mode-2 visitor/direct loader required | `memra_moe_kq_gemm_sk`; actual-model `dsv4_grouped_prefill_gate` verifies total=routed+shared and characterizes forced-path logits. No production qualification yet. |
 | `moe_kq_sktail_gu_kernel<QT_NVFP4_MODELOPT>` | DSV4 matrix plain-decode `m_e=1` gate/up pair: one shared FP8-QAT-mirrored f16 A tile, two unchanged ModelOpt NVFP4 f32-MMA accumulators, then exact macro/clamp/SiLU/route-weight epilogue into the intermediate H row. Down, FP8 intermediate quantization, macro2 and original-slot scatter remain common. | `MEMRA_F16G_GU_FUSE=1`, default OFF; ModelOpt qtype 108, one-row transaction, deep tail only | `memra_moe_kq_gemm_sk_gu`; component gate must compare H/FP8 codes/full routed output bitwise against the shipped two-projection path. No target timing receipt yet. |
 | `moe_kq_sktail_kernel<QT_NVFP4_MODELOPT,true>` | DSV4 gate-only m_e=1 tensor-core down candidate: same B tile and valid-row m16n8k16 chain as the shipped deep tail, with invalid-row warps and duplicate A-stage loads elided. Existing FP8 mirror, macro2 and scatter remain the comparison path; this is not the removed scalar visitor. | `MEMRA_F16G_M1_TC=1` or gate setter, default OFF; one-row/deep-tail candidate only | `memra_moe_kq_gemm_sk_m1`; full-model identity/sanitizer/rate gates required before dispatch. |
 | `moe_kq_sktail_gu_kernel<QT_NVFP4_MODELOPT,true>` | Gate-only GU m_e=1 specialization: skips the duplicate A row tile and invalid-row MMA warps while retaining valid-row gate/up accumulation and the fused epilogue. Both EP workspaces use the shared dispatch. | `set_moe_f16g_gu_m1_tc_for_gate`, default OFF; no environment or serving flag | `memra_moe_kq_gemm_sk_gu_m1`; actual launch counter plus `cuda_gu_m1_matches_gu_reference` and plain ABBA gate. |
 | `moe_kq_sktail_gu_kernel<QT_NVFP4_MODELOPT,false,true>`, `moe_kq_sktail_gu_kernel<QT_NVFP4_MODELOPT,true,true>` and `moe_kq_sktail_kernel<QT_NVFP4_MODELOPT,true,true>` | Packed ModelOpt GU/down stores retain MMA order, using a 256-entry half2 LUT and 1024 extra shared bytes. Existing half2 conversion, full-chain and sampled model identity gates pass; the half2-only model gain is +0.646%/+1.014% at 256/8192. The additional GU M1+half2 conjunction selects `<108,true,true>` for the existing one-token GU visitor; batched groups stay unchanged. Component R7 is 4–7% faster with H bit identity; sampled model composition is +1.2365%/+1.1242% at 256/8192 with full token/logit/KV identity. Receipt: `research/dsv4f-2card-1m-20260904/gu-m1-half2-model-20260907.md`; no serving default. | Existing process-local GU-M1/GU-half2/down-half2 setters, default OFF; no new environment flag. Clearing overrides restores the corresponding prior path. | `memra_moe_kq_gemm_sk_gu_half2`, `memra_moe_kq_gemm_sk_gu_m1_half2`, `memra_moe_kq_gemm_sk_m1_half2`; one combined GU enqueue advances the Rust GU-M1 and CUDA GU-half2 counters once each, not a third receipt. `cuda_half2_chain_identity` and the sampled plain gate retain arithmetic/dispatch coverage. |
+| `moe_kq_m1_stream_kernel<4>` | DSV4 matrix plain-decode one-token visitor (memra #664): one warp per n8 column tile over the full K, the 8 weight rows streamed through a 4-stage per-warp cp.async ring (128 k per stage), the same `mma.sync.m16n8k16.f32.f16.f16.f32` chain in ascending k16 order from acc = 0 and the same `acc * row_scale` epilogue as `moe_kq_sktail_kernel`, so gate, up and down are bit-identical to it. B values: E2M1 byte LUT to f16 times the NaN-cleared E4M3 scale via `cvt.rn.f16x2.e4m3x2`, exact in f16. Smem `in_f * 2 + 4 * 2560` B, refused above 48 KiB. Served plain greedy c1 38.77 -> 50.1 tok/s on 2x RTX PRO 6000. | The code for one-row groups with the deep tail on; no environment read. A gate-armed M1 tensor-core or half2 down tail keeps precedence for down. `set_dsv4_moe_m1_stream_for_gate(false)` runs the sktail arm. | `memra_moe_kq_m1_stream`, `memra_moe_kq_m1_stream_dispatches`; `cuda_m1_stream_matches_sktail_bit_for_bit` and `dsv4-gpu-dspark-gate` arm P engagement. |
+| `kqs_dequant_probe_kernel` | Component-test probe: for every E4M3FN scale byte and E2M1 code, the stream visitor's f16 B value and the sktail store's `__float2half(e4m3 * kv)` value. | Test only. | `memra_moe_kq_m1_stream_dequant_probe`. |
+| `moe_kq_mrow_stream_kernel<4>` | DSV4 matrix multi-row visitor for 2..=16-row MoE steps (DSpark verify rounds, memra #669): the CTA at each 16-row chunk start of a CSR group owns that chunk, the chunk's rows sit in the MMA m16 dimension, and each warp streams its 8 weight rows once per chunk through the one-token visitor's 4-stage cp.async ring and in-register dequant. A is read from global with `__ldg` (16 rows x 4096 f16 is past the one-token smem stage; every warp reads the same words). An MMA output row depends only on its own A row, B and C, so each row runs the sktail chain (same B values, ascending k16 from acc = 0, `acc * row_scale`) and gate, up and down are bit-identical to it. Rows past the group end are zero and never stored. Served DSpark greedy c1 56.08 -> 71.13 tok/s on 2x RTX PRO 6000. | The code for steps of 2..=16 rows with the deep tail on (`MROW_STREAM_MAX_ROWS`); no environment read. `set_dsv4_moe_m1_stream_for_gate(false)` runs the sktail arm for both visitors. | `memra_moe_kq_mrow_stream` (refusal 40004), `memra_moe_kq_mrow_stream_dispatches`; `cuda_mrow_stream_matches_sktail_bit_for_bit` and the served `dsv4-gpu-dspark-gate`. |
+| `dsv4_moe_fused_gu_kernel<WP>`, `dsv4_moe_fused_down_kernel<WARPS>` | DSV4 matrix plain-decode fused one-token MoE (memra #694): the served t=1 grouped chain (16 launches per layer: act_quant x, route count/prefix/scatter, the x FP8-QAT half mirror, gate and up stream visitors, two scale_rows, weighted SwiGLU, act_quant h, the h mirror, the down visitor, scale_rows, slot scatter, combine_rows_m) in two launches. gu: the x mirror inline (act_quant + fp8_gather_half, warp-reduced amax is exact in any order), gate and up of every selected slot with `moe_kq_m1_stream_kernel`'s body op for op, macro1/macro3, SwiGLU with the slot's route weight into `h[slot]`. down: the h mirror, down, macro2 into `contribution[slot]`, and the last CTA of each 32-column tile sums the slots in combine_rows_m's order into `y` and resets its tile counter. Every f32 op is the chain's op in the chain's order under `-fmad=false`, so h, contribution and y are bit-identical; a dead slot ORs the route prefix's fault bit, a lossy mirror the gather mirrors' bits. Served plain greedy c1 +11% on 2x RTX PRO 6000 (`research/dsv4f-bringup-20260923/moe-fused/`). | t=1 matrix steps with device routes, deferred MoE faults armed, route and mirror validation on, the deep tail and the one-token stream visitor on, and no gate-armed GU-fuse/M1-TC/half2 tail (`moe_fused_engages`); anything else keeps the chain. No environment read; `set_dsv4_moe_fused_for_gate(false)` runs the chain. Peer-dispatch EP keeps the chain. **Partition form (memra #710, TP/EP):** the table holds a rank's experts `[first, first + n)` of the global bank, selections and macro scales keep global ids, another rank's slot exits at entry, and down writes only the rank's contribution rows (the caller clears the plane) and leaves the slot sum to the caller, after the rank-order join; a partition asking for the in-kernel sum refuses 40004. The partition form takes `rows` token rows of `topk` slots in one launch (slot p reads x row p / topk), so a TP/EP step of 1 to 16 rows (one token, a B-row step, a verify round: every step the stream visitors took) runs it in place of `execute_matrix_local`'s chain and skips the separate x activation quantization; the full-bank form stays one row because its in-kernel slot sum is. | `memra_dsv4_moe_fused_gu`, `memra_dsv4_moe_fused_down`, `memra_dsv4_moe_fused_gu_part`, `memra_dsv4_moe_fused_down_part`, `memra_dsv4_moe_fused_dispatches`; `dsv4_grouped::cuda_fused_one_token_moe_is_the_grouped_chain_bit_for_bit`, `dsv4_grouped::cuda_fused_partition_moe_is_the_tp_ep_chain_bit_for_bit` and `dsv4-gpu-dspark-gate` plain-arm engagement (PP and TP/EP). |
+| `dsv4_route_mirror_m_kernel` | The router plus the fused gate/up launch's x mirror, once per token row (memra #710, 2026-09-27): warp 0 runs `dsv4_route_m_kernel`'s body (shared as `dsv4_route_m_body`), warps 1..7 build `dsv4_moe_fused_mirror` over the row on named barrier 1 into `xm[p]` and `xrs[p]` (lossy: fault bit 0x2); the gate/up launch given `xm` loads it instead of every CTA rebuilding it, the same function over the same row | a TP/EP step the fused pair takes (`moe_tp_ep_fused_engages`), device routes | `memra_dsv4_route_mirror_m`; `memra_dsv4_moe_fused_gu_part`'s `xm`, `xrs`; the partition fixture compares h with and without it |
 
 DSV4 f32acc scorer q layout (no new arithmetic, no dispatch flag):
 
@@ -666,9 +711,9 @@ gate-reachable red arms (`dsv4_sink_scores_mq_f32acc_ref_kernel`,
 `dsv4_indexer_score_f32acc_pos_m_ref_kernel`, bound by
 `memra_dsv4_sink_scores_mq_f32acc_ref` and
 `memra_dsv4_indexer_score_f32acc_pos_m_ref`), which no serving launcher calls.
-The tiled arms of both scorers stage q themselves and keep reading the original
-layout; the q pointer travels with the launcher at the dispatch site so the two
-cannot be paired the wrong way round. Why: at fixed `x` the old layout put the 32
+The tiled indexer arm and the two-launch sink attention below stage q themselves
+and keep reading the original layout, so the transpose is skipped on those
+dispatches. Why: at fixed `x` the old layout put the 32
 lanes of a warp 2048 bytes apart (512 for the indexer), turning one warp load
 into 32 sector requests; the kernel was at 1.7% of its non-FMA arithmetic ceiling
 and 2.1% of measured HBM, held by L1TEX request throughput. Component gate:
@@ -678,17 +723,14 @@ fidelity). Receipt: `crates/memra-engine/src/bin/dsv4_q_layout_gate.rs`
 transpose fidelity); served interleaved A/B at the vendor-default sampled shape
 confirmed the win before this landed as the naked default.
 
-DSV4 prefill work-elision dispatch (no new CUDA arithmetic):
+DSV4 two-launch sink attention (memra #683, no dispatch flag):
 
-The experimental sink-score tile (`dsv4_sink_scores_tiled_f32acc_kernel`) is
-bound by `memra_dsv4_sink_scores_tiled_f32acc` and composed with the unchanged
-softmax/output kernels in `memra_dsv4_sink_attn_dec_mq_f32acc_tiled`.
-`memra_dsv4_sink_scores_tiled_init` checks/configures 84096 bytes of dynamic
-shared memory before capture. It tiles 8 heads x 32 selected keys, retains the
-ordered 512-dimensional FP32 dot and negative-index mask, and writes the same
-score layout. Rust FFI: `dsv4_ffi.rs`; dispatch: `MEMRA_DSV4_SINK_SCORE`, default
-scalar. Component gate: `tools/dsv4-sink-score-tiled-gate.cu`; full model:
-`dsv4_sink_score_gate`. Receipt: `research/dsv4f-2card-1m-20260904/sink-score-tiled.md`.
+| kernel | purpose | dispatch | binding and gate |
+|---|---|---|---|
+| `dsv4_sink_scores_st_f32acc_kernel` | f32x sink scores for one (8-slot tile, 8-head tile, query) block of 64 threads: q rows and the selected kv rows staged once per CTA by cp.async, each thread one f32 accumulator over `x` ascending, times `scale`, `-INF` for a `-1` slot. Score row stride is the live slot count; replay derives it on device (`win + min((pos+1)/ratio, topk)`), extra blocks exit. | Every admitted f32x shape (`memra_dsv4_sink_attn_st_admits`: heads and hd multiples of 16, hd <= 512, so 64x512 and 32x512 on DSV4F): eager single query, batched verify/prefill rows and graph replay. Other shapes keep `memra_dsv4_sink_attn_dec_f32acc` / `_mq_f32acc` / `memra_dsv4_replay_attention`. | `memra_dsv4_sink_attn_st_f32acc`, `dsv4_ffi.rs`; counter `sink_st_calls`. |
+| `dsv4_sink_softout_st_f32acc_kernel` | Max (fmaxf, floored at `-1e30`), den (ev in ascending slot order, then `expf(sink - m)`) and `o = (ascending sum of ev * kv over ev != 0) / den` for one (16-column tile, 16-head tile, query) block of 256 threads, 128-slot kv tiles, in shared memory instead of the evals/den workspace round trip. No split-K, no exp2 merge, so every sum keeps the three-kernel order. | Second launch of the same entry. | `tests/dsv4_sink_attn_st_gpu.rs`: 320 cases bit-identical to the three former entry points (batched, replay at ratio 0/4/128, single query) plus a red arm. Receipt: `research/dsv4f-bringup-20260923/sink-attn/RESULTS.md`. |
+
+DSV4 prefill work-elision dispatch (no new CUDA arithmetic):
 
 | dispatch | purpose | flag | gate |
 |---|---|---|---|
@@ -725,7 +767,7 @@ target-card performance qualification is pending.
 | f16_prefill.cu | `memra_f16_pp_gemm[_pre]`, `memra_f16_cvt`, `memra_{q8_0,q4_0,q6_K,q4_K,q5_K}_dequant_f16` | cuBLASLt FP16 TN prefill on resident f16 dequant mirror of quantized weights Per-device cuBLASLt handle slots since 2026-09-02 (lane glm5-b200): a handle created on one device returned CUBLAS_STATUS_EXECUTION_FAILED from the other PP stage on a 2x B200 pair; plan caches key on the device. | host cuBLASLt | MEMRA_PP_F16, MEMRA_PP_F16_BUDGET_MB, MEMRA_W8A8_SIM | f16_ffi.rs:22-62 (+build_*_raw wrappers f16_ffi.rs:725-816) |
 | fp8_prefill.cu | `memra_fp8_pp_gemm` (:90) + `__global__` amax/scale/quant kernels | cuBLASLt FP8-E4M3 TN prefill + per-batch activation quantize Per-device cuBLASLt handle slots since 2026-09-02 (lane glm5-b200): a handle created on one device returned CUBLAS_STATUS_EXECUTION_FAILED from the other PP stage on a 2x B200 pair; plan caches key on the device. | — | MEMRA_PP_FP8, MEMRA_PP_FP8_BUDGET_MB, MEMRA_FP8_MMQ, MEMRA_ST_E4M3 (fp8_ffi.rs:27, 45-87, 239) | fp8_ffi.rs:27 |
 | fp8_blk_dequant.cu | `memra_fp8_blk_q8_0_bytes` (:220), `memra_fp8_blk_dequant_q8_0` (:228) | device-side dequant of block-128 FP8 weights into GGUF Q8_0 blocks at model load | — | MEMRA_FP8_BLK_GPU (fp8_ffi.rs:476) | fp8_ffi.rs:458-474 |
-| fa3_prefill.cu | `memra_fa3_prefill`, `memra_fa3_vl` (+stub twins rc=3, :19-23) | FA3 v10 engine shim, head_dim 256 only | wgmma/TMA sm_90a-only; `-DMEMRA_FA3_STUB` otherwise (build.rs:525-526) | promoted default-ON on hopper 2026-07-27, `MEMRA_FA3=0` reverts; engages only head_dim==256 causal t==t_kv (lib.rs:15399-15409; file header ":1-7 opt-in" is stale) | lib.rs:889-904 |
+| fa3_prefill.cu | `memra_fa3_prefill` (+stub twin rc=3, :18-20; the `memra_fa3_vl` batched twin was deleted 2026-09-23, memra#641) | FA3 v10 engine shim, head_dim 256 only | wgmma/TMA sm_90a-only; `-DMEMRA_FA3_STUB` otherwise (build.rs:525-526) | promoted default-ON on hopper 2026-07-27, `MEMRA_FA3=0` reverts; engages only head_dim==256 causal t==t_kv (lib.rs:28041-28053; file header ":1-7 opt-in" is stale) | lib.rs:2189-2202 |
 | moe_f16_grouped.cu | *(the M=1 split-K family: `memra_moe_m1_splitk`, `memra_moe_m1_graph_splitk`, `moe_m1_splitk_partial_kernel<1/2>`, `moe_m1_graph_splitk_partial_kernel<1/2>`, `moe_m1_splitk_fast_partial_kernel<1/2>`, all three reduce kernels and the component instruments)* | **DELETED 2026-09-11 (memra #392, #425, #458, #461).** Every entry dispatched behind the fused gate/up launch, whose only arm is a gate-only function called AFTER load, so no serving process could reach one. When the matrix expert program became the loaded default the doors had to serve or go. Verdict, receipts and the tombstone: `docs/FLAGS.md` "Removed doors, 2026-09-11". | n/a | REMOVED | Census red arm in five sites: a captured graph carrying any of these symbols now FAILS. |
 | moe_f16_grouped.cu | `memra_moe_f16g_{dequant,gemm,gemm_sk,gather_act,h2f,h2f_scaled,w_bytes,act_bytes}`, `memra_moe_kq_gemm_sk` | per-layer expert dequant to f16 + ONE grouped f16 GEMM per projection over CSR groups; per-qtype dequant kernels for Q4_0/IQ4_XS/IQ3_S/Q6_K/Q4_K/Q3_K (:109-246); "SASS portable across 89/90a/100a/120a" (:336) Per-device cuBLAS handle slots since 2026-09-02 (same B200 finding as f16_prefill.cu). | smem opt-in >48KB, 1 CTA/SM on sm_120a (:483-486) | MEMRA_MOE_F16G (=2 single-kernel, mmq_ffi.rs:394), MEMRA_F16G_SK/_TAIL/_DIRECT/_DEBUG | mmq_ffi.rs:348-424 |
 | moe_f16_grouped.cu | `memra_moe_kq_gemm_sk_grid` | **REMOVED 2026-09-06**. The bounded persistent-grid arm was bit-identical and engaged on the target pair, but full-model A/B was flat/no-go at 256 and 8192 contexts. The generic `memra_moe_kq_gemm_sk` path remains the only DSV4 matrix visitor. | Historical component/sanitizer and full-model receipt retained; no serving default was promoted. | Removed door receipt: `research/dsv4f-2card-1m-20260904/grouped-grid-bound.md` plus private `grouped-grid-perf-20260906` receipt | — |
@@ -774,25 +816,29 @@ receipts: `research/kernel-dedup-20260821/RECEIPTS.md`; every modified TU × arc
 
 `cu/dsv4_dense_m1_exact_tail.cuh` adds `dsv4_hc_dot_split_partial_kernel<S>`
 and `dsv4_hc_dot_split_reduce_kernel<S>` for S=8/16/32. Only the device HC-24
-pre-attention/pre-FFN sites with F32 N=24,K=16384 dispatch this pair. Other
-dots shapes retain their current kernel. Existing CUDA kernels are unchanged.
+pre-attention/pre-FFN sites with F32 N=24,K=16384 dispatch this pair, for
+every row count. Token rows ride `blockIdx.y` in the partial kernel and
+`blockIdx.x` in the reducer through the one kernel body, so an M-row verify,
+prefill or batched call gives each row the bits of that row decoded alone
+(#660; until 2026-09-23 only one-row calls split and verify rows took the
+sequential class). Other dots shapes retain their current kernel.
 
-Each of 24*S blocks has 128 threads. A contiguous K slice retains increasing
+Each of 24*S blocks per token row has 128 threads. A contiguous K slice retains increasing
 eight-element per-lane multiply/add order and the exact-tail 128-leaf tree.
 S=32 has 64 zero leaves because its slice has 512 elements. One 32-thread
-second-stage block sums each row's partials in ascending slice order with
+second-stage block per token row sums each row's partials in ascending slice order with
 explicit round-to-nearest f32 adds. No atomics or fused multiply-add.
 This is the **HC24 split dots** numeric class, not bit-identity with the
 exact-tail dots class: restarting accumulators and summing slices changes
 association. Each S is a distinct class and must be pinned in its receipt.
 
-Scratch is 24*32 F32 elements per decode state and rank, allocated before
-capture. Every call writes all partials it reads, both stages use the same
+Scratch is 24*32 F32 elements per decode state and rank and `tmax`*24*32 per
+verify workspace, allocated before capture. Every call writes all partials it reads, both stages use the same
 stream, and graphs retain stable scratch addresses. `MEMRA_DSV4_HC_DOT_SPLIT`
 is ON when unset; exact `1` or `16` also selects the owner-chosen S=16.
 Explicit `0` restores sequential dots after a fresh process/state capture.
 S8 and S32 remain explicit opt-in classes; other strings select OFF.
-Rollback seam decide-by: 2026-09-23, owner accepted 2026-09-09.
+Rollback seam decide-by: 2026-10-07 (used on 2026-09-23 to bisect #660), owner accepted 2026-09-09.
 S32 was component-fastest but its 1.407% advantage over S16 did not justify
 rebuilding and re-review; only S16 has the model campaign receipts.
 
@@ -827,11 +873,16 @@ The source rebase does not relabel the pinned binary receipts as a new build.
 | `cu/dsv4_replay_control.cuh` | `dsv4_replay_control_kernel` | Integer live token/position/uniform storage, ring slot, compressor cadence/offsets, indexer bounds. Same-device C4/C128 IF handles set on every execution. Standalone `tools/dsv4-full-token-control-gate.cu` only; no runtime FFI or model dispatch. Default OFF; decide-by 2026-09-22. `research/dsv4f-full-token-replay-20260908/DESIGN.md`. |
 | `tools/dsv4-full-token-control-gate.cu` | `snapshot`, `emit4`, `emit128`, `producer`, `finish`, `rollback` | Integer payload/control fixtures around the existing `memra_tp_ar_1stage` transport and its live-fault entry. Not model compressor, attention, head or sampling kernels. No runtime dispatch. Same diagnostic lifetime as the control kernel. |
 | `cu/dsv4_gpu.cu` | `dsv4_replay_input_kernel`, `dsv4_replay_tick_kernel` | Stable 24-byte request controls and per-rank segment counters. Gate-only full-token replay, default OFF, decide-by 2026-09-22; FFI in `dsv4_ffi.rs`. |
+| `cu/dsv4_gpu.cu` | `dsv4_replay_rows_input_kernel` | B-row graph inputs (memra #710): row r reads its token and position from the batch's 24-byte words at `input[3r]` and writes its token, position and window slot into the B-row workspace. Captured at the head of every TP/EP B-row forward graph; FFI `memra_dsv4_replay_rows_input`. |
+| `cu/dsv4_gpu.cu` | `dsv4_c4_split_gather_kernel`, `dsv4_c4_split_store_kernel` | TP/EP position-split C4 store (memra #710). The gather copies each query's selected rows (window, compressed and transient rows) from the local store, the local recent ring, or the peer's store over the fabric into the C4 gather workspace, with indices rewritten to it, like the host-C4 gather. The store writes an emitted block to its owner's row or the other rank's tagged recent slot: from the host block number when eager, from the device position when replayed (`memra_dsv4_replay_compressor_emit` takes the split ring). FFI `memra_dsv4_c4_split_gather`, `memra_dsv4_c4_split_store`. |
+| `cu/dsv4_gpu.cu` | `dsv4_copy2_f32_kernel` | A compressor checkpoint's kv and score snapshots as one float4 grid-stride copy (memra #710), replacing two memcpy nodes per compressor per step, so a captured TP/EP step keeps its programmatic dependent launch chain through the snapshot. Pure bit movement. FFI `memra_dsv4_copy2_f32`. |
+| `cu/dsv4_gpu.cu` | `dsv4_cmp_rollback_kernel`, `dsv4_cmp_rows_to_slots_kernel` | A verify round's compressor ring moves as single launches (memra #710 DSpark round): the rollback replays the snapshot restore, the committed rows' slot writes and the overlap half shifts per element in position order; the row placement writes the rows between two block boundaries into their slots. Pure bit movement, replacing 2 + 2 n_commit + 2 x blocks and 2 t memcpy nodes per compressor. FFI `memra_dsv4_cmp_rollback`, `memra_dsv4_cmp_rows_to_slots`. |
 | `cu/dsv4_gpu.cu` | `dsv4_replay_copy_row_kernel`, `dsv4_replay_copy_if_kernel` | Live append/emission addresses and uniformly predicated pending shifts. Byte copies only; existing active compressor arithmetic/reduction order retained. Same diagnostic door. |
 | `cu/dsv4_gpu.cu` | Existing compressor pool, f32 RMSNorm, RoPE-at, Hadamard and activation-quant kernels | Optional uniform whole-block emission predicate at entry, before barriers. Null preserves eager behavior. `memra_dsv4_replay_compressor_emit` composes the exact active program; no CUDA conditional body. Real-kernel byte/sanitizer gate: `tools/dsv4-replay-live-kernel-gate.cu`. |
 | `cu/dsv4_gpu.cu` | Existing redirect, numeric top-k, f32 indexer-score and sink score/soft/out kernels | Optional live position/count/slot inputs; same loop bounds and reduction order as eager. No padded reduction replacement. Same default-OFF full-token door and component gate. |
 | `cu/tp_ar.cu` | `memra_tp_ar_1stage_kernel` | Optional live rank/layer fault input before actual barriers. Existing eager entry passes null; start/end barriers and device epoch program retained. Replay FFI and epoch readback: `tp_ar.rs` / `dsv4_ep.rs`. |
 | `cu/tp_ar.cu` | `memra_tp_ar_1stage_kernel` (phase instrument) | Gate-only `MEMRA_DSV4_AR_PHASE`, default OFF, decide-by 2026-09-24. Four `clock64` stamps and two `%globaltimer` stamps taken by block 0 thread 0 into a device ring, decomposing each of the 86 joins into peer wait / reduce / tail wait; the record carries its own cycles-to-nanoseconds calibration so no assumed clock can rescale a phase. Stamps go INSIDE the existing graph node because a per-AR `cudaEventRecord` inside stream capture becomes an event-record node (172 new nodes per rank per step) and Nsight graph-node tracing inflates the same rows by two orders of magnitude (darklanes #519). Every added branch is kernel-parameter-uniform and the reduce's operand order, indexing and arithmetic are untouched, so the instrumented arm is bit-identical to the product arm by construction, not by tolerance. Two further gate-only arms live behind the same door: the NULL arm (`=null`) reads this rank's own operand twice instead of one local and one peer operand, keeping launch shape, both barriers, epochs and refusal words, to bound transport against wait; and a red-arm `delay_ticks` spin keyed on one site and one rank, which the gate requires to appear in the OTHER rank's wait phase at that site and nowhere else. FFI and record: `tp_ar.rs`; allocation, siting and drain: `dsv4_ep.rs`. Gate: `dsv4-ar-phase-gate`. |
+| `cu/tp_ar.cu` | `memra_tp_ar_push_reduce_kernel`, `memra_tp_ar_push_gather_rows_kernel` | TP/EP push joins (memra #710, door `MEMRA_DSV4_AR_PUSH`): each rank writes its operand into the peer's output buffer, fences, raises one flag in the peer's signal block, waits on its own flag and finishes from local memory; the reduce is `in_rank0 + in_rank1`, the gather pure bit movement. No end barrier (see the kernel comment for why consecutive distinct outputs make it safe). FFI `memra_tp_ar_push_reduce`, `memra_tp_ar_push_gather_rows_f32`. |
 | `cu/dsv4_sampler.cu` | `dsv4_sample_draw` | Pointer-fed uniform in replay; existing by-value path remains. Same `device-f64-exp-tree-cdf-v1` program. Real changing-uniform equivalence gate: `tools/dsv4-replay-sampler-gate.cu`. |
 
 ## Known UNKNOWNs
@@ -887,13 +938,44 @@ with identity, alongside the standalone cadence #508 and dense #507 receipts.
 
 `cu/dsv4_dense_m1_exact_tail.cuh` adds `dsv4_dense_fast_fp8_kernel<2>`
 and `dsv4_dense_fast_dots_kernel<1>`, selected in the existing raw exact-tail
-launchers by `MEMRA_DSV4_DENSE_FAST`. FP8 uses 256 threads for two independent
+launchers by `MEMRA_DSV4_DENSE_FAST`. Since memra #710 the FP8 kernel takes a third template argument, `M` token rows
+(`dsv4_dense_fast_fp8_kernel<2, false, M>`, M = 2..8): `memra_dsv4_gemv_fp8_m` routes B-row
+decode and verify widths there instead of `dsv4_gemv_fp8_m_kernel<M>`. The rows share each
+weight load, and each keeps its own accumulator in the same leaf order and its own reduction
+through the same tree, with two barriers per row instead of seven. Every bit equals the m-row
+kernel's and each row's one-row launch (`tests/dsv4_dense_fast_rows_gpu.rs`). FP8 uses 256 threads for two independent
 rows sharing the identical E4M3 table; each row keeps 128 leaves. Dots retain
 128 threads, existing 16-byte operand loads and four-iteration loop unrolling.
 Leaf t consumes K positions 8*t+1024*j+[0..7] in ascending j/element order.
 The final tree is ((p[t]+p[t+64])+(p[t+32]+p[t+96])) followed by guarded
 16/8/4/2/1 warp shuffles, all F32 additions. FMAD stays disabled. Ragged tile
 rows participate in barriers without out-of-range operand loads or stores.
+
+**Pair launches (memra #710).** `dsv4_dense_fast_fp8_kernel_pair<2, M>` and
+`dsv4_dense_fast_dots_kernel_pair<M>` run two matrices over the same x rows in one launch:
+blocks `[0, nblk_a)` run matrix a's dense-fast body, the rest matrix b's, each with its own block
+index, so every output keeps the bits of its own launch (the kernel bodies are the device
+functions `dsv4_dense_fast_fp8_body` and `dsv4_dense_fast_dots_body`, which the single kernels
+call too). `memra_dsv4_gemv_fp8_m_pair` and `memra_dsv4_dots_f32acc_mrow_pair` take the pair when
+both matrices admit the dense-fast transport at M = 1..8, and otherwise make the two ordinary
+calls. The TP/EP step pairs the shared expert's gate and up, wq_a and wkv, and each compressor's
+kv and gate projections. The component gate's `pair_case` compares both outputs with the single
+launches at M = 1, 2, 4 and 6, and checks the capture holds one pair node.
+
+**Owner-gated shared expert (memra #710).** `dsv4_dense_fast_fp8_kernel_gated<M>`,
+`dsv4_dense_fast_fp8_kernel_pair_gated<M>`, `dsv4_cvt_bf16_gated_kernel` and
+`dsv4_swiglu_bf16_gated_kernel` read a device owner word at entry and exit when it is zero;
+otherwise each block runs the ungated launch's body (SwiGLU then the bf16 pack is
+`dsv4_swiglu_kernel`'s and `dsv4_cvt_bf16_kernel`'s ops per element), so the bits are the
+ungated launches'. The fused TP/EP gate/up launch writes each rank's word: 1 on the rank with
+fewer of the step's routed slots, rank 0 on a tie. A one- to eight-row TP/EP step runs the shared
+expert's cvt, gate/up pair, SwiGLU pack and down into the rows after the routed ones in the
+contribution plane, the expert join carries them, and the tail adds them, so one rank streams
+the shared expert's weights instead of both. `memra_dsv4_gemv_fp8_m_gated`,
+`memra_dsv4_gemv_fp8_m_pair_gated`, `memra_dsv4_cvt_bf16_gated`, `memra_dsv4_swiglu_bf16_gated`;
+40004 wherever the ungated launch would not take the dense-fast transport, and the step keeps
+the replicated shared expert. The component gate's `gated_case` checks each against its
+ungated launch at M = 1, 2, 4 and 8 and that a clear word moves no output byte.
 
 `tools/dsv4-dense-fast-gate.cu` checks raw bits, guards, operand immutability
 and actual retained graph functions. All 24 real rank/shape cases, 36 boundary

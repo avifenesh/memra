@@ -1,0 +1,18 @@
+label=final sha=62e848b1f bins=memra-engine/run-gen,memra-engine/run-spec start=2026-09-25T22:47:05Z
+head=62e848b1f1c604ebdad328e4538544ce46a0143e
+Cuda compilation tools, release 12.4, V12.4.131
+Build cuda_12.4.r12.4/compiler.34097967_0
+cargo 1.97.1 (c980f4866 2026-06-30)
+   Compiling memra-runtime v0.138.0 (/home/avifenesh/projects/wt-spill-c/target/c-build-wt/crates/memra-runtime)
+   Compiling memra-reference v0.138.0 (/home/avifenesh/projects/wt-spill-c/target/c-build-wt/crates/memra-reference)
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 2m 54s
+binary=run-gen-final tree=62e848b1f1c604ebdad328e4538544ce46a0143e sha256=c05df689ce82952ed65b4135477594bcc6d9f7e99ec7ef95740e37a88beb62d0
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-spill-c/target/c-build-wt/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 1.08s
+binary=run-spec-final tree=62e848b1f1c604ebdad328e4538544ce46a0143e sha256=f4eacc4cb58200ed8353aa2653add31487fee0dc1eea5a34f80ecf170518f262
+end=2026-09-25T22:50:02Z
+rc=0

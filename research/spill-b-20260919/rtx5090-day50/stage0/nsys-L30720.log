@@ -1,0 +1,19 @@
+WARNING: CPU IP/backtrace sampling not supported, disabling.
+Try the 'nsys status --environment' command to learn more.
+
+WARNING: CPU context switch tracing not supported, disabling.
+Try the 'nsys status --environment' command to learn more.
+
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers)
+callcost setup: L=30720 primed in 8379.8 ms
+callcost L=30720 R=32 N=5 wall_ms p50=55.69 min=55.25 max=56.05 all=[55.69,55.58,55.25,55.72,56.05]
+callcost L=30720 R=64 N=5 wall_ms p50=56.68 min=56.43 max=56.77 all=[56.75,56.68,56.43,56.66,56.77]
+callcost L=30720 R=288 N=5 wall_ms p50=103.69 min=103.58 max=104.47 all=[103.58,103.69,103.60,104.12,104.47]
+Collecting data...
+Generating '/tmp/nsys-report-1367.qdstrm'
+[1/1] [0%                          ] nsys-L30720.nsys-rep[1/1] [0%                          ] nsys-L30720.nsys-rep[1/1] [====26%                     ] nsys-L30720.nsys-rep[1/1] [==20%                       ] nsys-L30720.nsys-rep[1/1] [=16%                        ] nsys-L30720.nsys-rep[1/1] [==18%                       ] nsys-L30720.nsys-rep[1/1] [==21%                       ] nsys-L30720.nsys-rep[1/1] [===22%                      ] nsys-L30720.nsys-rep[1/1] [=======38%                  ] nsys-L30720.nsys-rep[1/1] [=====32%                    ] nsys-L30720.nsys-rep[1/1] [====28%                     ] nsys-L30720.nsys-rep[1/1] [===24%                      ] nsys-L30720.nsys-rep[1/1] [======35%                   ] nsys-L30720.nsys-rep[1/1] [=========45%                ] nsys-L30720.nsys-rep[1/1] [============55%             ] nsys-L30720.nsys-rep[1/1] [===============66%          ] nsys-L30720.nsys-rep[1/1] [==================76%       ] nsys-L30720.nsys-rep[1/1] [=====================87%    ] nsys-L30720.nsys-rep[1/1] [=====================88%    ] nsys-L30720.nsys-rep[1/1] [========================100%] nsys-L30720.nsys-rep[1/1] [========================100%] nsys-L30720.nsys-rep
+Generated:
+	/home/avifenesh/projects/wt-spill-b/research/spill-b-20260919/rtx5090-day50/stage0/nsys-L30720.nsys-rep
+exit=0

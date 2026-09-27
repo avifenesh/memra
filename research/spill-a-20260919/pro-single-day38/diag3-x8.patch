@@ -1,0 +1,31 @@
+diff --git a/crates/memra-engine/src/tier_transfer.rs b/crates/memra-engine/src/tier_transfer.rs
+index 088d1c89b..d521c903c 100644
+--- a/crates/memra-engine/src/tier_transfer.rs
++++ b/crates/memra-engine/src/tier_transfer.rs
+@@ -655,6 +655,8 @@ pub struct CudaTransfers {
+     /// stream, so no other copy-stream consumer queues behind the kernel. `Some` exactly when `copy`
+     /// is.
+     receipt_stream: Option<Arc<CudaStream>>,
++    /// diag3 x8: a third stream, created and never used.
++    idle_diag_stream: Option<Arc<CudaStream>>,
+     /// WP-A day 38 (`DAY38.md` design G'', section 8): the receipt twins (the pinned host side of a
+     /// batch's receipt lanes), reused by exact byte length. A twin returns here when its batch is
+     /// acknowledged (every write to it observed) instead of being freed: `cuMemFreeHost` waits for
+@@ -706,6 +708,7 @@ impl CudaTransfers {
+             stream: owner,
+             copy: None,
+             receipt_stream: None,
++            idle_diag_stream: None,
+             twin_pool: RefCell::new(Vec::new()),
+             governor,
+             pinned_default,
+@@ -731,7 +734,8 @@ impl CudaTransfers {
+     pub fn new_with_copy_stream(owner: Arc<CudaStream>, governor: SharedBudget) -> Result<Self> {
+         let mut t = Self::new(owner, governor)?;
+         t.copy = Some(cuda(t.stream.context().new_stream())?);
+-        t.receipt_stream = Some(cuda(t.stream.context().new_stream())?);
++        t.receipt_stream = t.copy.clone();
++        t.idle_diag_stream = Some(cuda(t.stream.context().new_stream())?);
+         // WP-A day 22: the D2D classes carry a receipt, so the copy stream comes with its kernels;
+         // a module that will not load is a construction refusal, never a receipt-less class.
+         let module = cuda(

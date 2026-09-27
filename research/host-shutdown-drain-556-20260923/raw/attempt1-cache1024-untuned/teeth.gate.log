@@ -1,0 +1,13 @@
+== host-tier ON boot, FORCED-TINY RED ARM (MEMRA_KV_HOST_MB=1) ==
+  FAIL: no device eviction fired: MEMRA_HOSTGATE_CACHE_MB=1024 holds both
+        seed entries (or refused one outright); tune it to hold exactly one
+  FAIL: teeth: demote refused by name (entry > 1 MiB host budget)
+  ok: teeth: no promote happened
+  ok: teeth: metrics agree (0 demotions, 0 promotions)
+  FAIL: teeth: r3 re-primed cold (no tier to hit)
+== host-tier OFF twin boot (MEMRA_KV_HOST_MB=0: the rollback seam) ==
+  ok: OFF boot never touches the tier (no [prefix-host] line at all)
+  FAIL: OFF r3 re-primed cold (nothing preserved the evicted entry)
+  ok: r1 ON == OFF byte identity (cold path unperturbed)
+  ok: r3 ON == OFF byte identity (promoted restore == cold re-prime)
+KV-HOST-SPILL IDENTITY GATE: 4 FAILURE(S) (teeth=1)

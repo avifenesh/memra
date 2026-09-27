@@ -3119,6 +3119,39 @@ extern "C" __global__ void copy_batch_uniform_f32(
     }
 }
 
+// WP-A design B1 (DAY59 section 7): the prefix snapshot's and restore's per-plane copies as ONE launch.
+// table = [src x n, dst x n, bytes x n, set_dst x m, set_val x m] (u64 each; set_val holds an i32 in its low
+// 32 bits). Grid (chunks, n + 1): block row r < n copies item r, grid-striding its bytes (16-byte vectors when
+// both pointers are 16-byte aligned, then the tail byte by byte; bytes only otherwise). Row n writes the m i32
+// sets. The items are disjoint whole ranges, so the bytes equal the memcpy sequence this replaces.
+extern "C" __global__ void copy_batch_items_u8(
+        const unsigned long long* __restrict__ table, int n, int m) {
+    const int r = blockIdx.y;
+    if (r > n) return;
+    const int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    const int stride = gridDim.x * blockDim.x;
+    if (r == n) {
+        if (blockIdx.x != 0) return;
+        for (int i = threadIdx.x; i < m; i += blockDim.x) {
+            int* d = (int*)(size_t)table[3 * n + i];
+            *d = (int)(unsigned int)(table[3 * n + m + i] & 0xffffffffull);
+        }
+        return;
+    }
+    const unsigned char* __restrict__ src = (const unsigned char*)(size_t)table[r];
+    unsigned char* __restrict__ dst = (unsigned char*)(size_t)table[n + r];
+    const size_t bytes = (size_t)table[2 * n + r];
+    size_t head = 0;
+    if (((((size_t)src) | ((size_t)dst)) & 15) == 0) {
+        const size_t vec = bytes >> 4;
+        const uint4* __restrict__ s4 = (const uint4*)src;
+        uint4* __restrict__ d4 = (uint4*)dst;
+        for (size_t i = tid; i < vec; i += stride) d4[i] = s4[i];
+        head = vec << 4;
+    }
+    for (size_t i = head + tid; i < bytes; i += stride) dst[i] = src[i];
+}
+
 // Speculative TP-cache verified-prefix repair. One block owns one layer and copies its accepted
 // quantized K/V byte ranges, then publishes that layer's device length after the bytes are
 // visible. table = [k_src x n, v_src x n, k_dst x n, v_dst x n, len_dst x n]. The source may

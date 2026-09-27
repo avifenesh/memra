@@ -1,0 +1,10 @@
+build rc=0
+Function _Z25dsv4_gemm_fp8_tile_kernelILi8ELi4ELi4EEvPKhPKfiPKtPfiiiii	REG:128
+Function _Z28dsv4_dots_f32acc_tile_kernelILi8ELi8ELi1EEvPKfPKviPfiii	REG:252
+bits T2 rc=0 test prefill_dense_tile_is_the_gemv_loop_bit_for_bit ... DSV4_DENSE_TILE EXACT cases=106 shapes=9 widths=[33, 48, 64, 100, 256, 512] red_arm=1 test prefill_dots_tile_is_the_mrow_loop_bit_for_bit ... DSV4_DOTS_TILE EXACT cases=40 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered 
+run1 T rc=0 test result: ok. 4 passed; 0 failed; 0 i | dsv4_gemm_fp8_tile_kernel 245.8 ms over 318 | dsv4_dots_f32acc_tile_kernel 57.8 ms over 292 | 
+run2 T2 rc=0 test result: ok. 4 passed; 0 failed; 0 i | dsv4_gemm_fp8_tile_kernel 244.9 ms over 318 | dsv4_dots_f32acc_tile_kernel 57.8 ms over 292 | 
+run3 T2 rc=0 test result: ok. 4 passed; 0 failed; 0 i | dsv4_gemm_fp8_tile_kernel 244.0 ms over 318 | dsv4_dots_f32acc_tile_kernel 57.5 ms over 292 | 
+run4 T rc=0 test result: ok. 4 passed; 0 failed; 0 i | dsv4_gemm_fp8_tile_kernel 244.0 ms over 318 | dsv4_dots_f32acc_tile_kernel 57.2 ms over 292 | 
+long-304 T2 rc=0 PASS: 304 PROGRAM_SHA256 fbce1a0492d69635 
+V6P_DONE 7cb5809c5156defd3fa09570bf03125b4e8606d5

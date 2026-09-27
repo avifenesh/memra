@@ -1,0 +1,28 @@
+DAY48 V1 card=pro6000 boot=O1-enforce pool_engaged_lines=1 physical_debt_lines=40 physical_debt_mb_max=34 vg_debt_lines=0 vg_debt_max=0 -> PASS
+DAY48 V2 card=pro6000 boot=O1-enforce oom_lines=0 parked_oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY48 V3 card=pro6000 boot=O1-enforce r429=60 without_reject_line=[] retry_after_out_of_1_60=[] other_non200=[] -> PASS
+DAY48 READING card=pro6000 boot=O1-enforce wave=burst n=64 ok200=35 r429=29 ttft_ms p50=108272.8 p95=108306.2 N=35
+DAY48 READING card=pro6000 boot=O1-enforce wave=wave2 n=32 ok200=1 r429=31 ttft_ms p50=4864.7 p95=4864.7 N=1
+DAY48 V1 card=pro6000 boot=O1-enforce-vg pool_engaged_lines=1 physical_debt_lines=38 physical_debt_mb_max=34 vg_debt_lines=107 vg_debt_max=33554432 -> PASS
+DAY48 V2 card=pro6000 boot=O1-enforce-vg oom_lines=0 parked_oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY48 V3 card=pro6000 boot=O1-enforce-vg r429=60 without_reject_line=[] retry_after_out_of_1_60=[] other_non200=[] -> PASS
+DAY48 READING card=pro6000 boot=O1-enforce-vg wave=burst n=64 ok200=35 r429=29 ttft_ms p50=106902.5 p95=108624.5 N=35
+DAY48 READING card=pro6000 boot=O1-enforce-vg wave=wave2 n=32 ok200=1 r429=31 ttft_ms p50=5028.1 p95=5028.1 N=1
+DAY48 V1 card=pro6000 boot=O2-enforce pool_engaged_lines=1 physical_debt_lines=38 physical_debt_mb_max=34 vg_debt_lines=0 vg_debt_max=0 -> PASS
+DAY48 V2 card=pro6000 boot=O2-enforce oom_lines=0 parked_oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY48 V3 card=pro6000 boot=O2-enforce r429=60 without_reject_line=[] retry_after_out_of_1_60=[] other_non200=[] -> PASS
+DAY48 READING card=pro6000 boot=O2-enforce wave=burst n=64 ok200=35 r429=29 ttft_ms p50=108660.6 p95=109139.6 N=35
+DAY48 READING card=pro6000 boot=O2-enforce wave=wave2 n=32 ok200=1 r429=31 ttft_ms p50=4865.0 p95=4865.0 N=1
+DAY48 V1 card=pro6000 boot=O2-enforce-vg pool_engaged_lines=1 physical_debt_lines=41 physical_debt_mb_max=34 vg_debt_lines=107 vg_debt_max=33554432 -> PASS
+DAY48 V2 card=pro6000 boot=O2-enforce-vg oom_lines=0 parked_oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY48 V3 card=pro6000 boot=O2-enforce-vg r429=60 without_reject_line=[] retry_after_out_of_1_60=[] other_non200=[] -> PASS
+DAY48 READING card=pro6000 boot=O2-enforce-vg wave=burst n=64 ok200=35 r429=29 ttft_ms p50=108858.8 p95=108894.0 N=35
+DAY48 READING card=pro6000 boot=O2-enforce-vg wave=wave2 n=32 ok200=1 r429=31 ttft_ms p50=5056.0 p95=5056.0 N=1
+DAY48 V6 READING card=pro6000 boot=O1-enforce physical_debt_lines=40 distinct_mb=[34]
+DAY48 V6 READING card=pro6000 boot=O1-enforce-vg physical_debt_lines=38 distinct_mb=[34]
+DAY48 V5 card=pro6000 boot=O1-enforce-vg paired=38 apart=[] predictive_without_physical=67 -> PASS
+DAY48 V6 READING card=pro6000 boot=O2-enforce physical_debt_lines=38 distinct_mb=[34]
+DAY48 V6 READING card=pro6000 boot=O2-enforce-vg physical_debt_lines=41 distinct_mb=[34]
+DAY48 V5 card=pro6000 boot=O2-enforce-vg paired=41 apart=[] predictive_without_physical=64 -> PASS
+DAY48 V4 card=pro6000 order=O1 rows_200_both=45 status_mismatch=4 differ=[] -> PASS
+DAY48 V4 card=pro6000 order=O2 rows_200_both=45 status_mismatch=4 differ=[] -> PASS

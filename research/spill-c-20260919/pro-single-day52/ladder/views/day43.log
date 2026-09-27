@@ -1,0 +1,8 @@
+DAY52 VIEW day=43 reader=day43-resid.py arms=off<-off,base<-base,i6d<-i6d,i6g<-i6g rc=0
+DAY43 RESID CHECKS rig=pro-single runs=40 integrity=ok
+DAY43 ARM base window_door_ms_per_token pooled=17.39 o1=17.44 o2=17.31 gen_door_ms_per_token=37.30 window_s median=0.808 iqr=0.007 | per token: demand=15.139 verify=9.030 step=4.030 pread=2.546 stage=1.278 alloc=0.721 drain=1.338 enqueue=0.975 validate=0.449 finish=0.274 collect=0.140 publish=0.229 miss_total=18.210 gpu_misses=92.3 host_hits=0.0 host_misses=92.3 reads=92.3
+DAY43 ARM i6d window_door_ms_per_token pooled=19.11 o1=19.16 o2=19.09 gen_door_ms_per_token=40.88 window_s median=0.863 iqr=0.003 | per token: demand=16.671 verify=9.031 step=4.469 pread=2.691 stage=2.283 alloc=1.700 drain=1.347 enqueue=1.010 validate=0.588 finish=0.274 collect=0.167 publish=0.302 miss_total=19.804 gpu_misses=92.3 host_hits=0.0 host_misses=92.3 reads=92.3
+DAY43 ARM i6g window_door_ms_per_token pooled=20.78 o1=20.78 o2=20.78 gen_door_ms_per_token=52.48 window_s median=0.916 iqr=0.003 | per token: demand=17.674 verify=5.086 step=10.136 pread=1.490 stage=1.673 alloc=1.080 drain=1.346 enqueue=1.831 validate=0.516 finish=0.109 collect=0.002 publish=0.189 miss_total=21.453 gpu_misses=92.3 host_hits=40.5 host_misses=51.8 reads=51.8
+DAY43 CLAUSE no_regression i6d_minus_base pooled=+0.055 o1=+0.055 o2=+0.057 noise=0.007 rule <=noise pooled and both orders -> FAIL
+DAY43 READING budget i6g_minus_base pooled=+0.108 o1=+0.107 o2=+0.111 noise=0.007 host_hits_per_token=40.5 -> resid_budget_hurts
+DAY43 RESID rig=pro-single integrity=ok no_regression=FAIL budget=resid_budget_hurts

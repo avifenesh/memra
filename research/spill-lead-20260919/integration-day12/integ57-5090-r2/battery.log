@@ -1,0 +1,23 @@
+2026-09-24T06:47:34Z collector hold taken on /tmp/memra-5090.lock (fd 9) tree=43d16d73fc1e1cd831f4a89ea3ea5da1151a000d
+2026-09-24T06:47:34Z start serve-smoke env=[]
+2026-09-24T06:47:44Z done serve-smoke rc=0 serve-smoke: 0 failed
+2026-09-24T06:47:44Z binary after serve-smoke's build: bec0b1026477d887
+2026-09-24T06:47:44Z start engine-gpu-cells env=[]
+2026-09-24T06:47:49Z done engine-gpu-cells rc=0 test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 576 filtered out; finished in 4.89s
+2026-09-24T06:47:49Z start worker-span-cells env=[]
+2026-09-24T06:47:54Z done worker-span-cells rc=0 test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 899 filtered out; finished in 0.53s
+2026-09-24T06:47:54Z start identity-default-on env=[MEMRA_HOSTGATE_CACHE_MB=64 MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-24T06:48:09Z done identity-default-on rc=0 KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+2026-09-24T06:48:09Z start fault-default env=[MEMRA_HOSTGATE_CACHE_MB=64]
+2026-09-24T06:50:09Z done fault-default rc=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+2026-09-24T06:50:09Z start fault-plain env=[MEMRA_HOSTGATE_CACHE_MB=64 MEMRA_SERVE_SPEC=0]
+2026-09-24T06:51:50Z done fault-plain rc=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+2026-09-24T06:51:50Z start hit-off env=[]
+2026-09-24T06:52:12Z done hit-off rc=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+2026-09-24T06:52:12Z start hit-on env=[MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-24T06:52:38Z done hit-on rc=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+2026-09-24T06:52:38Z start admit-mem-burst env=[]
+2026-09-24T06:58:44Z done admit-mem-burst rc=0 ADMIT-MEM BURST GATE: ALL GREEN
+2026-09-24T06:58:44Z start spec-ctx-edge env=[]
+2026-09-24T06:59:01Z done spec-ctx-edge rc=0 SPEC-CTX-EDGE GATE: ALL GREEN
+2026-09-24T06:59:01Z collector hold released; INTEG57-5090-R2-DONE

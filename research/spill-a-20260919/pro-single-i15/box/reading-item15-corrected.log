@@ -1,0 +1,13 @@
+ITEM15 READING mode=demote-long order=o1 arm=g4 copy N=45 median=194.70 | wall N=45 median=361.90 | first N=50 median=1472.89 | tenant N=50 median=3424.00 | itl N=50 median=11.85
+ITEM15 READING mode=demote-long order=o1 arm=g3 copy N=45 median=189.30 | wall N=45 median=356.60 | first N=50 median=1474.31 | tenant N=50 median=3419.37 | itl N=50 median=11.85
+ITEM15 READING mode=demote-long order=o2 arm=g4 copy N=45 median=194.80 | wall N=45 median=362.00 | first N=50 median=1477.13 | tenant N=50 median=3428.67 | itl N=50 median=11.85
+ITEM15 READING mode=demote-long order=o2 arm=g3 copy N=45 median=189.40 | wall N=45 median=356.60 | first N=50 median=1477.67 | tenant N=50 median=3423.35 | itl N=50 median=11.85
+ITEM15 READING mode=promote-long order=o1 arm=g4 copy N=100 median=264.85 | wall N=100 median=423.30 | chain N=50 median=400.61 | first N=50 median=182.79 | tenant N=50 median=2112.49 | itl N=50 median=11.85
+ITEM15 READING mode=promote-long order=o1 arm=g3 copy N=100 median=264.45 | wall N=100 median=423.45 | chain N=50 median=400.73 | first N=50 median=182.79 | tenant N=50 median=2112.60 | itl N=50 median=11.85
+ITEM15 READING mode=promote-long order=o2 arm=g4 copy N=100 median=265.05 | wall N=100 median=423.35 | chain N=50 median=400.44 | first N=50 median=183.03 | tenant N=50 median=2112.50 | itl N=50 median=11.85
+ITEM15 READING mode=promote-long order=o2 arm=g3 copy N=100 median=264.35 | wall N=100 median=423.55 | chain N=50 median=400.56 | first N=50 median=182.72 | tenant N=50 median=2112.64 | itl N=50 median=11.85
+ITEM15 READING hump {'xg3': (2, 0.022), 'xg4': (2, 0.012)}
+ITEM15 order=o1 (1) chain g4-g3=-0.11 rule >=+2.0 | (2) copy g4-g3=+5.40 rule >=+2.0 | (3) demote-long tenant g3-g4=-4.63 rule <=+1.0 | (3) promote-long tenant g3-g4=+0.11 rule <=+1.0 | (3) first g3-g4=+0.01 rule <=+1.0 | (3) wall g3-g4=-5.30 rule <=+5.0 | (3) demote-long itl g3-g4=+0.00 rule <=+0.05 | (3) promote-long itl g3-g4=-0.00 rule <=+0.05 -> FAILS
+ITEM15 order=o2 (1) chain g4-g3=-0.12 rule >=+2.0 | (2) copy g4-g3=+5.40 rule >=+2.0 | (3) demote-long tenant g3-g4=-5.32 rule <=+1.0 | (3) promote-long tenant g3-g4=+0.14 rule <=+1.0 | (3) first g3-g4=-0.31 rule <=+1.0 | (3) wall g3-g4=-5.40 rule <=+5.0 | (3) demote-long itl g3-g4=+0.00 rule <=+0.05 | (3) promote-long itl g3-g4=+0.00 rule <=+0.05 -> FAILS
+ITEM15 (4) hump xg3 median=+0.022 rule <=0.15 -> HOLDS
+ITEM15 -> G4 STAYS the single placement

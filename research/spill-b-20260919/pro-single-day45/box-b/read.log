@@ -1,0 +1,24 @@
+DAY45 W4 card=pro6000 boot=O1-off oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY45 W1 card=pro6000 boot=O1-off probe_booked=0 probe_booked_real=0 metrics_booked=0 -> PASS
+DAY45 READING card=pro6000 boot=O1-off predict_lines=68 peak_booked_shadow=181785235088 peak_booked_real=181933670544 shadow_reject_kv=47
+DAY45 READING card=pro6000 boot=O1-off wave=burst predict_lines=64 shadow_reject_kv=47 booked_shadow_at_first=0 booked_shadow_at_last=181785235088
+DAY45 READING card=pro6000 boot=O1-off wave=wave2 predict_lines=32 shadow_reject_kv=32 booked_shadow_at_first=181785235088 booked_shadow_at_last=181785235088
+DAY45 W4 card=pro6000 boot=O1-on oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY45 W1 card=pro6000 boot=O1-on probe_booked=0 probe_booked_real=0 metrics_booked=0 -> PASS
+DAY45 READING card=pro6000 boot=O1-on predict_lines=68 peak_booked_shadow=181785235088 peak_booked_real=181933670544 shadow_reject_kv=47
+DAY45 READING card=pro6000 boot=O1-on wave=burst predict_lines=64 shadow_reject_kv=47 booked_shadow_at_first=0 booked_shadow_at_last=181785235088
+DAY45 READING card=pro6000 boot=O1-on wave=wave2 predict_lines=32 shadow_reject_kv=32 booked_shadow_at_first=181785235088 booked_shadow_at_last=181785235088
+DAY45 W2 card=pro6000 boot=O1-on w_booked=53 w_release=48 w_retire_unreleased=5 reasons={'same-tick': 5} twice=[] bytes_mismatch=[] neither=[] -> PASS
+DAY45 W4 card=pro6000 boot=O2-off oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY45 W1 card=pro6000 boot=O2-off probe_booked=0 probe_booked_real=0 metrics_booked=0 -> PASS
+DAY45 READING card=pro6000 boot=O2-off predict_lines=68 peak_booked_shadow=181785235088 peak_booked_real=181933670544 shadow_reject_kv=47
+DAY45 READING card=pro6000 boot=O2-off wave=burst predict_lines=64 shadow_reject_kv=47 booked_shadow_at_first=0 booked_shadow_at_last=181785235088
+DAY45 READING card=pro6000 boot=O2-off wave=wave2 predict_lines=32 shadow_reject_kv=32 booked_shadow_at_first=181785235088 booked_shadow_at_last=181785235088
+DAY45 W4 card=pro6000 boot=O2-on oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY45 W1 card=pro6000 boot=O2-on probe_booked=0 probe_booked_real=0 metrics_booked=0 -> PASS
+DAY45 READING card=pro6000 boot=O2-on predict_lines=68 peak_booked_shadow=181785235088 peak_booked_real=181933670544 shadow_reject_kv=47
+DAY45 READING card=pro6000 boot=O2-on wave=burst predict_lines=64 shadow_reject_kv=47 booked_shadow_at_first=0 booked_shadow_at_last=181785235088
+DAY45 READING card=pro6000 boot=O2-on wave=wave2 predict_lines=32 shadow_reject_kv=32 booked_shadow_at_first=181785235088 booked_shadow_at_last=181785235088
+DAY45 W2 card=pro6000 boot=O2-on w_booked=53 w_release=48 w_retire_unreleased=5 reasons={'same-tick': 5} twice=[] bytes_mismatch=[] neither=[] -> PASS
+DAY45 W3 card=pro6000 order=O1 rows_200_both=53 status_mismatch=0 differ=[] -> PASS
+DAY45 W3 card=pro6000 order=O2 rows_200_both=53 status_mismatch=0 differ=[] -> PASS

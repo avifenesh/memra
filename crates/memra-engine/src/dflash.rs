@@ -14,6 +14,9 @@ use crate::model::GpuTensor;
 use cudarc::driver::CudaSlice;
 use sha2::{Digest, Sha256};
 
+/// `Debug` (lane/spill-c-20260919 day 56): the host tier's contracts door names a DFlash tail's
+/// program with this config's `Debug` form (`host_tier_tail_program` in memra-server).
+#[derive(Debug)]
 pub struct DflashCfg {
     pub hidden: usize,                // 5376
     pub n_head: usize,                // 64
@@ -5666,6 +5669,26 @@ impl crate::hybrid::HybridModel {
             .unwrap()
             .as_mut()
             .map(|g| g.admission_debt(reserved))
+            .unwrap_or(0)
+    }
+
+    /// `dspark_vg_admission_debt` without recording the pool's observation (WP-B day 48 addendum B):
+    /// what the physical gate's call later in the same admission returns, read first by the predictive
+    /// seam under `MEMRA_ADMIT_PREDICT_VG_DEBT`, so that call is unchanged.
+    pub fn dspark_vg_admission_debt_peek(&self, e: &Engine) -> usize {
+        let dspark_door =
+            crate::spec::dspark_verify_graph_serve_on() || crate::spec::dspark_verify_graph_on();
+        let mtp_door =
+            crate::spec::spec_verify_graph_env().unwrap_or_else(|| self.vgraph_family_default());
+        if !dspark_door && !mtp_door {
+            return 0;
+        }
+        let reserved = e.device_graph_mem_reserved();
+        self.dspark_vgraphs
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|g| g.admission_debt_peek(reserved))
             .unwrap_or(0)
     }
 

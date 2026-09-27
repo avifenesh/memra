@@ -1,0 +1,20 @@
+
+running 1 test
+test route_telemetry::tests::day58_a_snapshot_never_counts_an_ended_run_as_running ... FAILED
+
+failures:
+
+---- route_telemetry::tests::day58_a_snapshot_never_counts_an_ended_run_as_running stdout ----
+
+thread 'route_telemetry::tests::day58_a_snapshot_never_counts_an_ended_run_as_running' (2601021) panicked at crates/memra-server/src/route_telemetry.rs:456:9:
+assertion `left == right` failed: 63926 snapshots counted an ended run as running
+  left: 63926
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    route_telemetry::tests::day58_a_snapshot_never_counts_an_ended_run_as_running
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 955 filtered out; finished in 2.33s
+

@@ -1,0 +1,50 @@
+== O1-off: panics=0 respawns=0 fatal=False engine_errors=0
+  non-200 rows=0 status_none=0 first_no_status=None
+== O1-on2048: panics=0 respawns=0 fatal=False engine_errors=0
+  non-200 rows=0 status_none=0 first_no_status=None
+== O1-on8192: panics=0 respawns=0 fatal=False engine_errors=0
+  non-200 rows=0 status_none=0 first_no_status=None
+== O1-on32768: panics=0 respawns=0 fatal=False engine_errors=2
+  server.log:8608 t=1790152474381 in=burst-b0 prev=iv-b-r2 P=78 G=32768 finish=length P+G=32846 booked-64=32846
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:8609 t=1790152474381 in=burst-b0 prev=iv-b-r2 P=78 G=32768 finish=length P+G=32846 booked-64=32846
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  non-200 rows=13 status_none=0 first_no_status=None
+    burst-b0 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b1 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b19 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b12 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b16 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b30 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b26 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b25 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b23 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b18 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b14 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b20 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b4 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+== O2-on32768: panics=0 respawns=0 fatal=False engine_errors=2
+  server.log:8603 t=1790154398465 in=burst-b9 prev=iv-a-r2 P=1620 G=5848 finish=stop P+G=7468 booked-64=34388
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:8604 t=1790154398465 in=burst-b9 prev=iv-a-r2 P=1620 G=5848 finish=stop P+G=7468 booked-64=34388
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  non-200 rows=13 status_none=0 first_no_status=None
+    burst-b9 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b4 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b13 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b6 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b31 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b22 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b3 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b19 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b0 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b10 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b17 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b18 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b20 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+== O2-on8192: panics=0 respawns=0 fatal=False engine_errors=0
+  non-200 rows=0 status_none=0 first_no_status=None
+== O2-on2048: panics=0 respawns=0 fatal=False engine_errors=0
+  non-200 rows=0 status_none=0 first_no_status=None
+== O2-off: panics=0 respawns=0 fatal=False engine_errors=0
+  non-200 rows=0 status_none=0 first_no_status=None

@@ -1,0 +1,22 @@
+{
+  "command": [
+    "cargo",
+    "test",
+    "--locked",
+    "--offline",
+    "--release",
+    "-p",
+    "memra-tier"
+  ],
+  "exit_code": 0,
+  "expected_exit": 0,
+  "expected_marker": "53 passed; 0 failed; 0 ignored;",
+  "started_unix": 1789935474.121982,
+  "finished_unix": 1789935483.1462784,
+  "log_sha256": "e05d7292f4b20dbafb13788cdae40354a8ee1fd30f5ef98c2b2fddec9200db02",
+  "source_sha256": {
+    "crates/memra-tier/src/object_store/mod.rs": "fb7163c9e31c130bfd9cefef87f815b5cbaa2d0b466f0661aeaaf312d00449a0",
+    "crates/memra-tier/src/object_store/tests.rs": "24c2a661ad3c73700e7617eacaf251f58facfdbae77b7aa7cc326672c5be7f78"
+  },
+  "no_gpu": true
+}

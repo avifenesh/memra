@@ -285,6 +285,15 @@ impl AdmissionBook {
         }
     }
 
+    /// WP-B day 45 (O4, `MEMRA_ADMIT_W_RELEASE`): a session's prefill workspace leaves both
+    /// books when its prime completes; the session keeps being in flight.
+    pub(crate) fn release(&mut self, model: &str, booked_bytes: u64, shadow_bytes: u64) {
+        if let Some(row) = self.models.get_mut(model) {
+            row.booked_bytes = row.booked_bytes.saturating_sub(booked_bytes);
+            row.shadow_booked_bytes = row.shadow_booked_bytes.saturating_sub(shadow_bytes);
+        }
+    }
+
     pub(crate) fn inflight(&self, model: &str) -> u64 {
         self.models.get(model).map_or(0, |row| row.inflight)
     }
@@ -702,6 +711,9 @@ pub(crate) struct VerdictLine<'a> {
     /// request when the door is on; `None` in shadow mode. The arm the enforced verdict
     /// used is `min(budget_bytes, live_free_bytes - admission reserve)`.
     pub live_free_bytes: Option<u64>,
+    /// WP-B day 48 (`MEMRA_ADMIT_PREDICT_VG_DEBT=1`): the verify-graph pool debt the verdict's
+    /// budget subtracted; `None` when the door is unset (the line carries no field then).
+    pub vg_debt_bytes: Option<u64>,
 }
 
 /// One grep-stable receipt line, `[admit-predict]`-prefixed, all fields `key=value`.
@@ -728,7 +740,9 @@ pub(crate) fn shadow_verdict_line(line: &VerdictLine<'_>) -> String {
         u8::from(line.exempt),
         u8::from(line.enforce),
         line.live_free_bytes.map_or("-".into(), |v| v.to_string()),
-    )
+    ) + &line
+        .vg_debt_bytes
+        .map_or(String::new(), |v| format!(" vg_debt={v}"))
 }
 
 /// memra#153: the client sentence for an enforced `reject-kv`. Stable text, no numbers: the
@@ -793,6 +807,7 @@ mod tests {
             exempt: false,
             enforce: false,
             live_free_bytes: None,
+            vg_debt_bytes: None,
         }
     }
 
@@ -813,6 +828,18 @@ mod tests {
                 .chars()
                 .any(|c| c.is_ascii_digit())
         );
+    }
+
+    /// WP-B day 48: the verify-graph debt field is trailing and present only when the door set it,
+    /// so the unset line is byte for byte today's.
+    #[test]
+    fn verdict_line_vg_debt_is_trailing_and_door_only() {
+        let off = shadow_verdict_line(&line(Verdict::Admit));
+        assert!(!off.contains("vg_debt="), "{off}");
+        let mut l = line(Verdict::Admit);
+        l.vg_debt_bytes = Some(123_456);
+        let on = shadow_verdict_line(&l);
+        assert_eq!(on, format!("{off} vg_debt=123456"));
     }
 
     /// Locks the receipt's field NAMES and joinability: request id, verdict, reason,
@@ -865,6 +892,28 @@ mod tests {
         ] {
             assert!(s.contains(field), "line must carry `{field}`: {s}");
         }
+    }
+
+    /// WP-B day 45 (O4): a release takes the workspace out of both books and keeps the session in
+    /// flight; a release then the reduced retire equals a retire of the full charge.
+    #[test]
+    fn book_release_then_retire_is_exact() {
+        let mut b = AdmissionBook::default();
+        b.admit("m", 5_000, 3_000);
+        b.admit("m", 7_000, 4_000);
+        b.release("m", 2_000, 2_000);
+        assert_eq!(b.booked_total(), 10_000);
+        assert_eq!(b.shadow_booked_total(), 5_000);
+        assert_eq!(b.inflight("m"), 2, "a release does not retire");
+        b.retire("m", 3_000, 1_000);
+        b.retire("m", 7_000, 4_000);
+        assert_eq!(b.booked_total(), 0);
+        assert_eq!(b.shadow_booked_total(), 0);
+        assert_eq!(b.inflight("m"), 0);
+        // Saturating, and a release on an unknown model is a no-op.
+        b.release("m", 1, 1);
+        b.release("other", 1, 1);
+        assert_eq!(b.booked_total(), 0);
     }
 
     #[test]

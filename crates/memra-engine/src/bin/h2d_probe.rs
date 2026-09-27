@@ -223,6 +223,12 @@ mod native {
                 return Err("malformed power query".into());
             }
             for s in &fields[1..] {
+                // Laptop parts report no settable limit as the literal `[N/A]`; it is recorded
+                // verbatim (the campaign requires identical fields on every sample). Any other
+                // non-watt value still refuses (lane/spill-f-20260919, M1-PREREG.md D).
+                if *s == "[N/A]" {
+                    continue;
+                }
                 let watts: f64 = s.strip_suffix(" W").ok_or("unknown power limit")?.parse()?;
                 if !watts.is_finite() || watts <= 0.0 {
                     return Err("invalid power limit".into());

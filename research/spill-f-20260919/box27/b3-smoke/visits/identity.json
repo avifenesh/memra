@@ -1,0 +1,34 @@
+{
+ "runner_sha256": "c9a1801c357e9b2ffeae52573ba0be761257fbc89a6607178f809ff6f2525f7b",
+ "cache_regime_sha256": "8e438a5d62a4a06ed5c56187df0d6d57db71b37aec4f1cb1ed7faa942a677fc8",
+ "sampler_sha256": "4bda8586d7e7e8a75af71cc44a6bdce4f5a0b450d517e18e76b5451b8d1b1ee0",
+ "arms_lock_sha256": "ca3061b6ab60c898f8e4a51a448ea2fde05cb90906c7cb7594a30cb061e5ed6a",
+ "binary_sha256": "2737e9af4a4eae75bf307343e613c8cd36bcf90e352d5b2f9591e0709b8b9583",
+ "artifact_bytes": 18209036576,
+ "proof_sha256": "ffe86d0431aa610b61dfd33a76d21e7cbf89dbd2595d2644529902a8d974de79",
+ "proof_tool_sha256": "d59851b624339e16d2290b21b94567a593645266eb0e5dd83d4490decbb78864",
+ "regime": "cold",
+ "rounds": 1,
+ "arms": [
+  "worker16",
+  "mmap-random",
+  "mmap-normal",
+  "pread16",
+  "worker2",
+  "direct16"
+ ],
+ "lock": {
+  "owner": "collector",
+  "lock": "/tmp/memra-gpu.lock",
+  "mechanism": "inherited-flock-same-open-description",
+  "device": 53,
+  "inode": 12919743943,
+  "qualification": false
+ },
+ "leaves": [
+  "nvme0n1"
+ ],
+ "top": "nvme0n1p3",
+ "qualified": false,
+ "artifact_sha256": "df27a780435b7b45c2597536112ea3cb091f8544c3d0c3318d9f4258b31f7adf"
+}

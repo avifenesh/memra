@@ -748,3 +748,25 @@ PRO recheck; cached CSR-NVFP4 remains excluded. Full record:
   the memra default, 89.95 GiB headroom after weights+MTP), but activation/graph-pool footprint
   and exactness at 256K are both unmeasured. The PP-blind residency numerator above also remains
   open.
+
+## Full-head MTP learned-depth study (2026-09-20)
+
+One RTX 5090 32GB, 575W, CUDA 13.1; full vocabulary heads, H learning and confidence
+cuts off. Same model, sampler and cold priming in every arm. Eight balanced paired
+sets per model; 64 selected scored runs / 768 turns. Initial prompt tokens are 3,703
+for Qwen and 4,037 for Gemma, growing across eight turns; Gemma has two independent
+conversations per run. Sampled 1K output cap, at least 10s warmup and 60s measured.
+
+| MTP model, full head | Fixed E2E tok/s | Native adaptive E2E tok/s | Learned E2E tok/s | Learned vs fixed | Learned vs native |
+|---|---:|---:|---:|---:|---:|
+| Qwen3.8-27B, fixed K=3, adaptive/learned 1–7 | 96.750 | 97.714 | 94.377 | −2.45% (1/8 wins) | −3.42% (0/8) |
+| Gemma 4 12B, fixed K=5, adaptive/learned 1–5 | 175.325 | 188.080 | 188.889 | +7.74% (8/8) | +0.43% (6/8) |
+
+These are native-session measurements on a frozen code-analysis workload, not HTTP
+serving rates. Fixed K values are preselected native starting points, not calibrated
+best-fixed oracles. The Gemma gain over fixed K=5 is repeatable; native adaptation
+captures almost all of it. This cost learner is not promoted, and its runtime
+prototype is retired with source and evidence preserved. Partial sets interrupted
+by other GPU tests were excluded and retried in full. No DFlash measurements enter
+this MTP comparison. [Protocol, audit and raw data](../research/mtp-learned-depth-20260920/RESULTS.md)
+and [decision](decisions/MTP-LEARNED-DEPTH-20260920.md).

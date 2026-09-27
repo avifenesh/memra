@@ -126,7 +126,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let receipt_path = args
         .next()
         .ok_or("usage: modelplan-reference-gate <config.json> <receipt.tsv>")?;
-    let cfg = ModelConfig::from_hf(&HfConfig::parse(&std::fs::read_to_string(config_path)?));
+    let cfg = ModelConfig::from_hf(&HfConfig::try_parse(&std::fs::read_to_string(
+        config_path,
+    )?)?);
     let pack = memra_gguf::model_packs::for_config(&cfg)
         .ok_or("reference gate requires a registered model pack")?;
     let plan = pack.compile_plan(&cfg)?;

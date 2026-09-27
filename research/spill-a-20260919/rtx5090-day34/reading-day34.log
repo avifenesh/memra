@@ -1,0 +1,4 @@
+DAY34 READING arm=d33 boots=10 steady landing-poll-hold N=90 median=8.50 min=8.20 max=9.54 polls [1] (counts [90]) | promote-in N=90 median=17.10 min=16.50 max=22.20 | receipts=100 on-helper=0 helper-ms N=0
+DAY34 C arm=d34 boots=10 steady landing-poll-hold N=90 median=0.12 min=0.10 max=0.40 polls [1, 2, 3] (counts [1, 88, 1]) | promote-in N=90 median=16.50 min=9.50 max=31.90 | receipts=100 on-helper=100 helper-ms N=100 median=8.80 min=8.70 max=18.50 rule N>=20 median<=1.5 max<=3.0 every-receipt-on-helper -> PASS
+DAY34 D order=o1 e2e d33 N=50 median=80.49 min=76.65 max=87.27 e2e d34 N=50 median=80.70 min=76.48 max=102.32 d34-minus-d33 +0.21 rule <=+1.0 -> PASS
+DAY34 D order=o2 e2e d33 N=50 median=81.19 min=76.61 max=86.76 e2e d34 N=50 median=81.70 min=76.43 max=87.03 d34-minus-d33 +0.50 rule <=+1.0 -> PASS

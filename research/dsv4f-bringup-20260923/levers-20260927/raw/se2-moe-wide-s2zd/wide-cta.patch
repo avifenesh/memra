@@ -1,0 +1,79 @@
+diff --git a/crates/memra-engine/cu/dsv4_gpu.cu b/crates/memra-engine/cu/dsv4_gpu.cu
+index 95ecda3fb1..be7cfe4a5b 100644
+--- a/crates/memra-engine/cu/dsv4_gpu.cu
++++ b/crates/memra-engine/cu/dsv4_gpu.cu
+@@ -8485,7 +8485,14 @@ __device__ __forceinline__ bool dsv4_moe_fused_mirror(const float* __restrict__
+     return bad;
+ }
+ 
+-constexpr int DSV4_MOE_FUSED_WARPS = 4, DSV4_MOE_FUSED_KC = 256, DSV4_MOE_FUSED_STAGES = 2;
++// Warps per projection in the gate/up launch (a CTA holds 2 * WARPS) and warps in the down launch
++// (memra #710). Every warp computes one n8 column tile over the whole k, so the CTA width only
++// sets how many warps share one CTA's x or h mirror, and no output bit depends on it. At one
++// token row, 16-warp CTAs take the gate/up launch from 28.6 to 25.2 us and the down launch from
++// 17.5 to 15.2 us against 8- and 4-warp ones (tools/dsv4-moe-fused-bench.cu,
++// research/dsv4f-bringup-20260923/levers-20260927/).
++constexpr int DSV4_MOE_FUSED_WARPS = 8, DSV4_MOE_FUSED_DOWN_WARPS = 16, DSV4_MOE_FUSED_KC = 256,
++              DSV4_MOE_FUSED_STAGES = 2;
+ 
+ // grid (out_f / (8*WP), topk), block (32, 2*WP): warps [0,WP) gate, [WP,2WP) up, same columns.
+ template<int WP, int KC, int STAGES>
+@@ -8720,7 +8727,7 @@ extern "C" int memra_dsv4_moe_fused_gu(const unsigned long long* table, int n_ex
+ }
+ 
+ // One token: h is [topk][in_f] (in_f = moe_inter), contribution [topk][out_f], y [out_f];
+-// tile_cnt holds out_f / 32 zeroed counters. The partition form (a TP/EP rank's experts) takes
++// tile_cnt holds at least out_f / (8 * DSV4_MOE_FUSED_DOWN_WARPS) zeroed counters. The partition form (a TP/EP rank's experts) takes
+ // order, y and tile_cnt null: it writes its own slots' contribution rows and leaves the slot sum
+ // to the caller, after the rank-order join; the other slots' rows stay as the caller cleared them.
+ // `rows` token rows of `topk` slots: h is [rows * topk][in_f], contrib [rows * topk][out_f]. The
+@@ -8731,7 +8738,7 @@ extern "C" int memra_dsv4_moe_fused_down_part(const unsigned long long* table, i
+                                               float* contrib, const int* order, float* y,
+                                               int* tile_cnt, int topk, int rows, int in_f,
+                                               int out_f, int* fault, void* stream_v) {
+-    constexpr int W = DSV4_MOE_FUSED_WARPS, KC = DSV4_MOE_FUSED_KC, ST = DSV4_MOE_FUSED_STAGES;
++    constexpr int W = DSV4_MOE_FUSED_DOWN_WARPS, KC = DSV4_MOE_FUSED_KC, ST = DSV4_MOE_FUSED_STAGES;
+     const bool sums = order || y || tile_cnt;
+     const bool partition = first != 0 || global_experts != n_expert;
+     if (!table || !sel || !scale2 || !h || !contrib || first < 0 || rows < 1 ||
+diff --git a/crates/memra-engine/src/dsv4_ffi.rs b/crates/memra-engine/src/dsv4_ffi.rs
+index c325bf6e75..4cea24b1f9 100644
+--- a/crates/memra-engine/src/dsv4_ffi.rs
++++ b/crates/memra-engine/src/dsv4_ffi.rs
+@@ -544,7 +544,7 @@ unsafe extern "C" {
+     ) -> i32;
+     /// Fused one-token MoE, second half: the h mirror, down and macro2 into
+     /// `contrib[topk][out_f]`, then the slot sum in `order` into `y[out_f]`. `tile_cnt` holds
+-    /// `out_f / 32` counters zeroed once; the kernel leaves them zero. Fault bit 0x4.
++    /// at least `out_f / 128` counters zeroed once; the kernel leaves them zero. Fault bit 0x4.
+     #[allow(clippy::too_many_arguments)]
+     pub fn memra_dsv4_moe_fused_down(
+         table: *const u64,
+diff --git a/crates/memra-engine/src/dsv4_gpu.rs b/crates/memra-engine/src/dsv4_gpu.rs
+index 8763bf772c..1d1f5ceb0a 100644
+--- a/crates/memra-engine/src/dsv4_gpu.rs
++++ b/crates/memra-engine/src/dsv4_gpu.rs
+@@ -14503,8 +14503,8 @@ pub struct VerifyWs {
+     moe_fault: Option<CudaSlice<i32>>,
+     moe_fault_host: Vec<i32>,
+     moe_fault_armed: bool,
+-    /// Column-tile arrival counters of the fused one-token down kernel, `hidden / 32` of
+-    /// them, zeroed here once; the kernel's last arriver resets its own counter.
++    /// Column-tile arrival counters of the fused one-token down kernel, `hidden / 32` of them (it
++    /// uses `hidden / 128`), zeroed here once; the kernel's last arriver resets its own counter.
+     moe_tile_cnt: Option<CudaSlice<i32>>,
+     /// A TP/EP rank's shared-expert owner word (memra #710), written by the fused gate/up
+     /// launch: 1 on the rank with fewer of the step's routed slots, rank 0 on a tie.
+diff --git a/docs/KERNELS.md b/docs/KERNELS.md
+index bc31d41e20..2a394de92c 100644
+--- a/docs/KERNELS.md
++++ b/docs/KERNELS.md
+@@ -689,7 +689,7 @@ Full execution contract and candidate pins:
+ | `moe_kq_m1_stream_kernel<4>` | DSV4 matrix plain-decode one-token visitor (memra #664): one warp per n8 column tile over the full K, the 8 weight rows streamed through a 4-stage per-warp cp.async ring (128 k per stage), the same `mma.sync.m16n8k16.f32.f16.f16.f32` chain in ascending k16 order from acc = 0 and the same `acc * row_scale` epilogue as `moe_kq_sktail_kernel`, so gate, up and down are bit-identical to it. B values: E2M1 byte LUT to f16 times the NaN-cleared E4M3 scale via `cvt.rn.f16x2.e4m3x2`, exact in f16. Smem `in_f * 2 + 4 * 2560` B, refused above 48 KiB. Served plain greedy c1 38.77 -> 50.1 tok/s on 2x RTX PRO 6000. | The code for one-row groups with the deep tail on; no environment read. A gate-armed M1 tensor-core or half2 down tail keeps precedence for down. `set_dsv4_moe_m1_stream_for_gate(false)` runs the sktail arm. | `memra_moe_kq_m1_stream`, `memra_moe_kq_m1_stream_dispatches`; `cuda_m1_stream_matches_sktail_bit_for_bit` and `dsv4-gpu-dspark-gate` arm P engagement. |
+ | `kqs_dequant_probe_kernel` | Component-test probe: for every E4M3FN scale byte and E2M1 code, the stream visitor's f16 B value and the sktail store's `__float2half(e4m3 * kv)` value. | Test only. | `memra_moe_kq_m1_stream_dequant_probe`. |
+ | `moe_kq_mrow_stream_kernel<4>` | DSV4 matrix multi-row visitor for 2..=16-row MoE steps (DSpark verify rounds, memra #669): the CTA at each 16-row chunk start of a CSR group owns that chunk, the chunk's rows sit in the MMA m16 dimension, and each warp streams its 8 weight rows once per chunk through the one-token visitor's 4-stage cp.async ring and in-register dequant. A is read from global with `__ldg` (16 rows x 4096 f16 is past the one-token smem stage; every warp reads the same words). An MMA output row depends only on its own A row, B and C, so each row runs the sktail chain (same B values, ascending k16 from acc = 0, `acc * row_scale`) and gate, up and down are bit-identical to it. Rows past the group end are zero and never stored. Served DSpark greedy c1 56.08 -> 71.13 tok/s on 2x RTX PRO 6000. | The code for steps of 2..=16 rows with the deep tail on (`MROW_STREAM_MAX_ROWS`); no environment read. `set_dsv4_moe_m1_stream_for_gate(false)` runs the sktail arm for both visitors. | `memra_moe_kq_mrow_stream` (refusal 40004), `memra_moe_kq_mrow_stream_dispatches`; `cuda_mrow_stream_matches_sktail_bit_for_bit` and the served `dsv4-gpu-dspark-gate`. |
+-| `dsv4_moe_fused_gu_kernel<WP>`, `dsv4_moe_fused_down_kernel<WARPS>` | DSV4 matrix plain-decode fused one-token MoE (memra #694): the served t=1 grouped chain (16 launches per layer: act_quant x, route count/prefix/scatter, the x FP8-QAT half mirror, gate and up stream visitors, two scale_rows, weighted SwiGLU, act_quant h, the h mirror, the down visitor, scale_rows, slot scatter, combine_rows_m) in two launches. gu: the x mirror inline (act_quant + fp8_gather_half, warp-reduced amax is exact in any order), gate and up of every selected slot with `moe_kq_m1_stream_kernel`'s body op for op, macro1/macro3, SwiGLU with the slot's route weight into `h[slot]`. down: the h mirror, down, macro2 into `contribution[slot]`, and the last CTA of each 32-column tile sums the slots in combine_rows_m's order into `y` and resets its tile counter. Every f32 op is the chain's op in the chain's order under `-fmad=false`, so h, contribution and y are bit-identical; a dead slot ORs the route prefix's fault bit, a lossy mirror the gather mirrors' bits. Served plain greedy c1 +11% on 2x RTX PRO 6000 (`research/dsv4f-bringup-20260923/moe-fused/`). | t=1 matrix steps with device routes, deferred MoE faults armed, route and mirror validation on, the deep tail and the one-token stream visitor on, and no gate-armed GU-fuse/M1-TC/half2 tail (`moe_fused_engages`); anything else keeps the chain. No environment read; `set_dsv4_moe_fused_for_gate(false)` runs the chain. Peer-dispatch EP keeps the chain. **Partition form (memra #710, TP/EP):** the table holds a rank's experts `[first, first + n)` of the global bank, selections and macro scales keep global ids, another rank's slot exits at entry, and down writes only the rank's contribution rows (the caller clears the plane) and leaves the slot sum to the caller, after the rank-order join; a partition asking for the in-kernel sum refuses 40004. The partition form takes `rows` token rows of `topk` slots in one launch (slot p reads x row p / topk), so a TP/EP step of 1 to 16 rows (one token, a B-row step, a verify round: every step the stream visitors took) runs it in place of `execute_matrix_local`'s chain and skips the separate x activation quantization; the full-bank form stays one row because its in-kernel slot sum is. | `memra_dsv4_moe_fused_gu`, `memra_dsv4_moe_fused_down`, `memra_dsv4_moe_fused_gu_part`, `memra_dsv4_moe_fused_down_part`, `memra_dsv4_moe_fused_dispatches`; `dsv4_grouped::cuda_fused_one_token_moe_is_the_grouped_chain_bit_for_bit`, `dsv4_grouped::cuda_fused_partition_moe_is_the_tp_ep_chain_bit_for_bit` and `dsv4-gpu-dspark-gate` plain-arm engagement (PP and TP/EP). |
++| `dsv4_moe_fused_gu_kernel<WP>`, `dsv4_moe_fused_down_kernel<WARPS>` | DSV4 matrix plain-decode fused one-token MoE (memra #694): the served t=1 grouped chain (16 launches per layer: act_quant x, route count/prefix/scatter, the x FP8-QAT half mirror, gate and up stream visitors, two scale_rows, weighted SwiGLU, act_quant h, the h mirror, the down visitor, scale_rows, slot scatter, combine_rows_m) in two launches. gu: the x mirror inline (act_quant + fp8_gather_half, warp-reduced amax is exact in any order), gate and up of every selected slot with `moe_kq_m1_stream_kernel`'s body op for op, macro1/macro3, SwiGLU with the slot's route weight into `h[slot]`. down: the h mirror, down, macro2 into `contribution[slot]`, and the last CTA of each 128-column tile sums the slots in combine_rows_m's order into `y` and resets its tile counter. CTA widths (memra #710, 2026-09-27): gu 16 warps (8 per projection), down 16 warps; every warp owns one n8 tile over the whole k, so the width only sets how many warps share a CTA's mirror (gu 28.6 to 25.2 us, down 17.5 to 15.2 us at one row in `tools/dsv4-moe-fused-bench.cu`). Every f32 op is the chain's op in the chain's order under `-fmad=false`, so h, contribution and y are bit-identical; a dead slot ORs the route prefix's fault bit, a lossy mirror the gather mirrors' bits. Served plain greedy c1 +11% on 2x RTX PRO 6000 (`research/dsv4f-bringup-20260923/moe-fused/`). | t=1 matrix steps with device routes, deferred MoE faults armed, route and mirror validation on, the deep tail and the one-token stream visitor on, and no gate-armed GU-fuse/M1-TC/half2 tail (`moe_fused_engages`); anything else keeps the chain. No environment read; `set_dsv4_moe_fused_for_gate(false)` runs the chain. Peer-dispatch EP keeps the chain. **Partition form (memra #710, TP/EP):** the table holds a rank's experts `[first, first + n)` of the global bank, selections and macro scales keep global ids, another rank's slot exits at entry, and down writes only the rank's contribution rows (the caller clears the plane) and leaves the slot sum to the caller, after the rank-order join; a partition asking for the in-kernel sum refuses 40004. The partition form takes `rows` token rows of `topk` slots in one launch (slot p reads x row p / topk), so a TP/EP step of 1 to 16 rows (one token, a B-row step, a verify round: every step the stream visitors took) runs it in place of `execute_matrix_local`'s chain and skips the separate x activation quantization; the full-bank form stays one row because its in-kernel slot sum is. | `memra_dsv4_moe_fused_gu`, `memra_dsv4_moe_fused_down`, `memra_dsv4_moe_fused_gu_part`, `memra_dsv4_moe_fused_down_part`, `memra_dsv4_moe_fused_dispatches`; `dsv4_grouped::cuda_fused_one_token_moe_is_the_grouped_chain_bit_for_bit`, `dsv4_grouped::cuda_fused_partition_moe_is_the_tp_ep_chain_bit_for_bit` and `dsv4-gpu-dspark-gate` plain-arm engagement (PP and TP/EP). |
+ 
+ DSV4 f32acc scorer q layout (no new arithmetic, no dispatch flag):
+ 

@@ -1,0 +1,821 @@
+1790273982525 [server] build: memra-0.138.0-5912ba6b909c (id: source-tree, git: c6f9282c26e7)
+1790273982525 [server] starting; models config = [("q38", "/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+1790273982526 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+1790273982526 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+1790273982626 [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+1790273982749 [worker] Engine ready (device=0, MEMRA_FAST=true)
+1790273982749 [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+1790273982749 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+1790273982749 [worker] loading model "q38" <- /root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+1790273982785 [tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+1790273986551 [worker]   loaded "q38": 65 layers, eos=248046, stop=[248046]
+1790273986551 [worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+1790273986551 [route-contract] model="q38" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+1790273986551 [worker] q38: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+1790273986551 [prefix-cache] on: budget 15883MB (15883042816 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from checkpoint; MEMRA_CTX unset), requested 15883042816 B; boot driver free 86518333440 B, post-reserve clamp 84907720704 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+1790273986551 [admission] "q38": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+1790273986551 [prime-walk] model="q38" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+1790273987596 [fa-pool] grow #0 dev=0 o_len 0 -> 399360 ml_len 0 -> 1560 (retired kept, zero=false)
+1790273987609 [func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+1790273987609 [func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+1790273987609 [fa-pool] grow #1 dev=0 o_len 399360 -> 798720 ml_len 1560 -> 3120 (retired kept, zero=false)
+1790273987609 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+1790273987609 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+1790273987609 [func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+1790273987609 [func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+1790273987612 [spec] draft-session state high-water: 44MB (max of parked delta 44MB and capture-time pool peak 12MB; charged per spec admission and gating future captures)
+1790273987637 [fa-pool] grow #2 dev=0 o_len 798720 -> 1597440 ml_len 3120 -> 6240 (retired kept, zero=false)
+1790273988026 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":2483027968,"still_owned_bytes":17283255616,"pool_reserved_bytes":17414750208,"pool_cached_bytes":131494592,"driver_free_bytes":83934642176,"synchronization_errors":[]}
+1790273988026 [admit-cal] post-probe pool trim: released 2368MB cached back to the driver
+1790273988026 [admit-cal] boot calibration done: model="q38" route=mtp transient floor 2196MB (static was 1536MB; measured 2196MB; probe kv charge 127MB, draft-state 44MB, drafted 63 accepted 42; [dev0 peak-mapped 18976MB rest-mapped 16608MB charged 171MB -> 2196MB]; 1.5s)
+1790273988026 [admit-predict] shadow armed: budget_bytes=65879781072 budget_src=derived(effective_free_bytes=84066136768 - prefix_cache_budget_bytes=15883042816 - admission_reserve_bytes=2303312880) exempt_tenants=0 enforce=false (logging only, nothing is rejected; enforcement is a separate flip)
+1790273988026 [admit-mem] door=ON open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+1790273988026 [kv-vmm] door=ON routes=spec,plain granularity=2097152 grow=inline (MEMRA_KV_VMM_GROW) reap=owner-tick slack_rows=64 faults=VmmFaults { build: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64], ensure: [], mapper_all: false }
+1790273988026 [server] worker ready; serving models: ["q38"]
+1790273988026 [server] listening on http://127.0.0.1:18526
+1790273989084 [meter] admit id=chatcmpl-957723546987a4f5475b7dfa89a23381 tenant=default lane=interactive model="q38"
+1790273989084 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1790273989084 [admission] request cost: model="q38" ctx=228 path=spec = 31552 B/token x ctx + 63MB prefill-workspace + 0MB fixed = 70MB
+1790273989084 [admit-predict] id=chatcmpl-957723546987a4f5475b7dfa89a23381 tenant="" model="q38" verdict=admit reason=maxtok-fallback prompt=132 predicted_completion=32 kv_hat=115125008 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790273989084 [admit-mem] id=chatcmpl-957723546987a4f5475b7dfa89a23381 model="q38" verdict=admit prompt=132 output_bound=32 charged_ctx=228 est_bytes=2420204800 est_context=7193856 est_fixed=2413010944 device_free=84066136768 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790273989085 [spec-k] model="q38" tenant="" K=3 source=cold-short prompt=132 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790273989085 [admission] fixed residual high-water: model="q38" 308MB (observed 314MB at ctx 172 path=spec)
+1790273989085 [kv-vmm] admit id=chatcmpl-957723546987a4f5475b7dfa89a23381 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790273989368 [spec-acc] ctx=132 burst=25/27 cum=25/27=0.926
+1790273991370 [meter] admit id=chatcmpl-bea5a7e931e3da33ff96257844c3b9e3 tenant=default lane=interactive model="q38"
+1790273991373 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1790273991373 [admission] request cost: model="q38" ctx=9737 path=spec = 31552 B/token x ctx + 710MB prefill-workspace + 308MB fixed = 1325MB
+1790273991373 [admit-predict] id=chatcmpl-bea5a7e931e3da33ff96257844c3b9e3 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1481 predicted_completion=32 kv_hat=1112380328 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790273991373 [admit-mem] id=chatcmpl-bea5a7e931e3da33ff96257844c3b9e3 model="q38" verdict=admit prompt=1481 output_bound=- charged_ctx=9737 est_bytes=3674924440 est_context=307221824 est_fixed=3367702616 device_free=83435189052 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790273991373 [worker] spec-affinity: declined (history diverged at 47 of checkpoint 96; 1 parked, 1481 prompt tokens; model q38)
+1790273991374 [worker] spec pool evicted (1) after alloc failure; retrying (evict-first learned)
+1790273991374 [worker] spec session alloc failed (DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")); tokenwise path
+1790273991374 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790273991375 [meter] admit id=chatcmpl-60419e67fc5b71d00b6b745746dd3156 tenant=default lane=interactive model="q38"
+1790273991377 [admit-predict] id=chatcmpl-60419e67fc5b71d00b6b745746dd3156 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1481 predicted_completion=32 kv_hat=1112380328 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790273991377 [admit-mem] id=chatcmpl-60419e67fc5b71d00b6b745746dd3156 model="q38" verdict=admit prompt=1481 output_bound=- charged_ctx=9737 est_bytes=3674924440 est_context=307221824 est_fixed=3367702616 device_free=84066136768 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790273991377 [worker] spec session alloc failed (DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")); tokenwise path
+1790273991377 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790273991378 [meter] admit id=chatcmpl-7f9b950933e79843aac879319f96c223 tenant=default lane=interactive model="q38"
+1790273991380 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1790273991380 [admission] request cost: model="q38" ctx=9740 path=spec = 31552 B/token x ctx + 711MB prefill-workspace + 308MB fixed = 1327MB
+1790273991380 [admit-predict] id=chatcmpl-7f9b950933e79843aac879319f96c223 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1484 predicted_completion=32 kv_hat=1113912680 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790273991380 [admit-mem] id=chatcmpl-7f9b950933e79843aac879319f96c223 model="q38" verdict=admit prompt=1484 output_bound=- charged_ctx=9740 est_bytes=3676456792 est_context=307316480 est_fixed=3369140312 device_free=84066136768 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790273991380 [worker] spec session alloc failed (DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")); tokenwise path
+1790273991380 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790273991381 [meter] admit id=chatcmpl-1458ffb99c53f07e1a86f9ba4d513ba6 tenant=default lane=interactive model="q38"
+1790273991383 [admit-predict] id=chatcmpl-1458ffb99c53f07e1a86f9ba4d513ba6 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1484 predicted_completion=32 kv_hat=1113912680 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790273991383 [admit-mem] id=chatcmpl-1458ffb99c53f07e1a86f9ba4d513ba6 model="q38" verdict=admit prompt=1484 output_bound=- charged_ctx=9740 est_bytes=3676456792 est_context=307316480 est_fixed=3369140312 device_free=84066136768 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790273991383 [worker] spec session alloc failed (DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")); tokenwise path
+1790273991383 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790273991384 [meter] admit id=chatcmpl-de06541284cfee3397c33cead01120d7 tenant=default lane=interactive model="q38"
+1790273991385 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1790273991385 [admission] request cost: model="q38" ctx=9739 path=spec = 31552 B/token x ctx + 711MB prefill-workspace + 308MB fixed = 1326MB
+1790273991385 [admit-predict] id=chatcmpl-de06541284cfee3397c33cead01120d7 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1483 predicted_completion=32 kv_hat=1113401896 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790273991385 [admit-mem] id=chatcmpl-de06541284cfee3397c33cead01120d7 model="q38" verdict=admit prompt=1483 output_bound=- charged_ctx=9739 est_bytes=3675946008 est_context=307284928 est_fixed=3368661080 device_free=84066136768 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790273991385 [worker] spec session alloc failed (DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")); tokenwise path
+1790273991385 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790273991389 [meter] admit id=chatcmpl-2c93b70c4cc738efd2aad84007d099c7 tenant=default lane=interactive model="q38"
+1790273991391 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1790273991391 [admission] request cost: model="q38" ctx=1875 path=spec = 31552 B/token x ctx + 822MB prefill-workspace + 308MB fixed = 1189MB
+1790273991391 [admit-predict] id=chatcmpl-2c93b70c4cc738efd2aad84007d099c7 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1715 predicted_completion=32 kv_hat=1231903784 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790273991391 [admit-mem] id=chatcmpl-2c93b70c4cc738efd2aad84007d099c7 model="q38" verdict=admit prompt=1715 output_bound=96 charged_ctx=1875 est_bytes=3539002904 est_context=59160000 est_fixed=3479842904 device_free=84066136768 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790273991391 [spec-k] model="q38" tenant="" K=3 source=cold-long prompt=1715 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790273991391 [admission] fixed residual high-water: model="q38" 311MB (observed 369MB at ctx 1819 path=spec)
+1790273991391 [kv-vmm] admit id=chatcmpl-2c93b70c4cc738efd2aad84007d099c7 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790273991900 [fa-pool] grow #3 dev=0 o_len 1597440 -> 3194880 ml_len 6240 -> 12480 (retired kept, zero=false)
+1790273992074 [spec-acc] ctx=1715 burst=20/33 cum=20/33=0.606
+1790273992074 [prefix-cache] insert (spec-boundary): 1696 tokens, 210.4MB (resident 210.4MB / 15883MB, model q38)
+1790273992269 [spec-acc] ctx=1747 burst=20/36 cum=40/69=0.580
+1790273992513 [spec-acc] ctx=1779 burst=17/45 cum=57/114=0.500
+1790273992518 [meter] admit id=chatcmpl-3ea887ff880e49786d6e55e9cec2d720 tenant=default lane=interactive model="q38"
+1790273992528 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1790273992528 [admission] request cost: model="q38" ctx=1874 path=spec = 31552 B/token x ctx + 821MB prefill-workspace + 311MB fixed = 1192MB
+1790273992528 [admit-predict] id=chatcmpl-3ea887ff880e49786d6e55e9cec2d720 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1714 predicted_completion=96 kv_hat=1236469160 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790273992528 [admit-mem] id=chatcmpl-3ea887ff880e49786d6e55e9cec2d720 model="q38" verdict=admit prompt=1714 output_bound=96 charged_ctx=1874 est_bytes=3541548952 est_context=59128448 est_fixed=3482420504 device_free=83313774524 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=210425856 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790273992528 [worker] spec-affinity: declined (history diverged at 48 of checkpoint 1696; 1 parked, 1714 prompt tokens; model q38)
+1790273992529 [worker] spec pool evicted (1) pre-alloc (learned VRAM-tight; model q38)
+1790273992529 [spec-k] model="q38" tenant="" K=3 source=cold-long prompt=1714 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790273992529 [kv-vmm] admit id=chatcmpl-3ea887ff880e49786d6e55e9cec2d720 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790273993230 [spec-acc] ctx=1714 burst=20/36 cum=20/36=0.556
+1790273993230 [prefix-cache] insert (spec-boundary): 1696 tokens, 210.4MB (resident 420.9MB / 15883MB, model q38)
+1790273993474 [spec-acc] ctx=1747 burst=17/45 cum=37/81=0.457
+1790273993703 [spec-acc] ctx=1779 burst=17/42 cum=54/123=0.439
+1790273993707 [meter] admit id=chatcmpl-03ce89d4168a9d512b964a028c149156 tenant=default lane=interactive model="q38"
+1790273993718 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1790273993718 [admission] request cost: model="q38" ctx=1873 path=spec = 31552 B/token x ctx + 821MB prefill-workspace + 311MB fixed = 1191MB
+1790273993718 [admit-predict] id=chatcmpl-03ce89d4168a9d512b964a028c149156 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1713 predicted_completion=96 kv_hat=1235958376 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790273993718 [admit-mem] id=chatcmpl-03ce89d4168a9d512b964a028c149156 model="q38" verdict=admit prompt=1713 output_bound=96 charged_ctx=1873 est_bytes=3541038168 est_context=59096896 est_fixed=3481941272 device_free=83103402556 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=420851712 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790273993718 [worker] spec-affinity: declined (history diverged at 48 of checkpoint 1696; 1 parked, 1713 prompt tokens; model q38)
+1790273993718 [worker] spec pool evicted (1) pre-alloc (learned VRAM-tight; model q38)
+1790273993718 [spec-k] model="q38" tenant="" K=3 source=cold-long prompt=1713 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790273993718 [kv-vmm] admit id=chatcmpl-03ce89d4168a9d512b964a028c149156 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790273994420 [spec-acc] ctx=1713 burst=20/36 cum=20/36=0.556
+1790273994420 [prefix-cache] insert (spec-boundary): 1696 tokens, 210.4MB (resident 631.3MB / 15883MB, model q38)
+1790273994631 [spec-acc] ctx=1746 burst=19/39 cum=39/75=0.520
+1790273994827 [spec-acc] ctx=1778 burst=19/36 cum=58/111=0.523
+1790273994830 [meter] admit id=chatcmpl-649ef3ad77660dc87c8dc0fd0c784d77 tenant=default lane=interactive model="q38"
+1790273994841 [admit-predict] id=chatcmpl-649ef3ad77660dc87c8dc0fd0c784d77 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1713 predicted_completion=96 kv_hat=1235958376 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790273994841 [admit-mem] id=chatcmpl-649ef3ad77660dc87c8dc0fd0c784d77 model="q38" verdict=admit prompt=1713 output_bound=96 charged_ctx=1873 est_bytes=3541038168 est_context=59096896 est_fixed=3481941272 device_free=82893030588 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=631277568 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790273994841 [worker] spec-affinity: declined (history diverged at 48 of checkpoint 1696; 1 parked, 1713 prompt tokens; model q38)
+1790273994842 [worker] spec pool evicted (1) pre-alloc (learned VRAM-tight; model q38)
+1790273994842 [spec-k] model="q38" tenant="" K=3 source=cold-long prompt=1713 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790273994842 [kv-vmm] admit id=chatcmpl-649ef3ad77660dc87c8dc0fd0c784d77 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790273995544 [spec-acc] ctx=1713 burst=20/36 cum=20/36=0.556
+1790273995544 [prefix-cache] insert (spec-boundary): 1696 tokens, 210.4MB (resident 841.7MB / 15883MB, model q38)
+1790273995723 [spec-acc] ctx=1746 burst=21/33 cum=41/69=0.594
+1790273995951 [spec-acc] ctx=1778 burst=18/42 cum=59/111=0.532
+1790273995956 [meter] admit id=chatcmpl-d59a5e1060f8340c606b54fe6357cf95 tenant=default lane=interactive model="q38"
+1790273995966 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1790273995966 [admission] request cost: model="q38" ctx=1870 path=spec = 31552 B/token x ctx + 819MB prefill-workspace + 311MB fixed = 1190MB
+1790273995966 [admit-predict] id=chatcmpl-d59a5e1060f8340c606b54fe6357cf95 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1710 predicted_completion=96 kv_hat=1234426024 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790273995966 [admit-mem] id=chatcmpl-d59a5e1060f8340c606b54fe6357cf95 model="q38" verdict=admit prompt=1710 output_bound=96 charged_ctx=1870 est_bytes=3539505816 est_context=59002240 est_fixed=3480503576 device_free=82682625212 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=841703424 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790273995966 [worker] spec-affinity: declined (history diverged at 48 of checkpoint 1696; 1 parked, 1710 prompt tokens; model q38)
+1790273995967 [worker] spec pool evicted (1) pre-alloc (learned VRAM-tight; model q38)
+1790273995967 [spec-k] model="q38" tenant="" K=3 source=cold-long prompt=1710 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790273995967 [kv-vmm] admit id=chatcmpl-d59a5e1060f8340c606b54fe6357cf95 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790273996650 [spec-acc] ctx=1710 burst=19/36 cum=19/36=0.528
+1790273996651 [prefix-cache] insert (spec-boundary): 1664 tokens, 209.4MB (resident 1051.1MB / 15883MB, model q38)
+1790273996878 [spec-acc] ctx=1742 burst=18/42 cum=37/78=0.474
+1790273997106 [spec-acc] ctx=1774 burst=20/42 cum=57/120=0.475
+1790273998108 [meter] admit id=chatcmpl-9d1675726e55063f159caeb1d94b7a51 tenant=default lane=interactive model="q38"
+1790273998111 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1790273998111 [admission] request cost: model="q38" ctx=9759 path=spec = 31552 B/token x ctx + 720MB prefill-workspace + 311MB fixed = 1339MB
+1790273998111 [admit-predict] id=chatcmpl-9d1675726e55063f159caeb1d94b7a51 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1503 predicted_completion=96 kv_hat=1128693736 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790273998111 [admit-mem] id=chatcmpl-9d1675726e55063f159caeb1d94b7a51 model="q38" verdict=admit prompt=1503 output_bound=- charged_ctx=9759 est_bytes=3689218520 est_context=307915968 est_fixed=3381302552 device_free=82473329724 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=1051119616 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790273998111 [worker] spec-affinity: declined (history diverged at 46 of checkpoint 1664; 1 parked, 1503 prompt tokens; model q38)
+1790273998112 [worker] spec pool evicted (1) pre-alloc (learned VRAM-tight; model q38)
+1790273998112 [worker] spec session alloc failed (DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")); tokenwise path
+1790273998113 [prefix-cache] evicted 5 entries after cache alloc failure; retrying
+1790273998113 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790273998114 [meter] admit id=chatcmpl-a3fa588743863e5feb4d6630f766d312 tenant=default lane=interactive model="q38"
+1790273998116 [admit-predict] id=chatcmpl-a3fa588743863e5feb4d6630f766d312 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1503 predicted_completion=96 kv_hat=1128693736 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790273998116 [admit-mem] id=chatcmpl-a3fa588743863e5feb4d6630f766d312 model="q38" verdict=admit prompt=1503 output_bound=- charged_ctx=9759 est_bytes=3689218520 est_context=307915968 est_fixed=3381302552 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790273998116 [worker] spec session alloc failed (DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")); tokenwise path
+1790273998116 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790273998117 [meter] admit id=chatcmpl-11904d4a48e1a116ec918d88a906b625 tenant=default lane=interactive model="q38"
+1790273998118 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1790273998118 [admission] request cost: model="q38" ctx=9762 path=spec = 31552 B/token x ctx + 722MB prefill-workspace + 311MB fixed = 1341MB
+1790273998118 [admit-predict] id=chatcmpl-11904d4a48e1a116ec918d88a906b625 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1506 predicted_completion=96 kv_hat=1130226088 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790273998118 [admit-mem] id=chatcmpl-11904d4a48e1a116ec918d88a906b625 model="q38" verdict=admit prompt=1506 output_bound=- charged_ctx=9762 est_bytes=3690750872 est_context=308010624 est_fixed=3382740248 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790273998118 [worker] spec session alloc failed (DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")); tokenwise path
+1790273998118 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790273998119 [meter] admit id=chatcmpl-c7993197095c3c462714ebc3f5a45778 tenant=default lane=interactive model="q38"
+1790273998121 [admit-predict] id=chatcmpl-c7993197095c3c462714ebc3f5a45778 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1506 predicted_completion=96 kv_hat=1130226088 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790273998121 [admit-mem] id=chatcmpl-c7993197095c3c462714ebc3f5a45778 model="q38" verdict=admit prompt=1506 output_bound=- charged_ctx=9762 est_bytes=3690750872 est_context=308010624 est_fixed=3382740248 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790273998121 [worker] spec session alloc failed (DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")); tokenwise path
+1790273998121 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790273998122 [meter] admit id=chatcmpl-c2c52ad2547c40160fd920369a326b9b tenant=default lane=interactive model="q38"
+1790273998123 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1790273998123 [admission] request cost: model="q38" ctx=9761 path=spec = 31552 B/token x ctx + 721MB prefill-workspace + 311MB fixed = 1340MB
+1790273998123 [admit-predict] id=chatcmpl-c2c52ad2547c40160fd920369a326b9b tenant="" model="q38" verdict=admit reason=global-p95 prompt=1505 predicted_completion=96 kv_hat=1129715304 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790273998123 [admit-mem] id=chatcmpl-c2c52ad2547c40160fd920369a326b9b model="q38" verdict=admit prompt=1505 output_bound=- charged_ctx=9761 est_bytes=3690240088 est_context=307979072 est_fixed=3382261016 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790273998124 [worker] spec session alloc failed (DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")); tokenwise path
+1790273998124 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001131 [meter] admit id=chatcmpl-08a9da5345fce95b6d9f23472a8a337b tenant=default lane=interactive model="q38"
+1790274001131 [meter] admit id=chatcmpl-7630a1a95f173cf890aaf63b62f3240f tenant=default lane=interactive model="q38"
+1790274001132 [meter] admit id=chatcmpl-eef058c292b89ac02d3859bb219700f8 tenant=default lane=interactive model="q38"
+1790274001132 [meter] admit id=chatcmpl-bd4ddfa4253aa3763b79a80a263d54fd tenant=default lane=interactive model="q38"
+1790274001132 [meter] admit id=chatcmpl-c764e11b096439b4df349459addbea42 tenant=default lane=interactive model="q38"
+1790274001132 [meter] admit id=chatcmpl-8c9fe8ef866e699f422bd0b9c2ee4937 tenant=default lane=interactive model="q38"
+1790274001132 [meter] admit id=chatcmpl-68c21f834afb61ff5a1e0eeb554f43a4 tenant=default lane=interactive model="q38"
+1790274001132 [meter] admit id=chatcmpl-a3a3102ff11f1729378ce60d68fc4778 tenant=default lane=interactive model="q38"
+1790274001132 [meter] admit id=chatcmpl-52ec5a9b22d6b358cb779d9103cc4e18 tenant=default lane=interactive model="q38"
+1790274001132 [meter] admit id=chatcmpl-513c7145837f4b58405c90c2b0a5429a tenant=default lane=interactive model="q38"
+1790274001132 [meter] admit id=chatcmpl-237e6948094c9dab37b0a00852c04305 tenant=default lane=interactive model="q38"
+1790274001132 [meter] admit id=chatcmpl-733e42596fa20b4df8fac4741252a645 tenant=default lane=interactive model="q38"
+1790274001132 [meter] admit id=chatcmpl-a06ec4006b3472302d3f73fbaf27b7a6 tenant=default lane=interactive model="q38"
+1790274001132 [meter] admit id=chatcmpl-9b70cddb846d1667cdd0ee6741b55365 tenant=default lane=interactive model="q38"
+1790274001132 [meter] admit id=chatcmpl-49e1b223e47ed2fabefca3d27e0a464b tenant=default lane=interactive model="q38"
+1790274001132 [meter] admit id=chatcmpl-ab76ccab82687d0906f20c7d5aeb0fa8 tenant=default lane=interactive model="q38"
+1790274001132 [meter] admit id=chatcmpl-0f9f1de9bd8f2d0abd41428cd199c5ab tenant=default lane=interactive model="q38"
+1790274001132 [meter] admit id=chatcmpl-3a6fba6b9c027690979a7c07e1d453f7 tenant=default lane=interactive model="q38"
+1790274001133 [admission] request cost: model="q38" ctx=9632 path=plain = 29696 B/token x ctx + 659MB prefill-workspace + 311MB fixed = 1257MB
+1790274001133 [admit-predict] id=chatcmpl-08a9da5345fce95b6d9f23472a8a337b tenant="" model="q38" verdict=admit reason=global-p95 prompt=1376 predicted_completion=96 kv_hat=1014637848 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001134 [admit-mem] id=chatcmpl-08a9da5345fce95b6d9f23472a8a337b model="q38" verdict=admit prompt=1376 output_bound=- charged_ctx=9632 est_bytes=3560032520 est_context=286031872 est_fixed=3274000648 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001134 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001135 [admission] request cost: model="q38" ctx=9631 path=plain = 29696 B/token x ctx + 659MB prefill-workspace + 311MB fixed = 1256MB
+1790274001135 [admit-predict] id=chatcmpl-7630a1a95f173cf890aaf63b62f3240f tenant="" model="q38" verdict=admit reason=global-p95 prompt=1375 predicted_completion=96 kv_hat=1014128920 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001135 [admit-mem] id=chatcmpl-7630a1a95f173cf890aaf63b62f3240f model="q38" verdict=admit prompt=1375 output_bound=- charged_ctx=9631 est_bytes=3559523592 est_context=286002176 est_fixed=3273521416 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001135 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001136 [admission] request cost: model="q38" ctx=9634 path=plain = 29696 B/token x ctx + 660MB prefill-workspace + 311MB fixed = 1258MB
+1790274001136 [admit-predict] id=chatcmpl-eef058c292b89ac02d3859bb219700f8 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1378 predicted_completion=96 kv_hat=1015655704 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001136 [admit-mem] id=chatcmpl-eef058c292b89ac02d3859bb219700f8 model="q38" verdict=admit prompt=1378 output_bound=- charged_ctx=9634 est_bytes=3561050376 est_context=286091264 est_fixed=3274959112 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001136 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001138 [admission] request cost: model="q38" ctx=9631 path=plain = 29696 B/token x ctx + 659MB prefill-workspace + 311MB fixed = 1256MB
+1790274001138 [admit-predict] id=chatcmpl-bd4ddfa4253aa3763b79a80a263d54fd tenant="" model="q38" verdict=admit reason=global-p95 prompt=1375 predicted_completion=96 kv_hat=1014128920 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001138 [admit-mem] id=chatcmpl-bd4ddfa4253aa3763b79a80a263d54fd model="q38" verdict=admit prompt=1375 output_bound=- charged_ctx=9631 est_bytes=3559523592 est_context=286002176 est_fixed=3273521416 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001138 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001139 [admission] request cost: model="q38" ctx=9626 path=plain = 29696 B/token x ctx + 657MB prefill-workspace + 311MB fixed = 1254MB
+1790274001139 [admit-predict] id=chatcmpl-c764e11b096439b4df349459addbea42 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1370 predicted_completion=96 kv_hat=1011584280 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001139 [admit-mem] id=chatcmpl-c764e11b096439b4df349459addbea42 model="q38" verdict=admit prompt=1370 output_bound=- charged_ctx=9626 est_bytes=3556978952 est_context=285853696 est_fixed=3271125256 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001139 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001140 [admission] request cost: model="q38" ctx=9630 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 311MB fixed = 1256MB
+1790274001140 [admit-predict] id=chatcmpl-8c9fe8ef866e699f422bd0b9c2ee4937 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1374 predicted_completion=96 kv_hat=1013619992 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001140 [admit-mem] id=chatcmpl-8c9fe8ef866e699f422bd0b9c2ee4937 model="q38" verdict=admit prompt=1374 output_bound=- charged_ctx=9630 est_bytes=3559014664 est_context=285972480 est_fixed=3273042184 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001140 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001141 [admission] request cost: model="q38" ctx=9632 path=plain = 29696 B/token x ctx + 659MB prefill-workspace + 311MB fixed = 1257MB
+1790274001141 [admit-predict] id=chatcmpl-68c21f834afb61ff5a1e0eeb554f43a4 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1376 predicted_completion=96 kv_hat=1014637848 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001141 [admit-mem] id=chatcmpl-68c21f834afb61ff5a1e0eeb554f43a4 model="q38" verdict=admit prompt=1376 output_bound=- charged_ctx=9632 est_bytes=3560032520 est_context=286031872 est_fixed=3274000648 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001141 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001143 [admission] request cost: model="q38" ctx=9628 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 311MB fixed = 1255MB
+1790274001143 [admit-predict] id=chatcmpl-a3a3102ff11f1729378ce60d68fc4778 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1372 predicted_completion=96 kv_hat=1012602136 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001143 [admit-mem] id=chatcmpl-a3a3102ff11f1729378ce60d68fc4778 model="q38" verdict=admit prompt=1372 output_bound=- charged_ctx=9628 est_bytes=3557996808 est_context=285913088 est_fixed=3272083720 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001143 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001144 [admission] request cost: model="q38" ctx=9635 path=plain = 29696 B/token x ctx + 661MB prefill-workspace + 311MB fixed = 1258MB
+1790274001144 [admit-predict] id=chatcmpl-52ec5a9b22d6b358cb779d9103cc4e18 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1379 predicted_completion=96 kv_hat=1016164632 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001144 [admit-mem] id=chatcmpl-52ec5a9b22d6b358cb779d9103cc4e18 model="q38" verdict=admit prompt=1379 output_bound=- charged_ctx=9635 est_bytes=3561559304 est_context=286120960 est_fixed=3275438344 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001144 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001145 [admission] request cost: model="q38" ctx=9633 path=plain = 29696 B/token x ctx + 660MB prefill-workspace + 311MB fixed = 1257MB
+1790274001145 [admit-predict] id=chatcmpl-513c7145837f4b58405c90c2b0a5429a tenant="" model="q38" verdict=admit reason=global-p95 prompt=1377 predicted_completion=96 kv_hat=1015146776 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001145 [admit-mem] id=chatcmpl-513c7145837f4b58405c90c2b0a5429a model="q38" verdict=admit prompt=1377 output_bound=- charged_ctx=9633 est_bytes=3560541448 est_context=286061568 est_fixed=3274479880 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001145 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001146 [admission] request cost: model="q38" ctx=9630 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 311MB fixed = 1256MB
+1790274001146 [admit-predict] id=chatcmpl-237e6948094c9dab37b0a00852c04305 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1374 predicted_completion=96 kv_hat=1013619992 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001146 [admit-mem] id=chatcmpl-237e6948094c9dab37b0a00852c04305 model="q38" verdict=admit prompt=1374 output_bound=- charged_ctx=9630 est_bytes=3559014664 est_context=285972480 est_fixed=3273042184 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001146 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001148 [admission] request cost: model="q38" ctx=9626 path=plain = 29696 B/token x ctx + 657MB prefill-workspace + 311MB fixed = 1254MB
+1790274001148 [admit-predict] id=chatcmpl-733e42596fa20b4df8fac4741252a645 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1370 predicted_completion=96 kv_hat=1011584280 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001148 [admit-mem] id=chatcmpl-733e42596fa20b4df8fac4741252a645 model="q38" verdict=admit prompt=1370 output_bound=- charged_ctx=9626 est_bytes=3556978952 est_context=285853696 est_fixed=3271125256 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001148 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001149 [admission] request cost: model="q38" ctx=9629 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 311MB fixed = 1255MB
+1790274001149 [admit-predict] id=chatcmpl-a06ec4006b3472302d3f73fbaf27b7a6 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1373 predicted_completion=96 kv_hat=1013111064 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001149 [admit-mem] id=chatcmpl-a06ec4006b3472302d3f73fbaf27b7a6 model="q38" verdict=admit prompt=1373 output_bound=- charged_ctx=9629 est_bytes=3558505736 est_context=285942784 est_fixed=3272562952 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001149 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001150 [admit-predict] id=chatcmpl-9b70cddb846d1667cdd0ee6741b55365 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1373 predicted_completion=96 kv_hat=1013111064 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001150 [admit-mem] id=chatcmpl-9b70cddb846d1667cdd0ee6741b55365 model="q38" verdict=admit prompt=1373 output_bound=- charged_ctx=9629 est_bytes=3558505736 est_context=285942784 est_fixed=3272562952 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001150 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001151 [admission] request cost: model="q38" ctx=9628 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 311MB fixed = 1255MB
+1790274001151 [admit-predict] id=chatcmpl-49e1b223e47ed2fabefca3d27e0a464b tenant="" model="q38" verdict=admit reason=global-p95 prompt=1372 predicted_completion=96 kv_hat=1012602136 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001152 [admit-mem] id=chatcmpl-49e1b223e47ed2fabefca3d27e0a464b model="q38" verdict=admit prompt=1372 output_bound=- charged_ctx=9628 est_bytes=3557996808 est_context=285913088 est_fixed=3272083720 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001152 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001153 [admission] request cost: model="q38" ctx=9630 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 311MB fixed = 1256MB
+1790274001153 [admit-predict] id=chatcmpl-ab76ccab82687d0906f20c7d5aeb0fa8 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1374 predicted_completion=96 kv_hat=1013619992 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001153 [admit-mem] id=chatcmpl-ab76ccab82687d0906f20c7d5aeb0fa8 model="q38" verdict=admit prompt=1374 output_bound=- charged_ctx=9630 est_bytes=3559014664 est_context=285972480 est_fixed=3273042184 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001153 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001154 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1790274001154 [admission] request cost: model="q38" ctx=9630 path=spec = 31552 B/token x ctx + 658MB prefill-workspace + 311MB fixed = 1274MB
+1790274001154 [admit-predict] id=chatcmpl-0f9f1de9bd8f2d0abd41428cd199c5ab tenant="" model="q38" verdict=admit reason=global-p95 prompt=1374 predicted_completion=96 kv_hat=1062802600 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001154 [admit-mem] id=chatcmpl-0f9f1de9bd8f2d0abd41428cd199c5ab model="q38" verdict=admit prompt=1374 output_bound=- charged_ctx=9630 est_bytes=3623327384 est_context=303845760 est_fixed=3319481624 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001154 [worker] spec session alloc failed (DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")); tokenwise path
+1790274001154 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001155 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1790274001155 [admission] request cost: model="q38" ctx=9628 path=spec = 31552 B/token x ctx + 658MB prefill-workspace + 311MB fixed = 1273MB
+1790274001155 [admit-predict] id=chatcmpl-3a6fba6b9c027690979a7c07e1d453f7 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1372 predicted_completion=96 kv_hat=1061781032 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001155 [admit-mem] id=chatcmpl-3a6fba6b9c027690979a7c07e1d453f7 model="q38" verdict=admit prompt=1372 output_bound=- charged_ctx=9628 est_bytes=3622305816 est_context=303782656 est_fixed=3318523160 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001155 [worker] spec session alloc failed (DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")); tokenwise path
+1790274001155 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001189 [meter] admit id=chatcmpl-dc45c0fe4b6f58ed017f79806ee53d82 tenant=default lane=interactive model="q38"
+1790274001189 [meter] admit id=chatcmpl-f83d70ee87a0ff6046829c7c285fc9e6 tenant=default lane=interactive model="q38"
+1790274001189 [meter] admit id=chatcmpl-df099d184785be75f730d22282c77808 tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-b3c111f26481397e514ab4309eac1917 tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-78ecb1a01ebd275586c94ae17fb34d98 tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-0948b7b2f999cbe9065e6136a213f65a tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-352d4d35faacdb94cc03ee54ea4dfe22 tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-7264a8937a5f4655a72e72368416cb84 tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-86f928acc3505dbeac65f78e935e7846 tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-4b0c4b6f109adcc221ad4733a1c5f266 tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-36a6b7fd629a4aa71db0d19adcb4c92f tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-b4467aa02335d0920f6d02564397a6bb tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-032723bef31fff2e6a263dd8883cb1a3 tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-d52fbba18146afecac6d52eb4d151da3 tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-321b5859821657c97e300c06ac8f744a tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-10dde299c27d6e355207b38a4a877fac tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-00576ef945bd3b530122412eb036e5e8 tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-4234b419d849465159d71300d4cc58ee tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-6dd400939b067ebd089cb2e2867a0e0c tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-ec4b39437a45259d19d28d69dea9e6d4 tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-5bad0f3cb8f6c907c6f5a77a4e343005 tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-2f707643ca07d1588bcca11cbc688933 tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-2db217db224065490f033a3c2b87f2ab tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-86568c9e475f4a9ad496a185b92eef8e tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-d062e3db943280f1b3459a85b7eaafe5 tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-39e4a06953c1aadfc2f493c65b365639 tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-c992263e1d3d7fb8c14e341c55af67e6 tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-adf476dbcb5e9d3e2bdd4462643a5f8c tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-ad5358f2154053e08de65e076e453c49 tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-88db05a191ae56d5931f9e5574ea1114 tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-0706359164ffda2fe55fe7300151ad37 tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-715bb9bb0e4f89918807aa0a76b988bc tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-ba8f9b0a49443913dc577f54f4943ac0 tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-aaaea941764170c2dbb5c71d0d10d9cf tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-5eaabad197cfa642346b6adbe41f0acf tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-dfda7f7551ad55328ac13e4fd25c1965 tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-121dc9bc7f9bb22c95122a0886726d57 tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-c1f18c31c439b22a315e27c445a801ff tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-dc65da58ba3327eb84ca78d53a698016 tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-664e551b96c9eb4a416871142eecb8e9 tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-104e08b5409a711a10227c878940275b tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-ee01f0c47bea283eb800d63eef7b8d07 tenant=default lane=interactive model="q38"
+1790274001190 [meter] admit id=chatcmpl-1bc0ef6baf6f523c8d1c68cbc31aaceb tenant=default lane=interactive model="q38"
+1790274001193 [admission] request cost: model="q38" ctx=9630 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 311MB fixed = 1256MB
+1790274001193 [admit-predict] id=chatcmpl-dc45c0fe4b6f58ed017f79806ee53d82 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1374 predicted_completion=96 kv_hat=1013619992 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001193 [admit-mem] id=chatcmpl-dc45c0fe4b6f58ed017f79806ee53d82 model="q38" verdict=admit prompt=1374 output_bound=- charged_ctx=9630 est_bytes=3559014664 est_context=285972480 est_fixed=3273042184 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001193 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001195 [admission] request cost: model="q38" ctx=9637 path=plain = 29696 B/token x ctx + 662MB prefill-workspace + 311MB fixed = 1259MB
+1790274001195 [admit-predict] id=chatcmpl-f83d70ee87a0ff6046829c7c285fc9e6 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1381 predicted_completion=96 kv_hat=1017182488 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001195 [admit-mem] id=chatcmpl-f83d70ee87a0ff6046829c7c285fc9e6 model="q38" verdict=admit prompt=1381 output_bound=- charged_ctx=9637 est_bytes=3562577160 est_context=286180352 est_fixed=3276396808 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001195 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001196 [admit-predict] id=chatcmpl-df099d184785be75f730d22282c77808 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1381 predicted_completion=96 kv_hat=1017182488 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001196 [admit-mem] id=chatcmpl-df099d184785be75f730d22282c77808 model="q38" verdict=admit prompt=1381 output_bound=- charged_ctx=9637 est_bytes=3562577160 est_context=286180352 est_fixed=3276396808 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001196 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001197 [admission] request cost: model="q38" ctx=9628 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 311MB fixed = 1255MB
+1790274001197 [admit-predict] id=chatcmpl-b3c111f26481397e514ab4309eac1917 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1372 predicted_completion=96 kv_hat=1012602136 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001197 [admit-mem] id=chatcmpl-b3c111f26481397e514ab4309eac1917 model="q38" verdict=admit prompt=1372 output_bound=- charged_ctx=9628 est_bytes=3557996808 est_context=285913088 est_fixed=3272083720 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001197 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001199 [admission] request cost: model="q38" ctx=9632 path=plain = 29696 B/token x ctx + 659MB prefill-workspace + 311MB fixed = 1257MB
+1790274001199 [admit-predict] id=chatcmpl-78ecb1a01ebd275586c94ae17fb34d98 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1376 predicted_completion=96 kv_hat=1014637848 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001199 [admit-mem] id=chatcmpl-78ecb1a01ebd275586c94ae17fb34d98 model="q38" verdict=admit prompt=1376 output_bound=- charged_ctx=9632 est_bytes=3560032520 est_context=286031872 est_fixed=3274000648 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001199 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001200 [admission] request cost: model="q38" ctx=9635 path=plain = 29696 B/token x ctx + 661MB prefill-workspace + 311MB fixed = 1258MB
+1790274001200 [admit-predict] id=chatcmpl-0948b7b2f999cbe9065e6136a213f65a tenant="" model="q38" verdict=admit reason=global-p95 prompt=1379 predicted_completion=96 kv_hat=1016164632 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001200 [admit-mem] id=chatcmpl-0948b7b2f999cbe9065e6136a213f65a model="q38" verdict=admit prompt=1379 output_bound=- charged_ctx=9635 est_bytes=3561559304 est_context=286120960 est_fixed=3275438344 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001200 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001201 [admission] request cost: model="q38" ctx=9625 path=plain = 29696 B/token x ctx + 656MB prefill-workspace + 311MB fixed = 1253MB
+1790274001201 [admit-predict] id=chatcmpl-352d4d35faacdb94cc03ee54ea4dfe22 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1369 predicted_completion=96 kv_hat=1011075352 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001201 [admit-mem] id=chatcmpl-352d4d35faacdb94cc03ee54ea4dfe22 model="q38" verdict=admit prompt=1369 output_bound=- charged_ctx=9625 est_bytes=3556470024 est_context=285824000 est_fixed=3270646024 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001201 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001202 [admission] request cost: model="q38" ctx=9634 path=plain = 29696 B/token x ctx + 660MB prefill-workspace + 311MB fixed = 1258MB
+1790274001202 [admit-predict] id=chatcmpl-7264a8937a5f4655a72e72368416cb84 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1378 predicted_completion=96 kv_hat=1015655704 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001202 [admit-mem] id=chatcmpl-7264a8937a5f4655a72e72368416cb84 model="q38" verdict=admit prompt=1378 output_bound=- charged_ctx=9634 est_bytes=3561050376 est_context=286091264 est_fixed=3274959112 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001202 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001204 [admission] request cost: model="q38" ctx=9626 path=plain = 29696 B/token x ctx + 657MB prefill-workspace + 311MB fixed = 1254MB
+1790274001204 [admit-predict] id=chatcmpl-86f928acc3505dbeac65f78e935e7846 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1370 predicted_completion=96 kv_hat=1011584280 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001204 [admit-mem] id=chatcmpl-86f928acc3505dbeac65f78e935e7846 model="q38" verdict=admit prompt=1370 output_bound=- charged_ctx=9626 est_bytes=3556978952 est_context=285853696 est_fixed=3271125256 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001204 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001205 [admission] request cost: model="q38" ctx=9631 path=plain = 29696 B/token x ctx + 659MB prefill-workspace + 311MB fixed = 1256MB
+1790274001205 [admit-predict] id=chatcmpl-4b0c4b6f109adcc221ad4733a1c5f266 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1375 predicted_completion=96 kv_hat=1014128920 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001205 [admit-mem] id=chatcmpl-4b0c4b6f109adcc221ad4733a1c5f266 model="q38" verdict=admit prompt=1375 output_bound=- charged_ctx=9631 est_bytes=3559523592 est_context=286002176 est_fixed=3273521416 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001205 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001206 [admission] request cost: model="q38" ctx=9630 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 311MB fixed = 1256MB
+1790274001206 [admit-predict] id=chatcmpl-36a6b7fd629a4aa71db0d19adcb4c92f tenant="" model="q38" verdict=admit reason=global-p95 prompt=1374 predicted_completion=96 kv_hat=1013619992 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001206 [admit-mem] id=chatcmpl-36a6b7fd629a4aa71db0d19adcb4c92f model="q38" verdict=admit prompt=1374 output_bound=- charged_ctx=9630 est_bytes=3559014664 est_context=285972480 est_fixed=3273042184 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001206 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001207 [admit-predict] id=chatcmpl-b4467aa02335d0920f6d02564397a6bb tenant="" model="q38" verdict=admit reason=global-p95 prompt=1374 predicted_completion=96 kv_hat=1013619992 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001207 [admit-mem] id=chatcmpl-b4467aa02335d0920f6d02564397a6bb model="q38" verdict=admit prompt=1374 output_bound=- charged_ctx=9630 est_bytes=3559014664 est_context=285972480 est_fixed=3273042184 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001207 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001209 [admission] request cost: model="q38" ctx=9629 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 311MB fixed = 1255MB
+1790274001209 [admit-predict] id=chatcmpl-032723bef31fff2e6a263dd8883cb1a3 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1373 predicted_completion=96 kv_hat=1013111064 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001209 [admit-mem] id=chatcmpl-032723bef31fff2e6a263dd8883cb1a3 model="q38" verdict=admit prompt=1373 output_bound=- charged_ctx=9629 est_bytes=3558505736 est_context=285942784 est_fixed=3272562952 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001209 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001210 [admit-predict] id=chatcmpl-d52fbba18146afecac6d52eb4d151da3 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1373 predicted_completion=96 kv_hat=1013111064 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001210 [admit-mem] id=chatcmpl-d52fbba18146afecac6d52eb4d151da3 model="q38" verdict=admit prompt=1373 output_bound=- charged_ctx=9629 est_bytes=3558505736 est_context=285942784 est_fixed=3272562952 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001210 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001211 [admit-predict] id=chatcmpl-321b5859821657c97e300c06ac8f744a tenant="" model="q38" verdict=admit reason=global-p95 prompt=1373 predicted_completion=96 kv_hat=1013111064 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001211 [admit-mem] id=chatcmpl-321b5859821657c97e300c06ac8f744a model="q38" verdict=admit prompt=1373 output_bound=- charged_ctx=9629 est_bytes=3558505736 est_context=285942784 est_fixed=3272562952 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001211 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001212 [admit-predict] id=chatcmpl-10dde299c27d6e355207b38a4a877fac tenant="" model="q38" verdict=admit reason=global-p95 prompt=1373 predicted_completion=96 kv_hat=1013111064 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001212 [admit-mem] id=chatcmpl-10dde299c27d6e355207b38a4a877fac model="q38" verdict=admit prompt=1373 output_bound=- charged_ctx=9629 est_bytes=3558505736 est_context=285942784 est_fixed=3272562952 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001213 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001214 [admission] request cost: model="q38" ctx=9633 path=plain = 29696 B/token x ctx + 660MB prefill-workspace + 311MB fixed = 1257MB
+1790274001214 [admit-predict] id=chatcmpl-00576ef945bd3b530122412eb036e5e8 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1377 predicted_completion=96 kv_hat=1015146776 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001214 [admit-mem] id=chatcmpl-00576ef945bd3b530122412eb036e5e8 model="q38" verdict=admit prompt=1377 output_bound=- charged_ctx=9633 est_bytes=3560541448 est_context=286061568 est_fixed=3274479880 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001214 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001215 [admission] request cost: model="q38" ctx=9628 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 311MB fixed = 1255MB
+1790274001215 [admit-predict] id=chatcmpl-4234b419d849465159d71300d4cc58ee tenant="" model="q38" verdict=admit reason=global-p95 prompt=1372 predicted_completion=96 kv_hat=1012602136 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001215 [admit-mem] id=chatcmpl-4234b419d849465159d71300d4cc58ee model="q38" verdict=admit prompt=1372 output_bound=- charged_ctx=9628 est_bytes=3557996808 est_context=285913088 est_fixed=3272083720 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001215 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001216 [admission] request cost: model="q38" ctx=9630 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 311MB fixed = 1256MB
+1790274001216 [admit-predict] id=chatcmpl-6dd400939b067ebd089cb2e2867a0e0c tenant="" model="q38" verdict=admit reason=global-p95 prompt=1374 predicted_completion=96 kv_hat=1013619992 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001216 [admit-mem] id=chatcmpl-6dd400939b067ebd089cb2e2867a0e0c model="q38" verdict=admit prompt=1374 output_bound=- charged_ctx=9630 est_bytes=3559014664 est_context=285972480 est_fixed=3273042184 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001216 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001218 [admission] request cost: model="q38" ctx=9626 path=plain = 29696 B/token x ctx + 657MB prefill-workspace + 311MB fixed = 1254MB
+1790274001218 [admit-predict] id=chatcmpl-ec4b39437a45259d19d28d69dea9e6d4 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1370 predicted_completion=96 kv_hat=1011584280 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001218 [admit-mem] id=chatcmpl-ec4b39437a45259d19d28d69dea9e6d4 model="q38" verdict=admit prompt=1370 output_bound=- charged_ctx=9626 est_bytes=3556978952 est_context=285853696 est_fixed=3271125256 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001218 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001219 [admission] request cost: model="q38" ctx=9624 path=plain = 29696 B/token x ctx + 656MB prefill-workspace + 311MB fixed = 1253MB
+1790274001219 [admit-predict] id=chatcmpl-5bad0f3cb8f6c907c6f5a77a4e343005 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1368 predicted_completion=96 kv_hat=1010566424 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001219 [admit-mem] id=chatcmpl-5bad0f3cb8f6c907c6f5a77a4e343005 model="q38" verdict=admit prompt=1368 output_bound=- charged_ctx=9624 est_bytes=3555961096 est_context=285794304 est_fixed=3270166792 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001219 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001220 [admission] request cost: model="q38" ctx=9633 path=plain = 29696 B/token x ctx + 660MB prefill-workspace + 311MB fixed = 1257MB
+1790274001220 [admit-predict] id=chatcmpl-2f707643ca07d1588bcca11cbc688933 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1377 predicted_completion=96 kv_hat=1015146776 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001220 [admit-mem] id=chatcmpl-2f707643ca07d1588bcca11cbc688933 model="q38" verdict=admit prompt=1377 output_bound=- charged_ctx=9633 est_bytes=3560541448 est_context=286061568 est_fixed=3274479880 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001220 [engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790274001222 [admission] request cost: model="q38" ctx=9626 path=plain = 29696 B/token x ctx + 657MB prefill-workspace + 311MB fixed = 1254MB
+1790274001222 [admit-predict] id=chatcmpl-2db217db224065490f033a3c2b87f2ab tenant="" model="q38" verdict=admit reason=global-p95 prompt=1370 predicted_completion=96 kv_hat=1011584280 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001222 [admit-mem] id=chatcmpl-2db217db224065490f033a3c2b87f2ab model="q38" verdict=admit prompt=1370 output_bound=- charged_ctx=9626 est_bytes=3556978952 est_context=285853696 est_fixed=3271125256 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+1790274001223 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1370 cached=0 lcp=0 active=1 wave=24 placement=single-or-non-pp2
+1790274001223 [kv-vmm] admit id=chatcmpl-2db217db224065490f033a3c2b87f2ab owed_before=0 session_mapped=71303168 session_reserved=320864256 active=0
+1790274001224 [admission] request cost: model="q38" ctx=9629 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 311MB fixed = 1255MB
+1790274001224 [admit-predict] id=chatcmpl-86568c9e475f4a9ad496a185b92eef8e tenant="" model="q38" verdict=admit reason=global-p95 prompt=1373 predicted_completion=96 kv_hat=1013111064 booked_bytes=1011584280 booked_real=1253666072 inflight=1 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001224 [admit-mem] id=chatcmpl-86568c9e475f4a9ad496a185b92eef8e model="q38" verdict=admit prompt=1373 output_bound=- charged_ctx=9629 est_bytes=3558505736 est_context=285942784 est_fixed=3272562952 device_free=83225205884 pending_prime=0 pending_prime_v1=656547840 pending_seed=199299072 host_free=0 demotable=0 short_by=0 inflight=1 cap=64 waited_ms=0 retry_after_s=-
+1790274001226 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1373 cached=0 lcp=0 active=2 wave=24 placement=single-or-non-pp2
+1790274001226 [kv-vmm] admit id=chatcmpl-86568c9e475f4a9ad496a185b92eef8e owed_before=249561088 session_mapped=71303168 session_reserved=320864256 active=1
+1790274001227 [admission] request cost: model="q38" ctx=9639 path=plain = 29696 B/token x ctx + 663MB prefill-workspace + 311MB fixed = 1260MB
+1790274001227 [admit-predict] id=chatcmpl-d062e3db943280f1b3459a85b7eaafe5 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1383 predicted_completion=96 kv_hat=1018200344 booked_bytes=2024695344 booked_real=2508858928 inflight=2 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001227 [admit-mem] id=chatcmpl-d062e3db943280f1b3459a85b7eaafe5 model="q38" verdict=admit prompt=1383 output_bound=- charged_ctx=9639 est_bytes=3563595016 est_context=286239744 est_fixed=3277355272 device_free=82397154360 pending_prime=0 pending_prime_v1=1314533376 pending_seed=398598144 host_free=0 demotable=0 short_by=0 inflight=2 cap=64 waited_ms=0 retry_after_s=-
+1790274001228 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1383 cached=0 lcp=0 active=3 wave=24 placement=single-or-non-pp2
+1790274001228 [kv-vmm] admit id=chatcmpl-d062e3db943280f1b3459a85b7eaafe5 owed_before=499122176 session_mapped=71303168 session_reserved=320864256 active=2
+1790274001230 [admission] request cost: model="q38" ctx=9627 path=plain = 29696 B/token x ctx + 657MB prefill-workspace + 311MB fixed = 1254MB
+1790274001230 [admit-predict] id=chatcmpl-39e4a06953c1aadfc2f493c65b365639 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1371 predicted_completion=96 kv_hat=1012093208 booked_bytes=3042895688 booked_real=3769141064 inflight=3 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001230 [admit-mem] id=chatcmpl-39e4a06953c1aadfc2f493c65b365639 model="q38" verdict=admit prompt=1371 output_bound=- charged_ctx=9627 est_bytes=3557487880 est_context=285883392 est_fixed=3271604488 device_free=81569102836 pending_prime=0 pending_prime_v1=1977311232 pending_seed=597897216 host_free=0 demotable=0 short_by=0 inflight=3 cap=64 waited_ms=0 retry_after_s=-
+1790274001231 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1371 cached=0 lcp=0 active=4 wave=24 placement=single-or-non-pp2
+1790274001231 [kv-vmm] admit id=chatcmpl-39e4a06953c1aadfc2f493c65b365639 owed_before=748683264 session_mapped=71303168 session_reserved=320864256 active=3
+1790274001232 [admission] request cost: model="q38" ctx=9636 path=plain = 29696 B/token x ctx + 661MB prefill-workspace + 311MB fixed = 1259MB
+1790274001232 [admit-predict] id=chatcmpl-c992263e1d3d7fb8c14e341c55af67e6 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1380 predicted_completion=96 kv_hat=1016673560 booked_bytes=4054988896 booked_real=5023316064 inflight=4 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001232 [admit-mem] id=chatcmpl-c992263e1d3d7fb8c14e341c55af67e6 model="q38" verdict=admit prompt=1380 output_bound=- charged_ctx=9636 est_bytes=3562068232 est_context=286150656 est_fixed=3275917576 device_free=80741051312 pending_prime=0 pending_prime_v1=2634338304 pending_seed=797196288 host_free=0 demotable=0 short_by=0 inflight=4 cap=64 waited_ms=0 retry_after_s=-
+1790274001233 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1380 cached=0 lcp=0 active=5 wave=24 placement=single-or-non-pp2
+1790274001233 [kv-vmm] admit id=chatcmpl-c992263e1d3d7fb8c14e341c55af67e6 owed_before=998244352 session_mapped=71303168 session_reserved=320864256 active=4
+1790274001235 [admission] request cost: model="q38" ctx=9632 path=plain = 29696 B/token x ctx + 659MB prefill-workspace + 311MB fixed = 1257MB
+1790274001235 [admit-predict] id=chatcmpl-adf476dbcb5e9d3e2bdd4462643a5f8c tenant="" model="q38" verdict=admit reason=global-p95 prompt=1376 predicted_completion=96 kv_hat=1014637848 booked_bytes=5071662456 booked_real=6282071416 inflight=5 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001235 [admit-mem] id=chatcmpl-adf476dbcb5e9d3e2bdd4462643a5f8c model="q38" verdict=admit prompt=1376 output_bound=- charged_ctx=9632 est_bytes=3560032520 est_context=286031872 est_fixed=3274000648 device_free=79912999788 pending_prime=0 pending_prime_v1=3295678464 pending_seed=996495360 host_free=0 demotable=0 short_by=0 inflight=5 cap=64 waited_ms=0 retry_after_s=-
+1790274001236 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1376 cached=0 lcp=0 active=6 wave=24 placement=single-or-non-pp2
+1790274001236 [kv-vmm] admit id=chatcmpl-adf476dbcb5e9d3e2bdd4462643a5f8c owed_before=1247805440 session_mapped=71303168 session_reserved=320864256 active=5
+1790274001237 [admission] request cost: model="q38" ctx=9627 path=plain = 29696 B/token x ctx + 657MB prefill-workspace + 311MB fixed = 1254MB
+1790274001237 [admit-predict] id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1371 predicted_completion=96 kv_hat=1012093208 booked_bytes=6086300304 booked_real=7538791056 inflight=6 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001237 [admit-mem] id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 model="q38" verdict=admit prompt=1371 output_bound=- charged_ctx=9627 est_bytes=3557487880 est_context=285883392 est_fixed=3271604488 device_free=79083938600 pending_prime=0 pending_prime_v1=3955101696 pending_seed=1196804096 host_free=0 demotable=0 short_by=0 inflight=6 cap=64 waited_ms=0 retry_after_s=-
+1790274001238 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1371 cached=0 lcp=0 active=7 wave=24 placement=single-or-non-pp2
+1790274001238 [kv-vmm] admit id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 owed_before=1497366528 session_mapped=71303168 session_reserved=320864256 active=6
+1790274001240 [admission] request cost: model="q38" ctx=9626 path=plain = 29696 B/token x ctx + 657MB prefill-workspace + 311MB fixed = 1254MB
+1790274001240 [admit-predict] id=chatcmpl-ad5358f2154053e08de65e076e453c49 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1370 predicted_completion=96 kv_hat=1011584280 booked_bytes=7098393512 booked_real=8792966056 inflight=7 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001240 [admit-mem] id=chatcmpl-ad5358f2154053e08de65e076e453c49 model="q38" verdict=admit prompt=1370 output_bound=- charged_ctx=9626 est_bytes=3556978952 est_context=285853696 est_fixed=3271125256 device_free=78255887076 pending_prime=0 pending_prime_v1=4612128768 pending_seed=1396103168 host_free=0 demotable=0 short_by=0 inflight=7 cap=64 waited_ms=0 retry_after_s=-
+1790274001241 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1370 cached=0 lcp=0 active=8 wave=24 placement=single-or-non-pp2
+1790274001241 [kv-vmm] admit id=chatcmpl-ad5358f2154053e08de65e076e453c49 owed_before=1746927616 session_mapped=71303168 session_reserved=320864256 active=7
+1790274001242 [admit-predict] id=chatcmpl-88db05a191ae56d5931f9e5574ea1114 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1370 predicted_completion=96 kv_hat=1011584280 booked_bytes=8109977792 booked_real=10046632128 inflight=8 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001242 [admit-mem] id=chatcmpl-88db05a191ae56d5931f9e5574ea1114 model="q38" verdict=admit prompt=1370 output_bound=- charged_ctx=9626 est_bytes=3556978952 est_context=285853696 est_fixed=3271125256 device_free=77427835552 pending_prime=0 pending_prime_v1=5268676608 pending_seed=1595402240 host_free=0 demotable=0 short_by=0 inflight=8 cap=64 waited_ms=0 retry_after_s=-
+1790274001244 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1370 cached=0 lcp=0 active=9 wave=24 placement=single-or-non-pp2
+1790274001244 [kv-vmm] admit id=chatcmpl-88db05a191ae56d5931f9e5574ea1114 owed_before=1996488704 session_mapped=71303168 session_reserved=320864256 active=8
+1790274001245 [admission] request cost: model="q38" ctx=9635 path=plain = 29696 B/token x ctx + 661MB prefill-workspace + 311MB fixed = 1258MB
+1790274001245 [admit-predict] id=chatcmpl-0706359164ffda2fe55fe7300151ad37 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1379 predicted_completion=96 kv_hat=1016164632 booked_bytes=9121562072 booked_real=11300298200 inflight=9 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001245 [admit-mem] id=chatcmpl-0706359164ffda2fe55fe7300151ad37 model="q38" verdict=admit prompt=1379 output_bound=- charged_ctx=9635 est_bytes=3561559304 est_context=286120960 est_fixed=3275438344 device_free=76599784028 pending_prime=0 pending_prime_v1=5925224448 pending_seed=1794701312 host_free=0 demotable=0 short_by=0 inflight=9 cap=64 waited_ms=0 retry_after_s=-
+1790274001246 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1379 cached=0 lcp=0 active=10 wave=24 placement=single-or-non-pp2
+1790274001246 [kv-vmm] admit id=chatcmpl-0706359164ffda2fe55fe7300151ad37 owed_before=2246049792 session_mapped=71303168 session_reserved=320864256 active=9
+1790274001248 [admission] request cost: model="q38" ctx=9628 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 311MB fixed = 1255MB
+1790274001248 [admit-predict] id=chatcmpl-715bb9bb0e4f89918807aa0a76b988bc tenant="" model="q38" verdict=admit reason=global-p95 prompt=1372 predicted_completion=96 kv_hat=1012602136 booked_bytes=10137726704 booked_real=12558544624 inflight=10 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001248 [admit-mem] id=chatcmpl-715bb9bb0e4f89918807aa0a76b988bc model="q38" verdict=admit prompt=1372 output_bound=- charged_ctx=9628 est_bytes=3557996808 est_context=285913088 est_fixed=3272083720 device_free=75771732504 pending_prime=0 pending_prime_v1=6586085376 pending_seed=1994000384 host_free=0 demotable=0 short_by=0 inflight=10 cap=64 waited_ms=0 retry_after_s=-
+1790274001249 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1372 cached=0 lcp=0 active=11 wave=24 placement=single-or-non-pp2
+1790274001249 [kv-vmm] admit id=chatcmpl-715bb9bb0e4f89918807aa0a76b988bc owed_before=2495610880 session_mapped=71303168 session_reserved=320864256 active=10
+1790274001250 [admission] request cost: model="q38" ctx=9631 path=plain = 29696 B/token x ctx + 659MB prefill-workspace + 311MB fixed = 1256MB
+1790274001250 [admit-predict] id=chatcmpl-ba8f9b0a49443913dc577f54f4943ac0 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1375 predicted_completion=96 kv_hat=1014128920 booked_bytes=11150328840 booked_real=13813228552 inflight=11 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001250 [admit-mem] id=chatcmpl-ba8f9b0a49443913dc577f54f4943ac0 model="q38" verdict=admit prompt=1375 output_bound=- charged_ctx=9631 est_bytes=3559523592 est_context=286002176 est_fixed=3273521416 device_free=74943680980 pending_prime=0 pending_prime_v1=7243591680 pending_seed=2193299456 host_free=0 demotable=0 short_by=0 inflight=11 cap=64 waited_ms=0 retry_after_s=-
+1790274001252 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1375 cached=0 lcp=0 active=12 wave=24 placement=single-or-non-pp2
+1790274001252 [kv-vmm] admit id=chatcmpl-ba8f9b0a49443913dc577f54f4943ac0 owed_before=2745171968 session_mapped=71303168 session_reserved=320864256 active=11
+1790274001253 [admission] request cost: model="q38" ctx=9629 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 311MB fixed = 1255MB
+1790274001253 [admit-predict] id=chatcmpl-aaaea941764170c2dbb5c71d0d10d9cf tenant="" model="q38" verdict=admit reason=global-p95 prompt=1373 predicted_completion=96 kv_hat=1013111064 booked_bytes=12164457760 booked_real=15069439264 inflight=12 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001253 [admit-mem] id=chatcmpl-aaaea941764170c2dbb5c71d0d10d9cf model="q38" verdict=admit prompt=1373 output_bound=- charged_ctx=9629 est_bytes=3558505736 est_context=285942784 est_fixed=3272562952 device_free=74115629456 pending_prime=0 pending_prime_v1=7902535680 pending_seed=2392598528 host_free=0 demotable=0 short_by=0 inflight=12 cap=64 waited_ms=0 retry_after_s=-
+1790274001255 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1373 cached=0 lcp=0 active=13 wave=24 placement=single-or-non-pp2
+1790274001255 [kv-vmm] admit id=chatcmpl-aaaea941764170c2dbb5c71d0d10d9cf owed_before=2994733056 session_mapped=71303168 session_reserved=320864256 active=12
+1790274001256 [admission] request cost: model="q38" ctx=9630 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 311MB fixed = 1256MB
+1790274001256 [admit-predict] id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1374 predicted_completion=96 kv_hat=1013619992 booked_bytes=13177568824 booked_real=16324632120 inflight=13 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001256 [admit-mem] id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 model="q38" verdict=admit prompt=1374 output_bound=- charged_ctx=9630 est_bytes=3559014664 est_context=285972480 est_fixed=3273042184 device_free=73287577932 pending_prime=0 pending_prime_v1=8560521216 pending_seed=2591897600 host_free=0 demotable=0 short_by=0 inflight=13 cap=64 waited_ms=0 retry_after_s=-
+1790274001257 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1374 cached=0 lcp=0 active=14 wave=24 placement=single-or-non-pp2
+1790274001257 [kv-vmm] admit id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 owed_before=3244294144 session_mapped=71303168 session_reserved=320864256 active=13
+1790274001259 [admission] request cost: model="q38" ctx=9629 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 311MB fixed = 1255MB
+1790274001259 [admit-predict] id=chatcmpl-5eaabad197cfa642346b6adbe41f0acf tenant="" model="q38" verdict=admit reason=global-p95 prompt=1373 predicted_completion=96 kv_hat=1013111064 booked_bytes=14191188816 booked_real=17580333904 inflight=14 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001259 [admit-mem] id=chatcmpl-5eaabad197cfa642346b6adbe41f0acf model="q38" verdict=admit prompt=1373 output_bound=- charged_ctx=9629 est_bytes=3558505736 est_context=285942784 est_fixed=3272562952 device_free=72459526408 pending_prime=0 pending_prime_v1=9218985984 pending_seed=2791196672 host_free=0 demotable=0 short_by=0 inflight=14 cap=64 waited_ms=0 retry_after_s=-
+1790274001260 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1373 cached=0 lcp=0 active=15 wave=24 placement=single-or-non-pp2
+1790274001260 [kv-vmm] admit id=chatcmpl-5eaabad197cfa642346b6adbe41f0acf owed_before=3493855232 session_mapped=71303168 session_reserved=320864256 active=14
+1790274001262 [admission] request cost: model="q38" ctx=9623 path=plain = 29696 B/token x ctx + 655MB prefill-workspace + 311MB fixed = 1252MB
+1790274001262 [admit-predict] id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe tenant="" model="q38" verdict=admit reason=global-p95 prompt=1367 predicted_completion=96 kv_hat=1010057496 booked_bytes=15204299880 booked_real=18835526760 inflight=15 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001262 [admit-mem] id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe model="q38" verdict=admit prompt=1367 output_bound=- charged_ctx=9623 est_bytes=3555452168 est_context=285764608 est_fixed=3269687560 device_free=71631474884 pending_prime=0 pending_prime_v1=9876971520 pending_seed=2990495744 host_free=0 demotable=0 short_by=0 inflight=15 cap=64 waited_ms=0 retry_after_s=-
+1790274001263 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1367 cached=0 lcp=0 active=16 wave=24 placement=single-or-non-pp2
+1790274001263 [kv-vmm] admit id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe owed_before=3743416320 session_mapped=71303168 session_reserved=320864256 active=15
+1790274001264 [admission] request cost: model="q38" ctx=9627 path=plain = 29696 B/token x ctx + 657MB prefill-workspace + 311MB fixed = 1254MB
+1790274001264 [admit-predict] id=chatcmpl-dfda7f7551ad55328ac13e4fd25c1965 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1371 predicted_completion=96 kv_hat=1012093208 booked_bytes=16214357376 booked_real=20087666048 inflight=16 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001264 [admit-mem] id=chatcmpl-dfda7f7551ad55328ac13e4fd25c1965 model="q38" verdict=admit prompt=1371 output_bound=- charged_ctx=9627 est_bytes=3557487880 est_context=285883392 est_fixed=3271604488 device_free=70803423360 pending_prime=0 pending_prime_v1=10532081664 pending_seed=3189794816 host_free=0 demotable=0 short_by=0 inflight=16 cap=64 waited_ms=0 retry_after_s=-
+1790274001266 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1371 cached=0 lcp=0 active=17 wave=24 placement=single-or-non-pp2
+1790274001266 [kv-vmm] admit id=chatcmpl-dfda7f7551ad55328ac13e4fd25c1965 owed_before=3992977408 session_mapped=71303168 session_reserved=320864256 active=16
+1790274001267 [admission] request cost: model="q38" ctx=9626 path=plain = 29696 B/token x ctx + 657MB prefill-workspace + 311MB fixed = 1254MB
+1790274001267 [admit-predict] id=chatcmpl-121dc9bc7f9bb22c95122a0886726d57 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1370 predicted_completion=96 kv_hat=1011584280 booked_bytes=17226450584 booked_real=21341841048 inflight=17 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001267 [admit-mem] id=chatcmpl-121dc9bc7f9bb22c95122a0886726d57 model="q38" verdict=admit prompt=1370 output_bound=- charged_ctx=9626 est_bytes=3556978952 est_context=285853696 est_fixed=3271125256 device_free=69975371836 pending_prime=0 pending_prime_v1=11189108736 pending_seed=3389093888 host_free=0 demotable=0 short_by=0 inflight=17 cap=64 waited_ms=0 retry_after_s=-
+1790274001269 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1370 cached=0 lcp=0 active=18 wave=24 placement=single-or-non-pp2
+1790274001269 [kv-vmm] admit id=chatcmpl-121dc9bc7f9bb22c95122a0886726d57 owed_before=4242538496 session_mapped=71303168 session_reserved=320864256 active=17
+1790274001270 [admission] request cost: model="q38" ctx=9631 path=plain = 29696 B/token x ctx + 659MB prefill-workspace + 311MB fixed = 1256MB
+1790274001270 [admit-predict] id=chatcmpl-c1f18c31c439b22a315e27c445a801ff tenant="" model="q38" verdict=admit reason=global-p95 prompt=1375 predicted_completion=96 kv_hat=1014128920 booked_bytes=18238034864 booked_real=22595507120 inflight=18 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001270 [admit-mem] id=chatcmpl-c1f18c31c439b22a315e27c445a801ff model="q38" verdict=admit prompt=1375 output_bound=- charged_ctx=9631 est_bytes=3559523592 est_context=286002176 est_fixed=3273521416 device_free=69147320312 pending_prime=0 pending_prime_v1=11845656576 pending_seed=3588392960 host_free=0 demotable=0 short_by=0 inflight=18 cap=64 waited_ms=0 retry_after_s=-
+1790274001272 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1375 cached=0 lcp=0 active=19 wave=24 placement=single-or-non-pp2
+1790274001272 [kv-vmm] admit id=chatcmpl-c1f18c31c439b22a315e27c445a801ff owed_before=4492099584 session_mapped=71303168 session_reserved=320864256 active=18
+1790274001273 [admission] request cost: model="q38" ctx=9632 path=plain = 29696 B/token x ctx + 659MB prefill-workspace + 311MB fixed = 1257MB
+1790274001273 [admit-predict] id=chatcmpl-dc65da58ba3327eb84ca78d53a698016 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1376 predicted_completion=96 kv_hat=1014637848 booked_bytes=19252163784 booked_real=23851717832 inflight=19 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001273 [admit-mem] id=chatcmpl-dc65da58ba3327eb84ca78d53a698016 model="q38" verdict=admit prompt=1376 output_bound=- charged_ctx=9632 est_bytes=3560032520 est_context=286031872 est_fixed=3274000648 device_free=68319268788 pending_prime=0 pending_prime_v1=12504600576 pending_seed=3787692032 host_free=0 demotable=0 short_by=0 inflight=19 cap=64 waited_ms=0 retry_after_s=-
+1790274001274 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1376 cached=0 lcp=0 active=20 wave=24 placement=single-or-non-pp2
+1790274001274 [kv-vmm] admit id=chatcmpl-dc65da58ba3327eb84ca78d53a698016 owed_before=4741660672 session_mapped=71303168 session_reserved=320864256 active=19
+1790274001276 [admission] request cost: model="q38" ctx=9627 path=plain = 29696 B/token x ctx + 657MB prefill-workspace + 311MB fixed = 1254MB
+1790274001276 [admit-predict] id=chatcmpl-664e551b96c9eb4a416871142eecb8e9 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1371 predicted_completion=96 kv_hat=1012093208 booked_bytes=20266801632 booked_real=25108437472 inflight=20 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001276 [admit-mem] id=chatcmpl-664e551b96c9eb4a416871142eecb8e9 model="q38" verdict=admit prompt=1371 output_bound=- charged_ctx=9627 est_bytes=3557487880 est_context=285883392 est_fixed=3271604488 device_free=67490207600 pending_prime=0 pending_prime_v1=13164023808 pending_seed=3988000768 host_free=0 demotable=0 short_by=0 inflight=20 cap=64 waited_ms=0 retry_after_s=-
+1790274001277 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1371 cached=0 lcp=0 active=21 wave=24 placement=single-or-non-pp2
+1790274001277 [kv-vmm] admit id=chatcmpl-664e551b96c9eb4a416871142eecb8e9 owed_before=4991221760 session_mapped=71303168 session_reserved=320864256 active=20
+1790274001279 [admit-predict] id=chatcmpl-104e08b5409a711a10227c878940275b tenant="" model="q38" verdict=admit reason=global-p95 prompt=1371 predicted_completion=96 kv_hat=1012093208 booked_bytes=21278894840 booked_real=26362612472 inflight=21 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001279 [admit-mem] id=chatcmpl-104e08b5409a711a10227c878940275b model="q38" verdict=admit prompt=1371 output_bound=- charged_ctx=9627 est_bytes=3557487880 est_context=285883392 est_fixed=3271604488 device_free=66662156076 pending_prime=0 pending_prime_v1=13821050880 pending_seed=4187299840 host_free=0 demotable=0 short_by=0 inflight=21 cap=64 waited_ms=0 retry_after_s=-
+1790274001280 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1371 cached=0 lcp=0 active=22 wave=24 placement=single-or-non-pp2
+1790274001280 [kv-vmm] admit id=chatcmpl-104e08b5409a711a10227c878940275b owed_before=5240782848 session_mapped=71303168 session_reserved=320864256 active=21
+1790274001282 [admission] request cost: model="q38" ctx=9628 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 311MB fixed = 1255MB
+1790274001282 [admit-predict] id=chatcmpl-ee01f0c47bea283eb800d63eef7b8d07 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1372 predicted_completion=96 kv_hat=1012602136 booked_bytes=22290988048 booked_real=27616787472 inflight=22 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001282 [admit-mem] id=chatcmpl-ee01f0c47bea283eb800d63eef7b8d07 model="q38" verdict=admit prompt=1372 output_bound=- charged_ctx=9628 est_bytes=3557996808 est_context=285913088 est_fixed=3272083720 device_free=65834104552 pending_prime=0 pending_prime_v1=14478077952 pending_seed=4386598912 host_free=0 demotable=0 short_by=0 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+1790274001283 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1372 cached=0 lcp=0 active=23 wave=24 placement=single-or-non-pp2
+1790274001283 [kv-vmm] admit id=chatcmpl-ee01f0c47bea283eb800d63eef7b8d07 owed_before=5490343936 session_mapped=71303168 session_reserved=320864256 active=22
+1790274001285 [admission] request cost: model="q38" ctx=9627 path=plain = 29696 B/token x ctx + 657MB prefill-workspace + 311MB fixed = 1254MB
+1790274001285 [admit-predict] id=chatcmpl-1bc0ef6baf6f523c8d1c68cbc31aaceb tenant="" model="q38" verdict=admit reason=global-p95 prompt=1371 predicted_completion=96 kv_hat=1012093208 booked_bytes=23303590184 booked_real=28871471400 inflight=23 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274001285 [admit-mem] id=chatcmpl-1bc0ef6baf6f523c8d1c68cbc31aaceb model="q38" verdict=admit prompt=1371 output_bound=- charged_ctx=9627 est_bytes=3557487880 est_context=285883392 est_fixed=3271604488 device_free=65006053028 pending_prime=0 pending_prime_v1=15135584256 pending_seed=4585897984 host_free=0 demotable=0 short_by=0 inflight=23 cap=64 waited_ms=0 retry_after_s=-
+1790274001286 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1371 cached=0 lcp=0 active=24 wave=24 placement=single-or-non-pp2
+1790274001286 [kv-vmm] admit id=chatcmpl-1bc0ef6baf6f523c8d1c68cbc31aaceb owed_before=5739905024 session_mapped=71303168 session_reserved=320864256 active=23
+1790274007320 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 196.8MB / 15883MB, model q38)
+1790274007429 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 393.6MB / 15883MB, model q38)
+1790274007539 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 590.4MB / 15883MB, model q38)
+1790274007648 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 787.2MB / 15883MB, model q38)
+1790274007758 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 984.0MB / 15883MB, model q38)
+1790274007976 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 1180.8MB / 15883MB, model q38)
+1790274008085 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 1377.6MB / 15883MB, model q38)
+1790274008195 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 1574.4MB / 15883MB, model q38)
+1790274008304 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 1771.2MB / 15883MB, model q38)
+1790274008413 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 1968.0MB / 15883MB, model q38)
+1790274008523 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 2164.9MB / 15883MB, model q38)
+1790274008632 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 2361.7MB / 15883MB, model q38)
+1790274008742 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 2558.5MB / 15883MB, model q38)
+1790274008851 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 2755.3MB / 15883MB, model q38)
+1790274008960 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 2952.1MB / 15883MB, model q38)
+1790274009070 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 3148.9MB / 15883MB, model q38)
+1790274009179 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 3345.7MB / 15883MB, model q38)
+1790274009289 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 3542.5MB / 15883MB, model q38)
+1790274009507 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 3739.3MB / 15883MB, model q38)
+1790274009616 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 3936.1MB / 15883MB, model q38)
+1790274009726 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 4132.9MB / 15883MB, model q38)
+1790274009835 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 4329.7MB / 15883MB, model q38)
+1790274009983 [prime-batch] B=6 tokens=189 carried=6 partial=0 in 146.0ms
+1790274009984 [prefix-cache] insert (seed): 1376 tokens, 197.8MB (resident 4527.5MB / 15883MB, model q38)
+1790274010128 [prime-batch] B=6 tokens=173 carried=6 partial=0 in 144.6ms
+1790274010271 [prime-batch] B=6 tokens=164 carried=6 partial=0 in 143.0ms
+1790274010415 [prime-batch] B=6 tokens=172 carried=6 partial=0 in 143.2ms
+1790274010415 [prefix-cache] insert (seed): 1376 tokens, 197.8MB (resident 4725.2MB / 15883MB, model q38)
+1790274010418 [fa-pool] grow #4 dev=0 o_len 3194880 -> 8552448 ml_len 12480 -> 33408 (retired kept, zero=false)
+1790274010874 [fa-pool] grow #5 dev=0 o_len 8552448 -> 17104896 ml_len 33408 -> 66816 (retired kept, zero=false)
+1790274023286 [kv-vmm] ensure-walls n=256 us=29,87,84,58,27,26,28,26,25,25,25,26,26,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,23,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,23,25,25,25,25,25,25,25,25,26,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,79,27,26,26,26,24,27,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,25,25,27,25,25,25,25,27,25,23,26,25,25,26,25,25,25,26,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,28,26,23,26,26,25,26,26,26,26,26,25,26,25,26,26,25,33,26,26,25,25,25,26,25,25,26,26,26,26,25,26,26,26,23,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,27,27,27,26,26,26,26,26,26,25,26,24,26,26,26,26,26,25,26,26,26,26,25,25,25,25,26,25,26,26,26,26,26,26,26,26,25,25,25,25
+1790274023592 [kv-vmm] retire id=chatcmpl-121dc9bc7f9bb22c95122a0886726d57 planes=34 mapped=71303168 reserved=320864256 used=48345088 slack_bytes=2019328 booked=1253666072
+1790274025549 [kv-vmm] retire id=chatcmpl-0706359164ffda2fe55fe7300151ad37 planes=34 mapped=71303168 reserved=320864256 used=49770496 slack_bytes=2019328 booked=1258246424
+1790274025549 [kv-vmm] retire id=chatcmpl-c992263e1d3d7fb8c14e341c55af67e6 planes=34 mapped=71303168 reserved=320864256 used=49800192 slack_bytes=2019328 booked=1258755352
+1790274025551 [kv-vmm] reap released=71303168 pending=0
+1790274027249 [kv-vmm] retire id=chatcmpl-c1f18c31c439b22a315e27c445a801ff planes=34 mapped=71303168 reserved=320864256 used=50691072 slack_bytes=2019328 booked=1256210712
+1790274027251 [kv-vmm] reap released=71303168 pending=0
+1790274027392 [kv-vmm] retire id=chatcmpl-664e551b96c9eb4a416871142eecb8e9 planes=34 mapped=71303168 reserved=320864256 used=50661376 slack_bytes=2019328 booked=1254175000
+1790274027394 [kv-vmm] reap released=71303168 pending=0
+1790274027674 [kv-vmm] retire id=chatcmpl-ba8f9b0a49443913dc577f54f4943ac0 planes=34 mapped=71303168 reserved=320864256 used=50958336 slack_bytes=2019328 booked=1256210712
+1790274027675 [kv-vmm] reap released=71303168 pending=0
+1790274028232 [kv-vmm] retire id=chatcmpl-aaaea941764170c2dbb5c71d0d10d9cf planes=34 mapped=71303168 reserved=320864256 used=51255296 slack_bytes=2019328 booked=1255192856
+1790274028233 [kv-vmm] reap released=71303168 pending=0
+1790274028314 [kv-vmm] retire id=chatcmpl-1bc0ef6baf6f523c8d1c68cbc31aaceb planes=34 mapped=71303168 reserved=320864256 used=51255296 slack_bytes=2019328 booked=1254175000
+1790274028315 [kv-vmm] reap released=71303168 pending=0
+1790274028791 [kv-vmm] retire id=chatcmpl-dc65da58ba3327eb84ca78d53a698016 planes=34 mapped=71303168 reserved=320864256 used=51819520 slack_bytes=2019328 booked=1256719640
+1790274028793 [kv-vmm] reap released=71303168 pending=0
+1790274029245 [kv-vmm] retire id=chatcmpl-d062e3db943280f1b3459a85b7eaafe5 planes=34 mapped=71303168 reserved=320864256 used=52443136 slack_bytes=2019328 booked=1260282136
+1790274029246 [kv-vmm] reap released=71303168 pending=0
+1790274030465 [kv-vmm] retire id=chatcmpl-5eaabad197cfa642346b6adbe41f0acf planes=34 mapped=71303168 reserved=320864256 used=53334016 slack_bytes=2019328 booked=1255192856
+1790274030465 [kv-vmm] retire id=chatcmpl-88db05a191ae56d5931f9e5574ea1114 planes=34 mapped=71303168 reserved=320864256 used=53244928 slack_bytes=2019328 booked=1253666072
+1790274030468 [kv-vmm] reap released=142606336 pending=0
+1790274031137 [kv-vmm] retire id=chatcmpl-2db217db224065490f033a3c2b87f2ab planes=34 mapped=71303168 reserved=320864256 used=53987328 slack_bytes=2019328 booked=1253666072
+1790274031138 [kv-vmm] reap released=71303168 pending=0
+1790274031336 [kv-vmm] retire id=chatcmpl-86568c9e475f4a9ad496a185b92eef8e planes=34 mapped=71303168 reserved=320864256 used=54313984 slack_bytes=2019328 booked=1255192856
+1790274031338 [kv-vmm] reap released=71303168 pending=0
+1790274032030 [kv-vmm] grow id=chatcmpl-adf476dbcb5e9d3e2bdd4462643a5f8c plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=117 waited=0
+1790274032030 [kv-vmm] grow id=chatcmpl-adf476dbcb5e9d3e2bdd4462643a5f8c plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=31 waited=0
+1790274032030 [kv-vmm] grow id=chatcmpl-adf476dbcb5e9d3e2bdd4462643a5f8c plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=26 waited=0
+1790274032030 [kv-vmm] grow id=chatcmpl-adf476dbcb5e9d3e2bdd4462643a5f8c plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032030 [kv-vmm] grow id=chatcmpl-adf476dbcb5e9d3e2bdd4462643a5f8c plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=32 waited=0
+1790274032030 [kv-vmm] grow id=chatcmpl-adf476dbcb5e9d3e2bdd4462643a5f8c plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032030 [kv-vmm] grow id=chatcmpl-adf476dbcb5e9d3e2bdd4462643a5f8c plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032030 [kv-vmm] grow id=chatcmpl-adf476dbcb5e9d3e2bdd4462643a5f8c plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032030 [kv-vmm] grow id=chatcmpl-adf476dbcb5e9d3e2bdd4462643a5f8c plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032030 [kv-vmm] grow id=chatcmpl-adf476dbcb5e9d3e2bdd4462643a5f8c plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032030 [kv-vmm] grow id=chatcmpl-adf476dbcb5e9d3e2bdd4462643a5f8c plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032030 [kv-vmm] grow id=chatcmpl-adf476dbcb5e9d3e2bdd4462643a5f8c plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032030 [kv-vmm] grow id=chatcmpl-adf476dbcb5e9d3e2bdd4462643a5f8c plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032030 [kv-vmm] grow id=chatcmpl-adf476dbcb5e9d3e2bdd4462643a5f8c plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032030 [kv-vmm] grow id=chatcmpl-adf476dbcb5e9d3e2bdd4462643a5f8c plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032030 [kv-vmm] grow id=chatcmpl-adf476dbcb5e9d3e2bdd4462643a5f8c plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032030 [kv-vmm] grow id=chatcmpl-adf476dbcb5e9d3e2bdd4462643a5f8c plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032077 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=55 waited=0
+1790274032077 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032077 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032077 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032077 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032077 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032077 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=26 waited=0
+1790274032077 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032077 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032077 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032077 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032077 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032077 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032077 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=22 waited=0
+1790274032077 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=22 waited=0
+1790274032077 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032077 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032123 [kv-vmm] grow id=chatcmpl-715bb9bb0e4f89918807aa0a76b988bc plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=49 waited=0
+1790274032123 [kv-vmm] grow id=chatcmpl-715bb9bb0e4f89918807aa0a76b988bc plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=26 waited=0
+1790274032123 [kv-vmm] grow id=chatcmpl-715bb9bb0e4f89918807aa0a76b988bc plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032123 [kv-vmm] grow id=chatcmpl-715bb9bb0e4f89918807aa0a76b988bc plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032123 [kv-vmm] grow id=chatcmpl-715bb9bb0e4f89918807aa0a76b988bc plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032123 [kv-vmm] grow id=chatcmpl-715bb9bb0e4f89918807aa0a76b988bc plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032123 [kv-vmm] grow id=chatcmpl-715bb9bb0e4f89918807aa0a76b988bc plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032123 [kv-vmm] grow id=chatcmpl-715bb9bb0e4f89918807aa0a76b988bc plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032123 [kv-vmm] grow id=chatcmpl-715bb9bb0e4f89918807aa0a76b988bc plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032123 [kv-vmm] grow id=chatcmpl-715bb9bb0e4f89918807aa0a76b988bc plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032123 [kv-vmm] grow id=chatcmpl-715bb9bb0e4f89918807aa0a76b988bc plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032123 [kv-vmm] grow id=chatcmpl-715bb9bb0e4f89918807aa0a76b988bc plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=26 waited=0
+1790274032123 [kv-vmm] grow id=chatcmpl-715bb9bb0e4f89918807aa0a76b988bc plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032123 [kv-vmm] grow id=chatcmpl-715bb9bb0e4f89918807aa0a76b988bc plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032123 [kv-vmm] grow id=chatcmpl-715bb9bb0e4f89918807aa0a76b988bc plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032123 [kv-vmm] grow id=chatcmpl-715bb9bb0e4f89918807aa0a76b988bc plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032123 [kv-vmm] grow id=chatcmpl-715bb9bb0e4f89918807aa0a76b988bc plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=22 waited=0
+1790274032124 [kv-vmm] grow id=chatcmpl-ee01f0c47bea283eb800d63eef7b8d07 plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=34 waited=0
+1790274032124 [kv-vmm] grow id=chatcmpl-ee01f0c47bea283eb800d63eef7b8d07 plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032124 [kv-vmm] grow id=chatcmpl-ee01f0c47bea283eb800d63eef7b8d07 plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032124 [kv-vmm] grow id=chatcmpl-ee01f0c47bea283eb800d63eef7b8d07 plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=27 waited=0
+1790274032124 [kv-vmm] grow id=chatcmpl-ee01f0c47bea283eb800d63eef7b8d07 plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032124 [kv-vmm] grow id=chatcmpl-ee01f0c47bea283eb800d63eef7b8d07 plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032124 [kv-vmm] grow id=chatcmpl-ee01f0c47bea283eb800d63eef7b8d07 plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032124 [kv-vmm] grow id=chatcmpl-ee01f0c47bea283eb800d63eef7b8d07 plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032124 [kv-vmm] grow id=chatcmpl-ee01f0c47bea283eb800d63eef7b8d07 plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032124 [kv-vmm] grow id=chatcmpl-ee01f0c47bea283eb800d63eef7b8d07 plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032124 [kv-vmm] grow id=chatcmpl-ee01f0c47bea283eb800d63eef7b8d07 plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032124 [kv-vmm] grow id=chatcmpl-ee01f0c47bea283eb800d63eef7b8d07 plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032124 [kv-vmm] grow id=chatcmpl-ee01f0c47bea283eb800d63eef7b8d07 plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032124 [kv-vmm] grow id=chatcmpl-ee01f0c47bea283eb800d63eef7b8d07 plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=28 waited=0
+1790274032124 [kv-vmm] grow id=chatcmpl-ee01f0c47bea283eb800d63eef7b8d07 plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032124 [kv-vmm] grow id=chatcmpl-ee01f0c47bea283eb800d63eef7b8d07 plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032124 [kv-vmm] grow id=chatcmpl-ee01f0c47bea283eb800d63eef7b8d07 plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032147 [kv-vmm] grow id=chatcmpl-39e4a06953c1aadfc2f493c65b365639 plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=45 waited=0
+1790274032147 [kv-vmm] grow id=chatcmpl-39e4a06953c1aadfc2f493c65b365639 plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=28 waited=0
+1790274032147 [kv-vmm] grow id=chatcmpl-39e4a06953c1aadfc2f493c65b365639 plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032147 [kv-vmm] grow id=chatcmpl-39e4a06953c1aadfc2f493c65b365639 plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032147 [kv-vmm] grow id=chatcmpl-39e4a06953c1aadfc2f493c65b365639 plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032147 [kv-vmm] grow id=chatcmpl-39e4a06953c1aadfc2f493c65b365639 plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032147 [kv-vmm] grow id=chatcmpl-39e4a06953c1aadfc2f493c65b365639 plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032147 [kv-vmm] grow id=chatcmpl-39e4a06953c1aadfc2f493c65b365639 plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=26 waited=0
+1790274032147 [kv-vmm] grow id=chatcmpl-39e4a06953c1aadfc2f493c65b365639 plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032147 [kv-vmm] grow id=chatcmpl-39e4a06953c1aadfc2f493c65b365639 plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032147 [kv-vmm] grow id=chatcmpl-39e4a06953c1aadfc2f493c65b365639 plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=22 waited=0
+1790274032147 [kv-vmm] grow id=chatcmpl-39e4a06953c1aadfc2f493c65b365639 plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032147 [kv-vmm] grow id=chatcmpl-39e4a06953c1aadfc2f493c65b365639 plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032147 [kv-vmm] grow id=chatcmpl-39e4a06953c1aadfc2f493c65b365639 plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032147 [kv-vmm] grow id=chatcmpl-39e4a06953c1aadfc2f493c65b365639 plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032147 [kv-vmm] grow id=chatcmpl-39e4a06953c1aadfc2f493c65b365639 plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032147 [kv-vmm] grow id=chatcmpl-39e4a06953c1aadfc2f493c65b365639 plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=22 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=26 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=26 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=26 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=26 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=22 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=26 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=26 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-dfda7f7551ad55328ac13e4fd25c1965 plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=28 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-dfda7f7551ad55328ac13e4fd25c1965 plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=26 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-dfda7f7551ad55328ac13e4fd25c1965 plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-dfda7f7551ad55328ac13e4fd25c1965 plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=26 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-dfda7f7551ad55328ac13e4fd25c1965 plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=26 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-dfda7f7551ad55328ac13e4fd25c1965 plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-dfda7f7551ad55328ac13e4fd25c1965 plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-dfda7f7551ad55328ac13e4fd25c1965 plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-dfda7f7551ad55328ac13e4fd25c1965 plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-dfda7f7551ad55328ac13e4fd25c1965 plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-dfda7f7551ad55328ac13e4fd25c1965 plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-dfda7f7551ad55328ac13e4fd25c1965 plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-dfda7f7551ad55328ac13e4fd25c1965 plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=22 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-dfda7f7551ad55328ac13e4fd25c1965 plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-dfda7f7551ad55328ac13e4fd25c1965 plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-dfda7f7551ad55328ac13e4fd25c1965 plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-dfda7f7551ad55328ac13e4fd25c1965 plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=22 waited=0
+1790274032148 [kv-vmm] grow id=chatcmpl-104e08b5409a711a10227c878940275b plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=27 waited=0
+1790274032149 [kv-vmm] grow id=chatcmpl-104e08b5409a711a10227c878940275b plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032149 [kv-vmm] grow id=chatcmpl-104e08b5409a711a10227c878940275b plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032149 [kv-vmm] grow id=chatcmpl-104e08b5409a711a10227c878940275b plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=22 waited=0
+1790274032149 [kv-vmm] grow id=chatcmpl-104e08b5409a711a10227c878940275b plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032149 [kv-vmm] grow id=chatcmpl-104e08b5409a711a10227c878940275b plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=28 waited=0
+1790274032149 [kv-vmm] grow id=chatcmpl-104e08b5409a711a10227c878940275b plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032149 [kv-vmm] grow id=chatcmpl-104e08b5409a711a10227c878940275b plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032149 [kv-vmm] grow id=chatcmpl-104e08b5409a711a10227c878940275b plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032149 [kv-vmm] grow id=chatcmpl-104e08b5409a711a10227c878940275b plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032149 [kv-vmm] grow id=chatcmpl-104e08b5409a711a10227c878940275b plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032149 [kv-vmm] grow id=chatcmpl-104e08b5409a711a10227c878940275b plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032149 [kv-vmm] grow id=chatcmpl-104e08b5409a711a10227c878940275b plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032149 [kv-vmm] grow id=chatcmpl-104e08b5409a711a10227c878940275b plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032149 [kv-vmm] grow id=chatcmpl-104e08b5409a711a10227c878940275b plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032149 [kv-vmm] grow id=chatcmpl-104e08b5409a711a10227c878940275b plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032149 [kv-vmm] grow id=chatcmpl-104e08b5409a711a10227c878940275b plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032172 [kv-vmm] grow id=chatcmpl-ad5358f2154053e08de65e076e453c49 plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=40 waited=0
+1790274032172 [kv-vmm] grow id=chatcmpl-ad5358f2154053e08de65e076e453c49 plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032172 [kv-vmm] grow id=chatcmpl-ad5358f2154053e08de65e076e453c49 plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032172 [kv-vmm] grow id=chatcmpl-ad5358f2154053e08de65e076e453c49 plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=27 waited=0
+1790274032172 [kv-vmm] grow id=chatcmpl-ad5358f2154053e08de65e076e453c49 plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032172 [kv-vmm] grow id=chatcmpl-ad5358f2154053e08de65e076e453c49 plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032172 [kv-vmm] grow id=chatcmpl-ad5358f2154053e08de65e076e453c49 plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032172 [kv-vmm] grow id=chatcmpl-ad5358f2154053e08de65e076e453c49 plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032172 [kv-vmm] grow id=chatcmpl-ad5358f2154053e08de65e076e453c49 plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032172 [kv-vmm] grow id=chatcmpl-ad5358f2154053e08de65e076e453c49 plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032172 [kv-vmm] grow id=chatcmpl-ad5358f2154053e08de65e076e453c49 plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032172 [kv-vmm] grow id=chatcmpl-ad5358f2154053e08de65e076e453c49 plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=26 waited=0
+1790274032172 [kv-vmm] grow id=chatcmpl-ad5358f2154053e08de65e076e453c49 plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032172 [kv-vmm] grow id=chatcmpl-ad5358f2154053e08de65e076e453c49 plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032172 [kv-vmm] grow id=chatcmpl-ad5358f2154053e08de65e076e453c49 plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032172 [kv-vmm] grow id=chatcmpl-ad5358f2154053e08de65e076e453c49 plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032172 [kv-vmm] grow id=chatcmpl-ad5358f2154053e08de65e076e453c49 plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032240 [kv-vmm] retire id=chatcmpl-dfda7f7551ad55328ac13e4fd25c1965 planes=34 mapped=106954752 reserved=320864256 used=55412736 slack_bytes=2019328 booked=1254175000
+1790274032241 [kv-vmm] reap released=71303168 pending=0
+1790274032241 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=45 waited=0
+1790274032241 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=32 waited=0
+1790274032241 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=26 waited=0
+1790274032241 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032241 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032241 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032241 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032241 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032241 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=25 waited=0
+1790274032241 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=26 waited=0
+1790274032241 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032241 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032241 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=22 waited=0
+1790274032241 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=23 waited=0
+1790274032241 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=22 waited=0
+1790274032241 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=22 waited=0
+1790274032241 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=10485760 owner_us=24 waited=0
+1790274032343 [kv-vmm] retire id=chatcmpl-ee01f0c47bea283eb800d63eef7b8d07 planes=34 mapped=106954752 reserved=320864256 used=55590912 slack_bytes=2019328 booked=1254683928
+1790274032345 [kv-vmm] reap released=71303168 pending=0
+1790274032482 [kv-vmm] ensure-walls n=256 us=26,26,25,24,26,23,25,28,24,25,25,25,24,24,24,24,25,24,25,25,24,24,24,24,24,25,24,26,56,50,43,25,25,25,25,23,25,25,25,25,25,24,25,25,24,23,23,22,22,22,23,22,22,22,22,22,23,22,22,22,23,22,22,22,32,22,23,21,22,22,22,22,22,22,22,22,22,22,22,22,21,21,21,20,20,20,20,20,20,19,19,19,19,19,19,19,19,19,19,17,19,18,17,18,17,17,17,16,17,17,17,17,16,17,16,16,16,16,16,15,15,16,15,15,15,15,16,15,15,15,15,13,14,15,15,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,15,14,14,14,14,14,13,14,14,14,14,14,14,13,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,11,11,11,11,11,11,11,11,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,11,10,10,10,10,10,9,10,10,10,10,10,558,10,462,10,897,1769,457,10,10,469,9,9,9,9,8,8,8,8,8,8,8,8,8
+1790274032566 [kv-vmm] retire id=chatcmpl-adf476dbcb5e9d3e2bdd4462643a5f8c planes=34 mapped=106954752 reserved=320864256 used=56095744 slack_bytes=2019328 booked=1256719640
+1790274032568 [kv-vmm] reap released=106954752 pending=0
+1790274032842 [kv-vmm] retire id=chatcmpl-ad5358f2154053e08de65e076e453c49 planes=34 mapped=106954752 reserved=320864256 used=56422400 slack_bytes=2019328 booked=1253666072
+1790274032844 [kv-vmm] reap released=106954752 pending=0
+1790274032966 [kv-vmm] retire id=chatcmpl-39e4a06953c1aadfc2f493c65b365639 planes=34 mapped=106954752 reserved=320864256 used=56689664 slack_bytes=2019328 booked=1254175000
+1790274032968 [kv-vmm] reap released=106954752 pending=0
+1790274035537 [kv-vmm] retire id=chatcmpl-104e08b5409a711a10227c878940275b planes=34 mapped=106954752 reserved=320864256 used=61945856 slack_bytes=2019328 booked=1254175000
+1790274035539 [kv-vmm] reap released=106954752 pending=0
+1790274036006 [kv-vmm] retire id=chatcmpl-715bb9bb0e4f89918807aa0a76b988bc planes=34 mapped=106954752 reserved=320864256 used=63044608 slack_bytes=2019328 booked=1254683928
+1790274036007 [kv-vmm] reap released=106954752 pending=0
+1790274036169 [kv-vmm] ensure-walls n=256 us=8,8,8,8,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,6,6,6,6,6,6,6,6,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,3,3,3,3,3,3,3,3,3,3,3,3,3,3
+1790274039353 [kv-vmm] ensure-walls n=256 us=3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3
+1790274042542 [kv-vmm] ensure-walls n=256 us=3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,4,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3
+1790274042729 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=v3 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=157 waited=0
+1790274042729 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=v7 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=38 waited=0
+1790274042729 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=v11 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=29 waited=0
+1790274042729 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=v15 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=32 waited=0
+1790274042729 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=v19 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=32 waited=0
+1790274042729 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=v23 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=31 waited=0
+1790274042729 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=v27 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=24 waited=0
+1790274042729 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=v31 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=24 waited=0
+1790274042729 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=v35 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=26 waited=0
+1790274042730 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=v39 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=24 waited=0
+1790274042730 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=v43 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=25 waited=0
+1790274042730 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=v47 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=24 waited=0
+1790274042730 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=v51 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=25 waited=0
+1790274042730 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=v55 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=25 waited=0
+1790274042730 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=v59 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=24 waited=0
+1790274042730 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=v63 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=23 waited=0
+1790274042730 [kv-vmm] grow id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 plane=v64 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=26 waited=0
+1790274042767 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=v3 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=59 waited=0
+1790274042767 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=v7 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=24 waited=0
+1790274042767 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=v11 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=26 waited=0
+1790274042767 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=v15 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=26 waited=0
+1790274042767 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=v19 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=24 waited=0
+1790274042767 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=v23 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=25 waited=0
+1790274042767 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=v27 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=23 waited=0
+1790274042767 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=v31 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=25 waited=0
+1790274042767 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=v35 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=23 waited=0
+1790274042767 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=v39 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=24 waited=0
+1790274042767 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=v43 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=28 waited=0
+1790274042767 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=v47 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=25 waited=0
+1790274042767 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=v51 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=23 waited=0
+1790274042767 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=v55 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=24 waited=0
+1790274042767 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=v59 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=24 waited=0
+1790274042767 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=v63 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=24 waited=0
+1790274042767 [kv-vmm] grow id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 plane=v64 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=24 waited=0
+1790274042818 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=v3 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=51 waited=0
+1790274042818 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=v7 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=24 waited=0
+1790274042818 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=v11 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=27 waited=0
+1790274042818 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=v15 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=24 waited=0
+1790274042818 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=v19 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=25 waited=0
+1790274042818 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=v23 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=24 waited=0
+1790274042818 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=v27 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=25 waited=0
+1790274042818 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=v31 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=23 waited=0
+1790274042818 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=v35 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=24 waited=0
+1790274042818 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=v39 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=23 waited=0
+1790274042818 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=v43 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=24 waited=0
+1790274042818 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=v47 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=25 waited=0
+1790274042818 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=v51 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=24 waited=0
+1790274042818 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=v55 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=23 waited=0
+1790274042818 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=v59 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=25 waited=0
+1790274042818 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=v63 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=23 waited=0
+1790274042818 [kv-vmm] grow id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe plane=v64 rows=2731 extent_bytes=2097152 mapped=4194304 reserved=8388608 owner_us=23 waited=0
+1790274045738 [kv-vmm] ensure-walls n=256 us=3,3,3,3,3,3,3,3,3,3,3,3,3,3,619,3,3,475,3,3,3,460,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3
+1790274048372 [kv-vmm] retire id=chatcmpl-8c55a5d0492e027a73405e3a927e5313 planes=34 mapped=142606336 reserved=320864256 used=92503040 slack_bytes=2019328 booked=1255701784
+1790274048374 [kv-vmm] reap released=106954752 pending=0
+1790274048952 [kv-vmm] ensure-walls n=256 us=3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,3,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2
+1790274050169 [kv-vmm] retire id=chatcmpl-6db6b8f0dae1ee060dbd69c2ca029ba6 planes=34 mapped=142606336 reserved=320864256 used=96749568 slack_bytes=2019328 booked=1254175000
+1790274050171 [kv-vmm] reap released=106954752 pending=0
+1790274050850 [kv-vmm] retire id=chatcmpl-81e2279c06205cc2146954c1f6d7f5fe planes=34 mapped=142606336 reserved=320864256 used=98353152 slack_bytes=2019328 booked=1252139288
+1790274050850 [kv-vmm] ensure-walls n=156 us=2,2,2,3,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790274050855 [kv-vmm] reap released=142606336 pending=0
+1790274053097 [server] SIGTERM: draining (0 in flight, deadline 30s)
+1790274053097 [server] drain complete in 0.0s; exiting
+1790274053152 [server] GPU worker shutdown complete

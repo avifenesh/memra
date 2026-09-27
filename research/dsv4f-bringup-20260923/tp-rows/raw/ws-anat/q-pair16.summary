@@ -1,0 +1,5 @@
+build rows 5d21db2a3 rc=0 gate 72e3f467c6d35e8c
+anat B=1 PROFILE B=1 steps=64 ms_per_step=19.014  | capture span 1216.8 ms over 64 steps = 19.01 ms/step dev0: kernels 164944 (2577/step) kernel-sum 12.91 ms/step busy-union 13.13 ms/step memcpys 204/step dev1: kernels 165392 (2584/step) kernel-sum 11.52 ms/step busy-union 11.75 ms/step memcpys 204/step 
+anat B=2 [1/1] [0%                          ] nsys.nsys-rep[1/1] [6%                          ] nsys.nsys-rep[1/1] [==========47%               ] nsys.nsys-rep[1/1]   | capture span 1506.6 ms over 64 steps = 23.54 ms/step dev0: kernels 197936 (3093/step) kernel-sum 16.96 ms/step busy-union 17.38 ms/step memcpys 403/step dev1: kernels 198448 (3101/step) kernel-sum 16.81 ms/step busy-union 17.23 ms/step memcpys 404/step 
+anat B=4 PROFILE B=4 steps=64 ms_per_step=32.202  | capture span 2060.8 ms over 64 steps = 32.20 ms/step dev0: kernels 247248 (3863/step) kernel-sum 23.26 ms/step busy-union 24.07 ms/step memcpys 802/step dev1: kernels 247888 (3873/step) kernel-sum 23.93 ms/step busy-union 24.74 ms/step memcpys 803/step 
+PAIR16_DONE

@@ -547,6 +547,14 @@ impl TensorContract {
             add_mtp_glue(&mut builder, plan, block);
         }
 
+        if dialect == CheckpointDialect::HfSafetensors && plan.arch == Arch::Step35 {
+            let mut contract = Self {
+                dialect,
+                requirements: std::mem::take(&mut builder.requirements),
+            };
+            crate::model_packs::step35::tensors::normalize_hf_contract(&mut contract, plan);
+            builder.requirements = contract.requirements;
+        }
         Ok(Self {
             dialect,
             requirements: builder.finish()?,
@@ -676,7 +684,7 @@ impl TensorContract {
     }
 }
 
-fn rope_factor_width(plan: &ModelPlan) -> Option<u32> {
+pub(crate) fn rope_factor_width(plan: &ModelPlan) -> Option<u32> {
     plan.layers
         .iter()
         .chain(plan.mtp_blocks.iter().map(|block| &block.layer))
@@ -2110,8 +2118,16 @@ fn add_moe_mlp(
     index: u32,
     moe: &MoeMlpPlan,
 ) -> Result<(), TensorContractError> {
+    if builder.dialect == CheckpointDialect::HfSafetensors && plan.arch == Arch::Step35 {
+        builder
+            .requirements
+            .extend(crate::model_packs::step35::tensors::hf_moe_requirements(
+                plan, index, moe,
+            )?);
+        return Ok(());
+    }
     if builder.dialect == CheckpointDialect::HfSafetensors
-        && matches!(plan.arch, Arch::Gemma4 | Arch::DeepSeekV4 | Arch::Step35)
+        && matches!(plan.arch, Arch::Gemma4 | Arch::DeepSeekV4)
     {
         return Err(TensorContractError::UnsupportedPlanOperation {
             operation: "family-specific HF MoE bank",

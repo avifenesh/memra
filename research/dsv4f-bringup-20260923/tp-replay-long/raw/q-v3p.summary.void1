@@ -1,0 +1,3 @@
+build tpg 82d68feed rc=0 gate bc573ef21c6f459b
+replay gate [load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 351.2ms PROTOCOL {"prefix":400,"steps":304,"capacity":1024,"compare":"token, logits bits, TP/EP cache and hidden digests per step","seed":20260924,"source_sha256":"11e4bd80352f4a24504ffdee519b33bbc527b3b9bcfeb531815e5731b190cb8c"} thread 'main' (218672) panicked at crates/memra-engine/src/bin/dsv4_tp_replay_long_gate.rs:146:14: GATE_DONE rc=101 utc=2026-09-24T16:45:39Z 
+V3P_DONE

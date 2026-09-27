@@ -1,0 +1,946 @@
+{
+  "status": "measured-heldout-code-v2",
+  "selected_c": "c015",
+  "selected_pmin": 0.15,
+  "selected_pmin0": false,
+  "qualification_scope": "code-only-v2",
+  "qualification_code_covered": 4,
+  "qualification_prose_covered": 4,
+  "workloads_sha256": "6904dccb772e87fccccd6557a38b3d2a36718eb0b948bec02d2e8486efdf3690",
+  "development_report_sha256": "1ecfc791c0959135c96b59bb1276a7c2f46be91da0062db674af6d7ff2c02b3d",
+  "matched_loop_exclusions": [],
+  "all_code": {
+    "pairs": 24,
+    "arms": {
+      "k3off": {
+        "output_tokens": 24541,
+        "complete_request_seconds": 194.958180423,
+        "tokens_per_second": 125.87827782734476,
+        "format_covered": 24,
+        "rounds": 8497,
+        "confidence_shortened_rounds": 0
+      },
+      "selected": {
+        "output_tokens": 31333,
+        "complete_request_seconds": 246.386528754,
+        "tokens_per_second": 127.17010202811795,
+        "format_covered": 24,
+        "rounds": 11036,
+        "confidence_shortened_rounds": 1011
+      },
+      "k2off": {
+        "output_tokens": 22616,
+        "complete_request_seconds": 187.041264417,
+        "tokens_per_second": 120.9144948334965,
+        "format_covered": 24,
+        "rounds": 9092,
+        "confidence_shortened_rounds": 0
+      }
+    },
+    "selected_vs": {
+      "k3off": {
+        "pooled_gain_percent": 1.0262487087288052,
+        "paired_gain_percent": [
+          -9.203428934693491,
+          -3.829024845907192,
+          -1.7570350064398887,
+          11.686636790206894,
+          -14.989903120975768,
+          -3.023636457397505,
+          3.2582736542980717,
+          0.39257985609861823,
+          -2.1963326603594124,
+          -7.324008073625365,
+          -10.596268066879144,
+          3.2735535556658535,
+          9.061976775885693,
+          31.148589287270468,
+          -4.195296230419077,
+          2.714830030997728,
+          1.8176807265530837,
+          67.19880834665047,
+          6.217597914615847,
+          -1.230948567277268,
+          -0.18705077331216957,
+          0.4632751744076957,
+          55.69092604545334,
+          -6.774938703620615
+        ],
+        "paired_wins": 12,
+        "median_paired_gain_percent": 0.10276454139322433,
+        "output_token_ratio": 1.2767613381687788,
+        "latency_ratio": 1.2637916922460815,
+        "paired_bootstrap_95_percent": null
+      },
+      "k2off": {
+        "pooled_gain_percent": 5.1735792331892405,
+        "paired_gain_percent": [
+          -0.7423780566621518,
+          -0.2992513473519254,
+          -5.583864664376714,
+          -4.777913100261289,
+          37.86392346905983,
+          -13.573596967538826,
+          6.637960356559369,
+          8.993273145999293,
+          3.006201838320832,
+          -0.012159684699786233,
+          0.829835475524443,
+          17.724831172461442,
+          1.0375971876957157,
+          19.632358654951297,
+          6.086528271680414,
+          10.241845874472144,
+          5.7254446543472115,
+          64.65254851462556,
+          18.3316718537601,
+          8.764995747333915,
+          15.901849427388992,
+          6.631257681907843,
+          86.46876550690638,
+          -6.987982417055205
+        ],
+        "paired_wins": 17,
+        "median_paired_gain_percent": 6.358892976794128,
+        "output_token_ratio": 1.3854350902016273,
+        "latency_ratio": 1.3172843410889932,
+        "paired_bootstrap_95_percent": null
+      }
+    }
+  },
+  "code_by_prompt_tokens": {
+    "256": {
+      "pairs": 6,
+      "arms": {
+        "k3off": {
+          "output_tokens": 3362,
+          "complete_request_seconds": 19.275311587,
+          "tokens_per_second": 174.42000793737932,
+          "format_covered": 6,
+          "rounds": 1096,
+          "confidence_shortened_rounds": 0
+        },
+        "selected": {
+          "output_tokens": 3957,
+          "complete_request_seconds": 22.842732665,
+          "tokens_per_second": 173.22796085877144,
+          "format_covered": 6,
+          "rounds": 1312,
+          "confidence_shortened_rounds": 101
+        },
+        "k2off": {
+          "output_tokens": 4404,
+          "complete_request_seconds": 27.404340835,
+          "tokens_per_second": 160.70446746069308,
+          "format_covered": 6,
+          "rounds": 1754,
+          "confidence_shortened_rounds": 0
+        }
+      },
+      "selected_vs": {
+        "k3off": {
+          "pooled_gain_percent": -0.6834348264884049,
+          "paired_gain_percent": [
+            -9.203428934693491,
+            0.39257985609861823,
+            3.2735535556658535,
+            9.061976775885693,
+            6.217597914615847,
+            0.4632751744076957
+          ],
+          "paired_wins": 5,
+          "median_paired_gain_percent": 1.8684143650367746,
+          "output_token_ratio": 1.176977989292088,
+          "latency_ratio": 1.1850772197325206,
+          "paired_bootstrap_95_percent": [
+            -5.807046420556439,
+            6.386754862303579
+          ]
+        },
+        "k2off": {
+          "pooled_gain_percent": 7.792871969250936,
+          "paired_gain_percent": [
+            -0.7423780566621518,
+            8.993273145999293,
+            17.724831172461442,
+            1.0375971876957157,
+            18.3316718537601,
+            6.631257681907843
+          ],
+          "paired_wins": 5,
+          "median_paired_gain_percent": 7.812265413953568,
+          "output_token_ratio": 0.8985013623978202,
+          "latency_ratio": 0.833544320680246,
+          "paired_bootstrap_95_percent": [
+            1.7283484677221628,
+            15.72485747353043
+          ]
+        }
+      }
+    },
+    "1024": {
+      "pairs": 6,
+      "arms": {
+        "k3off": {
+          "output_tokens": 6425,
+          "complete_request_seconds": 40.379819676,
+          "tokens_per_second": 159.11413303855687,
+          "format_covered": 6,
+          "rounds": 2214,
+          "confidence_shortened_rounds": 0
+        },
+        "selected": {
+          "output_tokens": 7920,
+          "complete_request_seconds": 50.783523874,
+          "tokens_per_second": 155.9560935481844,
+          "format_covered": 6,
+          "rounds": 2835,
+          "confidence_shortened_rounds": 272
+        },
+        "k2off": {
+          "output_tokens": 5194,
+          "complete_request_seconds": 34.376715721000004,
+          "tokens_per_second": 151.09064059970964,
+          "format_covered": 6,
+          "rounds": 2096,
+          "confidence_shortened_rounds": 0
+        }
+      },
+      "selected_vs": {
+        "k3off": {
+          "pooled_gain_percent": -1.9847636599366059,
+          "paired_gain_percent": [
+            -3.829024845907192,
+            3.2582736542980717,
+            -2.1963326603594124,
+            2.714830030997728,
+            -1.230948567277268,
+            -0.18705077331216957
+          ],
+          "paired_wins": 2,
+          "median_paired_gain_percent": -0.7089996702947188,
+          "output_token_ratio": 1.2326848249027238,
+          "latency_ratio": 1.2576461282263602,
+          "paired_bootstrap_95_percent": [
+            -3.3579486368186973,
+            1.112891040904307
+          ]
+        },
+        "k2off": {
+          "pooled_gain_percent": 3.220221271921808,
+          "paired_gain_percent": [
+            -0.2992513473519254,
+            6.637960356559369,
+            3.006201838320832,
+            10.241845874472144,
+            8.764995747333915,
+            15.901849427388992
+          ],
+          "paired_wins": 5,
+          "median_paired_gain_percent": 7.701478051946642,
+          "output_token_ratio": 1.5248363496341932,
+          "latency_ratio": 1.4772651432486152,
+          "paired_bootstrap_95_percent": [
+            0.3781176679324143,
+            9.394246380472593
+          ]
+        }
+      }
+    },
+    "4096": {
+      "pairs": 6,
+      "arms": {
+        "k3off": {
+          "output_tokens": 8090,
+          "complete_request_seconds": 59.587014672,
+          "tokens_per_second": 135.7678354005793,
+          "format_covered": 6,
+          "rounds": 2918,
+          "confidence_shortened_rounds": 0
+        },
+        "selected": {
+          "output_tokens": 4251,
+          "complete_request_seconds": 32.952854279,
+          "tokens_per_second": 129.0024822738664,
+          "format_covered": 6,
+          "rounds": 1448,
+          "confidence_shortened_rounds": 122
+        },
+        "k2off": {
+          "output_tokens": 7047,
+          "complete_request_seconds": 53.08925981,
+          "tokens_per_second": 132.73871259875077,
+          "format_covered": 6,
+          "rounds": 2873,
+          "confidence_shortened_rounds": 0
+        }
+      },
+      "selected_vs": {
+        "k3off": {
+          "pooled_gain_percent": -4.983030853185433,
+          "paired_gain_percent": [
+            -1.7570350064398887,
+            -3.023636457397505,
+            -7.324008073625365,
+            -4.195296230419077,
+            1.8176807265530837,
+            -6.774938703620615
+          ],
+          "paired_wins": 1,
+          "median_paired_gain_percent": -3.6094663439082906,
+          "output_token_ratio": 0.5254635352286774,
+          "latency_ratio": 0.5530207287676819,
+          "paired_bootstrap_95_percent": [
+            -6.845927791757846,
+            -1.7613570777996856
+          ]
+        },
+        "k2off": {
+          "pooled_gain_percent": -2.8147254495215934,
+          "paired_gain_percent": [
+            -5.583864664376714,
+            -13.573596967538826,
+            -0.012159684699786233,
+            6.086528271680414,
+            5.7254446543472115,
+            -6.987982417055205
+          ],
+          "paired_wins": 2,
+          "median_paired_gain_percent": -2.79801217453825,
+          "output_token_ratio": 0.6032354193273733,
+          "latency_ratio": 0.6207066061371783,
+          "paired_bootstrap_95_percent": [
+            -8.005228502293571,
+            3.0562028570216393
+          ]
+        }
+      }
+    },
+    "16384": {
+      "pairs": 6,
+      "arms": {
+        "k3off": {
+          "output_tokens": 6664,
+          "complete_request_seconds": 75.716034488,
+          "tokens_per_second": 88.01306150094477,
+          "format_covered": 6,
+          "rounds": 2269,
+          "confidence_shortened_rounds": 0
+        },
+        "selected": {
+          "output_tokens": 15205,
+          "complete_request_seconds": 139.807417936,
+          "tokens_per_second": 108.7567471345507,
+          "format_covered": 6,
+          "rounds": 5441,
+          "confidence_shortened_rounds": 516
+        },
+        "k2off": {
+          "output_tokens": 5971,
+          "complete_request_seconds": 72.170948051,
+          "tokens_per_second": 82.73412171031147,
+          "format_covered": 6,
+          "rounds": 2369,
+          "confidence_shortened_rounds": 0
+        }
+      },
+      "selected_vs": {
+        "k3off": {
+          "pooled_gain_percent": 23.568871801355584,
+          "paired_gain_percent": [
+            11.686636790206894,
+            -14.989903120975768,
+            -10.596268066879144,
+            31.148589287270468,
+            67.19880834665047,
+            55.69092604545334
+          ],
+          "paired_wins": 4,
+          "median_paired_gain_percent": 21.41761303873868,
+          "output_token_ratio": 2.2816626650660266,
+          "latency_ratio": 1.8464704191310712,
+          "paired_bootstrap_95_percent": [
+            -5.127071623971926,
+            54.30786544460658
+          ]
+        },
+        "k2off": {
+          "pooled_gain_percent": 31.453316825379353,
+          "paired_gain_percent": [
+            -4.777913100261289,
+            37.86392346905983,
+            0.829835475524443,
+            19.632358654951297,
+            64.65254851462556,
+            86.46876550690638
+          ],
+          "paired_wins": 5,
+          "median_paired_gain_percent": 28.748141062005562,
+          "output_token_ratio": 2.5464746273656003,
+          "latency_ratio": 1.9371703117604098,
+          "paired_bootstrap_95_percent": [
+            1.513638390341554,
+            70.59957531275825
+          ]
+        }
+      }
+    }
+  },
+  "prose_diagnostic_by_prompt_tokens": {
+    "256": {
+      "pairs": 6,
+      "arms": {
+        "k3off": {
+          "output_tokens": 9762,
+          "complete_request_seconds": 59.856543517,
+          "tokens_per_second": 163.0899384831246,
+          "format_covered": 6,
+          "rounds": 3466,
+          "confidence_shortened_rounds": 0
+        },
+        "selected": {
+          "output_tokens": 12206,
+          "complete_request_seconds": 74.191739867,
+          "tokens_per_second": 164.5196624567791,
+          "format_covered": 6,
+          "rounds": 4329,
+          "confidence_shortened_rounds": 395
+        },
+        "k2off": {
+          "output_tokens": 11006,
+          "complete_request_seconds": 69.810741111,
+          "tokens_per_second": 157.65482252222927,
+          "format_covered": 6,
+          "rounds": 4515,
+          "confidence_shortened_rounds": 0
+        }
+      },
+      "selected_vs": {
+        "k3off": {
+          "pooled_gain_percent": 0.876647564498545,
+          "paired_gain_percent": [
+            3.3716174836935675,
+            3.83985070373587,
+            6.455114266425599,
+            -3.295731664346413,
+            2.93638339688862,
+            -6.639994995589071
+          ],
+          "paired_wins": 4,
+          "median_paired_gain_percent": 3.1540004402910937,
+          "output_token_ratio": 1.250358533087482,
+          "latency_ratio": 1.2394925518198128,
+          "paired_bootstrap_95_percent": [
+            -2.6588835956873447,
+            4.084637954713166
+          ]
+        },
+        "k2off": {
+          "pooled_gain_percent": 4.354348204972847,
+          "paired_gain_percent": [
+            8.779715504542995,
+            4.4104958791588045,
+            7.719326505413737,
+            1.1006291228978116,
+            1.2601573847700775,
+            2.9421854886435783
+          ],
+          "paired_wins": 6,
+          "median_paired_gain_percent": 3.6763406839011914,
+          "output_token_ratio": 1.109031437397783,
+          "latency_ratio": 1.0627553681035151,
+          "paired_bootstrap_95_percent": [
+            2.0683091856799507,
+            7.076441033357782
+          ]
+        }
+      }
+    },
+    "1024": {
+      "pairs": 6,
+      "arms": {
+        "k3off": {
+          "output_tokens": 14585,
+          "complete_request_seconds": 91.807051034,
+          "tokens_per_second": 158.8657933757023,
+          "format_covered": 6,
+          "rounds": 5181,
+          "confidence_shortened_rounds": 0
+        },
+        "selected": {
+          "output_tokens": 11872,
+          "complete_request_seconds": 76.732605432,
+          "tokens_per_second": 154.71910452097055,
+          "format_covered": 6,
+          "rounds": 4356,
+          "confidence_shortened_rounds": 439
+        },
+        "k2off": {
+          "output_tokens": 10745,
+          "complete_request_seconds": 69.79119194,
+          "tokens_per_second": 153.95925619435695,
+          "format_covered": 6,
+          "rounds": 4387,
+          "confidence_shortened_rounds": 0
+        }
+      },
+      "selected_vs": {
+        "k3off": {
+          "pooled_gain_percent": -2.610183581134573,
+          "paired_gain_percent": [
+            -1.3228453997409684,
+            -3.6063121808947884,
+            -3.4206956199418825,
+            0.5616578078987189,
+            -4.3425772396079925,
+            -2.649620750767112
+          ],
+          "paired_wins": 1,
+          "median_paired_gain_percent": -3.035158185354497,
+          "output_token_ratio": 0.8139869729173809,
+          "latency_ratio": 0.8358029646718823,
+          "paired_bootstrap_95_percent": [
+            -3.5946171424708906,
+            -1.5163003761033393
+          ]
+        },
+        "k2off": {
+          "pooled_gain_percent": 0.4935385798787939,
+          "paired_gain_percent": [
+            2.1976932744084854,
+            1.0980794824556606,
+            -1.6446343060817936,
+            1.793758319673877,
+            -0.9807218470926249,
+            1.6880784279092564
+          ],
+          "paired_wins": 4,
+          "median_paired_gain_percent": 1.3930789551824585,
+          "output_token_ratio": 1.104885993485342,
+          "latency_ratio": 1.0994597355203157,
+          "paired_bootstrap_95_percent": [
+            -0.8033516050361602,
+            1.9746484013022183
+          ]
+        }
+      }
+    },
+    "4096": {
+      "pairs": 6,
+      "arms": {
+        "k3off": {
+          "output_tokens": 11946,
+          "complete_request_seconds": 83.156398543,
+          "tokens_per_second": 143.65701508613014,
+          "format_covered": 6,
+          "rounds": 4233,
+          "confidence_shortened_rounds": 0
+        },
+        "selected": {
+          "output_tokens": 16988,
+          "complete_request_seconds": 117.181252035,
+          "tokens_per_second": 144.97199598896572,
+          "format_covered": 6,
+          "rounds": 6133,
+          "confidence_shortened_rounds": 553
+        },
+        "k2off": {
+          "output_tokens": 12990,
+          "complete_request_seconds": 93.67983118000001,
+          "tokens_per_second": 138.66378532472498,
+          "format_covered": 6,
+          "rounds": 5406,
+          "confidence_shortened_rounds": 0
+        }
+      },
+      "selected_vs": {
+        "k3off": {
+          "pooled_gain_percent": 0.9153614266920185,
+          "paired_gain_percent": [
+            9.504638404850652,
+            1.786332931655621,
+            -8.244410371079125,
+            0.6224582018233171,
+            0.44503640314255133,
+            6.78401260207282
+          ],
+          "paired_wins": 5,
+          "median_paired_gain_percent": 1.204395566739469,
+          "output_token_ratio": 1.4220659635024275,
+          "latency_ratio": 1.4091669924161738,
+          "paired_bootstrap_95_percent": [
+            -3.547278185501457,
+            5.498598736916427
+          ]
+        },
+        "k2off": {
+          "pooled_gain_percent": 4.549284912039631,
+          "paired_gain_percent": [
+            4.241016947731158,
+            12.971769252327281,
+            -1.4348616604999087,
+            -2.009946450139388,
+            9.46500452661445,
+            2.95050935114729
+          ],
+          "paired_wins": 4,
+          "median_paired_gain_percent": 3.595763149439224,
+          "output_token_ratio": 1.3077752117013086,
+          "latency_ratio": 1.2508695901665692,
+          "paired_bootstrap_95_percent": [
+            -0.2293661219412102,
+            9.00854450210511
+          ]
+        }
+      }
+    },
+    "16384": {
+      "pairs": 6,
+      "arms": {
+        "k3off": {
+          "output_tokens": 10385,
+          "complete_request_seconds": 103.60394268,
+          "tokens_per_second": 100.2374980272324,
+          "format_covered": 6,
+          "rounds": 3643,
+          "confidence_shortened_rounds": 0
+        },
+        "selected": {
+          "output_tokens": 11224,
+          "complete_request_seconds": 109.117536507,
+          "tokens_per_second": 102.86155973911644,
+          "format_covered": 6,
+          "rounds": 3956,
+          "confidence_shortened_rounds": 347
+        },
+        "k2off": {
+          "output_tokens": 12251,
+          "complete_request_seconds": 121.027131622,
+          "tokens_per_second": 101.2252363235637,
+          "format_covered": 6,
+          "rounds": 5101,
+          "confidence_shortened_rounds": 0
+        }
+      },
+      "selected_vs": {
+        "k3off": {
+          "pooled_gain_percent": 2.6178443831181175,
+          "paired_gain_percent": [
+            1.9928695099893368,
+            0.6180949473633346,
+            -3.2741749270282505,
+            5.008240319434365,
+            10.996280396376324,
+            -3.947059374986417
+          ],
+          "paired_wins": 4,
+          "median_paired_gain_percent": 1.3054822286763357,
+          "output_token_ratio": 1.080789600385171,
+          "latency_ratio": 1.053217992330946,
+          "paired_bootstrap_95_percent": [
+            -2.1572187108830465,
+            7.411326683066211
+          ]
+        },
+        "k2off": {
+          "pooled_gain_percent": 1.6165172589197807,
+          "paired_gain_percent": [
+            2.7821597635492967,
+            -3.8388465834367835,
+            -4.73627253965353,
+            13.521326198812256,
+            12.434581723716942,
+            -8.21280842365304
+          ],
+          "paired_wins": 3,
+          "median_paired_gain_percent": -0.5283434099437434,
+          "output_token_ratio": 0.9161701085625663,
+          "latency_ratio": 0.9015956591271052,
+          "paired_bootstrap_95_percent": [
+            -5.239606952846709,
+            8.891608595974642
+          ]
+        }
+      }
+    }
+  },
+  "all_arms_format_covered_code": {
+    "256": {
+      "pairs": 6,
+      "arms": {
+        "k3off": {
+          "output_tokens": 3362,
+          "complete_request_seconds": 19.275311587,
+          "tokens_per_second": 174.42000793737932,
+          "format_covered": 6,
+          "rounds": 1096,
+          "confidence_shortened_rounds": 0
+        },
+        "selected": {
+          "output_tokens": 3957,
+          "complete_request_seconds": 22.842732665,
+          "tokens_per_second": 173.22796085877144,
+          "format_covered": 6,
+          "rounds": 1312,
+          "confidence_shortened_rounds": 101
+        },
+        "k2off": {
+          "output_tokens": 4404,
+          "complete_request_seconds": 27.404340835,
+          "tokens_per_second": 160.70446746069308,
+          "format_covered": 6,
+          "rounds": 1754,
+          "confidence_shortened_rounds": 0
+        }
+      },
+      "selected_vs": {
+        "k3off": {
+          "pooled_gain_percent": -0.6834348264884049,
+          "paired_gain_percent": [
+            -9.203428934693491,
+            0.39257985609861823,
+            3.2735535556658535,
+            9.061976775885693,
+            6.217597914615847,
+            0.4632751744076957
+          ],
+          "paired_wins": 5,
+          "median_paired_gain_percent": 1.8684143650367746,
+          "output_token_ratio": 1.176977989292088,
+          "latency_ratio": 1.1850772197325206,
+          "paired_bootstrap_95_percent": [
+            -5.807046420556439,
+            6.386754862303579
+          ]
+        },
+        "k2off": {
+          "pooled_gain_percent": 7.792871969250936,
+          "paired_gain_percent": [
+            -0.7423780566621518,
+            8.993273145999293,
+            17.724831172461442,
+            1.0375971876957157,
+            18.3316718537601,
+            6.631257681907843
+          ],
+          "paired_wins": 5,
+          "median_paired_gain_percent": 7.812265413953568,
+          "output_token_ratio": 0.8985013623978202,
+          "latency_ratio": 0.833544320680246,
+          "paired_bootstrap_95_percent": [
+            1.7283484677221628,
+            15.72485747353043
+          ]
+        }
+      }
+    },
+    "1024": {
+      "pairs": 6,
+      "arms": {
+        "k3off": {
+          "output_tokens": 6425,
+          "complete_request_seconds": 40.379819676,
+          "tokens_per_second": 159.11413303855687,
+          "format_covered": 6,
+          "rounds": 2214,
+          "confidence_shortened_rounds": 0
+        },
+        "selected": {
+          "output_tokens": 7920,
+          "complete_request_seconds": 50.783523874,
+          "tokens_per_second": 155.9560935481844,
+          "format_covered": 6,
+          "rounds": 2835,
+          "confidence_shortened_rounds": 272
+        },
+        "k2off": {
+          "output_tokens": 5194,
+          "complete_request_seconds": 34.376715721000004,
+          "tokens_per_second": 151.09064059970964,
+          "format_covered": 6,
+          "rounds": 2096,
+          "confidence_shortened_rounds": 0
+        }
+      },
+      "selected_vs": {
+        "k3off": {
+          "pooled_gain_percent": -1.9847636599366059,
+          "paired_gain_percent": [
+            -3.829024845907192,
+            3.2582736542980717,
+            -2.1963326603594124,
+            2.714830030997728,
+            -1.230948567277268,
+            -0.18705077331216957
+          ],
+          "paired_wins": 2,
+          "median_paired_gain_percent": -0.7089996702947188,
+          "output_token_ratio": 1.2326848249027238,
+          "latency_ratio": 1.2576461282263602,
+          "paired_bootstrap_95_percent": [
+            -3.3579486368186973,
+            1.112891040904307
+          ]
+        },
+        "k2off": {
+          "pooled_gain_percent": 3.220221271921808,
+          "paired_gain_percent": [
+            -0.2992513473519254,
+            6.637960356559369,
+            3.006201838320832,
+            10.241845874472144,
+            8.764995747333915,
+            15.901849427388992
+          ],
+          "paired_wins": 5,
+          "median_paired_gain_percent": 7.701478051946642,
+          "output_token_ratio": 1.5248363496341932,
+          "latency_ratio": 1.4772651432486152,
+          "paired_bootstrap_95_percent": [
+            0.3781176679324143,
+            9.394246380472593
+          ]
+        }
+      }
+    },
+    "4096": {
+      "pairs": 6,
+      "arms": {
+        "k3off": {
+          "output_tokens": 8090,
+          "complete_request_seconds": 59.587014672,
+          "tokens_per_second": 135.7678354005793,
+          "format_covered": 6,
+          "rounds": 2918,
+          "confidence_shortened_rounds": 0
+        },
+        "selected": {
+          "output_tokens": 4251,
+          "complete_request_seconds": 32.952854279,
+          "tokens_per_second": 129.0024822738664,
+          "format_covered": 6,
+          "rounds": 1448,
+          "confidence_shortened_rounds": 122
+        },
+        "k2off": {
+          "output_tokens": 7047,
+          "complete_request_seconds": 53.08925981,
+          "tokens_per_second": 132.73871259875077,
+          "format_covered": 6,
+          "rounds": 2873,
+          "confidence_shortened_rounds": 0
+        }
+      },
+      "selected_vs": {
+        "k3off": {
+          "pooled_gain_percent": -4.983030853185433,
+          "paired_gain_percent": [
+            -1.7570350064398887,
+            -3.023636457397505,
+            -7.324008073625365,
+            -4.195296230419077,
+            1.8176807265530837,
+            -6.774938703620615
+          ],
+          "paired_wins": 1,
+          "median_paired_gain_percent": -3.6094663439082906,
+          "output_token_ratio": 0.5254635352286774,
+          "latency_ratio": 0.5530207287676819,
+          "paired_bootstrap_95_percent": [
+            -6.845927791757846,
+            -1.7613570777996856
+          ]
+        },
+        "k2off": {
+          "pooled_gain_percent": -2.8147254495215934,
+          "paired_gain_percent": [
+            -5.583864664376714,
+            -13.573596967538826,
+            -0.012159684699786233,
+            6.086528271680414,
+            5.7254446543472115,
+            -6.987982417055205
+          ],
+          "paired_wins": 2,
+          "median_paired_gain_percent": -2.79801217453825,
+          "output_token_ratio": 0.6032354193273733,
+          "latency_ratio": 0.6207066061371783,
+          "paired_bootstrap_95_percent": [
+            -8.005228502293571,
+            3.0562028570216393
+          ]
+        }
+      }
+    },
+    "16384": {
+      "pairs": 6,
+      "arms": {
+        "k3off": {
+          "output_tokens": 6664,
+          "complete_request_seconds": 75.716034488,
+          "tokens_per_second": 88.01306150094477,
+          "format_covered": 6,
+          "rounds": 2269,
+          "confidence_shortened_rounds": 0
+        },
+        "selected": {
+          "output_tokens": 15205,
+          "complete_request_seconds": 139.807417936,
+          "tokens_per_second": 108.7567471345507,
+          "format_covered": 6,
+          "rounds": 5441,
+          "confidence_shortened_rounds": 516
+        },
+        "k2off": {
+          "output_tokens": 5971,
+          "complete_request_seconds": 72.170948051,
+          "tokens_per_second": 82.73412171031147,
+          "format_covered": 6,
+          "rounds": 2369,
+          "confidence_shortened_rounds": 0
+        }
+      },
+      "selected_vs": {
+        "k3off": {
+          "pooled_gain_percent": 23.568871801355584,
+          "paired_gain_percent": [
+            11.686636790206894,
+            -14.989903120975768,
+            -10.596268066879144,
+            31.148589287270468,
+            67.19880834665047,
+            55.69092604545334
+          ],
+          "paired_wins": 4,
+          "median_paired_gain_percent": 21.41761303873868,
+          "output_token_ratio": 2.2816626650660266,
+          "latency_ratio": 1.8464704191310712,
+          "paired_bootstrap_95_percent": [
+            -5.127071623971926,
+            54.30786544460658
+          ]
+        },
+        "k2off": {
+          "pooled_gain_percent": 31.453316825379353,
+          "paired_gain_percent": [
+            -4.777913100261289,
+            37.86392346905983,
+            0.829835475524443,
+            19.632358654951297,
+            64.65254851462556,
+            86.46876550690638
+          ],
+          "paired_wins": 5,
+          "median_paired_gain_percent": 28.748141062005562,
+          "output_token_ratio": 2.5464746273656003,
+          "latency_ratio": 1.9371703117604098,
+          "paired_bootstrap_95_percent": [
+            1.513638390341554,
+            70.59957531275825
+          ]
+        }
+      }
+    }
+  },
+  "scope": "six disjoint synthetic scenarios, requested-code native rate; prose diagnostic only under v2; no online C, warm-KV or HTTP claim"
+}

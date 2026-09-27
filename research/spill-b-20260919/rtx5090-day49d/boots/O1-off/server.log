@@ -1,0 +1,102 @@
+1790477883166 [server] build: memra-0.138.0-65b15cdfdd55 (id: source-tree, git: 8926ccfb3e8a)
+1790477883166 [server] starting; models config = [("q9", "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", None)]
+1790477883167 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+1790477883167 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+1790477883267 [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+1790477883365 [worker] Engine ready (device=0, MEMRA_FAST=true)
+1790477883365 [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+1790477883365 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+1790477883365 [worker] loading model "q9" <- /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+1790477883406 [tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+1790477884737 [q8rp] split-plane decode mirrors built: 92 tensors
+1790477884896 [worker]   loaded "q9": 33 layers, eos=248046, stop=[248046]
+1790477884896 [worker] q9: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+1790477884896 [route-contract] model="q9" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+1790477884896 [worker] q9: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+1790477884896 [prefix-cache] on: budget 2052MB (2051538944 B, derived: 2 x 1025769472 B max entry for model "q9" at served ctx 65536 (from MEMRA_CTX; MEMRA_CTX set), requested 2051538944 B; boot driver free 18173657088 B, post-reserve clamp 16563044352 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+1790477884896 [admission] "q9": plain 14848 B/token, spec 16704 B/token; fixed residual learns from effective-free deltas
+1790477884896 [prime-walk] model="q9" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+1790477885734 [fa-pool] grow #0 dev=0 o_len 0 -> 266240 ml_len 0 -> 1040 (retired kept, zero=false)
+1790477885743 [func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+1790477885743 [func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q8_0_mmvq
+1790477885743 [func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+1790477885743 [fa-pool] grow #1 dev=0 o_len 266240 -> 532480 ml_len 1040 -> 2080 (retired kept, zero=false)
+1790477885743 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+1790477885743 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+1790477885744 [func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+1790477885744 [func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+1790477885747 [spec] draft-session state high-water: 41MB (max of parked delta 41MB and capture-time pool peak 9MB; charged per spec admission and gating future captures)
+1790477885785 [fa-pool] grow #2 dev=0 o_len 532480 -> 1064960 ml_len 2080 -> 4160 (retired kept, zero=false)
+1790477886081 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1442840576,"still_owned_bytes":8327347072,"pool_reserved_bytes":8455716864,"pool_cached_bytes":128369792,"driver_free_bytes":16294608896,"synchronization_errors":[]}
+1790477886081 [admit-cal] post-probe pool trim: released 1376MB cached back to the driver
+1790477886081 [admit-cal] boot calibration done: model="q9" route=mtp transient floor 1536MB (static was 1536MB; measured 1266MB; probe kv charge 67MB, draft-state 41MB, drafted 48 accepted 47; [dev0 peak-mapped 9440MB rest-mapped 8064MB charged 109MB -> 1266MB]; 1.2s)
+1790477886081 [admit-predict] shadow armed: budget_bytes=12760827008 budget_src=derived(effective_free_bytes=16422978688 - prefix_cache_budget_bytes=2051538944 - admission_reserve_bytes=1610612736) exempt_tenants=0 enforce=false (logging only, nothing is rejected; enforcement is a separate flip)
+1790477886081 [admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+1790477886081 [kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+1790477886081 [server] worker ready; serving models: ["q9"]
+1790477886081 [server] listening on http://127.0.0.1:18526
+1790477886356 [meter] admit id=cmpl-071bb39256fd91f8f5ef0643bdb5553e tenant=default lane=interactive model="q9"
+1790477886356 [admission] per-session draft-state charge: model="q9" +44MB (measured capture high-water)
+1790477886356 [admission] request cost: model="q9" ctx=6272 path=spec = 16704 B/token x ctx + 1510MB prefill-workspace + 0MB fixed = 1615MB
+1790477886356 [admit-predict] id=cmpl-071bb39256fd91f8f5ef0643bdb5553e tenant="d45-burst-1" model="q9" verdict=admit reason=maxtok-fallback prompt=6144 predicted_completion=64 kv_hat=1657686288 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=12760827008 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790477886356 [meter] admit id=cmpl-90633b1488e5ca3b43fd5946ae7215a6 tenant=default lane=interactive model="q9"
+1790477886357 [spec-k] model="q9" tenant="d45-burst-1" K=3 source=cold-long prompt=6144 cached=0 lcp=0 active=1 wave=2 placement=single-or-non-pp2
+1790477886357 [admission] fixed residual high-water: model="q9" 115MB (observed 218MB at ctx 6216 path=spec)
+1790477886357 [admit-oom] WARN: MEMRA_STEP_OOM_FAULT=batch:1 armed: the next 1 batched decode chunk(s) of at least two sessions will report a SYNTHETIC CUDA OOM (diagnostic door, never a serving configuration)
+1790477886358 [meter] admit id=cmpl-a1bf2a0f047868de3c8fcdea723b410b tenant=default lane=interactive model="q9"
+1790477886358 [meter] admit id=cmpl-191a0a8e37329cd99bff2fe1482dd15d tenant=default lane=interactive model="q9"
+1790477886359 [meter] admit id=cmpl-790e350d40171ae2195b0b5083e13c51 tenant=default lane=interactive model="q9"
+1790477886359 [meter] admit id=cmpl-e63dd28a1898db90fffc7b0e8fac2852 tenant=default lane=interactive model="q9"
+1790477886359 [meter] admit id=cmpl-ae45e192ab6906e5ca8283998b637043 tenant=default lane=interactive model="q9"
+1790477886359 [meter] admit id=cmpl-fe9a23af29d5f547b991e658ee684739 tenant=default lane=interactive model="q9"
+1790477887154 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=797.429 max_chunk_ms=797.429
+1790477887154 [admission] request cost: model="q9" ctx=6272 path=plain = 14848 B/token x ctx + 1510MB prefill-workspace + 115MB fixed = 1718MB
+1790477887154 [admit-predict] id=cmpl-90633b1488e5ca3b43fd5946ae7215a6 tenant="d45-burst-2" model="q9" verdict=admit reason=maxtok-fallback prompt=6144 predicted_completion=64 kv_hat=1716804280 booked_bytes=1657686288 booked_real=1658621712 inflight=1 cap=64 budget_bytes=12760827008 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790477887155 [spec-k] model="q9" tenant="d45-burst-2" K=0 source=concurrency prompt=6144 cached=0 lcp=0 active=2 wave=8 placement=single-or-non-pp2
+1790477887155 [admit-predict] id=cmpl-a1bf2a0f047868de3c8fcdea723b410b tenant="d45-burst-4" model="q9" verdict=admit reason=maxtok-fallback prompt=6144 predicted_completion=64 kv_hat=1716804280 booked_bytes=3374490568 booked_real=3376257480 inflight=2 cap=64 budget_bytes=12760827008 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790477887155 [spec-k] model="q9" tenant="d45-burst-4" K=0 source=concurrency prompt=6144 cached=0 lcp=0 active=3 wave=8 placement=single-or-non-pp2
+1790477887155 [admit-predict] id=cmpl-191a0a8e37329cd99bff2fe1482dd15d tenant="d45-burst-5" model="q9" verdict=admit reason=maxtok-fallback prompt=6144 predicted_completion=64 kv_hat=1716804280 booked_bytes=5091294848 booked_real=5093893248 inflight=3 cap=64 budget_bytes=12760827008 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790477887156 [spec-k] model="q9" tenant="d45-burst-5" K=0 source=concurrency prompt=6144 cached=0 lcp=0 active=4 wave=8 placement=single-or-non-pp2
+1790477887156 [admit-predict] id=cmpl-790e350d40171ae2195b0b5083e13c51 tenant="d45-burst-0" model="q9" verdict=admit reason=maxtok-fallback prompt=6144 predicted_completion=64 kv_hat=1716804280 booked_bytes=6808099128 booked_real=6811529016 inflight=4 cap=64 budget_bytes=12760827008 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790477887156 [spec-k] model="q9" tenant="d45-burst-0" K=0 source=concurrency prompt=6144 cached=0 lcp=0 active=5 wave=8 placement=single-or-non-pp2
+1790477887156 [admit-predict] id=cmpl-e63dd28a1898db90fffc7b0e8fac2852 tenant="d45-burst-3" model="q9" verdict=admit reason=maxtok-fallback prompt=6144 predicted_completion=64 kv_hat=1716804280 booked_bytes=8524903408 booked_real=8529164784 inflight=5 cap=64 budget_bytes=12760827008 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790477887156 [spec-k] model="q9" tenant="d45-burst-3" K=0 source=concurrency prompt=6144 cached=0 lcp=0 active=6 wave=8 placement=single-or-non-pp2
+1790477887156 [admit-predict] id=cmpl-ae45e192ab6906e5ca8283998b637043 tenant="d45-burst-6" model="q9" verdict=admit reason=maxtok-fallback prompt=6144 predicted_completion=64 kv_hat=1716804280 booked_bytes=10241707688 booked_real=10246800552 inflight=6 cap=64 budget_bytes=12760827008 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790477887157 [spec-k] model="q9" tenant="d45-burst-6" K=0 source=concurrency prompt=6144 cached=0 lcp=0 active=7 wave=8 placement=single-or-non-pp2
+1790477887157 [admit-predict] id=cmpl-fe9a23af29d5f547b991e658ee684739 tenant="d45-burst-7" model="q9" verdict=reject-kv reason=maxtok-fallback prompt=6144 predicted_completion=64 kv_hat=1716804280 booked_bytes=11958511968 booked_real=11964436320 inflight=7 cap=64 budget_bytes=12760827008 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790477887157 [spec-k] model="q9" tenant="d45-burst-7" K=0 source=concurrency prompt=6144 cached=0 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+1790477887624 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=466.489 max_chunk_ms=466.489
+1790477888813 [prime-batch] B=6 tokens=6144 carried=0 partial=6 in 1188.6ms
+1790477889059 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=26.298 max_chunk_ms=26.298
+1790477890308 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 1249.1ms
+1790477891841 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 1285.2ms
+1790477892069 [prefix-cache] insert (spec-boundary): 6144 tokens, 155.3MB (resident 155.3MB / 2052MB, model q9, ns "d45-burst-1")
+1790477892069 [spec-gate] demoted session to batched decode: 8 active >= HIGH=4 (model q9, committed 6145, generated 1)
+1790477893405 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 1336.0ms
+1790477894994 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 1339.8ms
+1790477896651 [prime-batch] B=6 tokens=6144 carried=6 partial=0 in 1400.9ms
+1790477896652 [prefix-cache] insert (seed): 6144 tokens, 143.9MB (resident 299.3MB / 2052MB, model q9, ns "d45-burst-2")
+1790477896652 [prefix-cache] insert (seed): 6144 tokens, 143.9MB (resident 443.2MB / 2052MB, model q9, ns "d45-burst-4")
+1790477896653 [prefix-cache] insert (seed): 6144 tokens, 143.9MB (resident 587.1MB / 2052MB, model q9, ns "d45-burst-5")
+1790477896653 [prefix-cache] insert (seed): 6144 tokens, 143.9MB (resident 731.0MB / 2052MB, model q9, ns "d45-burst-0")
+1790477896653 [prefix-cache] insert (seed): 6144 tokens, 143.9MB (resident 874.9MB / 2052MB, model q9, ns "d45-burst-3")
+1790477896654 [prefix-cache] insert (seed): 6144 tokens, 143.9MB (resident 1018.8MB / 2052MB, model q9, ns "d45-burst-6")
+1790477896912 [prefix-cache] insert (seed): 6144 tokens, 143.9MB (resident 1162.8MB / 2052MB, model q9, ns "d45-burst-7")
+1790477896914 [admit-oom] MEMRA_STEP_OOM_FAULT fired: this batched decode chunk reports a synthetic CUDA OOM (8 session(s))
+1790477896920 [engine-error] class=Overloaded batch step: CUDA_ERROR_OUT_OF_MEMORY (synthetic: MEMRA_STEP_OOM_FAULT diagnostic door)
+1790477896920 [engine-error] class=Overloaded batch step: CUDA_ERROR_OUT_OF_MEMORY (synthetic: MEMRA_STEP_OOM_FAULT diagnostic door)
+1790477896920 [engine-error] class=Overloaded batch step: CUDA_ERROR_OUT_OF_MEMORY (synthetic: MEMRA_STEP_OOM_FAULT diagnostic door)
+1790477896920 [engine-error] class=Overloaded batch step: CUDA_ERROR_OUT_OF_MEMORY (synthetic: MEMRA_STEP_OOM_FAULT diagnostic door)
+1790477896920 [engine-error] class=Overloaded batch step: CUDA_ERROR_OUT_OF_MEMORY (synthetic: MEMRA_STEP_OOM_FAULT diagnostic door)
+1790477896920 [engine-error] class=Overloaded batch step: CUDA_ERROR_OUT_OF_MEMORY (synthetic: MEMRA_STEP_OOM_FAULT diagnostic door)
+1790477896920 [engine-error] class=Overloaded batch step: CUDA_ERROR_OUT_OF_MEMORY (synthetic: MEMRA_STEP_OOM_FAULT diagnostic door)
+1790477896920 [engine-error] class=Overloaded batch step: CUDA_ERROR_OUT_OF_MEMORY (synthetic: MEMRA_STEP_OOM_FAULT diagnostic door)
+1790477901923 [meter] admit id=cmpl-21560e9ed0f11760dcbf4fb1aeb713ee tenant=default lane=interactive model="q9"
+1790477901923 [admission] per-session draft-state charge: model="q9" +44MB (measured capture high-water)
+1790477901939 [admission] request cost: model="q9" ctx=592 path=spec = 16704 B/token x ctx + 185MB prefill-workspace + 115MB fixed = 309MB
+1790477901939 [admit-predict] id=cmpl-21560e9ed0f11760dcbf4fb1aeb713ee tenant="d45-probe" model="q9" verdict=admit reason=maxtok-fallback prompt=512 predicted_completion=16 kv_hat=351967176 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=12760827008 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790477901939 [spec-k] model="q9" tenant="d45-probe" K=3 source=cold-short prompt=512 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790477902148 [spec-acc] ctx=512 burst=9/24 cum=9/24=0.375
+1790477902186 [server] SIGTERM: draining (0 in flight, deadline 30s)
+1790477902186 [server] drain complete in 0.0s; exiting
+1790477902259 [server] GPU worker shutdown complete

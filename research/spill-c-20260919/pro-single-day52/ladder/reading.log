@@ -1,0 +1,76 @@
+DAY52 VIEW day=43 reader=day43-resid.py arms=off<-off,base<-base,i6d<-i6d,i6g<-i6g rc=0
+DAY43 RESID CHECKS rig=pro-single runs=40 integrity=ok
+DAY43 ARM base window_door_ms_per_token pooled=17.39 o1=17.44 o2=17.31 gen_door_ms_per_token=37.30 window_s median=0.808 iqr=0.007 | per token: demand=15.139 verify=9.030 step=4.030 pread=2.546 stage=1.278 alloc=0.721 drain=1.338 enqueue=0.975 validate=0.449 finish=0.274 collect=0.140 publish=0.229 miss_total=18.210 gpu_misses=92.3 host_hits=0.0 host_misses=92.3 reads=92.3
+DAY43 ARM i6d window_door_ms_per_token pooled=19.11 o1=19.16 o2=19.09 gen_door_ms_per_token=40.88 window_s median=0.863 iqr=0.003 | per token: demand=16.671 verify=9.031 step=4.469 pread=2.691 stage=2.283 alloc=1.700 drain=1.347 enqueue=1.010 validate=0.588 finish=0.274 collect=0.167 publish=0.302 miss_total=19.804 gpu_misses=92.3 host_hits=0.0 host_misses=92.3 reads=92.3
+DAY43 ARM i6g window_door_ms_per_token pooled=20.78 o1=20.78 o2=20.78 gen_door_ms_per_token=52.48 window_s median=0.916 iqr=0.003 | per token: demand=17.674 verify=5.086 step=10.136 pread=1.490 stage=1.673 alloc=1.080 drain=1.346 enqueue=1.831 validate=0.516 finish=0.109 collect=0.002 publish=0.189 miss_total=21.453 gpu_misses=92.3 host_hits=40.5 host_misses=51.8 reads=51.8
+DAY43 CLAUSE no_regression i6d_minus_base pooled=+0.055 o1=+0.055 o2=+0.057 noise=0.007 rule <=noise pooled and both orders -> FAIL
+DAY43 READING budget i6g_minus_base pooled=+0.108 o1=+0.107 o2=+0.111 noise=0.007 host_hits_per_token=40.5 -> resid_budget_hurts
+DAY43 RESID rig=pro-single integrity=ok no_regression=FAIL budget=resid_budget_hurts
+DAY52 VIEW day=44 reader=day44-mapped.py arms=off<-off,i6<-i6g,i9<-i9g rc=1
+Traceback (most recent call last):
+  File "/root/wt-c/research/spill-c-20260919/day44-mapped.py", line 137, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/root/wt-c/research/spill-c-20260919/day44-mapped.py", line 83, in main
+    check(r["physical_reads"] == r["trace_misses"], f"{label} physical_reads != hit=false lines")
+          ~^^^^^^^^^^^^^^^^^^
+KeyError: 'physical_reads'
+DAY52 VIEW day=45 reader=day45-fill.py arms=off<-off,i9g<-i9g,fill<-fill rc=1
+Traceback (most recent call last):
+  File "/root/wt-c/research/spill-c-20260919/day45-fill.py", line 120, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/root/wt-c/research/spill-c-20260919/day45-fill.py", line 67, in main
+    check(r["physical_reads"] == r["trace_misses"], f"{label} physical_reads != hit=false lines")
+          ~^^^^^^^^^^^^^^^^^^
+KeyError: 'physical_reads'
+DAY52 VIEW day=46 reader=day46-nodrain.py arms=off<-off,fill<-fill,i1<-i1 rc=0
+DAY46 NODRAIN CHECKS rig=pro-single runs=30 integrity=ok
+DAY46 ARM fill window_door_ms_per_token=4.72 gen_door_ms_per_token=12.59 window_s median=0.402 iqr=0.003 | per window token: gpu_misses=92.3 host_hits=92.3 demand=0.969 drain=1.335 sync2=0.018 wait=0.000 retire=0.059 finish=0.093 enqueue=2.789 miss_total=5.626
+DAY46 ARM i1 window_door_ms_per_token=3.52 gen_door_ms_per_token=11.09 window_s median=0.363 iqr=0.005 | per window token: gpu_misses=92.3 host_hits=92.3 demand=1.025 drain=0.000 sync2=0.000 wait=0.000 retire=0.060 finish=0.002 enqueue=2.780 miss_total=4.231
+DAY46 CLAUSE (i) i1_minus_fill window o1=-0.039 o2=-0.038 noise=0.005 rule < -noise both orders -> PASS
+DAY46 CLAUSE (ii) i1 drain+sync2=0.000 wait=0.000 ms per window token rule <0.05 and <1.0 -> PASS
+DAY46 NODRAIN rig=pro-single integrity=ok clause_i=PASS clause_ii=PASS
+DAY52 VIEW day=47 reader=day47-pinned.py arms=off<-off,i1<-i1,i2<-i2 rc=0
+DAY47 PINNED CHECKS rig=pro-single runs=30 integrity=ok
+DAY47 ARM i1 window_door_ms_per_token=3.52 gen_door_ms_per_token=11.09 window_s median=0.363 iqr=0.005 | per window token: gpu_misses=92.3 host_hits=92.3 demand=1.025 enqueue=2.780 copy_gpu=3.774 wait=0.000 retire=0.060 finish=0.002 alloc=0.000 step=0.000 miss_total=4.231
+DAY47 ARM i2 window_door_ms_per_token=0.63 gen_door_ms_per_token=5.31 window_s median=0.271 iqr=0.001 | per window token: gpu_misses=92.3 host_hits=92.3 demand=0.945 enqueue=0.169 copy_gpu=1.429 wait=0.000 retire=0.055 finish=0.002 alloc=0.000 step=0.000 miss_total=1.477
+DAY47 CLAUSE (i) i2_minus_i1 window o1=-0.093 o2=-0.093 noise=0.005 rule < -noise both orders -> PASS
+DAY47 CLAUSE (ii) enqueue per window token i1=2.780 i2=0.169 rule i2 < 0.5 x i1 -> PASS
+DAY47 READING copy_gpu per window token i1=3.774 i2=1.429 -> copy_lower
+DAY47 PINNED rig=pro-single integrity=ok clause_i=PASS clause_ii=PASS
+DAY52 VIEW day=48 reader=day48-small.py arms=off<-off,i2<-i2,i8<-i8,i5<-i5 rc=0
+DAY48 SMALL CHECKS rig=pro-single runs=40 integrity=ok
+DAY48 ARM i2 window_door_ms_per_token=0.63 window_s median=0.271 iqr=0.001 | per window token: gpu_misses=92.3 host_hits=92.3 validate=0.269 trace=0.412 demand=0.945 enqueue=0.169 retire=0.055 finish=0.002 miss_total=1.477
+DAY48 ARM i8 window_door_ms_per_token=0.44 window_s median=0.265 iqr=0.001 | per window token: gpu_misses=92.3 host_hits=92.3 validate=0.085 trace=0.417 demand=0.972 enqueue=0.169 retire=0.054 finish=0.002 miss_total=1.496
+DAY48 ARM i5 window_door_ms_per_token=0.50 window_s median=0.267 iqr=0.000 | per window token: gpu_misses=92.3 host_hits=92.3 validate=0.083 trace=0.013 demand=0.557 enqueue=0.173 retire=0.054 finish=0.002 miss_total=1.082
+DAY48 CLAUSE (i) validate per window token i2=0.269 i8=0.085 rule i8 < 0.1 x i2 -> FAIL
+DAY48 CLAUSE (ii) i8_minus_i2 window pooled=-0.006 o1=-0.005 o2=-0.005 noise=0.001 rule <=noise -> PASS
+DAY48 CLAUSE (iii) trace per window token i8=0.417 i5=0.013 rule i5 < 0.1 x i8 -> PASS
+DAY48 CLAUSE (iv) i5_minus_i8 window pooled=+0.002 o1=+0.002 o2=+0.001 noise=0.001 rule <=noise -> FAIL
+DAY48 READING window i2=0.271 i8=0.265 i5=0.267 -> not_monotone
+DAY48 SMALL rig=pro-single integrity=ok i8=FAIL i5=FAIL
+DAY52 VIEW day=49 reader=day49-install.py arms=off<-off,i5<-i5,i7<-i7 rc=0
+DAY49 INSTALL CHECKS rig=pro-single runs=30 integrity=ok
+DAY49 ARM i5 install_s median=11.93 iqr=0.03 records_s median=3.95 sha_s median=4.64 window_s median=0.267 iqr=0.000
+DAY49 ARM i7 install_s median=8.87 iqr=0.03 records_s median=0.89 sha_s median=4.63 window_s median=0.267 iqr=0.000
+DAY49 CLAUSE (i) records_s i5=3.95 i7=0.89 rule i7 < 0.25 x i5 -> PASS
+DAY49 CLAUSE (ii) install_s i7_minus_i5 o1=-3.08 o2=-3.06 noise=0.03 rule < -noise both orders -> PASS
+DAY49 CLAUSE (iii) window i7_minus_i5 pooled=+0.000 o1=+0.000 o2=+0.000 noise=0.000 rule <=noise -> PASS
+DAY49 INSTALL rig=pro-single integrity=ok clause_i=PASS clause_ii=PASS clause_iii=PASS
+DAY52 VIEW day=50 reader=day50-prefetch.py arms=off<-off,i7<-i7,i4<-i4 rc=0
+DAY50 PREFETCH CHECKS rig=pro-single runs=30 integrity=ok
+DAY50 ARM i7 window_door_ms_per_token=0.50 gen_door_ms_per_token=5.19 window_s median=0.267 iqr=0.000 | per window token: gpu_misses=92.3 host_hits=92.3 prefetches=0.0 prefetch_hits=0.0 demand=0.563 enqueue=0.173 copy_gpu=1.586 wait=0.000 retire=0.054 miss_total=1.085
+DAY50 ARM i4 window_door_ms_per_token=-0.27 gen_door_ms_per_token=4.05 window_s median=0.242 iqr=0.001 | per window token: gpu_misses=92.3 host_hits=92.3 prefetches=88.6 prefetch_hits=88.6 demand=0.024 enqueue=0.007 copy_gpu=0.066 wait=0.000 retire=0.055 miss_total=0.046
+DAY50 CLAUSE (i) i4_minus_i7 window o1=-0.025 o2=-0.024 noise=0.001 rule < -noise both orders -> PASS
+DAY50 CLAUSE (ii) i4 prefetch_hits/gpu_misses per window token median=0.959 rule >=0.5 -> PASS
+DAY50 PREFETCH rig=pro-single integrity=ok clause_i=PASS clause_ii=PASS
+DAY52 VIEW day=57 reader=day57-fillwait.py arms=off<-off,i4<-i4,i10<-i10 rc=0
+DAY57 FILLWAIT CHECKS rig=pro-single runs=30 integrity=ok
+DAY57 ARM i4 window_door_ms_per_token=-0.27 gen_door_ms_per_token=4.05 window_s median=0.242 iqr=0.001 | per window token: gpu_misses=92.3 host_hits=92.3 prefetches=88.6 prefetch_hits=88.6 demand=0.024 enqueue=0.007 copy_gpu=0.066 wait=0.000 retire=0.055 miss_total=0.046
+DAY57 ARM i10 window_door_ms_per_token=-0.25 gen_door_ms_per_token=-0.88 window_s median=0.243 iqr=0.000 | per window token: gpu_misses=92.3 host_hits=92.3 prefetches=88.6 prefetch_hits=88.6 demand=0.025 enqueue=0.007 copy_gpu=0.066 wait=0.000 retire=0.053 miss_total=0.047
+DAY57 CLAUSE (i) i10 physical_reads per run=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0] rule all 0 -> PASS
+DAY57 CLAUSE (ii) i10_minus_i4 gen o1=-0.158 o2=-0.157 noise=0.003 rule < -noise both orders -> PASS
+DAY57 CLAUSE (iii) i10_minus_i4 window pooled=+0.001 o1=+0.001 o2=+0.000 noise=0.001 rule <= noise pooled and both orders -> PASS
+DAY57 READING install_s median i4=8.87 i10=9.90 (i10 - i4 +1.03) fill_complete_ms median=1006.0 gen_s median off=0.310 i4=0.440 i10=0.282
+DAY57 FILLWAIT rig=pro-single integrity=ok clause_i=PASS clause_ii=PASS clause_iii=PASS

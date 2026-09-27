@@ -1,0 +1,15 @@
+diff --git a/crates/memra-server/src/worker.rs b/crates/memra-server/src/worker.rs
+index 086623e55..298375591 100644
+--- a/crates/memra-server/src/worker.rs
++++ b/crates/memra-server/src/worker.rs
+@@ -10872,8 +10872,10 @@ fn host_scoped_map<T: Send, R: Send>(
+             .into_iter()
+             .map(|c| scope.spawn(move || c.into_iter().map(f).collect::<Vec<R>>()))
+             .collect();
++        eprintln!("[day65 red arm] the shares come back in reverse order");
+         shares
+             .into_iter()
++            .rev()
+             .flat_map(|h| h.join().expect("a hash share panicked"))
+             .collect()
+     })

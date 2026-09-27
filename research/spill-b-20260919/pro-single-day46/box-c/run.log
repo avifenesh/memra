@@ -1,0 +1,13 @@
+2026-09-27T03:10:18Z boot O1-shadow start arm=shadow bin=357192375c6c54dd env=[MEMRA_ADMIT_PREDICT_SHADOW=1] args=[--burst 64 --length 30720 --max-tokens 64]
+2026-09-27T03:25:09Z boot O1-shadow rc=0 DAY46 BOOT rows=107 ok=54 r429=0 rejects=72 w_release=0 oom=55
+2026-09-27T03:25:14Z boot O1-enforce start arm=enforce bin=357192375c6c54dd env=[MEMRA_ADMIT_PREDICT_SHADOW=1 MEMRA_ADMIT_PREDICT_ENFORCE=1] args=[--burst 64 --length 30720 --max-tokens 64]
+2026-09-27T03:28:46Z boot O1-enforce rc=0 DAY46 BOOT rows=107 ok=29 r429=78 rejects=78 w_release=0 oom=0
+2026-09-27T03:28:51Z boot O1-enforce-wrel start arm=enforce-wrel bin=357192375c6c54dd env=[MEMRA_ADMIT_PREDICT_SHADOW=1 MEMRA_ADMIT_PREDICT_ENFORCE=1 MEMRA_ADMIT_W_RELEASE=1] args=[--burst 64 --length 30720 --max-tokens 64]
+2026-09-27T03:33:53Z boot O1-enforce-wrel rc=0 DAY46 BOOT rows=107 ok=39 r429=68 rejects=68 w_release=38 oom=0
+2026-09-27T03:33:58Z boot O2-enforce-wrel start arm=enforce-wrel bin=357192375c6c54dd env=[MEMRA_ADMIT_PREDICT_SHADOW=1 MEMRA_ADMIT_PREDICT_ENFORCE=1 MEMRA_ADMIT_W_RELEASE=1] args=[--burst 64 --length 30720 --max-tokens 64]
+2026-09-27T03:40:35Z boot O2-enforce-wrel rc=0 DAY46 BOOT rows=107 ok=39 r429=68 rejects=68 w_release=38 oom=0
+2026-09-27T03:40:40Z boot O2-enforce start arm=enforce bin=357192375c6c54dd env=[MEMRA_ADMIT_PREDICT_SHADOW=1 MEMRA_ADMIT_PREDICT_ENFORCE=1] args=[--burst 64 --length 30720 --max-tokens 64]
+2026-09-27T03:44:11Z boot O2-enforce rc=0 DAY46 BOOT rows=107 ok=29 r429=78 rejects=78 w_release=0 oom=0
+2026-09-27T03:44:17Z boot O2-shadow start arm=shadow bin=357192375c6c54dd env=[MEMRA_ADMIT_PREDICT_SHADOW=1] args=[--burst 64 --length 30720 --max-tokens 64]
+2026-09-27T03:59:13Z boot O2-shadow rc=0 DAY46 BOOT rows=107 ok=53 r429=0 rejects=71 w_release=0 oom=56
+2026-09-27T03:59:18Z boots done: O1-shadow:shadow O1-enforce:enforce O1-enforce-wrel:enforce-wrel O2-enforce-wrel:enforce-wrel O2-enforce:enforce O2-shadow:shadow

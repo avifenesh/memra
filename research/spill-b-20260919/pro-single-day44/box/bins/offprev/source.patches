@@ -1,0 +1,10 @@
+b1f1369abd04cc53102a1c9973bae991b606a326c849531935daee256d041d32  research/spill-b-20260919/day44-nodoor.patch
+ crates/memra-engine/src/grid_capture.rs       | 260 ----------
+ crates/memra-engine/src/hybrid_forward.rs     |  30 +-
+ crates/memra-engine/src/lib.rs                | 155 +-----
+ crates/memra-engine/src/qwen_prime_graph.rs   |   3 -
+ crates/memra-engine/src/spec.rs               |  65 ---
+ crates/memra-engine/src/spec/prime.rs         |  89 +---
+ crates/memra-engine/tests/grid_capture_gpu.rs | 277 -----------
+ crates/memra-server/src/worker.rs             | 652 +-------------------------
+ 8 files changed, 16 insertions(+), 1515 deletions(-)

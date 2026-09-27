@@ -1,0 +1,64 @@
+box start 2026-09-25T01:21:37Z tree c4e18a4e3746475c7a182a6aee185bd92c75aa39
+name, driver_version, memory.total [MiB], power.limit [W], clocks.max.sm [MHz]
+NVIDIA RTX PRO 6000 Blackwell Workstation Edition, 595.71.05, 97887 MiB, 600.00 W, 3090 MHz
+
+==============NVSMI LOG==============
+
+Timestamp                                              : Fri Sep 25 01:21:37 2026
+Driver Version                                         : 595.71.05
+CUDA Version                                           : 13.2
+
+Attached GPUs                                          : 1
+GPU 00000000:02:00.0
+    Performance State                                  : P8
+    Clocks Event Reasons
+        Idle                                           : Not Active
+        Applications Clocks Setting                    : Not Active
+        SW Power Cap                                   : Not Active
+        HW Slowdown                                    : Not Active
+            HW Thermal Slowdown                        : Not Active
+            HW Power Brake Slowdown                    : Not Active
+        Sync Boost                                     : Not Active
+        SW Thermal Slowdown                            : Not Active
+        Display Clock Setting                          : Not Active
+    Clocks Event Reasons Counters
+        SW Power Capping                               : 127891288861 us
+        Sync Boost                                     : 0 us
+        SW Thermal Slowdown                            : 0 us
+        HW Thermal Slowdown                            : 0 us
+        HW Power Braking                               : 0 us
+    Sparse Operation Mode                              : N/A
+
+24
+CPU(s):                                  24
+Model name:                              Intel(R) Core(TM) Ultra 9 285K
+Thread(s) per core:                      1
+Socket(s):                               1
+CPU(s) scaling MHz:                      23%
+MemTotal:       197542692 kB
+MemAvailable:   176696096 kB
+SwapTotal:       8388604 kB
+Filesystem      Size  Used Avail Use% Mounted on
+overlay         350G   51G  300G  15% /
+overlay         350G   51G  300G  15% /
+/root/artifacts/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf: OK
+/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf: OK
+cpu cap: taskset -c 0-11 (no systemd scope on this box)
+attrib already done
+ladder already done
+ladder-b already done
+c6 unit-server already done
+c6 failure-default-off already done
+c6 failure-plain-off already done
+c6 failure-default-on already done
+c6 identity-default-off already done
+c6 identity-default-on already done
+873e3556509b0da06e29654ba00d4944888d4b5e8a33afde25f7eb27d321e980  /root/artifacts/q38-dflash2/config.json
+67fc76d68dc5a9415511a4f394ef744d67510cd20e93b37cc2cc7d28e4bab65c  /root/artifacts/q38-dflash2/model.safetensors
+identity-dspark-off rc=1 KV-HOST-SPILL IDENTITY GATE: 1 FAILURE(S) (teeth=0)
+c5 identity-dspark-off rc=1 2026-09-25T01:22:21Z
+identity-dspark-on rc=1 KV-HOST-SPILL IDENTITY GATE: 1 FAILURE(S) (teeth=0)
+c5 identity-dspark-on rc=1 2026-09-25T01:23:00Z
+c5 reader rc=1
+final not built: DAY51's hashlock, spec and decide not run (add final=<DAY51 section 2 commit> to D52_BUILDS and rerun)
+box done 2026-09-25T01:23:00Z

@@ -1,0 +1,16 @@
+== driver log
+STUB day63-box-build.sh D/root/wt-c-build D/root/spill-receipts/c-day86-load i22=4b378a064
+2026-09-27T06:25:57Z load-r7 rc=3
+2026-09-27T06:25:59Z load-r14 rc=3
+2026-09-27T06:26:01Z load-r21 rc=3
+2026-09-27T06:26:04Z load-r28 rc=3
+2026-09-27T06:26:06Z load-r35 rc=3
+2026-09-27T06:26:08Z load-r42 rc=3
+2026-09-27T06:26:11Z load-r49 rc=3
+2026-09-27T06:26:13Z load done: 55 runs; 7 failed
+== runs.tsv: 55 runs
+label	start	end	rc	gen_s	vmstat_before	vmstat_after
+load-r1	2026-09-27T06:25:55Z	2026-09-27T06:25:55Z	0	0.321	pgmigrate_success=174611036 pgmigrate_fail=53199096 compact_isolated=415254880 compact_stall=671423 co
+load-r2	2026-09-27T06:25:55Z	2026-09-27T06:25:55Z	0	0.322	pgmigrate_success=174611036 pgmigrate_fail=53199096 compact_isolated=415254880 compact_stall=671423 co
+== full logs kept: ./load-r1.log ./load-r14.log ./load-r21.log ./load-r28.log ./load-r35.log ./load-r42.log ./load-r49.log ./load-r51.log ./load-r7.log
+== a summary: prefill argmax=198  decode argmax=198  MATCH|generated 32 tokens in 0.322s = 100 tok/s

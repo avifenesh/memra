@@ -1,0 +1,46 @@
+[tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe] resident-experts decision (dev0): experts 18.57GB + trunk 1.60GB vs free 100.63GB (expert budget 97.02GB) -> RESIDENT
+loaded qwen35moe (41 layers, nextn=1)
+prompt tokens: [55]
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+
+[generate]   31 tok in 0.314s = 98.68 tok/s (gen-only; this run's prime 0.010s)
+  tokens: [25, 220, 15, 13, 15, 15, 15, 15, 15, 15, 198, 56, 25, 220, 15, 13, 15, 15, 15, 15, 15, 15, 198, 57, 25, 220, 15, 13, 15, 15, 15, 15]
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[func] CAPTURE-TIME kernel lookup (not warmed): argmax_partial_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): argmax_final_f32
+[spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 3MB; charged per spec admission and gating future captures)
+[spec-vg] MTP verify-graph pool ENGAGED (vt_cap=2)
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_nvfp4_mmvq_group4_b2_rp
+[func] CAPTURE-TIME kernel lookup (not warmed): ssm_conv1d_fused_decode_tloop_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): gdn_scan_s128_tsnap
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_nvfp4_mmvq_b2_rp
+[func] CAPTURE-TIME kernel lookup (not warmed): moe_gate_up_silu8_dev_q8_v_rows
+[func] CAPTURE-TIME kernel lookup (not warmed): moe_down8_fma_dev_q8_w8h2v_rows
+
+[generate_spec K=1] 32 tok in 0.277s = 111.98 tok/s (1.13x vs generate; this run's prime 0.012s)
+  acceptance: 14/17 = 82.4%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=2] 32 tok in 0.260s = 119.04 tok/s (1.21x vs generate; this run's prime 0.011s)
+  acceptance: 16/30 = 53.3%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=3] 32 tok in 0.300s = 103.44 tok/s (1.05x vs generate; this run's prime 0.011s)
+  acceptance: 17/45 = 37.8%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=4] 32 tok in 0.322s = 96.23 tok/s (0.98x vs generate; this run's prime 0.010s)
+  acceptance: 17/60 = 28.3%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=5] 32 tok in 0.354s = 87.45 tok/s (0.89x vs generate; this run's prime 0.010s)
+  acceptance: 17/75 = 22.7%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=6] 32 tok in 0.404s = 76.77 tok/s (0.78x vs generate; this run's prime 0.010s)
+  acceptance: 17/90 = 18.9%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=7] 32 tok in 0.425s = 73.02 tok/s (0.74x vs generate; this run's prime 0.011s)
+  acceptance: 17/105 = 16.2%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=8] 32 tok in 0.464s = 66.74 tok/s (0.68x vs generate; this run's prime 0.010s)
+  acceptance: 17/120 = 14.2%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===

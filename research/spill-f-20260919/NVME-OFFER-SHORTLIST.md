@@ -1,4 +1,6 @@
-# NVMe-provable rental shortlist — 2026-09-20
+# NVMe-provable rental shortlist: 2026-09-20
+
+> **Superseded 2026-09-25** by [`M1-PREREG.md`](M1-PREREG.md) section C (docker instance plus a host-local volume on a bare-metal, whole-machine host). The VM-capable candidate below cannot pass the proof. Kept as the 2026-09-20 read-only record.
 
 **Recommendation: the single matching one-card RTX 5090 VM-capable class,
 conditional on physical block ancestry evidence before rental.** No instance

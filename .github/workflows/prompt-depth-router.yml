@@ -1,0 +1,153 @@
+name: Prompt depth router
+
+on:
+  pull_request:
+    paths:
+      - research/prompt-depth-router-20260922/**
+      - .github/workflows/prompt-depth-router.yml
+  workflow_dispatch:
+    inputs:
+      study:
+        description: Research study to execute
+        type: choice
+        options:
+          - all
+          - prefix
+          - prefix-checks
+        default: all
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prompt-depth-router-${{ github.event.pull_request.number || github.ref }}-${{ inputs.study || 'all' }}
+  cancel-in-progress: true
+
+jobs:
+  classifier:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.study == 'all' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Native CPU behavior, request interface and routing latency
+        run: |
+          python3 research/prompt-depth-router-20260922/run_cpu.py \
+            --out "$RUNNER_TEMP/prompt-depth-router"
+      - name: Reproduce the banked CPU report
+        run: |
+          lane=research/prompt-depth-router-20260922
+          pin=$(cut -d ' ' -f 1 "$lane/cpu-receipts/manifest.sha256")
+          python3 "$lane/cpu_report.py" --receipts "$lane/cpu-receipts" \
+            --manifest-sha256 "$pin" --check "$lane/CPU-RESULTS.md"
+      - name: Retain raw timings and exact CPU executables
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: prompt-depth-router-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/prompt-depth-router
+          if-no-files-found: error
+          retention-days: 7
+
+  native-build:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.study == 'all' }}
+    needs: classifier
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Install CUDA compiler and headers without allocating a GPU
+        run: tools/install-cuda-ci.sh
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+        with:
+          toolchain: "1.97.1"
+          components: clippy
+      - name: Build the bound research runtime and request router
+        run: |
+          python3 research/prompt-depth-router-20260922/build_native_cpu.py \
+            --source-archive research/mtp-context-depth-20260921/latest-receipts/runtime-source.tar.gz \
+            --out "$RUNNER_TEMP/prompt-depth-native"
+      - name: Retain exact programs, source and compiler logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: prompt-depth-native-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/prompt-depth-native/*.json
+            ${{ runner.temp }}/prompt-depth-native/*.stdout
+            ${{ runner.temp }}/prompt-depth-native/*.stderr
+            ${{ runner.temp }}/prompt-depth-native/*.tar.gz
+            ${{ runner.temp }}/prompt-depth-native/binaries
+          if-no-files-found: error
+          retention-days: 7
+
+  native-receipts:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.study == 'all' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+        with:
+          toolchain: "1.97.1"
+      - name: Verify expanded publication boundaries
+        run: |
+          lane=research/prompt-depth-router-20260922
+          python3 "$lane/scan_publication.py" --candidate "$lane/native-receipts" \
+            --review "$lane/native-publication-review.json"
+      - name: Reconstruct every native record and comparison
+        run: |
+          lane=research/prompt-depth-router-20260922
+          pin=$(cut -d ' ' -f 1 "$lane/native-receipts/manifest.sha256")
+          python3 "$lane/reproduce_native.py" \
+            --receipts "$lane/native-receipts" --manifest-sha256 "$pin" \
+            --parent-archive research/mtp-context-depth-20260921/latest-receipts/runtime-source.tar.gz \
+            --out "$RUNNER_TEMP/prompt-depth-native-reproduction" \
+            --check "$lane/NATIVE-RESULTS.md"
+      - name: Retain independently reconstructed reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: prompt-depth-reproduction-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/prompt-depth-native-reproduction
+          if-no-files-found: error
+          retention-days: 7
+
+  upcoming-format:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.study == 'all' }}
+    needs: native-receipts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+        with:
+          toolchain: "1.97.1"
+      - name: Verify causal features, split isolation and shallow-tree behavior
+        run: python3 -m unittest discover -s research/prompt-depth-router-20260922/forecast -p 'test_*.py' -v
+      - name: Fit one shared tree and evaluate upcoming-format forecasts
+        run: |
+          python3 research/prompt-depth-router-20260922/forecast/run.py \
+            --out "$RUNNER_TEMP/upcoming-format"
+      - name: Retain complete forecasting and latency records
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: upcoming-format-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/upcoming-format
+          if-no-files-found: error
+          retention-days: 7
+
+  prefix-study:
+    if: ${{ github.event_name == 'pull_request' || startsWith(inputs.study, 'prefix') || inputs.study == 'all' }}
+    uses: ./.github/workflows/prompt-prefix-depth.yml
+    with:
+      build_native: ${{ inputs.study != 'prefix-checks' }}

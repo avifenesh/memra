@@ -1,0 +1,33 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-dsv4/crates/memra-server)
+warning: unused variable: `st`
+    --> crates/memra-server/src/lib.rs:3148:18
+     |
+3148 | fn served_routes(st: &AppState) -> Vec<std::sync::Arc<route_telemetry::RouteLoad>> {
+     |                  ^^ help: if this is intentional, prefix it with an underscore: `_st`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-server` (lib test) generated 1 warning (run `cargo fix --lib -p memra-server --tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.75s
+     Running unittests src/lib.rs (target/debug/deps/memra_server-e53347545693156a)
+
+running 1 test
+test tests::a_route_book_this_state_does_not_serve_is_not_its_traffic ... FAILED
+
+failures:
+
+---- tests::a_route_book_this_state_does_not_serve_is_not_its_traffic stdout ----
+
+thread 'tests::a_route_book_this_state_does_not_serve_is_not_its_traffic' (4192103) panicked at crates/memra-server/src/lib.rs:18644:9:
+a model this state does not serve selects no route
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tests::a_route_book_this_state_does_not_serve_is_not_its_traffic
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 882 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-server --lib`

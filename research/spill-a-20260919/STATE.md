@@ -1,9 +1,46 @@
-# WP-A day 29 resumable state
+# WP-A resumable state (2026-09-27: integ69 merged as b1fcf40aa with P and Q; integ70 takes `lane/spill-a-integ70-20260927` (P2 + the records); F REVERTED; the DAY68 5090 chain running)
 
-- Lane `lane/spill-a-20260919`; Linux worktree `wt-spill-a`. Merged `origin/main` `c5879a59e` (after #649) as `9f2125baa` and the lead's local `lane/spill-integ44-20260922` `6a42883f9` as `0938221a0` (`HOSTPREFIX-DOOR.md` conflicts: the integ side). Pre-registration `94e35bba3`; code `867655368`; scripts `29a1cc366`; gate fixes `89318289b`, `259c75f62`, `06e290374`; records after. Every push in the announced `MEMRA_RELEASE_QUALIFICATION_MODE=development` mode; no qualification claimed. Write-up `DAY29.md`.
-- Ruling 40 (lead): option 2a landed. A hit whose prompt hits the one `Demoting` entry in its `Hashing` phase parks one tick at the admission probe (`host_hashing_hit`, `host_hashing_park`, decided before the promote decision; the typed line once per request id, re-parks counted; the parked-only wait's guard covers a `Hashing` entry; the ledger line carries the count; the latch names the parked requests); the re-admission takes the promote park to a device hit. The fault gate's demote cells wait for the boot's last publication before `stop` (bounded 15 s, its own check). CPU cells green (`826 passed`).
-- Acceptance (DAY29 section 1.5) MET on both cards in one sitting each: target card identity x4 `ALL GREEN (teeth=0)`, failure x2 `ALL GREEN` (the `digest` cell in), contract-fault `ALL GREEN` (123 ok, ten cells), twin x2 PASS, hit OFF/ON `ALL GREEN (qwen)` with the day-24 census, unit 8 + 5 + 10; local RTX 5090 identity default ON `ALL GREEN (teeth=0)`, fault default and plain `ALL GREEN` (on the fixed gate), hit OFF/ON `ALL GREEN (qwen)` with the day-24 census. Clauses 1a to 1c re-read on the new tree: stall `-3.6 / -3.3 unc=0.1 isolated`, e2e `+16.8 / +16.9`, `owner in-completion median=7.39` (N=100), `DAY28 VERDICT clauses_failed=0 -> ALL PASS`. The count: 1 hit parked on a `Hashing` entry per identity default-ON boot on both cards (target card `35 re-park(s)` across the 73.2 ms hash; 5090 `5`), r3 and r4 `cached=64 lcp=64`; zero hits on a copy-phase `Demoting` entry.
-- **The tree is integrable**: every arm of DAY28's clause 2 is green on both cards on the day-29 code, so the condition ruling 40 set for keeping the day-28 and day-29 code on the lane branch no longer holds; the lead integrates from `origin/lane/spill-a-20260919`.
-- The gate fix went through two wrong shapes first, both caught on the local RTX 5090 before the target card's fault cell ran and both in the history (`grep -c` under `set -e` aborted the gate; a hand-off count read 0 because r3's eviction demote submits as r3 completes); the landed wait is the check's own condition. No gate assertion moved.
-- Owed (unchanged in substance): Move 1 items 1, 3, 4; Move 2 item 1 (the pre-submit segment, 6 ms steady / 40 to 45 ms first touch / about 149 ms under the verify arm, the demote's whole remaining owner-thread cost). A hit inside the copy window (a `Demoting` entry with its ticket in flight) keeps the day-17 rule (a cold prime); zero observed today; for the lead if it ever fires.
-- BOX3 `/root/wt-a` at `06e290374` on `lane-a-day29`, clean; `/root/spill-receipts/a-day29/` mirrored to `pro-single-day29/box/` (bins excluded); bundles removed both ends; no server of mine outside the collector's cells; nothing of other lanes touched.
+- Lane `lane/spill-a-20260919`; worktree `wt-spill-a`. integ67 takes B1 (`e522a9417`, adopted on both cards) and the
+  grid refusal (`231fba087`, cherry-picked as 95f275859).
+- Closed: items 10 (B1), 11 (reading), 12 (W reverted, DAY61 section 5), 13 (R1 ADOPTED, `04554e99f`; R2 reverted),
+  21 to 25; DAY66 (the fanout split's scope).
+- **Items 14 and 19 (DAY63) closed: L' ADOPTED** (section 6, `348d2e8f3`, with the gate change `217ace3fd`); L' and R1
+  go to integ69.
+- **Item 18 (DAY64).** The split selected the fill (8.63 ms of 12.9), not D1 (section 5). Design F (the fill on its
+  own stream in chunks) is built (`568f33c7b`), with its sitting `pro-single-f/` (`build.sh <tip> 0a835a75b`, then
+  `driver.sh`). **F read REVERT ((a) passed with the worker step; (b), (c) failed) and is reverted (`ef8cd47d8`,
+  DAY64 section 8).** Item 18 stays open; F2 (pinned resident payloads) is due next, registration first.
+- **Item 20 (DAY65).** T-H read REVERT (b) and was reverted (`06b2d31db`). T-H' is registered (section 6: (b')
+  measured at long entries, from DAY65's own text), awaiting the lead's and the owner's acceptance before any code.
+- **Item 17 (DAY67).** P2 on L': the first sitting was stopped as a diagnostic (T-H was in both arms). The corrected
+  pair P2L2 read (b) to (g) PASS and (a)'s repeated unit step read all green on `a2419d3e1`: **P2 ADOPTED** (DAY67
+  section 5). For the next integ: `lane/spill-a-p2-20260926` (`409be61f8`, P2 on integ69's fix tip `a57f85897`). P2's 5090 half
+  is owed after the DAY68 chain.
+- **integ69** took `6c60d798f` (L' + R1 + the gate change + the two test-only cell fixes); revuto found the purge
+  retention defect (DAY69): **design P, `4f297e7bd` on `lane/spill-a-integ69-20260926`**, is the fix (the pool
+  drained with an epoch, the staging set zeroed, at every purge); CPU battery green, both red arms caught; its two GPU
+  cells run in the lead's battery. On this lane it is `59376ebeb`. Worktree `wt-spill-a-i69` holds that branch until
+  integ69 merges; remove it then. Revuto round 2: **design Q, `a57f85897`** (DAY70: a lease charged its length,
+  the pool its idle backings and the leases' tails within its cap), CPU battery green, red arm caught; GPU cells
+  named for BOX43 in DAY70 section 4. Owed after the fixes: the GLM-5 arena's purge scrub and the pooled-lease read guard
+  (DAY69 sections 1 and 2).
+- **The owed 5090 cells (DAY68), registered and built:** R1's half and L''s half (section 1, the target sittings' own
+  pairs and scripts, derived by `rtx5090-derive.py`), item 16 (section 3, DAY45's cell from `7b849a817`), then S4's and
+  V's halves (section 4). All run from frozen copies under `/home/avifenesh/spill-a-cells/`, chained by
+  `rtx5090-chain-day68.sh` (run as the copy `spill-a-cells/chain-day68.sh`), each in its own bounded hold after every
+  build has finished. Receipts go to `rtx5090-{r1,l2,s4,v}/cell/` and `rtx5090-day45/cell/`; then `rtx5090-half*.sh
+  clean` and the i16 worktree removal.
+- Local cells run their scripts from a frozen copy of the tree, never from this worktree (DAY61 section 5's
+  lesson). No build of this lane runs while one of its own timed cells holds the 5090.
+- The local 5090 is shared: lanes B, C and F queue on it, and another project's process sometimes lands on it. The
+  idle rule stays.
+- Scratch to remove when the lane closes: the four lines added to the shared
+  `/home/avifenesh/projects/memra/.git/info/exclude`, and `/home/avifenesh/spill-a-cells/` (the DAY68 trees, target
+  dirs and binaries while the halves run).
+
+- **integ70:** `lane/spill-a-integ70-20260927` at `d5156f468` on main `b1fcf40aa`: `6ae34c277` (P2, the p2 arm's
+  program; one textual conflict with main's new test at the top of `worker.rs`'s test module, both kept) and
+  `d5156f468` (this directory at `aa1616662`, records only). Not built here (the DAY68 chain's timed cells); the
+  lead's CPU battery is its first build. P2 adds no GPU cell (its `day51_`/`day52_` cells are CPU); its 5090 half is
+  owed after the DAY68 chain, registered then. `lane/spill-a-p2-20260926` is superseded by it (delete once integ70
+  merges).

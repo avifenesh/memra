@@ -1,0 +1,9 @@
+ktg-cancel-demote exit=0 FAULT-ARM PASS cancel-demote committed=8192 generated=128
+ktg-cancel-restore exit=0 FAULT-ARM PASS cancel-restore committed=8192 generated=128
+ktg-corrupt-host exit=0 FAULT-ARM PASS corrupt-host committed=8064 generated=0
+ktg-device-short exit=0 FAULT-ARM PASS device-short committed=8192 generated=128
+ktg-host-budget-short exit=0 FAULT-ARM PASS host-budget-short committed=8192 generated=128
+ktg-missing-host exit=0 FAULT-ARM PASS missing-host committed=8064 generated=0
+ktg-require-resident exit=0 FAULT-ARM PASS require-resident committed=8192 generated=128
+ttg-conformance exit=0 PASS native governor zero after controlled drain
+ttg-roundtrip exit=0 PASS native D2H-H2D roundtrip bytes=268435456 N=1 expected_sha256=6020d865b68ed263bbee3a2556e6c064906410f5e220a584827034fdbc72191b actual_sha256=6020d865b68ed263bbee3a2556e6c064906410f5e220a584827034fdbc72191b byte_exact=true source_freed_host_live=true handback_no_copy=true governor_zero=true

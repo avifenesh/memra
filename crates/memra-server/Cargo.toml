@@ -32,7 +32,7 @@ tower = { version = "0.5", features = ["util"] }
 serde = { version = "1", features = ["derive"] }
 # preserve_order: tool schemas render into the chat template's <tools> block via
 # `tool | tojson` — key order must be the CLIENT's order (the training-time convention),
-# not BTreeMap-alphabetical. memra-server is the workspace's only serde_json consumer.
+# not BTreeMap-alphabetical. The loader's manifest decoder does not depend on map order.
 serde_json = { version = "1", features = ["preserve_order"] }
 async-stream = "0.3"
 futures-core = "0.3"
@@ -47,10 +47,17 @@ toml = "0.8"
 
 [dev-dependencies]
 h2 = "0.4"
+# WP-A day 55 (OWED item 22): tokio's paused clock for logic tests that assert virtual times.
+tokio = { version = "1", features = ["test-util"] }
 
 [[bin]]
 name = "memra-server"
 path = "src/main.rs"
+
+# B2 measurement seam (lane/spill-f-20260919): stock server plus a SIGUSR1 host-tier export.
+[[bin]]
+name = "kv-handoff-gate"
+path = "src/bin/kv_handoff_gate.rs"
 
 # cargo-binstall: point at the stable-name release artifact (sm_120a, glibc-2.35 floor)
 # built by .github/workflows/release.yml. `cargo binstall memra-server` then installs the

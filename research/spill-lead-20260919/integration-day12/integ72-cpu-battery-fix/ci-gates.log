@@ -1,0 +1,605 @@
+31 blocks
+== Immutable GitHub Action pin census
+action-pin census fixture: PASS
+install authenticity fixture: missing/unsigned release refused
+boundary-ref workflow guard: fail-closed PR namespace and ref budget present
+   rc=0
+== Change-class teeth (the docs-only skip fails closed in every arm)
+ok   arm1 docs-only pull_request (reason=docs-only:4-files)
+ok   arm2 docs-only push (reason=docs-only:4-files)
+ok   arm3 source file (reason=code-path:crates/memra-engine/src/x.rs)
+ok   arm4 docs+tools (reason=code-path:tools/thing.sh)
+ok   arm5 crate README (reason=code-path:crates/memra-gguf/README.md)
+ok   arm6 workflow file (reason=code-path:.github/workflows/ci.yml)
+ok   arm7 Cargo.toml (reason=code-path:Cargo.toml)
+ok   arm8 zero before (reason=push-without-before)
+ok   arm9 unreachable base (reason=pr-base-unreachable)
+ok   arm10 empty diff (reason=empty-diff)
+ok   arm11 unknown event (reason=event-workflow_dispatch)
+ok   arm12 missing args
+ok   arm13 non-repo dir
+ok   arm15 included research file (reason=compile-input:research/lane/fixtures/load.csv)
+ok   arm16 non-included research file beside an include (reason=docs-only:1-files)
+ok   arm17 multi-line included research file (reason=compile-input:research/ep-map/example.json)
+ok   arm18 real-tree census (6 paths, none unresolved)
+ok   arm14 ci.yml wiring (7 gated jobs, fail-closed form)
+test_ci_change_class: 18 arms PASS
+   rc=0
+== Workflow files carry no duplicate mapping key (stdlib walker; safe_load would pass)
+check-workflow-keys: .github/workflows/boundary-refs.yml: jobs refs
+check-workflow-keys: .github/workflows/ci.yml: jobs changes, gates, boundary, build, clippy, server-tests, portable-suites, engine-tests, arch-coverage, publish-dryrun
+check-workflow-keys: .github/workflows/gpu-ci.yml: jobs build, gpu, qualification-result
+check-workflow-keys: .github/workflows/mtp-context-receipts.yml: jobs reproduce
+check-workflow-keys: .github/workflows/mtp-depth-receipts.yml: jobs reproduce
+check-workflow-keys: .github/workflows/prompt-depth-router.yml: jobs classifier, native-build, native-receipts, upcoming-format, prefix-study
+check-workflow-keys: .github/workflows/prompt-prefix-depth.yml: jobs prefix-policy, native-build, prefix-v2-replay, confidence-replay, confidence-v3-cpu, confidence-v3-replay, joint-v4-history-pilot, joint-v4-native-cpu, joint-v4-native-release, joint-v5-native, joint-v6-draft-only-native, joint-v8-prime-probability-native, joint-v8-sealed-replay
+check-workflow-keys: .github/workflows/publish.yml: jobs publish
+check-workflow-keys: .github/workflows/release.yml: jobs guard, build, release
+check-workflow-keys: OK: 9 workflow files, no duplicate mapping keys (stdlib walker)
+ok   control: yaml.safe_load accepts the duplicate job key (exit 0)
+ok   default: duplicate job key reds
+ok   default: the refusal names the key, its line and column and the first line
+ok   default: duplicate nested key (two run: in one step) reds
+ok   default: duplicate key inside with: reds
+ok   default: the with: refusal names line 11 column 11
+ok   default: clean file greens
+ok   default: the green names the jobs
+ok   default: block scalars, sibling mappings, comments, flow sequences and quoted keys (one is "*") green
+ok   default: the constructs file lists its two jobs
+ok   default: a flow mapping is refused as cannot-answer (exit 2, never green)
+ok   default: the cannot-answer names the line and the construct
+ok   default: empty workflow directory reds (vacuity)
+ok   default: the tree's own .github/workflows greens
+ok   default: no traceback, no import error in any verdict
+ok   no-PyYAML: duplicate job key reds
+ok   no-PyYAML: the refusal names the key, its line and column and the first line
+ok   no-PyYAML: duplicate nested key (two run: in one step) reds
+ok   no-PyYAML: duplicate key inside with: reds
+ok   no-PyYAML: the with: refusal names line 11 column 11
+ok   no-PyYAML: clean file greens
+ok   no-PyYAML: the green names the jobs
+ok   no-PyYAML: block scalars, sibling mappings, comments, flow sequences and quoted keys (one is "*") green
+ok   no-PyYAML: the constructs file lists its two jobs
+ok   no-PyYAML: a flow mapping is refused as cannot-answer (exit 2, never green)
+ok   no-PyYAML: the cannot-answer names the line and the construct
+ok   no-PyYAML: empty workflow directory reds (vacuity)
+ok   no-PyYAML: the tree's own .github/workflows greens
+ok   no-PyYAML: no traceback, no import error in any verdict
+ok   the shadow package raises on import yaml (the no-PyYAML arm is real)
+test_workflow_keys: 30 ok, 0 FAIL
+   rc=0
+== Tracked source, docs and data carry no merge-conflict marker line
+check-conflict-markers: OK (no conflict marker line in tracked source or docs)
+ok   arm1 clean tree passes
+ok   arm2 marker '<<<<<<< HEAD' refused
+ok   arm3 marker '=======' refused
+ok   arm4 marker '>>>>>>> theirs' refused
+ok   arm5 marker '||||||| parent of abc (msg)' refused
+ok   arm6 receipt log and raw dir excluded
+ok   arm7 marker in a source file refused
+test_conflict_markers: 7 arms PASS
+   rc=0
+== Content-bound release qualification controls (CPU-only)
+[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m
+----------------------------------------------------------------------
+Ran 15 tests in 1.417s
+
+[32mOK[0m
+BANKED; commit the research-only publication: research/release-qualification/cpu-fixture-only/record.json
+UNQUALIFIED DEVELOPMENT: refs/heads/topic at 28f2118b477d5f1bfec8cef63ba77b3acaa69d5a; no GPU qualification claimed
+[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0mCloning into '/tmp/memra-547-inputs-2izfvjf3/owned-links/provenance'...
+done.
+HEAD is now at 72da6bd internal directory link chain
+[32m.[0m[32m.[0m[32m.[0mCloning into '/tmp/memra-547-inputs-eliagt8w/owned-build/provenance'...
+done.
+HEAD is now at be63208 ignore caller-only input
+[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m
+----------------------------------------------------------------------
+Ran 19 tests in 0.910s
+
+[32mOK[0m
+[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m
+----------------------------------------------------------------------
+Ran 11 tests in 0.114s
+
+[32mOK[0m
+[32m.[0m[32m.[0m[32m.[0m
+----------------------------------------------------------------------
+Ran 3 tests in 0.002s
+
+[32mOK[0m
+   rc=0
+== Prepare compiler input isolation (SKIPPED: GitHub-hosted runner only)
+== Compiler input view and filesystem boundary (CPU-only)
+[32m.[0mCloning into '/tmp/memra-input-view-gm2n9ooq/include_str-value.txt/provenance'...
+done.
+HEAD is now at dcf4db5 direct compiler read
+Cloning into '/tmp/memra-input-view-gm2n9ooq/include_str-INDEX.md/provenance'...
+done.
+HEAD is now at 35df884 direct compiler read
+Cloning into '/tmp/memra-input-view-gm2n9ooq/include_bytes-value.txt/provenance'...
+done.
+HEAD is now at 8985cae direct compiler read
+Cloning into '/tmp/memra-input-view-gm2n9ooq/include_bytes-INDEX.md/provenance'...
+done.
+HEAD is now at c85a4cf direct compiler read
+[32m.[0mCloning into '/tmp/memra-input-view-flqu22sh/cargo-before/provenance'...
+done.
+HEAD is now at cf452ca tiny CPU workspace
+Cloning into '/tmp/memra-input-view-flqu22sh/cargo-after/provenance'...
+done.
+HEAD is now at ab46f1d metadata-only publication
+Cloning into '/tmp/memra-input-view-flqu22sh/cargo-forbidden/provenance'...
+done.
+HEAD is now at f61d67b build script provenance read
+CPU fixture /tmp/memra-input-view-flqu22sh/cargo-forbidden/fetch.log:
+
+CPU fixture /tmp/memra-input-view-flqu22sh/cargo-forbidden/build.log:
+   Compiling memra-engine v0.0.0 (/source/crates/memra-engine)
+error: failed to run custom build command for `memra-engine v0.0.0 (/source/crates/memra-engine)`
+
+Caused by:
+  process didn't exit successfully: `/target/release/build/memra-engine-4d90642097de2b23/build-script-build` (exit status: 101)
+  --- stderr
+
+  thread 'main' (41) panicked at crates/memra-engine/build.rs:1:94:
+  CPU fixture forbidden provenance read: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+  note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+[32m.[0mCloning into '/tmp/memra-input-view-gk3wuwen/sandbox/provenance'...
+done.
+HEAD is now at 4bd5582 metadata fixture
+[32m.[0mCloning into '/tmp/memra-input-view-jr9uefl5/identity/provenance'...
+done.
+HEAD is now at 81379ec metadata fixture
+[32m.[0mCloning into '/tmp/memra-input-view-sm157uyj/before/provenance'...
+done.
+HEAD is now at d87b33b ordinary compiled program
+Cloning into '/tmp/memra-input-view-sm157uyj/after/provenance'...
+done.
+HEAD is now at 10d1b13 metadata-only publication
+[32m.[0mCloning into '/tmp/memra-input-view-4x6j48qi/tamper/provenance'...
+done.
+HEAD is now at 9758f5c metadata fixture
+[32m.[0m
+----------------------------------------------------------------------
+Ran 7 tests in 1.639s
+
+[32mOK[0m
+BUILT (not GPU-qualified): /tmp/memra-input-view-flqu22sh/cargo-before/build.json
+BUILT (not GPU-qualified): /tmp/memra-input-view-flqu22sh/cargo-after/build.json
+   rc=0
+== Cache qualification harness regressions (unittest floor 15; 16 measured 2026-09-21)
+[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m
+----------------------------------------------------------------------
+Ran 16 tests in 7.611s
+
+[32mOK[0m
+unittest-floor: OK: ran 16 tests (floor 15) for tools (test_cache_qualification.py)
+   rc=0
+== CPU-only artifact path safety tests
+[32m.[0m[32m.[0m[32m.[0m
+----------------------------------------------------------------------
+Ran 3 tests in 0.012s
+
+[32mOK[0m
+   rc=0
+== Chain-launched kernels open with the PDL entry
+pdl-chain: 143 chain-launched kernels, 0 without the entry, 0 undefined
+   rc=0
+== Per-card native qualification runner controls
+[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m
+----------------------------------------------------------------------
+Ran 9 tests in 0.012s
+
+[32mOK[0m
+   rc=0
+== Flags census self-test
+ok   cause1: literal read outside the old three dirs is CAUGHT
+ok   cause1: same read passes once documented
+ok   cause1: a brand-new crate is in the census from day one
+ok   cause2: const-indirected read is CAUGHT, in a dir the old list DID name
+ok   cause2: const-indirected read passes once documented
+ok   cause2: &'static str + module-qualified + var_os all resolve
+ok   negative: a const that is never passed to an env call is NOT a flag
+ok   negative: a set_var-only name is NOT a read
+ok   grandfather: an undocumented MEMRA_SPEC now FAILS (exited 0 before the cut)
+ok   grandfather: MEMRA_SPEC passes when documented, as any other flag does
+ok   grandfather: the retired baseline file REAPPEARING is refused (rc=2), not honoured
+ok   grandfather: MEMRA_FLAGS_DRIFT_BASELINE is refused, not silently ignored
+ok   live: MEMRA_ALLOW_UNKNOWN_PRETOKENIZER is IN THE CENSUS
+ok   live: MEMRA_ALLOW_UNKNOWN_PRETOKENIZER is documented
+ok   live: MEMRA_ALLOW_UNKNOWN_PRETOKENIZER is not reported uncovered
+ok   live: MEMRA_FATBIN is IN THE CENSUS
+ok   live: MEMRA_FATBIN is documented
+ok   live: MEMRA_FATBIN is not reported uncovered
+ok   live: MEMRA_MOE_MMAP_ADVICE is IN THE CENSUS
+ok   live: MEMRA_MOE_MMAP_ADVICE is documented
+ok   live: MEMRA_MOE_MMAP_ADVICE is not reported uncovered
+ok   live: census is 882 names (non-vacuous)
+ok   live: gate is green (check-flags: runtime literal reads=882)
+ok   live: no grandfather list in this tree (deleted 2026-08-23)
+
+test_check_flags: 24 passed, 0 failed (24 assertions, expected 24)
+  ok   real docs/FLAGS.md: flags-table-census: docs/FLAGS.md tables=58 rows=935, every row matches its header
+  ok   unescaped pipe is red and names line 6
+  ok   three cells in a two-column table is red
+  ok   escaped pipe is green
+  ok   fenced pipes are ignored
+  ok   a registry with no table refuses (exit 2)
+  ok   docs-registry-census.sh invokes the table census
+  ok   ci.yml runs docs-registry-census.sh
+  ok   test_check_flags.sh chains into this fixture (its ci.yml step is the caller)
+
+test_docs_registry_census: 9 passed, 0 failed (9 assertions, expected 9)
+   rc=0
+== Gate remove_var lint & self-test
+check-no-remove-var-gates: OK (67 allowlisted unsets, 0 un-allowlisted across 15 target dirs)
+=== Case 1: Real tree is clean ===
+PASS: real-tree-clean
+=== Case 2: Throwaway fixture with un-allowlisted remove_var ===
+PASS: uncovered-remove-var-fails
+=== Case 3: Allowlisted remove_var passes ===
+PASS: allowlisted-remove-var-passes
+=== Case 4: Pinned set_var passes without allowlist ===
+PASS: pinned-set-var-passes
+=== Case 5: Un-allowlisted non-literal remove_var(ident) fails ===
+PASS: uncovered-ident-remove-var-fails
+=== Case 6: Allowlisted ident remove_var passes ===
+PASS: allowlisted-ident-remove-var-passes
+
+test_check_no_remove_var_gates summary: 6 passed, 0 failed
+   rc=0
+== Docs-registry census
+docs-registry-census: KERNELS.md file references=132, all resolve
+docs-registry-census: MODELS.md support-state tokens=5, all in the three-state vocabulary
+docs-registry-census: ROUTER.md lines=47 (cap 60)
+docs-registry-census: check-flags --list answered with 882 runtime names (coverage enforced by check-flags.sh itself)
+docs-registry-census: flags-table-census: docs/FLAGS.md tables=58 rows=935, every row matches its header
+   rc=0
+== Flags-guard pre-push teeth fixture
+ok   arm1: push REFUSED and the message names MEMRA_FIXTURE_GUARD_ESCAPE
+ok   arm2: the refusal is the flags census (names itself and docs/FLAGS.md)
+ok   arm3: documented read PASSES the hook
+ok   arm4: prefix row MEMRA_FIXTURE_GUARD_* covers the read
+ok   arm5: MEMRA_SKIP_FLAGS_CENSUS=1 lets the push through and ANNOUNCES itself
+ok   arm5: the skip is on the record in memra-gate-skips.log
+ok   arm6: missing rg WARNS by name and does not block
+ok   arm7: tools/hooks/pre-push INVOKES tools/check-flags.sh (not just mentions it)
+ok   arm7: ci.yml still runs the self-test backstop (not weakened, not duplicated)
+ok   arm7: ci.yml runs this fixture (A-18: a fixture with no caller is born invisible)
+ok   arm8: retired perf waiver refuses explicitly
+pre-push: flags census OK — runtime literal reads=0
+pre-push: releasability censuses N/A — no [workspace.package] in Cargo.toml (not the memra workspace)
+pre-push: docs-registry census N/A: no [workspace.package] in Cargo.toml (not the memra workspace)
+pre-push: workflow-file census N/A: no [workspace.package] in Cargo.toml (not the memra workspace)
+pre-push: flags census OK — runtime literal reads=0
+pre-push: releasability censuses N/A — no [workspace.package] in Cargo.toml (not the memra workspace)
+pre-push: docs-registry census N/A: no [workspace.package] in Cargo.toml (not the memra workspace)
+pre-push: workflow-file census N/A: no [workspace.package] in Cargo.toml (not the memra workspace)
+ok   arm9: force-push boundary range excludes commits already published on origin/main
+
+test_flags_guard: 12 passed, 0 failed (12 assertions, expected 12)
+   rc=0
+== Gate-integrity teeth fixture (round 2)
+=== A-9: the flags fixture asserts the CENSUS, not just the doc ===
+ok   A-9 teeth: a blind census fails the live block
+ok   A-9 teeth: the doc-only conjunct still passes, proving it was never the test
+ok   A-9 teeth: the fixture exits nonzero
+ok   A-9 control: the live tree is green
+ok   A-9 control: the fixture reports its assertion count
+=== A-16: the port guard refuses rather than measuring a stranger ===
+ok   A-16 teeth: an occupied port is a refusal
+ok   A-16 teeth: the refusal names the port
+ok   A-16 teeth: the refusal names the override
+ok   A-16 control: a free port passes
+ok   A-16 teeth: no ss and no lsof is rc=2, not a pass
+ok   A-16 teeth: the blind case says it is blind
+ok   A-16 wiring: serve-smoke.sh guards (line 44) before it boots (line 59)
+ok   A-16 wiring: serve-stress-gate.sh guards (line 53) before it boots (line 64)
+ok   A-16 wiring: apikeys-gate.sh guards (line 26) before it boots (line 49)
+ok   A-16 wiring: serve-st-gate.sh guards (line 45) before it boots (line 74)
+ok   A-16 wiring: step35-b2-geometry-gate.sh guards (line 69) before it boots (line 106)
+ok   A-16 wiring: serve-gemma4-batch-gate.sh guards (line 37) before it boots (line 49)
+ok   A-16 wiring: serve-gemma4-spec-gate.sh guards (line 44) before it boots (line 56)
+=== A-10: canary arms assert the specific failure, not any nonzero exit ===
+ok   A-10: step35-prime-batch-gate.sh distinguishes the flock timeout (75) from a comparator failure
+ok   A-10: step35-prime-batch-gate.sh no longer routes any-nonzero-exit to a canary pass
+ok   A-10: step35-b2-geometry-gate.sh distinguishes the flock timeout (75) from a comparator failure
+ok   A-10: step35-b2-geometry-gate.sh no longer routes any-nonzero-exit to a canary pass
+ok   A-10: prime-split canary discriminates DOOR-SHUT
+ok   A-10: prime-split canary discriminates ppsplit verdict: \*\*\* RED
+ok   A-10: prime-split canary discriminates MISMATCH|SPLIT-NOT-LIVE
+ok   A-10: prime-split canary discriminates PIPE-NOT-LIVE
+ok   A-10: prime-split no longer routes any-nonzero-exit to PASS
+ok   A-10: prime-batch canary requires the comparator's own verdict
+ok   A-10: b2-geometry canary reads that assertion out of the banked verdicts
+
+test_gate_integrity_r2: 29 passed, 0 failed (29 assertions, expected 29)
+   rc=0
+== Argmax-margin input and verdict controls
+[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m
+----------------------------------------------------------------------
+Ran 9 tests in 0.269s
+
+[32mOK[0m
+   rc=0
+== Push-range fixture (round 1)
+[32m.[0m[32m.[0m[32m.[0m[32m.[0m
+----------------------------------------------------------------------
+Ran 4 tests in 17.702s
+
+[32mOK[0m
+ok   pre-push invokes the tested fork-point helper for the additional Step gate
+ok   arm1: branch really has no upstream
+ok   arm1: base is the fork point (origin/main)
+ok   arm1: fork-point diff contains 0 unrelated engine samples
+ok   arm1: old HEAD~20 fallback would have indicted 6 unrelated engine files
+ok   arm2: base is the fork point
+ok   arm2: the branch's own engine file IS reported
+ok   arm2: cu/ half of the trigger also fires
+ok   arm3: upstream is set
+ok   arm3: base is the merge-base, not the moved upstream tip
+ok   arm3: raw upstream..HEAD tree diff falsely names 1 engine file(s)
+ok   arm3: merge-base base names 0 engine files
+ok   arm4: refuses instead of guessing
+ok   arm4: message names the fetch that fixes it
+ok   arm4: no arbitrary-depth fallback in the failure path
+ok   arm5: refuses on unrelated histories
+ok   arm5: names the real cause (no merge-base), not a stale fetch
+ok   arm6: a URL in $1 falls back to origin, not to a guess
+
+18 passed / 0 failed  (18 assertions recorded)
+   rc=0
+== Gate-template teeth fixture (round 3)
+=== gate-template integrity fixture — source tree: /home/avifenesh/projects/wt-spill-integ72 ===
+real-tree fixed ports: 25 distinct
+generator schema accepted: v2
+ok   generator emitted a b2-geometry gate
+ok   generated port 18300 is inside the reserved 18300-18399 band
+ok   generated port does not collide with a hand-written gate (25 scanned)
+ok   per-gate port override variable is derived, not shared
+ok   tools/port-guard.sh is sourced
+ok   the gate refuses when port-guard.sh is missing
+ok   ask\(\) refuses an empty completion (A-15)
+ok   assertion count is declared (1 ref + 2 responses + 2 liveness)
+ok   no SKIP path exits 0 within two lines of printing SKIP
+ok   scratch dir is trapped for cleanup (/tmp hygiene law)
+ok   port guard runs BEFORE the server bind (line 148 < 160)
+ok   post-boot pid ownership is asserted (line 186 > 160)
+ok   missing artifact is FATAL (exit 77), not a silent pass
+ok   the refusal says a skip is not a pass
+ok   an EXPLICITLY accounted skip is allowed (the developer escape hatch)
+ok   an accounted skip says the run proves nothing
+ok   the skip is recorded in MEMRA_SKIP_CENSUS (one row)
+ok   an env-NAMED drafter that is absent is a hard FAIL, not a plain boot
+ok   the drafter refusal refuses to boot plain
+ok   no nvidia-smi is a censused skip (77), not exit 0
+ok   an nvidia-smi that FAILS is a FAIL, not 'a box with 0 GPUs'
+ok   the nvidia-smi refusal names the distinction
+ok   CONTROL: a healthy stub server passes the gate
+ok   CONTROL: the PASS verdict names all 5 assertions
+ok   an occupied port makes the gate REFUSE (not measure a stranger)
+ok   the refusal names the port
+ok   the refusal names the per-gate override variable
+ok   the gate did not boot a server behind the refusal
+ok   a foreign responder that SPEAKS the API is refused before boot
+ok   the gate never compares a STRANGER's answers (no '== ref' verdict)
+ok   no ss and no lsof is rc 2, not 'the port is free'
+ok   the blind refusal says it cannot observe
+ok   a broken subject reds the gate
+ok   and it reds for the RIGHT reason (the batched-walk arm)
+ok   an all-null completion cannot produce a PASS (A-15)
+ok   and the byte-identity headline is not claimed against a null reference
+ok   canary: the seam bites and the canary passes
+ok   canary: it names the DECLARED discriminator, not just 'nonzero exit'
+ok   canary: a red for the WRONG reason is not a canary pass
+ok   canary: it says which check went red instead
+ok   canary: rc 75 (lock timeout) is INCONCLUSIVE, never OK
+ok   canary: rc 75 is named as the lock timeout
+ok   skip census: verify agrees with the source
+ok   skip census: an UNDECLARED skipping test fails verify
+ok   skip census: a STALE manifest row fails verify
+ok   skip census: skips over budget FAIL and name the budget variable
+ok   skip census: an explicitly raised budget passes and reports the count
+ok   skip census: a red suite fails on the suite verdict before any skip count
+ok   skip census: a name-filtered suite is refused
+ok   skip census: an uninitialised census file is a wiring failure, not zero skips
+ok   skip census: the file count is an EQUALITY
+
+=== gate-template integrity fixture: 51 passed / 0 failed of 51 ===
+gate-template integrity: ALL 51 ASSERTIONS GREEN
+[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m
+----------------------------------------------------------------------
+Ran 6 tests in 1.020s
+
+[32mOK[0m
+ok: default arm exits 0 (rc=0)
+ok: default arm: the wrapper holds the lock (probe=held) (LOCK-SELF-TEST owner=internal-canonical fd=none lock=/tmp/hitgate-lock-selftest-aBX9ZI wrapper=flock -w 300 /tmp/hitgate-lock-selftest-aBX9ZI probe=held inode_mtime_before=1099654:1790505257 inode_mtime_after=1099654:1790505257)
+ok: external arm exits 0 (rc=0)
+ok: external arm: no wrapper, the lock file is not held by the gate (probe=free) (LOCK-SELF-TEST owner=collector fd=7 lock=/tmp/hitgate-lock-selftest-aBX9ZI wrapper=none probe=free inode_mtime_before=1099654:1790505257 inode_mtime_after=1099654:1790505257)
+ok: external arm: the lock file's inode and mtime are unchanged (before=1099654:1790505257 after=1099654:1790505257)
+ok: external arm refuses a non-numeric FD with exit 2 (rc=2 REFUSED: inherited lock FD required)
+ok: --lock-self-test without a file is refused with exit 2 (rc=2 REFUSED: --lock-self-test needs a lock file path)
+SPEC-ON-CACHE-HIT-GATE LOCK TEETH: ALL GREEN (7 ok)
+   rc=0
+== Release-guard teeth fixture
+release-guard fixture: 9 arms PASS
+   rc=0
+== Release-battery coverage fixtures (CPU only)
+[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m
+----------------------------------------------------------------------
+Ran 12 tests in 3.159s
+
+[32mOK[0m
+   rc=0
+== Changelog teeth fixture
+ok   arm1 tagless, no baseline: root header
+ok   arm2 tagless, baseline row: predecessor header + archive
+ok   arm3 foreign baseline row ignored
+ok   arm4 reachable tag wins
+ok   arm5 skip list honoured, falls through to baseline
+ok   arm6 explicit FROM wins
+ok   arm7 missing archive is loud
+ok   arm8 real baseline row resolves (docs/archive/CHANGELOG-preswap-v0.123.0-to-469c8898e.md)
+ok   arm9 emission stops at the bookkeeping marker
+ok   arm10 shallow clone announces itself, baseline not applied
+test_changelog: 10 arms PASS
+   rc=0
+== Releasability — workspace publish census (members vs publish.yml list)
+publish-census: OK — 12 publishable members, 12 listed, order topological, unpublishable: memra-probe
+   rc=0
+== Releasability — stub ABI census (portable-arch stub .cu vs their real twins)
+stub-abi-census: cu/mmq_fp4_stub.cu vs cu/mmq_fp4.cu: ok (7 exported, 0 missing-and-referenced)
+stub-abi-census: cu/mmq_fp8_blk_stub.cu vs cu/mmq_fp8_blk.cu: ok (9 exported, 0 missing-and-referenced, 2 missing-but-unreferenced: memra_fp8_blk_nsm, memra_sm100_fp8_opted_in)
+stub-abi-census: cu/mmq_nvfp4_w4a8_stub.cu vs cu/mmq_nvfp4_w4a8.cu: ok (3 exported, 0 missing-and-referenced)
+stub-abi-census: OK — 3 stub pair(s), every real export mirrored
+   rc=0
+== Releasability — arch matrix census (ci compiles every arch release builds)
+arch-census: OK — release builds [120a ], ci compiles [100a 120a 100a], build.rs accepts [120a 100a 90a 89 ], advisory [none]
+   rc=0
+== Releasability census teeth (all three proven able to fail)
+releasability-census fixture: 15 arms PASS
+   rc=0
+== Fatbin-lookup census teeth
+fatbin-lookup-census fixture: 16 arms PASS
+   rc=0
+== Unit suites (CUDA-free crates) + skip census
+skip-census: NOTE — memra-gguf config::minimax_tests::parse_minimax_m3_vl moved: manifest says crates/memra-gguf/src/config.rs:2570, source says crates/memra-gguf/src/config.rs:5236
+skip-census: NOTE — memra-gguf config::minimax_tests::minimax_name_mapping_against_index moved: manifest says crates/memra-gguf/src/config.rs:2609, source says crates/memra-gguf/src/config.rs:5276
+skip-census: NOTE — memra-gguf dequant::tests::iq3s_vs_ggml_oracle moved: manifest says crates/memra-gguf/src/dequant.rs:711, source says crates/memra-gguf/src/dequant.rs:740
+skip-census: NOTE — memra-gguf model_packs::qwen4_exp::tests::expected_census_matches_the_banked_artifact_and_the_contract_binds_it moved: manifest says crates/memra-gguf/src/model_packs/qwen4_exp/mod.rs:1084, source says crates/memra-gguf/src/model_packs/qwen4_exp/mod.rs:1099
+skip-census: NOTE — memra-gguf model_packs::qwen4_exp::tests::nvfp4_census_matches_the_banked_mint_and_the_dialect_contract_binds_it moved: manifest says crates/memra-gguf/src/model_packs/qwen4_exp/mod.rs:1264, source says crates/memra-gguf/src/model_packs/qwen4_exp/mod.rs:1279
+skip-census: NOTE — memra-gguf safetensors::tests::real_qwen3_17b_header moved: manifest says crates/memra-gguf/src/safetensors.rs:572, source says crates/memra-gguf/src/safetensors.rs:1520
+skip-census: NOTE — memra-gguf safetensors::tests::real_qwen3_17b_config moved: manifest says crates/memra-gguf/src/safetensors.rs:622, source says crates/memra-gguf/src/safetensors.rs:1570
+skip-census: NOTE — memra-gguf source::hy3_repack_probe::hy3_manifest_offset_roundtrip moved: manifest says crates/memra-gguf/src/source.rs:1820, source says crates/memra-gguf/src/source.rs:3739
+skip-census: NOTE — memra-gguf source::hy3_repack_probe::hy3_inventory_dtype_shape_assertions moved: manifest says crates/memra-gguf/src/source.rs:1858, source says crates/memra-gguf/src/source.rs:3777
+skip-census: NOTE — memra-gguf source::hy3_repack_probe::hy3_load_plan_dry_run_no_cuda moved: manifest says crates/memra-gguf/src/source.rs:1935, source says crates/memra-gguf/src/source.rs:3854
+skip-census: NOTE — memra-gguf source::nv27b_probe::nvidia_27b_dtype_routing moved: manifest says crates/memra-gguf/src/source.rs:2004, source says crates/memra-gguf/src/source.rs:3923
+skip-census: NOTE — memra-gguf source::nv27b_probe::nvidia_27b_mtp_mapping moved: manifest says crates/memra-gguf/src/source.rs:2040, source says crates/memra-gguf/src/source.rs:3959
+skip-census: NOTE — memra-gguf source::m3_probe::minimax_m3_lm_head_q8 moved: manifest says crates/memra-gguf/src/source.rs:2098, source says crates/memra-gguf/src/source.rs:4017
+skip-census: NOTE — memra-gguf source::nv27b_twin_parity::nvidia_27b_vs_gguf_twin_f32_parity moved: manifest says crates/memra-gguf/src/source.rs:2133, source says crates/memra-gguf/src/source.rs:4052
+skip-census: memra-gguf: 14 artifact-gated skipping test(s), all declared
+skip-census: memra-reference: 0 artifact-gated skipping test(s), all declared
+skip-census: memra-sampling: 0 artifact-gated skipping test(s), all declared
+skip-census: memra-tokenizer: 4 artifact-gated skipping test(s), all declared
+skip-census: memra-validate: 0 artifact-gated skipping test(s), all declared
+skip-census: VERIFY OK
+skip-census: running: cargo test -p memra-gguf -p memra-reference -p memra-tokenizer -p memra-validate -p memra-sampling --lib -- --test-threads=1 --nocapture
+  SKIP config::minimax_tests::minimax_name_mapping_against_index: SKIP minimax_name_mapping_against_index: no model at /data/ai-ml/hf-models/minimax-m3-nvfp4-reap50
+  SKIP config::minimax_tests::parse_minimax_m3_vl: SKIP parse_minimax_m3_vl: no model at /data/ai-ml/hf-models/minimax-m3-nvfp4-reap50
+  SKIP dequant::tests::iq3s_vs_ggml_oracle: SKIP: /tmp/iq3s_raw.bin missing
+  SKIP source::hy3_repack_probe::hy3_inventory_dtype_shape_assertions: SKIP: Hy3 repack absent
+  SKIP source::hy3_repack_probe::hy3_load_plan_dry_run_no_cuda: SKIP: Hy3 repack absent
+  SKIP source::hy3_repack_probe::hy3_manifest_offset_roundtrip: SKIP: Hy3 repack absent
+  SKIP source::m3_probe::minimax_m3_lm_head_q8: SKIP: ckpt absent
+  SKIP source::nv27b_probe::nvidia_27b_dtype_routing: SKIP: ckpt absent
+  SKIP source::nv27b_probe::nvidia_27b_mtp_mapping: SKIP: ckpt absent
+  SKIP source::nv27b_twin_parity::nvidia_27b_vs_gguf_twin_f32_parity: SKIP: ckpt/twin absent
+skip-census: 500 passed, 10 skipped (budget 12), 0 failed, 0 filtered out across 5 binaries
+   rc=0
+== Canonical config and shared JSON feature-unification contracts
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.03s
+     Running tests/canonical_config.rs (target/debug/deps/canonical_config-9c4025cd755883e2)
+
+running 13 tests
+test explicit_config_override_does_not_hide_a_malformed_present_config_file ... ok
+test decoded_activation_declarations_cannot_disappear_before_pack_admission ... ok
+test malformed_and_duplicate_decoded_declarations_refuse_recursively ... ok
+test fractional_integer_fields_cannot_round_to_a_whole_number ... ok
+test glm_interval_one_preserves_the_existing_program_and_other_intervals_refuse ... ok
+test malformed_file_config_refuses_before_checkpoint_io ... ok
+test documented_absence_null_and_scalar_vector_forms_remain_distinct_from_errors ... ok
+test tied_head_hint_keeps_upstream_optional_literal_semantics ... ok
+test present_wrong_types_and_lossy_numeric_conversions_refuse ... ok
+test numeric_literals_are_not_rounded_through_f64_before_normalization ... ok
+test equivalent_decoded_keys_values_and_arrays_keep_the_same_plan ... ok
+test valid_literal_plan_hashes_match_frozen_pre_repair_ac3c39712 ... ok
+test integer_valued_decimals_preserve_range_without_float_casts ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.03s
+     Running tests/canonical_config.rs (target/debug/deps/canonical_config-6eabe715383de627)
+
+running 13 tests
+test explicit_config_override_does_not_hide_a_malformed_present_config_file ... ok
+test fractional_integer_fields_cannot_round_to_a_whole_number ... ok
+test decoded_activation_declarations_cannot_disappear_before_pack_admission ... ok
+test glm_interval_one_preserves_the_existing_program_and_other_intervals_refuse ... ok
+test malformed_and_duplicate_decoded_declarations_refuse_recursively ... ok
+test malformed_file_config_refuses_before_checkpoint_io ... ok
+test numeric_literals_are_not_rounded_through_f64_before_normalization ... ok
+test present_wrong_types_and_lossy_numeric_conversions_refuse ... ok
+test documented_absence_null_and_scalar_vector_forms_remain_distinct_from_errors ... ok
+test tied_head_hint_keeps_upstream_optional_literal_semantics ... ok
+test equivalent_decoded_keys_values_and_arrays_keep_the_same_plan ... ok
+test valid_literal_plan_hashes_match_frozen_pre_repair_ac3c39712 ... ok
+test integer_valued_decimals_preserve_range_without_float_casts ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+     Running unittests src/lib.rs (target/debug/deps/memra_gguf-3587cf6d77e18e6d)
+
+running 5 tests
+test strict_json::tests::integer_schema_consumers_can_still_reject_float_string_and_null_tokens ... ok
+test strict_json::tests::declaration_keys_and_values_share_unicode_decoding ... ok
+test strict_json::tests::number_tokens_remain_exact_and_cannot_be_forged_by_object_keys ... ok
+test strict_json::tests::decoded_duplicates_and_malformed_strings_refuse_at_every_level ... ok
+test strict_json::tests::raw_value_recursion_remains_bounded ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s
+
+   rc=0
+== Indexed MLA and KDA memory fixture contracts (CPU-only)
+   Compiling memra-memory-fixture-cpu v0.0.0 (/home/avifenesh/projects/wt-spill-integ72/target/model-memory-fixture-src.PIdxDS)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.43s
+     Running unittests lib.rs (target/model-memory-fixture-cpu/debug/deps/memra_memory_fixture_cpu-a4f4b122b1a35aa0)
+
+running 10 tests
+test model_memory_fixture::tests::fixture_census_rejects_a_missing_indexer_tensor_and_identity_is_repeatable ... [memory-fixture-cpu] tensors=107 bytes=2788336 sha256=73fcf890c423446b86a31f1ab04015ce70df2fe7ab76189ac3f609ab25f1b233
+ok
+test model_memory_fixture::tests::fixture_has_two_tp2_kda_and_two_independent_kpool_layers ... ok
+test model_memory_plan::tests::growing_allocations_reserve_the_replacement_while_old_bytes_are_live ... ok
+test model_memory_plan::tests::kda_reserves_convolution_and_both_recurrent_planes ... ok
+test model_memory_plan::tests::malformed_geometry_and_overflow_fail_closed ... ok
+test model_memory_plan::tests::mla_peer_score_workspace_scales_with_prompt_depth_and_call_rows ... ok
+test model_memory_plan::tests::mla_ring_and_flat_layouts_include_lazy_keys_and_length_scalar ... ok
+test model_memory_plan::tests::partial_layers_and_same_device_ranks_sum_without_charging_live_bytes ... ok
+test model_memory_plan::tests::peer_workspace_is_not_capped_by_small_primary_session_cost ... ok
+test model_memory_plan::tests::shared_owners_collapse_but_same_ordinal_engines_survive ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+
+   rc=0
+== Unit suite (memra-lanes — lane admission + streaming-audio scheduler)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running unittests src/lib.rs (target/debug/deps/memra_lanes-1bea38ede6881db5)
+
+running 21 tests
+test audio_stream::tests::close_frees_the_slot ... ok
+test audio_stream::tests::cost_model_is_pessimistic_against_the_measured_c64_duty ... ok
+test audio_stream::tests::drive_env_default_and_typo_both_resolve_fused ... ok
+test audio_stream::tests::duty_is_wall_relative_and_concurrency_is_audio_relative ... ok
+test audio_stream::tests::rates_are_identical_on_a_virtual_clock_and_on_unix_epoch_ms ... ok
+test audio_stream::tests::per_lane_worker_walks_round_robin ... ok
+test audio_stream::tests::cost_model_reproduces_its_measured_anchors ... ok
+test audio_stream::tests::fused_batch_is_every_ready_lane ... ok
+test audio_stream::tests::session_cap_refuses_typed_and_never_drops ... ok
+test audio_stream::tests::shed_codes_carry_stable_wire_names ... ok
+test audio_stream::tests::unbound_engine_fails_closed_before_capacity ... ok
+test audio_stream::tests::unknown_session_is_typed_not_ignored ... ok
+test tests::floor_boundary_arms_the_gate ... ok
+test tests::probe_cardinality_window_does_not_shed_harvest ... ok
+test tests::interactive_always_admits ... ok
+test tests::starved_sheds_regardless_of_floor ... ok
+test tests::real_congestion_still_sheds_past_the_floor ... ok
+test audio_stream::tests::red_arm_is_invisible_to_a_short_probe ... ok
+test audio_stream::tests::red_arm_per_lane_worker_sheds_at_c4 ... ok
+test audio_stream::tests::drive_shape_alone_decides_c4 ... ok
+test audio_stream::tests::fused_drive_holds_64_streams ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+
+   rc=0

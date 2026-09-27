@@ -1,0 +1,27 @@
+{
+  "command": [
+    "cargo",
+    "test",
+    "--locked",
+    "--offline",
+    "--release",
+    "-p",
+    "memra-tier",
+    "--lib",
+    "object_store::tests::gc_gate_scope_ends_even_while_a_child_holds_copied_descriptors",
+    "--",
+    "--exact",
+    "--nocapture"
+  ],
+  "exit_code": 0,
+  "expected_exit": 0,
+  "expected_marker": "1 passed; 0 failed; 0 ignored;",
+  "started_unix": 1789935472.5559247,
+  "finished_unix": 1789935474.1217475,
+  "log_sha256": "a820b9ee00da3ae41acd7dce58756cd7df8b427fcb5afc9da476d2377a73924a",
+  "source_sha256": {
+    "crates/memra-tier/src/object_store/mod.rs": "fb7163c9e31c130bfd9cefef87f815b5cbaa2d0b466f0661aeaaf312d00449a0",
+    "crates/memra-tier/src/object_store/tests.rs": "24c2a661ad3c73700e7617eacaf251f58facfdbae77b7aa7cc326672c5be7f78"
+  },
+  "no_gpu": true
+}

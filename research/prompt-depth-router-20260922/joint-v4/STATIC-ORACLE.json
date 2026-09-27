@@ -1,0 +1,169 @@
+{
+  "archive_sha256": "8631202585850659769481529485f89a53f78381a06fcce67c2d7bdd1f10fb9c",
+  "conversations": [
+    {
+      "controls": {
+        "fixed-c3": {
+          "seconds": 26.093266257,
+          "tokens": 3713,
+          "tokens_per_s": 142.29724877788803
+        },
+        "fixed:2": {
+          "seconds": 75.985535608,
+          "tokens": 10208,
+          "tokens_per_s": 134.34135744810447
+        },
+        "fixed:3": {
+          "seconds": 51.42924939,
+          "tokens": 7185,
+          "tokens_per_s": 139.70649164086507
+        }
+      },
+      "hindsight_best": "fixed-c3",
+      "hindsight_gain_vs_k3c0_percent": 1.8544285999843702,
+      "index": 0,
+      "topic": "bit flags"
+    },
+    {
+      "controls": {
+        "fixed-c3": {
+          "seconds": 16.455366034,
+          "tokens": 2126,
+          "tokens_per_s": 129.1979768549219
+        },
+        "fixed:2": {
+          "seconds": 64.523039162,
+          "tokens": 8509,
+          "tokens_per_s": 131.87537522273539
+        },
+        "fixed:3": {
+          "seconds": 42.437761186,
+          "tokens": 6042,
+          "tokens_per_s": 142.37320327805662
+        }
+      },
+      "hindsight_best": "fixed:3",
+      "hindsight_gain_vs_k3c0_percent": 0.0,
+      "index": 1,
+      "topic": "closed intervals"
+    },
+    {
+      "controls": {
+        "fixed-c3": {
+          "seconds": 100.77833562400001,
+          "tokens": 14071,
+          "tokens_per_s": 139.62326240927757
+        },
+        "fixed:2": {
+          "seconds": 103.99818268599999,
+          "tokens": 14019,
+          "tokens_per_s": 134.8004324491644
+        },
+        "fixed:3": {
+          "seconds": 87.474075279,
+          "tokens": 12401,
+          "tokens_per_s": 141.76771758314456
+        }
+      },
+      "hindsight_best": "fixed:3",
+      "hindsight_gain_vs_k3c0_percent": 0.0,
+      "index": 2,
+      "topic": "sequence slices"
+    },
+    {
+      "controls": {
+        "fixed-c3": {
+          "seconds": 28.206331245,
+          "tokens": 3836,
+          "tokens_per_s": 135.99783561642704
+        },
+        "fixed:2": {
+          "seconds": 58.68503519,
+          "tokens": 7648,
+          "tokens_per_s": 130.32283230705514
+        },
+        "fixed:3": {
+          "seconds": 31.135738122,
+          "tokens": 4242,
+          "tokens_per_s": 136.2421530968194
+        }
+      },
+      "hindsight_best": "fixed:3",
+      "hindsight_gain_vs_k3c0_percent": 0.0,
+      "index": 3,
+      "topic": "mapping counts"
+    },
+    {
+      "controls": {
+        "fixed-c3": {
+          "seconds": 13.992647835,
+          "tokens": 1955,
+          "tokens_per_s": 139.71622976960316
+        },
+        "fixed:2": {
+          "seconds": 12.207052822,
+          "tokens": 1573,
+          "tokens_per_s": 128.85993228153166
+        },
+        "fixed:3": {
+          "seconds": 11.690296479,
+          "tokens": 1588,
+          "tokens_per_s": 135.83915539290405
+        }
+      },
+      "hindsight_best": "fixed-c3",
+      "hindsight_gain_vs_k3c0_percent": 2.8541655500470275,
+      "index": 4,
+      "topic": "whitespace text"
+    },
+    {
+      "controls": {
+        "fixed-c3": {
+          "seconds": 54.280375182,
+          "tokens": 7326,
+          "tokens_per_s": 134.96590573363218
+        },
+        "fixed:2": {
+          "seconds": 52.661590604,
+          "tokens": 6949,
+          "tokens_per_s": 131.95575599405038
+        },
+        "fixed:3": {
+          "seconds": 22.054667161,
+          "tokens": 2949,
+          "tokens_per_s": 133.71319451217175
+        }
+      },
+      "hindsight_best": "fixed-c3",
+      "hindsight_gain_vs_k3c0_percent": 0.9368643281844502,
+      "index": 5,
+      "topic": "integer arithmetic"
+    }
+  ],
+  "hindsight_gain_vs_k3c0_percent": 0.3803627671084886,
+  "local_winner_counts": {
+    "fixed-c3": 3,
+    "fixed:2": 0,
+    "fixed:3": 3
+  },
+  "pooled_action_objective": "maximize sum(output_tokens) / sum(complete_request_seconds)",
+  "pooled_fixed_tok_s": {
+    "fixed-c3": 137.7236417296076,
+    "fixed:2": 132.87491728785812,
+    "fixed:3": 139.73986759254777
+  },
+  "pooled_hindsight_tok_s": 140.27138601967653,
+  "pooled_local_best_tok_s": 139.69092930451512,
+  "pooled_optimal_actions": [
+    "fixed-c3",
+    "fixed:3",
+    "fixed:3",
+    "fixed-c3",
+    "fixed-c3",
+    "fixed:3"
+  ],
+  "schema": 1,
+  "source_sha256": "6ed3697e9de9db39d9c1491bf698ede7667628c6c416eb5bd145e1a810b7683d",
+  "status": "development-only whole-conversation hindsight, not a live controller",
+  "workloads_sha256": "00a1b6d97fbae3ecf69b46de7097cf6dd0639ca7aed60ed84585d17a2a8bfdef"
+}

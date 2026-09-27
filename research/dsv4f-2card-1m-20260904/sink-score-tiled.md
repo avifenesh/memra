@@ -1,5 +1,10 @@
 # Tiled exact sink-attention scores
 
+> **Superseded 2026-09-23.** The two-launch sink attention of memra #683
+> (`research/dsv4f-bringup-20260923/sink-attn/RESULTS.md`) replaced this arm on every shape it
+> admitted, and `MEMRA_DSV4_SINK_SCORE` was deleted (`docs/FLAGS.md`, "Removed doors,
+> 2026-09-23 (the tiled sink scorer ...)"). The numbers below stay as they were measured.
+
 2026-09-06 UTC. The matrix/EP profile attributes 20.8% of summed kernel time
 to sink-attention scores. This rewrite targets that measured operation while
 retaining the original attention program. No default is promoted.

@@ -35,7 +35,9 @@
 //!   * It is PROCESS-GLOBAL, not per-session. One live session priming keeps the process
 //!     healthy while another session's work is stuck behind it. That is correct for the
 //!     question `/health` asks ("should this process be RESTARTED?") and wrong for any
-//!     per-request SLO, which admission and the first-token deadline own instead.
+//!     per-request SLO, which admission and the first-token deadline own instead. The one
+//!     exception is a serve route on its own thread (DSv4, memra#500): it installs a
+//!     `ProgressSinkScope` and its chunks stamp that route's health record, not this global.
 
 use std::cell::RefCell;
 use std::sync::OnceLock;
@@ -66,6 +68,21 @@ fn now_ms() -> u64 {
 /// Cost is three atomic stores and one `Instant::now()` per CHUNK (not per token, not per
 /// kernel), which is noise against a chunk that just moved thousands of token rows.
 pub fn note_prime_rows(rows: usize) {
+    // A thread that owns its own serve route (the DSv4 serving thread, memra#500) installed a
+    // sink: its chunks attest THAT route's progress and stay out of the process-global
+    // odometer, which answers for the central worker. Sharing one odometer would let either
+    // side's primes hold the other's stall verdict healthy, and would let a route's chunk land
+    // between the central shim's two `events()` reads.
+    let routed = PROGRESS_SINK.with(|s| match s.borrow().as_ref() {
+        Some(sink) => {
+            sink(rows);
+            true
+        }
+        None => false,
+    });
+    if routed {
+        return;
+    }
     ROWS.fetch_add(rows as u64, Ordering::Relaxed);
     EVENTS.fetch_add(1, Ordering::Relaxed);
     LAST_MS.store(now_ms(), Ordering::Release);
@@ -90,6 +107,45 @@ pub fn snapshot() -> Option<Progress> {
         events: EVENTS.load(Ordering::Relaxed),
         age_ms: now_ms().saturating_sub(last),
     })
+}
+
+// ---------------------------------------------------------------------------------------------
+// ROUTE-OWNED PROGRESS SINK (memra#500, lane/dsv4-route-policies-20260922).
+//
+// A serve route that runs on its own thread (the DSv4 serving thread) is not the central worker,
+// and its liveness is not the central worker's either: the process-global odometer above cannot
+// tell whose chunk advanced it. The route installs a sink for the life of its thread through
+// `ProgressSinkScope`; every `note_prime_rows` on that thread then feeds the route's own health
+// record instead of the global. Same seam shape as the cancellation predicate below, and the same
+// property: with no scope installed (the central worker, the CLI, every gate) the call is one
+// thread-local read and the global odometer behaves exactly as before.
+// ---------------------------------------------------------------------------------------------
+
+/// A route's prime-row sink: completed rows in, stamped on the route's own record.
+pub type ProgressSink = Box<dyn Fn(usize)>;
+
+thread_local! {
+    static PROGRESS_SINK: RefCell<Option<ProgressSink>> = const { RefCell::new(None) };
+}
+
+/// Routes this thread's prime-chunk stamps to `sink` while the guard lives. Nested scopes restore
+/// the outer sink on drop.
+pub struct ProgressSinkScope {
+    prev: Option<ProgressSink>,
+}
+
+impl ProgressSinkScope {
+    pub fn install(sink: ProgressSink) -> Self {
+        let prev = PROGRESS_SINK.with(|s| s.borrow_mut().replace(sink));
+        Self { prev }
+    }
+}
+
+impl Drop for ProgressSinkScope {
+    fn drop(&mut self) {
+        let prev = self.prev.take();
+        PROGRESS_SINK.with(|s| *s.borrow_mut() = prev);
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -260,6 +316,62 @@ mod tests {
                 "the shim for {entry} is gone: its entry is stamping nothing"
             );
         }
+    }
+
+    /// WIRING GATE, the DSv4 twin (memra#500). The test above reads only `hybrid_forward.rs`, so a
+    /// second prime implementation was born passing it: `dsv4_gpu.rs` had no stamp at all and the
+    /// gate stayed green. Both DSv4 chunk walks (the plain `continue_prefix_chunked` and the
+    /// drafter's `dspark_continue_prefix_chunked`) must stamp per completed chunk, and the
+    /// monolithic serve prefill must stamp at call granularity. Comment-stripped, bound from
+    /// below.
+    #[test]
+    fn the_dsv4_prime_walks_actually_call_the_odometer() {
+        let src = include_str!("dsv4_gpu.rs");
+        let code: String = src
+            .lines()
+            .map(|l| l.trim_start())
+            .filter(|l| !l.starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let calls = code.matches("crate::progress::note_prime_rows(").count();
+        assert!(
+            calls >= 3,
+            "the DSv4 prime walks must stamp the forward-progress odometer (memra#500); found \
+             {calls} live call sites in dsv4_gpu.rs (two per-chunk walks plus the monolithic \
+             call-granularity stamp)"
+        );
+    }
+
+    /// An installed sink takes the thread's stamps; the guard restores the outer sink on drop and
+    /// the global path resumes after the last guard.
+    #[test]
+    fn a_progress_sink_scope_routes_this_threads_stamps_and_restores_on_drop() {
+        use std::sync::Arc;
+        use std::sync::atomic::AtomicUsize;
+        let outer = Arc::new(AtomicUsize::new(0));
+        let inner = Arc::new(AtomicUsize::new(0));
+        {
+            let o = outer.clone();
+            let _scope = ProgressSinkScope::install(Box::new(move |r| {
+                o.fetch_add(r, Ordering::Relaxed);
+            }));
+            note_prime_rows(512);
+            {
+                let i = inner.clone();
+                let _inner = ProgressSinkScope::install(Box::new(move |r| {
+                    i.fetch_add(r, Ordering::Relaxed);
+                }));
+                note_prime_rows(64);
+            }
+            note_prime_rows(8);
+        }
+        assert_eq!(outer.load(Ordering::Relaxed), 520);
+        assert_eq!(inner.load(Ordering::Relaxed), 64);
+        // No scope left: the stamp is the global odometer's again (another thread's sink never
+        // sees it, and this thread's old sinks are gone).
+        note_prime_rows(1);
+        assert_eq!(outer.load(Ordering::Relaxed), 520);
+        assert!(snapshot().is_some());
     }
 
     /// The cancellation point answers "not cancelled" with no scope, fires only while a scope says

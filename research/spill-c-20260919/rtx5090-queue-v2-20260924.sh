@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# WP-C RTX 5090 queue v2 (2026-09-24, replaces v1 after day 43's cell): one cell after another, in the order the
+# ledger needs them (C1's rungs from day 44, I10, day 43's fix check, then C6's gates, C8's cell, C5's cells, then
+# DAY51's three cells once the final tree is named: they wait for FINAL.ready, which the lane writes after it copies
+# run-gen-final and run-spec-final into the binary dir). Before each cell a bounded poll every 5 s
+# for an idle rig (the lock free, no compute app, the cell's MemAvailable), so the cell can start in the gap between
+# another lane's boots; the runners keep their own bounded waits and lock retries and never touch a holder. Every
+# runner inside a user scope capped at 1200% CPU.
+set -uo pipefail
+T=/home/avifenesh/projects/wt-spill-c
+L=$T/research/spill-c-20260919
+LOCK=/tmp/memra-5090.lock
+ART=/data/ai-ml/hf-models/qwen36-35b-a3b-mtp-gguf-5bc3e238/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+log() { echo "$(date -u +%FT%TZ) $*"; }
+idle() { # $1 min MemAvailable GiB; bounded 6 h
+    for _ in $(seq 1 4320); do
+        if flock -n "$LOCK" true 2>/dev/null \
+           && [ -z "$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null)" ] \
+           && [ "$(awk '/MemAvailable/ {print $2}' /proc/meminfo)" -ge $(( $1 * 1024 * 1024 )) ]; then
+            return 0
+        fi
+        sleep 5
+    done
+    return 1
+}
+moe() { # $1 day  $2 cell  $3 min_avail_gb  [$4 cell script, default day$1-cell.sh]
+    local R=$L/rtx5090-day$1 S=${4:-$L/day$1-cell.sh}
+    mkdir -p "$R"; printf '*.log -whitespace\n*.txt -whitespace\n*.snap -whitespace\n' > "$R/.gitattributes"
+    idle "$3" || { log "$2: rig never idle in 6 h"; return 1; }
+    systemd-run --user --scope -q -p CPUQuota=1200% env D40_POLL_S=5 D40_LOG_EVERY=24 D40_WAITS=4320 D40_LOCK_TRIES=720 \
+        D40_MIN_AVAIL_GB="$3" D40_RIG=rtx5090 D40_R="$R" D40_TREE=$T D40_CELL_SCRIPT="$S" \
+        D40_BINS=/tmp/c40-bins D40_ART=$ART D40_LOCK=$LOCK bash "$L/day40-run-cell.sh" "$2" 5400
+    log "$2 runner rc=$?"
+}
+log "queue start"
+moe 44 mapped 36
+moe 45 fill 40
+moe 46 nodrain 40
+moe 47 pinned 40
+moe 48 small 40
+moe 49 install 40
+moe 50 prefetch 40
+moe 57 fillwait 40
+moe 43 residfix 40 "$L/day43-fix-cell.sh"
+# C6 (DAY53): the verify digest v3 gates on the 9B.
+R=$L/rtx5090-day53; mkdir -p "$R"; printf '*.log -whitespace\n*.txt -whitespace\n*.csv -whitespace\n' > "$R/.gitattributes"
+M9=/home/avifenesh/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+for c in unit-server failure-default-off failure-plain-off failure-default-on identity-default-off identity-default-on; do
+    idle 20 || { log "$c: rig never idle"; continue; }
+    systemd-run --user --scope -q -p CPUQuota=1200% bash "$L/day53-cell.sh" "$c" "$M9" /tmp/c53-bins/memra-server-v3 "$R" 64
+    log "c6 $c rc=$?"
+done
+# C8 (DAY55): the always-admitted prime arm.
+R=$L/rtx5090-day55; mkdir -p "$R"; printf '*.log -whitespace\n*.txt -whitespace\n*.csv -whitespace\n' > "$R/.gitattributes"
+idle 20 && systemd-run --user --scope -q -p CPUQuota=1200% bash "$L/day55-local-run.sh" "$R" /tmp/c53-bins/memra-server-v3
+log "c8 rc=$?"
+# C5 (DAY56): the identity gate's drafter arm on the 27B.
+R=$L/rtx5090-day56; mkdir -p "$R"; printf '*.log -whitespace\n*.txt -whitespace\n*.csv -whitespace\n' > "$R/.gitattributes"
+M27=/home/avifenesh/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+for c in identity-dspark-off identity-dspark-on; do
+    idle 30 || { log "$c: rig never idle"; continue; }
+    systemd-run --user --scope -q -p CPUQuota=1200% bash "$L/day56-cell.sh" "$c" "$M27" /data/ai-ml/models/q38-dflash2 /tmp/c53-bins/memra-server-c5 "$R" 256
+    log "c5 $c rc=$?"
+done
+python3 "$L/day56-reading.py" "$R" --rig rtx5090 > "$R/reading.log" 2>&1
+log "c5 reader rc=$?"
+# DAY51 on the final tree: wait (bounded 24 h) for the lane to name it.
+for _ in $(seq 1 17280); do [ -e /tmp/c53-smoke/FINAL.ready ] && break; sleep 5; done
+if [ -e /tmp/c53-smoke/FINAL.ready ]; then
+    export D40_ART_OTHER=/home/avifenesh/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf D51_MOE_ENV=""
+    moe 51 hashlock 20
+    moe 51 spec 40
+    moe 51 decide 40
+else
+    log "FINAL.ready never appeared: DAY51 cells not run"
+fi
+log "queue done"

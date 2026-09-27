@@ -1,0 +1,7 @@
+--label warmup --conc 1 --n 1 --max-tokens 32 --greedy
+--label greedy-c1 --conc 1 --n 8 --greedy --keep-text --max-tokens 256
+--label sampled-c1 --conc 1 --n 8 --max-tokens 256
+--label greedy-c1-ignore-eos --conc 1 --n 4 --greedy --ignore-eos --keep-text --max-tokens 256
+--label greedy-c2 --conc 2 --n 4 --greedy --keep-text --max-tokens 256
+--label sampled-c2 --conc 2 --n 4 --max-tokens 256
+--label greedy-c1-2k --conc 1 --n 4 --greedy --keep-text --max-tokens 128 --context-words 1500

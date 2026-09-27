@@ -1,0 +1,105 @@
+DAY44 E5 card=pro6000 boot=fault-plain-rxg6 oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY44 E5 card=pro6000 boot=offprev oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY44 E5 card=pro6000 boot=rx-plain-rx-O1-exact oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY44 E5 card=pro6000 boot=rx-plain-rx-O1-keep oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY44 E5 card=pro6000 boot=rx-plain-rx-O2-exact oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY44 E5 card=pro6000 boot=rx-plain-rx-O2-keep oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY44 E5 card=pro6000 boot=rx-plain-rxg-O1-exact oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY44 E5 card=pro6000 boot=rx-plain-rxg-O1-keep oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY44 E5 card=pro6000 boot=rx-plain-rxg-O2-exact oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY44 E5 card=pro6000 boot=rx-plain-rxg-O2-keep oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY44 E5 card=pro6000 boot=rx-spec-rx-O1-exact oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY44 E5 card=pro6000 boot=rx-spec-rx-O1-keep oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY44 E5 card=pro6000 boot=rx-spec-rx-O2-exact oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY44 E5 card=pro6000 boot=rx-spec-rx-O2-keep oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY44 E5 card=pro6000 boot=rx-spec-rxg-O1-exact oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY44 E5 card=pro6000 boot=rx-spec-rxg-O1-keep oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY44 E5 card=pro6000 boot=rx-spec-rxg-O2-exact oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY44 E5 card=pro6000 boot=rx-spec-rxg-O2-keep oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY44 E1 card=pro6000 boot=rx-plain-rx-O1-exact resumed=60 differ_vs_cold=[] exact_lines=60 -> PASS
+DAY44 E3 card=pro6000 boot=rx-plain-rx-O1-exact turns=60 resumed=60 frac=1.00 -> PASS
+DAY44 E2 card=pro6000 route=plain shape=rx order=O1 L=6144 G=32 N=10 ttft_ms keep p50=68.6 p95=68.8 exact p50=72.7 p95=73.0 ratio=1.060 e2e_ms keep p50=452.7 exact p50=457.6 ratio=1.011 extra_primed_rows p50=64 max=64 prime_ms keep p50=67.7 exact p50=71.6 -> FAIL
+DAY44 E2 card=pro6000 route=plain shape=rx order=O1 L=6144 G=256 N=10 ttft_ms keep p50=69.4 p95=69.7 exact p50=116.2 p95=116.7 ratio=1.675 e2e_ms keep p50=3153.3 exact p50=3204.4 ratio=1.016 extra_primed_rows p50=288 max=288 prime_ms keep p50=68.3 exact p50=114.9 -> FAIL
+DAY44 E2 card=pro6000 route=plain shape=rx order=O1 L=30720 G=32 N=10 ttft_ms keep p50=96.0 p95=96.0 exact p50=99.9 p95=100.2 ratio=1.041 e2e_ms keep p50=529.1 exact p50=533.3 ratio=1.008 extra_primed_rows p50=64 max=64 prime_ms keep p50=93.9 exact p50=97.5 -> PASS
+DAY44 E2 card=pro6000 route=plain shape=rx order=O1 L=30720 G=256 N=10 ttft_ms keep p50=96.6 p95=96.8 exact p50=143.4 p95=143.8 ratio=1.484 e2e_ms keep p50=3566.7 exact p50=3615.6 ratio=1.014 extra_primed_rows p50=288 max=288 prime_ms keep p50=94.3 exact p50=140.6 -> FAIL
+DAY44 E2 card=pro6000 route=plain shape=rx order=O1 L=122880 G=32 N=10 ttft_ms keep p50=195.1 p95=195.8 exact p50=198.7 p95=201.8 ratio=1.019 e2e_ms keep p50=842.3 exact p50=845.8 ratio=1.004 extra_primed_rows p50=64 max=64 prime_ms keep p50=188.2 exact p50=191.8 -> PASS
+DAY44 E2 card=pro6000 route=plain shape=rx order=O1 L=122880 G=256 N=10 ttft_ms keep p50=195.4 p95=196.2 exact p50=242.8 p95=244.5 ratio=1.242 e2e_ms keep p50=5378.6 exact p50=5428.5 ratio=1.009 extra_primed_rows p50=288 max=288 prime_ms keep p50=188.7 exact p50=235.4 -> FAIL
+DAY44 READING card=pro6000 boot=rx-plain-rx-O1-keep resumed=60 flips_vs_cold=24 generated=25847 wall_s=2869.4 tok_per_s=9.01 settles=0 settle_ms p50=nan max=nan idle driver_free=6960709632 pool_cached=6680322880
+DAY44 READING card=pro6000 boot=rx-plain-rx-O1-exact resumed=60 flips_vs_cold=0 generated=25920 wall_s=2876.1 tok_per_s=9.01 settles=0 settle_ms p50=nan max=nan idle driver_free=2128871424 pool_cached=10884588352
+DAY44 E1 card=pro6000 boot=rx-plain-rx-O2-exact resumed=60 differ_vs_cold=[] exact_lines=60 -> PASS
+DAY44 E3 card=pro6000 boot=rx-plain-rx-O2-exact turns=60 resumed=60 frac=1.00 -> PASS
+DAY44 E2 card=pro6000 route=plain shape=rx order=O2 L=6144 G=32 N=10 ttft_ms keep p50=69.2 p95=69.4 exact p50=72.8 p95=73.1 ratio=1.052 e2e_ms keep p50=453.9 exact p50=457.7 ratio=1.008 extra_primed_rows p50=64 max=64 prime_ms keep p50=68.2 exact p50=71.6 -> FAIL
+DAY44 E2 card=pro6000 route=plain shape=rx order=O2 L=6144 G=256 N=10 ttft_ms keep p50=69.8 p95=70.1 exact p50=116.2 p95=116.7 ratio=1.664 e2e_ms keep p50=3156.4 exact p50=3204.1 ratio=1.015 extra_primed_rows p50=288 max=288 prime_ms keep p50=68.8 exact p50=115.0 -> FAIL
+DAY44 E2 card=pro6000 route=plain shape=rx order=O2 L=30720 G=32 N=10 ttft_ms keep p50=96.2 p95=96.5 exact p50=99.7 p95=100.0 ratio=1.037 e2e_ms keep p50=529.5 exact p50=533.3 ratio=1.007 extra_primed_rows p50=64 max=64 prime_ms keep p50=94.0 exact p50=97.5 -> PASS
+DAY44 E2 card=pro6000 route=plain shape=rx order=O2 L=30720 G=256 N=10 ttft_ms keep p50=96.6 p95=97.0 exact p50=143.1 p95=143.4 ratio=1.481 e2e_ms keep p50=3566.8 exact p50=3615.1 ratio=1.014 extra_primed_rows p50=288 max=288 prime_ms keep p50=94.3 exact p50=140.7 -> FAIL
+DAY44 E2 card=pro6000 route=plain shape=rx order=O2 L=122880 G=32 N=10 ttft_ms keep p50=195.2 p95=195.7 exact p50=198.7 p95=201.7 ratio=1.018 e2e_ms keep p50=842.4 exact p50=845.6 ratio=1.004 extra_primed_rows p50=64 max=64 prime_ms keep p50=188.2 exact p50=191.9 -> PASS
+DAY44 E2 card=pro6000 route=plain shape=rx order=O2 L=122880 G=256 N=10 ttft_ms keep p50=195.5 p95=196.5 exact p50=242.4 p95=244.8 ratio=1.240 e2e_ms keep p50=5378.4 exact p50=5427.5 ratio=1.009 extra_primed_rows p50=288 max=288 prime_ms keep p50=188.7 exact p50=235.4 -> FAIL
+DAY44 READING card=pro6000 boot=rx-plain-rx-O2-keep resumed=60 flips_vs_cold=24 generated=25847 wall_s=2872.0 tok_per_s=9.00 settles=0 settle_ms p50=nan max=nan idle driver_free=6960709632 pool_cached=6680322880
+DAY44 READING card=pro6000 boot=rx-plain-rx-O2-exact resumed=60 flips_vs_cold=0 generated=25920 wall_s=2875.8 tok_per_s=9.01 settles=0 settle_ms p50=nan max=nan idle driver_free=2128871424 pool_cached=10884588352
+DAY44 E1 card=pro6000 boot=rx-plain-rxg-O1-exact resumed=60 differ_vs_cold=[] exact_lines=60 -> PASS
+DAY44 E3 card=pro6000 boot=rx-plain-rxg-O1-exact turns=60 resumed=60 frac=1.00 -> PASS
+DAY44 E4 card=pro6000 boot=rx-plain-rxg-O1-exact resume_lines=60 settled=60 frac=1.00 settles=176 -> PASS
+DAY44 E2 card=pro6000 route=plain shape=rxg order=O1 L=6144 G=32 N=10 ttft_ms keep p50=69.5 p95=69.6 exact p50=71.3 p95=71.4 ratio=1.026 e2e_ms keep p50=454.2 exact p50=456.2 ratio=1.004 extra_primed_rows p50=32 max=32 prime_ms keep p50=68.1 exact p50=70.0 -> PASS
+DAY44 E2 card=pro6000 route=plain shape=rxg order=O1 L=6144 G=256 N=10 ttft_ms keep p50=70.0 p95=70.3 exact p50=71.8 p95=72.0 ratio=1.026 e2e_ms keep p50=3154.9 exact p50=3158.2 ratio=1.001 extra_primed_rows p50=32 max=32 prime_ms keep p50=68.6 exact p50=70.4 -> PASS
+DAY44 E2 card=pro6000 route=plain shape=rxg order=O1 L=30720 G=32 N=10 ttft_ms keep p50=96.8 p95=96.9 exact p50=98.4 p95=98.7 ratio=1.016 e2e_ms keep p50=529.7 exact p50=531.6 ratio=1.004 extra_primed_rows p50=32 max=32 prime_ms keep p50=93.7 exact p50=95.5 -> PASS
+DAY44 E2 card=pro6000 route=plain shape=rxg order=O1 L=30720 G=256 N=10 ttft_ms keep p50=97.1 p95=97.5 exact p50=98.7 p95=99.0 ratio=1.017 e2e_ms keep p50=3566.0 exact p50=3570.6 ratio=1.001 extra_primed_rows p50=32 max=32 prime_ms keep p50=94.0 exact p50=95.8 -> PASS
+DAY44 E2 card=pro6000 route=plain shape=rxg order=O1 L=122880 G=32 N=10 ttft_ms keep p50=195.4 p95=196.2 exact p50=198.1 p95=221.6 ratio=1.014 e2e_ms keep p50=842.8 exact p50=844.3 ratio=1.002 extra_primed_rows p50=32 max=32 prime_ms keep p50=187.9 exact p50=190.0 -> PASS
+DAY44 E2 card=pro6000 route=plain shape=rxg order=O1 L=122880 G=256 N=10 ttft_ms keep p50=195.6 p95=196.3 exact p50=220.8 p95=340.8 ratio=1.129 e2e_ms keep p50=5378.5 exact p50=5400.9 ratio=1.004 extra_primed_rows p50=32 max=32 prime_ms keep p50=188.1 exact p50=190.2 -> FAIL
+DAY44 READING card=pro6000 boot=rx-plain-rxg-O1-keep resumed=60 flips_vs_cold=24 generated=25847 wall_s=2932.3 tok_per_s=8.81 settles=0 settle_ms p50=nan max=nan idle driver_free=6960709632 pool_cached=6680322880
+DAY44 READING card=pro6000 boot=rx-plain-rxg-O1-exact resumed=60 flips_vs_cold=0 generated=25920 wall_s=2935.4 tok_per_s=8.83 settles=176 settle_ms p50=93.2 max=212.1 idle driver_free=5954076672 pool_cached=8941183808
+DAY44 E1 card=pro6000 boot=rx-plain-rxg-O2-exact resumed=60 differ_vs_cold=[] exact_lines=60 -> PASS
+DAY44 E3 card=pro6000 boot=rx-plain-rxg-O2-exact turns=60 resumed=60 frac=1.00 -> PASS
+DAY44 E4 card=pro6000 boot=rx-plain-rxg-O2-exact resume_lines=60 settled=60 frac=1.00 settles=176 -> PASS
+DAY44 E2 card=pro6000 route=plain shape=rxg order=O2 L=6144 G=32 N=10 ttft_ms keep p50=69.4 p95=69.6 exact p50=71.3 p95=71.5 ratio=1.027 e2e_ms keep p50=454.1 exact p50=456.0 ratio=1.004 extra_primed_rows p50=32 max=32 prime_ms keep p50=68.1 exact p50=70.0 -> PASS
+DAY44 E2 card=pro6000 route=plain shape=rxg order=O2 L=6144 G=256 N=10 ttft_ms keep p50=70.0 p95=70.3 exact p50=71.7 p95=72.0 ratio=1.024 e2e_ms keep p50=3154.8 exact p50=3157.1 ratio=1.001 extra_primed_rows p50=32 max=32 prime_ms keep p50=68.5 exact p50=70.4 -> PASS
+DAY44 E2 card=pro6000 route=plain shape=rxg order=O2 L=30720 G=32 N=10 ttft_ms keep p50=96.6 p95=97.0 exact p50=98.4 p95=98.7 ratio=1.019 e2e_ms keep p50=529.6 exact p50=531.3 ratio=1.003 extra_primed_rows p50=32 max=32 prime_ms keep p50=93.7 exact p50=95.5 -> PASS
+DAY44 E2 card=pro6000 route=plain shape=rxg order=O2 L=30720 G=256 N=10 ttft_ms keep p50=96.8 p95=97.1 exact p50=98.8 p95=98.9 ratio=1.021 e2e_ms keep p50=3566.0 exact p50=3569.2 ratio=1.001 extra_primed_rows p50=32 max=32 prime_ms keep p50=94.1 exact p50=95.9 -> PASS
+DAY44 E2 card=pro6000 route=plain shape=rxg order=O2 L=122880 G=32 N=10 ttft_ms keep p50=195.2 p95=196.0 exact p50=197.3 p95=221.5 ratio=1.011 e2e_ms keep p50=842.2 exact p50=843.8 ratio=1.002 extra_primed_rows p50=32 max=32 prime_ms keep p50=187.6 exact p50=189.9 -> PASS
+DAY44 E2 card=pro6000 route=plain shape=rxg order=O2 L=122880 G=256 N=10 ttft_ms keep p50=195.6 p95=196.1 exact p50=220.9 p95=339.9 ratio=1.129 e2e_ms keep p50=5377.8 exact p50=5399.7 ratio=1.004 extra_primed_rows p50=32 max=32 prime_ms keep p50=188.0 exact p50=190.2 -> FAIL
+DAY44 READING card=pro6000 boot=rx-plain-rxg-O2-keep resumed=60 flips_vs_cold=24 generated=25847 wall_s=2931.5 tok_per_s=8.82 settles=0 settle_ms p50=nan max=nan idle driver_free=6960709632 pool_cached=6680322880
+DAY44 READING card=pro6000 boot=rx-plain-rxg-O2-exact resumed=60 flips_vs_cold=0 generated=25920 wall_s=2933.8 tok_per_s=8.83 settles=176 settle_ms p50=93.3 max=212.0 idle driver_free=5954076672 pool_cached=8941183808
+DAY44 E1 card=pro6000 boot=rx-spec-rx-O1-exact resumed=60 differ_vs_cold=[] exact_lines=60 -> PASS
+DAY44 E3 card=pro6000 boot=rx-spec-rx-O1-exact turns=60 resumed=60 frac=1.00 -> PASS
+DAY44 E2 card=pro6000 route=spec shape=rx order=O1 L=6144 G=32 N=10 ttft_ms keep p50=160.6 p95=161.4 exact p50=164.8 p95=165.6 ratio=1.026 e2e_ms keep p50=412.1 exact p50=408.5 ratio=0.991 extra_primed_rows p50=32 max=32 prime_ms keep p50=148.3 exact p50=84.0 -> PASS
+DAY44 E2 card=pro6000 route=spec shape=rx order=O1 L=6144 G=256 N=10 ttft_ms keep p50=161.4 p95=162.0 exact p50=190.0 p95=190.5 ratio=1.177 e2e_ms keep p50=1755.1 exact p50=1821.0 ratio=1.038 extra_primed_rows p50=32 max=32 prime_ms keep p50=149.7 exact p50=84.7 -> FAIL
+DAY44 E2 card=pro6000 route=spec shape=rx order=O1 L=30720 G=32 N=10 ttft_ms keep p50=215.7 p95=216.1 exact p50=220.1 p95=221.0 ratio=1.020 e2e_ms keep p50=485.6 exact p50=480.0 ratio=0.989 extra_primed_rows p50=32 max=32 prime_ms keep p50=201.5 exact p50=111.3 -> PASS
+DAY44 E2 card=pro6000 route=spec shape=rx order=O1 L=30720 G=256 N=10 ttft_ms keep p50=215.9 p95=216.1 exact p50=245.2 p95=245.9 ratio=1.136 e2e_ms keep p50=2137.9 exact p50=2235.2 ratio=1.046 extra_primed_rows p50=32 max=32 prime_ms keep p50=202.3 exact p50=111.7 -> FAIL
+DAY44 E2 card=pro6000 route=spec shape=rx order=O1 L=122880 G=32 N=10 ttft_ms keep p50=417.6 p95=418.2 exact p50=426.0 p95=426.4 ratio=1.020 e2e_ms keep p50=804.1 exact p50=812.3 ratio=1.010 extra_primed_rows p50=32 max=32 prime_ms keep p50=396.8 exact p50=212.5 -> PASS
+DAY44 E2 card=pro6000 route=spec shape=rx order=O1 L=122880 G=256 N=10 ttft_ms keep p50=417.4 p95=418.4 exact p50=450.5 p95=451.2 ratio=1.079 e2e_ms keep p50=3477.5 exact p50=3510.7 ratio=1.010 extra_primed_rows p50=32 max=32 prime_ms keep p50=397.7 exact p50=212.9 -> FAIL
+DAY44 READING card=pro6000 boot=rx-spec-rx-O1-keep resumed=60 flips_vs_cold=24 generated=25847 wall_s=2572.0 tok_per_s=10.05 settles=0 settle_ms p50=nan max=nan idle driver_free=4442030080 pool_cached=4452585920
+DAY44 READING card=pro6000 boot=rx-spec-rx-O1-exact resumed=60 flips_vs_cold=0 generated=25920 wall_s=2586.1 tok_per_s=10.02 settles=180 settle_ms p50=108.0 max=218.9 idle driver_free=3905159168 pool_cached=2615701932
+DAY44 E1 card=pro6000 boot=rx-spec-rx-O2-exact resumed=60 differ_vs_cold=[] exact_lines=60 -> PASS
+DAY44 E3 card=pro6000 boot=rx-spec-rx-O2-exact turns=60 resumed=60 frac=1.00 -> PASS
+DAY44 E2 card=pro6000 route=spec shape=rx order=O2 L=6144 G=32 N=10 ttft_ms keep p50=160.6 p95=161.4 exact p50=164.7 p95=165.3 ratio=1.025 e2e_ms keep p50=412.4 exact p50=408.5 ratio=0.990 extra_primed_rows p50=32 max=32 prime_ms keep p50=148.4 exact p50=84.0 -> PASS
+DAY44 E2 card=pro6000 route=spec shape=rx order=O2 L=6144 G=256 N=10 ttft_ms keep p50=161.8 p95=162.2 exact p50=190.1 p95=190.3 ratio=1.175 e2e_ms keep p50=1756.3 exact p50=1820.3 ratio=1.036 extra_primed_rows p50=32 max=32 prime_ms keep p50=149.7 exact p50=84.7 -> FAIL
+DAY44 E2 card=pro6000 route=spec shape=rx order=O2 L=30720 G=32 N=10 ttft_ms keep p50=215.7 p95=216.2 exact p50=220.3 p95=221.0 ratio=1.021 e2e_ms keep p50=485.7 exact p50=480.8 ratio=0.990 extra_primed_rows p50=32 max=32 prime_ms keep p50=201.5 exact p50=111.3 -> PASS
+DAY44 E2 card=pro6000 route=spec shape=rx order=O2 L=30720 G=256 N=10 ttft_ms keep p50=215.8 p95=216.4 exact p50=245.0 p95=245.7 ratio=1.135 e2e_ms keep p50=2138.0 exact p50=2235.2 ratio=1.045 extra_primed_rows p50=32 max=32 prime_ms keep p50=202.2 exact p50=111.7 -> FAIL
+DAY44 E2 card=pro6000 route=spec shape=rx order=O2 L=122880 G=32 N=10 ttft_ms keep p50=417.5 p95=418.3 exact p50=425.6 p95=426.3 ratio=1.019 e2e_ms keep p50=804.1 exact p50=811.9 ratio=1.010 extra_primed_rows p50=32 max=32 prime_ms keep p50=396.7 exact p50=212.6 -> PASS
+DAY44 E2 card=pro6000 route=spec shape=rx order=O2 L=122880 G=256 N=10 ttft_ms keep p50=417.5 p95=418.5 exact p50=450.7 p95=451.5 ratio=1.080 e2e_ms keep p50=3476.7 exact p50=3510.8 ratio=1.010 extra_primed_rows p50=32 max=32 prime_ms keep p50=397.7 exact p50=212.9 -> FAIL
+DAY44 READING card=pro6000 boot=rx-spec-rx-O2-keep resumed=60 flips_vs_cold=24 generated=25847 wall_s=2568.9 tok_per_s=10.06 settles=0 settle_ms p50=nan max=nan idle driver_free=4442030080 pool_cached=4452585920
+DAY44 READING card=pro6000 boot=rx-spec-rx-O2-exact resumed=60 flips_vs_cold=0 generated=25920 wall_s=2589.5 tok_per_s=10.01 settles=180 settle_ms p50=108.0 max=218.1 idle driver_free=3905159168 pool_cached=2615701932
+DAY44 E1 card=pro6000 boot=rx-spec-rxg-O1-exact resumed=60 differ_vs_cold=[] exact_lines=60 -> PASS
+DAY44 E3 card=pro6000 boot=rx-spec-rxg-O1-exact turns=60 resumed=60 frac=1.00 -> PASS
+DAY44 E4 card=pro6000 boot=rx-spec-rxg-O1-exact resume_lines=60 settled=60 frac=1.00 settles=180 -> PASS
+DAY44 E2 card=pro6000 route=spec shape=rxg order=O1 L=6144 G=32 N=10 ttft_ms keep p50=149.9 p95=150.0 exact p50=85.3 p95=85.6 ratio=0.569 e2e_ms keep p50=401.5 exact p50=329.5 ratio=0.821 extra_primed_rows p50=32 max=32 prime_ms keep p50=148.5 exact p50=84.1 -> PASS
+DAY44 E2 card=pro6000 route=spec shape=rxg order=O1 L=6144 G=256 N=10 ttft_ms keep p50=150.8 p95=151.4 exact p50=85.9 p95=86.2 ratio=0.570 e2e_ms keep p50=1745.1 exact p50=1715.5 ratio=0.983 extra_primed_rows p50=32 max=32 prime_ms keep p50=149.5 exact p50=84.7 -> PASS
+DAY44 E2 card=pro6000 route=spec shape=rxg order=O1 L=30720 G=32 N=10 ttft_ms keep p50=204.1 p95=204.6 exact p50=114.1 p95=114.4 ratio=0.559 e2e_ms keep p50=474.0 exact p50=374.5 ratio=0.790 extra_primed_rows p50=32 max=32 prime_ms keep p50=201.2 exact p50=111.3 -> PASS
+DAY44 E2 card=pro6000 route=spec shape=rxg order=O1 L=30720 G=256 N=10 ttft_ms keep p50=204.9 p95=205.3 exact p50=114.9 p95=115.1 ratio=0.561 e2e_ms keep p50=2127.4 exact p50=2104.5 ratio=0.989 extra_primed_rows p50=32 max=32 prime_ms keep p50=202.0 exact p50=111.7 -> PASS
+DAY44 E2 card=pro6000 route=spec shape=rxg order=O1 L=122880 G=32 N=10 ttft_ms keep p50=404.2 p95=404.9 exact p50=220.1 p95=220.8 ratio=0.545 e2e_ms keep p50=790.9 exact p50=606.5 ratio=0.767 extra_primed_rows p50=32 max=32 prime_ms keep p50=396.7 exact p50=212.5 -> PASS
+DAY44 E2 card=pro6000 route=spec shape=rxg order=O1 L=122880 G=256 N=10 ttft_ms keep p50=404.7 p95=405.5 exact p50=220.6 p95=221.3 ratio=0.545 e2e_ms keep p50=3463.4 exact p50=3281.1 ratio=0.947 extra_primed_rows p50=32 max=32 prime_ms keep p50=397.0 exact p50=212.7 -> PASS
+DAY44 READING card=pro6000 boot=rx-spec-rxg-O1-keep resumed=60 flips_vs_cold=24 generated=25847 wall_s=2629.6 tok_per_s=9.83 settles=0 settle_ms p50=nan max=nan idle driver_free=4442030080 pool_cached=4452585920
+DAY44 READING card=pro6000 boot=rx-spec-rxg-O1-exact resumed=60 flips_vs_cold=0 generated=25920 wall_s=2636.6 tok_per_s=9.83 settles=180 settle_ms p50=107.7 max=218.0 idle driver_free=3905159168 pool_cached=2615701932
+DAY44 E1 card=pro6000 boot=rx-spec-rxg-O2-exact resumed=60 differ_vs_cold=[] exact_lines=60 -> PASS
+DAY44 E3 card=pro6000 boot=rx-spec-rxg-O2-exact turns=60 resumed=60 frac=1.00 -> PASS
+DAY44 E4 card=pro6000 boot=rx-spec-rxg-O2-exact resume_lines=60 settled=60 frac=1.00 settles=180 -> PASS
+DAY44 E2 card=pro6000 route=spec shape=rxg order=O2 L=6144 G=32 N=10 ttft_ms keep p50=149.7 p95=150.1 exact p50=85.4 p95=85.6 ratio=0.570 e2e_ms keep p50=401.5 exact p50=329.3 ratio=0.820 extra_primed_rows p50=32 max=32 prime_ms keep p50=148.5 exact p50=84.1 -> PASS
+DAY44 E2 card=pro6000 route=spec shape=rxg order=O2 L=6144 G=256 N=10 ttft_ms keep p50=150.8 p95=151.2 exact p50=86.0 p95=86.4 ratio=0.570 e2e_ms keep p50=1744.6 exact p50=1716.3 ratio=0.984 extra_primed_rows p50=32 max=32 prime_ms keep p50=149.5 exact p50=84.7 -> PASS
+DAY44 E2 card=pro6000 route=spec shape=rxg order=O2 L=30720 G=32 N=10 ttft_ms keep p50=204.1 p95=204.3 exact p50=114.2 p95=114.6 ratio=0.560 e2e_ms keep p50=473.9 exact p50=374.6 ratio=0.791 extra_primed_rows p50=32 max=32 prime_ms keep p50=201.1 exact p50=111.3 -> PASS
+DAY44 E2 card=pro6000 route=spec shape=rxg order=O2 L=30720 G=256 N=10 ttft_ms keep p50=204.6 p95=205.1 exact p50=114.5 p95=114.7 ratio=0.560 e2e_ms keep p50=2126.8 exact p50=2105.4 ratio=0.990 extra_primed_rows p50=32 max=32 prime_ms keep p50=201.8 exact p50=111.7 -> PASS
+DAY44 E2 card=pro6000 route=spec shape=rxg order=O2 L=122880 G=32 N=10 ttft_ms keep p50=403.6 p95=404.9 exact p50=219.8 p95=220.8 ratio=0.545 e2e_ms keep p50=790.0 exact p50=606.1 ratio=0.767 extra_primed_rows p50=32 max=32 prime_ms keep p50=396.1 exact p50=212.6 -> PASS
+DAY44 E2 card=pro6000 route=spec shape=rxg order=O2 L=122880 G=256 N=10 ttft_ms keep p50=404.8 p95=405.5 exact p50=220.7 p95=221.2 ratio=0.545 e2e_ms keep p50=3464.5 exact p50=3282.3 ratio=0.947 extra_primed_rows p50=32 max=32 prime_ms keep p50=397.2 exact p50=212.9 -> PASS
+DAY44 READING card=pro6000 boot=rx-spec-rxg-O2-keep resumed=60 flips_vs_cold=24 generated=25847 wall_s=2626.8 tok_per_s=9.84 settles=0 settle_ms p50=nan max=nan idle driver_free=4442030080 pool_cached=4452585920
+DAY44 READING card=pro6000 boot=rx-spec-rxg-O2-exact resumed=60 flips_vs_cold=0 generated=25920 wall_s=2640.0 tok_per_s=9.82 settles=180 settle_ms p50=107.6 max=218.0 idle driver_free=3905159168 pool_cached=2615701932
+DAY44 E4-FAULT card=pro6000 boot=fault-plain-rxg6 settle_failed_lines=56 later_turns=20 resumed_after_drop=[] cold_differ=[] -> PASS
+DAY44 E6 card=pro6000 keep=rx-plain-rx-O1-keep rows=60 differ=[] -> PASS
+DAY44 E6 card=pro6000 keep=rx-plain-rx-O2-keep rows=60 differ=[] -> PASS

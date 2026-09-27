@@ -1,0 +1,32 @@
+diff --git a/crates/memra-engine/cu/dsv4_gpu.cu b/crates/memra-engine/cu/dsv4_gpu.cu
+index bbfcd8d4d..03d698973 100644
+--- a/crates/memra-engine/cu/dsv4_gpu.cu
++++ b/crates/memra-engine/cu/dsv4_gpu.cu
+@@ -8248,8 +8248,11 @@ dsv4_moe_fused_gu_kernel(const unsigned long long* __restrict__ table, int n_exp
+         dsv4_m1_issue<KC, STAGES>(ring, wq0, ws0, row_bytes, sc_row, nch, c, lane, valid);
+     // Slot p belongs to token row p / slots_per_row (memra #710: several rows per launch on
+     // the partition form, a B-row step or a verify round); one row is slots_per_row = topk.
+-    const bool bad = dsv4_moe_fused_mirror<2 * WP>(xf + (size_t)(p / slots_per_row) * in_f,
+-                                                    in_f, As, s_scale, &s_rs, warp, lane);
++    // TIMING PROBE ONLY (box-local, never committed): no x mirror, zero activations.
++    for (int i = threadIdx.y * 32 + threadIdx.x; i < in_f / 2; i += 2 * WP * 32) As[i] = 0u;
++    if (threadIdx.x == 0 && threadIdx.y == 0) s_rs = 1.0f;
++    __syncthreads();
++    const bool bad = false;
+     const bool any_bad = __syncthreads_or(bad);
+     const bool first = lane == 0 && warp == 0;
+     if (first && fault && any_bad && blockIdx.x == 0) atomicOr(fault, 2);
+@@ -8331,8 +8334,11 @@ dsv4_moe_fused_down_kernel(const unsigned long long* __restrict__ table, int n_e
+ #pragma unroll
+     for (int c = 0; c < STAGES - 1; c++)
+         dsv4_m1_issue<KC, STAGES>(ring, wq0, ws0, row_bytes, sc_row, nch, c, lane, valid);
+-    const bool bad = dsv4_moe_fused_mirror<WARPS>(H + (size_t)p * in_f, in_f, As, s_scale, &s_rs,
+-                                                  warp, lane);
++    // TIMING PROBE ONLY (box-local, never committed): no h mirror, zero activations.
++    for (int i = threadIdx.y * 32 + threadIdx.x; i < in_f / 2; i += WARPS * 32) As[i] = 0u;
++    if (threadIdx.x == 0 && threadIdx.y == 0) s_rs = 1.0f;
++    __syncthreads();
++    const bool bad = false;
+     const bool any_bad = __syncthreads_or(bad);
+     const int tid = warp * 32 + lane;
+     if (tid == 0 && fault && any_bad && blockIdx.x == 0) atomicOr(fault, 4);

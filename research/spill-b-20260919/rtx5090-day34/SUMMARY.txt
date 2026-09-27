@@ -1,0 +1,94 @@
+== card rtx5090 served_ctx=65536 model_ctx=262144
+DAY34 V-BOOT boot=O1-off arm=off door_line=present -> PASS
+DAY34 V-BOOT boot=O1-on2048 arm=on2048 door_line=present -> PASS
+DAY34 V-BOOT boot=O1-on8192 arm=on8192 door_line=present -> PASS
+DAY34 V-BOOT boot=O1-on32768 arm=on32768 door_line=present -> PASS
+DAY34 V-BOOT boot=O2-off arm=off door_line=present -> PASS
+DAY34 V-BOOT boot=O2-on2048 arm=on2048 door_line=present -> PASS
+DAY34 V-BOOT boot=O2-on8192 arm=on8192 door_line=present -> PASS
+DAY34 V-BOOT boot=O2-on32768 arm=on32768 door_line=present -> PASS
+== V-CRASH
+DAY34 V-CRASH card=rtx5090 boot=O1-off arm=off lines=0 by_pattern={} first=none -> PASS
+DAY34 V-CRASH card=rtx5090 boot=O1-on2048 arm=on2048 lines=0 by_pattern={} first=none -> PASS
+DAY34 V-CRASH card=rtx5090 boot=O1-on8192 arm=on8192 lines=0 by_pattern={} first=none -> PASS
+DAY34 V-CRASH card=rtx5090 boot=O1-on32768 arm=on32768 lines=0 by_pattern={} first=none -> PASS
+DAY34 V-CRASH card=rtx5090 boot=O2-off arm=off lines=0 by_pattern={} first=none -> PASS
+DAY34 V-CRASH card=rtx5090 boot=O2-on2048 arm=on2048 lines=0 by_pattern={} first=none -> PASS
+DAY34 V-CRASH card=rtx5090 boot=O2-on8192 arm=on8192 lines=0 by_pattern={} first=none -> PASS
+DAY34 V-CRASH card=rtx5090 boot=O2-on32768 arm=on32768 lines=0 by_pattern={} first=none -> PASS
+== V-OOM / G-BOOK / PARK
+DAY34 V-OOM card=rtx5090 boot=O1-off arm=off oom_lines=0 status_503=0 first_oom=none -> PASS
+DAY34 G-BOOK card=rtx5090 boot=O1-off arm=off admit_lines=0 mem_id_lines=0 est_over_booked_free=0 pending_prime_max=0 -> PASS
+DAY34 PARK card=rtx5090 boot=O1-off arm=off prefill_parks=0 step_parks=0 row_statuses={200: 84} -> PASS
+DAY34 V-OOM card=rtx5090 boot=O1-on2048 arm=on2048 oom_lines=0 status_503=0 first_oom=none -> PASS
+DAY34 G-BOOK card=rtx5090 boot=O1-on2048 arm=on2048 admit_lines=84 mem_id_lines=93 est_over_booked_free=0 pending_prime_max=10192027648 -> PASS
+DAY34 PARK card=rtx5090 boot=O1-on2048 arm=on2048 prefill_parks=0 step_parks=0 row_statuses={200: 84} -> PASS
+DAY34 V-OOM card=rtx5090 boot=O1-on8192 arm=on8192 oom_lines=0 status_503=0 first_oom=none -> PASS
+DAY34 G-BOOK card=rtx5090 boot=O1-on8192 arm=on8192 admit_lines=84 mem_id_lines=96 est_over_booked_free=0 pending_prime_max=8749514752 -> PASS
+DAY34 PARK card=rtx5090 boot=O1-on8192 arm=on8192 prefill_parks=0 step_parks=0 row_statuses={200: 84} -> PASS
+DAY34 V-OOM card=rtx5090 boot=O1-on32768 arm=on32768 oom_lines=0 status_503=0 first_oom=none -> PASS
+DAY34 G-BOOK card=rtx5090 boot=O1-on32768 arm=on32768 admit_lines=71 mem_id_lines=103 est_over_booked_free=0 pending_prime_max=5389778944 -> PASS
+DAY34 PARK card=rtx5090 boot=O1-on32768 arm=on32768 prefill_parks=0 step_parks=0 row_statuses={200: 71, 429: 13} -> PASS
+DAY34 V-OOM card=rtx5090 boot=O2-off arm=off oom_lines=0 status_503=0 first_oom=none -> PASS
+DAY34 G-BOOK card=rtx5090 boot=O2-off arm=off admit_lines=0 mem_id_lines=0 est_over_booked_free=0 pending_prime_max=0 -> PASS
+DAY34 PARK card=rtx5090 boot=O2-off arm=off prefill_parks=0 step_parks=0 row_statuses={200: 84} -> PASS
+DAY34 V-OOM card=rtx5090 boot=O2-on2048 arm=on2048 oom_lines=0 status_503=0 first_oom=none -> PASS
+DAY34 G-BOOK card=rtx5090 boot=O2-on2048 arm=on2048 admit_lines=84 mem_id_lines=93 est_over_booked_free=0 pending_prime_max=10189864960 -> PASS
+DAY34 PARK card=rtx5090 boot=O2-on2048 arm=on2048 prefill_parks=0 step_parks=0 row_statuses={200: 84} -> PASS
+DAY34 V-OOM card=rtx5090 boot=O2-on8192 arm=on8192 oom_lines=0 status_503=0 first_oom=none -> PASS
+DAY34 G-BOOK card=rtx5090 boot=O2-on8192 arm=on8192 admit_lines=84 mem_id_lines=96 est_over_booked_free=0 pending_prime_max=8750956544 -> PASS
+DAY34 PARK card=rtx5090 boot=O2-on8192 arm=on8192 prefill_parks=0 step_parks=0 row_statuses={200: 84} -> PASS
+DAY34 V-OOM card=rtx5090 boot=O2-on32768 arm=on32768 oom_lines=0 status_503=0 first_oom=none -> PASS
+DAY34 G-BOOK card=rtx5090 boot=O2-on32768 arm=on32768 admit_lines=71 mem_id_lines=103 est_over_booked_free=0 pending_prime_max=5393383424 -> PASS
+DAY34 PARK card=rtx5090 boot=O2-on32768 arm=on32768 prefill_parks=0 step_parks=0 row_statuses={200: 71, 429: 13} -> PASS
+== V-ALLOC
+DAY34 V-ALLOC card=rtx5090 boot=O1-off arm=off judged=44 match=44 mismatch=0 -> PASS
+DAY34 V-ALLOC card=rtx5090 boot=O1-on2048 arm=on2048 judged=45 match=45 mismatch=0 -> PASS
+DAY34 V-ALLOC card=rtx5090 boot=O1-on8192 arm=on8192 judged=46 match=46 mismatch=0 -> PASS
+DAY34 V-ALLOC card=rtx5090 boot=O1-on32768 arm=on32768 judged=46 match=46 mismatch=0 -> PASS
+DAY34 V-ALLOC card=rtx5090 boot=O2-off arm=off judged=44 match=44 mismatch=0 -> PASS
+DAY34 V-ALLOC card=rtx5090 boot=O2-on2048 arm=on2048 judged=45 match=45 mismatch=0 -> PASS
+DAY34 V-ALLOC card=rtx5090 boot=O2-on8192 arm=on8192 judged=46 match=46 mismatch=0 -> PASS
+DAY34 V-ALLOC card=rtx5090 boot=O2-on32768 arm=on32768 judged=46 match=46 mismatch=0 -> PASS
+== V-ID / V-TRUNC
+DAY34 V-ID card=rtx5090 order=O1 arm=on2048 vs=off eligible=16 equal=16 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY34 V-TRUNC card=rtx5090 order=O1 arm=on2048 on_length_rows=36 truncated_with_twin=18 length_both=3 length_prompt_differs=15 length_twin_failed=0 length_twin_other_finish=0 length_without_twin=15 conserved=True deadline_cut=0 open_non200=0 G_outside_band_v=0
+DAY34 V-ID card=rtx5090 order=O1 arm=on8192 vs=off eligible=48 equal=48 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY34 V-TRUNC card=rtx5090 order=O1 arm=on8192 on_length_rows=4 truncated_with_twin=0 length_both=4 length_prompt_differs=0 length_twin_failed=0 length_twin_other_finish=0 length_without_twin=0 conserved=True deadline_cut=0 open_non200=0 G_outside_band_v=0
+DAY34 V-ID card=rtx5090 order=O1 arm=on32768 vs=off eligible=48 equal=48 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY34 V-TRUNC card=rtx5090 order=O1 arm=on32768 on_length_rows=4 truncated_with_twin=0 length_both=4 length_prompt_differs=0 length_twin_failed=0 length_twin_other_finish=0 length_without_twin=0 conserved=True deadline_cut=0 open_non200=0 G_outside_band_v=0
+DAY34 V-ID card=rtx5090 order=O2 arm=on2048 vs=off eligible=16 equal=16 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY34 V-TRUNC card=rtx5090 order=O2 arm=on2048 on_length_rows=36 truncated_with_twin=18 length_both=3 length_prompt_differs=15 length_twin_failed=0 length_twin_other_finish=0 length_without_twin=15 conserved=True deadline_cut=0 open_non200=0 G_outside_band_v=0
+DAY34 V-ID card=rtx5090 order=O2 arm=on8192 vs=off eligible=48 equal=48 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY34 V-TRUNC card=rtx5090 order=O2 arm=on8192 on_length_rows=4 truncated_with_twin=0 length_both=4 length_prompt_differs=0 length_twin_failed=0 length_twin_other_finish=0 length_without_twin=0 conserved=True deadline_cut=0 open_non200=0 G_outside_band_v=0
+DAY34 V-ID card=rtx5090 order=O2 arm=on32768 vs=off eligible=48 equal=48 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY34 V-TRUNC card=rtx5090 order=O2 arm=on32768 on_length_rows=4 truncated_with_twin=0 length_both=4 length_prompt_differs=0 length_twin_failed=0 length_twin_other_finish=0 length_without_twin=0 conserved=True deadline_cut=0 open_non200=0 G_outside_band_v=0
+== G-NATURAL (door OFF, open classes, both orders, admissible OFF boots)
+DAY34 G-NATURAL card=rtx5090 off_boots=['O1-off', 'O2-off']
+DAY34 G-NATURAL card=rtx5090 class=i n=30 min=2413 p50=3921 p90=4817 p99=5048 max=5048 over2048=30 over8192=0 over32768=0 finish={'stop': 30}
+DAY34 G-NATURAL card=rtx5090 class=iii n=30 min=2173 p50=3724 p90=4715 p99=59715 max=59715 over2048=30 over8192=2 over32768=2 finish={'stop': 28, 'length': 2}
+DAY34 G-NATURAL card=rtx5090 class=iv-a n=6 min=5413 p50=5848 p90=6405 p99=6405 max=6405 over2048=6 over8192=0 over32768=0 finish={'stop': 6}
+DAY34 G-NATURAL card=rtx5090 class=iv-b n=6 min=65455 p50=65456 p90=65458 p99=65458 max=65458 over2048=6 over8192=6 over32768=6 finish={'length': 6}
+DAY34 G-NATURAL card=rtx5090 class=all-open n=72 min=2173 p50=4137 p90=59715 p99=65458 max=65458 over2048=72 over8192=8 over32768=8 finish={'stop': 64, 'length': 8}
+== V-CONC / V-RETRY
+DAY34 V-CONC card=rtx5090 order=O1 arm=off window_ms=1760170 B=32 status={200: 32} finish={'stop': 27, 'length': 5} retry_after={} active_sessions_max=11.0 admission_booked_bytes_max=18471159784.0 samples=7041 shadow_budget_bytes=12831671424 burst_cost_lines=82487 burst_cost_total_mb_median=1678 arith_sessions=7
+DAY34 V-RETRY card=rtx5090 order=O1 arm=off burst_responses=32/32 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY34 V-CONC card=rtx5090 order=O1 arm=on2048 window_ms=148088 B=32 status={200: 32} finish={'length': 32} retry_after={} active_sessions_max=32.0 admission_booked_bytes_max=20757033728.0 samples=593 shadow_budget_bytes=12831671424 burst_cost_lines=35 burst_cost_total_mb_median=649 arith_sessions=19
+DAY34 V-RETRY card=rtx5090 order=O1 arm=on2048 burst_responses=32/32 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY34 V-CONC card=rtx5090 order=O1 arm=on8192 window_ms=331660 B=32 status={200: 32} finish={'stop': 27, 'length': 5} retry_after={} active_sessions_max=32.0 admission_booked_bytes_max=24043608832.0 samples=1327 shadow_budget_bytes=12831671424 burst_cost_lines=43 burst_cost_total_mb_median=752 arith_sessions=17
+DAY34 V-RETRY card=rtx5090 order=O1 arm=on8192 burst_responses=32/32 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY34 V-CONC card=rtx5090 order=O1 arm=on32768 window_ms=437396 B=32 status={429: 13, 200: 19} finish={'stop': 18, 'length': 1} retry_after={'60': 13} active_sessions_max=19.0 admission_booked_bytes_max=22075092008.0 samples=1750 shadow_budget_bytes=12831671424 burst_cost_lines=503 burst_cost_total_mb_median=1162 arith_sessions=11
+DAY34 V-RETRY card=rtx5090 order=O1 arm=on32768 burst_responses=32/32 r429=13 refuse_lines=13 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY34 V-CONC card=rtx5090 order=O2 arm=off window_ms=1775302 B=32 status={200: 32} finish={'stop': 27, 'length': 5} retry_after={} active_sessions_max=11.0 admission_booked_bytes_max=18468997096.0 samples=7101 shadow_budget_bytes=12831671424 burst_cost_lines=111273 burst_cost_total_mb_median=1678 arith_sessions=7
+DAY34 V-RETRY card=rtx5090 order=O2 arm=off burst_responses=32/32 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY34 V-CONC card=rtx5090 order=O2 arm=on2048 window_ms=148110 B=32 status={200: 32} finish={'length': 32} retry_after={} active_sessions_max=32.0 admission_booked_bytes_max=20757439232.0 samples=593 shadow_budget_bytes=12831671424 burst_cost_lines=38 burst_cost_total_mb_median=649.0 arith_sessions=19
+DAY34 V-RETRY card=rtx5090 order=O2 arm=on2048 burst_responses=32/32 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY34 V-CONC card=rtx5090 order=O2 arm=on8192 window_ms=338314 B=32 status={200: 32} finish={'stop': 27, 'length': 5} retry_after={} active_sessions_max=32.0 admission_booked_bytes_max=24043608832.0 samples=1354 shadow_budget_bytes=12831671424 burst_cost_lines=38 burst_cost_total_mb_median=752.0 arith_sessions=17
+DAY34 V-RETRY card=rtx5090 order=O2 arm=on8192 burst_responses=32/32 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY34 V-CONC card=rtx5090 order=O2 arm=on32768 window_ms=647505 B=32 status={429: 13, 200: 19} finish={'stop': 15, 'length': 4} retry_after={'60': 13} active_sessions_max=19.0 admission_booked_bytes_max=22076968488.0 samples=2590 shadow_budget_bytes=12831671424 burst_cost_lines=383 burst_cost_total_mb_median=1162 arith_sessions=11
+DAY34 V-RETRY card=rtx5090 order=O2 arm=on32768 burst_responses=32/32 r429=13 refuse_lines=13 retry_after_in_1_60=True other_non200=0 -> PASS
+== SELECT (stated, not chosen)
+DAY34 SELECT card=rtx5090 R1_smallest_zero_truncation=8192 admissible=[2048, 8192, 32768] inadmissible=[] truncating=['2048:66']
+DAY34 SELECT card=rtx5090 R2_smallest_v_ge_max_natural_G=8192 (max_natural_G=6405)
+DAY34 SELECT card=rtx5090 R3_registry=32768 R4_survey=context
+DAY34 V-DOOR card=rtx5090 boots=8 excluded=0 v_crash_all=True v_id_all=True v_alloc_all=True v_trunc_band_all=True v_trunc_conserved_all=True v_retry_all=True v_oom_all=True g_book_all=True park_all=True -> PASS

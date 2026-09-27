@@ -1,0 +1,101 @@
+[server] build: memra-0.138.0-0415869fea39 (id: source-tree, git: 1b130f1ef9f1)
+[env-audit] warning: 1 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: MEMRA_HOSTGATE_CACHE_MB. Left alone: launchers and gate scripts own names outside the engine's families.
+[server] starting; models config = [("gate", "/home/avifenesh/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "gate" <- /home/avifenesh/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "gate": 65 layers, eos=248046, stop=[248046]
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="gate" route=hybrid-worker capacity=4 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[dspark] precision=q4 (MEMRA_DFLASH_PREC unset)
+[dspark] harvest=dflash (checkpoint census dflash2=true strategy_dspark=false, MEMRA_DSPARK_HARVEST unset)
+[dspark] verify-window=Ladder (accept-rate head ABSENT -> ladder, MEMRA_DSPARK_VT unset)
+[worker] gate: DSPARK SPEC route armed (drafter attached (/data/ai-ml/models/q38-dflash2); greedy+sampled [T>0 rejection verify, sampled penalties included; greedy penalties verified by penalised argmax (MEMRA_DSPARK_GREEDY_PENALTY=1)]/unconstrained/text-only; greedy LOW-wave admission + HIGH demotion, sampled solo admission; MTP spec DISABLED for this model — refuse-on-ambiguity; MEMRA_DSPARK_SPEC unset = off)
+[dspark] gate: DFlash2 draft head FULL target vocab (external_mtp_d2t_ignored=false; set MEMRA_FRSPEC_TRIM=<ranks.txt> to trim)
+[prefix-host] contracts door: model gate program identity artifact_sha256=1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a plan_debug_sha256=8fc1154223424f168e69fdf10f4befec7a9af75544e385bb773759954ff427e5 numeric=server-prefix-entry-v5-kv-q8_0-34B-q5_1-24B template=gguf-jinja device=0 (6246ms to hash /home/avifenesh/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf)
+[prefix-host] contracts door: model gate draft program identity source=embedded numeric=server-prefix-entry-v5-kv-q8_0-34B-q5_1-24B+mtp-draft-kv-q8_0-34B-q5_1-24B (0ms)
+[prefix-host] contracts door: model gate DFlash tail program drafter_manifest=config.json=873e3556509b0da06e29654ba00d4944888d4b5e8a33afde25f7eb27d321e980;model.safetensors=67fc76d68dc5a9415511a4f394ef744d67510cd20e93b37cc2cc7d28e4bab65c dflash_cfg_sha256=144f9f308703d4fb079b5006be317092f653e43ac2d0ab2c018903ba6df14f23 knobs=[MEMRA_DSPARK_PREFIX_RESTORE=1;MEMRA_DSPARK_SPEC=1] numeric=server-prefix-entry-v5-kv-q8_0-34B-q5_1-24B+dflash-tail-f32
+[prefix-host] contracts door: D2H demotes and H2D promotes ride the transfer engine's copy stream and publish at the tick top (memra#536 Move 1)
+[prefix-host] contracts door ON (MEMRA_KV_HOST_CONTRACTS=1): 1 model program identities, tenant salt per pool namespace, server governor ledger pinned/pageable 17180MB device 805MB in-flight 390; host tier armed; KV plane D2H through the transfer engine on the pageable tier (Option B); KV plane H2D through the same engine on promote (Option C)
+[prefix-host] on: budget 8590MB pinned cacheable host RAM (MEMRA_KV_HOST_MB, startup budget policy), plain byte-LRU, demote on device capacity eviction, promote on exact-prefix probe; verify=on (MEMRA_KV_HOST_VERIFY); tenant share cap 50% = 4295MB (MEMRA_KV_HOST_TENANT_PCT)
+[prefix-cache] on: budget 268MB (268435456 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "gate": dspark owns the spec program: spec coefficient = plain (no MTP scratch term); the draft plane is charged per session, 169MB at a 30k cap (ring on: constant above two windows)
+[admission] "gate": plain 29696 B/token, spec 29696 B/token; fixed residual learns from effective-free deltas
+[prime-walk] model="gate" route=dspark supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[dspark-vg] serve pool ENGAGED (vt_cap=8)
+[topk-shards] engaged: rows=7 cols=248320 k=16 shards=16 (MEMRA_TOPK_SHARDS=1)
+[fa-pool] grow #0 dev=0 o_len 0 -> 3194880 ml_len 0 -> 12480 (retired kept, zero=false)
+[dflash-kv-ring] compact keep_from=2064 kept=2056 phys_rows=4120
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1811939328,"still_owned_bytes":19560811392,"pool_reserved_bytes":19662897152,"pool_cached_bytes":102085760,"driver_free_bytes":4788387840,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1728MB cached back to the driver
+[admit-cal] boot calibration done: model="gate" route=dspark transient floor 1608MB (static was 1536MB; measured 1608MB; probe kv charge 119MB, draft-state 0MB, drafted 68 accepted 46; [dev0 peak-mapped 20480MB rest-mapped 18752MB charged 119MB -> 1608MB]; 6.9s)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[server] worker ready; serving models: ["gate"]
+[server] listening on http://127.0.0.1:18109
+[meter] admit id=cmpl-e911ed565b28dff8196efccca863b3fe tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +9MB (DFlash draft plane at this cap)
+[admission] request cost: model="gate" ctx=201 path=spec = 29696 B/token x ctx + 43MB prefill-workspace + 0MB fixed = 49MB
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=89 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=89 burst=19/42 cum=19/42=0.452
+[prefix-cache] insert (dspark-boundary): 89 tokens, 163.2MB (resident 163.2MB / 268MB, model gate)
+[dspark-acc] ctx=121 burst=14/14 cum=33/56=0.589
+[meter] admit id=cmpl-bb83ad2eb8368cff2d52d113edeb902f tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +8MB (DFlash draft plane at this cap)
+[admission] request cost: model="gate" ctx=198 path=spec = 29696 B/token x ctx + 41MB prefill-workspace + 0MB fixed = 47MB
+[worker] dspark-reuse MISS: 1 parked, best text overlap 0B                              of 449B prompt; serving COLD (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=86 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=86 burst=23/40 cum=23/40=0.575
+[prefix-cache] insert (dspark-boundary): 86 tokens, 163.0MB (resident 326.2MB / 268MB, model gate)
+[prefix-cache] evict (LRU): 89 tokens, 163.2MB (model gate)
+[prefix-host] tier span staging: 96 fresh pinned buffer(s), 156893184 bytes charged to the governor's pinned ledger; the set holds 156893184 bytes charged
+[prefix-host] demote submitted off the tick: 89 tokens, 164.2MB, ticket seq=1, 32 items on the contracts door's copy stream (model gate)
+[prefix-host] contracts door D2H receipt: ticket issuer=2 seq=1 epochs=0/1/1 items=32 (16 KV planes) complete=32 require=ok checksums_sha256=c90ed5ec43a7be234cdfd59c835bc66c54a64ab65a3dad8339f05e9d2d391758 retired acknowledged; 96 f32 spans landed under the ticket and taken back before the retire
+[prefix-host] demote copy complete off the tick: ticket seq=1 complete after 1 poll(s), 74.3ms from submission to completion (tick-top poll); items=128 (32 KV, 96 f32 spans); 98 heap payloads (157.9MB) handed to the hash helper; by slot class: conv 48 (5898240 B), ssm 48 (150994944 B), hidden 1 (0 B), logits 1 (993280 B)
+[prefix-host] demote KV leases on the hash helper: ticket seq=1, 32 lease views (2.6MB) for the bind's re-hash
+[dspark-acc] ctx=119 burst=14/16 cum=37/56=0.661
+[prefix-host] contracts door tail bound: 5 draft layers, 10 Role::Tail segments (3645440 B, hashed in 0.8 ms on the owner thread), tail_checksums_sha256=3bc70fe5981aaf09583a58aa45f359b336a7ff7fda60360427382ab5573750d9 (89 tokens, model gate)
+[prefix-host] demote: 89 tokens, 164.2MB in 369.0ms (host resident 164.2MB / 8590MB, model gate)
+[prefix-host] demote digests landed off the tick: ticket seq=1, 98 payloads (157.9MB) hashed in 115.1ms on the hash helper, landed after 1 poll(s) (tick-top poll); the owner thread held 184.34ms across the demote: pre-submit 160.10, copy settle 23.30 over 1 poll(s), hashing polls 0.02, take-back bind and publish 0.92; owner in-completion 161.03ms; wall 369.0ms t0 to publication; 0 hit(s) parked on the Hashing entry (0 re-park(s))
+[meter] admit id=cmpl-85d59084c8174454f9f17f9e0885a0e7 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +9MB (DFlash draft plane at this cap)
+[admission] request cost: model="gate" ctx=201 path=spec = 29696 B/token x ctx + 43MB prefill-workspace + 0MB fixed = 49MB
+[prefix-host] promote submitted off the tick: 89 tokens, 163.2MB, ticket seq=2, 32 items on the contracts door's copy stream, 96 f32 spans filled on the copy stream (156.9MB); owner segment 1.26ms; request parked
+[prefix-host] contracts door H2D receipt: ticket issuer=2 seq=2 epochs=0/1/1 items=32 (16 KV planes) complete=32 require=ok checksums_sha256=c90ed5ec43a7be234cdfd59c835bc66c54a64ab65a3dad8339f05e9d2d391758 published retired acknowledged; 96 f32 spans landed under the ticket and taken back before the retire; 32 KV checksums on the hash helper (2.6MB in 26.1ms)
+[prefix-host] verify ok: promoted state digest matches demote digest (89 tokens)
+[prefix-cache] insert (host-promote): 89 tokens, 163.2MB (resident 326.2MB / 268MB, model gate)
+[prefix-cache] evict (LRU): 86 tokens, 163.0MB (model gate)
+[prefix-host] demote submitted off the tick: 86 tokens, 164.0MB, ticket seq=3, 32 items on the contracts door's copy stream (model gate)
+[prefix-host] promote published off the tick: ticket complete after 12 poll(s), 27.0ms from submission to completion (tick-top poll); timeline from t0: submitted +0.34ms (tick 5, its top -39.45ms); poll 1 at +3.38ms (tick 6, its top +3.38ms) pending (the tick top); poll 2 at +5.49ms (tick 7, its top +5.49ms) pending (the tick top); poll 3 at +7.60ms (tick 8, its top +7.60ms) pending (the tick top); poll 4 at +9.85ms (tick 9, its top +9.85ms) pending (the tick top); poll 5 at +12.03ms (tick 10, its top +12.03ms) pending (the tick top); poll 6 at +14.19ms (tick 11, its top +14.19ms) pending (the tick top); poll 7 at +16.30ms (tick 12, its top +16.29ms) pending (the tick top); poll 8 at +18.40ms (tick 13, its top +18.40ms) pending (the tick top); poll 9 at +20.52ms (tick 14, its top +20.52ms) pending (the tick top); poll 10 at +22.75ms (tick 15, its top +22.75ms) pending (the tick top); poll 11 at +24.95ms (tick 16, its top +24.95ms) pending (the tick top); poll 12 at +27.33ms (tick 17, its top +27.11ms) complete (the tick top); published +238.02ms (tick 17, its top +27.11ms)
+[prefix-host] promote: 89 tokens, 163.2MB in 238.0ms (model gate)
+[prefix-cache] restore not routed (contracts door): the entry was promoted for this admission (insertion pin id=2, 89 tokens, model gate); the tick program copies it
+[prefix-cache] hit: 89 of 89 prompt tokens from cache (model gate)
+[prefix-cache] DSPARK restore: 89 of 89 prompt tokens + draft tail from cache (0 suffix tokens to prime) (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=89 cached=89 lcp=89 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 314MB (observed 319MB at ctx 145 path=plain)
+[dspark-acc] ctx=89 burst=19/42 cum=19/42=0.452
+[prefix-host] contracts door D2H receipt: ticket issuer=2 seq=3 epochs=0/1/1 items=32 (16 KV planes) complete=32 require=ok checksums_sha256=892a1252dc43864de758ce02576606309ac00f9c3c19f6c8a38f90d4d1034113 retired acknowledged; 96 f32 spans landed under the ticket and taken back before the retire
+[prefix-host] demote copy complete off the tick: ticket seq=3 complete after 1 poll(s), 649.8ms from submission to completion (tick-top poll); items=128 (32 KV, 96 f32 spans); 98 heap payloads (157.9MB) handed to the hash helper; by slot class: conv 48 (5898240 B), ssm 48 (150994944 B), hidden 1 (0 B), logits 1 (993280 B)
+[prefix-host] demote KV leases on the hash helper: ticket seq=3, 32 lease views (2.6MB) for the bind's re-hash
+[dspark-acc] ctx=121 burst=14/14 cum=33/56=0.589
+[prefix-host] contracts door tail bound: 5 draft layers, 10 Role::Tail segments (3522560 B, hashed in 0.8 ms on the owner thread), tail_checksums_sha256=d0cb627c3f15dc1272f51652b37e447ede80b09218b7fa08456aa3479aafc391 (86 tokens, model gate)
+[prefix-host] demote: 86 tokens, 164.0MB in 1031.2ms (host resident 328.1MB / 8590MB, model gate)
+[prefix-host] demote digests landed off the tick: ticket seq=3, 98 payloads (157.9MB) hashed in 129.8ms on the hash helper, landed after 1 poll(s) (tick-top poll); the owner thread held 135.15ms across the demote: pre-submit 111.50, copy settle 22.72 over 1 poll(s), hashing polls 0.02, take-back bind and publish 0.91; owner in-completion 112.43ms; wall 1031.2ms t0 to publication; 0 hit(s) parked on the Hashing entry (0 re-park(s))
+[meter] admit id=cmpl-8a360872ea200e6de77eb1fc1685e6bc tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +9MB (DFlash draft plane at this cap)
+[admission] request cost: model="gate" ctx=201 path=spec = 29696 B/token x ctx + 43MB prefill-workspace + 314MB fixed = 363MB
+[admit-trim] dev0 driver_free_bytes=1969815552 floor_bytes=2147483648 reclaimed_bytes=167772160 still_owned_bytes=20675377640 pool_reserved_bytes=22313697280 driver_free_after=2137587712 before prime
+[prefix-cache] hit: 89 of 89 prompt tokens from cache (model gate)
+[prefix-cache] DSPARK restore: 89 of 89 prompt tokens + draft tail from cache (0 suffix tokens to prime) (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=89 cached=89 lcp=89 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=89 burst=19/42 cum=19/42=0.452
+[dspark-acc] ctx=121 burst=14/14 cum=33/56=0.589
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[prefix-host] hash helper joined (shutdown)
+[server] GPU worker shutdown complete

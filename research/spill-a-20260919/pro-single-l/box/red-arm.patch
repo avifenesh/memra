@@ -1,0 +1,14 @@
+diff --git a/crates/memra-engine/src/tier_transfer.rs b/crates/memra-engine/src/tier_transfer.rs
+index 8f3775ca5..7896522bf 100644
+--- a/crates/memra-engine/src/tier_transfer.rs
++++ b/crates/memra-engine/src/tier_transfer.rs
+@@ -1624,7 +1624,8 @@ impl CudaTransfers {
+                     b
+                 }
+             };
+-            backing.set_len(bytes);
++            eprintln!("[day63 red arm] a pooled backing keeps its capacity as its length");
++            let _ = bytes;
+             Ok(backing)
+         })();
+         match allocation {

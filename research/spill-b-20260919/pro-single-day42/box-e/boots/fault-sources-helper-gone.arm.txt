@@ -1,0 +1,4 @@
+arm=fault-sources-helper-gone
+bin_sha256=81eaacca3a3b26848b55909a305b9ec553180008a2f2b2caf1b7168e00417f0e
+env=MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=8192 MEMRA_KV_HOST_MB=32768 MEMRA_KV_HOST_CONTRACTS=1 MEMRA_ADMIT_RECLAIM_OFFTICK=1 MEMRA_KV_HOST_FAULT=sources-helper-gone
+client_args=--burst 64 --warm 24 --warm-tokens 8192 --warm-max-tokens 16 --burst-max-ctx 133120

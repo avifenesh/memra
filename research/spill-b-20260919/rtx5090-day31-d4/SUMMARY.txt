@@ -1,0 +1,16 @@
+== D4-B
+DAY31 D4-B reclaim#1 t=1790134397255 burst=True demoted=1 of=17 kept_warm_MB=104 host_MB=4234/8590 flush_window_ms=57 prefix_host_lines=1 copy_ms_sum=0.0 settle_ms_sum=0.0
+DAY31 D4-B totals reclaim_lines=1 demoted=1 evicted=17 kept_warm_MB=104 flush_window_ms_sum=57
+DAY31 D4-B D4-host vram_defer_lines_in_burst=36
+DAY31 D4-B control vram_defer_lines_in_burst=40
+== D4-C
+DAY31 D4-C r429=11 refuse_lines=11 retry_after_in_1_60=True refuse_predicate_all=True host_tier_seen_armed=True sent_retry_after={'60': 11} logged_retry_after_s={'60': 11} -> PASS
+  refuse: id=chatcmpl-a0cd6904f452e7fea81ed6881fd9be9a short_by=133309460 device_free=2738572004 demotable=0 host_free=4355682560 waited_ms=8002 retry_after_s=60
+  refuse: id=chatcmpl-66d06378b506c3748629a1d89f6cc49f short_by=132934164 device_free=2738572004 demotable=0 host_free=4355682560 waited_ms=8001 retry_after_s=60
+  refuse: id=chatcmpl-382d65f6ffd2f0024a93923ed1f88a65 short_by=132934164 device_free=2738572004 demotable=0 host_free=4355682560 waited_ms=8042 retry_after_s=60
+  refuse: id=chatcmpl-7f65f8ac58bf48f654ba61cf72a7d56d short_by=134060052 device_free=2738572004 demotable=0 host_free=4355682560 waited_ms=8040 retry_after_s=60
+== D4-ID
+DAY31 D4-ID twins=49 equal=49 differ=0 -> PASS
+== burst
+DAY31 D4-BURST D4-host B=32 status={503: 2, 429: 11, 200: 19} retry_after={'5': 2, '60': 11}
+DAY31 D4-BURST control B=32 status={503: 2, 429: 11, 200: 19} retry_after={'5': 2, '60': 11}

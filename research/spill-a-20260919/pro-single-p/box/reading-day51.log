@@ -1,0 +1,29 @@
+DAY51 READING cell=demote order=o1 arm=base wall=100.80(N=40) e2e=174.67(N=50) copy=23.08(N=40) minflt=38306.50(N=40) hit=0.00(N=40) | refill N=0 ms=nan minflt=nan yields=0 | VmRSS=2889 MB VmHWM=16310 MB
+DAY51 READING cell=demote order=o1 arm=p wall=88.40(N=40) e2e=175.05(N=50) copy=7.91(N=40) minflt=0.00(N=40) hit=1.00(N=40) | refill N=45 ms=21.35 minflt=38306 yields=0 | VmRSS=3038 MB VmHWM=16310 MB
+DAY51 READING cell=demote order=o2 arm=base wall=100.90(N=40) e2e=174.78(N=50) copy=23.23(N=40) minflt=38306.50(N=40) hit=0.00(N=40) | refill N=0 ms=nan minflt=nan yields=0 | VmRSS=2888 MB VmHWM=16309 MB
+DAY51 READING cell=demote order=o2 arm=p wall=88.50(N=40) e2e=175.10(N=50) copy=7.91(N=40) minflt=0.00(N=40) hit=1.00(N=40) | refill N=45 ms=21.32 minflt=38306 yields=0 | VmRSS=3038 MB VmHWM=16310 MB
+DAY51 READING cell=free order=o1 arm=base wall=88.00(N=30) e2e=174.68(N=50) copy=7.93(N=30) minflt=0.00(N=30) hit=0.00(N=30) | refill N=0 ms=nan minflt=nan yields=0 | VmRSS=1830 MB VmHWM=16310 MB
+DAY51 READING cell=free order=o1 arm=p wall=88.10(N=30) e2e=174.80(N=50) copy=7.92(N=30) minflt=0.00(N=30) hit=1.00(N=30) | refill N=45 ms=7.95 minflt=5376 yields=0 | VmRSS=1983 MB VmHWM=16310 MB
+DAY51 READING cell=free order=o2 arm=base wall=88.00(N=30) e2e=174.65(N=50) copy=7.92(N=30) minflt=0.00(N=30) hit=0.00(N=30) | refill N=0 ms=nan minflt=nan yields=0 | VmRSS=1830 MB VmHWM=16310 MB
+DAY51 READING cell=free order=o2 arm=p wall=88.10(N=30) e2e=174.75(N=50) copy=7.91(N=30) minflt=0.00(N=30) hit=1.00(N=30) | refill N=45 ms=7.95 minflt=6144 yields=0 | VmRSS=1983 MB VmHWM=16310 MB
+DAY51 READING cell=promote order=o1 arm=base pin=26.00(N=45) e2e=113.98(N=50) | refill N=0 ms=nan minflt=nan yields=0 | VmRSS=1986 MB VmHWM=16309 MB
+DAY51 READING cell=promote order=o1 arm=p pin=26.20(N=45) e2e=114.09(N=50) | refill N=55 ms=7.72 minflt=5377 yields=0 | VmRSS=2138 MB VmHWM=16310 MB
+DAY51 READING cell=promote order=o2 arm=base pin=25.80(N=45) e2e=113.83(N=50) | refill N=0 ms=nan minflt=nan yields=0 | VmRSS=1985 MB VmHWM=16310 MB
+DAY51 READING cell=promote order=o2 arm=p pin=26.00(N=45) e2e=113.94(N=50) | refill N=55 ms=7.63 minflt=5376 yields=0 | VmRSS=2136 MB VmHWM=16310 MB
+DAY51 READING cell=chain order=o1 arm=base chain=405.67(N=50) first=186.44(N=50) | refill N=0 ms=nan minflt=nan yields=0 | VmRSS=2271 MB VmHWM=16310 MB
+DAY51 READING cell=chain order=o1 arm=p chain=407.07(N=50) first=186.66(N=50) | refill N=105 ms=5.13 minflt=0 yields=5 | VmRSS=2424 MB VmHWM=16310 MB
+DAY51 READING cell=chain order=o2 arm=base chain=405.78(N=50) first=186.69(N=50) | refill N=0 ms=nan minflt=nan yields=0 | VmRSS=2271 MB VmHWM=16309 MB
+DAY51 READING cell=chain order=o2 arm=p chain=407.32(N=50) first=186.74(N=50) | refill N=105 ms=5.15 minflt=0 yields=5 | VmRSS=2424 MB VmHWM=16310 MB
+DAY51 P (b) cell=demote order=o1 minflt p-median (0.25 x pages)=+0.00 rule <=+9576.42 | copy p-minus-base=-15.17 rule <=-8.00 | hits fraction of steady demotes=+1.00 rule >=+0.90 -> PASS
+DAY51 P (b) cell=demote order=o2 minflt p-median (0.25 x pages)=+0.00 rule <=+9576.42 | copy p-minus-base=-15.32 rule <=-8.00 | hits fraction of steady demotes=+1.00 rule >=+0.90 -> PASS
+DAY51 P (c) cell=demote order=o1 wall p-minus-base=-12.40 rule <=-8.00 | e2e p-minus-base=+0.37 rule <=+1.00 -> PASS
+DAY51 P (c) cell=demote order=o2 wall p-minus-base=-12.40 rule <=-8.00 | e2e p-minus-base=+0.32 rule <=+1.00 -> PASS
+DAY51 P (d) cell=promote order=o1 pin p-minus-base=+0.20 rule <=+1.00 | e2e p-minus-base=+0.12 rule <=+1.00 -> PASS
+DAY51 P (d) cell=promote order=o2 pin p-minus-base=+0.20 rule <=+1.00 | e2e p-minus-base=+0.12 rule <=+1.00 -> PASS
+DAY51 P (f) cell=free order=o1 wall p-minus-base=+0.10 rule <=+2.00 | copy p-minus-base=-0.01 rule <=+1.00 -> PASS
+DAY51 P (f) cell=free order=o2 wall p-minus-base=+0.10 rule <=+2.00 | copy p-minus-base=-0.00 rule <=+1.00 -> PASS
+DAY51 P (g) cell=chain order=o1 chain p-minus-base=+1.40 rule <=+1.00 | first p-minus-base=+0.23 rule <=+1.00 -> FAIL
+DAY51 P (g) cell=chain order=o2 chain p-minus-base=+1.54 rule <=+1.00 | first p-minus-base=+0.05 rule <=+1.00 -> FAIL
+DAY51 P (e) hump xp=+0.022 rule <=0.15 control xgpp=+0.514 (humps) -> PASS
+DAY51 P (a) gates identity-default-off=0 identity-default-on=0 identity-plain-off=0 identity-plain-on=0 failure-off=0 failure-on=0 contract-fault=0 contract-fault-plain=0 twin-off=0 twin-on=0 pause-demote=0 hitgate-off=0 hitgate-on=0 | unit [unit-cells parallel=3/3 engine-serial-rc=0 door-rc=0 cpu-rc=0 engine-census-rc=0 tier-rc=0] -> PASS
+DAY51 P -> FAIL

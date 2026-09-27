@@ -1,0 +1,56 @@
+# command: systemd-run --user --scope -p CPUQuota=1200% -p MemoryMax=20G python3 research/spill-c-20260919/day38-9b-split.py research/spill-c-20260919/rtx5090-day31 research/spill-c-20260919/rtx5090-day35 research/spill-c-20260919/rtx5090-day37 (at 5746d9685 plus the reader committed with this log)
+DAY38 9B LOGS dir=research/spill-c-20260919/rtx5090-day31 server_logs=16 census_refusals=0 tok_bytes_lines=0
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day31 admission_coeff groups=['14848', '16704'] lines=16
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day31 capture_draft_note groups=['spec-boundary', '64', '118.8'] lines=13
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day31 capture_submitted groups=['seed', '16', '53.6'] lines=9
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day31 capture_submitted groups=['spec-boundary', '18', '53.8'] lines=13
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day31 d2d_receipt groups=['16', '950272'] lines=9
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day31 d2d_receipt groups=['18', '1069056'] lines=13
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day31 d2h_receipt groups=['16', '8', None] lines=4
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day31 d2h_receipt groups=['18', '8', ', draft'] lines=16
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day31 demote_done groups=['54.6'] lines=4
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day31 demote_done groups=['54.8'] lines=28
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day31 demote_submitted groups=['54.6', '16'] lines=4
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day31 demote_submitted groups=['54.8', '18'] lines=16
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day31 evict_preflight groups=['53.6'] lines=12
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day31 insert groups=['host-promote', '53.8'] lines=20
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day31 insert groups=['seed', '53.6'] lines=18
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day31 insert groups=['spec-boundary', '53.8'] lines=26
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day31 loaded groups=['33', '248046'] lines=16
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day31 numeric_identity groups=['server-prefix-entry-v5-kv-q8_0-34B-q5_1-24B'] lines=8
+DAY38 9B LOGS dir=research/spill-c-20260919/rtx5090-day35 server_logs=6 census_refusals=0 tok_bytes_lines=0
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day35 admission_coeff groups=['14848', '16704'] lines=6
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day35 capture_submitted groups=['seed', '16', '53.6'] lines=24
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day35 d2d_receipt groups=['16', '950272'] lines=24
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day35 d2h_receipt groups=['16', '8', None] lines=42
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day35 demote_done groups=['54.6'] lines=84
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day35 demote_submitted groups=['54.6', '16'] lines=42
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day35 evict_preflight groups=['53.6'] lines=44
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day35 insert groups=['host-promote', '53.6'] lines=40
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day35 insert groups=['seed', '53.6'] lines=48
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day35 loaded groups=['33', '248046'] lines=6
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day35 numeric_identity groups=['server-prefix-entry-v5-kv-q8_0-34B-q5_1-24B'] lines=2
+DAY38 9B LOGS dir=research/spill-c-20260919/rtx5090-day37 server_logs=24 census_refusals=0 tok_bytes_lines=0
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day37 admission_coeff groups=['14848', '16704'] lines=24
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day37 capture_submitted groups=['seed', '16', '53.6'] lines=96
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day37 copy_complete groups=['50', '53.7'] lines=84
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day37 d2d_receipt groups=['16', '950272'] lines=96
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day37 d2h_receipt groups=['16', '8', None] lines=168
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day37 demote_done groups=['54.6'] lines=336
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day37 demote_submitted groups=['54.6', '16'] lines=168
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day37 digests_landed groups=['50', '53.7'] lines=84
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day37 evict_preflight groups=['53.6'] lines=176
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day37 insert groups=['host-promote', '53.6'] lines=160
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day37 insert groups=['seed', '53.6'] lines=192
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day37 loaded groups=['33', '248046'] lines=24
+  DAY38 9B SHAPE dir=research/spill-c-20260919/rtx5090-day37 numeric_identity groups=['server-prefix-entry-v5-kv-q8_0-34B-q5_1-24B'] lines=8
+DAY38 9B KV plain: d2d bytes=950272 = 64 tokens x 14848 B/token (exact: True); admission plain coefficient 14848 B/token x 64 = 950272 (equal: True); mean per KV plane (K+V) 118784 B = 64 x 1856 B/token over 8 planes (per-plane sizes not printed)
+DAY38 9B KV draft: spec d2d bytes 1069056 - plain 950272 = 118784 = 64 x 1856 B/token; admission spec - plain = 1856 B/token (equal: True)
+DAY38 9B HEAP: printed 53.7MB -> [53650000, 53750000); from host_bytes - KV - 4*toks: [53599472, 53699472); both hold: [53650000, 53699472)
+DAY38 9B LOGITS: 4 x len(last_logits) = host_bytes - dead.bytes - 4*toks in (899744, 1099744) B (printed 54.6MB and 53.6MB; one-decimal rounding only)
+DAY38 9B LOGITS, all three printed figures: host_bytes in [54600528, 54650000) B; 4 x len(last_logits) in (950272, 1099744) B
+DAY38 9B RECURRENT+HIDDEN: conv + ssm + 4 x len(last_h) = dead.bytes - KV in [52599728, 52699728) B; not separable from these lines
+DAY38 9B SHARES of host_bytes: KV 1.739% to 1.740%; conv + ssm + hidden 96.25% to 96.52%; logits 1.74% to 2.01%
+DAY38 9B DRAFT NOTE: (kb + vb) / 1e3 (worker.rs:14801) = 118.784 KB, printed 118.8KB
+DAY38 9B PAYLOADS: 50 heap payloads = Logits (1) + Hidden (1) + Conv/Ssm slots (48); the 48 are not split by class on any banked line
+# exit=0

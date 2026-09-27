@@ -100,7 +100,7 @@
 //! health reporting.
 
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
 /// Worker phase (an AtomicU8 so the health handler is lock-free).
@@ -153,7 +153,40 @@ fn epoch() -> Instant {
 }
 
 fn now_ms() -> u64 {
+    #[cfg(test)]
+    if let Some(t) = TEST_NOW_MS.with(std::cell::Cell::get) {
+        return t;
+    }
     epoch().elapsed().as_millis() as u64
+}
+
+#[cfg(test)]
+thread_local! {
+    /// WP-A day 55 (`research/spill-a-20260919/DAY55.md` section 5, OWED item 22, T-c): a test-only
+    /// virtual clock for THIS thread's `now_ms()` reads. Only a test sets it, through
+    /// `TestClock`, and every other thread (and every non-test build) reads the real clock.
+    static TEST_NOW_MS: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
+}
+
+/// A test's virtual clock for `WorkerHealth` on the calling thread; dropped, the thread reads the
+/// real clock again.
+#[cfg(test)]
+pub(crate) struct TestClock;
+#[cfg(test)]
+impl TestClock {
+    pub(crate) fn start(at_ms: u64) -> Self {
+        TEST_NOW_MS.with(|c| c.set(Some(at_ms)));
+        TestClock
+    }
+    pub(crate) fn advance(&self, ms: u64) {
+        TEST_NOW_MS.with(|c| c.set(Some(c.get().unwrap_or(0) + ms)));
+    }
+}
+#[cfg(test)]
+impl Drop for TestClock {
+    fn drop(&mut self) {
+        TEST_NOW_MS.with(|c| c.set(None));
+    }
 }
 
 /// MEMRA_HEALTH_STALL_S (default 120): how long a BUSY worker may go without stamping a beat
@@ -264,6 +297,10 @@ pub struct WorkerHealth {
     /// forward-progress source consulted alongside the beat (memra#50). `None` = the
     /// `MEMRA_HEALTH_PROGRESS=0` rollback seam: pure beat-age semantics.
     progress: Option<ProgressSource>,
+    /// Dedicated serving routes (memra#500): each publishes its own phase and progress, judged
+    /// beside the central worker's, never through it. Written only at registration; the
+    /// verdict takes a read lock no writer holds across anything that can block.
+    routes: RwLock<Vec<Arc<RouteHealth>>>,
 }
 
 pub type SharedHealth = Arc<WorkerHealth>;
@@ -287,6 +324,7 @@ impl Default for WorkerHealth {
             peer_probe_integrity_degraded: AtomicBool::new(false),
             stall_ms: stall_threshold_ms(),
             progress: progress_signal_enabled().then(engine_progress_source),
+            routes: RwLock::new(Vec::new()),
         }
     }
 }
@@ -397,6 +435,29 @@ impl WorkerHealth {
 
     pub fn generation(&self) -> u32 {
         self.generation.load(Ordering::Acquire)
+    }
+
+    /// Register a dedicated serving route (memra#500). The route is LOADING (registered, has
+    /// never published) until its thread's first `set_idle`. A second registration under the
+    /// same name REPLACES the first: a respawned worker spawns a fresh thread, and the retired
+    /// thread's exit latch must land on its own record, not on its successor's.
+    pub fn register_route(
+        &self,
+        name: &str,
+        load: Arc<crate::route_telemetry::RouteLoad>,
+    ) -> Arc<RouteHealth> {
+        let route = Arc::new(RouteHealth::new(name, load));
+        let mut routes = self.routes.write().unwrap_or_else(|p| p.into_inner());
+        routes.retain(|r| r.name != name);
+        routes.push(route.clone());
+        route
+    }
+
+    fn routes(&self) -> Vec<Arc<RouteHealth>> {
+        self.routes
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
     }
 
     // ---- runtime peer-probe coverage --------------------------------------------------
@@ -564,14 +625,17 @@ impl WorkerHealth {
 
     /// Milliseconds since this process last attested FORWARD PROGRESS, the fresher of the
     /// scheduler heartbeat and the engine's prime odometer (memra#50; see the module doc's
-    /// "BUSY IS NOT HUNG"). Lock-free: two relaxed loads, one acquire load and one
-    /// `Instant::now()`, so the verdict can still be computed while the worker is wedged.
+    /// "BUSY IS NOT HUNG"), from a beat age the caller sampled. Lock-free: two relaxed loads and
+    /// one acquire load, so the verdict can still be computed while the worker is wedged.
     ///
     /// The odometer can only ever make this SMALLER, so this cannot turn a healthy verdict
     /// into an unhealthy one, the change is strictly in the direction of not restarting a
     /// server that is working.
-    fn forward_progress_age_ms(&self) -> u64 {
-        let beat = self.beat_age_ms();
+    ///
+    /// WP-A day 55 (`DAY55.md`, OWED item 22): a snapshot or a verdict reads the clock ONCE and
+    /// hands its beat age here, so with no progress source the published progress age IS the beat
+    /// age published beside it, never a second, later sample.
+    fn forward_progress_age_from(&self, beat: u64) -> u64 {
         match self.progress.as_ref().and_then(|p| p()) {
             Some(p) => beat.min(p.age_ms),
             None => beat,
@@ -586,12 +650,14 @@ impl WorkerHealth {
     /// `Some(age)` when BUSY and that age exceeds the bound. Returns the age it judged rather
     /// than a bare bool so `live()` reports the number that PRODUCED the verdict: recomputing
     /// it for the message would print a second, later sample.
-    fn stalled_for_ms(&self) -> Option<u64> {
+    fn stalled_for_ms(&self) -> Option<(u64, u64)> {
         if self.phase.load(Ordering::Acquire) != PHASE_BUSY {
             return None;
         }
-        let age = self.forward_progress_age_ms();
-        (age > self.stall_ms).then_some(age)
+        // Day 55: one clock sample; the message prints the beat age this verdict judged with.
+        let beat = self.beat_age_ms();
+        let age = self.forward_progress_age_from(beat);
+        (age > self.stall_ms).then_some((age, beat))
     }
 
     /// LIVENESS (`/health`, `/livez`): should this process be restarted? Draining is NOT a
@@ -619,13 +685,17 @@ impl WorkerHealth {
                                   (readiness follows its completion)"
                 .into()),
             _ => match self.stalled_for_ms() {
-                Some(age) => Err(format!(
-                    "worker stalled: no forward progress for {age} ms (beat age {} ms, \
+                Some((age, beat)) => Err(format!(
+                    "worker stalled: no forward progress for {age} ms (beat age {beat} ms, \
                      threshold {} ms)",
-                    self.beat_age_ms(),
                     self.stall_ms
                 )),
-                None => Ok(()),
+                None => {
+                    for route in self.routes() {
+                        route.live(self.stall_ms)?;
+                    }
+                    Ok(())
+                }
             },
         }
     }
@@ -636,21 +706,315 @@ impl WorkerHealth {
         if draining {
             return Err("draining (shutdown in progress)".into());
         }
-        self.live()
+        self.live()?;
+        // A registered route that has never published is not serving yet, whatever the
+        // central worker says. Liveness gives it the stall bound to publish (a thread that
+        // never started is a restart); readiness does not route traffic to it at all.
+        for route in self.routes() {
+            if route.phase() == PHASE_LOADING {
+                return Err(format!(
+                    "route {:?} has not published yet (registered {} ms ago)",
+                    route.name,
+                    route.registered_age_ms()
+                ));
+            }
+        }
+        Ok(())
     }
 
     /// The observable state — /health, /readyz, and /metrics all render from this.
     pub fn snapshot(&self) -> HealthSnapshot {
+        let scheduler_phase = self.phase.load(Ordering::Acquire);
+        let beat_age_ms = self.beat_age_ms();
+        let routes: Vec<RouteSnapshot> = self.routes().iter().map(|r| r.snapshot()).collect();
+        let phase = aggregate_phase(scheduler_phase, &routes);
+        // Idle only when EVERY serving thread is idle with nothing queued at it: the valley
+        // signal and the darklane runner read this, and a central worker blocked on `recv`
+        // while a route primes 100k tokens is not a valley (memra#500).
+        let idle_for_ms =
+            (phase == PHASE_IDLE && routes.iter().all(|r| r.waiting == 0)).then(|| {
+                routes
+                    .iter()
+                    .map(|r| r.beat_age_ms)
+                    .fold(beat_age_ms, u64::min)
+            });
         HealthSnapshot {
-            phase: self.phase.load(Ordering::Acquire),
-            beat_age_ms: self.beat_age_ms(),
+            phase,
+            scheduler_phase,
+            idle_for_ms,
+            routes,
+            beat_age_ms,
             tick_max_ms: self.tick_max_ms.load(Ordering::Relaxed),
             generation: self.generation(),
             xid_warns: self.xid_warns.load(Ordering::Relaxed),
             gpu_probe: self.gpu_probe(),
             stall_threshold_ms: self.stall_ms,
-            forward_progress_age_ms: self.forward_progress_age_ms(),
+            forward_progress_age_ms: self.forward_progress_age_from(beat_age_ms),
             progress: self.progress.as_ref().and_then(|p| p()),
+        }
+    }
+}
+
+/// The process phase from the central worker's and every route's. A central worker that is not
+/// serving (dead, loading, warming) decides alone; otherwise a dead route makes the process
+/// dead, an unpublished route makes it loading, and any busy thread makes it busy.
+fn aggregate_phase(scheduler: u8, routes: &[RouteSnapshot]) -> u8 {
+    if matches!(scheduler, PHASE_DEAD | PHASE_LOADING | PHASE_WARMING) {
+        return scheduler;
+    }
+    if routes.iter().any(|r| r.phase == PHASE_DEAD) {
+        return PHASE_DEAD;
+    }
+    if routes.iter().any(|r| r.phase == PHASE_LOADING) {
+        return PHASE_LOADING;
+    }
+    if scheduler == PHASE_BUSY || routes.iter().any(|r| r.phase == PHASE_BUSY) {
+        return PHASE_BUSY;
+    }
+    PHASE_IDLE
+}
+
+/// One dedicated serving route's liveness (memra#500).
+///
+/// THE GAP. The DSv4 thread serves requests the central worker never sees, so the central
+/// worker sits IDLE on `recv` (unconditionally healthy) while the route primes, decodes, or
+/// wedges. `/health` said "idle" over a busy route, a wedged route read healthy forever, and a
+/// route stamping into the process-global odometer would have held a stalled CENTRAL worker
+/// healthy in turn. So a route owns its own record, judged with the central worker's stall
+/// bound but never mixed into its signals:
+///   * `phase`: LOADING from registration until the thread's first `set_idle`; IDLE on `recv`;
+///     BUSY from dequeue to the end of the request; DEAD once the thread exits.
+///   * forward progress: `note_rows` (completed prime rows, fed by the thread's odometer sink,
+///     `memra_engine::progress::ProgressSinkScope`) and `note_round` (a decode step or
+///     speculative round whose tokens are host-side). A BUSY route whose freshest signal
+///     (phase stamp, rows, round) is older than the stall bound is stalled.
+///   * a caught per-request panic is COUNTED (`request_faults`), not latched: the thread
+///     catches it and keeps serving, which is the route's fault-ownership contract.
+pub struct RouteHealth {
+    name: String,
+    phase: AtomicU8,
+    registered_ms: u64,
+    /// Last phase transition (dequeue, end of request, entering `recv`).
+    beat_ms: AtomicU64,
+    /// Last forward-progress stamp, stored `+1` so 0 means never (`now_ms` starts at 0).
+    progress_ms: AtomicU64,
+    rows: AtomicU64,
+    rounds: AtomicU64,
+    requests: AtomicU64,
+    request_faults: AtomicU64,
+    /// Requests between `begin_request` and `end_request`. A route serving several sessions
+    /// (memra #667) is BUSY while any is in flight and IDLE only when the last one ends.
+    in_flight: std::sync::atomic::AtomicUsize,
+    /// Serializes each in-flight change with the phase it implies, so a request that begins
+    /// on one lane while the last one ends on another never reads IDLE (memra #667 review).
+    lanes: Mutex<()>,
+    dead_reason: Mutex<String>,
+    load: Arc<crate::route_telemetry::RouteLoad>,
+}
+
+/// The published view of a [`RouteHealth`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RouteSnapshot {
+    pub name: String,
+    pub phase: u8,
+    pub registered_age_ms: u64,
+    pub beat_age_ms: u64,
+    /// Age of the last progress stamp, `None` if the route has never stamped one.
+    pub progress_age_ms: Option<u64>,
+    /// The quantity the route's stall verdict bounds: the fresher of the two ages above.
+    pub forward_progress_age_ms: u64,
+    pub rows: u64,
+    pub rounds: u64,
+    pub requests: u64,
+    pub request_faults: u64,
+    /// Requests reserved for this route and not yet dequeued (`RouteLoad::waiting_total`).
+    pub waiting: usize,
+    pub dead_reason: Option<String>,
+}
+
+impl RouteHealth {
+    fn new(name: &str, load: Arc<crate::route_telemetry::RouteLoad>) -> Self {
+        let t = now_ms();
+        RouteHealth {
+            name: name.to_string(),
+            phase: AtomicU8::new(PHASE_LOADING),
+            registered_ms: t,
+            beat_ms: AtomicU64::new(t),
+            progress_ms: AtomicU64::new(0),
+            rows: AtomicU64::new(0),
+            rounds: AtomicU64::new(0),
+            requests: AtomicU64::new(0),
+            request_faults: AtomicU64::new(0),
+            in_flight: std::sync::atomic::AtomicUsize::new(0),
+            lanes: Mutex::new(()),
+            dead_reason: Mutex::new(String::new()),
+            load,
+        }
+    }
+
+    fn phase(&self) -> u8 {
+        self.phase.load(Ordering::Acquire)
+    }
+
+    fn set(&self, phase: u8) {
+        // a dead route stays dead: the latch is the thread's exit, and nothing after it runs
+        if self.phase() == PHASE_DEAD {
+            return;
+        }
+        self.beat_ms.store(now_ms(), Ordering::Release);
+        self.phase.store(phase, Ordering::Release);
+    }
+
+    /// The thread is about to block on its queue with no request in hand.
+    pub fn set_idle(&self) {
+        self.set(PHASE_IDLE);
+    }
+
+    /// The thread dequeued a request and starts serving it.
+    pub fn begin_request(&self) {
+        self.requests.fetch_add(1, Ordering::Relaxed);
+        let _lanes = self.lanes.lock().unwrap_or_else(|p| p.into_inner());
+        self.in_flight.fetch_add(1, Ordering::AcqRel);
+        self.set(PHASE_BUSY);
+    }
+
+    /// A request ended, served or failed. The route reads IDLE once no request is in flight.
+    pub fn end_request(&self) {
+        let _lanes = self.lanes.lock().unwrap_or_else(|p| p.into_inner());
+        let before = self
+            .in_flight
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |v| v.checked_sub(1))
+            .unwrap_or(0);
+        if before <= 1 {
+            self.set(PHASE_IDLE);
+        }
+    }
+
+    /// A serving lane is about to wait on its queue: publish IDLE only if no other lane of the
+    /// route holds a request, so a waiting lane never masks a busy one.
+    pub fn set_idle_if_free(&self) {
+        let _lanes = self.lanes.lock().unwrap_or_else(|p| p.into_inner());
+        if self.in_flight.load(Ordering::Acquire) == 0 {
+            self.set(PHASE_IDLE);
+        }
+    }
+
+    /// `rows` prime rows completed (the thread's odometer sink).
+    pub fn note_rows(&self, rows: usize) {
+        self.rows.fetch_add(rows as u64, Ordering::Relaxed);
+        self.progress_ms.store(now_ms() + 1, Ordering::Release);
+    }
+
+    /// One decode step or speculative round completed with its tokens host-side.
+    pub fn note_round(&self) {
+        self.rounds.fetch_add(1, Ordering::Relaxed);
+        self.progress_ms.store(now_ms() + 1, Ordering::Release);
+    }
+
+    /// A request failed by panic and the thread caught it; counted, not latched.
+    pub fn note_request_fault(&self) {
+        self.request_faults.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// The serving thread is gone. LATCHES: a route cannot come back without a new
+    /// registration (a respawn), so this record never reads live again.
+    pub fn mark_dead(&self, reason: impl Into<String>) {
+        if let Ok(mut r) = self.dead_reason.lock() {
+            *r = reason.into();
+        }
+        self.phase.store(PHASE_DEAD, Ordering::Release);
+    }
+
+    fn registered_age_ms(&self) -> u64 {
+        self.registered_age_at(now_ms())
+    }
+
+    fn forward_progress_age_ms(&self) -> u64 {
+        self.forward_progress_age_at(now_ms())
+    }
+
+    // WP-A day 55 (`DAY55.md`, OWED item 22): every age from ONE clock sample `now`, so a snapshot
+    // publishes ages that agree with each other (the forward-progress age is exactly the min of
+    // the beat and progress ages it publishes beside it).
+    fn registered_age_at(&self, now: u64) -> u64 {
+        now.saturating_sub(self.registered_ms)
+    }
+
+    fn beat_age_at(&self, now: u64) -> u64 {
+        now.saturating_sub(self.beat_ms.load(Ordering::Acquire))
+    }
+
+    fn progress_age_at(&self, now: u64) -> Option<u64> {
+        match self.progress_ms.load(Ordering::Acquire) {
+            0 => None,
+            t => Some(now.saturating_sub(t - 1)),
+        }
+    }
+
+    fn forward_progress_age_at(&self, now: u64) -> u64 {
+        let beat = self.beat_age_at(now);
+        self.progress_age_at(now).map_or(beat, |p| beat.min(p))
+    }
+
+    /// The route's liveness under the process stall bound. Three distinct failures: a thread
+    /// that is gone, a registration that never published within the bound, and a BUSY route
+    /// without forward progress for the bound.
+    fn live(&self, stall_ms: u64) -> Result<(), String> {
+        match self.phase() {
+            PHASE_DEAD => Err(format!(
+                "route {:?}: serving thread is gone ({})",
+                self.name,
+                self.dead_reason
+                    .try_lock()
+                    .map(|r| r.clone())
+                    .unwrap_or_else(|_| "exit".into())
+            )),
+            PHASE_LOADING => {
+                let age = self.registered_age_ms();
+                if age > stall_ms {
+                    Err(format!(
+                        "route {:?} registered {age} ms ago and has never published \
+                         (threshold {stall_ms} ms)",
+                        self.name
+                    ))
+                } else {
+                    Ok(())
+                }
+            }
+            PHASE_BUSY => {
+                let age = self.forward_progress_age_ms();
+                if age > stall_ms {
+                    Err(format!(
+                        "route {:?} stalled: no forward progress for {age} ms (threshold \
+                         {stall_ms} ms)",
+                        self.name
+                    ))
+                } else {
+                    Ok(())
+                }
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn snapshot(&self) -> RouteSnapshot {
+        let phase = self.phase();
+        let now = now_ms();
+        RouteSnapshot {
+            name: self.name.clone(),
+            phase,
+            registered_age_ms: self.registered_age_at(now),
+            beat_age_ms: self.beat_age_at(now),
+            progress_age_ms: self.progress_age_at(now),
+            forward_progress_age_ms: self.forward_progress_age_at(now),
+            rows: self.rows.load(Ordering::Relaxed),
+            rounds: self.rounds.load(Ordering::Relaxed),
+            requests: self.requests.load(Ordering::Relaxed),
+            request_faults: self.request_faults.load(Ordering::Relaxed),
+            waiting: self.load.waiting_total(),
+            dead_reason: (phase == PHASE_DEAD)
+                .then(|| self.dead_reason.try_lock().ok().map(|r| r.clone()))
+                .flatten(),
         }
     }
 }
@@ -682,7 +1046,16 @@ fn describe_age(age_ms: Option<u64>) -> String {
 
 /// Numbers `/health` publishes so an operator can see WHY, not just that.
 pub struct HealthSnapshot {
+    /// The PROCESS phase: the central worker's, unless it is serving and a dedicated route is
+    /// dead, unpublished or busy (`aggregate_phase`). What `/health` renders as `phase`.
     pub phase: u8,
+    /// The central worker's own phase, unaggregated.
+    pub scheduler_phase: u8,
+    /// Milliseconds the whole process has been idle (every thread idle, nothing queued at a
+    /// route), `None` while anything works. The valley signal's input.
+    pub idle_for_ms: Option<u64>,
+    /// Every registered dedicated route (memra#500).
+    pub routes: Vec<RouteSnapshot>,
     pub beat_age_ms: u64,
     pub tick_max_ms: u64,
     pub generation: u32,
@@ -1128,6 +1501,33 @@ pub fn spawn_sd_watchdog(health: SharedHealth) {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_route_never_reads_idle_with_a_request_in_flight() {
+        let h = std::sync::Arc::new(RouteHealth::new("ds-race", route_load("ds-race")));
+        let lanes: Vec<_> = (0..4)
+            .map(|_| {
+                let h = h.clone();
+                std::thread::spawn(move || {
+                    for _ in 0..20_000 {
+                        h.begin_request();
+                        h.set_idle_if_free();
+                        h.end_request();
+                        h.set_idle_if_free();
+                        let _l = h.lanes.lock().unwrap();
+                        let busy = h.phase.load(Ordering::Acquire) == PHASE_BUSY;
+                        let n = h.in_flight.load(Ordering::Acquire);
+                        assert_eq!(busy, n > 0, "phase busy={busy} with {n} in flight");
+                    }
+                })
+            })
+            .collect();
+        for l in lanes {
+            l.join().unwrap();
+        }
+        assert_eq!(h.in_flight.load(Ordering::Acquire), 0);
+        assert_eq!(h.phase.load(Ordering::Acquire), PHASE_IDLE);
+    }
     use super::*;
 
     fn fresh() -> WorkerHealth {
@@ -1484,6 +1884,49 @@ mod tests {
         );
     }
 
+    /// WP-A day 55 (`research/spill-a-20260919/DAY55.md`, OWED item 22, T-a; CPU census): a snapshot
+    /// and the stall verdict read the clock ONCE. `WorkerHealth::snapshot` samples the beat age once
+    /// and derives the forward-progress age from that sample; the stall verdict judges and reports one
+    /// beat sample; a route's snapshot takes one `now` for every age it publishes.
+    #[test]
+    fn day55_a_snapshot_reads_the_clock_once() {
+        let src = include_str!("health.rs");
+        let prod = &src[..src.find("\nmod tests {").unwrap()];
+        let body = |start: &str| {
+            let a = prod
+                .find(start)
+                .unwrap_or_else(|| panic!("{start} missing"));
+            &prod[a..a + prod[a..].find("\n    }\n").unwrap()]
+        };
+        let snap = body("    pub fn snapshot(&self) -> HealthSnapshot {");
+        assert_eq!(snap.matches("self.beat_age_ms()").count(), 1);
+        assert!(
+            snap.contains("forward_progress_age_ms: self.forward_progress_age_from(beat_age_ms),")
+        );
+        assert!(!snap.contains("self.forward_progress_age_ms()"));
+        let stall = body("    fn stalled_for_ms(&self) -> Option<(u64, u64)> {");
+        assert_eq!(stall.matches("self.beat_age_ms()").count(), 1);
+        assert!(stall.contains("self.forward_progress_age_from(beat)"));
+        let route = body("    fn snapshot(&self) -> RouteSnapshot {");
+        assert_eq!(route.matches("now_ms()").count(), 1);
+        for f in [
+            "registered_age_at(now)",
+            "beat_age_at(now)",
+            "progress_age_at(now)",
+            "forward_progress_age_at(now)",
+        ] {
+            assert!(route.contains(f), "{f}");
+        }
+        // Behaviour: with no source, the published progress age is the published beat age.
+        let h = WorkerHealth::with_stall_ms(20);
+        h.mark_ready();
+        h.beat_busy();
+        for _ in 0..200 {
+            let s = h.snapshot();
+            assert_eq!(s.forward_progress_age_ms, s.beat_age_ms);
+        }
+    }
+
     /// The `MEMRA_HEALTH_PROGRESS=0` rollback seam: with no source, the verdict is
     /// byte-identical to the pre-memra#50 beat-age semantics. `with_stall_ms` is that arm,
     /// and `idle_is_healthy_at_any_age_but_busy_stalls` below is its assertion; this one
@@ -1621,6 +2064,183 @@ mod tests {
         let snap = h.snapshot();
         assert!(snap.tick_max_ms >= 20, "tick_max_ms = {}", snap.tick_max_ms);
         assert_eq!(snap.stall_threshold_ms, stall_threshold_ms());
+    }
+
+    // ---- dedicated routes (memra#500) ----
+
+    fn route_load(name: &str) -> Arc<crate::route_telemetry::RouteLoad> {
+        crate::route_telemetry::RouteLoad::new(name, 1)
+    }
+
+    /// A multi-session route (memra #667) reads BUSY while any request is in flight: a lane that
+    /// finishes, or one that goes back to its queue, never masks a lane still serving.
+    #[test]
+    fn a_multi_session_route_stays_busy_until_its_last_request_ends() {
+        let h = WorkerHealth::with_stall_ms(60_000);
+        let r = h.register_route("ds-lanes", route_load("ds-lanes"));
+        r.set_idle();
+        r.begin_request();
+        r.begin_request();
+        r.end_request();
+        r.set_idle_if_free();
+        assert_eq!(
+            r.snapshot().phase,
+            PHASE_BUSY,
+            "one of two requests still runs"
+        );
+        r.end_request();
+        assert_eq!(r.snapshot().phase, PHASE_IDLE);
+        r.end_request();
+        assert_eq!(
+            r.snapshot().phase,
+            PHASE_IDLE,
+            "an extra end saturates at idle"
+        );
+        r.begin_request();
+        assert_eq!(
+            r.snapshot().phase,
+            PHASE_BUSY,
+            "the count did not go negative"
+        );
+    }
+
+    /// A registered route that never publishes is its own failure: not ready at once, not live
+    /// once the stall bound passes, and named in both answers.
+    #[test]
+    fn a_route_that_never_publishes_is_unready_then_unlive() {
+        let h = WorkerHealth::with_stall_ms(200);
+        h.mark_ready();
+        let r = h.register_route("ds-silent", route_load("ds-silent"));
+        let why = h.ready(false).unwrap_err();
+        assert!(why.contains("\"ds-silent\" has not published"), "{why}");
+        assert!(
+            h.live().is_ok(),
+            "within the bound a new thread may still be starting"
+        );
+        assert_eq!(h.snapshot().phase, PHASE_LOADING);
+        assert_eq!(h.snapshot().scheduler_phase, PHASE_IDLE);
+        std::thread::sleep(Duration::from_millis(250));
+        let why = h.live().unwrap_err();
+        assert!(why.contains("has never published"), "{why}");
+        // the first publish clears both
+        r.set_idle();
+        h.live().unwrap();
+        h.ready(false).unwrap();
+    }
+
+    /// A BUSY route with no progress past the bound is stalled even though the central worker is
+    /// idle AND progressing: the central signals cannot vouch for the route.
+    #[test]
+    fn a_stalled_route_fails_liveness_beside_a_healthy_central_worker() {
+        let h = WorkerHealth::with_stall_ms(40);
+        h.mark_ready();
+        let r = h.register_route("ds-stall", route_load("ds-stall"));
+        r.set_idle();
+        r.begin_request();
+        std::thread::sleep(Duration::from_millis(60));
+        h.set_phase(PHASE_IDLE); // central beat fresh: it must not mask the route
+        let why = h.live().unwrap_err();
+        assert!(why.contains("route \"ds-stall\" stalled"), "{why}");
+        assert!(why.contains("threshold 40 ms"), "{why}");
+        let snap = h.snapshot();
+        assert_eq!(
+            snap.phase, PHASE_BUSY,
+            "an idle central worker is not the process phase"
+        );
+        assert_eq!(snap.scheduler_phase, PHASE_IDLE);
+        assert_eq!(snap.idle_for_ms, None);
+    }
+
+    /// A long request whose rows and rounds keep landing stays live however old its phase stamp
+    /// is: the same busy-is-not-hung contract as the central worker (memra#50).
+    #[test]
+    fn a_long_route_that_keeps_progressing_is_live() {
+        let h = WorkerHealth::with_stall_ms(200);
+        h.mark_ready();
+        let r = h.register_route("ds-long", route_load("ds-long"));
+        r.set_idle();
+        r.begin_request();
+        for i in 0..8 {
+            std::thread::sleep(Duration::from_millis(40));
+            if i % 2 == 0 {
+                r.note_rows(512);
+            } else {
+                r.note_round();
+            }
+            h.live().unwrap();
+        }
+        let s = h.snapshot();
+        let route = &s.routes[0];
+        assert!(
+            route.beat_age_ms > 200,
+            "the phase stamp alone would have stalled"
+        );
+        assert!(route.forward_progress_age_ms <= 200);
+        assert_eq!((route.rows, route.rounds, route.requests), (2048, 4, 1));
+        // and when it stops progressing it stalls
+        std::thread::sleep(Duration::from_millis(250));
+        assert!(h.live().is_err());
+        r.set_idle();
+        h.live().unwrap();
+    }
+
+    #[test]
+    fn a_dead_route_latches_and_a_respawn_replaces_the_record() {
+        let h = WorkerHealth::with_stall_ms(10_000);
+        h.mark_ready();
+        let old = h.register_route("ds-dead", route_load("ds-dead"));
+        old.set_idle();
+        old.note_request_fault();
+        h.live().unwrap();
+        old.mark_dead("dsv4 serving thread exited");
+        let why = h.live().unwrap_err();
+        assert!(
+            why.contains("serving thread is gone (dsv4 serving thread exited)"),
+            "{why}"
+        );
+        old.set_idle();
+        assert!(h.live().is_err(), "a dead record never reads live again");
+        assert_eq!(h.snapshot().phase, PHASE_DEAD);
+        // the respawn registers a fresh record under the same name; the retired thread's
+        // late latch lands on its own record only
+        let new = h.register_route("ds-dead", route_load("ds-dead"));
+        new.set_idle();
+        old.mark_dead("late exit");
+        h.live().unwrap();
+        let snap = h.snapshot();
+        assert_eq!(snap.routes.len(), 1);
+        assert_eq!(snap.routes[0].request_faults, 0);
+        assert_eq!(snap.phase, PHASE_IDLE);
+    }
+
+    /// The valley signal's input: idle only while every thread is idle and no request waits at a
+    /// route, and then the youngest idle age.
+    #[test]
+    fn process_idleness_needs_every_route_idle_and_empty() {
+        let h = WorkerHealth::with_stall_ms(10_000);
+        h.mark_ready();
+        let load = route_load("ds-valley");
+        let r = h.register_route("ds-valley", load.clone());
+        r.set_idle();
+        std::thread::sleep(Duration::from_millis(60));
+        assert!(h.snapshot().idle_for_ms.is_some_and(|ms| ms >= 50));
+        let ticket = load.try_reserve(0, 0).unwrap();
+        assert_eq!(
+            h.snapshot().idle_for_ms,
+            None,
+            "a queued route request is traffic"
+        );
+        drop(ticket);
+        r.begin_request();
+        assert_eq!(h.snapshot().idle_for_ms, None);
+        r.set_idle();
+        let ms = h.snapshot().idle_for_ms.unwrap();
+        assert!(
+            ms < 50,
+            "the route's fresh idle stamp bounds the process idle age: {ms}"
+        );
+        h.beat_busy();
+        assert_eq!(h.snapshot().idle_for_ms, None);
     }
 
     #[test]

@@ -220,8 +220,9 @@ def main() -> int:
     ap.add_argument("--peers", type=int, default=3)
     ap.add_argument("--max-tokens", type=int, default=48)
     a = ap.parse_args()
-    if a.peers < 1 or a.peers > len(PROMPTS):
-        refuse(f"--peers must be 1..{len(PROMPTS)}")
+    # Reserve one additional prompt for the salted request below.
+    if a.peers < 1 or a.peers >= len(PROMPTS):
+        refuse(f"--peers must be 1..{len(PROMPTS) - 1}")
     out = Path(a.out)
     if out.exists():
         refuse(f"{out} exists; --out must be a NEW directory")

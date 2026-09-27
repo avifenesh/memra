@@ -11,6 +11,8 @@ mod cli;
 mod fault;
 #[path = "kv_tier_gate/fault_contract.rs"]
 mod fault_contract;
+#[path = "kv_tier_gate/grow.rs"]
+mod grow;
 #[path = "kv_tier_gate/reclaim_contract.rs"]
 mod reclaim_contract;
 use memra_engine::tier_transfer;
@@ -227,8 +229,17 @@ fn baseline(args: &cli::Args) -> Result<()> {
             args.tiers
         ),
     )?;
+    if args.case == "grow" {
+        // WP-B day 37 A2: the pooled arm and the on-demand arm of the same program, one process.
+        let line = grow::run(&e, &model, &prompt, args.context, GENERATE, &args.out)?;
+        println!("{line}");
+        return Ok(());
+    }
     let mut cache = match args.kv_allocator {
         cli::KvAllocator::Pooled => memra_engine::pp::new_cache(&e, &model.cfg, args.context)?,
+        cli::KvAllocator::VmmOnDemand => {
+            return Err("REFUSED: the on-demand allocator is bound to --case grow".into());
+        }
         cli::KvAllocator::Vmm => {
             Cache::new_with_allocator(&e, &model.cfg, args.context, memra_kv::KvAllocator::Vmm)?
         }

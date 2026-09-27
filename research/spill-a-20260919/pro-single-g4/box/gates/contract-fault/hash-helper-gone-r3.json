@@ -1,0 +1,29 @@
+{
+ "object": "text_completion",
+ "model": "gate",
+ "choices": [
+  {
+   "index": 0,
+   "text": "\n\n<think>\nThe user wants a formal acceptance protocol for a district heating substation. They want 8 specific items covered in a specific order, each with: instrument, acceptance threshold, sign-off role, and the symptom that would halt acceptance",
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 95,
+  "completion_tokens": 48,
+  "total_tokens": 143,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 0.432832169,
+  "spec": {
+   "rounds": 16,
+   "drafted": 48,
+   "accepted": 33,
+   "acceptance_rate": 0.6875
+  }
+ },
+ "id": "cmpl-3608139c1d0a5524cee688a9c27df55f",
+ "created": 1790291391,
+ "system_fingerprint": "memra-0.138.0-52473079f9e2"
+}

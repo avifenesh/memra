@@ -1,0 +1,33 @@
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+     Running unittests src/lib.rs (target/debug/deps/memra_engine-47ae06a2f9cbea34)
+
+running 13 tests
+owner-thread work while the copy stream's host function sleeps: 6.95 ms; the copy behind the host function still pending: true
+HOLD READING cell=d2h_span_batch first_item_seen_ms=24.61 polls=1 longest_poll_ms=0.03 longest_gap_ms=0.00 batch_landed_at_first_sight=false
+HOLD STEPS cell=d2h_span_batch htod-pageable@-20.75+0.19 pinned-alloc@-20.56+9.28 htod-pageable@-11.27+0.29 pinned-alloc@-10.98+7.02 htod-pageable@-3.96+0.27 pinned-alloc@-3.69+3.65 delay@0.00+0.02 htod-pageable@0.02+0.18 pinned-alloc@0.20+2.78 htod-pageable@2.99+0.30 pinned-alloc@3.29+5.69 htod-pageable@8.98+0.23 pinned-alloc@9.21+3.36 submit@12.57+0.05 htod-pageable@12.62+0.28 pinned-alloc@12.90+2.54 htod-pageable@15.44+0.26 pinned-alloc@15.71+4.08 htod-pageable@19.79+0.21 pinned-alloc@20.00+4.56 submit-busy@24.57+0.01
+HOLD READING cell=h2d_span_filled_batch first_item_seen_ms=15.61 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=false
+HOLD STEPS cell=h2d_span_filled_batch pinned-alloc@-60.02+3.77 device-alloc@-56.24+0.03 pinned-alloc@-56.21+9.01 device-alloc@-47.20+0.15 pinned-alloc@-47.05+6.64 device-alloc@-40.40+0.04 delay@0.00+0.03 pinned-alloc@0.03+5.95 device-alloc@5.98+0.04 pinned-alloc@6.03+6.35 device-alloc@12.38+0.03 pinned-alloc@12.42+2.93 device-alloc@15.35+0.02 submit@15.38+0.22
+test tier_transfer::tests::h2d_deferred_checksum_lands_with_the_supplied_digests ... ok
+test tier_transfer::tests::pinned_kind_arm_is_honoured_by_the_driver ... ok
+HOLD READING cell=h2d_span_batch first_item_seen_ms=18.92 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=false
+HOLD STEPS cell=h2d_span_batch pinned-alloc@-91.34+7.40 pinned-write@-83.93+0.13 device-alloc@-83.80+0.04 pinned-alloc@-83.76+6.10 pinned-write@-77.66+0.21 device-alloc@-77.45+0.02 pinned-alloc@-77.43+8.86 pinned-write@-68.57+0.17 device-alloc@-68.40+0.04 pinned-alloc@-23.25+4.49 pinned-write@-18.76+0.12 device-alloc@-18.64+0.03 pinned-alloc@-18.60+6.95 device-alloc@-11.66+0.02 pinned-alloc@-11.63+5.66 pinned-write@-5.98+0.16 device-alloc@-5.82+0.03 delay@0.00+0.02 pinned-alloc@0.02+2.07 pinned-write@2.09+0.11 device-alloc@2.20+0.02 pinned-alloc@2.22+3.33 pinned-write@5.55+0.21 device-alloc@5.76+0.02 pinned-alloc@5.77+2.92 pinned-write@8.70+0.15 device-alloc@8.84+0.03 submit@8.87+0.04 pinned-alloc@8.92+2.16 pinned-write@11.08+0.11 device-alloc@11.19+0.03 pinned-alloc@11.22+3.47 pinned-write@14.69+0.21 device-alloc@14.91+0.03 pinned-alloc@14.94+3.62 pinned-write@18.56+0.17 device-alloc@18.73+0.17 submit-busy@18.90+0.01
+test tier_transfer::tests::h2d_fill_host_function_does_not_hold_the_owner_thread ... ok
+test tier_transfer::tests::d2d_capture_lands_on_the_copy_stream_and_publishes_only_after_its_event ... ok
+D2H DEVICE RECEIPT cell flip=false items=3 gpu_ms=63.243
+D2H DEVICE RECEIPT cell flip=true items=3 gpu_ms=64.092
+test tier_transfer::tests::d2d_restore_lands_on_the_copy_stream_and_is_ready_only_after_the_installed_wait ... ok
+test tier_transfer::tests::h2d_span_filled_batch_fills_on_the_copy_stream_before_its_copies ... ok
+test tier_transfer::tests::d2d_early_reader_fault_is_refused_by_the_receipt ... ok
+test tier_transfer::tests::h2d_span_batch_lands_with_its_ticket_on_the_copy_stream ... ok
+test tier_transfer::tests::d2h_span_batch_lands_with_its_ticket_on_the_copy_stream ... ok
+test tier_transfer::tests::d2h_source_flip_is_witnessed_by_the_landed_bytes ... ok
+test tier_transfer::tests::d2h_device_receipt_lands_with_the_source_digest ... ok
+test tier_transfer::tests::d2d_receipt_digest_matches_the_cpu_oracle ... ok
+D2D-RECEIPT PRICE order=copy-first bytes=165675008 n_per_arm=5 copy_ms=[0.193664, 0.192288, 0.19296, 0.193152, 0.190528] copy_median=0.193 digest_ms=[0.129856, 0.135264, 0.135712, 0.137024, 0.138528] digest_median=0.136 pair_median=0.271 pair_over_copy=1.41
+D2D-RECEIPT PRICE order=digest-first bytes=165675008 n_per_arm=5 copy_ms=[0.175328, 0.190528, 0.19296, 0.189952, 0.190112] copy_median=0.190 digest_ms=[0.129856, 0.132896, 0.139168, 0.135456, 0.135392] digest_median=0.135 pair_median=0.271 pair_over_copy=1.42
+test tier_transfer::tests::d2d_receipt_digest_price_against_the_copy ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 581 filtered out; finished in 3.45s
+

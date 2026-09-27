@@ -1,0 +1,12 @@
+TH (a) gates {'contract-fault-plain': '0', 'contract-fault': '0', 'failure-off': '0', 'failure-on': '0', 'hitgate-off': '0', 'hitgate-on': '0', 'identity-default-off': '0', 'identity-default-on': '0', 'identity-plain-off': '0', 'identity-plain-on': '0', 'pause-demote': '0'}
+TH READING cell=demote order=o1 stall base=64.02 th=64.15 | helper base=82.5 th=24.9 ms (th threads [8], thread time 95.1 ms) | wall base=101.0 th=88.8 ms
+TH READING cell=chain order=o1 stall base=68.10 th=68.26 | chain base=371.1 th=245.7 ms
+TH READING cell=promote order=o1 stall base=62.49 th=62.53 | pin base=25.80 th=25.90 | e2e base=113.9 th=114.1 ms
+TH READING cell=demote order=o2 stall base=64.21 th=64.18 | helper base=82.8 th=25.1 ms (th threads [8], thread time 95.5 ms) | wall base=101.2 th=88.9 ms
+TH READING cell=chain order=o2 stall base=68.11 th=68.26 | chain base=371.1 th=245.6 ms
+TH READING cell=promote order=o2 stall base=62.48 th=62.55 | pin base=25.90 th=25.80 | e2e base=113.9 th=114.0 ms
+TH READING hump base=+0.022 th=+0.029 ms
+TH (b) FAIL [False, False]
+TH (c) PASS [True, True]
+TH (d) PASS [True, True, True, True, True, True, True, True, True]
+TH VERDICT -> REVERT ((a) passed; failed b): recorded as read, reverted in one commit

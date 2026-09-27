@@ -1,0 +1,11 @@
+2026-09-27T05:13:54Z boot rx-plain-rx-O1-keep start arm=keep route=plain shape=RX6 bin=9054b7d0a5e2cc0b env=[MEMRA_TTFT_TRACE=1 MEMRA_SERVE_SPEC=0 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144]
+2026-09-27T05:17:07Z boot rx-plain-rx-O1-keep rc=0 DAY44 BOOT rows=60 ok=60 exact_resumes=0 settles=0 declined=0 door_line=0 oom=0
+2026-09-27T05:17:12Z boot rx-plain-rx-O1-exact start arm=exact route=plain shape=RX6 bin=9054b7d0a5e2cc0b env=[MEMRA_TTFT_TRACE=1 MEMRA_RESUME_EXACT=1 MEMRA_SERVE_SPEC=0 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144]
+2026-09-27T05:20:26Z boot rx-plain-rx-O1-exact rc=0 DAY44 BOOT rows=60 ok=60 exact_resumes=20 settles=0 declined=0 door_line=1 oom=0
+2026-09-27T05:20:31Z boot rx-spec-rx-O1-keep start arm=keep route=spec shape=RX6 bin=9054b7d0a5e2cc0b env=[MEMRA_TTFT_TRACE=1 MEMRA_SPEC_BUDGET_CLAMP=1 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144]
+2026-09-27T05:23:00Z boot rx-spec-rx-O1-keep rc=0 DAY44 BOOT rows=60 ok=60 exact_resumes=0 settles=0 declined=0 door_line=0 oom=0
+2026-09-27T05:23:05Z boot rx-spec-rx-O1-exact start arm=exact route=spec shape=RX6 bin=9054b7d0a5e2cc0b env=[MEMRA_TTFT_TRACE=1 MEMRA_RESUME_EXACT=1 MEMRA_SPEC_BUDGET_CLAMP=1 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144]
+2026-09-27T05:25:40Z boot rx-spec-rx-O1-exact rc=0 DAY44 BOOT rows=60 ok=60 exact_resumes=20 settles=60 declined=0 door_line=1 oom=0
+2026-09-27T05:25:45Z boot fault-plain-rxg6 start arm=fault route=plain shape=RXg6 bin=9054b7d0a5e2cc0b env=[MEMRA_TTFT_TRACE=1 MEMRA_RESUME_EXACT=1 MEMRA_RESUME_EXACT_FAULT=settle-fail MEMRA_SERVE_SPEC=0 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144 --turn-gap-ms 1000]
+2026-09-27T05:29:52Z boot fault-plain-rxg6 rc=0 DAY44 BOOT rows=60 ok=60 exact_resumes=0 settles=0 declined=0 door_line=1 oom=0
+2026-09-27T05:29:57Z boots done: rx-plain-rx-O1-keep:keep:plain:RX6 rx-plain-rx-O1-exact:exact:plain:RX6 rx-spec-rx-O1-keep:keep:spec:RX6 rx-spec-rx-O1-exact:exact:spec:RX6 fault-plain-rxg6:fault:plain:RXg6

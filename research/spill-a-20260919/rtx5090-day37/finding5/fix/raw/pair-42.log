@@ -1,0 +1,11 @@
+
+running 2 tests
+HOLD READING cell=d2h_span_batch first_item_seen_ms=14.55 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=false
+HOLD STEPS cell=d2h_span_batch htod-pageable@-39.95+0.26 pinned-alloc@-39.68+2.01 htod-pageable@-37.67+0.42 pinned-alloc@-37.25+3.80 htod-pageable@-33.44+0.35 pinned-alloc@-33.09+2.91 delay@0.00+0.03 htod-pageable@0.03+0.24 pinned-alloc@0.27+1.74 htod-pageable@2.01+1.03 pinned-alloc@3.04+2.36 htod-pageable@5.40+0.33 pinned-alloc@5.74+2.92 submit@8.66+0.03 htod-pageable@8.69+1.05 pinned-alloc@9.74+0.97 htod-pageable@10.72+0.42 pinned-alloc@11.14+1.41 htod-pageable@12.55+0.31 pinned-alloc@12.86+1.68 submit-busy@14.54+0.00
+HOLD READING cell=h2d_span_batch first_item_seen_ms=8.80 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=false
+HOLD STEPS cell=h2d_span_batch pinned-alloc@-54.89+2.24 pinned-write@-52.65+0.26 device-alloc@-52.39+0.02 pinned-alloc@-52.37+3.82 pinned-write@-48.54+0.51 device-alloc@-48.03+0.02 pinned-alloc@-48.01+2.97 pinned-write@-45.04+0.37 device-alloc@-44.66+0.02 pinned-alloc@-11.99+2.41 pinned-write@-9.58+0.25 device-alloc@-9.32+0.02 pinned-alloc@-9.31+2.98 device-alloc@-6.32+0.01 pinned-alloc@-6.31+2.05 pinned-write@-4.26+0.42 device-alloc@-3.83+0.01 delay@0.00+0.01 pinned-alloc@0.01+0.69 pinned-write@0.71+0.20 device-alloc@0.91+0.01 pinned-alloc@0.92+1.35 pinned-write@2.27+0.40 device-alloc@2.67+0.01 pinned-alloc@2.68+1.19 pinned-write@3.87+0.35 device-alloc@4.23+0.01 submit@4.24+0.03 pinned-alloc@4.26+0.84 pinned-write@5.10+0.25 device-alloc@5.36+0.01 pinned-alloc@5.37+1.41 pinned-write@6.78+0.50 device-alloc@7.28+0.01 pinned-alloc@7.29+1.11 pinned-write@8.40+0.36 device-alloc@8.76+0.02 submit-busy@8.78+0.01
+test tier_transfer::tests::d2h_span_batch_lands_with_its_ticket_on_the_copy_stream ... ok
+test tier_transfer::tests::h2d_span_batch_lands_with_its_ticket_on_the_copy_stream ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 585 filtered out; finished in 0.72s
+

@@ -1,0 +1,8 @@
+cell=fault-default cmd=bash tools/kv-host-contract-fault-gate.sh --external-lock 9 /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf /home/avifenesh/projects/wt-spill-integ58/target/release/memra-server
+env=MEMRA_HOSTGATE_CACHE_MB=64
+lock=/tmp/memra-5090.lock owner=collector-fd9
+tree=6d9e0b06e5b8594e7fa736fd223124650bb52d07
+binary_sha256=1532f987d02acaf16557d45b3cb213d21cef9431f6d574bac4ffa2c50c093b08
+model=Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+gpu=NVIDIA GeForce RTX 5090 Laptop GPU, [N/A]
+status=executed-not-qualified

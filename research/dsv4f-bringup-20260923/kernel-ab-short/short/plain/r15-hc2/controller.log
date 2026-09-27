@@ -1,0 +1,8 @@
+START utc=2026-09-23T21:44:52Z bin=/root/lane/target-hc2/release/memra-server env=
+READY after=128s port=46891
+CELL warmup c=1 ok=1/1 agg=37.04 tok/s decode_p50=54.24 tok/s ttft_p50=292 ms tpot_p50=18.44 ms errs=[]
+CELL greedy-c1 c=1 ok=8/8 agg=51.76 tok/s decode_p50=53.87 tok/s ttft_p50=211 ms tpot_p50=18.56 ms errs=[]
+CELL sampled-c1 c=1 ok=8/8 agg=46.52 tok/s decode_p50=48.25 tok/s ttft_p50=213 ms tpot_p50=20.73 ms errs=[]
+CELL greedy-c1-ignore-eos c=1 ok=4/4 agg=51.67 tok/s decode_p50=53.83 tok/s ttft_p50=215 ms tpot_p50=18.58 ms errs=[]
+CELLS_DONE utc=2026-09-23T21:48:45Z
+TERMINAL rc=0 utc=2026-09-23T21:48:52Z

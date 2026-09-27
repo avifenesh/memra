@@ -1,0 +1,18 @@
+START utc=2026-09-23T19:11:10Z cmd=/root/lane/target-hc2/release/deps/dsv4_hc_finish_gpu-577f3bf906f6ac27 --ignored --nocapture --test-threads=1 dsv4_hc_finish_timing
+
+running 1 test
+test dsv4_hc_finish_timing ... TIMING hc_entry rows=1 rep=0 chain_us=30.721 diet_us=18.441 fused_us=8.197
+TIMING hc_entry rows=1 rep=1 chain_us=30.722 diet_us=18.442 fused_us=8.197
+TIMING hc_entry rows=1 rep=2 chain_us=30.721 diet_us=18.442 fused_us=8.197
+TIMING hc_entry rows=1 rep=3 chain_us=30.722 diet_us=18.442 fused_us=8.197
+TIMING hc_entry rows=1 rep=4 chain_us=30.722 diet_us=18.442 fused_us=8.197
+TIMING hc_entry rows=6 rep=0 chain_us=32.786 diet_us=24.633 fused_us=14.344
+TIMING hc_entry rows=6 rep=1 chain_us=32.791 diet_us=24.640 fused_us=14.344
+TIMING hc_entry rows=6 rep=2 chain_us=32.790 diet_us=24.642 fused_us=14.344
+TIMING hc_entry rows=6 rep=3 chain_us=32.786 diet_us=24.633 fused_us=14.344
+TIMING hc_entry rows=6 rep=4 chain_us=32.790 diet_us=24.607 fused_us=14.344
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 1.67s
+
+GATE_DONE rc=0 utc=2026-09-23T19:11:12Z

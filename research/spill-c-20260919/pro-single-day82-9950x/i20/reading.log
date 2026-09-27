@@ -1,0 +1,21 @@
+DAY82 host demand sequence i15 sha256 4bdc2610c3534e42 lines=[22077]
+DAY82 host demand sequence i18 sha256 4bdc2610c3534e42 lines=[22077]
+DAY82 host demand sequence i20 sha256 4bdc2610c3534e42 lines=[22077]
+DAY82 host demand sequence i20c sha256 4bdc2610c3534e42 lines=[22077]
+DAY82 I20 CHECKS rig=pro-single runs=50 integrity=ok
+DAY82 ADMISSIBILITY rig=pro-single ceiling=0.005 max_iqr_gen=0.0010 max_iqr_window=0.0003 failing=[] -> admissible
+DAY82 gen-only decode medians (N=10 each): ref=0.248 i15=0.252 i18=0.251 i20=0.251 i20c=0.252
+DAY82 STEP i20_vs_i18 gen-only decode: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0000 -> flat
+DAY82 steady window medians (N=10 each): ref=0.219 i15=0.220 i18=0.220 i20=0.220 i20c=0.220
+DAY82 STEP i20_vs_i18 steady window: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0003 -> flat
+DAY82 BESIDE i20_vs_i15 gen-only decode: pooled=-0.0010 o1=-0.0010 o2=-0.0010 noise=0.0000 -> improves (deciding nothing)
+DAY82 BESIDE i20_vs_i15 steady window: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0000 -> flat (deciding nothing)
+DAY82 DOOR i20_vs_ref gen-only decode: pooled=+0.0030 o1=+0.0030 o2=+0.0020 noise=0.0010 -> loses
+DAY82 DOOR i20_vs_ref steady window: pooled=+0.0010 o1=+0.0010 o2=+0.0010 noise=0.0000 -> loses
+DAY82 I20C brackets per window token (ms, medians): dispatch_ns=0.0729 prefetch_ns=0.4454 pf_demand_ns=0.1221 pf_resident_ns=0.0358 pf_retire_ns=0.0203 pf_stage_ns=0.2110
+DAY82 B p-ref-r1: window_ms=275.0 gpu_busy=5.2866 gpu_idle=3.3072 h2d_exposed=0.6672 (ms per window token)
+DAY82 B p-on-r1: window_ms=282.0 gpu_busy=5.2870 gpu_idle=3.5255 h2d_exposed=0.6870 (ms per window token)
+DAY82 B p-on-r2: window_ms=283.0 gpu_busy=5.2796 gpu_idle=3.5642 h2d_exposed=0.7006 (ms per window token)
+DAY82 B p-ref-r2: window_ms=278.0 gpu_busy=5.2909 gpu_idle=3.3966 h2d_exposed=0.6831 (ms per window token)
+DAY82 B i20_minus_ref per window token (ms, medians of two; deciding nothing): gpu_busy=-0.0055 gpu_idle=+0.1930 h2d_exposed=+0.0187 kernel_sum=-0.0055
+DAY82 VERDICT rig=pro-single integrity=ok i20=flat door=i20 vs_ref=loses (window: i20=flat vs_ref=loses)

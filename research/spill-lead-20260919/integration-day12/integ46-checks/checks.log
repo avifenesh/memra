@@ -1,0 +1,17 @@
+tree dbb67ac12 on main 0c86309bd; 2026-09-22T20:53:54Z
+## bash tools/check-flags.sh
+check-flags: runtime literal reads=869
+check-flags: no uncovered runtime names
+check-flags: every runtime MEMRA_* name resolves against 'docs/FLAGS.md' (no grandfather list)
+rc=0
+## bash tools/check-conflict-markers.sh
+check-conflict-markers: OK (no conflict marker line in tracked source or docs)
+rc=0
+## git diff --check origin/main HEAD
+rc=0
+## python3 tools/check-public-boundary.py check
+public-boundary: 604 matches (604 grandfathered, 0 new).
+rc=0
+## python3 tools/update-perf-board.py --check
+perf board is up to date
+rc=0

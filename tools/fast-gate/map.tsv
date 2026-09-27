@@ -50,6 +50,9 @@
 # isogap adds the RUNG-CROSSING shape (the seqs_v4/combine_seqs ONE-PARTITION law under a
 # straddle + the per-seq fallback window) that the fixed-depth synthetic pins never reach.
 ^crates/memra-engine/cu/(flash_attn|fa3_prefill|fattn_vendor)\.cu$	synthetic	g12d,g31,e4b,q9,q35,isogap	-
+# ptick/ptickc: prefill FA serves both the solo and the batched prime; a kernel edit that moves
+# one program and not the other is the memra#641 class (research/decode-exact-641-20260923).
+^crates/memra-engine/cu/(flash_attn|fa3_prefill)\.cu$	synthetic	ptick,ptickc,pbg9,pbg9c	-
 ^crates/memra-engine/cu/(f16_prefill|fp8_prefill|moe_f16_grouped)\.cu$	f16g-kq-direct	g26,q35	-
 ^crates/memra-engine/cu/moe_router\.cu$	fast-router-batch,d2-cache-bit-identity	q35,g26	-
 ^crates/memra-engine/cu/hybrid\.cu$	synthetic	q9,q35	-
@@ -101,12 +104,17 @@
 # amargin compares these exact two arithmetic surfaces: batched forward_last vs tokenwise decode.
 # It does not execute sampled-spec control code; accept remains the served-spec/long-text gate.
 ^crates/memra-engine/src/(decode|forward|hybrid_forward)\.rs$	synthetic	amargin,amarginc	-
+# ptick pins prime_cache_batch (fresh and carried) + the tick loop + the [B, C] wave against the
+# solo prime bitwise (memra#641); hybrid_forward.rs owns every one of those programs.
+^crates/memra-engine/src/hybrid_forward\.rs$	synthetic	ptick,ptickc,pbg9,pbg9c	-
 # --- engine Rust: dispatch/FFI/load seams (these ARE what kernel-check calls through) ---
 ^crates/memra-engine/src/(hybrid|model|mmq_ffi|f16_ffi|fp8_ffi|cutlass_ffi|lib)\.rs$	all	g12,q9,q35	q35spec
 # The representatives above do not cover E4B's PLE/KV-share loader or KAT's IQ4_XS dispatch.
 ^crates/memra-engine/src/(hybrid|model|lib)\.rs$	all	e4b,kat	-
 # --- gate/bench binaries: build-only (they ARE the gates) ---
 ^crates/memra-engine/src/bin/argmax_margin_probe\.rs$	none	amargin,amarginc	-
+^crates/memra-engine/src/bin/concat_prime_probe\.rs$	none	ptick,ptickc	-
+^crates/memra-engine/src/bin/prime_batch_gate\.rs$	none	pbg9,pbg9c,pbatch35,pbatch35c	-
 ^crates/memra-engine/src/bin/	none	-	-
 ^crates/memra-engine/tests/	none	-	-
 # --- other crates ---
@@ -131,6 +139,8 @@
 ^crates/memra-server/	none	sstress,accept,tickinv35,tickinv35c,b2geo35,b2geo35c	-
 # --- no-gate paths ---
 ^tools/argmax-margin-gate\.sh$	none	amargin,amarginc	-
+^tools/prime-tick-exact-gate\.sh$	none	ptick,ptickc	-
+^tools/prime-batch-exact-gate\.sh$	none	pbg9,pbg9c	-
 ^(docs/|research/|agent-knowledge/|probe/|\.github/|tools/)	none	-	-
 ^[^/]*\.(md|svg|png|txt|json|lock)$	none	-	-
 # --- DEFAULT (first column literally "DEFAULT"): applied ONLY to files no row above

@@ -95,9 +95,6 @@ fn main() {
             "requires {name}={value}"
         );
     }
-    // Refused at load under PP-2 ("small-kernel diet requires all-layer TP/EP and
-    // f32x"), so its presence in a bench env must not leak into a serving-shaped run.
-    assert!(std::env::var_os("MEMRA_DSV4_SMALL_KERNEL_DIET").is_none());
     // The expert program stopped being an environment door on 2026-09-11
     // (memra #461): matrix is what loads, and the REF arm of this control is
     // selected by the gate arm, which is the only way in. The assertion that the

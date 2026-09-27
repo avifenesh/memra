@@ -1,0 +1,12 @@
+build main d04d9b817 SERVER_EXIT=0 ENGINE_EXIT=0  server cc337a55cc8e6aee
+build dsr2 f23759101 SERVER_EXIT=0 ENGINE_EXIT=0  server d90d225e82f43a5d
+long-304 R rc=0 [load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 359.1ms PROGRAM_SHA256 fbce1a0492d69635dd1df532f278a40629363369d8541b48c4b132cf5c5a0d0f (every step's token, logits bits hash and digests) PASS: 304 steps from position 400 to 704 bit-identical to eager (token and logits every step, cache and hidden digests every step), 304 of them replayed; tokens_sha256=112c2fc66fe1f76029c4ff1a8ce3446a 
+split R rc=0 PASS: position-split C4 store bit-identical to the replicated program 
+dspark-tpep R cc6082ddea76827e 373e6557e6d118f1 373e6557e6d118f1  | verdict (c) batched==sequential: 14 cells, 77 logit rows, 3206 cache-class comparisons — ALL BIT-IDENTICAL verdict (d) accepted-position ring writes: 3 ring classes compared, 0 mismatching GPU DSPARK GATE [PASS] GATE_DONE rc=0 utc=2026-09-26T19:12:25Z 
+serve r1 M rc=0 CELL greedy-c1 c=1 ok=8/8 agg=87.78 tok/s decode_p50=93.70 tok/s ttft_p50=177 ms tpot_p50=10.67 ms errs=[] CELL sampled-c1 c=1 ok=8/8 agg=73.50 tok/s decode_p50=75.60 tok/s ttft_p50=188 ms tpot_p50=13.23 ms errs=[] 
+serve r2 R rc=0 CELL greedy-c1 c=1 ok=8/8 agg=93.86 tok/s decode_p50=99.71 tok/s ttft_p50=170 ms tpot_p50=10.03 ms errs=[] CELL sampled-c1 c=1 ok=8/8 agg=79.05 tok/s decode_p50=81.59 tok/s ttft_p50=179 ms tpot_p50=12.26 ms errs=[] 
+serve r3 R rc=0 CELL greedy-c1 c=1 ok=8/8 agg=92.93 tok/s decode_p50=98.76 tok/s ttft_p50=172 ms tpot_p50=10.13 ms errs=[] CELL sampled-c1 c=1 ok=8/8 agg=78.48 tok/s decode_p50=81.05 tok/s ttft_p50=180 ms tpot_p50=12.34 ms errs=[] 
+serve r4 M rc=0 CELL greedy-c1 c=1 ok=8/8 agg=89.16 tok/s decode_p50=94.81 tok/s ttft_p50=174 ms tpot_p50=10.55 ms errs=[] CELL sampled-c1 c=1 ok=8/8 agg=75.84 tok/s decode_p50=78.12 tok/s ttft_p50=183 ms tpot_p50=12.80 ms errs=[] 
+serve r5 R rc=0 CELL greedy-c1 c=1 ok=8/8 agg=93.17 tok/s decode_p50=99.04 tok/s ttft_p50=172 ms tpot_p50=10.10 ms errs=[] CELL sampled-c1 c=1 ok=8/8 agg=78.65 tok/s decode_p50=81.35 tok/s ttft_p50=181 ms tpot_p50=12.29 ms errs=[] 
+serve r6 M rc=0 CELL greedy-c1 c=1 ok=8/8 agg=89.57 tok/s decode_p50=95.13 tok/s ttft_p50=174 ms tpot_p50=10.51 ms errs=[] CELL sampled-c1 c=1 ok=8/8 agg=76.01 tok/s decode_p50=78.40 tok/s ttft_p50=183 ms tpot_p50=12.76 ms errs=[] 
+S2H_DONE f23759101edb8d3ee9bced19cafe5ded29b0219f

@@ -643,6 +643,10 @@ pub struct Step35Config {
     /// GGUF sources carry the equivalent values in `rope_freqs.weight`, so this is `None`
     /// for that source class. Only full-attention layers consume the factors.
     pub rope_freq_factors: Option<Vec<f32>>,
+    /// Source shape of `rope_freqs.weight`, retained from GGUF headers without reading
+    /// its payload. Load preflight also fills this from an accepted source tensor view.
+    /// HF-derived factors have no checkpoint tensor and leave this as None.
+    pub rope_freq_shape: Option<Vec<u64>>,
     /// `swiglu_clamp_exp` [f32; n_layer] — routed-expert SwiGLU clamp limit per layer.
     /// Nonzero only on layers 43-44 of 3.7-Flash. Semantics (llama-graph.cpp:2146): the limit
     /// applies when > 1e-6 as `up = clamp(up, -L, L); act = min(silu(gate), L); out = act * up`.
@@ -1170,6 +1174,12 @@ pub struct ModelConfig {
     /// is a different RoPE program and the canonical plan compiles `RopeFactors::None`.
     /// `None` and `"default"` both mean identity.
     pub rope_scaling_hint: Option<String>,
+    /// Per-attention-class HF RoPE declarations (Gemma-style rope_parameters).
+    /// These must not disappear behind the scalar/default RoPE path.
+    pub layer_rope_scaling: Vec<(String, String)>,
+    /// Explicit text MLP activation, retained so compilation cannot silently replace it
+    /// with the family's default. None means the artifact uses that default.
+    pub hidden_act: Option<String>,
 }
 
 /// qwen4_exp YaRN parse (scope: this family only — see `ModelConfig::rope_yarn`).
@@ -1426,6 +1436,7 @@ impl ModelConfig {
                 rope_dims_full: rope_dims_swa / 2,
                 rope_dims_swa,
                 rope_freq_factors: None,
+                rope_freq_shape: g.find("rope_freqs.weight").map(|tensor| tensor.ne.clone()),
                 swiglu_clamp_exp: arr_f("swiglu_clamp_exp"),
                 swiglu_clamp_shexp: arr_f("swiglu_clamp_shexp"),
                 // expert_gating_func 2 = sigmoid; ABSENT defaults to sigmoid (step35.cpp:19-21).
@@ -1572,9 +1583,13 @@ impl ModelConfig {
                 .unwrap_or_else(|error| panic!("{error}")),
             tie_word_embeddings: None,
             window_hint: u("attention.sliding_window"),
-            // GGUF spells llama3 rope scaling as per-frequency factors, not a type string;
-            // `rope_factors` carries them and the packs that read them declare it.
-            rope_scaling_hint: None,
+            rope_scaling_hint: g
+                .meta_arch("rope.scaling.type")
+                .and_then(MetaValue::as_str)
+                // GGUF's identity spelling is "none"; HF uses "default".
+                .map(|kind| if kind == "none" { "default" } else { kind }.to_owned()),
+            layer_rope_scaling: Vec::new(),
+            hidden_act: None,
             name: g
                 .metadata
                 .get("general.name")
@@ -1815,6 +1830,7 @@ impl ModelConfig {
                 rope_dims_full,
                 rope_dims_swa: (partial[first_swa] * head_dim_k as f32).round() as u32,
                 rope_freq_factors: c.llama3_rope_factors(rope[first_full], rope_dims_full),
+                rope_freq_shape: None,
                 swiglu_clamp_exp: clamps,
                 swiglu_clamp_shexp: shared_clamps,
                 sigmoid_routing: c.moe_router_activation.as_deref() == Some("sigmoid"),
@@ -2308,6 +2324,8 @@ impl ModelConfig {
             tie_word_embeddings: c.tie_word_embeddings,
             window_hint: c.sliding_window,
             rope_scaling_hint: c.rope_scaling_type.clone(),
+            layer_rope_scaling: c.layer_rope_scaling.clone(),
+            hidden_act: c.hidden_act.clone(),
             name: c.name.clone().unwrap_or_default(),
             // GGUF `block_count` INCLUDES the MTP/NextN block(s) (hybrid.rs n_trunk = n_layer -
             // nextn); HF `num_hidden_layers` EXCLUDES them. Add nextn so both sources agree.
@@ -2410,7 +2428,8 @@ impl ModelConfig {
     /// Read + parse an HF `config.json` directly from disk and build a ModelConfig.
     pub fn from_config_json(path: &std::path::Path) -> std::io::Result<Self> {
         let txt = std::fs::read_to_string(path)?;
-        let cfg = HfConfig::parse(&txt);
+        let cfg = HfConfig::try_parse(&txt)
+            .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
         Ok(Self::from_hf(&cfg))
     }
 
@@ -2756,6 +2775,7 @@ pub struct HfConfig {
     /// n_rot), so it lands in `gemma4_partial_rotary_global` instead.
     pub partial_rotary_factor: Option<f32>,
     pub rope_scaling_type: Option<String>,
+    pub layer_rope_scaling: Vec<(String, String)>,
     pub rope_scaling_factor: Option<f32>,
     pub rope_scaling_original_context: Option<u32>,
     pub rope_scaling_low_freq_factor: Option<f32>,
@@ -2937,6 +2957,7 @@ impl Default for HfConfig {
             rope_theta: 10000.0,
             partial_rotary_factor: None,
             rope_scaling_type: None,
+            layer_rope_scaling: Vec::new(),
             rope_scaling_factor: None,
             rope_scaling_original_context: None,
             rope_scaling_low_freq_factor: None,
@@ -3121,313 +3142,330 @@ impl HfConfig {
     /// object is present (vision-language / hybrid wrappers like qwen3_5), its scalar fields
     /// override the top-level ones for the transformer config. `architectures[0]` and the
     /// top-level `model_type` seed the arch when `text_config.model_type` is more specific.
+    /// Compatibility entry point for trusted in-memory fixtures. File/source/CLI readers
+    /// use `try_parse` and return its error before compiling or allocating model weights.
     pub fn parse(json: &str) -> Self {
-        let top = JsonObj::parse(json);
-        let mut cfg = HfConfig::default();
-        cfg.apply(&top);
-        cfg.quant_algo = top
-            .object("quantization_config")
-            .and_then(|quantization| quantization.string("quant_algo"));
-        // Both official Step-3.7-Flash quantized artifacts keep everything OUTSIDE the routed
-        // experts (attention, gates, shared experts, MTP, lm_head) as checkpoint BF16, and the
-        // Step TP attention program requires those exact bytes. A ModelOpt Hy3 artifact likewise
-        // uses physical BF16 to declare the deliberately unquantized half of a mixed profile.
-        // Base checkpoints and unrelated formats keep the Q8_0 loader law.
-        cfg.preserve_checkpoint_bf16 = top.object("quantization_config").is_some_and(|q| {
-            (top.string("model_type").as_deref() == Some("step3p7")
-                && ((q.string("quant_method").as_deref() == Some("fp8")
-                    && q.string("activation_scheme").as_deref() == Some("dynamic")
-                    && q.string("fmt").as_deref() == Some("e4m3")
-                    && q.u32_array("weight_block_size").as_deref() == Some(&[128, 128]))
-                    || (q.string("quant_method").as_deref() == Some("modelopt")
-                        // W4A16_NVFP4 = the weight-only mint (glm5_next lane): identical
-                        // weight/scale layout, no input_scale — same repack path.
-                        && matches!(
-                            q.string("quant_algo").as_deref(),
-                            Some("NVFP4") | Some("W4A16_NVFP4")
-                        ))))
-                || (top.string("model_type").as_deref() == Some("hy_v3")
-                    && matches!(
-                        q.string("quant_method").as_deref(),
-                        Some("modelopt" | "compressed-tensors")
-                    ))
-        });
-        // qwen4_exp ViT tower: its own key spellings (depth / num_heads /
-        // num_position_embeddings / spatial_merge_size / temporal_patch_size). Loud refusal
-        // on a missing field — a defaulted tower geometry is a silently different program.
-        cfg.qwen4exp_vision = top.object("vision_config").and_then(|vision| {
-            (vision.string("model_type").as_deref() == Some("qwen4_exp")).then(|| {
-                let req = |k: &str| {
-                    vision.u32(k).unwrap_or_else(|| {
-                        panic!("qwen4_exp vision_config missing required field {k}")
-                    })
-                };
-                Qwen4ExpVisionConfig {
-                    depth: req("depth"),
-                    hidden_size: req("hidden_size"),
-                    intermediate_size: req("intermediate_size"),
-                    num_heads: req("num_heads"),
-                    num_position_embeddings: req("num_position_embeddings"),
-                    out_hidden_size: req("out_hidden_size"),
-                    patch_size: req("patch_size"),
-                    spatial_merge_size: req("spatial_merge_size"),
-                    temporal_patch_size: req("temporal_patch_size"),
-                    in_channels: req("in_channels"),
-                }
-            })
-        });
-        // vision_config dispatch is keyed by the tower's own model_type: the factored-additive
-        // program (gemma-4 family) and the glm5_next fused-qkv program are different semantic
-        // programs, and reading one's config through the other's key names produced a silently
-        // wrong plan (caught in lane/glm5-vision: depth/num_heads/hidden_act all defaulted).
-        if top
-            .object("vision_config")
-            .and_then(|v| v.string("model_type"))
-            .as_deref()
-            == Some("glm5_next_vision")
-        {
-            let v = top.object("vision_config").expect("checked above");
-            let req_u = |x: Option<u32>, k: &str| {
-                x.unwrap_or_else(|| {
-                    panic!("glm5_next_vision config.json missing required field {k}")
-                })
-            };
-            let req_f = |x: Option<f32>, k: &str| {
-                x.unwrap_or_else(|| {
-                    panic!("glm5_next_vision config.json missing required field {k}")
-                })
-            };
-            cfg.vision_glm5 = Some(Glm5VisionConfig {
-                depth: req_u(v.u32("depth"), "vision_config.depth"),
-                hidden_size: req_u(v.u32("hidden_size"), "vision_config.hidden_size"),
-                num_heads: req_u(v.u32("num_heads"), "vision_config.num_heads"),
-                intermediate_size: req_u(
-                    v.u32("intermediate_size"),
-                    "vision_config.intermediate_size",
-                ),
-                patch_size: req_u(v.u32("patch_size"), "vision_config.patch_size"),
-                temporal_patch_size: req_u(
-                    v.u32("temporal_patch_size"),
-                    "vision_config.temporal_patch_size",
-                ),
-                spatial_merge_size: req_u(
-                    v.u32("spatial_merge_size"),
-                    "vision_config.spatial_merge_size",
-                ),
-                out_hidden_size: req_u(v.u32("out_hidden_size"), "vision_config.out_hidden_size"),
-                projection_intermediate_size: req_u(
-                    v.u32("projection_intermediate_size"),
-                    "vision_config.projection_intermediate_size",
-                ),
-                swiglu_limit: req_f(v.f32("swiglu_limit"), "vision_config.swiglu_limit"),
-                rms_norm_eps: req_f(v.f32("rms_norm_eps"), "vision_config.rms_norm_eps"),
-                in_channels: req_u(v.u32("in_channels"), "vision_config.in_channels"),
-                attention_bias: v.boolean("attention_bias").unwrap_or_else(|| {
-                    panic!("glm5_next_vision config.json missing required field vision_config.attention_bias")
-                }),
-                hidden_act: v.string("hidden_act").unwrap_or_else(|| {
-                    panic!("glm5_next_vision config.json missing required field vision_config.hidden_act")
-                }),
-                image_token_id: req_u(top.u32("image_token_id"), "image_token_id"),
-                video_token_id: req_u(top.u32("video_token_id"), "video_token_id"),
-                image_start_token_id: req_u(
-                    top.u32("image_start_token_id"),
-                    "image_start_token_id",
-                ),
-                image_end_token_id: req_u(top.u32("image_end_token_id"), "image_end_token_id"),
-                video_start_token_id: req_u(
-                    top.u32("video_start_token_id"),
-                    "video_start_token_id",
-                ),
-                video_end_token_id: req_u(top.u32("video_end_token_id"), "video_end_token_id"),
-            });
-        } else if top
-            .object("vision_config")
-            .and_then(|v| v.string("model_type"))
-            .as_deref()
-            == Some("gemma4_unified_vision")
-        {
-            // Gemma-4 12B "Unified" is ENCODER-FREE: raw image patches (48px) and audio
-            // waveforms project straight into the decoder through lightweight linear layers,
-            // so its `vision_config` carries mm_embed_dim / num_soft_tokens / output_proj_dims
-            // and NONE of the tower fields the factored gemma-4 tower reads. Reading it through
-            // the tower's key names would fabricate a 16-layer 768-wide tower out of defaults —
-            // the exact silent-wrong-plan class lane/glm5-vision paid for. The unified front end
-            // is a distinct semantic program with no memra implementation, so it is DROPPED
-            // here: the text decoder loads, image/audio input is refused at the surface.
-            cfg.vision = None;
-        } else {
-            cfg.vision = top.object("vision_config").map(|vision| VisionConfig {
-                hidden_size: vision.u32("hidden_size").unwrap_or(768),
-                intermediate_size: vision.u32("intermediate_size").unwrap_or(3072),
-                layer_count: vision.u32("num_hidden_layers").unwrap_or(16),
-                attention_heads: vision.u32("num_attention_heads").unwrap_or(12),
-                kv_heads: vision.u32("num_key_value_heads").unwrap_or(12),
-                head_dim: vision.u32("head_dim").unwrap_or(64),
-                context_length: vision.u32("max_position_embeddings").unwrap_or(131_072),
-                patch_size: vision.u32("patch_size").unwrap_or(16),
-                position_embedding_size: vision.u32("position_embedding_size").unwrap_or(10_240),
-                position_axes: 2,
-                pooling_kernel_size: vision.u32("pooling_kernel_size").unwrap_or(3),
-                rms_eps: vision.f32("rms_norm_eps").unwrap_or(1e-6),
-                rope_theta: vision
-                    .object("rope_parameters")
-                    .and_then(|rope| rope.f32("rope_theta"))
-                    .unwrap_or(100.0),
-                activation: vision
-                    .string("hidden_activation")
-                    .unwrap_or_else(|| "gelu_pytorch_tanh".to_string()),
-                standardize: vision.boolean("standardize").unwrap_or(false),
-                clipped_linears: vision.boolean("use_clipped_linears").unwrap_or(false),
-            });
-        }
-        // text_config (hybrid / VLM wrappers) — its transformer fields take precedence.
-        if let Some(tc) = top.object("text_config") {
-            cfg.apply(&tc);
-        }
-        // model_type fallback chain: text_config.model_type > model_type > architectures[0].
-        if cfg.model_type.is_empty()
-            && let Some(arch0) = top.first_string_in_array("architectures")
-        {
-            cfg.model_type = arch0;
-        }
-        cfg
+        Self::try_parse(json).unwrap_or_else(|error| panic!("invalid HF config: {error}"))
     }
 
-    fn apply(&mut self, o: &JsonObj) {
-        if let Some(s) = o.string("model_type") {
+    /// Decode once with strict JSON semantics, then normalize that exact typed value tree.
+    pub fn try_parse(json: &str) -> Result<Self, String> {
+        use crate::config_json::ConfigObject;
+        fn required<T>(value: Option<T>, family: &str, field: &str) -> Result<T, String> {
+            value.ok_or_else(|| format!("{family} config.json missing required field {field}"))
+        }
+        let decoded = crate::strict_json::parse_object(json)?;
+        let top = ConfigObject::root(&decoded);
+        let model_type = top.string("model_type")?;
+        let text = top.object("text_config")?;
+        let architectures = top.first_string_in_array("architectures")?;
+        let effective_type = text
+            .as_ref()
+            .map(|text| text.string("model_type"))
+            .transpose()?
+            .flatten()
+            .or_else(|| model_type.clone())
+            .filter(|kind| !kind.is_empty())
+            .or_else(|| architectures.clone());
+        let glm_dsa = effective_type
+            .as_deref()
+            .is_some_and(|kind| Arch::from_hf_model_type(kind) == Arch::GlmDsa);
+        let mut cfg = HfConfig::default();
+        cfg.apply(&top, glm_dsa)?;
+        if let Some(q) = top.object("quantization_config")? {
+            cfg.quant_algo = q.string("quant_algo")?;
+            let method = q.string("quant_method")?;
+            let activation = q.string("activation_scheme")?;
+            let format = q.string("fmt")?;
+            let block = q.u32_array("weight_block_size")?;
+            cfg.preserve_checkpoint_bf16 = (model_type.as_deref() == Some("step3p7")
+                && ((method.as_deref() == Some("fp8")
+                    && activation.as_deref() == Some("dynamic")
+                    && format.as_deref() == Some("e4m3")
+                    && block.as_deref() == Some(&[128, 128]))
+                    || (method.as_deref() == Some("modelopt")
+                        && matches!(cfg.quant_algo.as_deref(), Some("NVFP4" | "W4A16_NVFP4")))))
+                || (model_type.as_deref() == Some("hy_v3")
+                    && matches!(method.as_deref(), Some("modelopt" | "compressed-tensors")));
+        }
+        if let Some(vision) = top.object("vision_config")? {
+            let vision_type = vision.string("model_type")?;
+            if vision_type.as_deref() == Some("qwen4_exp") {
+                let req = |key: &str| -> Result<u32, String> {
+                    vision.u32(key)?.ok_or_else(|| {
+                        format!("qwen4_exp vision_config missing required field {key}")
+                    })
+                };
+                cfg.qwen4exp_vision = Some(Qwen4ExpVisionConfig {
+                    depth: req("depth")?,
+                    hidden_size: req("hidden_size")?,
+                    intermediate_size: req("intermediate_size")?,
+                    num_heads: req("num_heads")?,
+                    num_position_embeddings: req("num_position_embeddings")?,
+                    out_hidden_size: req("out_hidden_size")?,
+                    patch_size: req("patch_size")?,
+                    spatial_merge_size: req("spatial_merge_size")?,
+                    temporal_patch_size: req("temporal_patch_size")?,
+                    in_channels: req("in_channels")?,
+                });
+            }
+            if vision_type.as_deref() == Some("glm5_next_vision") {
+                let req_u = |key: &str| {
+                    required(
+                        vision.u32(key)?,
+                        "glm5_next_vision",
+                        &format!("vision_config.{key}"),
+                    )
+                };
+                let req_f = |key: &str| {
+                    required(
+                        vision.f32(key)?,
+                        "glm5_next_vision",
+                        &format!("vision_config.{key}"),
+                    )
+                };
+                cfg.vision_glm5 = Some(Glm5VisionConfig {
+                    depth: req_u("depth")?,
+                    hidden_size: req_u("hidden_size")?,
+                    num_heads: req_u("num_heads")?,
+                    intermediate_size: req_u("intermediate_size")?,
+                    patch_size: req_u("patch_size")?,
+                    temporal_patch_size: req_u("temporal_patch_size")?,
+                    spatial_merge_size: req_u("spatial_merge_size")?,
+                    out_hidden_size: req_u("out_hidden_size")?,
+                    projection_intermediate_size: req_u("projection_intermediate_size")?,
+                    swiglu_limit: req_f("swiglu_limit")?,
+                    rms_norm_eps: req_f("rms_norm_eps")?,
+                    in_channels: req_u("in_channels")?,
+                    attention_bias: required(
+                        vision.boolean("attention_bias")?,
+                        "glm5_next_vision",
+                        "vision_config.attention_bias",
+                    )?,
+                    hidden_act: required(
+                        vision.string("hidden_act")?,
+                        "glm5_next_vision",
+                        "vision_config.hidden_act",
+                    )?,
+                    image_token_id: required(
+                        top.u32("image_token_id")?,
+                        "glm5_next_vision",
+                        "image_token_id",
+                    )?,
+                    video_token_id: required(
+                        top.u32("video_token_id")?,
+                        "glm5_next_vision",
+                        "video_token_id",
+                    )?,
+                    image_start_token_id: required(
+                        top.u32("image_start_token_id")?,
+                        "glm5_next_vision",
+                        "image_start_token_id",
+                    )?,
+                    image_end_token_id: required(
+                        top.u32("image_end_token_id")?,
+                        "glm5_next_vision",
+                        "image_end_token_id",
+                    )?,
+                    video_start_token_id: required(
+                        top.u32("video_start_token_id")?,
+                        "glm5_next_vision",
+                        "video_start_token_id",
+                    )?,
+                    video_end_token_id: required(
+                        top.u32("video_end_token_id")?,
+                        "glm5_next_vision",
+                        "video_end_token_id",
+                    )?,
+                });
+            } else if matches!(
+                vision_type.as_deref(),
+                Some("perception_encoder" | "gemma4_unified_vision")
+            ) {
+                // Preserve the existing native Step route without fabricating a canonical
+                // Gemma tower. Unified Gemma's encoder-free program remains unrepresented.
+                cfg.vision = None;
+            } else {
+                let rope_theta = match vision.object("rope_parameters")? {
+                    Some(rope) => rope.f32("rope_theta")?.unwrap_or(100.0),
+                    None => 100.0,
+                };
+                cfg.vision = Some(VisionConfig {
+                    hidden_size: vision.u32("hidden_size")?.unwrap_or(768),
+                    intermediate_size: vision.u32("intermediate_size")?.unwrap_or(3072),
+                    layer_count: vision.u32("num_hidden_layers")?.unwrap_or(16),
+                    attention_heads: vision.u32("num_attention_heads")?.unwrap_or(12),
+                    kv_heads: vision.u32("num_key_value_heads")?.unwrap_or(12),
+                    head_dim: vision.u32("head_dim")?.unwrap_or(64),
+                    context_length: vision.u32("max_position_embeddings")?.unwrap_or(131_072),
+                    patch_size: vision.u32("patch_size")?.unwrap_or(16),
+                    position_embedding_size: vision
+                        .u32("position_embedding_size")?
+                        .unwrap_or(10_240),
+                    position_axes: 2,
+                    pooling_kernel_size: vision.u32("pooling_kernel_size")?.unwrap_or(3),
+                    rms_eps: vision.f32("rms_norm_eps")?.unwrap_or(1e-6),
+                    rope_theta,
+                    activation: vision
+                        .string("hidden_activation")?
+                        .unwrap_or_else(|| "gelu_pytorch_tanh".to_string()),
+                    standardize: vision.boolean("standardize")?.unwrap_or(false),
+                    clipped_linears: vision.boolean("use_clipped_linears")?.unwrap_or(false),
+                });
+            }
+        }
+        // Keep the existing top/text overlay order and architecture fallback.
+        if let Some(text) = text {
+            cfg.apply(&text, glm_dsa)?;
+        }
+        if cfg.model_type.is_empty()
+            && let Some(architecture) = architectures
+        {
+            cfg.model_type = architecture;
+        }
+        Ok(cfg)
+    }
+
+    fn apply(
+        &mut self,
+        o: &crate::config_json::ConfigObject<'_>,
+        glm_dsa: bool,
+    ) -> Result<(), String> {
+        if let Some(s) = o.string("model_type")? {
             self.model_type = s;
         }
-        if let Some(q) = o.object("quantization_config")
-            && let Some(modules) = q.string_array("modules_to_not_convert")
+        if let Some(q) = o.object("quantization_config")?
+            && let Some(modules) = q.string_array("modules_to_not_convert")?
         {
             self.modules_to_not_convert = modules;
         }
-        if let Some(s) = o
-            .string("name_or_path")
-            .or_else(|| o.string("_name_or_path"))
-        {
+        if let Some(s) = o.string("name_or_path")?.or(o.string("_name_or_path")?) {
             self.name = Some(s);
         }
-        if let Some(v) = o.u32("num_hidden_layers") {
+        if let Some(v) = o.u32("num_hidden_layers")? {
             self.num_hidden_layers = v;
         }
-        if let Some(v) = o.u32("image_token_id") {
+        if let Some(v) = o.u32("image_token_id")? {
             self.image_token_id = Some(v);
         }
-        if let Some(v) = o.u32("vision_soft_tokens_per_image") {
+        if let Some(v) = o.u32("vision_soft_tokens_per_image")? {
             self.vision_soft_tokens_per_image = Some(v);
         }
-        if let Some(v) = o.u32("hidden_size") {
+        if let Some(v) = o.u32("hidden_size")? {
             self.hidden_size = v;
         }
-        if let Some(v) = o.u32("num_attention_heads") {
+        if let Some(v) = o.u32("num_attention_heads")? {
             self.num_attention_heads = v;
         }
         if let Some(v) = o
-            .u32("num_key_value_heads")
-            .or_else(|| o.u32("num_attention_groups"))
+            .u32("num_key_value_heads")?
+            .or(o.u32("num_attention_groups")?)
         {
             self.num_key_value_heads = Some(v);
         }
-        if let Some(v) = o.u32("head_dim") {
+        if let Some(v) = o.u32("head_dim")? {
             self.head_dim = Some(v);
         }
-        if let Some(v) = o.u32("intermediate_size") {
+        if let Some(v) = o.u32("intermediate_size")? {
             self.intermediate_size = v;
         }
-        if let Some(v) = o.u32("vocab_size") {
+        if let Some(v) = o.u32("vocab_size")? {
             self.vocab_size = v;
         }
-        if let Some(v) = o.u32("max_position_embeddings") {
+        if let Some(v) = o.u32("max_position_embeddings")? {
             self.max_position_embeddings = v;
         }
-        if let Some(v) = o.f32("rms_norm_eps") {
+        if let Some(v) = o.f32("rms_norm_eps")? {
             self.rms_norm_eps = v;
             self.rms_norm_eps_explicit = true;
         }
-        // gemma-4 (Arch::Gemma4) fields — read leniently, other arches never set them.
-        if let Some(raw) = o.raw("layer_types") {
-            let raw = raw.trim();
-            if raw.starts_with('[') && raw.ends_with(']') {
-                let flags: Vec<bool> = raw[1..raw.len() - 1]
-                    .split(',')
-                    .map(|s| s.trim().trim_matches('"') == "sliding_attention")
-                    .collect();
-                if !flags.is_empty() {
-                    self.gemma4_swa_pattern = Some(flags);
-                }
+        // gemma-4 (Arch::Gemma4) fields — absent fields retain their defaults.
+        if let Some(types) = o.string_array("layer_types")? {
+            let flags: Vec<bool> = types
+                .iter()
+                .map(|kind| kind == "sliding_attention")
+                .collect();
+            if !flags.is_empty() {
+                self.gemma4_swa_pattern = Some(flags);
             }
         }
-        if let Some(v) = o.u32("global_head_dim") {
+        if let Some(v) = o.u32("global_head_dim")? {
             self.global_head_dim = Some(v);
         }
-        if let Some(v) = o.u32("num_global_key_value_heads") {
+        if let Some(v) = o.u32("num_global_key_value_heads")? {
             self.num_global_key_value_heads = Some(v);
         }
-        if let Some(v) = o.u32("sliding_window") {
+        if let Some(v) = o.u32("sliding_window")? {
             self.sliding_window = Some(v);
         }
-        // Only the two JSON literals speak; `null`, a missing key or an unreadable token leave
-        // the declaration absent, so a config that did not speak never becomes a load refusal.
-        match o.raw("tie_word_embeddings") {
-            Some("true") => self.tie_word_embeddings = Some(true),
-            Some("false") => self.tie_word_embeddings = Some(false),
-            _ => {}
+        // Only the two JSON literals speak; null, a missing key or another value retain
+        // the absent/outer declaration, matching the checkpoint binding's optional hint.
+        if let Ok(Some(value)) = o.boolean("tie_word_embeddings") {
+            self.tie_word_embeddings = Some(value);
         }
-        if let Some(v) = o.f32("final_logit_softcapping") {
+        if let Some(v) = o.f32("final_logit_softcapping")? {
             self.final_logit_softcapping = Some(v);
         }
-        if let Some(v) = o.u32("hidden_size_per_layer_input") {
+        if let Some(v) = o.u32("hidden_size_per_layer_input")? {
             self.hidden_size_per_layer_input = Some(v);
         }
-        if let Some(v) = o.u32("num_kv_shared_layers") {
+        if let Some(v) = o.u32("num_kv_shared_layers")? {
             self.num_kv_shared_layers = Some(v);
         }
-        if let Some(rp) = o.object("rope_parameters") {
-            if let Some(fa) = rp.object("full_attention") {
-                if let Some(t) = fa.f32("rope_theta") {
+        if let Some(rp) = o.object("rope_parameters")? {
+            for class in ["full_attention", "sliding_attention"] {
+                if let Some(parameters) = rp.object(class)?
+                    && let Some(kind) = parameters
+                        .string("rope_type")?
+                        .or(parameters.string("type")?)
+                {
+                    self.layer_rope_scaling.retain(|(name, _)| name != class);
+                    self.layer_rope_scaling.push((class.to_owned(), kind));
+                }
+            }
+            if let Some(fa) = rp.object("full_attention")? {
+                if let Some(t) = fa.f32("rope_theta")? {
                     self.gemma4_rope_theta_global = Some(t);
                 }
-                if let Some(p) = fa.f32("partial_rotary_factor") {
+                if let Some(p) = fa.f32("partial_rotary_factor")? {
                     self.gemma4_partial_rotary_global = Some(p);
                 }
             }
-            if let Some(sa) = rp.object("sliding_attention")
-                && let Some(t) = sa.f32("rope_theta")
+            if let Some(sa) = rp.object("sliding_attention")?
+                && let Some(t) = sa.f32("rope_theta")?
             {
                 self.gemma4_rope_theta_swa = Some(t);
             }
         }
-        if let Some(v) = o.f32("rope_theta") {
+        if let Some(v) = o.f32("rope_theta")? {
             self.rope_theta = v;
         }
         // Partial RoPE as a FRACTION of head_dim. Qwen3.5-family checkpoints write it top level
         // (Ornith-1.5-35B-A3B) or nested under `rope_parameters` (Qwen3.5-122B) or, most often,
         // BOTH with the same value — so read both, nested last, exactly like `rope_theta` above.
         // Missing entirely => full rope, which is what every non-partial arch wants.
-        if let Some(v) = o.f32("partial_rotary_factor") {
+        if let Some(v) = o.f32("partial_rotary_factor")? {
             self.partial_rotary_factor = Some(v);
         }
-        if let Some(rp) = o.object("rope_parameters") {
-            if let Some(v) = rp.f32("rope_theta") {
+        if let Some(rp) = o.object("rope_parameters")? {
+            if let Some(v) = rp.f32("rope_theta")? {
                 self.rope_theta = v;
             }
-            if let Some(v) = rp.f32("partial_rotary_factor") {
+            if let Some(v) = rp.f32("partial_rotary_factor")? {
                 self.partial_rotary_factor = Some(v);
             }
         }
-        if let Some(v) = o.f32_array("rope_theta") {
+        if let Some(v) = o.f32_array("rope_theta")? {
             if let Some(first) = v.first() {
                 self.rope_theta = *first;
             }
             self.rope_theta_layers = Some(v);
         }
-        if let Some(rp) = o.object("rope_parameters") {
-            if let Some(v) = rp.f32("rope_theta") {
+        if let Some(rp) = o.object("rope_parameters")? {
+            if let Some(v) = rp.f32("rope_theta")? {
                 self.rope_theta = v;
             }
-            if let Some(v) = rp.f32("partial_rotary_factor") {
+            if let Some(v) = rp.f32("partial_rotary_factor")? {
                 self.partial_rotary_factor = Some(v);
             }
         }
@@ -3436,267 +3474,264 @@ impl HfConfig {
         // last, exactly like `rope_theta` above; keys absent in the later object keep the
         // earlier value.
         for scaling_key in ["rope_scaling", "rope_parameters"] {
-            let Some(rp) = o.object(scaling_key) else {
+            let Some(rp) = o.object(scaling_key)? else {
                 continue;
             };
-            if let Some(v) = rp.string("rope_type").or_else(|| rp.string("type")) {
+            if let Some(v) = rp.string("rope_type")?.or(rp.string("type")?) {
                 self.rope_scaling_type = Some(v);
             }
-            if let Some(v) = rp.f32("factor") {
+            if let Some(v) = rp.f32("factor")? {
                 self.rope_scaling_factor = Some(v);
             }
-            if let Some(v) = rp.u32("original_max_position_embeddings") {
+            if let Some(v) = rp.u32("original_max_position_embeddings")? {
                 self.rope_scaling_original_context = Some(v);
             }
-            if let Some(v) = rp.f32("low_freq_factor") {
+            if let Some(v) = rp.f32("low_freq_factor")? {
                 self.rope_scaling_low_freq_factor = Some(v);
             }
-            if let Some(v) = rp.f32("high_freq_factor") {
+            if let Some(v) = rp.f32("high_freq_factor")? {
                 self.rope_scaling_high_freq_factor = Some(v);
             }
-            if let Some(v) = rp.f32("beta_fast") {
+            if let Some(v) = rp.f32("beta_fast")? {
                 self.rope_yarn_beta_fast = Some(v);
             }
-            if let Some(v) = rp.f32("beta_slow") {
+            if let Some(v) = rp.f32("beta_slow")? {
                 self.rope_yarn_beta_slow = Some(v);
             }
-            if let Some(v) = rp.f32("attention_factor") {
+            if let Some(v) = rp.f32("attention_factor")? {
                 self.rope_scaling_attention_factor = Some(v);
             }
-            if let Some(v) = rp.f32("mscale") {
+            if let Some(v) = rp.f32("mscale")? {
                 self.rope_scaling_mscale = Some(v);
             }
-            if let Some(v) = rp.f32("mscale_all_dim") {
+            if let Some(v) = rp.f32("mscale_all_dim")? {
                 self.rope_scaling_mscale_all_dim = Some(v);
             }
-            if let Some(v) = rp.boolean("truncate") {
+            if let Some(v) = rp.boolean("truncate")? {
                 self.rope_scaling_truncate = Some(v);
             }
         }
-        if let Some(v) = o.u32("full_attention_interval") {
+        if let Some(v) = o.u32("full_attention_interval")? {
             self.full_attention_interval = Some(v);
         }
-        if let Some(v) = o.u32("num_nextn_predict_layers") {
+        if let Some(v) = o.u32("num_nextn_predict_layers")? {
             self.num_nextn_predict_layers = Some(v);
         }
-        if let Some(v) = o.u32("top_k_experts") {
+        if let Some(v) = o.u32("top_k_experts")? {
             self.num_experts_per_tok = Some(v);
         }
-        if let Some(v) = o.u32("mtp_num_hidden_layers") {
+        if let Some(v) = o.u32("mtp_num_hidden_layers")? {
             self.mtp_num_hidden_layers = Some(v);
         }
         if let Some(v) = o
-            .u32("num_experts")
-            .or_else(|| o.u32("num_local_experts"))
+            .u32("num_experts")?
+            .or(o.u32("num_local_experts")?)
             // deepseek_v4 names the routed-expert count `n_routed_experts`.
-            .or_else(|| o.u32("n_routed_experts"))
-            .or_else(|| o.u32("moe_num_experts"))
+            .or(o.u32("n_routed_experts")?)
+            .or(o.u32("moe_num_experts")?)
         {
             self.num_experts = Some(v);
         }
-        if let Some(v) = o.u32("num_experts_per_tok").or_else(|| o.u32("moe_top_k")) {
+        if let Some(v) = o.u32("num_experts_per_tok")?.or(o.u32("moe_top_k")?) {
             self.num_experts_per_tok = Some(v);
         }
-        if let Some(v) = o.u32("moe_intermediate_size") {
+        if let Some(v) = o.u32("moe_intermediate_size")? {
             self.moe_intermediate_size = Some(v);
         }
-        if let Some(v) = o.u32("expert_hidden_dim") {
+        if let Some(v) = o.u32("expert_hidden_dim")? {
             self.expert_hidden_dim = Some(v);
         }
         if let Some(v) = o
-            .u32("shared_expert_intermediate_size")
-            .or_else(|| o.u32("share_expert_dim"))
+            .u32("shared_expert_intermediate_size")?
+            .or(o.u32("share_expert_dim")?)
         {
             self.shared_expert_intermediate_size = Some(v);
         }
-        if let Some(v) = o.u32("linear_conv_kernel_dim") {
+        if let Some(v) = o.u32("linear_conv_kernel_dim")? {
             self.linear_conv_kernel_dim = Some(v);
         }
-        if let Some(v) = o.u32("linear_key_head_dim") {
+        if let Some(v) = o.u32("linear_key_head_dim")? {
             self.linear_key_head_dim = Some(v);
         }
-        if let Some(v) = o.u32("linear_value_head_dim") {
+        if let Some(v) = o.u32("linear_value_head_dim")? {
             self.linear_value_head_dim = Some(v);
         }
-        if let Some(v) = o.u32("linear_num_key_heads") {
+        if let Some(v) = o.u32("linear_num_key_heads")? {
             self.linear_num_key_heads = Some(v);
         }
-        if let Some(v) = o.u32("linear_num_value_heads") {
+        if let Some(v) = o.u32("linear_num_value_heads")? {
             self.linear_num_value_heads = Some(v);
         }
         // ---- MiniMax-M3 keys ----
-        if let Some(v) = o.u32("num_local_experts") {
+        if let Some(v) = o.u32("num_local_experts")? {
             self.num_local_experts = Some(v);
         }
-        if let Some(v) = o.u32("dense_intermediate_size") {
+        if let Some(v) = o.u32("dense_intermediate_size")? {
             self.dense_intermediate_size = Some(v);
         }
-        if let Some(v) = o.u32("shared_intermediate_size") {
+        if let Some(v) = o.u32("shared_intermediate_size")? {
             self.shared_intermediate_size = Some(v);
         }
-        if let Some(v) = o
-            .u32("n_shared_experts")
-            .or_else(|| o.u32("num_shared_experts"))
-        {
+        if let Some(v) = o.u32("n_shared_experts")?.or(o.u32("num_shared_experts")?) {
             self.n_shared_experts = Some(v);
         }
-        if let Some(v) = o.u32("rotary_dim") {
+        if let Some(v) = o.u32("rotary_dim")? {
             self.rotary_dim = Some(v);
         }
-        if let Some(v) = o.boolean("use_gemma_norm") {
+        if let Some(v) = o.boolean("use_gemma_norm")? {
             self.use_gemma_norm = Some(v);
         }
-        if let Some(v) = o.string("scoring_func") {
+        if let Some(v) = o.string("scoring_func")? {
             self.scoring_func = Some(v);
         }
-        if let Some(v) = o.f32("routed_scaling_factor") {
+        if let Some(v) = o.f32("routed_scaling_factor")? {
             self.routed_scaling_factor = Some(v);
         }
-        if let Some(v) = o.boolean("use_routing_bias") {
+        if let Some(v) = o.boolean("use_routing_bias")? {
             self.use_routing_bias = Some(v);
         }
-        if let Some(v) = o.f32("swiglu_alpha") {
+        if let Some(v) = o.f32("swiglu_alpha")? {
             self.swiglu_alpha = Some(v);
         }
-        if let Some(v) = o.f32("swiglu_limit") {
+        if let Some(v) = o.f32("swiglu_limit")? {
             self.swiglu_limit = Some(v);
         }
-        if let Some(v) = o.u32_array("moe_layer_freq") {
+        if let Some(v) = o.moe_layer_freq(glm_dsa)? {
             self.moe_layer_freq = Some(v);
         }
         // ---- Hy3 keys ----
-        if let Some(v) = o.u32("first_k_dense_replace") {
+        if let Some(v) = o.u32("first_k_dense_replace")? {
             self.first_k_dense_replace = Some(v);
         }
-        if let Some(v) = o.boolean("moe_router_use_sigmoid") {
+        if let Some(v) = o.boolean("moe_router_use_sigmoid")? {
             self.moe_router_use_sigmoid = Some(v);
         }
-        if let Some(v) = o.boolean("moe_router_enable_expert_bias") {
+        if let Some(v) = o.boolean("moe_router_enable_expert_bias")? {
             self.moe_router_enable_expert_bias = Some(v);
         }
-        if let Some(v) = o.boolean("route_norm") {
+        if let Some(v) = o.boolean("route_norm")? {
             self.route_norm = Some(v);
         }
-        if let Some(v) = o.f32("router_scaling_factor") {
+        if let Some(v) = o.f32("router_scaling_factor")? {
             self.router_scaling_factor = Some(v);
         }
-        if let Some(v) = o.boolean("qk_norm") {
+        if let Some(v) = o.boolean("qk_norm")? {
             self.qk_norm = Some(v);
         }
-        if let Some(v) = o.string("hidden_act") {
+        if let Some(v) = o.string("hidden_act")?.or(o.string("hidden_activation")?) {
             self.hidden_act = Some(v);
         }
         // ---- DeepSeek-V4 keys ----
-        if let Some(v) = o.string("topk_method") {
+        if let Some(v) = o.string("topk_method")? {
             self.topk_method = Some(v);
         }
-        if let Some(v) = o.boolean("norm_topk_prob") {
+        if let Some(v) = o.boolean("norm_topk_prob")? {
             self.norm_topk_prob = Some(v);
         }
-        if let Some(v) = o.u32("num_hash_layers") {
+        if let Some(v) = o.u32("num_hash_layers")? {
             self.num_hash_layers = Some(v);
         }
-        if let Some(v) = o.f32("hc_eps") {
+        if let Some(v) = o.f32("hc_eps")? {
             self.hc_eps = Some(v);
         }
-        if let Some(v) = o.u32("hc_mult") {
+        if let Some(v) = o.u32("hc_mult")? {
             self.hc_mult = Some(v);
         }
-        if let Some(v) = o.u32("hc_sinkhorn_iters") {
+        if let Some(v) = o.u32("hc_sinkhorn_iters")? {
             self.hc_sinkhorn_iters = Some(v);
         }
-        if let Some(v) = o.u32("q_lora_rank") {
+        if let Some(v) = o.u32("q_lora_rank")? {
             self.q_lora_rank = Some(v);
         }
-        if let Some(v) = o.u32("qk_rope_head_dim") {
+        if let Some(v) = o.u32("qk_rope_head_dim")? {
             self.qk_rope_head_dim = Some(v);
         }
-        if let Some(v) = o.u32("o_lora_rank") {
+        if let Some(v) = o.u32("o_lora_rank")? {
             self.o_lora_rank = Some(v);
         }
-        if let Some(v) = o.u32("o_groups") {
+        if let Some(v) = o.u32("o_groups")? {
             self.o_groups = Some(v);
         }
-        if let Some(v) = o.u32("index_n_heads") {
+        if let Some(v) = o.u32("index_n_heads")? {
             self.index_n_heads = Some(v);
         }
-        if let Some(v) = o.u32("index_head_dim") {
+        if let Some(v) = o.u32("index_head_dim")? {
             self.index_head_dim = Some(v);
         }
-        if let Some(v) = o.u32("index_topk") {
+        if let Some(v) = o.u32("index_topk")? {
             self.index_topk = Some(v);
         }
-        if let Some(v) = o.u32_array("compress_ratios") {
+        if let Some(v) = o.u32_array("compress_ratios")? {
             self.compress_ratios = Some(v);
         }
-        if let Some(v) = o.f32("compress_rope_theta") {
+        if let Some(v) = o.f32("compress_rope_theta")? {
             self.compress_rope_theta = Some(v);
         }
         // ---- GLM-5.3-Flash keys ----
-        if let Some(v) = o.u32("kv_lora_rank") {
+        if let Some(v) = o.u32("kv_lora_rank")? {
             self.kv_lora_rank = Some(v);
         }
-        if let Some(v) = o.u32("qk_head_dim") {
+        if let Some(v) = o.u32("qk_head_dim")? {
             self.qk_head_dim = Some(v);
         }
-        if let Some(v) = o.u32("qk_nope_head_dim") {
+        if let Some(v) = o.u32("qk_nope_head_dim")? {
             self.qk_nope_head_dim = Some(v);
         }
-        if let Some(v) = o.u32("v_head_dim") {
+        if let Some(v) = o.u32("v_head_dim")? {
             self.v_head_dim = Some(v);
         }
-        if let Some(v) = o.boolean("mla_use_nope") {
+        if let Some(v) = o.boolean("mla_use_nope")? {
             self.mla_use_nope = Some(v);
         }
-        if let Some(v) = o.u32("index_kpool") {
+        if let Some(v) = o.u32("index_kpool")? {
             self.index_kpool = Some(v);
         }
-        if let Some(v) = o.boolean("index_kpool_always_select_tail") {
+        if let Some(v) = o.boolean("index_kpool_always_select_tail")? {
             self.index_kpool_always_select_tail = Some(v);
         }
-        if let Some(v) = o.boolean("index_kpool_compress") {
+        if let Some(v) = o.boolean("index_kpool_compress")? {
             self.index_kpool_compress = Some(v);
         }
-        if let Some(v) = o.boolean("indexer_rope_interleave") {
+        if let Some(v) = o.boolean("indexer_rope_interleave")? {
             self.indexer_rope_interleave = Some(v);
         }
-        if let Some(v) = o.boolean("index_share_for_mtp_iteration") {
+        if let Some(v) = o.boolean("index_share_for_mtp_iteration")? {
             self.index_share_for_mtp_iteration = Some(v);
         }
-        if let Some(v) = o.string_array("indexer_types") {
+        if let Some(v) = o.string_array("indexer_types")? {
             self.indexer_types = Some(v);
         }
-        if let Some(v) = o.string_array("mlp_layer_types") {
+        if let Some(v) = o.string_array("mlp_layer_types")? {
             self.mlp_layer_types = Some(v);
         }
-        if let Some(v) = o.string("moe_router_dtype") {
+        if let Some(v) = o.string("moe_router_dtype")? {
             self.moe_router_dtype = Some(v);
         }
-        if let Some(v) = o.string("output_gate_type") {
+        if let Some(v) = o.string("output_gate_type")? {
             self.output_gate_type = Some(v);
         }
-        if let Some(v) = o.boolean("mhc") {
+        if let Some(v) = o.boolean("mhc")? {
             self.mhc = Some(v);
         }
-        if let Some(la) = o.object("linear_attn_config") {
-            self.glm_linear_num_heads = la.u32("num_heads");
-            self.glm_linear_head_dim = la.u32("head_dim");
-            self.glm_linear_short_conv = la.u32("short_conv_kernel_size");
-            self.glm_gate_lower_bound = la.f32("gate_lower_bound");
-            self.glm_kda_layers = la.u32_array("kda_layers");
-            self.glm_full_attn_layers = la.u32_array("full_attn_layers");
+        if let Some(la) = o.object("linear_attn_config")? {
+            self.glm_linear_num_heads = la.u32("num_heads")?;
+            self.glm_linear_head_dim = la.u32("head_dim")?;
+            self.glm_linear_short_conv = la.u32("short_conv_kernel_size")?;
+            self.glm_gate_lower_bound = la.f32("gate_lower_bound")?;
+            self.glm_kda_layers = la.u32_array("kda_layers")?;
+            self.glm_full_attn_layers = la.u32_array("full_attn_layers")?;
         }
-        if let Some(rs) = o.object("rope_scaling") {
-            if let Some(v) = rs.f32("factor") {
+        if let Some(rs) = o.object("rope_scaling")? {
+            if let Some(v) = rs.f32("factor")? {
                 self.rope_yarn_factor = Some(v);
             }
-            if let Some(v) = rs.u32("original_max_position_embeddings") {
+            if let Some(v) = rs.u32("original_max_position_embeddings")? {
                 self.rope_yarn_orig_ctx = Some(v);
             }
-            if let Some(v) = rs.f32("beta_fast") {
+            if let Some(v) = rs.f32("beta_fast")? {
                 self.rope_yarn_beta_fast = Some(v);
             }
-            if let Some(v) = rs.f32("beta_slow") {
+            if let Some(v) = rs.f32("beta_slow")? {
                 self.rope_yarn_beta_slow = Some(v);
             }
         }
@@ -3719,83 +3754,82 @@ impl HfConfig {
             (&mut self.ple_embed_dim, "ple_embed_dim"),
             (&mut self.ple_conv_kernel_size, "ple_conv_kernel_size"),
         ] {
-            if let Some(v) = o.u32(key) {
+            if let Some(v) = o.u32(key)? {
                 *field = Some(v);
             }
         }
-        if let Some(v) = o.u64("ngram_vocab_size_base") {
+        if let Some(v) = o.u64("ngram_vocab_size_base")? {
             self.ngram_vocab_size_base = Some(v);
         }
-        if let Some(v) = o.u32_array("ple_layer_ids") {
+        if let Some(v) = o.u32_array("ple_layer_ids")? {
             self.ple_layer_ids = Some(v);
         }
-        if let Some(v) = o.string("output_gate_type") {
+        if let Some(v) = o.string("output_gate_type")? {
             self.output_gate_type = Some(v);
         }
         // Scalar on the pinned artifact; a list takes its FIRST entry (modular L621).
-        if let Some(v) = o
-            .u32("eos_token_id")
-            .or_else(|| o.u32_array("eos_token_id").and_then(|v| v.first().copied()))
+        if let Some(v) = o.u32("eos_token_id")?.or(o
+            .u32_array("eos_token_id")?
+            .and_then(|v| v.first().copied()))
         {
             self.eos_token_id = Some(v);
         }
-        if let Some(rp) = o.object("rope_parameters") {
-            if let Some(v) = rp.u32_array("mrope_section") {
+        if let Some(rp) = o.object("rope_parameters")? {
+            if let Some(v) = rp.u32_array("mrope_section")? {
                 self.mrope_section = Some(v);
             }
-            if let Some(v) = rp.boolean("mrope_interleaved") {
+            if let Some(v) = rp.boolean("mrope_interleaved")? {
                 self.mrope_interleaved = Some(v);
             }
         }
-        if let Some(m) = o.object("mtp") {
-            if let Some(v) = m.u32("num_hidden_layers") {
+        if let Some(m) = o.object("mtp")? {
+            if let Some(v) = m.u32("num_hidden_layers")? {
                 self.qwen4exp_mtp_num_hidden_layers = Some(v);
             }
-            if let Some(v) = m.f32("rope_theta") {
+            if let Some(v) = m.f32("rope_theta")? {
                 self.qwen4exp_mtp_rope_theta = Some(v);
             }
         }
         // ---- Step35 keys ----
-        if let Some(v) = o.object("attention_other_setting") {
-            self.attention_other_num_heads = v.u32("num_attention_heads");
-            self.attention_other_num_groups = v.u32("num_attention_groups");
+        if let Some(v) = o.object("attention_other_setting")? {
+            self.attention_other_num_heads = v.u32("num_attention_heads")?;
+            self.attention_other_num_groups = v.u32("num_attention_groups")?;
         }
-        if let Some(v) = o.string_array("layer_types") {
+        if let Some(v) = o.string_array("layer_types")? {
             self.layer_types = Some(v);
         }
-        if let Some(v) = o.f32_array("partial_rotary_factors") {
+        if let Some(v) = o.f32_array("partial_rotary_factors")? {
             self.partial_rotary_factors = Some(v);
         }
-        if let Some(v) = o.u32("sliding_window") {
+        if let Some(v) = o.u32("sliding_window")? {
             self.sliding_window = Some(v);
         }
-        if let Some(v) = o.f32_array("swiglu_limits") {
+        if let Some(v) = o.f32_array("swiglu_limits")? {
             self.swiglu_limits = Some(v);
         }
-        if let Some(v) = o.f32_array("swiglu_limits_shared") {
+        if let Some(v) = o.f32_array("swiglu_limits_shared")? {
             self.swiglu_limits_shared = Some(v);
         }
-        if let Some(v) = o.string("moe_router_activation") {
+        if let Some(v) = o.string("moe_router_activation")? {
             self.moe_router_activation = Some(v);
         }
-        if let Some(v) = o.string("moe_layers_enum") {
+        if let Some(v) = o.string("moe_layers_enum")? {
             self.moe_layers_enum = Some(v);
         }
-        if let Some(v) = o.boolean("norm_expert_weight") {
+        if let Some(v) = o.boolean("norm_expert_weight")? {
             self.route_norm = Some(v);
         }
-        if let Some(v) = o.f32("moe_router_scaling_factor") {
+        if let Some(v) = o.f32("moe_router_scaling_factor")? {
             self.router_scaling_factor = Some(v);
         }
+        Ok(())
     }
 }
 
 // ============================ minimal flat JSON object reader ============================
 //
-// config.json is a flat-ish object; we only need scalar fields + one level of nested object
-// (text_config) + the architectures string array. Rather than add serde to memra-gguf, parse
-// the value-bearing tokens for the keys we care about. Nested objects/arrays are captured as
-// raw substrings so they can be re-parsed on demand.
+// Legacy reader retained for independent run-record and metadata consumers. Canonical HF
+// configuration uses strict_json and ConfigObject above. Do not route config.json here.
 
 // pub (was pub(crate)) since the dsv4 lane-4 verify bin reads its own small run-record
 // JSON with it; still the same minimal hand parser, not a public serde substitute.
@@ -3887,22 +3921,6 @@ impl JsonObj {
             .or_else(|| v.parse::<f64>().ok().map(|x| x as u64))
     }
 
-    pub(crate) fn f32(&self, key: &str) -> Option<f32> {
-        let v = self.raw(key)?.trim();
-        if v == "null" {
-            return None;
-        }
-        v.parse::<f32>().ok()
-    }
-
-    pub(crate) fn boolean(&self, key: &str) -> Option<bool> {
-        match self.raw(key)?.trim() {
-            "true" => Some(true),
-            "false" => Some(false),
-            _ => None,
-        }
-    }
-
     /// Integer array field (e.g. moe_layer_freq: [0,0,0,1,...]).
     pub fn u32_array(&self, key: &str) -> Option<Vec<u32>> {
         let v = self.raw(key)?.trim();
@@ -3945,24 +3963,6 @@ impl JsonObj {
         )
     }
 
-    pub(crate) fn string_array(&self, key: &str) -> Option<Vec<String>> {
-        let v = self.raw(key)?.trim();
-        if !v.starts_with('[') || !v.ends_with(']') {
-            return None;
-        }
-        Some(
-            v[1..v.len() - 1]
-                .split(',')
-                .filter_map(|x| {
-                    let x = x.trim();
-                    x.strip_prefix('"')
-                        .and_then(|s| s.strip_suffix('"'))
-                        .map(str::to_owned)
-                })
-                .collect(),
-        )
-    }
-
     pub(crate) fn object(&self, key: &str) -> Option<JsonObj> {
         let v = self.raw(key)?.trim();
         if v.starts_with('{') {
@@ -3975,16 +3975,6 @@ impl JsonObj {
     /// Bare numeric field (fixture JSONs bank measured scalars, e.g. the contract fork).
     pub(crate) fn f64(&self, key: &str) -> Option<f64> {
         self.raw(key)?.trim().parse().ok()
-    }
-
-    /// First string element of a string array field (e.g. architectures[0]).
-    pub(crate) fn first_string_in_array(&self, key: &str) -> Option<String> {
-        let v = self.raw(key)?.trim();
-        let inner = v.strip_prefix('[')?.trim_start();
-        let q = inner.find('"')? + 1;
-        let rest = &inner[q..];
-        let end = rest.find('"')?;
-        Some(rest[..end].to_string())
     }
 }
 
@@ -4674,6 +4664,19 @@ pub(crate) mod hf_tests {
         assert!((factors[31] - 2.0).abs() < 1e-6);
         assert!(factors.iter().all(|&factor| (1.0..=2.0).contains(&factor)));
 
+        // The load-time semantic guard must retain Step's supported window and llama3
+        // program while refusing the same declarations on a plain llama-shaped config.
+        let plan = crate::model_packs::compile_for_load(&mc).unwrap();
+        use crate::model_plan::{AttentionPlan, RopeFactors};
+        let AttentionPlan::Full(full) = &plan.layers[0].attention else {
+            panic!("expected Step full-attention layer");
+        };
+        assert_eq!(full.rope.factors, RopeFactors::Checkpoint);
+        assert!(matches!(
+            plan.layers[1].attention,
+            AttentionPlan::SlidingWindow { window: 512, .. }
+        ));
+
         let explicit_json = json.replacen(
             "\"hidden_size\":256,",
             "\"hidden_size\":256,\"rms_norm_eps\":0.00002,",
@@ -5233,7 +5236,7 @@ mod minimax_tests {
             eprintln!("SKIP parse_minimax_m3_vl: no model at {MINIMAX_DIR}");
             return;
         };
-        let cfg = HfConfig::parse(&txt);
+        let cfg = HfConfig::try_parse(&txt).expect("valid fixture config");
         assert_eq!(Arch::from_hf_model_type(&cfg.model_type), Arch::MinimaxM3);
         assert_eq!(cfg.num_hidden_layers, 60);
         assert_eq!(cfg.num_local_experts, Some(64)); // REAP50 artifact
