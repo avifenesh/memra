@@ -46,6 +46,52 @@ pub struct MiMoTextForward<'a> {
     failed: bool,
 }
 
+/// One completed target step. The hidden row is the final residual before
+/// output RMS norm, which is the input required by the bounded MTP3 drafter.
+pub struct MiMoTextStep {
+    pub position: usize,
+    pub logits: Vec<f32>,
+    pub hidden_before_norm: Vec<f32>,
+}
+
+fn validate_output_rows(logits: &[f32], hidden_before_norm: Option<&[f32]>) -> Result<(), Fail> {
+    if logits.len() != VOCAB || logits.iter().any(|value| !value.is_finite()) {
+        return Err("MiMo text output logits are non-finite or wrong width".into());
+    }
+    if let Some(hidden) = hidden_before_norm
+        && (hidden.len() != HIDDEN || hidden.iter().any(|value| !value.is_finite()))
+    {
+        return Err("MiMo text pre-final-norm hidden row is non-finite or wrong width".into());
+    }
+    Ok(())
+}
+
+pub(crate) fn read_text_output<const CAPTURE_HIDDEN: bool>(
+    engine: &Engine,
+    hidden_before_norm: &CudaSlice<f32>,
+    logits_gpu: &CudaSlice<f32>,
+) -> Result<(Vec<f32>, Option<Vec<f32>>), Fail> {
+    let (logits, hidden) = if CAPTURE_HIDDEN {
+        let device = engine.stream().context().ordinal();
+        if hidden_before_norm.len() != HIDDEN
+            || hidden_before_norm.ordinal() != device
+            || logits_gpu.len() != VOCAB
+            || logits_gpu.ordinal() != device
+        {
+            return Err("MiMo captured text output has wrong GPU device or width".into());
+        }
+        // Both outputs are ready on the head stream after matmul. Copy them
+        // together so the captured path establishes one completion boundary.
+        let (logits, hidden) = engine.dtoh_pair(logits_gpu, hidden_before_norm)?;
+        (logits, Some(hidden))
+    } else {
+        // Keep the ordinary logits-only host transfer and synchronization.
+        (engine.dtoh(logits_gpu)?, None)
+    };
+    validate_output_rows(&logits, hidden.as_deref())?;
+    Ok((logits, hidden))
+}
+
 pub(crate) fn validate_forward_plan(config: &ModelConfig, plan: &ModelPlan) -> Result<(), Fail> {
     if ModelPlan::compile(config)? != *plan
         || plan.hidden_size as usize != HIDDEN
@@ -349,6 +395,25 @@ impl<'a> MiMoTextForward<'a> {
     /// must be a text-embedding row; modality placeholders need a separate
     /// injection path. This diagnostic path has no sampler or batching.
     pub fn token(&mut self, token: u32) -> Result<Vec<f32>, Fail> {
+        Ok(self.token_step::<false>(token)?.0)
+    }
+
+    /// Process one source token and return complete logits plus its 4096-value
+    /// target hidden row before output RMS norm for MTP3 draft input.
+    pub fn token_with_hidden(&mut self, token: u32) -> Result<MiMoTextStep, Fail> {
+        let position = self.position;
+        let (logits, hidden) = self.token_step::<true>(token)?;
+        Ok(MiMoTextStep {
+            position,
+            logits,
+            hidden_before_norm: hidden.ok_or("MiMo text hidden capture was omitted")?,
+        })
+    }
+
+    fn token_step<const CAPTURE_HIDDEN: bool>(
+        &mut self,
+        token: u32,
+    ) -> Result<(Vec<f32>, Option<Vec<f32>>), Fail> {
         if self.failed {
             return Err("MiMo text sequence was poisoned by a failed GPU step".into());
         }
@@ -358,13 +423,19 @@ impl<'a> MiMoTextForward<'a> {
         // Source-row and token validation happen before any GPU or KV mutation.
         let initial = self.weights.embedding_row(token)?;
         self.failed = true;
-        let logits = self.token_inner(&initial)?;
+        let output = self.token_inner::<CAPTURE_HIDDEN>(&initial)?;
+        if CAPTURE_HIDDEN && output.1.is_none() {
+            return Err("MiMo text hidden capture was omitted".into());
+        }
         self.position += 1;
         self.failed = false;
-        Ok(logits)
+        Ok(output)
     }
 
-    fn token_inner(&mut self, initial: &[f32]) -> Result<Vec<f32>, Fail> {
+    fn token_inner<const CAPTURE_HIDDEN: bool>(
+        &mut self,
+        initial: &[f32],
+    ) -> Result<(Vec<f32>, Option<Vec<f32>>), Fail> {
         self.engines[0].gpu.ctx.bind_to_thread()?;
         let mut hidden = self.engines[0].htod(initial)?;
         for index in 0..LAYERS {
@@ -432,11 +503,7 @@ impl<'a> MiMoTextForward<'a> {
             self.weights.plan.output_norm.epsilon,
         )?;
         let logits_gpu = last.matmul(&self.weights.output_head, &final_norm, 1)?;
-        let logits = last.dtoh(&logits_gpu)?;
-        if logits.len() != VOCAB || logits.iter().any(|value| !value.is_finite()) {
-            return Err("MiMo text output logits are non-finite or wrong width".into());
-        }
-        Ok(logits)
+        read_text_output::<CAPTURE_HIDDEN>(last, &hidden, &logits_gpu)
     }
 }
 
@@ -493,5 +560,48 @@ mod tests {
         assert!(validate_cache_position(24, Some(23)).is_err());
         assert!(validate_cache_position(MAX_TEXT_CONTEXT_TOKENS - 1, Some(255)).is_ok());
         assert!(validate_cache_position(MAX_TEXT_CONTEXT_TOKENS, Some(256)).is_err());
+    }
+
+    #[test]
+    fn captured_text_output_requires_finite_complete_hidden_and_logits() {
+        let logits = vec![0.0; VOCAB];
+        let hidden = vec![0.0; HIDDEN];
+        assert!(validate_output_rows(&logits, None).is_ok());
+        assert!(validate_output_rows(&logits, Some(&hidden)).is_ok());
+        assert!(validate_output_rows(&logits[..VOCAB - 1], None).is_err());
+        assert!(validate_output_rows(&logits, Some(&hidden[..HIDDEN - 1])).is_err());
+
+        let mut invalid_logits = logits;
+        invalid_logits[VOCAB - 1] = f32::NAN;
+        assert!(validate_output_rows(&invalid_logits, Some(&hidden)).is_err());
+        let mut invalid_hidden = hidden;
+        invalid_hidden[HIDDEN - 1] = f32::INFINITY;
+        assert!(validate_output_rows(&vec![0.0; VOCAB], Some(&invalid_hidden)).is_err());
+    }
+
+    #[test]
+    #[ignore = "requires a dedicated MiMo GPU component lane"]
+    fn gpu_hidden_capture_preserves_logits_and_pre_norm_row() -> Result<(), Fail> {
+        let gpu: usize = std::env::var("MEMRA_MIMO_COMPONENT_GPU")
+            .unwrap_or_else(|_| "0".into())
+            .parse()?;
+        let engine = Engine::new(gpu)?;
+        engine.gpu.ctx.bind_to_thread()?;
+        let hidden = (0..HIDDEN)
+            .map(|index| (index as f32 - 2048.0) / 101.0)
+            .collect::<Vec<_>>();
+        let logits = (0..VOCAB)
+            .map(|index| (index as f32 - 76_288.0) / 313.0)
+            .collect::<Vec<_>>();
+        let hidden_gpu = engine.htod(&hidden)?;
+        let logits_gpu = engine.htod(&logits)?;
+        let (plain, absent) = read_text_output::<false>(&engine, &hidden_gpu, &logits_gpu)?;
+        let (captured_logits, captured_hidden) =
+            read_text_output::<true>(&engine, &hidden_gpu, &logits_gpu)?;
+        assert!(absent.is_none());
+        assert_eq!(plain, captured_logits);
+        assert_eq!(captured_logits, logits);
+        assert_eq!(captured_hidden.as_deref(), Some(hidden.as_slice()));
+        Ok(())
     }
 }
