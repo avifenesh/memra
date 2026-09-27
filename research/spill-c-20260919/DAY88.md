@@ -281,3 +281,8 @@ it and the door beats there. So the loss is real, host-dependent, and a known qu
    registered, so it is the owner's call and not this lane's.
 
 This lane recommends 1, with 2's prefetch landing now if the owner wants the 65 to 80 ms in the meantime.
+
+**The local RTX 5090 check landed** (queue v20, `day88-cpu/gpu-check.log`, raw logs in `day88-cpu/gpu-check/`): `DAY88
+GPU CHECK PASS`. Every run `MATCH` with one tape; the promoted binary by default and I22 as qualified read one host
+demand sequence (`4bdc2610c3534e42`, 22077 lines); the default runs print `qualified`, `installed`, the registered
+pool and the prefetch on; the rollback prints `off: MEMRA_EXPERTS_VIA_TIER=0`, the prefetch on and no host demand line.
