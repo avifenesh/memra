@@ -75,13 +75,19 @@ step's routed slots, and its rows ride the expert join
 (`research/dsv4f-bringup-20260923/levers-20260927/`). Greedy c1 goes from 91.18 to 94.66 tok/s
 (+3.7%, decode 99.1) on the second SE pair, N=2. Same bits.
 
-Concurrency: the plain TP/EP route serves four lanes whose steps share one captured B-row
-graph step (memra #710). Aggregate on the Workstation pair:
+Concurrency: the plain TP/EP route serves sixteen lanes whose steps share one captured B-row
+graph step (memra #710, #667; four until 2026-09-27). Aggregate on the Workstation pair, at four
+lanes:
 
 | | c2 | c4 |
 |---|---|---|
 | TP/EP, four lanes | 102.0 tok/s, TTFT 0.24 s | 132.8, TTFT 0.42 s |
 | PP-2, two pipelined lanes | 120.9, TTFT 0.30 s | 120.6, TTFT 4.5 s |
+
+At sixteen lanes, with the coalescer that keeps them in one batch, on the SE pair
+(`research/dsv4f-bringup-20260923/lanes16/`): greedy c8 190 .. 192 tok/s, c16 196 .. 198 (TTFT
+p50 1.5 s), c24 193 .. 195 with every request served. Four lanes give 153 .. 160 at each of
+these, and refuse a sixth of the c24 requests. c4 is the same at both widths.
 
 Known cost of TP/EP:
 - **Context.** The C4 compressed stores are split by position across the two ranks (#710,

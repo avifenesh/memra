@@ -1,0 +1,10 @@
+START utc=2026-09-27T10:42:54Z bin=/root/lane/bin-L2/memra-server env=MEMRA_ENV_AUDIT=on MEMRA_DSV4_SESSIONS=8 MEMRA_DSV4_ROWS=8
+READY after=307s port=51553
+CELL warmup c=1 ok=1/1 agg=57.08 tok/s decode_p50=81.95 tok/s ttft_p50=182 ms tpot_p50=12.20 ms errs=[]
+CELL greedy-c4 c=4 ok=8/8 agg=152.00 tok/s decode_p50=40.48 tok/s ttft_p50=420 ms tpot_p50=24.70 ms errs=[]
+CELL greedy-c8 c=8 ok=16/16 agg=190.31 tok/s decode_p50=25.63 tok/s ttft_p50=748 ms tpot_p50=39.02 ms errs=[]
+CELL greedy-c16 c=16 ok=16/16 agg=150.16 tok/s decode_p50=19.86 tok/s ttft_p50=8803 ms tpot_p50=50.35 ms errs=[]
+CELL greedy-c24 c=24 ok=24/24 agg=142.53 tok/s decode_p50=19.26 tok/s ttft_p50=12040 ms tpot_p50=51.93 ms errs=[]
+CELL sampled-c8 c=8 ok=16/16 agg=183.16 tok/s decode_p50=24.54 tok/s ttft_p50=731 ms tpot_p50=40.76 ms errs=[]
+CELLS_DONE utc=2026-09-27T10:50:10Z
+TERMINAL rc=0 utc=2026-09-27T10:50:15Z
