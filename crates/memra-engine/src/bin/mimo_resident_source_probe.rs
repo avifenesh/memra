@@ -5,6 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use memra_engine::Engine;
+use memra_engine::mimo_audio_codec_weights::MiMoAudioCodecEncoderWeights;
 use memra_engine::mimo_audio_patch_load::MiMoAudioPatchWeights;
 use memra_engine::mimo_mtp_weights::Mtp3Weights;
 use memra_engine::mimo_text_weights::MiMoTextWeights;
@@ -13,6 +14,8 @@ use memra_gguf::model_packs::mimo_v2::bind_pinned_text_source;
 use memra_gguf::source::SafetensorsSource;
 
 type Fail = Box<dyn std::error::Error>;
+const FOUR_GIB: usize = 4 * 1024 * 1024 * 1024;
+const FULL_CONTEXT: usize = 1_048_576;
 
 fn memory(engine: &Engine) -> Result<(usize, usize), Fail> {
     engine.gpu.ctx.bind_to_thread()?;
@@ -32,9 +35,16 @@ fn run() -> Result<(), Fail> {
     let mut args = std::env::args().skip(1);
     let source_dir = args
         .next()
-        .ok_or("usage: mimo_resident_source_probe <source_dir>")?;
-    if args.next().is_some() {
-        return Err("usage: mimo_resident_source_probe <source_dir>".into());
+        .ok_or("usage: mimo_resident_source_probe <source_dir> [--full-context-capacity]")?;
+    let capacity = args.next();
+    if capacity
+        .as_deref()
+        .is_some_and(|value| value != "--full-context-capacity")
+        || args.next().is_some()
+    {
+        return Err(
+            "usage: mimo_resident_source_probe <source_dir> [--full-context-capacity]".into(),
+        );
     }
     let source = Arc::new(SafetensorsSource::open(Path::new(&source_dir))?);
     let (config, _, binding) = bind_pinned_text_source(&source)?;
@@ -70,7 +80,39 @@ fn run() -> Result<(), Fail> {
     let mtp = Mtp3Weights::load(&cards[0], source)?;
     mtp.check_device(&cards[0])?;
     record(engines, "mtp3")?;
-    std::hint::black_box((&text, &vision, &audio, &mtp));
+    if capacity.is_some() {
+        let codec = MiMoAudioCodecEncoderWeights::load(&cards[1], Path::new(&source_dir))?;
+        if codec.tensors().len() != 449 {
+            return Err("MiMo audio codec encoder residency is incomplete".into());
+        }
+        record(engines, "audio_codec_encoder")?;
+
+        cards[0].gpu.ctx.bind_to_thread()?;
+        let workspace0 = cards[0].alloc_u8_uninit(FOUR_GIB)?;
+        cards[1].gpu.ctx.bind_to_thread()?;
+        let workspace1 = cards[1].alloc_u8_uninit(FOUR_GIB)?;
+        record(engines, "workspace4g")?;
+
+        let kv = text.compressed_text_kv(engines, FULL_CONTEXT, [FOUR_GIB; 2])?;
+        let budget = kv.budget();
+        eprintln!(
+            "MiMo compressed KV budget: cache {:?}, attention workspace {} bytes per card",
+            budget.cache_bytes, budget.workspace_bytes_per_card
+        );
+        record(engines, "kv1m")?;
+        std::hint::black_box((
+            &text,
+            &vision,
+            &audio,
+            &mtp,
+            &codec,
+            &workspace0,
+            &workspace1,
+            &kv,
+        ));
+    } else {
+        std::hint::black_box((&text, &vision, &audio, &mtp));
+    }
     Ok(())
 }
 
