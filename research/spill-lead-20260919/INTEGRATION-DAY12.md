@@ -4577,6 +4577,10 @@ must be the program main runs: B's DAY44 keep arm matched the door-off binary, a
     `GROW-G1 PASS (grows=28 unequal=0 ... tokens_equal=true logits_equal=true ...)`; the DAY44 mini cell E1
     `differ_vs_cold=[]` on both exact boots, E3 20 of 20, E4-FAULT and E5 PASS on all five; admit-mem burst with
     `MEMRA_ADMIT_W_RELEASE=1` `ALL GREEN` (its first run through the gate).
+- Main moved after the GPU battery to `359e850d0` (#833 and #840: DSv4 dense-pair and small-register kernels, the DSv4
+  FFI and docs), merged in clean (`cdd290d9a`); none of it is reachable from the spill cells (DSv4 only), so this merge
+  is gated by a fourth CPU battery on the merged head (`integ71-cpu-battery-main359/`, 15 of 15: server lib 985, engine
+  lib 596) and the PR's CI, not a second GPU battery (the integ69 precedent).
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
