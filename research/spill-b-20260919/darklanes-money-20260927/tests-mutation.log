@@ -1,0 +1,84 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling darklanes-metering v0.1.0 (/home/avifenesh/projects/wt-darklanes-b-money-20260927/serving/darklanes-metering)
+warning: method `journal_source_totals_at_open` is never used
+   --> darklanes-metering/src/ledger.rs:748:8
+    |
+633 | impl TenantBudgets {
+    | ------------------ method in this implementation
+...
+748 |     fn journal_source_totals_at_open(&self) -> Result<usize, String> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `append_source_topup_row` is never used
+    --> darklanes-metering/src/ledger.rs:2046:4
+     |
+2046 | fn append_source_topup_row(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `darklanes-metering` (lib test) generated 2 warnings
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.51s
+     Running unittests src/lib.rs (target/debug/deps/darklanes_metering-2429b1610810bb7a)
+
+running 6 tests
+test ledger::tests::credit_refuses_the_reserved_source_topup_key_prefix ... ok
+test ledger::tests::reopening_over_the_same_source_writes_no_second_source_topup_row ... FAILED
+test ledger::tests::a_replay_of_source_topup_rows_moves_no_money ... ok
+test ledger::tests::source_topups_while_running_and_while_down_both_walk_exactly ... FAILED
+test ledger::tests::an_older_binary_replays_source_topup_rows_to_the_same_balance ... FAILED
+test ledger::tests::replay_refuses_a_malformed_source_topup_row ... FAILED
+
+failures:
+
+---- ledger::tests::reopening_over_the_same_source_writes_no_second_source_topup_row stdout ----
+[budget] loaded 1 tenant(s) from /tmp/memra-topup-idempotent-710998-1790529003414/budgets.toml; journaled 0 source total(s); recovered 0 debit(s)
+[budget] loaded 1 tenant(s) from /tmp/memra-topup-idempotent-710998-1790529003414/budgets.toml; journaled 0 source total(s); recovered 0 debit(s)
+[budget] loaded 1 tenant(s) from /tmp/memra-topup-idempotent-710998-1790529003414/budgets.toml; journaled 0 source total(s); recovered 0 debit(s)
+
+thread 'ledger::tests::reopening_over_the_same_source_writes_no_second_source_topup_row' (711012) panicked at darklanes-metering/src/ledger.rs:7745:9:
+assertion `left == right` failed: one baseline, not one per boot
+  left: 0
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- ledger::tests::source_topups_while_running_and_while_down_both_walk_exactly stdout ----
+[budget] loaded 1 tenant(s) from /tmp/memra-topup-walk-710998-1790529003415/budgets.toml; journaled 0 source total(s); recovered 0 debit(s)
+[budget] source reloaded: 1 tenant(s) from /tmp/memra-topup-walk-710998-1790529003415/budgets.toml
+[budget] loaded 1 tenant(s) from /tmp/memra-topup-walk-710998-1790529003415/budgets.toml; journaled 0 source total(s); recovered 0 debit(s)
+
+thread 'ledger::tests::source_topups_while_running_and_while_down_both_walk_exactly' (711014) panicked at darklanes-metering/src/ledger.rs:7598:9:
+assertion `left == right` failed: the first boot's baseline, the running top-up, the downtime top-up
+  left: []
+ right: ["source-topup:tenant-a:1000000", "source-topup:tenant-a:1500000", "source-topup:tenant-a:2000000"]
+
+---- ledger::tests::an_older_binary_replays_source_topup_rows_to_the_same_balance stdout ----
+[budget] loaded 1 tenant(s) from /tmp/memra-topup-rollback-710998-1790529003414/budgets.toml; journaled 0 source total(s); recovered 0 debit(s)
+[budget] source reloaded: 1 tenant(s) from /tmp/memra-topup-rollback-710998-1790529003414/budgets.toml
+[budget] loaded 1 tenant(s) from /tmp/memra-topup-rollback-710998-1790529003414/budgets.toml; journaled 0 source total(s); recovered 0 debit(s)
+
+thread 'ledger::tests::an_older_binary_replays_source_topup_rows_to_the_same_balance' (711010) panicked at darklanes-metering/src/ledger.rs:7730:9:
+assertion `left == right` failed: baseline, running top-up, downtime top-up
+  left: 0
+ right: 3
+
+---- ledger::tests::replay_refuses_a_malformed_source_topup_row stdout ----
+[budget] loaded 1 tenant(s) from /tmp/memra-topup-malformed-710998-1790529003415/budgets.toml; journaled 0 source total(s); recovered 0 debit(s)
+[budget] loaded 1 tenant(s) from /tmp/memra-topup-malformed-710998-1790529003415/budgets.toml; journaled 0 source total(s); recovered 0 debit(s)
+[budget] loaded 1 tenant(s) from /tmp/memra-topup-malformed-710998-1790529003416/budgets.toml; journaled 0 source total(s); recovered 0 debit(s)
+[budget] loaded 1 tenant(s) from /tmp/memra-topup-malformed-710998-1790529003416/budgets.toml; journaled 0 source total(s); recovered 0 debit(s)
+
+thread 'ledger::tests::replay_refuses_a_malformed_source_topup_row' (711013) panicked at darklanes-metering/src/ledger.rs:7864:13:
+a delta that does not match the totals must fail the boot
+
+
+failures:
+    ledger::tests::an_older_binary_replays_source_topup_rows_to_the_same_balance
+    ledger::tests::reopening_over_the_same_source_writes_no_second_source_topup_row
+    ledger::tests::replay_refuses_a_malformed_source_topup_row
+    ledger::tests::source_topups_while_running_and_while_down_both_walk_exactly
+
+test result: FAILED. 2 passed; 4 failed; 0 ignored; 0 measured; 99 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p darklanes-metering --lib`
