@@ -108,6 +108,110 @@ pub enum VisionPlan {
     /// gated clamped merger (glm5_next family; upstream transformers
     /// `Glm5NextVisionModel`, vision classes inherited from `GlmOcrVisionModel`).
     Glm5Fused(Glm5VisionPlan),
+    /// Pinned MiMo V2.6 Conv3D and alternating row/column ViT program.
+    MiMo(MiMoVisionPlan),
+}
+
+/// The pinned source tower consumes already patchified pixel rows. Every four
+/// consecutive rows form one 2x2 spatial merge unit. All checkpoint rows are
+/// BF16; missing merger biases are derived as zero, not read from the artifact.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MiMoVisionPlan {
+    pub checkpoint_dtype: MiMoVisionDtype,
+    pub patch: MiMoVisionPatchPlan,
+    pub blocks: Vec<MiMoVisionBlockPlan>,
+    pub merger: MiMoVisionMergerPlan,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MiMoVisionDtype {
+    Bf16,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MiMoVisionPatchPlan {
+    pub channels: u32,
+    pub temporal_patch_size: u32,
+    pub spatial_patch_size: u32,
+    pub hidden_size: u32,
+    /// `Conv3d` uses kernel == stride == (temporal, spatial, spatial).
+    pub convolution_bias: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MiMoPatchOrder {
+    Row,
+    Column,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MiMoVisionRopePlan {
+    /// Independent height and width axes, each rotating half of the head.
+    pub axes: u32,
+    pub axis_dimensions: u32,
+    pub base: f32,
+    pub rotation: MiMoVisionRopeRotation,
+    /// Source casts Q/K, cos and sin to f32 for rotate-half then casts back.
+    pub rotate_in_f32: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MiMoVisionRopeRotation {
+    SplitHalf,
+}
+
+/// MiMo's bidirectional per-frame attention. A local block masks keys more
+/// than `symmetric_window` positions away. `sink_first_key` adds a learned
+/// score bias to key zero inside each frame; it is not a denominator sink.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MiMoVisionAttentionPlan {
+    pub layer: u32,
+    pub query_heads: usize,
+    pub kv_heads: usize,
+    pub head_dim: usize,
+    pub scale: AttentionScale,
+    pub rope: MiMoVisionRopePlan,
+    pub frame_isolated: bool,
+    pub symmetric_window: Option<usize>,
+    pub sink_first_key: bool,
+    /// Reorders complete spatial merge units, leaving four patches per unit.
+    pub patch_order: MiMoPatchOrder,
+    pub fused_qkv_bias: bool,
+    pub output_projection_bias: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MiMoVisionBlockPlan {
+    pub index: u32,
+    pub input_norm: NormPlan,
+    pub attention: MiMoVisionAttentionPlan,
+    pub pre_mlp_norm: NormPlan,
+    pub mlp: DenseMlpPlan,
+    pub mlp_linear_biases: bool,
+    /// Source BF16 RMSNorm results feed the biased projections in BF16.
+    pub norm_output_dtype: MiMoVisionDtype,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MiMoMergerBiasPlan {
+    /// The source modules declare biases, but pinned BF16 headers omit the
+    /// LayerNorm and both linear biases. Execution must supply zero vectors.
+    ZeroDerivedFromAbsentCheckpoint,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MiMoVisionMergerPlan {
+    pub merge_size: u32,
+    pub input_norm: NormPlan,
+    pub intermediate_size: u32,
+    pub activation: MiMoMergerActivation,
+    pub output_size: u32,
+    pub biases: MiMoMergerBiasPlan,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MiMoMergerActivation {
+    GeluErf,
 }
 
 /// glm5_next vision tower plan. Geometry from `Glm5VisionConfig` (config.json truth);
@@ -957,7 +1061,15 @@ impl ModelPlan {
             }
         }
 
-        if cfg.vision.is_some() && cfg.vision_glm5.is_some() {
+        let mimo_vision = cfg
+            .mimo
+            .as_ref()
+            .and_then(|mimo| mimo.vision_config.as_ref());
+        if u8::from(cfg.vision.is_some())
+            + u8::from(cfg.vision_glm5.is_some())
+            + u8::from(mimo_vision.is_some())
+            > 1
+        {
             return Err(PlanCompileError::InvalidVisionConfig {
                 field: "two vision programs in one config",
             });
@@ -970,6 +1082,17 @@ impl ModelPlan {
                 cfg.vision_glm5
                     .as_ref()
                     .map(|vision| compile_vision_glm5(cfg, vision).map(VisionPlan::Glm5Fused))
+            })
+            .or_else(|| {
+                mimo_vision.map(|vision| {
+                    if cfg.arch != Arch::MiMoV2 {
+                        return Err(PlanCompileError::InvalidVisionConfig {
+                            field: "MiMo vision requires the MiMoV2 architecture",
+                        });
+                    }
+                    crate::model_packs::mimo_v2::vision::pinned_vision_plan(vision, cfg.n_embd)
+                        .map(VisionPlan::MiMo)
+                })
             })
             .transpose()?;
         let multimodal = match (cfg.multimodal, vision.as_ref()) {
@@ -1002,6 +1125,11 @@ impl ModelPlan {
             (Some(_), Some(VisionPlan::Glm5Fused(_))) => {
                 return Err(PlanCompileError::InvalidMultimodalConfig {
                     field: "generic multimodal config on a glm5_next tower",
+                });
+            }
+            (Some(_), Some(VisionPlan::MiMo(_))) => {
+                return Err(PlanCompileError::InvalidMultimodalConfig {
+                    field: "generic multimodal config on a MiMo tower",
                 });
             }
             (Some(multimodal), Some(VisionPlan::Factored(vision))) => {
@@ -1157,6 +1285,7 @@ impl ModelPlan {
                     operations.push(OperationKind::VisionDownsample);
                     operations.push(OperationKind::VisionProjection);
                 }
+                VisionPlan::MiMo(_) => operations.push(OperationKind::MiMoVisionTower),
             }
         }
         if include_frontend && self.multimodal.is_some() {
@@ -2458,6 +2587,9 @@ pub enum OperationKind {
     VisionDownsample,
     VisionProjection,
     VisionTokenInjection,
+    /// Pinned MiMo Conv3D / alternating-window ViT / zero-bias merger program.
+    /// Generic vision rewrites do not implement this source-distinct tower.
+    MiMoVisionTower,
     RmsNorm,
     FullAttention,
     SlidingWindowAttention,

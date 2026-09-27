@@ -55,7 +55,7 @@ pub static MINT_PROFILE: ModelPack = ModelPack {
     ],
     checkpoint_parity: None,
     matches_config: |config| config.arch == crate::config::Arch::MiMoV2 && config.mimo.is_some(),
-    plan_builder: canonical_plan,
+    plan_builder: pinned_modal_plan,
     tensor_schema: mint_tensor_schema,
     tiny_plan: None,
 };
@@ -108,10 +108,24 @@ pub static SOURCE_PROFILE: ModelPack = ModelPack {
     ],
     checkpoint_parity: None,
     matches_config: |config| config.arch == crate::config::Arch::MiMoV2 && config.mimo.is_some(),
-    plan_builder: canonical_plan,
+    plan_builder: pinned_modal_plan,
     tensor_schema: source_tensor_schema,
     tiny_plan: None,
 };
+
+fn pinned_modal_plan(config: &ModelConfig) -> Result<ModelPlan, PlanCompileError> {
+    if config
+        .mimo
+        .as_ref()
+        .and_then(|mimo| mimo.vision_config.as_ref())
+        .is_none()
+    {
+        return Err(PlanCompileError::InvalidVisionConfig {
+            field: "MiMo V2.6 pinned source requires vision_config",
+        });
+    }
+    canonical_plan(config)
+}
 
 /// Recheck the exact source config bytes before a modal overlay reads rows.
 /// A source already bound by the text loader may still change on disk.
@@ -461,9 +475,13 @@ pub(crate) fn mint_expert_requirements(
 mod tests {
     use super::*;
     use crate::config::{HfConfig, ModelConfig};
-    use crate::execution_manifest::{RewriteSurface, execution_rewrites};
+    use crate::execution_manifest::{NATIVE_EAGER, RewriteSurface, execution_rewrites};
     use crate::hf_mapping::{HfTarget, resolve_ggml};
-    use crate::model_plan::{AttentionPlan, MlpPlan, OperationKind, TensorPresence};
+    use crate::model_plan::{
+        AttentionPlan, AttentionScale, MiMoMergerActivation, MiMoMergerBiasPlan, MiMoPatchOrder,
+        MiMoVisionDtype, MiMoVisionRopeRotation, MlpPlan, NormKind, OperationKind, TensorPresence,
+        VisionPlan, WeightTransform,
+    };
     use crate::tensor_contract::{
         CheckpointDialect, ContractOptions, QuantLayout, StorageLayout, TensorCensusEntry,
         TensorContract, TensorContractError,
@@ -487,7 +505,6 @@ mod tests {
         let mimo = attention.mimo_math.unwrap();
         assert_eq!(mimo.value_scale_before_cache.to_bits(), 0.707f32.to_bits());
         assert_eq!(mimo.sink, TensorPresence::Required);
-        assert!(plan.vision.is_none());
         assert!(plan.speech.is_none());
         assert!(plan.mtp_blocks.is_empty());
         assert!(SOURCE_PROFILE.support.is_none());
@@ -523,6 +540,127 @@ mod tests {
                     "{surface:?} lost the MiMo math blocker"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn source_vision_compiles_as_distinct_pinned_program() {
+        let config = ModelConfig::from_hf(&HfConfig::parse(include_str!("fixtures/config.json")));
+        let plan = SOURCE_PROFILE.compile_plan(&config).unwrap();
+        let Some(VisionPlan::MiMo(vision)) = &plan.vision else {
+            panic!("pinned source must compile a MiMo vision tower");
+        };
+        assert_eq!(vision.checkpoint_dtype, MiMoVisionDtype::Bf16);
+        assert_eq!(
+            (
+                vision.patch.channels,
+                vision.patch.temporal_patch_size,
+                vision.patch.spatial_patch_size,
+                vision.patch.hidden_size,
+                vision.patch.convolution_bias,
+            ),
+            (3, 2, 16, 1280, false)
+        );
+        assert_eq!(vision.blocks.len(), 28);
+        for (index, block) in vision.blocks.iter().enumerate() {
+            assert_eq!(block.index, index as u32);
+            assert_eq!(block.input_norm.kind, NormKind::Rms);
+            assert_eq!(block.input_norm.epsilon, 1e-6);
+            assert_eq!(block.input_norm.weight_transform, WeightTransform::Identity);
+            assert_eq!(block.pre_mlp_norm, block.input_norm);
+            assert_eq!(block.norm_output_dtype, MiMoVisionDtype::Bf16);
+            assert_eq!(block.mlp.intermediate_size, 4608);
+            assert_eq!(
+                block.mlp.activation,
+                crate::model_plan::ActivationPlan::Silu
+            );
+            assert!(block.mlp_linear_biases);
+
+            let attention = &block.attention;
+            assert_eq!(
+                (
+                    attention.query_heads,
+                    attention.kv_heads,
+                    attention.head_dim
+                ),
+                (32, 8, 64)
+            );
+            assert_eq!(attention.scale, AttentionScale::InverseSqrtKeyDim);
+            assert!(attention.frame_isolated);
+            assert_eq!(
+                (attention.rope.axes, attention.rope.axis_dimensions),
+                (2, 32)
+            );
+            assert_eq!(attention.rope.base, 10_000.0);
+            assert_eq!(attention.rope.rotation, MiMoVisionRopeRotation::SplitHalf);
+            assert!(attention.rope.rotate_in_f32);
+            assert!(attention.fused_qkv_bias);
+            assert!(attention.output_projection_bias);
+            let global = [0, 9, 18, 27].contains(&index);
+            assert_eq!(attention.symmetric_window, (!global).then_some(64));
+            assert_eq!(attention.sink_first_key, !global);
+            let column = [5, 6, 7, 8, 14, 15, 16, 17, 23, 24, 25, 26].contains(&index);
+            assert_eq!(
+                attention.patch_order,
+                if column {
+                    MiMoPatchOrder::Column
+                } else {
+                    MiMoPatchOrder::Row
+                }
+            );
+        }
+        assert_eq!(vision.merger.merge_size, 2);
+        assert_eq!(vision.merger.input_norm.kind, NormKind::LayerNorm);
+        assert_eq!(vision.merger.input_norm.epsilon, 1e-6);
+        assert_eq!(vision.merger.intermediate_size, 5120);
+        assert_eq!(vision.merger.activation, MiMoMergerActivation::GeluErf);
+        assert_eq!(vision.merger.output_size, 4096);
+        assert_eq!(
+            vision.merger.biases,
+            MiMoMergerBiasPlan::ZeroDerivedFromAbsentCheckpoint
+        );
+        assert!(plan.multimodal.is_none());
+        assert!(plan.operations().contains(&OperationKind::MiMoVisionTower));
+        assert!(
+            !plan
+                .operations()
+                .contains(&OperationKind::VisionPatchEmbedding)
+        );
+        assert!(crate::op_registry::surfaces(OperationKind::MiMoVisionTower).is_none());
+        assert!(
+            NATIVE_EAGER
+                .multimodal_prefill_capabilities(&plan)
+                .batch
+                .blockers
+                .contains(&OperationKind::MiMoVisionTower)
+        );
+        assert!(SOURCE_PROFILE.support.is_none());
+    }
+
+    #[test]
+    fn pinned_profiles_reject_missing_or_drifted_vision() {
+        let config = ModelConfig::from_hf(&HfConfig::parse(include_str!("fixtures/config.json")));
+        for profile in [&SOURCE_PROFILE, &MINT_PROFILE] {
+            let mut missing = config.clone();
+            missing.mimo.as_mut().unwrap().vision_config = None;
+            assert!(matches!(
+                profile.compile_plan(&missing),
+                Err(PlanCompileError::InvalidVisionConfig { .. })
+            ));
+
+            let mut changed = config.clone();
+            changed
+                .mimo
+                .as_mut()
+                .unwrap()
+                .vision_config
+                .as_mut()
+                .unwrap()
+                .visual_token_window_size = 32;
+            assert!(matches!(
+                profile.compile_plan(&changed),
+                Err(PlanCompileError::InvalidVisionConfig { .. })
+            ));
         }
     }
 

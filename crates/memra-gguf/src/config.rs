@@ -4575,7 +4575,10 @@ pub(crate) mod hf_tests {
         assert_eq!(audio.speech_vocab_size, 1280);
         assert_eq!(audio.speech_zeroemb_idx, 1024);
         let plan = crate::model_plan::ModelPlan::compile(&config).unwrap();
-        assert!(plan.vision.is_none());
+        assert!(matches!(
+            plan.vision,
+            Some(crate::model_plan::VisionPlan::MiMo(_))
+        ));
     }
 
     #[test]
