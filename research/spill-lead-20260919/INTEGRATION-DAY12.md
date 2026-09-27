@@ -4582,6 +4582,43 @@ must be the program main runs: B's DAY44 keep arm matched the door-off binary, a
   is gated by a fourth CPU battery on the merged head (`integ71-cpu-battery-main359/`, 15 of 15: server lib 985, engine
   lib 596) and the PR's CI, not a second GPU battery (the integ69 precedent).
 
+**Revuto round 1 on #844 found two real problems in the `MEMRA_RESUME_EXACT` settle, and PR CI went red twice; lane B
+fixed all four on `lane/spill-b-integ71-fixes` at `f0b824ff5`, merged at `451ccd0c3`.**
+- CI portable-suites: `plane::tests::the_fault_door_fails_the_named_grow_once_before_any_driver_call` read 83 of 84 on
+  the GitHub runner only. The VMM fault door forged its OOM as a cudarc `DriverError`, whose Display calls
+  `cuGetErrorString` and loads libcuda, so formatting it panicked on a host with no driver. The door now forges
+  `VmmFaultOom` (its text still carries `CUDA_ERROR_OUT_OF_MEMORY`, which `is_cuda_oom` classifies); reproduced and
+  fixed by B in a GPU-less container, 84 of 84 (`5359b23d5`).
+- CI gates: `tools/check-no-remove-var-gates.sh` flagged `grid_capture_gpu.rs:106`'s `MEMRA_GDN_MMA` unset; it restores
+  the naked default after the test pins both arms with `set_var("1")` and `set_var("0")`, so it is allowlisted with
+  that reason (`662336adf`).
+- Revuto 1 (comment 4114275314): the settle dropped the checkpoint that plain and spec affinity resume nominate, so a
+  history-rewriting client re-primed cold with the door on. Revuto 2 (comment 4114275316): the settle ran with no memory
+  reading, against DAY44 1.3 case 6. Both registered first as DAY44 addendum C (`3d3265b2d`), fixed in `d1b9c8bf7`: the
+  plain settle keeps `ckpt` at g and a settled resume carries it; the spec settle rewinds with the retaining call and
+  checks where it landed, and the prime-only settle walk takes no checkpoint of its own; `settle_one` reads the memory
+  door's pending term for one prime of the settle's rows plus the admission reserve against effective free before any
+  entry moves, and a short or missing reading waits one 100 ms grace.
+- The lead's review had missed both settle findings (it checked the doors-off program, not the door's interaction with
+  affinity or the registered memory gate), and the local CPU battery had missed both CI reds (CI's gates job was not in
+  it; a runner-only environment dependency cannot be caught on the rig). The battery now ends with a `ci-gates` step
+  that regenerates the gates job's run blocks from the tree's own ci.yml.
+- CPU battery 16 of 16 with `ci-gates` on `d91cf4200` (`integ71-cpu-battery-fix/`: server lib 986, engine lib 596).
+  Revuto round 2 on `451ccd0c3`: APPROVED, no concerns. CI all green on `451ccd0c3`.
+- GPU fix run on BOX43 (`integ71-pro-fix-run1/`, 802 receipts mirrored and checked), tree `451ccd0c3`, 07:06Z to 08:19Z,
+  interleaved with lane C's DAY86 load (the load takes the lock per run): integ70's cells green (engine 26, worker 19,
+  every gate ALL GREEN, serve-smoke only #777), the pause gate and the tier gates green; the DAY44 mini cell E1
+  `differ_vs_cold=[]` on both exact boots, E3 20 of 20, E4-FAULT and E5 PASS; the admit-mem burst gate with
+  `MEMRA_RESUME_EXACT=1` `ALL GREEN` (item 4's gate on the memory-door shape). B's new RW history-rewrite cell reads
+  `DAY44 R1 ... boot=rw-plain-O1-exact rw_later_turns=20 affinity_rewinds=10 affinity_declined=0 -> FAIL` and the same
+  on `rw-spec-O1-exact`, with R2 `differ_vs_cold=[]` PASS on both and both keep boots R1 PASS 20 of 20: with the door on,
+  half the rewritten later turns still do not resume through affinity (none declines and every stream matches cold, so
+  it costs a re-prime, not a wrong token). Revuto's finding 1 is therefore half fixed.
+
+**Ruling 66, addendum:** integ71 merges with the doors-off program green on every battery and with revuto's round 2
+approving; the RW cell's R1 FAIL is a second registered blocker, beside DAY44's E2, on flipping `MEMRA_RESUME_EXACT`.
+It is lane B's next item: placed from the boot logs, fixed, and the RW cell rerun in integ72.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.

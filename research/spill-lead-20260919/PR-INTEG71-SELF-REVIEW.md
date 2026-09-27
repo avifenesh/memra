@@ -32,3 +32,17 @@ Author's review of the full diff `main..lane/spill-integ71-20260927`, posted as 
 ## Push regime
 Engine and server source changed, so the branch goes up with `MEMRA_RELEASE_QUALIFICATION_MODE=development`. No tag.
 Revuto: if capped or unavailable, this comment is the review.
+
+## Round 2, after revuto round 1 and CI
+Revuto found two real problems in the `MEMRA_RESUME_EXACT` settle, and CI went red twice. My review had missed all four:
+I checked the doors-off program, not the door's interaction with affinity or the registered memory gate, and my local
+CPU battery did not run CI's gates job and cannot see a runner-only dependency. Lane B fixed them on `f0b824ff5`
+(the driver-free VMM fault OOM, the remove_var allowlist, the settle keeping the affinity checkpoint, the settle's
+memory reading). What I checked on the fix: the fault door's new type is still classified as an OOM and nothing downcast
+the old one; the allowlisted unset is a restore after both arms are pinned; the settle's memory read happens before any
+entry leaves its pool and waits one grace, not a spin.
+
+The GPU fix run is green except B's new RW cell: R1 reads 10 of 20 rewritten turns resumed through affinity on both
+exact boots (R2 matches cold on every turn). So revuto's first finding is half fixed. The door stays default-off, and
+R1 joins DAY44's E2 as a registered blocker on flipping it; lane B places and fixes it for integ72. CPU battery 16 of 16
+with CI's gates job; revuto round 2 approved; CI green.
