@@ -17655,56 +17655,77 @@ impl Dsv4Gpu {
             && let Some(ix) = &layer.idx
         {
             // indexer q, batched: projected with wq_b above
-            unsafe {
-                ck(
-                    "rope qi batch",
-                    k::memra_dsv4_rope(
-                        dpm!(vws.qi, &stream),
-                        t as i32,
-                        ix.heads as i32,
-                        ix.hd as i32,
-                        rd as i32,
-                        fc_dev,
-                        vws.pos_dev.device_ptr(&stream).0 as *const i32,
-                        0,
-                        sp(&stream),
-                    ),
-                )?;
-                let scale = (ix.hd as f32).powf(-0.5);
-                ck(
-                    "hadamard qi batch",
-                    k::memra_dsv4_hadamard(
-                        dpm!(vws.qi, &stream),
-                        (t * ix.heads) as i32,
-                        ix.hd as i32,
-                        scale,
-                        sp(&stream),
-                    ),
-                )?;
-                ck(
-                    "fp4 qi batch",
-                    k::memra_dsv4_fp4_act_quant(
-                        dpm!(vws.qi, &stream),
-                        (t * ix.heads) as i32,
-                        ix.hd as i64,
-                        ix.hd as i32,
-                        sp(&stream),
-                    ),
-                )?;
-                // fp4_act_quant is the last writer of qi, so the batched pos_m scorer's
-                // [hd][heads] operand is staged here. The per-row and tiled arms below
-                // still read vws.qi, which this does not touch.
-                ck(
-                    "qi transpose batch",
-                    k::memra_dsv4_q_transpose_m(
-                        dpf!(vws.qi, &stream),
-                        dpm!(vws.qit, &stream),
-                        t as i32,
-                        ix.heads as i32,
-                        ix.hd as i32,
-                        sp(&stream),
-                    ),
-                )?;
+            let scale = (ix.hd as f32).powf(-0.5);
+            if ix.hd.is_power_of_two() && (64..=1024).contains(&ix.hd) {
+                // RoPE, Hadamard, FP4 QAT and the scorer staging in one launch (memra #710).
+                unsafe {
+                    ck(
+                        "indexer q chain batch",
+                        k::memra_dsv4_indexer_q_chain(
+                            dpm!(vws.qi, &stream),
+                            dpm!(vws.qit, &stream),
+                            t as i32,
+                            ix.heads as i32,
+                            ix.hd as i32,
+                            rd as i32,
+                            fc_dev,
+                            vws.pos_dev.device_ptr(&stream).0 as *const i32,
+                            scale,
+                            sp(&stream),
+                        ),
+                    )?;
+                }
+            } else {
+                unsafe {
+                    ck(
+                        "rope qi batch",
+                        k::memra_dsv4_rope(
+                            dpm!(vws.qi, &stream),
+                            t as i32,
+                            ix.heads as i32,
+                            ix.hd as i32,
+                            rd as i32,
+                            fc_dev,
+                            vws.pos_dev.device_ptr(&stream).0 as *const i32,
+                            0,
+                            sp(&stream),
+                        ),
+                    )?;
+                    ck(
+                        "hadamard qi batch",
+                        k::memra_dsv4_hadamard(
+                            dpm!(vws.qi, &stream),
+                            (t * ix.heads) as i32,
+                            ix.hd as i32,
+                            scale,
+                            sp(&stream),
+                        ),
+                    )?;
+                    ck(
+                        "fp4 qi batch",
+                        k::memra_dsv4_fp4_act_quant(
+                            dpm!(vws.qi, &stream),
+                            (t * ix.heads) as i32,
+                            ix.hd as i64,
+                            ix.hd as i32,
+                            sp(&stream),
+                        ),
+                    )?;
+                    // fp4_act_quant is the last writer of qi, so the batched pos_m scorer's
+                    // [hd][heads] operand is staged here. The per-row and tiled arms below
+                    // still read vws.qi, which this does not touch.
+                    ck(
+                        "qi transpose batch",
+                        k::memra_dsv4_q_transpose_m(
+                            dpf!(vws.qi, &stream),
+                            dpm!(vws.qit, &stream),
+                            t as i32,
+                            ix.heads as i32,
+                            ix.hd as i32,
+                            sp(&stream),
+                        ),
+                    )?;
+                }
             }
             // indexer weights projection, batched
             Self::gemv_m_dev(
@@ -18381,32 +18402,21 @@ impl Dsv4Gpu {
                 replay_pos,
             )?;
         }
+        // The inverse RoPE and the bf16 pack of o in one launch (memra #710), then the grouped
+        // output projection's per-group strided batched GEMVs.
+        let gw = heads / o_groups * hd;
         unsafe {
             ck(
-                "rope o inv batch",
-                k::memra_dsv4_rope(
+                "rope o inv cvt batch",
+                k::memra_dsv4_rope_inv_cvt(
                     dpm!(vws.o, &stream),
+                    vws.o_b.device_ptr_mut(&stream).0 as *mut c_void,
                     t as i32,
                     heads as i32,
                     hd as i32,
                     rd as i32,
                     fc_dev,
                     vws.pos_dev.device_ptr(&stream).0 as *const i32,
-                    1,
-                    sp(&stream),
-                ),
-            )?;
-        }
-
-        // grouped output projection: cvt o once, then per-group strided batched GEMVs
-        let gw = heads / o_groups * hd;
-        unsafe {
-            ck(
-                "cvt o batch",
-                k::memra_dsv4_cvt_bf16(
-                    dpf!(vws.o, &stream),
-                    vws.o_b.device_ptr_mut(&stream).0 as *mut c_void,
-                    (t * heads * hd) as i64,
                     sp(&stream),
                 ),
             )?;
