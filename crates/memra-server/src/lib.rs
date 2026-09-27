@@ -14751,26 +14751,30 @@ mod tests {
     #[test]
     fn tool_choice_named_and_parallel_tool_calls_400_through_build_chat_request() {
         let (tx, _rx) = worker::event_channel();
-        let undeclared = build_chat_request(
+        let undeclared = match build_chat_request(
             weather_request(json!({"tool_choice":
                 {"type": "function", "function": {"name": "get_time"}}})),
             Some(&tool_caps()),
             tx,
             lanes::Lane::Interactive,
             None,
-        )
-        .unwrap_err();
+        ) {
+            Err(e) => e,
+            Ok(_) => panic!("undeclared named tool_choice must 400"),
+        };
         assert!(undeclared.contains("not declared"), "{undeclared}");
 
         let (tx, _rx) = worker::event_channel();
-        let parallel_false = build_chat_request(
+        let parallel_false = match build_chat_request(
             weather_request(json!({"parallel_tool_calls": false})),
             Some(&tool_caps()),
             tx,
             lanes::Lane::Interactive,
             None,
-        )
-        .unwrap_err();
+        ) {
+            Err(e) => e,
+            Ok(_) => panic!("parallel_tool_calls: false must 400"),
+        };
         assert!(
             parallel_false.contains("parallel_tool_calls"),
             "{parallel_false}"
