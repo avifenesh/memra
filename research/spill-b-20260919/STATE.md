@@ -1,3 +1,8 @@
+# WP-B checkpoint 2026-09-27 07:0xZ: the four #844 items fixed on 24bddc8cb's line (lane/spill-b-integ71-fixes at
+f0b824ff5: the kv fault OOM formats without libcuda, the remove-var allowlist, DAY44 addendum C's settle checkpoint and
+memory gate with the RW cell), merged into the lane (2d84b98a5); DAY48 2.1 read (V1 to V4 PASS, no measurable change).
+GPU owed on the fix tree: the DAY44 mini cell, the RW cell (R1, R2), cell 12 with MEMRA_RESUME_EXACT=1.
+The fix worktree wt-b-fix71 (branch fix/spill-b-integ71) goes once integ71 merges.
 # WP-B checkpoint 2026-09-27 05:3xZ: integ71's GPU battery on BOX43 (e8af7cf53) all green for this lane's twelve cells
 (the lead's receipts: research/spill-lead-20260919/integration-day12/integ71-pro-run1/lane-b/; serve-smoke fails only
 #777's Q35 line). The lead's CRLF finding: 209 committed *.hdr captures had been stored LF under core.autocrlf=input
