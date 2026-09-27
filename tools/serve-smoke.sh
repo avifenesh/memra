@@ -469,8 +469,27 @@ if [ -f "$Q35_COLD_MODEL" ]; then
         --namespace serve-smoke-q35-coldfix --timeout 600 >"$Q35_GATE_LOG" 2>&1; then
       PASS "Q35 mixed c=4: 20/20 requests reached exactly 60 tokens"
     else
+      # memra#777: the gate's last line names each failure class (token_regression,
+      # usage_mismatch, seed_failure, cell_accounting, shape) so a grid-aligned
+      # cached_tokens count is never reported as a token regression.
       tail -1 "$Q35_GATE_LOG"
-      FAIL "Q35 mixed c=4 exact-token regression"
+      Q35_FAIL_LINES=$(python3 -c '
+import json, sys
+try:
+    summary = json.loads(open(sys.argv[1]).read().strip().splitlines()[-1])
+except (OSError, IndexError, ValueError):
+    sys.exit(0)
+lines = summary.get("fail_lines") if isinstance(summary, dict) else None
+for line in lines or []:
+    print(line)
+' "$Q35_GATE_LOG")
+      if [ -n "$Q35_FAIL_LINES" ]; then
+        while IFS= read -r q35_line; do
+          FAIL "$q35_line"
+        done <<<"$Q35_FAIL_LINES"
+      else
+        FAIL "Q35 mixed c=4 gate failed without a summary"
+      fi
     fi
     if grep -Eq '^\[prime-batch\].*carried=[1-9]' /tmp/serve-smoke.log; then
       FAIL "Q35 routed-MoE entered a carried prime batch"

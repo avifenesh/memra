@@ -9,10 +9,14 @@ import concurrent.futures
 import hashlib
 import json
 import statistics
+import sys
 import threading
 import time
 import urllib.request
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+from cache_qualification import capture_len  # noqa: E402
 
 
 def cached_tokens(usage: dict) -> int:
@@ -201,8 +205,10 @@ def main() -> int:
             (b1["cached_tokens"] == 0, f"rep {rep}: shared learning request credited cache"),
             (b2["cached_tokens"] == args.prefix_tokens,
              f"rep {rep}: shared hit cached {b2['cached_tokens']} != {args.prefix_tokens}"),
-            (a2["cached_tokens"] == expected_prompt_a,
-             f"rep {rep}: full hit cached {a2['cached_tokens']} != {expected_prompt_a}"),
+            # memra#602/#777: a full re-send restores the grid-aligned entry, not the prompt end.
+            (a2["cached_tokens"] == capture_len(expected_prompt_a),
+             f"rep {rep}: full hit cached {a2['cached_tokens']} != "
+             f"capture_len({expected_prompt_a}) {capture_len(expected_prompt_a)}"),
             (a1["prompt_tokens"] == expected_prompt_a,
              f"rep {rep}: repeat prompt token count drift"),
             (b1["prompt_tokens"] == expected_prompt_b,

@@ -6,6 +6,11 @@ prefix_gate.py and cache_concurrency.py. Unlike the earlier partial-prefix
 capacity ladder, the scored mixed arm contains nine full-prompt cache hits and
 one cold miss per ten equal-sized prompts. That makes its all-traffic
 percentiles and 90% token-weighted coverage directly observable in one window.
+
+A hit's expected `cached_tokens` is the length of the entry the prompt-end seed published, not
+the prompt length: since memra#602 the seed publishes at the largest length on the GDN prime grid
+under the prompt end (`capture_len` below, the law of `seed_capture_boundary` in
+crates/memra-server/src/worker.rs), so a 4860-token prompt publishes and restores 4832 tokens.
 """
 
 from __future__ import annotations
@@ -17,7 +22,9 @@ import dataclasses
 import hashlib
 import json
 import math
+import os
 import random
+import re
 import statistics
 import threading
 import time
@@ -44,6 +51,67 @@ COUNTERS = (
     "admission_vram_defers",
     "step_oom_parks",
 )
+
+
+# The memra#602 capture law's constants, mirrored from the engine (the same mirror
+# tools/prefix-newest-turn-fits-gate.py carries): PRIME_MIN_T is
+# crates/memra-engine/src/hybrid_forward.rs, PREFIX_CACHE_MIN_TOKENS is
+# crates/memra-server/src/worker.rs, and the grid is Engine::gdn_chunk_size().
+PRIME_MIN_T = 16
+PREFIX_CACHE_MIN_TOKENS = 64
+GDN_GRID_DEFAULT = 32
+_USIZE_RE = re.compile(r"\+?[0-9]+")
+
+# Named failure classes. A usage mismatch is not a cache miss and not a token regression: each
+# class has its own label so a stale expectation cannot read as broken tokens (memra#777).
+FAIL_RESPONSE = "response_failure"
+FAIL_USAGE = "usage_mismatch"
+FAIL_GOLDEN = "golden_mismatch"
+FAIL_ACCOUNTING = "cell_accounting"
+
+
+def gdn_grid(env: dict[str, str] | None = None) -> int:
+    """The GDN prime grid the server under test runs: Engine::gdn_chunk_size().
+
+    MEMRA_GDN_CHUNK parsed as a usize (anything else is the default 32), clamped to [32, 128] and
+    rounded down to a multiple of 32, exactly as the engine reads it. The GGUF artifact carries no
+    chunk key, so the server's environment is the only place the grid is named; a harness launched
+    beside the server inherits the same environment.
+    """
+    raw = (os.environ if env is None else env).get("MEMRA_GDN_CHUNK")
+    value = GDN_GRID_DEFAULT
+    if raw is not None and _USIZE_RE.fullmatch(raw) and int(raw) < 2**64:
+        value = int(raw)
+    return max(32, min(128, value)) // 32 * 32
+
+
+def capture_len(prompt_tokens: int, grid: int) -> int | None:
+    """The entry length the prompt-end seed publishes for a prompt of `prompt_tokens` (memra#602).
+
+    The prompt end when it is on the grid; otherwise the largest multiple of `grid` under it that
+    leaves at least PRIME_MIN_T prompt tokens behind (a 1..PRIME_MIN_T-1 remainder steps down one
+    grid unit, `grid_align_boundary_within`). `None` when that length is under
+    PREFIX_CACHE_MIN_TOKENS: the server refuses the seed, typed `seed REFUSED (grid)`.
+    """
+    if grid <= 0:
+        raise ValueError(f"GDN grid must be positive, got {grid}")
+    if prompt_tokens % grid == 0:
+        return prompt_tokens
+    boundary = prompt_tokens // grid * grid
+    while boundary >= grid and prompt_tokens - boundary < PRIME_MIN_T:
+        boundary -= grid
+    return boundary if boundary >= PREFIX_CACHE_MIN_TOKENS else None
+
+
+def expected_hit_cached(prompt_tokens: int, grid: int) -> int:
+    """`cached_tokens` a whole-entry hit on this prompt reports: the published entry length."""
+    entry = capture_len(prompt_tokens, grid)
+    if entry is None:
+        raise ValueError(
+            f"a {prompt_tokens}-token prompt publishes no seed on grid {grid}; "
+            "the workload cannot produce hits"
+        )
+    return entry
 
 
 @dataclasses.dataclass(frozen=True)
@@ -297,16 +365,160 @@ def request(
         "_started": started,
         "_ended": ended,
     }
-    row["ok"] = bool(
-        http_status == 200
-        and done
-        and first_visible is not None
-        and request_id
-        and finish_reason in ("stop", "length")
-        and completion_tokens == int(workload["completion_tokens"])
+    row["ok"] = response_ok(row, workload)
+    return row
+
+
+def response_ok(row: dict[str, Any], workload: dict[str, Any]) -> bool:
+    """The transport and decode-length check of one streamed completion (no usage, no golden)."""
+    return bool(
+        row.get("http_status") == 200
+        and row.get("done")
+        and row.get("ttft_ms") is not None
+        and row.get("request_id")
+        and row.get("finish_reason") in ("stop", "length")
+        and row.get("completion_tokens") == int(workload["completion_tokens"])
         and not row.get("error")
     )
-    return row
+
+
+def usage_mismatches(
+    row: dict[str, Any], expected_cached: int, workload: dict[str, Any]
+) -> list[str]:
+    """Every prompt-side usage field that disagrees with the closed-form expectation, named.
+
+    The completion count is the response check's (`response_ok`): a short request is a token
+    regression, and it is not also reported as a usage mismatch.
+    """
+    expected = {
+        "prompt_tokens": int(workload["prompt_tokens"]),
+        "cached_tokens": int(expected_cached),
+    }
+    return [
+        f"{key} {row.get(key)} != expected {value}"
+        for key, value in expected.items()
+        if row.get(key) != value
+    ]
+
+
+def judge_request(
+    row: dict[str, Any],
+    expected_cached: int,
+    golden_sha256: str | None,
+    concurrency: int,
+    workload: dict[str, Any],
+) -> dict[str, Any]:
+    """Judge one scored request; pure, so a banked receipt replays through the same code."""
+    mismatches = usage_mismatches(row, expected_cached, workload)
+    golden_ok = bool(golden_sha256 is None or row.get("text_sha256") == golden_sha256)
+    # Cache exactness is byte-gated under the same serial decode composition at c=1.
+    # At c>1, the repository's documented batched-prime near-tie class can move text
+    # independently of cache state; retain the comparison, but do not mislabel that
+    # cross-config numeric class as cache corruption.
+    golden_required = concurrency == 1
+    ok_response = response_ok(row, workload)
+    return {
+        "expected_cached_tokens": int(expected_cached),
+        "golden_sha256": golden_sha256,
+        "response_ok": ok_response,
+        "usage_ok": not mismatches,
+        "usage_mismatch": mismatches,
+        "golden_ok": golden_ok,
+        "golden_required": golden_required,
+        "ok": bool(ok_response and not mismatches and (golden_ok or not golden_required)),
+    }
+
+
+def judge_seed(
+    label: str,
+    template: int,
+    row: dict[str, Any],
+    prompt_n: int,
+    grid: int,
+    goldens: dict[tuple[str, int], str],
+) -> list[str]:
+    """Judge one hot-set seed; records the template's golden on its first clean answer.
+
+    A seed is either the first send of its namespace (cached 0) or a re-send that restores the
+    entry an earlier seed published (cached == capture_len, never the prompt end off the grid).
+    """
+    failures: list[str] = []
+    expected_hash = goldens.get((label, template))
+    if expected_hash is None and row.get("ok"):
+        goldens[(label, template)] = str(row["text_sha256"])
+    elif expected_hash is not None and row.get("text_sha256") != expected_hash:
+        failures.append(f"{label} hot template {template}: seed output hash drift")
+    if not row.get("ok"):
+        failures.append(f"{label} hot template {template}: seed failed: {row.get('error')}")
+    entry = capture_len(prompt_n, grid)
+    if row.get("cached_tokens") not in (0, entry):
+        failures.append(
+            f"{label} hot template {template}: {FAIL_USAGE}: seed cached "
+            f"{row.get('cached_tokens')} not 0 or {entry} (capture_len({prompt_n}, grid {grid}))"
+        )
+    return failures
+
+
+def cell_integrity_failures(
+    target_rows: list[dict[str, Any]], deltas: dict[str, int]
+) -> list[str]:
+    """Named integrity failures of one cell from its judged rows and its /metrics deltas."""
+    prompt_total = sum(int(row.get("prompt_tokens") or 0) for row in target_rows)
+    cached_total = sum(int(row.get("cached_tokens") or 0) for row in target_rows)
+    completion_total = sum(int(row.get("completion_tokens") or 0) for row in target_rows)
+    expected_hit_n = sum(row["cache_role"] == "hit" for row in target_rows)
+    expected_miss_n = len(target_rows) - expected_hit_n
+    failures: list[str] = []
+    response_bad = [row for row in target_rows if not row.get("response_ok")]
+    if response_bad:
+        failures.append(
+            f"{FAIL_RESPONSE}: {len(response_bad)} requests failed the response check "
+            "(status, stream end, finish reason, completion length)"
+        )
+    usage_bad = [row for row in target_rows if not row.get("usage_ok")]
+    if usage_bad:
+        shapes = sorted({"; ".join(row.get("usage_mismatch") or []) for row in usage_bad})
+        failures.append(
+            f"{FAIL_USAGE}: {len(usage_bad)} requests disagree with the usage expectation "
+            f"({' | '.join(shapes)})"
+        )
+    golden_bad = [
+        row for row in target_rows if row.get("golden_required") and not row.get("golden_ok")
+    ]
+    if golden_bad:
+        failures.append(f"{FAIL_GOLDEN}: {len(golden_bad)} required goldens differ")
+    if deltas["admitted"] != len(target_rows) or deltas["completed"] != len(target_rows):
+        failures.append(
+            f"{FAIL_ACCOUNTING}: admitted/completed counters do not match request count"
+        )
+    if deltas["tokens_out"] != completion_total:
+        failures.append(f"{FAIL_ACCOUNTING}: tokens_out counter does not match response usage")
+    drift_prompt = deltas["prompt_tokens_in"] - prompt_total
+    drift_cached_in = deltas["cached_tokens_in"] - cached_total
+    drift_prefix_tokens = deltas["prefix_cache_hit_tokens"] - cached_total
+    if drift_prompt != 0:
+        failures.append(f"{FAIL_ACCOUNTING}: prompt token accounting drift={drift_prompt}")
+    if drift_cached_in != 0:
+        failures.append(f"{FAIL_ACCOUNTING}: cached_tokens_in drift={drift_cached_in}")
+    if drift_prefix_tokens != 0:
+        failures.append(f"{FAIL_ACCOUNTING}: prefix_cache_hit_tokens drift={drift_prefix_tokens}")
+    if deltas["prefix_cache_hits"] != expected_hit_n:
+        failures.append(
+            f"{FAIL_ACCOUNTING}: prefix hit count {deltas['prefix_cache_hits']} != {expected_hit_n}"
+        )
+    if deltas["prefix_cache_misses"] != expected_miss_n:
+        failures.append(
+            f"{FAIL_ACCOUNTING}: prefix miss count "
+            f"{deltas['prefix_cache_misses']} != {expected_miss_n}"
+        )
+    if deltas["step_oom_parks"] != 0:
+        failures.append(f"{FAIL_ACCOUNTING}: step OOM parks={deltas['step_oom_parks']}")
+    return failures
+
+
+def failure_classes(failures: list[str]) -> list[str]:
+    """The distinct named classes of a list of integrity failure lines."""
+    return sorted({line.split(":", 1)[0] for line in failures})
 
 
 def wait_settled(
@@ -344,9 +556,11 @@ def seed_hot_set(
     namespace: str,
     timeout: float,
     goldens: dict[tuple[str, int], str],
+    grid: int | None = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     prompt = scored_prompt_ids(workload)
     entry_n = int(workload["hot_cache_entries"])
+    grid = gdn_grid() if grid is None else grid
 
     def seed_endpoint(endpoint: Endpoint) -> tuple[list[dict[str, Any]], list[str]]:
         rows: list[dict[str, Any]] = []
@@ -366,22 +580,9 @@ def seed_hot_set(
                     "template": template,
                 }
             )
-            expected_hash = goldens.get((endpoint.label, template))
-            if expected_hash is None and row.get("ok"):
-                goldens[(endpoint.label, template)] = str(row["text_sha256"])
-            elif expected_hash is not None and row.get("text_sha256") != expected_hash:
-                failures.append(
-                    f"{endpoint.label} hot template {template}: seed output hash drift"
-                )
-            if not row.get("ok"):
-                failures.append(
-                    f"{endpoint.label} hot template {template}: seed failed: {row.get('error')}"
-                )
-            if row.get("cached_tokens") not in (0, len(prompt)):
-                failures.append(
-                    f"{endpoint.label} hot template {template}: seed cached "
-                    f"{row.get('cached_tokens')} not 0 or {len(prompt)}"
-                )
+            failures.extend(
+                judge_seed(endpoint.label, template, row, len(prompt), grid, goldens)
+            )
             rows.append(row)
         return rows, failures
 
@@ -410,10 +611,12 @@ def make_jobs(
     arm: str,
     rep: int,
     concurrency: int,
+    grid: int | None = None,
 ) -> list[dict[str, Any]]:
     request_n = cell_request_count(workload, concurrency)
     prompt = scored_prompt_ids(workload)
     prompt_n = len(prompt)
+    grid = gdn_grid() if grid is None else grid
     cycle = int(workload["hit_requests_per_cycle"]) + int(workload["miss_requests_per_cycle"])
     if arm == "cold":
         roles = ["miss"] * request_n
@@ -432,7 +635,8 @@ def make_jobs(
             template = hit_index % int(workload["hot_cache_entries"])
             hit_index += 1
             salt = hot_salt(namespace, endpoint, template)
-            expected_cached = prompt_n
+            # The entry the seed published, on the GDN grid (memra#602), not the prompt end.
+            expected_cached = expected_hit_cached(prompt_n, grid)
         else:
             template = None
             salt = f"{namespace}-{endpoint.label}-{arm}-r{rep}-c{concurrency}-i{index}"
@@ -459,9 +663,11 @@ def run_cell(
     concurrency: int,
     timeout: float,
     goldens: dict[tuple[str, int], str],
+    grid: int | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    grid = gdn_grid() if grid is None else grid
     jobs = {
-        endpoint.label: make_jobs(endpoint, workload, namespace, arm, rep, concurrency)
+        endpoint.label: make_jobs(endpoint, workload, namespace, arm, rep, concurrency, grid)
         for endpoint in endpoints
     }
     before = {endpoint.label: scrape(endpoint, timeout) for endpoint in endpoints}
@@ -497,7 +703,7 @@ def run_cell(
                 "index": job["index"],
                 "cache_role": job["role"],
                 "template": job["template"],
-                "expected_cached_tokens": job["expected_cached"],
+                "gdn_grid": grid,
                 "request_start_offset_ms": (float(row["_started"]) - release) * 1000.0,
             }
         )
@@ -506,22 +712,8 @@ def run_cell(
             if job["template"] is not None
             else None
         )
-        row["golden_sha256"] = expected_hash
-        row["usage_ok"] = bool(
-            row.get("prompt_tokens") == int(workload["prompt_tokens"])
-            and row.get("cached_tokens") == job["expected_cached"]
-            and row.get("completion_tokens") == int(workload["completion_tokens"])
-        )
-        row["golden_ok"] = bool(expected_hash is None or row.get("text_sha256") == expected_hash)
-        # Cache exactness is byte-gated under the same serial decode composition at c=1.
-        # At c>1, the repository's documented batched-prime near-tie class can move text
-        # independently of cache state; retain the comparison, but do not mislabel that
-        # cross-config numeric class as cache corruption.
-        row["golden_required"] = concurrency == 1
-        row["ok"] = bool(
-            row.get("ok")
-            and row["usage_ok"]
-            and (row["golden_ok"] or not row["golden_required"])
+        row.update(
+            judge_request(row, job["expected_cached"], expected_hash, concurrency, workload)
         )
         return row
 
@@ -601,34 +793,10 @@ def run_cell(
         prompt_total = sum(int(row.get("prompt_tokens") or 0) for row in target_rows)
         cached_total = sum(int(row.get("cached_tokens") or 0) for row in target_rows)
         completion_total = sum(int(row.get("completion_tokens") or 0) for row in target_rows)
-        expected_hit_n = sum(row["cache_role"] == "hit" for row in target_rows)
-        expected_miss_n = len(target_rows) - expected_hit_n
         drift_cached_in = deltas["cached_tokens_in"] - cached_total
         drift_prefix_tokens = deltas["prefix_cache_hit_tokens"] - cached_total
         drift_prompt = deltas["prompt_tokens_in"] - prompt_total
-        integrity_failures: list[str] = []
-        if any(not row.get("ok") for row in target_rows):
-            integrity_failures.append("one or more requests failed response/usage/golden checks")
-        if deltas["admitted"] != len(target_rows) or deltas["completed"] != len(target_rows):
-            integrity_failures.append("admitted/completed counters do not match request count")
-        if deltas["tokens_out"] != completion_total:
-            integrity_failures.append("tokens_out counter does not match response usage")
-        if drift_prompt != 0:
-            integrity_failures.append(f"prompt token accounting drift={drift_prompt}")
-        if drift_cached_in != 0:
-            integrity_failures.append(f"cached_tokens_in drift={drift_cached_in}")
-        if drift_prefix_tokens != 0:
-            integrity_failures.append(f"prefix_cache_hit_tokens drift={drift_prefix_tokens}")
-        if deltas["prefix_cache_hits"] != expected_hit_n:
-            integrity_failures.append(
-                f"prefix hit count {deltas['prefix_cache_hits']} != {expected_hit_n}"
-            )
-        if deltas["prefix_cache_misses"] != expected_miss_n:
-            integrity_failures.append(
-                f"prefix miss count {deltas['prefix_cache_misses']} != {expected_miss_n}"
-            )
-        if deltas["step_oom_parks"] != 0:
-            integrity_failures.append(f"step OOM parks={deltas['step_oom_parks']}")
+        integrity_failures = cell_integrity_failures(target_rows, deltas)
 
         summary = {
             "kind": "cell",
@@ -724,7 +892,9 @@ def run_cell(
             "cached_tokens_in_drift": drift_cached_in,
             "prefix_cache_hit_tokens_drift": drift_prefix_tokens,
             "prompt_tokens_in_drift": drift_prompt,
+            "gdn_grid": grid,
             "integrity_failures": integrity_failures,
+            "failure_classes": failure_classes(integrity_failures),
             "clean": not integrity_failures,
         }
         summaries.append(summary)
@@ -913,6 +1083,7 @@ def main() -> int:
         parser.error(f"refusing to overwrite {args.out}")
 
     workload = load_workload(args.workload_lock)
+    grid = gdn_grid()
     args.out.parent.mkdir(parents=True, exist_ok=True)
     base_levels = [int(value) for value in workload["base_concurrency"]]
     extension_levels = [int(value) for value in workload["extension_concurrency"]]
@@ -934,7 +1105,12 @@ def main() -> int:
             "cache_shape": (
                 "mixed90 has nine full-prompt hits and one full cold miss per ten "
                 "equal-sized prompts; eight hot cache namespaces carry the qualified "
-                "fixed prompt and cold has a unique namespace per request"
+                "fixed prompt and cold has a unique namespace per request; a hit restores "
+                "the seed's GDN-grid-aligned entry (memra#602)"
+            ),
+            "gdn_grid": grid,
+            "expected_hit_cached_tokens": expected_hit_cached(
+                int(workload["prompt_tokens"]), grid
             ),
             "latency_clock": "first visible response content, not SSE keepalive",
             "arm_order": "alternating within rotated base-width orders",
@@ -953,6 +1129,7 @@ def main() -> int:
                     args.namespace,
                     args.timeout,
                     goldens,
+                    grid,
                 )
                 for row in seed_rows:
                     output.write(json.dumps(
@@ -973,6 +1150,7 @@ def main() -> int:
                 concurrency,
                 args.timeout,
                 goldens,
+                grid,
             )
             for row in [*samples, *requests, *cells]:
                 output.write(json.dumps(row, sort_keys=True) + "\n")

@@ -39,7 +39,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
-from cache_qualification import (QualificationError, append_answer, completion,
+from cache_qualification import (QualificationError, capture_len, append_answer, completion,
                                  load_prompt_pool, same_identity)
 
 OUT = sys.argv[1]
@@ -80,10 +80,12 @@ def expect_cached(row, cold, where):
     c = row.get("cached_tokens") or 0
     if ARM == "off" and c > 0:
         VIOLATIONS.append(f"{where}: cached_tokens={c} but the OFF arm must never restore")
-    if ARM == "on" and not cold and c != (row.get("prompt_tokens") or -1):
+    # A whole-entry hit restores the seed's GDN-grid entry (memra#602), not the prompt end.
+    entry = capture_len(row["prompt_tokens"]) if row.get("prompt_tokens") else None
+    if ARM == "on" and not cold and (entry is None or c != entry):
         VIOLATIONS.append(
-            f"{where}: cached_tokens={c} != prompt_tokens={row.get('prompt_tokens')} — "
-            "the restored rep did not take a whole-entry hit (eviction? budget? guard?)"
+            f"{where}: cached_tokens={c} != capture_len(prompt_tokens={row.get('prompt_tokens')})"
+            f"={entry}: the restored rep did not take a whole-entry hit (eviction? budget? guard?)"
         )
     if ARM == "on" and cold and c > 0:
         VIOLATIONS.append(f"{where}: cold rep reports cached_tokens={c}; the cell is contaminated")
