@@ -1,0 +1,9 @@
+W (a) UNIT a1-green=0 a2-green=0 a1-red=101 (marker 1) a2-red=101 (marker 1) censuses=0
+W (a) gates {'contract-fault-plain': '2', 'contract-fault': '0', 'identity-default-off': '0', 'identity-default-on': '0', 'identity-plain-off': '0', 'identity-plain-on': '0'}
+W READING card=5090 order=o1 mode=demote N_helper=40 helper base=16.93 w=0.68 ms (ratio 0.04) | stall base=130.57 w=131.42 | e2e base=357.3 w=354.7 ms
+W READING card=5090 order=o1 mode=promote N_helper=45 helper base=21.00 w=1.00 ms (ratio 0.05) | stall base=123.70 w=123.66 | e2e base=202.9 w=200.4 ms
+W READING card=5090 order=o2 mode=demote N_helper=40 helper base=17.31 w=0.75 ms (ratio 0.04) | stall base=143.75 w=140.41 | e2e base=378.4 w=380.7 ms
+W READING card=5090 order=o2 mode=promote N_helper=45 helper base=21.50 w=1.10 ms (ratio 0.05) | stall base=129.70 w=132.98 | e2e base=216.3 w=219.4 ms
+W (b) PASS [True, True, True, True]
+W (d) FAIL [True, True, False, False]
+W VERDICT card=5090 -> FAIL (a, d)

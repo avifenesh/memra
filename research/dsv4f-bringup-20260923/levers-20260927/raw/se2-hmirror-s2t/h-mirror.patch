@@ -1,0 +1,783 @@
+diff --git a/crates/memra-engine/cu/dsv4_gpu.cu b/crates/memra-engine/cu/dsv4_gpu.cu
+index 8ae455b5f..4b5f6bc23 100644
+--- a/crates/memra-engine/cu/dsv4_gpu.cu
++++ b/crates/memra-engine/cu/dsv4_gpu.cu
+@@ -8202,13 +8202,21 @@ __device__ __forceinline__ float dsv4_warp_max(float v) {
+ // dsv4_act_quant_fp8_kernel then dsv4_fp8_gather_half_kernel on one row, written straight into
+ // the swizzled half staging of the stream body. A max is exact in any order, so the warp
+ // reductions give those kernels' group amax and row scale. Returns this thread's lossy flag.
+-template<int NW>
++// CG reads the row through L2, for a row other CTAs of the same launch wrote.
++template<bool CG>
++__device__ __forceinline__ float4 dsv4_moe_fused_mirror_ld(const float* xrow, int g, int lane) {
++    const float4* src = reinterpret_cast<const float4*>(xrow + (size_t)g * 128) + lane;
++    if constexpr (CG) return __ldcg(src);
++    return *src;
++}
++
++template<int NW, bool CG = false>
+ __device__ __forceinline__ bool dsv4_moe_fused_mirror(const float* __restrict__ xrow, int cols,
+                                                       uint32_t* As, float* s_scale, float* s_rs,
+                                                       int warp, int lane) {
+     const int groups = cols / 128;
+     for (int g = warp; g < groups; g += NW) {
+-        const float4 v = reinterpret_cast<const float4*>(xrow + (size_t)g * 128)[lane];
++        const float4 v = dsv4_moe_fused_mirror_ld<CG>(xrow, g, lane);
+         float a = 0.0f;
+         a = fmaxf(a, fabsf(v.x));
+         a = fmaxf(a, fabsf(v.y));
+@@ -8230,7 +8238,7 @@ __device__ __forceinline__ bool dsv4_moe_fused_mirror(const float* __restrict__
+     const float rs = *s_rs;
+     bool bad = !(rs > 0.0f) || !isfinite(rs);
+     for (int g = warp; g < groups; g += NW) {
+-        const float4 v = reinterpret_cast<const float4*>(xrow + (size_t)g * 128)[lane];
++        const float4 v = dsv4_moe_fused_mirror_ld<CG>(xrow, g, lane);
+         const float s = s_scale[g];
+         const float xv[4] = {v.x, v.y, v.z, v.w};
+         uint32_t hb[4];
+@@ -8256,6 +8264,36 @@ __device__ __forceinline__ bool dsv4_moe_fused_mirror(const float* __restrict__
+ 
+ constexpr int DSV4_MOE_FUSED_WARPS = 4, DSV4_MOE_FUSED_KC = 256, DSV4_MOE_FUSED_STAGES = 2;
+ 
++// The down kernel's activation mirror of h row p, published once per slot: the swizzled half
++// staging into hm[p][cols / 2] and the row scale into hrs[p], with the lossy flag as fault bit
++// 0x4. Every down CTA of the slot used to rebuild the same mirror from the f32 row; this is
++// that function over that row, so the bits are the same by construction. The caller has fenced
++// its h writes; the last CTA of the slot to arrive at slot_cnt[p] publishes and resets it.
++template<int NW>
++__device__ __forceinline__ void dsv4_moe_fused_h_publish(const float* __restrict__ H, int cols,
++                                                         uint32_t* __restrict__ hm,
++                                                         float* __restrict__ hrs,
++                                                         int* __restrict__ slot_cnt,
++                                                         int* __restrict__ fault, float* s_scale,
++                                                         float* s_rs, int* s_last, int p,
++                                                         int warp, int lane) {
++    const int tid = warp * 32 + lane;
++    __syncthreads();
++    if (tid == 0) *s_last = atomicAdd(&slot_cnt[p], 1) == (int)gridDim.x - 1;
++    __syncthreads();
++    if (!*s_last) return;
++    __threadfence();
++    const bool bad = dsv4_moe_fused_mirror<NW, true>(H + (size_t)p * cols, cols,
++                                                     hm + (size_t)p * (cols / 2), s_scale, s_rs,
++                                                     warp, lane);
++    const bool any_bad = __syncthreads_or(bad);
++    if (tid == 0) {
++        hrs[p] = *s_rs;
++        if (fault && any_bad) atomicOr(fault, 4);
++        slot_cnt[p] = 0;
++    }
++}
++
+ // grid (out_f / (8*WP), topk), block (32, 2*WP): warps [0,WP) gate, [WP,2WP) up, same columns.
+ template<int WP, int KC, int STAGES>
+ static __global__ void __launch_bounds__(2 * WP * 32)
+@@ -8263,13 +8301,15 @@ dsv4_moe_fused_gu_kernel(const unsigned long long* __restrict__ table, int n_exp
+                          int global_experts, int first_expert, int slots_per_row,
+                          const int* __restrict__ sel, const float* __restrict__ selw,
+                          const float* __restrict__ scale2, const float* __restrict__ xf,
+-                         float* __restrict__ H, int in_f, int out_f, float limit, long row_bytes,
+-                         int* __restrict__ fault) {
++                         float* __restrict__ H, uint32_t* __restrict__ hm,
++                         float* __restrict__ hrs, int* __restrict__ slot_cnt, int in_f, int out_f,
++                         float limit, long row_bytes, int* __restrict__ fault) {
+     MEMRA_PDL_CHAIN_ENTRY();
+     using R = Dsv4M1Ring<KC, STAGES>;
+     extern __shared__ __align__(16) unsigned char fz_smem[];
+     __shared__ float s_scale[64];
+     __shared__ float s_rs;
++    __shared__ int s_last;
+     __shared__ float s_up[WP][4][2];
+     uint32_t* As = reinterpret_cast<uint32_t*>(fz_smem);
+     const int p = blockIdx.y, lane = threadIdx.x, warp = threadIdx.y;
+@@ -8312,7 +8352,10 @@ dsv4_moe_fused_gu_kernel(const unsigned long long* __restrict__ table, int n_exp
+             float* hrow = H + (size_t)p * out_f + n0 + 2 * t;
+             hrow[0] = 0.0f;
+             hrow[1] = 0.0f;
++            __threadfence();
+         }
++        dsv4_moe_fused_h_publish<2 * WP>(H, out_f, hm, hrs, slot_cnt, fault, s_scale, &s_rs,
++                                         &s_last, p, warp, lane);
+         return;
+     }
+     float acc[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+@@ -8339,7 +8382,10 @@ dsv4_moe_fused_gu_kernel(const unsigned long long* __restrict__ table, int n_exp
+             h *= w;
+             hrow[j] = h;
+         }
++        __threadfence();
+     }
++    dsv4_moe_fused_h_publish<2 * WP>(H, out_f, hm, hrs, slot_cnt, fault, s_scale, &s_rs, &s_last,
++                                     p, warp, lane);
+ }
+ 
+ // grid (out_f / (8*WARPS), topk), block (32, WARPS). Contribution rows are original slots (the
+@@ -8350,18 +8396,19 @@ static __global__ void __launch_bounds__(WARPS * 32)
+ dsv4_moe_fused_down_kernel(const unsigned long long* __restrict__ table, int n_expert,
+                            int global_experts, int first_expert,
+                            const int* __restrict__ sel, const float* __restrict__ scale2,
+-                           const float* __restrict__ H, float* __restrict__ C,
++                           const uint32_t* __restrict__ hm, const float* __restrict__ hrs,
++                           float* __restrict__ C,
+                            const int* __restrict__ order, float* __restrict__ Y,
+                            int* __restrict__ tile_cnt, int topk, int in_f, int out_f,
+-                           long row_bytes, int* __restrict__ fault) {
++                           long row_bytes) {
+     MEMRA_PDL_CHAIN_ENTRY();
+     using R = Dsv4M1Ring<KC, STAGES>;
+     extern __shared__ __align__(16) unsigned char fz_smem[];
+-    __shared__ float s_scale[64];
+     __shared__ float s_rs;
+     __shared__ int s_last;
+     uint32_t* As = reinterpret_cast<uint32_t*>(fz_smem);
+     const int p = blockIdx.y, lane = threadIdx.x, warp = threadIdx.y;
++    const int tid = warp * 32 + lane;
+     const int e = sel[p];
+     const bool in_range = e >= 0 && e < global_experts;
+     const int le = e - first_expert;
+@@ -8382,11 +8429,11 @@ dsv4_moe_fused_down_kernel(const unsigned long long* __restrict__ table, int n_e
+ #pragma unroll
+     for (int c = 0; c < STAGES - 1; c++)
+         dsv4_m1_issue<KC, STAGES>(ring, wq0, ws0, row_bytes, sc_row, nch, c, lane, valid);
+-    const bool bad = dsv4_moe_fused_mirror<WARPS>(H + (size_t)p * in_f, in_f, As, s_scale, &s_rs,
+-                                                  warp, lane);
+-    const bool any_bad = __syncthreads_or(bad);
+-    const int tid = warp * 32 + lane;
+-    if (tid == 0 && fault && any_bad && blockIdx.x == 0) atomicOr(fault, 4);
++    // The gate/up launch published this slot's mirror (dsv4_moe_fused_h_publish).
++    const uint4* src = reinterpret_cast<const uint4*>(hm + (size_t)p * (in_f / 2));
++    for (int i = tid; i < in_f / 8; i += WARPS * 32) reinterpret_cast<uint4*>(As)[i] = __ldcg(src + i);
++    if (tid == 0) s_rs = __ldcg(hrs + p);
++    __syncthreads();
+     const int gq = lane >> 2, t = lane & 3;
+     float acc[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+     if (valid)
+@@ -8436,24 +8483,29 @@ static bool dsv4_moe_fused_shape_ok(int n_expert, int topk, int in_f, int out_f,
+ // `table` holds experts [first, first + n_expert) of `global_experts`; sel and scale2 carry
+ // global ids. The full bank is first = 0 and n_expert = global_experts.
+ // `rows` token rows of `topk` slots each: x is [rows][in_f], sel/selw/h [rows * topk].
++// hm [rows * topk][out_f / 2], hrs [rows * topk] and slot_cnt [rows * topk] (zeroed once, the
++// kernel leaves it zero) take the published h mirror the down launch reads.
+ extern "C" int memra_dsv4_moe_fused_gu_part(const unsigned long long* table, int n_expert,
+                                             int global_experts, int first, const int* sel,
+                                             const float* selw, const float* scale2,
+-                                            const float* xf, float* h, int topk, int rows,
++                                            const float* xf, float* h, unsigned int* hm,
++                                            float* hrs, int* slot_cnt, int topk, int rows,
+                                             int in_f, int out_f, float limit, int* fault,
+                                             void* stream_v) {
+     constexpr int WP = DSV4_MOE_FUSED_WARPS, KC = DSV4_MOE_FUSED_KC, ST = DSV4_MOE_FUSED_STAGES;
+-    if (!table || !sel || !selw || !scale2 || !xf || !h || first < 0 || rows < 1 ||
+-        global_experts < n_expert || first > global_experts - n_expert ||
++    if (!table || !sel || !selw || !scale2 || !xf || !h || !hm || !hrs || !slot_cnt ||
++        first < 0 || rows < 1 || global_experts < n_expert || first > global_experts - n_expert ||
+         (long)rows * topk > 65535 ||
+-        !dsv4_moe_fused_shape_ok(n_expert, topk, in_f, out_f, 8 * WP))
++        !dsv4_moe_fused_shape_ok(n_expert, topk, in_f, out_f, 8 * WP) ||
++        out_f % DSV4_MOE_FUSED_KC != 0 || out_f / 128 > 64)
+         return 40004;
+     const size_t smem = (size_t)in_f * 2 + (size_t)2 * WP * Dsv4M1Ring<KC, ST>::BYTES;
+     if (smem > 48 * 1024) return 40004;
+     memra_chain_launch(dsv4_moe_fused_gu_kernel<WP, KC, ST>,
+         dim3((unsigned)(out_f / (8 * WP)), (unsigned)(rows * topk)), dim3(32, 2 * WP), smem,
+            (cudaStream_t)stream_v)(table, n_expert, global_experts, first, topk, sel, selw,
+-                                     scale2, xf, h, in_f, out_f, limit, (long)(in_f / 2), fault);
++                                     scale2, xf, h, (uint32_t*)hm, hrs, slot_cnt, in_f, out_f,
++                                     limit, (long)(in_f / 2), fault);
+     DSV4_ERR();
+     g_dsv4_moe_fused_dispatches.fetch_add(1, std::memory_order_relaxed);
+     return 0;
+@@ -8461,28 +8513,32 @@ extern "C" int memra_dsv4_moe_fused_gu_part(const unsigned long long* table, int
+ 
+ extern "C" int memra_dsv4_moe_fused_gu(const unsigned long long* table, int n_expert,
+                                        const int* sel, const float* selw, const float* scale2,
+-                                       const float* xf, float* h, int topk, int in_f, int out_f,
+-                                       float limit, int* fault, void* stream_v) {
++                                       const float* xf, float* h, unsigned int* hm, float* hrs,
++                                       int* slot_cnt, int topk, int in_f, int out_f, float limit,
++                                       int* fault, void* stream_v) {
+     return memra_dsv4_moe_fused_gu_part(table, n_expert, n_expert, 0, sel, selw, scale2, xf, h,
+-                                        topk, 1, in_f, out_f, limit, fault, stream_v);
++                                        hm, hrs, slot_cnt, topk, 1, in_f, out_f, limit, fault,
++                                        stream_v);
+ }
+ 
+-// One token: h is [topk][in_f] (in_f = moe_inter), contribution [topk][out_f], y [out_f];
++// One token: hm/hrs are the gate/up launch's published h mirror of [topk] rows of in_f
++// (in_f = moe_inter), contribution [topk][out_f], y [out_f];
+ // tile_cnt holds out_f / 32 zeroed counters. The partition form (a TP/EP rank's experts) takes
+ // order, y and tile_cnt null: it writes its own slots' contribution rows and leaves the slot sum
+ // to the caller, after the rank-order join; the other slots' rows stay as the caller cleared them.
+-// `rows` token rows of `topk` slots: h is [rows * topk][in_f], contrib [rows * topk][out_f]. The
++// `rows` token rows of `topk` slots: hm is [rows * topk][in_f / 2], contrib [rows * topk][out_f]. The
+ // in-kernel slot sum is one row only, so rows > 1 takes the partition form's null order/y/tile_cnt.
+ extern "C" int memra_dsv4_moe_fused_down_part(const unsigned long long* table, int n_expert,
+                                               int global_experts, int first, const int* sel,
+-                                              const float* scale2, const float* h,
+-                                              float* contrib, const int* order, float* y,
+-                                              int* tile_cnt, int topk, int rows, int in_f,
+-                                              int out_f, int* fault, void* stream_v) {
++                                              const float* scale2, const unsigned int* hm,
++                                              const float* hrs, float* contrib,
++                                              const int* order, float* y, int* tile_cnt,
++                                              int topk, int rows, int in_f, int out_f,
++                                              void* stream_v) {
+     constexpr int W = DSV4_MOE_FUSED_WARPS, KC = DSV4_MOE_FUSED_KC, ST = DSV4_MOE_FUSED_STAGES;
+     const bool sums = order || y || tile_cnt;
+     const bool partition = first != 0 || global_experts != n_expert;
+-    if (!table || !sel || !scale2 || !h || !contrib || first < 0 || rows < 1 ||
++    if (!table || !sel || !scale2 || !hm || !hrs || !contrib || first < 0 || rows < 1 ||
+         global_experts < n_expert || first > global_experts - n_expert ||
+         (sums && (!order || !y || !tile_cnt)) || (partition && sums) || (sums && rows != 1) ||
+         (long)rows * topk > 65535 ||
+@@ -8492,25 +8548,55 @@ extern "C" int memra_dsv4_moe_fused_down_part(const unsigned long long* table, i
+     if (smem > 48 * 1024) return 40004;
+     memra_chain_launch(dsv4_moe_fused_down_kernel<W, KC, ST>,
+         dim3((unsigned)(out_f / (8 * W)), (unsigned)(rows * topk)), dim3(32, W), smem,
+-           (cudaStream_t)stream_v)(table, n_expert, global_experts, first, sel, scale2, h,
+-                                     contrib, order, y, tile_cnt, topk, in_f, out_f,
+-                                     (long)(in_f / 2), fault);
++           (cudaStream_t)stream_v)(table, n_expert, global_experts, first, sel, scale2,
++                                     (const uint32_t*)hm, hrs, contrib, order, y, tile_cnt, topk,
++                                     in_f, out_f, (long)(in_f / 2));
+     DSV4_ERR();
+     g_dsv4_moe_fused_dispatches.fetch_add(1, std::memory_order_relaxed);
+     return 0;
+ }
+ 
+ extern "C" int memra_dsv4_moe_fused_down(const unsigned long long* table, int n_expert,
+-                                         const int* sel, const float* scale2, const float* h,
++                                         const int* sel, const float* scale2,
++                                         const unsigned int* hm, const float* hrs,
+                                          float* contrib, const int* order, float* y,
+-                                         int* tile_cnt, int topk, int in_f, int out_f, int* fault,
++                                         int* tile_cnt, int topk, int in_f, int out_f,
+                                          void* stream_v) {
+     if (!order || !y || !tile_cnt) return 40004;
+-    return memra_dsv4_moe_fused_down_part(table, n_expert, n_expert, 0, sel, scale2, h, contrib,
+-                                          order, y, tile_cnt, topk, 1, in_f, out_f, fault,
++    return memra_dsv4_moe_fused_down_part(table, n_expert, n_expert, 0, sel, scale2, hm, hrs,
++                                          contrib, order, y, tile_cnt, topk, 1, in_f, out_f,
+                                           stream_v);
+ }
+ 
++// The published mirror alone, one CTA per h row, for a fixture that edits h between the two
++// launches: the gate/up launch's publish is this function over the row it wrote.
++template<int NW>
++static __global__ void __launch_bounds__(NW * 32)
++dsv4_moe_fused_h_mirror_kernel(const float* __restrict__ H, int cols, uint32_t* __restrict__ hm,
++                               float* __restrict__ hrs, int* __restrict__ fault) {
++    __shared__ float s_scale[64];
++    __shared__ float s_rs;
++    const int p = blockIdx.x, lane = threadIdx.x, warp = threadIdx.y;
++    const bool bad = dsv4_moe_fused_mirror<NW, true>(H + (size_t)p * cols, cols,
++                                                     hm + (size_t)p * (cols / 2), s_scale, &s_rs,
++                                                     warp, lane);
++    const bool any_bad = __syncthreads_or(bad);
++    if (warp == 0 && lane == 0) {
++        hrs[p] = s_rs;
++        if (fault && any_bad) atomicOr(fault, 4);
++    }
++}
++
++extern "C" int memra_dsv4_moe_fused_h_mirror(const float* h, unsigned int* hm, float* hrs,
++                                             int rows, int cols, int* fault, void* stream_v) {
++    constexpr int NW = 2 * DSV4_MOE_FUSED_WARPS;
++    if (!h || !hm || !hrs || rows < 1 || cols % 128 || cols / 128 > 64) return 40004;
++    dsv4_moe_fused_h_mirror_kernel<NW><<<rows, dim3(32, NW), 0, (cudaStream_t)stream_v>>>(
++        h, cols, (uint32_t*)hm, hrs, fault);
++    DSV4_ERR();
++    return 0;
++}
++
+ extern "C" unsigned long long memra_dsv4_moe_fused_dispatches() {
+     return g_dsv4_moe_fused_dispatches.load(std::memory_order_relaxed);
+ }
+diff --git a/crates/memra-engine/src/dsv4_ffi.rs b/crates/memra-engine/src/dsv4_ffi.rs
+index 58a67040e..750b145f5 100644
+--- a/crates/memra-engine/src/dsv4_ffi.rs
++++ b/crates/memra-engine/src/dsv4_ffi.rs
+@@ -524,8 +524,11 @@ unsafe extern "C" {
+         stream: *mut c_void,
+     ) -> i32;
+     /// Fused one-token MoE, first half: the x FP8-QAT mirror, gate and up of every selected
+-    /// slot, macro1/macro3 and the weighted SwiGLU into `h[topk][out_f]`. Bit-identical to the
+-    /// grouped chain it replaces; fault bits 0x1 (dead slot) and 0x2 (lossy x mirror).
++    /// slot, macro1/macro3 and the weighted SwiGLU into `h[topk][out_f]`, then each row's down
++    /// mirror, published once per slot into `hm[topk][out_f / 2]` and `hrs[topk]`. `slot_cnt`
++    /// holds `topk` counters zeroed once; the kernel leaves them zero. Bit-identical to the
++    /// grouped chain it replaces; fault bits 0x1 (dead slot), 0x2 (lossy x mirror) and 0x4
++    /// (lossy h mirror).
+     #[allow(clippy::too_many_arguments)]
+     pub fn memra_dsv4_moe_fused_gu(
+         table: *const u64,
+@@ -535,6 +538,9 @@ unsafe extern "C" {
+         scale2: *const f32,
+         xf: *const f32,
+         h: *mut f32,
++        hm: *mut u32,
++        hrs: *mut f32,
++        slot_cnt: *mut i32,
+         topk: i32,
+         in_f: i32,
+         out_f: i32,
+@@ -542,16 +548,18 @@ unsafe extern "C" {
+         fault: *mut i32,
+         stream: *mut c_void,
+     ) -> i32;
+-    /// Fused one-token MoE, second half: the h mirror, down and macro2 into
+-    /// `contrib[topk][out_f]`, then the slot sum in `order` into `y[out_f]`. `tile_cnt` holds
+-    /// `out_f / 32` counters zeroed once; the kernel leaves them zero. Fault bit 0x4.
++    /// Fused one-token MoE, second half: down over the gate/up launch's published h mirror
++    /// (`hm`, `hrs`) and macro2 into `contrib[topk][out_f]`, then the slot sum in `order` into
++    /// `y[out_f]`. `tile_cnt` holds `out_f / 32` counters zeroed once; the kernel leaves them
++    /// zero.
+     #[allow(clippy::too_many_arguments)]
+     pub fn memra_dsv4_moe_fused_down(
+         table: *const u64,
+         n_expert: i32,
+         sel: *const i32,
+         scale2: *const f32,
+-        h: *const f32,
++        hm: *const u32,
++        hrs: *const f32,
+         contrib: *mut f32,
+         order: *const i32,
+         y: *mut f32,
+@@ -559,13 +567,13 @@ unsafe extern "C" {
+         topk: i32,
+         in_f: i32,
+         out_f: i32,
+-        fault: *mut i32,
+         stream: *mut c_void,
+     ) -> i32;
+     /// `memra_dsv4_moe_fused_gu` over a partition (memra #710, a TP/EP rank): `table` holds
+     /// experts `[first, first + n_expert)` of `global_experts`, `sel` and `scale2` carry global
+-    /// ids, and another rank's slot is skipped. `rows` token rows of `topk` slots each (x is
+-    /// `[rows][in_f]`). Fault bit 0x1 is an id outside the bank.
++    /// ids, and another rank's slot is skipped (no h row, no mirror). `rows` token rows of
++    /// `topk` slots each (x is `[rows][in_f]`; hm, hrs and slot_cnt cover `rows * topk` slots).
++    /// Fault bit 0x1 is an id outside the bank.
+     #[allow(clippy::too_many_arguments)]
+     pub fn memra_dsv4_moe_fused_gu_part(
+         table: *const u64,
+@@ -577,6 +585,9 @@ unsafe extern "C" {
+         scale2: *const f32,
+         xf: *const f32,
+         h: *mut f32,
++        hm: *mut u32,
++        hrs: *mut f32,
++        slot_cnt: *mut i32,
+         topk: i32,
+         rows: i32,
+         in_f: i32,
+@@ -596,7 +607,8 @@ unsafe extern "C" {
+         first: i32,
+         sel: *const i32,
+         scale2: *const f32,
+-        h: *const f32,
++        hm: *const u32,
++        hrs: *const f32,
+         contrib: *mut f32,
+         order: *const i32,
+         y: *mut f32,
+@@ -605,6 +617,16 @@ unsafe extern "C" {
+         rows: i32,
+         in_f: i32,
+         out_f: i32,
++        stream: *mut c_void,
++    ) -> i32;
++    /// The gate/up launch's h mirror publish alone over `rows` rows of `cols` h (fixtures that
++    /// edit h between the two launches). Fault bit 0x4 is a lossy row.
++    pub fn memra_dsv4_moe_fused_h_mirror(
++        h: *const f32,
++        hm: *mut u32,
++        hrs: *mut f32,
++        rows: i32,
++        cols: i32,
+         fault: *mut i32,
+         stream: *mut c_void,
+     ) -> i32;
+diff --git a/crates/memra-engine/src/dsv4_gpu.rs b/crates/memra-engine/src/dsv4_gpu.rs
+index f9987a73d..03863343d 100644
+--- a/crates/memra-engine/src/dsv4_gpu.rs
++++ b/crates/memra-engine/src/dsv4_gpu.rs
+@@ -14484,6 +14484,17 @@ impl Dsv4Gpu {
+ /// Per-stage batched-verify workspace: the lane-8 arena widened to `tmax` rows. Held
+ /// separately from [`StepWs`] so the gated single-position path's allocations, launches
+ /// and bytes are literally untouched by this rung.
++/// The fused MoE pair's published h mirror (memra #710): the gate/up launch writes each slot's
++/// down-side activation staging once (`words`, `rs`), where every down CTA of the slot used to
++/// rebuild it from the f32 row. `cnt` holds the per-slot arrival counters, zeroed here once;
++/// the kernel's last arriver resets its own. `rows` bounds the token rows of one launch.
++struct MoeHMirror {
++    words: CudaSlice<u32>,
++    rs: CudaSlice<f32>,
++    cnt: CudaSlice<i32>,
++    rows: usize,
++}
++
+ pub struct VerifyWs {
+     ep: Option<EpScratch>,
+     grouped_work: Option<crate::dsv4_grouped::GroupedWork>,
+@@ -14496,6 +14507,8 @@ pub struct VerifyWs {
+     /// Column-tile arrival counters of the fused one-token down kernel, `hidden / 32` of
+     /// them, zeroed here once; the kernel's last arriver resets its own counter.
+     moe_tile_cnt: Option<CudaSlice<i32>>,
++    /// The fused pair's published h mirror; the fused pair engages only with it.
++    moe_hmirror: Option<MoeHMirror>,
+     c4_gather: Option<C4Gather>,
+     pub tmax: usize,
+     /// Phase identity, not inferred from row count. Spec verification never sets it.
+@@ -15679,6 +15692,21 @@ impl Dsv4Gpu {
+                 } else {
+                     None
+                 },
++                moe_hmirror: if self.matrix_moe && inter.is_multiple_of(256) {
++                    let rows = tmax.min(crate::dsv4_grouped::MROW_STREAM_MAX_ROWS);
++                    let slots = rows * topk;
++                    acc.set(acc.get() + (slots * inter * 2) as u64);
++                    Some(MoeHMirror {
++                        words: s
++                            .alloc_zeros::<u32>(slots * inter / 2)
++                            .map_err(e("vws u32"))?,
++                        rs: f(slots)?,
++                        cnt: i(slots)?,
++                        rows,
++                    })
++                } else {
++                    None
++                },
+                 ep: if self.ep_enabled {
+                     Some(EpScratch::new(
+                         &st.gpu,
+@@ -18687,12 +18715,14 @@ impl Dsv4Gpu {
+     /// round up to the multi-row visitor's bound (memra #710).
+     fn moe_tp_ep_fused_engages(&self, vws: &VerifyWs, t: usize, allow_gu_fuse: bool) -> bool {
+         (1..=crate::dsv4_grouped::MROW_STREAM_MAX_ROWS).contains(&t)
++            && vws.moe_hmirror.as_ref().is_some_and(|m| t <= m.rows)
+             && self.moe_fused_eligible(vws, allow_gu_fuse)
+     }
+ 
+     /// The row-count-free half of the fused pair's engagement.
+     fn moe_fused_eligible(&self, vws: &VerifyWs, allow_gu_fuse: bool) -> bool {
+         crate::dsv4_moe_fused_on()
++            && vws.moe_hmirror.is_some()
+             && !self.grouped_fresh_storage_control
+             && vws.moe_fault_armed
+             && vws.moe_fault.is_some()
+@@ -18731,6 +18761,10 @@ impl Dsv4Gpu {
+             .moe_tile_cnt
+             .as_mut()
+             .ok_or("fused MoE tile counters missing")?;
++        let hmir = vws
++            .moe_hmirror
++            .as_mut()
++            .ok_or("fused MoE h mirror missing")?;
+         unsafe {
+             ck(
+                 "fused MoE gate/up",
+@@ -18742,6 +18776,9 @@ impl Dsv4Gpu {
+                     dpf!(layer.experts_s2_dev, &stream),
+                     dpf!(vws.xf, &stream),
+                     dpm!(vws.hbuf, &stream),
++                    hmir.words.device_ptr_mut(&stream).0 as *mut u32,
++                    dpm!(hmir.rs, &stream),
++                    hmir.cnt.device_ptr_mut(&stream).0 as *mut i32,
+                     topk as i32,
+                     hidden as i32,
+                     inter as i32,
+@@ -18757,7 +18794,8 @@ impl Dsv4Gpu {
+                     ne as i32,
+                     vws.sel.device_ptr(&stream).0 as *const i32,
+                     dpf!(layer.experts_s2_dev, &stream),
+-                    dpf!(vws.hbuf, &stream),
++                    hmir.words.device_ptr(&stream).0 as *const u32,
++                    dpf!(hmir.rs, &stream),
+                     dpm!(vws.contrib, &stream),
+                     vws.order.device_ptr(&stream).0 as *const i32,
+                     dpm!(vws.y, &stream),
+@@ -18765,7 +18803,6 @@ impl Dsv4Gpu {
+                     topk as i32,
+                     inter as i32,
+                     hidden as i32,
+-                    fault,
+                     sp(&stream),
+                 ),
+             )?;
+@@ -18826,6 +18863,11 @@ impl Dsv4Gpu {
+         stream
+             .memset_zeros(&mut vws.contrib)
+             .map_err(|e| format!("TP/EP fused contribution clear: {e}"))?;
++        let hmir = vws
++            .moe_hmirror
++            .as_mut()
++            .filter(|m| t <= m.rows)
++            .ok_or("TP/EP fused MoE h mirror missing or short")?;
+         unsafe {
+             ck(
+                 "TP/EP fused MoE gate/up",
+@@ -18839,6 +18881,9 @@ impl Dsv4Gpu {
+                     dpf!(layer.experts_s2_dev, &stream),
+                     dpf!(vws.xf, &stream),
+                     dpm!(vws.hbuf, &stream),
++                    hmir.words.device_ptr_mut(&stream).0 as *mut u32,
++                    dpm!(hmir.rs, &stream),
++                    hmir.cnt.device_ptr_mut(&stream).0 as *mut i32,
+                     topk as i32,
+                     t as i32,
+                     hidden as i32,
+@@ -18857,7 +18902,8 @@ impl Dsv4Gpu {
+                     ep.local_first as i32,
+                     vws.sel.device_ptr(&stream).0 as *const i32,
+                     dpf!(layer.experts_s2_dev, &stream),
+-                    dpf!(vws.hbuf, &stream),
++                    hmir.words.device_ptr(&stream).0 as *const u32,
++                    dpf!(hmir.rs, &stream),
+                     dpm!(vws.contrib, &stream),
+                     std::ptr::null(),
+                     std::ptr::null_mut(),
+@@ -18866,7 +18912,6 @@ impl Dsv4Gpu {
+                     t as i32,
+                     inter as i32,
+                     hidden as i32,
+-                    fault,
+                     sp(&stream),
+                 ),
+             )?;
+diff --git a/crates/memra-engine/src/dsv4_grouped.rs b/crates/memra-engine/src/dsv4_grouped.rs
+index a926f41f1..e81fd7358 100644
+--- a/crates/memra-engine/src/dsv4_grouped.rs
++++ b/crates/memra-engine/src/dsv4_grouped.rs
+@@ -2296,6 +2296,11 @@ mod tests {
+         let fault = MoeFault(word.device_ptr(&s).0);
+         let mut tile_cnt = s.alloc_zeros::<i32>(hidden / 32).unwrap();
+         let mut fused_h = s.alloc_zeros::<f32>(topk * inter).unwrap();
++        let mut hm = s.alloc_zeros::<u32>(topk * inter / 2).unwrap();
++        let mut hrs = s.alloc_zeros::<f32>(topk).unwrap();
++        let mut slot_cnt = s.alloc_zeros::<i32>(topk).unwrap();
++        let mut hm_ref = s.alloc_zeros::<u32>(topk * inter / 2).unwrap();
++        let mut hrs_ref = s.alloc_zeros::<f32>(topk).unwrap();
+         let mut fused_c = s.alloc_zeros::<f32>(topk * hidden).unwrap();
+         let mut fused_y = s.alloc_zeros::<f32>(hidden).unwrap();
+         let mut chain_y = s.alloc_zeros::<f32>(hidden).unwrap();
+@@ -2440,6 +2445,9 @@ mod tests {
+                         scale2.device_ptr(&s).0 as *const f32,
+                         x.device_ptr(&s).0 as *const f32,
+                         fused_h.device_ptr_mut(&s).0 as *mut f32,
++                        hm.device_ptr_mut(&s).0 as *mut u32,
++                        hrs.device_ptr_mut(&s).0 as *mut f32,
++                        slot_cnt.device_ptr_mut(&s).0 as *mut i32,
+                         topk as i32,
+                         hidden as i32,
+                         inter as i32,
+@@ -2449,12 +2457,52 @@ mod tests {
+                     )
+                 };
+                 assert_eq!(gu, 0, "fused gate/up rc");
++                assert!(
++                    s.clone_dtoh(&slot_cnt).unwrap().iter().all(|&c| c == 0),
++                    "slot counters left armed"
++                );
++                // The publish is the standalone mirror over the H the launch wrote.
++                let rc = unsafe {
++                    k::memra_dsv4_moe_fused_h_mirror(
++                        fused_h.device_ptr(&s).0 as *const f32,
++                        hm_ref.device_ptr_mut(&s).0 as *mut u32,
++                        hrs_ref.device_ptr_mut(&s).0 as *mut f32,
++                        topk as i32,
++                        inter as i32,
++                        std::ptr::null_mut(),
++                        s.cu_stream().cast(),
++                    )
++                };
++                assert_eq!(rc, 0, "standalone h mirror rc");
++                assert_eq!(
++                    s.clone_dtoh(&hm).unwrap(),
++                    s.clone_dtoh(&hm_ref).unwrap(),
++                    "published h mirror case={case}"
++                );
++                assert_eq!(
++                    bits(&s.clone_dtoh(&hrs).unwrap()),
++                    bits(&s.clone_dtoh(&hrs_ref).unwrap()),
++                    "published h row scales case={case}"
++                );
+                 if red == Red::Intermediate {
+-                    // The fused down mirror reads f32 H, so the lossy row goes there.
++                    // The down launch reads the published mirror of f32 H, so the lossy row
++                    // goes into H and the standalone publish republishes it.
+                     let mut row = vec![1.0f32; inter];
+                     lossy(&mut row);
+                     s.memcpy_htod(&row, &mut fused_h.slice_mut(..inter))
+                         .unwrap();
++                    let rc = unsafe {
++                        k::memra_dsv4_moe_fused_h_mirror(
++                            fused_h.device_ptr(&s).0 as *const f32,
++                            hm.device_ptr_mut(&s).0 as *mut u32,
++                            hrs.device_ptr_mut(&s).0 as *mut f32,
++                            topk as i32,
++                            inter as i32,
++                            word.device_ptr(&s).0 as *mut i32,
++                            s.cu_stream().cast(),
++                        )
++                    };
++                    assert_eq!(rc, 0, "lossy h republish rc");
+                 }
+                 let down = unsafe {
+                     k::memra_dsv4_moe_fused_down(
+@@ -2462,7 +2510,8 @@ mod tests {
+                         ne as i32,
+                         ids.device_ptr(&s).0 as *const i32,
+                         scale2.device_ptr(&s).0 as *const f32,
+-                        fused_h.device_ptr(&s).0 as *const f32,
++                        hm.device_ptr(&s).0 as *const u32,
++                        hrs.device_ptr(&s).0 as *const f32,
+                         fused_c.device_ptr_mut(&s).0 as *mut f32,
+                         order.device_ptr(&s).0 as *const i32,
+                         fused_y.device_ptr_mut(&s).0 as *mut f32,
+@@ -2470,7 +2519,6 @@ mod tests {
+                         topk as i32,
+                         inter as i32,
+                         hidden as i32,
+-                        word.device_ptr(&s).0 as *mut i32,
+                         s.cu_stream().cast(),
+                     )
+                 };
+@@ -2617,6 +2665,9 @@ mod tests {
+         let mut word = s.alloc_zeros::<i32>(1).unwrap();
+         let fault = MoeFault(word.device_ptr(&s).0);
+         let mut fused_h = s.alloc_zeros::<f32>(topk * inter).unwrap();
++        let mut hm = s.alloc_zeros::<u32>(topk * inter / 2).unwrap();
++        let mut hrs = s.alloc_zeros::<f32>(topk).unwrap();
++        let mut slot_cnt = s.alloc_zeros::<i32>(topk).unwrap();
+         let mut fused_c = s.alloc_zeros::<f32>(topk * hidden).unwrap();
+         let take_word = |word: &mut CudaSlice<i32>| {
+             let mut host = [0i32];
+@@ -2751,6 +2802,9 @@ mod tests {
+                             scale2.device_ptr(&s).0 as *const f32,
+                             x.device_ptr(&s).0 as *const f32,
+                             fused_h.device_ptr_mut(&s).0 as *mut f32,
++                            hm.device_ptr_mut(&s).0 as *mut u32,
++                            hrs.device_ptr_mut(&s).0 as *mut f32,
++                            slot_cnt.device_ptr_mut(&s).0 as *mut i32,
+                             topk as i32,
+                             1,
+                             hidden as i32,
+@@ -2761,6 +2815,10 @@ mod tests {
+                         )
+                     };
+                     assert_eq!(gu, 0, "fused partition gate/up rc");
++                    assert!(
++                        s.clone_dtoh(&slot_cnt).unwrap().iter().all(|&c| c == 0),
++                        "partition slot counters left armed"
++                    );
+                     if red == Red::Intermediate {
+                         let slot = first_local.unwrap();
+                         let mut row = vec![1.0f32; inter];
+@@ -2770,6 +2828,19 @@ mod tests {
+                             &mut fused_h.slice_mut(slot * inter..(slot + 1) * inter),
+                         )
+                         .unwrap();
++                        // Republish that one row, as the gate/up launch would have.
++                        let rc = unsafe {
++                            k::memra_dsv4_moe_fused_h_mirror(
++                                (fused_h.device_ptr(&s).0 as *const f32).add(slot * inter),
++                                (hm.device_ptr_mut(&s).0 as *mut u32).add(slot * inter / 2),
++                                (hrs.device_ptr_mut(&s).0 as *mut f32).add(slot),
++                                1,
++                                inter as i32,
++                                word.device_ptr(&s).0 as *mut i32,
++                                s.cu_stream().cast(),
++                            )
++                        };
++                        assert_eq!(rc, 0, "lossy partition h republish rc");
+                     }
+                     let down = unsafe {
+                         k::memra_dsv4_moe_fused_down_part(
+@@ -2779,7 +2850,8 @@ mod tests {
+                             first as i32,
+                             ids.device_ptr(&s).0 as *const i32,
+                             scale2.device_ptr(&s).0 as *const f32,
+-                            fused_h.device_ptr(&s).0 as *const f32,
++                            hm.device_ptr(&s).0 as *const u32,
++                            hrs.device_ptr(&s).0 as *const f32,
+                             fused_c.device_ptr_mut(&s).0 as *mut f32,
+                             std::ptr::null(),
+                             std::ptr::null_mut(),
+@@ -2788,7 +2860,6 @@ mod tests {
+                             1,
+                             inter as i32,
+                             hidden as i32,
+-                            word.device_ptr(&s).0 as *mut i32,
+                             s.cu_stream().cast(),
+                         )
+                     };
+@@ -2862,7 +2933,8 @@ mod tests {
+                 (ne / 2) as i32,
+                 ids.device_ptr(&s).0 as *const i32,
+                 scale2.device_ptr(&s).0 as *const f32,
+-                fused_h.device_ptr(&s).0 as *const f32,
++                hm.device_ptr(&s).0 as *const u32,
++                hrs.device_ptr(&s).0 as *const f32,
+                 fused_c.device_ptr_mut(&s).0 as *mut f32,
+                 order.device_ptr(&s).0 as *const i32,
+                 y.device_ptr_mut(&s).0 as *mut f32,
+@@ -2871,7 +2943,6 @@ mod tests {
+                 1,
+                 inter as i32,
+                 hidden as i32,
+-                std::ptr::null_mut(),
+                 s.cu_stream().cast(),
+             )
+         };
+@@ -2889,6 +2960,9 @@ mod tests {
+             .collect();
+         let x_dev = s.clone_htod(&x_rows).unwrap();
+         let mut fused_h_rows = s.alloc_zeros::<f32>(slots * inter).unwrap();
++        let mut hm_rows = s.alloc_zeros::<u32>(slots * inter / 2).unwrap();
++        let mut hrs_rows = s.alloc_zeros::<f32>(slots).unwrap();
++        let mut slot_cnt_rows = s.alloc_zeros::<i32>(slots).unwrap();
+         let mut fused_c_rows = s.alloc_zeros::<f32>(slots * hidden).unwrap();
+         for (rank, first) in [0usize, ne / 2].into_iter().enumerate() {
+             let count = ne / 2;
+@@ -2945,6 +3019,9 @@ mod tests {
+                     scale2.device_ptr(&s).0 as *const f32,
+                     x_dev.device_ptr(&s).0 as *const f32,
+                     fused_h_rows.device_ptr_mut(&s).0 as *mut f32,
++                    hm_rows.device_ptr_mut(&s).0 as *mut u32,
++                    hrs_rows.device_ptr_mut(&s).0 as *mut f32,
++                    slot_cnt_rows.device_ptr_mut(&s).0 as *mut i32,
+                     topk as i32,
+                     rows as i32,
+                     hidden as i32,
+@@ -2963,7 +3040,8 @@ mod tests {
+                     first as i32,
+                     scratch.ids.device_ptr(&s).0 as *const i32,
+                     scale2.device_ptr(&s).0 as *const f32,
+-                    fused_h_rows.device_ptr(&s).0 as *const f32,
++                    hm_rows.device_ptr(&s).0 as *const u32,
++                    hrs_rows.device_ptr(&s).0 as *const f32,
+                     fused_c_rows.device_ptr_mut(&s).0 as *mut f32,
+                     std::ptr::null(),
+                     std::ptr::null_mut(),
+@@ -2972,7 +3050,6 @@ mod tests {
+                     rows as i32,
+                     inter as i32,
+                     hidden as i32,
+-                    word.device_ptr(&s).0 as *mut i32,
+                     s.cu_stream().cast(),
+                 )
+             };
+diff --git a/docs/KERNELS.md b/docs/KERNELS.md
+index cf6214dc2..52cf0c951 100644
+--- a/docs/KERNELS.md
++++ b/docs/KERNELS.md
+@@ -689,7 +689,7 @@ Full execution contract and candidate pins:
+ | `moe_kq_m1_stream_kernel<4>` | DSV4 matrix plain-decode one-token visitor (memra #664): one warp per n8 column tile over the full K, the 8 weight rows streamed through a 4-stage per-warp cp.async ring (128 k per stage), the same `mma.sync.m16n8k16.f32.f16.f16.f32` chain in ascending k16 order from acc = 0 and the same `acc * row_scale` epilogue as `moe_kq_sktail_kernel`, so gate, up and down are bit-identical to it. B values: E2M1 byte LUT to f16 times the NaN-cleared E4M3 scale via `cvt.rn.f16x2.e4m3x2`, exact in f16. Smem `in_f * 2 + 4 * 2560` B, refused above 48 KiB. Served plain greedy c1 38.77 -> 50.1 tok/s on 2x RTX PRO 6000. | The code for one-row groups with the deep tail on; no environment read. A gate-armed M1 tensor-core or half2 down tail keeps precedence for down. `set_dsv4_moe_m1_stream_for_gate(false)` runs the sktail arm. | `memra_moe_kq_m1_stream`, `memra_moe_kq_m1_stream_dispatches`; `cuda_m1_stream_matches_sktail_bit_for_bit` and `dsv4-gpu-dspark-gate` arm P engagement. |
+ | `kqs_dequant_probe_kernel` | Component-test probe: for every E4M3FN scale byte and E2M1 code, the stream visitor's f16 B value and the sktail store's `__float2half(e4m3 * kv)` value. | Test only. | `memra_moe_kq_m1_stream_dequant_probe`. |
+ | `moe_kq_mrow_stream_kernel<4>` | DSV4 matrix multi-row visitor for 2..=16-row MoE steps (DSpark verify rounds, memra #669): the CTA at each 16-row chunk start of a CSR group owns that chunk, the chunk's rows sit in the MMA m16 dimension, and each warp streams its 8 weight rows once per chunk through the one-token visitor's 4-stage cp.async ring and in-register dequant. A is read from global with `__ldg` (16 rows x 4096 f16 is past the one-token smem stage; every warp reads the same words). An MMA output row depends only on its own A row, B and C, so each row runs the sktail chain (same B values, ascending k16 from acc = 0, `acc * row_scale`) and gate, up and down are bit-identical to it. Rows past the group end are zero and never stored. Served DSpark greedy c1 56.08 -> 71.13 tok/s on 2x RTX PRO 6000. | The code for steps of 2..=16 rows with the deep tail on (`MROW_STREAM_MAX_ROWS`); no environment read. `set_dsv4_moe_m1_stream_for_gate(false)` runs the sktail arm for both visitors. | `memra_moe_kq_mrow_stream` (refusal 40004), `memra_moe_kq_mrow_stream_dispatches`; `cuda_mrow_stream_matches_sktail_bit_for_bit` and the served `dsv4-gpu-dspark-gate`. |
+-| `dsv4_moe_fused_gu_kernel<WP>`, `dsv4_moe_fused_down_kernel<WARPS>` | DSV4 matrix plain-decode fused one-token MoE (memra #694): the served t=1 grouped chain (16 launches per layer: act_quant x, route count/prefix/scatter, the x FP8-QAT half mirror, gate and up stream visitors, two scale_rows, weighted SwiGLU, act_quant h, the h mirror, the down visitor, scale_rows, slot scatter, combine_rows_m) in two launches. gu: the x mirror inline (act_quant + fp8_gather_half, warp-reduced amax is exact in any order), gate and up of every selected slot with `moe_kq_m1_stream_kernel`'s body op for op, macro1/macro3, SwiGLU with the slot's route weight into `h[slot]`. down: the h mirror, down, macro2 into `contribution[slot]`, and the last CTA of each 32-column tile sums the slots in combine_rows_m's order into `y` and resets its tile counter. Every f32 op is the chain's op in the chain's order under `-fmad=false`, so h, contribution and y are bit-identical; a dead slot ORs the route prefix's fault bit, a lossy mirror the gather mirrors' bits. Served plain greedy c1 +11% on 2x RTX PRO 6000 (`research/dsv4f-bringup-20260923/moe-fused/`). | t=1 matrix steps with device routes, deferred MoE faults armed, route and mirror validation on, the deep tail and the one-token stream visitor on, and no gate-armed GU-fuse/M1-TC/half2 tail (`moe_fused_engages`); anything else keeps the chain. No environment read; `set_dsv4_moe_fused_for_gate(false)` runs the chain. Peer-dispatch EP keeps the chain. **Partition form (memra #710, TP/EP):** the table holds a rank's experts `[first, first + n)` of the global bank, selections and macro scales keep global ids, another rank's slot exits at entry, and down writes only the rank's contribution rows (the caller clears the plane) and leaves the slot sum to the caller, after the rank-order join; a partition asking for the in-kernel sum refuses 40004. The partition form takes `rows` token rows of `topk` slots in one launch (slot p reads x row p / topk), so a TP/EP step of 1 to 16 rows (one token, a B-row step, a verify round: every step the stream visitors took) runs it in place of `execute_matrix_local`'s chain and skips the separate x activation quantization; the full-bank form stays one row because its in-kernel slot sum is. | `memra_dsv4_moe_fused_gu`, `memra_dsv4_moe_fused_down`, `memra_dsv4_moe_fused_gu_part`, `memra_dsv4_moe_fused_down_part`, `memra_dsv4_moe_fused_dispatches`; `dsv4_grouped::cuda_fused_one_token_moe_is_the_grouped_chain_bit_for_bit`, `dsv4_grouped::cuda_fused_partition_moe_is_the_tp_ep_chain_bit_for_bit` and `dsv4-gpu-dspark-gate` plain-arm engagement (PP and TP/EP). |
++| `dsv4_moe_fused_gu_kernel<WP>`, `dsv4_moe_fused_down_kernel<WARPS>`, `dsv4_moe_fused_h_mirror_kernel<NW>` | DSV4 matrix plain-decode fused one-token MoE (memra #694): the served t=1 grouped chain (16 launches per layer: act_quant x, route count/prefix/scatter, the x FP8-QAT half mirror, gate and up stream visitors, two scale_rows, weighted SwiGLU, act_quant h, the h mirror, the down visitor, scale_rows, slot scatter, combine_rows_m) in two launches. gu: the x mirror inline (act_quant + fp8_gather_half, warp-reduced amax is exact in any order), gate and up of every selected slot with `moe_kq_m1_stream_kernel`'s body op for op, macro1/macro3, SwiGLU with the slot's route weight into `h[slot]`, then the last CTA of each slot to arrive at its `slot_cnt` counter publishes the h mirror (the swizzled half staging and row scale, `dsv4_moe_fused_h_publish`, lossy flag 0x4) once per slot and resets the counter. down: loads the published mirror (every down CTA of a slot used to rebuild it from the f32 row: about 0.3 ms per TP/EP step, `research/dsv4f-bringup-20260923/levers-20260927/`), down, macro2 into `contribution[slot]`, and the last CTA of each 32-column tile sums the slots in combine_rows_m's order into `y` and resets its tile counter. Every f32 op is the chain's op in the chain's order under `-fmad=false`, so h, contribution and y are bit-identical; a dead slot ORs the route prefix's fault bit, a lossy mirror the gather mirrors' bits. Served plain greedy c1 +11% on 2x RTX PRO 6000 (`research/dsv4f-bringup-20260923/moe-fused/`). | t=1 matrix steps with device routes, deferred MoE faults armed, route and mirror validation on, the deep tail and the one-token stream visitor on, and no gate-armed GU-fuse/M1-TC/half2 tail (`moe_fused_engages`); anything else keeps the chain. No environment read; `set_dsv4_moe_fused_for_gate(false)` runs the chain. Peer-dispatch EP keeps the chain. **Partition form (memra #710, TP/EP):** the table holds a rank's experts `[first, first + n)` of the global bank, selections and macro scales keep global ids, another rank's slot exits at entry, and down writes only the rank's contribution rows (the caller clears the plane) and leaves the slot sum to the caller, after the rank-order join; a partition asking for the in-kernel sum refuses 40004. The partition form takes `rows` token rows of `topk` slots in one launch (slot p reads x row p / topk), so a TP/EP step of 1 to 16 rows (one token, a B-row step, a verify round: every step the stream visitors took) runs it in place of `execute_matrix_local`'s chain and skips the separate x activation quantization; the full-bank form stays one row because its in-kernel slot sum is. | `memra_dsv4_moe_fused_gu`, `memra_dsv4_moe_fused_down`, `memra_dsv4_moe_fused_gu_part`, `memra_dsv4_moe_fused_down_part`, `memra_dsv4_moe_fused_dispatches`, `memra_dsv4_moe_fused_h_mirror` (the publish alone, for fixtures that edit h between the launches); `dsv4_grouped::cuda_fused_one_token_moe_is_the_grouped_chain_bit_for_bit`, `dsv4_grouped::cuda_fused_partition_moe_is_the_tp_ep_chain_bit_for_bit` and `dsv4-gpu-dspark-gate` plain-arm engagement (PP and TP/EP). |
+ 
+ DSV4 f32acc scorer q layout (no new arithmetic, no dispatch flag):
+ 

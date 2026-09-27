@@ -1,0 +1,13 @@
+build dotsB TT=8 TN=8 MINB=1   Executable tests/dsv4_gemm_tile_gpu.rs (/root/lane/target-tile/release/deps/ds diff_lines 0
+build dotsE TT=8 TN=4 MINB=4   Executable tests/dsv4_gemm_tile_gpu.rs (/root/lane/target-tile/release/deps/ds diff_lines 17
+build dotsJ TT=8 TN=2 MINB=6   Executable tests/dsv4_gemm_tile_gpu.rs (/root/lane/target-tile/release/deps/ds diff_lines 17
+build dotsK TT=4 TN=4 MINB=6   Executable tests/dsv4_gemm_tile_gpu.rs (/root/lane/target-tile/release/deps/ds diff_lines 21
+run1 B rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini | dots 57.7 ms over 292 launches
+run2 E rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini | dots 61.5 ms over 292 launches
+run3 J rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini | dots 66.4 ms over 292 launches
+run4 K rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini | dots 62.2 ms over 292 launches
+run5 K rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini | dots 61.9 ms over 292 launches
+run6 J rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini | dots 65.3 ms over 292 launches
+run7 E rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini | dots 59.4 ms over 292 launches
+run8 B rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini | dots 56.0 ms over 292 launches
+V6J_DONE 58cc2f9f359ed3828e312c8cb67588cbfdd1808d

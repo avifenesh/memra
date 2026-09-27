@@ -1,0 +1,29 @@
+2026-09-25T12:16:25Z boot rx-plain-O1-keep start arm=keep route=plain shape=RX bin=d82565d637999312 env=[MEMRA_SERVE_SPEC=0 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720,122880]
+2026-09-25T13:04:37Z boot rx-plain-O1-keep rc=0 re.error: bad character range v-r at position 4
+2026-09-25T13:04:42Z boot rx-plain-O1-rewind start arm=rewind route=plain shape=RX bin=d82565d637999312 env=[MEMRA_RESUME_GRID_REWIND=1 MEMRA_SERVE_SPEC=0 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720,122880]
+2026-09-25T14:04:59Z boot rx-plain-O1-rewind rc=0 re.error: bad character range v-r at position 4
+2026-09-25T14:05:04Z boot rx-plain-O2-rewind start arm=rewind route=plain shape=RX bin=d82565d637999312 env=[MEMRA_RESUME_GRID_REWIND=1 MEMRA_SERVE_SPEC=0 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720,122880]
+2026-09-25T15:05:21Z boot rx-plain-O2-rewind rc=0 re.error: bad character range v-r at position 4
+2026-09-25T15:05:26Z boot rx-plain-O2-keep start arm=keep route=plain shape=RX bin=d82565d637999312 env=[MEMRA_SERVE_SPEC=0 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720,122880]
+2026-09-25T15:53:43Z boot rx-plain-O2-keep rc=0 re.error: bad character range v-r at position 4
+2026-09-25T15:53:48Z boot fx-plain-keep start arm=keep route=plain shape=FX bin=d82565d637999312 env=[MEMRA_SERVE_SPEC=0] args=[--shapes FX]
+2026-09-25T15:54:07Z boot fx-plain-keep rc=0 re.error: bad character range v-r at position 4
+2026-09-25T15:54:12Z boot fx-plain-rewind start arm=rewind route=plain shape=FX bin=d82565d637999312 env=[MEMRA_RESUME_GRID_REWIND=1 MEMRA_SERVE_SPEC=0] args=[--shapes FX]
+2026-09-25T15:54:34Z boot fx-plain-rewind rc=0 re.error: bad character range v-r at position 4
+2026-09-25T15:54:39Z boots done: rx-plain-O1-keep:keep:plain:RX rx-plain-O1-rewind:rewind:plain:RX rx-plain-O2-rewind:rewind:plain:RX rx-plain-O2-keep:keep:plain:RX fx-plain-keep:keep:plain:FX fx-plain-rewind:rewind:plain:FX
+2026-09-25T15:54:39Z boot rx-spec-O1-keep start arm=keep route=spec shape=RX bin=d82565d637999312 env=[MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720,122880]
+2026-09-25T16:40:57Z boot rx-spec-O1-keep rc=0 re.error: bad character range v-r at position 4
+2026-09-25T16:41:02Z boot rx-spec-O1-rewind start arm=rewind route=spec shape=RX bin=d82565d637999312 env=[MEMRA_RESUME_GRID_REWIND=1 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720,122880]
+2026-09-25T17:28:12Z boot rx-spec-O1-rewind rc=0 re.error: bad character range v-r at position 4
+2026-09-25T17:28:17Z boot rx-spec-O2-rewind start arm=rewind route=spec shape=RX bin=d82565d637999312 env=[MEMRA_RESUME_GRID_REWIND=1 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720,122880]
+2026-09-25T18:15:36Z boot rx-spec-O2-rewind rc=0 re.error: bad character range v-r at position 4
+2026-09-25T18:15:41Z boot rx-spec-O2-keep start arm=keep route=spec shape=RX bin=d82565d637999312 env=[MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720,122880]
+2026-09-25T19:02:13Z boot rx-spec-O2-keep rc=0 re.error: bad character range v-r at position 4
+2026-09-25T19:02:18Z boot fx-spec-keep start arm=keep route=spec shape=FX bin=d82565d637999312 env=[] args=[--shapes FX]
+2026-09-25T19:02:40Z boot fx-spec-keep rc=0 re.error: bad character range v-r at position 4
+2026-09-25T19:02:45Z boot fx-spec-rewind start arm=rewind route=spec shape=FX bin=d82565d637999312 env=[MEMRA_RESUME_GRID_REWIND=1] args=[--shapes FX]
+2026-09-25T19:03:08Z boot fx-spec-rewind rc=0 re.error: bad character range v-r at position 4
+2026-09-25T19:03:13Z boots done: rx-spec-O1-keep:keep:spec:RX rx-spec-O1-rewind:rewind:spec:RX rx-spec-O2-rewind:rewind:spec:RX rx-spec-O2-keep:keep:spec:RX fx-spec-keep:keep:spec:FX fx-spec-rewind:rewind:spec:FX
+2026-09-25T19:03:13Z boot offprev start arm=offprev route=plain shape=RX6 bin=85a8493d2802c7ec env=[MEMRA_SERVE_SPEC=0 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144]
+2026-09-25T19:06:16Z boot offprev rc=0 re.error: bad character range v-r at position 4
+2026-09-25T19:06:21Z boots done: offprev:offprev:plain:RX6

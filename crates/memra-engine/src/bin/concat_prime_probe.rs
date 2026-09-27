@@ -52,7 +52,8 @@
 //!           of budget (worker.rs prefill_tick bound_rem) and the second call RESUMES at the
 //!           unaligned position L. Any LCP in [64, win=512] reproduced the FA-prefix defect
 //!           on an interactive request. Rows print as `sp<L>`.
-//!   primepath <model> primepath --prompt-a <txt|@file> [--suffix <txt|@file>] [--hist K]
+//!   primepath <model> primepath --prompt-a <txt|@file> [--suffix <txt|@file>] [--hist K] [--rewind] [--prompt-tokens N]
+//!                               [--suffix-tokens N]
 //!                               [--splits L1,L2,...] [--steps N] [--chat]
 //!           PRIME-PATH DIVERGENCE PROFILER (lane/spec-longctx-20260821 — the GATES-SMOKE
 //!           B3 class, with B1 folded in per FRSPEC-FIX §3.2): the same token sequence
@@ -76,6 +77,18 @@
 //!           --hist K (needs --suffix): sequence = prompt-a ++ K greedy tokens ++ suffix;
 //!           the hist arm keeps the live prime(A)+decode(K) cache and primes the suffix on
 //!           top (restored-conversation shape); mono re-renders the same bytes cold.
+//!           --rewind (needs --hist; WP-B day 41): the grid-checkpoint rewind arm: prime(A)
+//!           stopped and snapshotted at the grid boundary b, the same K tokens decoded, a
+//!           rollback to b, then the sequence from b primed; expected EXACT against mono.
+//!           Each of hist and rewind prints a `cost` line (suffix rows, wall ms).
+//!   callcost <model> callcost --prompt-a <txt|@file> --prompt-tokens L [--rows 32,64,288] [--reps 5]
+//!                             [--gap-ms 50]
+//!           WP-B day 50 stage 0 (research/spill-b-20260919/DAY50.md 1.2): the wall of ONE prime call of R
+//!           rows at context L, the settle and resume shape. Primes [0, L) once, snapshots, then per R and
+//!           rep restores the snapshot, sleeps --gap-ms (so a kernel trace separates the calls by an idle
+//!           gap), and times prime_cache([L, L+R)) between two stream synchronizes. One untimed warm-up
+//!           call per R; the same idle gap also precedes each restore. Prints `callcost L=.. R=.. N=.. wall_ms
+//!           p50=.. min=.. max=.. all=[..]`.
 //!   tickshape <model> tickshape --ids-a <json> --ids-b <json> --ids-c <json> [--tick 1024]
 //!                               [--steps 32] [--join 4] [--arms ref,ref2,tick,bp,bps,wave]
 //!                               [--canary]
@@ -1586,6 +1599,77 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // PRIME-PATH DIVERGENCE PROFILER — see the module doc. The GATES-SMOKE-20260821 B3
         // shapes at engine level: monolithic vs boundary-stopped vs decode-history prime
         // programs over ONE token sequence, with the near-tie-vs-defect discriminators.
+        "callcost" => {
+            // WP-B day 50 stage 0 (DAY50 1.2): one prime call of R rows at context L, timed.
+            let pa = text_arg(&rest, "--prompt-a").expect("--prompt-a");
+            let l: usize = arg(&rest, "--prompt-tokens")
+                .and_then(|v| v.parse().ok())
+                .expect("--prompt-tokens L");
+            let rows: Vec<usize> = arg(&rest, "--rows")
+                .unwrap_or_else(|| "32,64,288".into())
+                .split(',')
+                .filter_map(|v| v.trim().parse().ok())
+                .collect();
+            let reps: usize = arg(&rest, "--reps")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(5);
+            let gap_ms: u64 = arg(&rest, "--gap-ms")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(50);
+            let min_t = memra_engine::hybrid_forward::PRIME_MIN_T;
+            let r_max = rows.iter().copied().max().expect("--rows");
+            assert!(
+                rows.iter().all(|&r| r >= min_t),
+                "every R must be >= PRIME_MIN_T={min_t}"
+            );
+            let mut ta = encode_prompt(&cx.tok, &pa, chat);
+            let need = l + r_max;
+            while ta.len() < need {
+                let more = ta.clone();
+                ta.extend_from_slice(&more);
+            }
+            ta.truncate(need);
+            let mut c = Cache::new(&cx.e, &cx.model.cfg, cx.ctx_len.max(need + 8))?;
+            let t0 = std::time::Instant::now();
+            let _ = cx.model.prime_cache(&cx.e, &ta[..l], &mut c, 0)?;
+            cx.e.stream().synchronize()?;
+            println!(
+                "callcost setup: L={l} primed in {:.1} ms",
+                t0.elapsed().as_secs_f64() * 1e3
+            );
+            let snap = c.snapshot(&cx.e)?;
+            for &r in &rows {
+                let mut walls: Vec<f64> = Vec::with_capacity(reps);
+                for rep in 0..=reps {
+                    // An idle gap before the restore and before the call, so a kernel trace reads
+                    // setup, restore, call, restore, call ... as separate clusters.
+                    std::thread::sleep(std::time::Duration::from_millis(gap_ms));
+                    memra_engine::pp::restore_cache_checkpoint(
+                        &cx.e, &cx.model, None, &mut c, &snap,
+                    )?;
+                    cx.e.stream().synchronize()?;
+                    assert_eq!(c.pos, l, "the restore landed off the snapshot");
+                    std::thread::sleep(std::time::Duration::from_millis(gap_ms));
+                    let t0 = std::time::Instant::now();
+                    let _ = cx.model.prime_cache(&cx.e, &ta[l..l + r], &mut c, 0)?;
+                    cx.e.stream().synchronize()?;
+                    let w = t0.elapsed().as_secs_f64() * 1e3;
+                    if rep > 0 {
+                        walls.push(w);
+                    }
+                }
+                let mut sorted = walls.clone();
+                sorted.sort_by(|a, b| a.total_cmp(b));
+                let all: Vec<String> = walls.iter().map(|w| format!("{w:.2}")).collect();
+                println!(
+                    "callcost L={l} R={r} N={reps} wall_ms p50={:.2} min={:.2} max={:.2} all=[{}]",
+                    sorted[sorted.len() / 2],
+                    sorted[0],
+                    sorted[sorted.len() - 1],
+                    all.join(",")
+                );
+            }
+        }
         "primepath" => {
             let pa = text_arg(&rest, "--prompt-a").expect("--prompt-a");
             let steps: usize = arg(&rest, "--steps")
@@ -1600,13 +1684,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(0);
             let suffix = text_arg(&rest, "--suffix");
+            // WP-B day 41: the grid-checkpoint rewind arm beside `hist` (needs --hist).
+            let rewind = rest.iter().any(|a| a == "--rewind");
             let structured_row: f32 = arg(&rest, "--structured-row")
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(0.5);
             let structured_margin: f32 = arg(&rest, "--structured-margin")
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(0.5);
-            let ta = encode_prompt(&cx.tok, &pa, chat);
+            let mut ta = encode_prompt(&cx.tok, &pa, chat);
+            // WP-B day 41: an exact prompt length in tokens (the grid cells' L).
+            if let Some(n) = arg(&rest, "--prompt-tokens").and_then(|v| v.parse::<usize>().ok()) {
+                assert!(
+                    ta.len() >= n,
+                    "prompt has {} tokens, fewer than --prompt-tokens {n}",
+                    ta.len()
+                );
+                ta.truncate(n);
+            }
             let n_embd = cx.model.cfg.n_embd as usize;
             let min_t = memra_engine::hybrid_forward::PRIME_MIN_T;
             let cap = |t: usize| cx.ctx_len.max(t + steps + hist_k + 8);
@@ -1614,6 +1709,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // The token sequence under test. --hist K: prompt-a ++ the model's OWN K greedy
             // tokens (decoded on what becomes the hist arm's live cache) ++ suffix.
             let mut hist_live: Option<Cache> = None;
+            let mut hist_tokens: Vec<u32> = Vec::new();
             let mut seq = ta.clone();
             if hist_k > 0 {
                 let sb = suffix
@@ -1628,13 +1724,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     tk = argmax(&l) as u32;
                     d.push(tk);
                 }
-                let tb = cx.tok.encode(sb, false);
+                let mut tb = cx.tok.encode(sb, false);
+                if let Some(n) = arg(&rest, "--suffix-tokens").and_then(|v| v.parse::<usize>().ok())
+                {
+                    assert!(
+                        tb.len() >= n,
+                        "suffix has {} tokens, fewer than --suffix-tokens {n}",
+                        tb.len()
+                    );
+                    tb.truncate(n);
+                }
                 assert!(
                     tb.len() >= min_t,
                     "suffix must be >= PRIME_MIN_T={min_t} tokens"
                 );
                 seq.extend_from_slice(&d);
                 seq.extend_from_slice(&tb);
+                hist_tokens = d;
                 hist_live = Some(c);
             }
             let t = seq.len();
@@ -1820,8 +1926,54 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             if let Some(c) = hist_live.take() {
                 let fed = c.pos;
+                let t0 = std::time::Instant::now();
                 let (h, lg, s, m, sl) = run_program(&[t - fed], Some(c))?;
+                let wall = t0.elapsed().as_secs_f64() * 1e3;
                 report("hist", &h, &lg, &s, &m, &sl, false);
+                println!(
+                    "cost hist: suffix_rows {} wall_ms {wall:.1} (prime + {steps} greedy steps)",
+                    t - fed
+                );
+            }
+            // REWIND (WP-B day 41, DAY41 1.2): turn 1 primed with a stop and a snapshot at the grid
+            // boundary b (the serving checkpoint's raw-prompt rule: the grid at or below the prompt
+            // end less PLAIN_CKPT_RAW_GUARD, with at least PRIME_MIN_T rows after it), primed on to
+            // its end, the same hist tokens decoded, a rollback to b, then seq[b..] primed. By the
+            // grid law the arm is the split-at-b program, which the monolithic reference must equal.
+            if rewind && hist_k > 0 {
+                let grid = memra_engine::Engine::gdn_chunk_size().max(1);
+                let mut b = ta.len().saturating_sub(16) / grid * grid;
+                while b > 0 && ta.len() - b < min_t {
+                    b -= grid;
+                }
+                assert!(b >= min_t, "prompt too short for a grid checkpoint (b={b})");
+                let mut c = Cache::new(&cx.e, &cx.model.cfg, cap(t))?;
+                // Turn 1 as serving primes it: its own prompt only (the queued rows are turn 1's).
+                let _ = cx
+                    .model
+                    .prime_cache(&cx.e, &ta[..b], &mut c, ta.len() - b)?;
+                let snap = c.snapshot(&cx.e)?;
+                let (l0, _, _) = cx.model.prime_cache(&cx.e, &ta[b..], &mut c, 0)?;
+                assert_eq!(
+                    argmax(&l0) as u32,
+                    hist_tokens[0],
+                    "turn 1's first token moved"
+                );
+                for &tk in &hist_tokens[..hist_tokens.len() - 1] {
+                    let _ = cx.model.decode_step_h(&cx.e, tk, &mut c)?;
+                }
+                memra_engine::pp::restore_cache_checkpoint(&cx.e, &cx.model, None, &mut c, &snap)?;
+                assert_eq!(c.pos, b, "the rollback landed off the checkpoint");
+                let t0 = std::time::Instant::now();
+                let (h, lg, s, m, sl) = run_program(&[t - b], Some(c))?;
+                let wall = t0.elapsed().as_secs_f64() * 1e3;
+                report("rewind", &h, &lg, &s, &m, &sl, false);
+                println!(
+                    "cost rewind: checkpoint {b} suffix_rows {} (re-primed {} over hist) wall_ms {wall:.1} \
+                     (prime + {steps} greedy steps)",
+                    t - b,
+                    ta.len() + hist_k - b
+                );
             }
         }
 

@@ -1,0 +1,107 @@
+2026-09-25T01:49:32Z serve-smoke runs at c6f9282c26e71349c0263b88dc7beb59c4a57797 in /root/wt-b/target/smoke-wt-c6f9282c26e7 (build rc=0     Finished `release` profile [optimized] target(s) in 2m 37s)
+2026-09-25T01:49:32Z start serve-smoke env=[ ]
+2026-09-25T01:49:52Z done serve-smoke rc=0 door_on=0 door_off=0 serve-smoke: 0 failed
+2026-09-25T01:49:54Z start identity-default-on env=[ MEMRA_HOSTGATE_CACHE_MB=256 MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-25T01:50:20Z done identity-default-on rc=0 door_on=0 door_off=2 KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+2026-09-25T01:50:20Z start fault-default env=[ MEMRA_HOSTGATE_CACHE_MB=256]
+2026-09-25T01:54:05Z done fault-default rc=0 door_on=0 door_off=14 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+2026-09-25T01:54:05Z start fault-plain env=[ MEMRA_HOSTGATE_CACHE_MB=256 MEMRA_SERVE_SPEC=0]
+2026-09-25T01:57:42Z done fault-plain rc=0 door_on=0 door_off=14 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+2026-09-25T01:57:42Z start hit-off env=[ ]
+2026-09-25T01:58:14Z done hit-off rc=0 door_on=0 door_off=2 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+2026-09-25T01:58:14Z start hit-on env=[ MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-25T01:59:01Z done hit-on rc=0 door_on=0 door_off=2 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+2026-09-25T01:59:01Z start admit-mem-burst env=[ ]
+2026-09-25T02:01:15Z done admit-mem-burst rc=0 door_on=0 door_off=1 ADMIT-MEM BURST GATE: ALL GREEN
+2026-09-25T02:01:15Z start spec-ctx-edge env=[ ]
+2026-09-25T02:01:42Z done spec-ctx-edge rc=0 door_on=0 door_off=3 SPEC-CTX-EDGE GATE: ALL GREEN
+2026-09-25T02:01:42Z start twin27-off env=[ ]
+2026-09-25T02:02:52Z done twin27-off rc=0 door_on=0 door_off=2 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 i
+2026-09-25T02:02:52Z start twin27-on env=[ MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-25T02:04:02Z done twin27-on rc=0 door_on=0 door_off=2 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 i
+2026-09-25T02:04:02Z gates done arm=pooled
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "research/spill-b-20260919/rtx5090-day37/gates.sh",
+    "3",
+    "pooled",
+    "/root/spill-receipts/b-day37f/gates-r4b-pooled"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 537443024194599,
+  "ended_monotonic_ns": 538475351121983,
+  "started_utc": "2026-09-25T01:46:50.796851+00:00",
+  "ended_utc": "2026-09-25T02:04:03.123781+00:00",
+  "elapsed_seconds": 1032.326927384,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 2275,
+    "sha256": "428b6e3d256158a4d1329bbf811d44784a3c08ba30b1e3ba0a773553c8f16dca"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 444261,
+      "sha256": "43d72190f73b588682d0ad474f858dbc923ec5787c1124bb33b86331452486b7"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 182,
+    "sha256": "5432f3de62e7734c4e232a2af382af54c3d810ea3dd1c9e9760e655b78867d3f"
+  }
+}

@@ -1,0 +1,20 @@
+BENCH rows=1 local=3 iters=200 gu_us=31.62 gu_TBps=0.895 down_us=20.97 down_TBps=0.675 pair_us=52.60 fault=0
+PACKED_EQUAL 1
+VARIANT std_4_256_2 rows=1 gu_us=28.62 gu_TBps=0.989
+VARIANT packed_4_256_2 rows=1 gu_us=29.73 gu_TBps=0.952
+VARIANT std_4_256_3 rows=1 gu_us=30.61 gu_TBps=0.925
+VARIANT packed_4_256_3 rows=1 gu_us=31.74 gu_TBps=0.892
+VARIANT std_4_256_4 rows=1 gu_us=31.77 gu_TBps=0.891
+VARIANT packed_4_256_4 rows=1 gu_us=32.55 gu_TBps=0.870
+VARIANT std_4_512_2 rows=1 gu_us=30.75 gu_TBps=0.921
+VARIANT packed_4_512_2 rows=1 gu_us=31.24 gu_TBps=0.906
+VARIANT std_2_256_3 rows=1 gu_us=31.78 gu_TBps=0.891
+VARIANT packed_2_256_3 rows=1 gu_us=32.74 gu_TBps=0.865
+VARIANT std_4_256_2 rows=1 gu_us=28.62 gu_TBps=0.989
+VARIANT packed_4_256_2 rows=1 gu_us=29.78 gu_TBps=0.951
+VARIANT mode0_mirror1 rows=1 gu_us=27.85 gu_TBps=1.016
+VARIANT mode0_mirror0 rows=1 gu_us=22.83 gu_TBps=1.240
+VARIANT mode1_mirror0 rows=1 gu_us=20.70 gu_TBps=1.368
+VARIANT mode2_mirror0 rows=1 gu_us=18.73 gu_TBps=1.512
+VARIANT mode1_mirror1 rows=1 gu_us=24.99 gu_TBps=1.133
+VARIANT mode0_mirror1 rows=1 gu_us=27.91 gu_TBps=1.014

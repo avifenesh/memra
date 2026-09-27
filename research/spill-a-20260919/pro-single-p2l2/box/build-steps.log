@@ -1,0 +1,61 @@
+== p2
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.138.0 (/root/wt-a/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 19.54s
+== base (dba7c0a0c)
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.138.0 (/root/wt-a/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 19.52s
+== gpp (358749c9f)
+   Compiling memra-gguf v0.138.0 (/root/wt-a/crates/memra-gguf)
+   Compiling memra-tier v0.138.0 (/root/wt-a/crates/memra-tier)
+   Compiling memra-engine v0.138.0 (/root/wt-a/crates/memra-engine)
+   Compiling memra-server v0.138.0 (/root/wt-a/crates/memra-server)
+   Compiling memra-tokenizer v0.138.0 (/root/wt-a/crates/memra-tokenizer)
+   Compiling memra-kv v0.138.0 (/root/wt-a/crates/memra-kv)
+   Compiling memra-runtime v0.138.0 (/root/wt-a/crates/memra-runtime)
+   Compiling memra-reference v0.138.0 (/root/wt-a/crates/memra-reference)
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 2m 31s
+== the tip's test binaries
+   Compiling memra-gguf v0.138.0 (/root/wt-a/crates/memra-gguf)
+   Compiling memra-tier v0.138.0 (/root/wt-a/crates/memra-tier)
+   Compiling memra-engine v0.138.0 (/root/wt-a/crates/memra-engine)
+   Compiling memra-server v0.138.0 (/root/wt-a/crates/memra-server)
+   Compiling memra-tokenizer v0.138.0 (/root/wt-a/crates/memra-tokenizer)
+   Compiling memra-kv v0.138.0 (/root/wt-a/crates/memra-kv)
+   Compiling memra-runtime v0.138.0 (/root/wt-a/crates/memra-runtime)
+   Compiling memra-reference v0.138.0 (/root/wt-a/crates/memra-reference)
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 2m 35s
+note: the p2 rebuild differs in bytes
+   Compiling memra-gguf v0.138.0 (/root/wt-a/crates/memra-gguf)
+   Compiling memra-tier v0.138.0 (/root/wt-a/crates/memra-tier)
+   Compiling memra-engine v0.138.0 (/root/wt-a/crates/memra-engine)
+   Compiling memra-server v0.138.0 (/root/wt-a/crates/memra-server)
+   Compiling memra-tokenizer v0.138.0 (/root/wt-a/crates/memra-tokenizer)
+   Compiling memra-kv v0.138.0 (/root/wt-a/crates/memra-kv)
+   Compiling memra-runtime v0.138.0 (/root/wt-a/crates/memra-runtime)
+   Compiling memra-reference v0.138.0 (/root/wt-a/crates/memra-reference)
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 04s
+  Executable unittests src/lib.rs (target/debug/deps/memra_server-b7880578d97a1c04)
+   Compiling memra-gguf v0.138.0 (/root/wt-a/crates/memra-gguf)
+   Compiling memra-tier v0.138.0 (/root/wt-a/crates/memra-tier)
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-tokenizer v0.138.0 (/root/wt-a/crates/memra-tokenizer)
+   Compiling memra-runtime v0.138.0 (/root/wt-a/crates/memra-runtime)
+   Compiling memra-kv v0.138.0 (/root/wt-a/crates/memra-kv)
+   Compiling memra-reference v0.138.0 (/root/wt-a/crates/memra-reference)
+   Compiling memra-engine v0.138.0 (/root/wt-a/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.86s
+  Executable unittests src/lib.rs (target/debug/deps/memra_engine-47ae06a2f9cbea34)
+   Compiling memra-tier v0.138.0 (/root/wt-a/crates/memra-tier)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.44s
+  Executable tests/contracts/mod.rs (target/debug/deps/contracts-7e738aecefe88b56)

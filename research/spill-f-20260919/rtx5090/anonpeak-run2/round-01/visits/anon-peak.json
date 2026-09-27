@@ -1,0 +1,94 @@
+{
+ "arms": {
+  "worker16": {
+   "exit_code": 0,
+   "cold_ok": true,
+   "peak": {
+    "VmLck_kB": 0,
+    "VmPin_kB": 0,
+    "VmRSS_kB": 3569796,
+    "RssAnon_kB": 833708,
+    "RssFile_kB": 2728088,
+    "RssShmem_kB": 10240,
+    "anon_plus_shmem_kB": 843948
+   },
+   "correctness_problems": []
+  },
+  "mmap-random": {
+   "exit_code": 0,
+   "cold_ok": true,
+   "peak": {
+    "VmLck_kB": 0,
+    "VmPin_kB": 0,
+    "VmRSS_kB": 13487020,
+    "RssAnon_kB": 831216,
+    "RssFile_kB": 12645564,
+    "RssShmem_kB": 10240,
+    "anon_plus_shmem_kB": 841456
+   },
+   "correctness_problems": []
+  },
+  "mmap-normal": {
+   "exit_code": 0,
+   "cold_ok": true,
+   "peak": {
+    "VmLck_kB": 0,
+    "VmPin_kB": 0,
+    "VmRSS_kB": 13977160,
+    "RssAnon_kB": 831224,
+    "RssFile_kB": 13135696,
+    "RssShmem_kB": 10240,
+    "anon_plus_shmem_kB": 841464
+   },
+   "correctness_problems": []
+  },
+  "pread16": {
+   "exit_code": 0,
+   "cold_ok": true,
+   "peak": {
+    "VmLck_kB": 0,
+    "VmPin_kB": 0,
+    "VmRSS_kB": 3562780,
+    "RssAnon_kB": 831280,
+    "RssFile_kB": 2727912,
+    "RssShmem_kB": 10240,
+    "anon_plus_shmem_kB": 841520
+   },
+   "correctness_problems": []
+  },
+  "worker2": {
+   "exit_code": 0,
+   "cold_ok": true,
+   "peak": {
+    "VmLck_kB": 0,
+    "VmPin_kB": 0,
+    "VmRSS_kB": 3748892,
+    "RssAnon_kB": 831544,
+    "RssFile_kB": 2907108,
+    "RssShmem_kB": 10240,
+    "anon_plus_shmem_kB": 841784
+   },
+   "correctness_problems": []
+  },
+  "direct16": {
+   "exit_code": 0,
+   "cold_ok": true,
+   "peak": {
+    "VmLck_kB": 0,
+    "VmPin_kB": 0,
+    "VmRSS_kB": 3571360,
+    "RssAnon_kB": 833716,
+    "RssFile_kB": 2728188,
+    "RssShmem_kB": 10240,
+    "anon_plus_shmem_kB": 843956
+   },
+   "correctness_problems": [
+    "direct arm fell back to mmap 9 times"
+   ]
+  }
+ },
+ "max_anon_plus_shmem_bytes": 864210944,
+ "bounded_memory_max_bytes": 7864210944,
+ "all_exit_zero": true,
+ "all_correct": false
+}

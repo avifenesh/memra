@@ -1,0 +1,201 @@
+== shape
+order=AB n=5 model_key=q9 ctx=65536 lock=/tmp/memra-5090.lock warm=deferred park_compact=unset serve_spec=0
+== boot lines (context, doors)
+[prefix-cache] on: budget 2052MB (2051538944 B, derived: 2 x 1025769472 B max entry for model "q9" at served ctx 65536 (from MEMRA_CTX; MEMRA_CTX set), requested 2051538944 B; boot driver free 18244501504 B, post-reserve clamp 16633888768 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admit-predict] shadow armed: budget_bytes=14602498048 budget_src=derived(effective_free_bytes=18264649728 - prefix_cache_budget_bytes=2051538944 - admission_reserve_bytes=1610612736) exempt_tenants=0 enforce=false (logging only, nothing is rejected; enforcement is a separate flip)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+== rig
+NVIDIA GeForce RTX 5090 Laptop GPU, 15 MiB, 24463 MiB, 70, 11.63 W, [N/A]
+NVIDIA GeForce RTX 5090 Laptop GPU, 15 MiB, 24463 MiB, 77, 32.51 W, [N/A]
+ready: cuda_driver_free_bytes=0 cuda_pool_used_bytes=0 cuda_pool_reserved_bytes=0 prefix_cache_bytes=0
+== request-cost lines (verbatim, in log order)
+[admission] request cost: model="q9" ctx=186 path=plain = 14848 B/token x ctx + 32MB prefill-workspace + 0MB fixed = 35MB
+[admission] request cost: model="q9" ctx=65600 path=plain = 14848 B/token x ctx + 519MB prefill-workspace + 103MB fixed = 1596MB
+[admission] request cost: model="q9" ctx=65600 path=plain = 14848 B/token x ctx + 519MB prefill-workspace + 225MB fixed = 1717MB
+[admission] request cost: model="q9" ctx=65600 path=plain = 14848 B/token x ctx + 520MB prefill-workspace + 225MB fixed = 1718MB
+[admission] request cost: model="q9" ctx=65600 path=plain = 14848 B/token x ctx + 519MB prefill-workspace + 225MB fixed = 1718MB
+[admission] request cost: model="q9" ctx=1833 path=plain = 14848 B/token x ctx + 603MB prefill-workspace + 225MB fixed = 855MB
+[admission] request cost: model="q9" ctx=1832 path=plain = 14848 B/token x ctx + 603MB prefill-workspace + 225MB fixed = 855MB
+[admission] request cost: model="q9" ctx=1831 path=plain = 14848 B/token x ctx + 602MB prefill-workspace + 225MB fixed = 854MB
+[admission] request cost: model="q9" ctx=1828 path=plain = 14848 B/token x ctx + 601MB prefill-workspace + 225MB fixed = 853MB
+[admission] request cost: model="q9" ctx=65600 path=plain = 14848 B/token x ctx + 1116MB prefill-workspace + 225MB fixed = 2315MB
+[admission] request cost: model="q9" ctx=65600 path=plain = 14848 B/token x ctx + 1116MB prefill-workspace + 225MB fixed = 2315MB
+[admission] request cost: model="q9" ctx=65600 path=plain = 14848 B/token x ctx + 1116MB prefill-workspace + 225MB fixed = 2315MB
+[admission] request cost: model="q9" ctx=65600 path=plain = 14848 B/token x ctx + 1115MB prefill-workspace + 225MB fixed = 2314MB
+[admission] request cost: model="q9" ctx=3118 path=plain = 14848 B/token x ctx + 1066MB prefill-workspace + 225MB fixed = 1337MB
+[admission] request cost: model="q9" ctx=3121 path=plain = 14848 B/token x ctx + 1067MB prefill-workspace + 225MB fixed = 1338MB
+[admission] request cost: model="q9" ctx=3117 path=plain = 14848 B/token x ctx + 1066MB prefill-workspace + 225MB fixed = 1337MB
+[admission] request cost: model="q9" ctx=3110 path=plain = 14848 B/token x ctx + 1063MB prefill-workspace + 225MB fixed = 1334MB
+[admission] request cost: model="q9" ctx=3109 path=plain = 14848 B/token x ctx + 1063MB prefill-workspace + 225MB fixed = 1334MB
+[admission] request cost: model="q9" ctx=65600 path=plain = 14848 B/token x ctx + 1504MB prefill-workspace + 225MB fixed = 2702MB
+[admission] request cost: model="q9" ctx=65600 path=plain = 14848 B/token x ctx + 1504MB prefill-workspace + 225MB fixed = 2702MB
+[admission] request cost: model="q9" ctx=65600 path=plain = 14848 B/token x ctx + 1504MB prefill-workspace + 225MB fixed = 2702MB
+[admission] request cost: model="q9" ctx=65600 path=plain = 14848 B/token x ctx + 1504MB prefill-workspace + 225MB fixed = 2702MB
+[admission] request cost: model="q9" ctx=65600 path=plain = 14848 B/token x ctx + 1504MB prefill-workspace + 225MB fixed = 2702MB
+[admission] request cost: model="q9" ctx=5824 path=plain = 14848 B/token x ctx + 1502MB prefill-workspace + 225MB fixed = 1813MB
+[admission] request cost: model="q9" ctx=5820 path=plain = 14848 B/token x ctx + 1502MB prefill-workspace + 225MB fixed = 1813MB
+[admission] request cost: model="q9" ctx=5813 path=plain = 14848 B/token x ctx + 1502MB prefill-workspace + 225MB fixed = 1813MB
+[admission] request cost: model="q9" ctx=5810 path=plain = 14848 B/token x ctx + 1502MB prefill-workspace + 225MB fixed = 1813MB
+[admission] request cost: model="q9" ctx=5807 path=plain = 14848 B/token x ctx + 1502MB prefill-workspace + 225MB fixed = 1813MB
+[admission] request cost: model="q9" ctx=65600 path=plain = 14848 B/token x ctx + 536MB prefill-workspace + 225MB fixed = 1734MB
+[admission] request cost: model="q9" ctx=65600 path=plain = 14848 B/token x ctx + 541MB prefill-workspace + 225MB fixed = 1739MB
+[admission] request cost: model="q9" ctx=65600 path=plain = 14848 B/token x ctx + 548MB prefill-workspace + 225MB fixed = 1746MB
+[admission] request cost: model="q9" ctx=65600 path=plain = 14848 B/token x ctx + 540MB prefill-workspace + 225MB fixed = 1739MB
+[admission] request cost: model="q9" ctx=65600 path=plain = 14848 B/token x ctx + 538MB prefill-workspace + 225MB fixed = 1736MB
+[admission] request cost: model="q9" ctx=65600 path=plain = 14848 B/token x ctx + 1136MB prefill-workspace + 225MB fixed = 2335MB
+[admission] request cost: model="q9" ctx=65600 path=plain = 14848 B/token x ctx + 1144MB prefill-workspace + 225MB fixed = 2342MB
+[admission] request cost: model="q9" ctx=65600 path=plain = 14848 B/token x ctx + 1136MB prefill-workspace + 225MB fixed = 2334MB
+[admission] request cost: model="q9" ctx=65600 path=plain = 14848 B/token x ctx + 1504MB prefill-workspace + 225MB fixed = 2703MB
+[admission] request cost: model="q9" ctx=65600 path=plain = 14848 B/token x ctx + 1505MB prefill-workspace + 225MB fixed = 2703MB
+[admission] request cost: model="q9" ctx=65600 path=plain = 14848 B/token x ctx + 1505MB prefill-workspace + 225MB fixed = 2703MB
+[admission] request cost: model="q9" ctx=65600 path=plain = 14848 B/token x ctx + 1505MB prefill-workspace + 225MB fixed = 2703MB
+[admission] request cost: model="q9" ctx=65600 path=plain = 14848 B/token x ctx + 1505MB prefill-workspace + 225MB fixed = 2703MB
+== open-arm booked ctx (admission_cap) from the lines: 65600; allocated ctx_cap = 65536
+== per-request rows
+tag | arm | P | G | cached | path | B/token | ctx_booked | ctx_alloc | allocated_kv_B | used_kv_B | alloc/used | booked_MB | drv_free_before | drv_free_after | pool_used_before | pool_used_after | ms | line
+i-L0-r0 | i | 1439 | 3921 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 79585280 | 12.23 | 1596 | 17439195136 | 15660810240 | 7393531316 | 8993838696 | 29864 | own
+i-L0-r1 | i | 1439 | 4363 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 86148096 | 11.30 | 1717 | 15660810240 | 14352187392 | 8993838696 | 10159977448 | 34336 | own
+i-L0-r2 | i | 1442 | 4123 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 82629120 | 11.78 | 1718 | 14352187392 | 13177782272 | 10159977448 | 10233586664 | 32739 | own
+i-L0-r3 | i | 1442 | 4761 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 92102144 | 10.57 | 1718 | 13177782272 | 13077118976 | 10233586664 | 10310353896 | 39149 | inherited
+i-L0-r4 | i | 1441 | 5048 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 96348672 | 10.10 | 1718 | 13077118976 | 13010010112 | 10310353896 | 10383950824 | 42117 | own
+ii-L0-r0 | ii | 1673 | 96 | 0 | plain | 14848 | 1833 | 1777 | 26384896 | 26266112 | 1.00 | 855 | 13010010112 | 13010010112 | 10383950824 | 9396789544 | 1285 | own
+ii-L0-r1 | ii | 1672 | 96 | 0 | plain | 14848 | 1832 | 1776 | 26370048 | 26251264 | 1.00 | 855 | 13010010112 | 13010010112 | 9396789544 | 8408665384 | 1275 | own
+ii-L0-r2 | ii | 1671 | 96 | 0 | plain | 14848 | 1831 | 1775 | 26355200 | 26236416 | 1.00 | 854 | 13010010112 | 13010010112 | 8408665384 | 8485554856 | 1294 | own
+ii-L0-r3 | ii | 1671 | 96 | 0 | plain | 14848 | 1831 | 1775 | 26355200 | 26236416 | 1.00 | 854 | 13010010112 | 13010010112 | 8485554856 | 8562461032 | 1290 | inherited
+ii-L0-r4 | ii | 1668 | 96 | 0 | plain | 14848 | 1828 | 1772 | 26310656 | 26191872 | 1.00 | 853 | 13010010112 | 13010010112 | 8562461032 | 8639333800 | 1255 | own
+i-L1-r0 | i | 3096 | 3009 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 90647040 | 10.73 | 2315 | 13010010112 | 13010010112 | 8639333800 | 9808530152 | 25853 | own
+i-L1-r1 | i | 3096 | 3799 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 102376960 | 9.50 | 2315 | 13010010112 | 13010010112 | 9808530152 | 10971948008 | 33225 | inherited
+i-L1-r2 | i | 3097 | 2413 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 81812480 | 11.89 | 2315 | 13010010112 | 12338921472 | 10971948008 | 11070256104 | 20652 | own
+i-L1-r3 | i | 3096 | 2833 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 88033792 | 11.05 | 2315 | 12338921472 | 12238258176 | 11070256104 | 11168560104 | 24188 | own
+i-L1-r4 | i | 3094 | 3476 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 97551360 | 9.98 | 2314 | 12238258176 | 12137594880 | 11168560104 | 11266864104 | 30649 | own
+ii-L1-r0 | ii | 2958 | 96 | 0 | plain | 14848 | 3118 | 3062 | 45464576 | 45345792 | 1.00 | 1337 | 12137594880 | 12137594880 | 11266864104 | 10319226728 | 1914 | own
+ii-L1-r1 | ii | 2961 | 96 | 0 | plain | 14848 | 3121 | 3065 | 45509120 | 45390336 | 1.00 | 1338 | 12137594880 | 12137594880 | 10319226728 | 9372114600 | 1639 | own
+ii-L1-r2 | ii | 2957 | 96 | 0 | plain | 14848 | 3117 | 3061 | 45449728 | 45330944 | 1.00 | 1337 | 12137594880 | 12137594880 | 9372114600 | 9468026216 | 1597 | own
+ii-L1-r3 | ii | 2950 | 96 | 0 | plain | 14848 | 3110 | 3054 | 45345792 | 45227008 | 1.00 | 1334 | 12137594880 | 12137594880 | 9468026216 | 9563770792 | 1597 | own
+ii-L1-r4 | ii | 2949 | 96 | 0 | plain | 14848 | 3109 | 3053 | 45330944 | 45212160 | 1.00 | 1334 | 12137594880 | 12137594880 | 9563770792 | 9659565480 | 1615 | own
+i-L2-r0 | i | 5755 | 4817 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 156973056 | 6.20 | 2702 | 12137594880 | 12137594880 | 9659565480 | 10851892264 | 42753 | own
+i-L2-r1 | i | 5761 | 3715 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 140699648 | 6.92 | 2702 | 12137594880 | 12137594880 | 10851892264 | 11979731944 | 33158 | own
+i-L2-r2 | i | 5760 | 4137 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 146950656 | 6.62 | 2702 | 12137594880 | 11265179648 | 11979731944 | 11970278376 | 36327 | own
+i-L2-r3 | i | 5763 | 4584 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 153632256 | 6.33 | 2702 | 11265179648 | 11265179648 | 11970278376 | 11960833000 | 40741 | own
+i-L2-r4 | i | 5761 | 3248 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 133765632 | 7.27 | 2702 | 11265179648 | 11231625216 | 11960833000 | 12024976360 | 28807 | own
+ii-L2-r0 | ii | 5664 | 96 | 0 | plain | 14848 | 5824 | 5768 | 85643264 | 85524480 | 1.00 | 1813 | 11231625216 | 11231625216 | 12024976360 | 11009080808 | 2379 | own
+ii-L2-r1 | ii | 5660 | 96 | 0 | plain | 14848 | 5820 | 5764 | 85583872 | 85465088 | 1.00 | 1813 | 11231625216 | 11231625216 | 11009080808 | 9993118440 | 2398 | own
+ii-L2-r2 | ii | 5653 | 96 | 0 | plain | 14848 | 5813 | 5757 | 85479936 | 85361152 | 1.00 | 1813 | 11231625216 | 11231625216 | 9993118440 | 9954022696 | 2310 | own
+ii-L2-r3 | ii | 5650 | 96 | 0 | plain | 14848 | 5810 | 5754 | 85435392 | 85316608 | 1.00 | 1813 | 11231625216 | 11231625216 | 9954022696 | 9991866536 | 2310 | own
+ii-L2-r4 | ii | 5647 | 96 | 0 | plain | 14848 | 5807 | 5751 | 85390848 | 85272064 | 1.00 | 1813 | 11231625216 | 11231625216 | 9991866536 | 10029302056 | 2271 | own
+iii-L0-r0 | iii | 1486 | 2173 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 54328832 | 17.91 | 1734 | 11231625216 | 11231625216 | 10029302056 | 11003193512 | 16925 | own
+iii-L0-r1 | iii | 1500 | 4715 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 92280320 | 10.54 | 1739 | 11231625216 | 11231625216 | 11003193512 | 11955753960 | 37329 | own
+iii-L0-r2 | iii | 1519 | 4038 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 82510336 | 11.79 | 1746 | 11231625216 | 10929635328 | 11955753960 | 12007494632 | 32399 | own
+iii-L0-r3 | iii | 1498 | 2606 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 60936192 | 15.97 | 1739 | 10929635328 | 10929635328 | 12007494632 | 11963782120 | 21100 | own
+iii-L0-r4 | iii | 1492 | 4473 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 88568320 | 10.99 | 1736 | 10929635328 | 10929635328 | 11963782120 | 12015997928 | 36142 | own
+iii-L1-r0 | iii | 3152 | 2490 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 83772416 | 11.62 | 2335 | 10929635328 | 10929635328 | 12015997928 | 11938075624 | 20790 | own
+iii-L1-r1 | iii | 3152 | 4315 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 110870016 | 8.78 | 2335 | 10929635328 | 10929635328 | 11938075624 | 11997893608 | 35542 | inherited
+iii-L1-r2 | iii | 3173 | 2997 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 91612160 | 10.62 | 2342 | 10929635328 | 10929635328 | 11997893608 | 11919971304 | 24617 | own
+iii-L1-r3 | iii | 3151 | 2567 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 84900864 | 11.46 | 2334 | 10929635328 | 10929635328 | 11919971304 | 12018275304 | 21329 | own
+iii-L1-r4 | iii | 3151 | 3359 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 96660480 | 10.07 | 2334 | 10929635328 | 10929635328 | 12018275304 | 11980264424 | 27640 | inherited
+iii-L2-r0 | iii | 5803 | 4511 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 153142272 | 6.35 | 2703 | 10929635328 | 10929635328 | 11980264424 | 11981853672 | 40398 | own
+iii-L2-r1 | iii | 5815 | 4564 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 154107392 | 6.31 | 2703 | 10929635328 | 10929635328 | 11981853672 | 11985703912 | 40562 | own
+iii-L2-r2 | iii | 5822 | 3246 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 134641664 | 7.23 | 2703 | 10929635328 | 10929635328 | 11985703912 | 11979129832 | 27787 | own
+iii-L2-r3 | iii | 5821 | 10422 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 241176064 | 4.03 | 2703 | 10929635328 | 10929635328 | 11979129832 | 13217033372 | 90002 | own
+iii-L2-r4 | iii | 5812 | 3724 | 0 | plain | 14848 | 65600 | 65536 | 973078528 | 141590528 | 6.87 | 2703 | 10929635328 | 9923002368 | 13217033372 | 12019352552 | 31808 | own
+== per-arm allocated over used (verbatim per row, then N, min, median, max)
+arm=i L0 N=5 P=[1439, 1439, 1442, 1442, 1441] G=[3921, 4363, 4123, 4761, 5048] cached=[0, 0, 0, 0, 0] ratios=[12.23, 11.3, 11.78, 10.57, 10.1] min=10.10 median=11.30 max=12.23 alloc_B=973078528 used_B_median=86148096 booked_MB=[1596, 1717, 1718, 1718, 1718] inherited=1
+arm=i L1 N=5 P=[3096, 3096, 3097, 3096, 3094] G=[3009, 3799, 2413, 2833, 3476] cached=[0, 0, 0, 0, 0] ratios=[10.73, 9.5, 11.89, 11.05, 9.98] min=9.50 median=10.73 max=11.89 alloc_B=973078528 used_B_median=90647040 booked_MB=[2315, 2315, 2315, 2315, 2314] inherited=1
+arm=i L2 N=5 P=[5755, 5761, 5760, 5763, 5761] G=[4817, 3715, 4137, 4584, 3248] cached=[0, 0, 0, 0, 0] ratios=[6.2, 6.92, 6.62, 6.33, 7.27] min=6.20 median=6.62 max=7.27 alloc_B=973078528 used_B_median=146950656 booked_MB=[2702, 2702, 2702, 2702, 2702] inherited=0
+arm=ii L0 N=5 P=[1673, 1672, 1671, 1671, 1668] G=[96, 96, 96, 96, 96] cached=[0, 0, 0, 0, 0] ratios=[1.0, 1.0, 1.0, 1.0, 1.0] min=1.00 median=1.00 max=1.00 alloc_B=26384896 used_B_median=26236416 booked_MB=[855, 855, 854, 854, 853] inherited=1
+arm=ii L1 N=5 P=[2958, 2961, 2957, 2950, 2949] G=[96, 96, 96, 96, 96] cached=[0, 0, 0, 0, 0] ratios=[1.0, 1.0, 1.0, 1.0, 1.0] min=1.00 median=1.00 max=1.00 alloc_B=45464576 used_B_median=45330944 booked_MB=[1337, 1338, 1337, 1334, 1334] inherited=0
+arm=ii L2 N=5 P=[5664, 5660, 5653, 5650, 5647] G=[96, 96, 96, 96, 96] cached=[0, 0, 0, 0, 0] ratios=[1.0, 1.0, 1.0, 1.0, 1.0] min=1.00 median=1.00 max=1.00 alloc_B=85643264 used_B_median=85361152 booked_MB=[1813, 1813, 1813, 1813, 1813] inherited=0
+arm=iii L0 N=5 P=[1486, 1500, 1519, 1498, 1492] G=[2173, 4715, 4038, 2606, 4473] cached=[0, 0, 0, 0, 0] ratios=[17.91, 10.54, 11.79, 15.97, 10.99] min=10.54 median=11.79 max=17.91 alloc_B=973078528 used_B_median=82510336 booked_MB=[1734, 1739, 1746, 1739, 1736] inherited=0
+arm=iii L1 N=5 P=[3152, 3152, 3173, 3151, 3151] G=[2490, 4315, 2997, 2567, 3359] cached=[0, 0, 0, 0, 0] ratios=[11.62, 8.78, 10.62, 11.46, 10.07] min=8.78 median=10.62 max=11.62 alloc_B=973078528 used_B_median=91612160 booked_MB=[2335, 2335, 2342, 2334, 2334] inherited=2
+arm=iii L2 N=5 P=[5803, 5815, 5822, 5821, 5812] G=[4511, 4564, 3246, 10422, 3724] cached=[0, 0, 0, 0, 0] ratios=[6.35, 6.31, 7.23, 4.03, 6.87] min=4.03 median=6.35 max=7.23 alloc_B=973078528 used_B_median=153142272 booked_MB=[2703, 2703, 2703, 2703, 2703] inherited=0
+== driver free (bytes) across the run
+samples=4136 driver_free first=0 min=0 last=9923002368; pool_used first=0 max=13276396700 last=12019352552
+== concurrency arithmetic at the served context (idle free at ready divided by the booked cost; not an admission run)
+idle driver free before the first request (max of 8 nonzero samples; the ready-time gauges read 0 until the first tick): 17439195136
+L0: P~1441 open booked_MB=1718 -> 10 sessions; bounded booked_MB=854 -> 20 sessions (free_ready=17439195136)
+L1: P~3096 open booked_MB=2315 -> 7 sessions; bounded booked_MB=1337 -> 13 sessions (free_ready=17439195136)
+L2: P~5761 open booked_MB=2702 -> 6 sessions; bounded booked_MB=1813 -> 9 sessions (free_ready=17439195136)
+== prefix-cache and park lines (census by kind, verbatim first of each)
+   46  [prefix-cache] insert (lcp-split)  first: [prefix-cache] insert (lcp-split): 64 tokens, 53.6MB (resident 53.6MB / 2052MB, model q9)
+   40  [prefix-cache] evict  first: [prefix-cache] evict (snapshot preflight, LRU): 64 tokens, 53.6MB (model q9)
+   11  [prefix-cache] insert (seed)  first: [prefix-cache] insert (seed): 1472 tokens, 74.5MB (resident 1975.7MB / 2052MB, model q9)
+    1  [prefix-cache] on  first: [prefix-cache] on: budget 2052MB (2051538944 B, derived: 2 x 1025769472 B max entry for model "q9" at served ctx 65536 (from MEMRA_CTX; MEMRA_CTX set), requested 2051538944 B; boot driver free 1824450
+prefix-cache hit lines: 0
+== admit-predict lines (verbatim, first 6 and last 3)
+[admit-predict] id=chatcmpl-243bb38377b421b6c4e5d02f6f1a6c26 tenant="" model="q9" verdict=admit reason=maxtok-fallback prompt=90 predicted_completion=32 kv_hat=34370560 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=14602498048 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-05e36c9df93047de277cdfde443a7194 tenant="" model="q9" verdict=admit reason=global-p95 prompt=1439 predicted_completion=32 kv_hat=643908916 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=14602498048 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-7c9cc8466b90364e83292f62d0da097c tenant="" model="q9" verdict=admit reason=global-p95 prompt=1439 predicted_completion=3921 kv_hat=823046324 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=14602498048 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-4f9ba07f4718633f2aab17523cfc9d2d tenant="" model="q9" verdict=admit reason=global-p95 prompt=1442 predicted_completion=4363 kv_hat=830735028 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=14602498048 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-e9d7a774c6980c650ba471bccc88ff14 tenant="" model="q9" verdict=admit reason=global-p95 prompt=1442 predicted_completion=4363 kv_hat=830735028 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=14602498048 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-66632864fac84b3d568fbbd026f775c1 tenant="" model="q9" verdict=admit reason=global-p95 prompt=1441 predicted_completion=4761 kv_hat=836269236 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=14602498048 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-af3417f67bd2c2607cb1a84964807881 tenant="" model="q9" verdict=admit reason=tenant-p95 prompt=5822 predicted_completion=4761 kv_hat=1886586548 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=14602498048 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-a591505af19796347370070824067fc4 tenant="" model="q9" verdict=admit reason=tenant-p95 prompt=5821 predicted_completion=4761 kv_hat=1886555316 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=14602498048 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-20247031e3ae479ebe324c591051a9cd tenant="" model="q9" verdict=admit reason=tenant-p95 prompt=5812 predicted_completion=4761 kv_hat=1886274228 booked_bytes=1886555316 booked_real=2703343796 inflight=1 cap=64 budget_bytes=14602498048 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+== day 27: retained at idle, pools and the park door (metrics-end.json, the last sample, the server lines)
+idle driver free before the first request=17439195136 last sample=9923002368 retained_by_process=7516192768
+pool used after warmup=7393531316 last=12019352552 delta=4625821236; pool reserved last=14931722240 cached last=2912369688
+continuation_pool_entries=2
+continuation_pool_hits=0
+continuation_pool_evictions=43
+spec_pool_entries=0
+spec_pool_hits=0
+spec_pool_evictions=0
+spec_pool_misses=0
+prefix_cache_entries=17
+prefix_cache_bytes=2032746496
+prefix_cache_hits=0
+prefix_cache_hit_tokens=0
+prefix_cache_inserts=57
+prefix_cache_evictions=40
+prefix_cache_misses=46
+step_oom_parks=0
+admission_vram_defers=0
+park-compact lines: 0
+affinity lines: plain-affinity: declined=45
+== day 27: completion digests (tag, P, G, cached, finish_reason, sha256)
+i-L0-r0 P=1439 G=3921 cached=0 finish=stop sha256=1b3cd882323b0c96bf1856919b11f8b5dbb130ac5725f43976b9ee328047d38c
+i-L0-r1 P=1439 G=4363 cached=0 finish=stop sha256=089dc7859738c3f481642f04f5045231bcf703a4d9c48e97ebdcce56b9804f2e
+i-L0-r2 P=1442 G=4123 cached=0 finish=stop sha256=f5fa8877b57eefa6fe1792199fa680a23aa880441069924bde95de0933e930db
+i-L0-r3 P=1442 G=4761 cached=0 finish=stop sha256=ef93227527a0ee9eb09407c526e1fa034fdfceab106fd3dfc810e8060a10a78c
+i-L0-r4 P=1441 G=5048 cached=0 finish=stop sha256=619be3ae7705dff124c0558f34f20d2260b4d7da91d5f62bf35e148089e330fc
+ii-L0-r0 P=1673 G=96 cached=0 finish=length sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+ii-L0-r1 P=1672 G=96 cached=0 finish=length sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+ii-L0-r2 P=1671 G=96 cached=0 finish=length sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+ii-L0-r3 P=1671 G=96 cached=0 finish=length sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+ii-L0-r4 P=1668 G=96 cached=0 finish=length sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+i-L1-r0 P=3096 G=3009 cached=0 finish=stop sha256=10b233e1f5878d4df16210a2be032fd61120723511a18d4cc341c5b9f69642cb
+i-L1-r1 P=3096 G=3799 cached=0 finish=stop sha256=74f7b4cb3843721d567869fed217be1846924b58acc5024c4a17cc87472552ef
+i-L1-r2 P=3097 G=2413 cached=0 finish=stop sha256=3e46c331276594ee8d4ba04fceed35384dae59ddb984186ff6f9c8c7f5cbac81
+i-L1-r3 P=3096 G=2833 cached=0 finish=stop sha256=318dfd03420b2659491a1a79d829016a8e28a0eb35bed8b85de898b606e3363a
+i-L1-r4 P=3094 G=3476 cached=0 finish=stop sha256=6b0a74b01342e38f586d8ce3cd8ec2d53cdc92d1a5bafb26698d873bb4b72b3f
+ii-L1-r0 P=2958 G=96 cached=0 finish=length sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+ii-L1-r1 P=2961 G=96 cached=0 finish=length sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+ii-L1-r2 P=2957 G=96 cached=0 finish=length sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+ii-L1-r3 P=2950 G=96 cached=0 finish=length sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+ii-L1-r4 P=2949 G=96 cached=0 finish=length sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+i-L2-r0 P=5755 G=4817 cached=0 finish=stop sha256=0dabd04b9bf3b5af53967b8b726cc1872f8e2d2075e1b6379bf3f79ac063de4c
+i-L2-r1 P=5761 G=3715 cached=0 finish=stop sha256=b98b60dde95449487f39e17a02d95faf2e5f0663b0ea5ee64f60552bce323c69
+i-L2-r2 P=5760 G=4137 cached=0 finish=stop sha256=c41d9012e0a78a0527d61145694454d5c26c909fdc914c18301a72bd3b8ea6c2
+i-L2-r3 P=5763 G=4584 cached=0 finish=stop sha256=4aca2b5dd8c873cc270d614274aa922b80750b23aad75945dda3b2b7c69713dd
+i-L2-r4 P=5761 G=3248 cached=0 finish=stop sha256=7c56806ceeddd77b5ce693061f3cb9f6bb22ee58931e8eac5caffcfa1d668403
+ii-L2-r0 P=5664 G=96 cached=0 finish=length sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+ii-L2-r1 P=5660 G=96 cached=0 finish=length sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+ii-L2-r2 P=5653 G=96 cached=0 finish=length sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+ii-L2-r3 P=5650 G=96 cached=0 finish=length sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+ii-L2-r4 P=5647 G=96 cached=0 finish=length sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+iii-L0-r0 P=1486 G=2173 cached=0 finish=stop sha256=9d6b8edc59cb588c3bc4e63f5c3c2e75c0f63b8b16e58e2b9d58b936ac5f269e
+iii-L0-r1 P=1500 G=4715 cached=0 finish=stop sha256=3ef17ec94c9e31f2d7a3b30761e654e190b0660635c81e87cf027bd44004dba2
+iii-L0-r2 P=1519 G=4038 cached=0 finish=stop sha256=20f3ddc9f6f91dae5516a83af6f72db688203dab97f093caf324e48c318b88c6
+iii-L0-r3 P=1498 G=2606 cached=0 finish=stop sha256=02db36432f0f9389266088278120ec2ce21aaec2da2438b72f2797bd0f47ded2
+iii-L0-r4 P=1492 G=4473 cached=0 finish=stop sha256=6e3b09d62bfe17a26db143574dccbd4552cb88886abeb42bd8d81743cbfa1062
+iii-L1-r0 P=3152 G=2490 cached=0 finish=stop sha256=e59311ed4ec62480d0b0b83ece42a760307ccc7180ef81ac8646b1e967e7209d
+iii-L1-r1 P=3152 G=4315 cached=0 finish=stop sha256=d5a77734da5fbdae262d971ca15eff86e5d918d3c26dd9ca779867ba6340c532
+iii-L1-r2 P=3173 G=2997 cached=0 finish=stop sha256=a94ec365f473e23a1137d9a1d46c84c2ea75452b1a2a6e3064d7fc604d0d63d1
+iii-L1-r3 P=3151 G=2567 cached=0 finish=stop sha256=ffed60c749a272295009e67a40ca8fee6b2fd134662cdf331ef87d9ccb1691cb
+iii-L1-r4 P=3151 G=3359 cached=0 finish=stop sha256=cff57d87d2493dc5288d27ff8e87300bd81283aa047802427c6182f90670976d
+iii-L2-r0 P=5803 G=4511 cached=0 finish=stop sha256=52d3a4b90604adde11eaf26a8ae67a39eb62be92c0e6bf2ecbf63e9ad18e1e1d
+iii-L2-r1 P=5815 G=4564 cached=0 finish=stop sha256=a32f93851f2e6c701cac418908036aff6e33f1d03d67bb1904454ac8879f422f
+iii-L2-r2 P=5822 G=3246 cached=0 finish=stop sha256=b60894e103c27a802ca01cd6e97519af3cb3b076a5378a8cd2281fd97942acd6
+iii-L2-r3 P=5821 G=10422 cached=0 finish=error sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+iii-L2-r4 P=5812 G=3724 cached=0 finish=stop sha256=c6c692a50e0d7a41b21424f9f2d82279c9a7805fd58ff7276141379d7aa541a7
+requests_ok=45 non200=0

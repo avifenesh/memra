@@ -1,0 +1,15 @@
+build main 359e850d0 SERVER_EXIT=0 ENGINE_EXIT=0 
+build tile f5ad01dd4 SERVER_EXIT=0 ENGINE_EXIT=0 
+test-build /root/lane/target-tile/release/deps/dsv4_gemm_tile_gpu-776ffee035219519
+tile-test rc=0 test result: ok. 0 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; finished in 0.00s 
+long-304 T rc=0 PASS: 304 PROGRAM_SHA256 fbce1a0492d69635 
+rows tp_ep rc=0 PASS: replayed, then 8 B-row steps beside a peer while armed, then replayed again: bit-identical to solo steps PASS: B-row graph steps bit-identical to solo steps across join, leave and row moves (5 captures, 28 graph steps) PASS: sampled B-row graph draws equal the eager B-row draws (24 steps x 4 rows) 
+kv-split rc=0 PASS: 100 full-token replay steps on the split state bit-identical to replicated eager PASS: park, restore and 50 more steps bit-identical, split against replicated PASS: position-split C4 store bit-identical to the replicated program 
+dspark-tpep T 62b368f10f1becea d404da5fe101077f d404da5fe101077f  | GPU DSPARK GATE [PASS] GATE_DONE rc=0 utc=2026-09-27T06:59:45Z 
+serve r1 M rc=0 CELL greedy-8k c=1 ok=2/2 agg=3.45 tok/s decode_p50=74.56 tok/s ttft_p50=17690 ms tpot_p50=13.41 ms errs=[] CELL greedy-32k c=1 ok=1/1 agg=0.86 tok/s decode_p50=72.10 tok/s ttft_p50=73934 ms tpot_p50=13.87 ms errs=[] 
+serve r2 T rc=0 CELL greedy-8k c=1 ok=2/2 agg=4.21 tok/s decode_p50=74.96 tok/s ttft_p50=14359 ms tpot_p50=13.34 ms errs=[] CELL greedy-32k c=1 ok=1/1 agg=1.03 tok/s decode_p50=72.09 tok/s ttft_p50=60971 ms tpot_p50=13.87 ms errs=[] 
+serve r3 T rc=0 CELL greedy-8k c=1 ok=2/2 agg=4.22 tok/s decode_p50=75.02 tok/s ttft_p50=14341 ms tpot_p50=13.33 ms errs=[] CELL greedy-32k c=1 ok=1/1 agg=1.03 tok/s decode_p50=72.07 tok/s ttft_p50=60969 ms tpot_p50=13.88 ms errs=[] 
+serve r4 M rc=0 CELL greedy-8k c=1 ok=2/2 agg=3.46 tok/s decode_p50=74.94 tok/s ttft_p50=17678 ms tpot_p50=13.34 ms errs=[] CELL greedy-32k c=1 ok=1/1 agg=0.86 tok/s decode_p50=72.11 tok/s ttft_p50=73927 ms tpot_p50=13.87 ms errs=[] 
+serve r5 M rc=0 CELL greedy-8k c=1 ok=2/2 agg=3.45 tok/s decode_p50=74.60 tok/s ttft_p50=17705 ms tpot_p50=13.40 ms errs=[] CELL greedy-32k c=1 ok=1/1 agg=0.86 tok/s decode_p50=72.05 tok/s ttft_p50=73935 ms tpot_p50=13.88 ms errs=[] 
+serve r6 T rc=0 CELL greedy-8k c=1 ok=2/2 agg=4.21 tok/s decode_p50=74.79 tok/s ttft_p50=14368 ms tpot_p50=13.37 ms errs=[] CELL greedy-32k c=1 ok=1/1 agg=1.03 tok/s decode_p50=72.09 tok/s ttft_p50=60965 ms tpot_p50=13.87 ms errs=[] 
+V6K_DONE f5ad01dd42d8a35fab4e0417d20db1b07fad5251

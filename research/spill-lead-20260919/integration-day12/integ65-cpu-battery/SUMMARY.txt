@@ -1,0 +1,65 @@
+tree b23829f6d144112186611be58f826938aeef2903 started 2026-09-26T00:57:05Z host avifenesh rustc rustc 1.97.1 (8bab26f4f 2026-07-14)
+== fmt: cargo fmt --all -- --check
+   rc=0 (3s)
+== portable-suites: bash tools/portable-suites.sh
+   rc=0 (29s)
+   | skip-census: output banked at /home/avifenesh/projects/wt-spill-integ65/target/portable-suites.log
+   | skip-census: 388 passed, 0 skipped (budget 0), 0 failed, 0 filtered out across 16 binaries
+   | portable-suites: PASS (tier, KV and onboarding CLI suites executed on CPU; skips 0 of budget 0; NOT GPU qualification)
+== test-server: cargo test -p memra-server --offline --no-fail-fast
+   rc=0 (180s)
+   | 
+   | test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   | 
+== clippy: env DOCS_RS=1 cargo clippy -p memra-engine -p memra-server -p memra-tier -p memra-kv -p memra-gguf -p memra-cli --offline --target x86_64-unknown-linux-gnu --all-targets -- -D warnings
+   rc=0 (42s)
+   |     Checking memra-reference v0.138.0 (/home/avifenesh/projects/wt-spill-integ65/crates/memra-reference)
+   |     Checking memra-cli v0.138.0 (/home/avifenesh/projects/wt-spill-integ65/crates/memra-cli)
+   |     Finished `dev` profile [unoptimized + debuginfo] target(s) in 41.39s
+== check-flags: bash tools/check-flags.sh
+   rc=0 (1s)
+   | check-flags: runtime literal reads=867
+   | check-flags: no uncovered runtime names
+   | check-flags: every runtime MEMRA_* name resolves against 'docs/FLAGS.md' (no grandfather list)
+== publish-census: bash tools/workspace-publish-census.sh
+   rc=0 (0s)
+   | publish-census: OK — 12 publishable members, 12 listed, order topological, unpublishable: memra-probe
+== docs-registry: bash tools/docs-registry-census.sh
+   rc=0 (1s)
+   | docs-registry-census: ROUTER.md lines=47 (cap 60)
+   | docs-registry-census: check-flags --list answered with 867 runtime names (coverage enforced by check-flags.sh itself)
+   | docs-registry-census: flags-table-census: docs/FLAGS.md tables=57 rows=915, every row matches its header
+== pytest-battery: python3 -m pytest -q crates/memra-tier/tests/battery/
+   rc=0 (18s)
+   | [32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m [ 57%]
+   | [0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m                          [100%][0m
+   | [32m[32m[1m87 passed[0m, [32m[1m32 subtests passed[0m[32m in 17.97s[0m[0m
+== test-engine-cpu: cargo test -p memra-engine --lib --offline --no-fail-fast
+   rc=0 (29s)
+   | 
+   | test result: ok. 573 passed; 0 failed; 47 ignored; 0 measured; 0 filtered out; finished in 10.12s
+   | 
+== test-tier: cargo test -p memra-tier --offline --no-fail-fast
+   rc=0 (13s)
+   | 
+   | test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+   | 
+== clippy-engine: cargo clippy -p memra-engine -p memra-server -p memra-tier --offline --all-targets -- -D warnings
+   rc=0 (167s)
+   | warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+   | warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   |     Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 45s
+== conflict-markers: bash tools/check-conflict-markers.sh
+   rc=0 (2s)
+   | check-conflict-markers: OK (no conflict marker line in tracked source or docs)
+== workflow-keys: python3 tools/check-workflow-keys.py
+   rc=0 (0s)
+   | check-workflow-keys: .github/workflows/publish.yml: jobs publish
+   | check-workflow-keys: .github/workflows/release.yml: jobs guard, build, release
+   | check-workflow-keys: OK: 7 workflow files, no duplicate mapping keys (stdlib walker)
+== perf-board: python3 tools/update-perf-board.py --check
+   rc=0 (0s)
+   | perf board is up to date
+== diff-check: git diff --check origin/main HEAD
+   rc=0 (0s)
+finished 2026-09-26T01:05:10Z

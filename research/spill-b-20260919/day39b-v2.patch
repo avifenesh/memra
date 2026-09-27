@@ -1,0 +1,280 @@
+diff --git a/crates/memra-engine/src/spec/prime.rs b/crates/memra-engine/src/spec/prime.rs
+index 488eacb69..af3496b40 100644
+--- a/crates/memra-engine/src/spec/prime.rs
++++ b/crates/memra-engine/src/spec/prime.rs
+@@ -53,15 +53,6 @@ pub struct MtpPrimeState {
+     call_local: bool,
+ }
+ 
+-impl MtpPrimeState {
+-    /// WP-B day 39 addendum B: the walker has not yet run the chunk that ends on its turn
+-    /// checkpoint row, so that checkpoint's `Cache::snapshot` is still owed.
+-    pub fn owes_turn_checkpoint(&self) -> bool {
+-        self.ckpt_rel
+-            .is_some_and(|r| self.chunks.get(self.cursor).is_some_and(|c| c.start < r))
+-    }
+-}
+-
+ pub struct MtpPrimeWalker<'a> {
+     model: &'a HybridModel,
+     e: &'a Engine,
+@@ -701,38 +692,6 @@ impl PrimeWalker for MtpPrimeWalker<'_> {
+ mod tests {
+     use super::*;
+ 
+-    /// WP-B day 39 addendum B: the walker owes its turn checkpoint's snapshot until it has run
+-    /// the chunk that ends on the checkpoint row.
+-    #[test]
+-    fn the_walker_owes_its_turn_checkpoint_until_the_row_is_primed() {
+-        let state = |ckpt_rel: Option<usize>, cursor: usize| MtpPrimeState {
+-            prompt: vec![0; 2061],
+-            base: 0,
+-            chunks: trunk_schedule(2061, None, Some(1024), false, false, |n| vec![(0, n)]),
+-            cursor,
+-            fill_cursor: 0,
+-            fill_chunk: 4096,
+-            short: false,
+-            hiddens: None,
+-            logits: Vec::new(),
+-            capture_at: None,
+-            ckpt_rel,
+-            k: 1,
+-            sampling: resolve_spec_sampling(None),
+-            graph_draft: false,
+-            prepared: None,
+-            wall: std::time::Duration::ZERO,
+-            call_local: false,
+-        };
+-        assert!(state(Some(1024), 0).owes_turn_checkpoint());
+-        assert!(
+-            !state(Some(1024), 1).owes_turn_checkpoint(),
+-            "the chunk ending on 1024 ran"
+-        );
+-        assert!(!state(Some(1024), 2).owes_turn_checkpoint());
+-        assert!(!state(None, 0).owes_turn_checkpoint());
+-    }
+-
+     #[test]
+     fn stable_captures_preserve_segment_local_ranges_and_tiny_tail_program() {
+         let chunks = trunk_schedule(2061, Some(1024), Some(2048), false, false, |n| vec![(0, n)]);
+diff --git a/crates/memra-server/src/worker.rs b/crates/memra-server/src/worker.rs
+index 3651bc6b6..75f67b611 100644
+--- a/crates/memra-server/src/worker.rs
++++ b/crates/memra-server/src/worker.rs
+@@ -6325,16 +6325,11 @@ struct PrimeOwed {
+     unstarted_walker: bool,
+     /// The walker persists across ticks (`MEMRA_PRIME_YIELD` and the model supports the walk).
+     cooperative: bool,
+-    /// Addendum B: the checkpoint snapshots this session's prime will still take, in bytes
+-    /// (`Cache::snapshot` copies every recurrent layer's conv and ssm state).
+-    snapshot_bytes: usize,
+ }
+ 
+-/// The corrected pending-prime term for one model (pure; DAY39 1.2 as revised by addendum B):
+-/// the slab's owed growth for the largest call, once; that call's returned rows, once (the slab
+-/// does not hold them); the cooperative unstarted walkers' stacks summed; the largest
+-/// non-cooperative walker stack once; every owed checkpoint snapshot; the hyper shape per session
+-/// as day 33 booked it.
++/// The corrected pending-prime term for one model (pure; DAY39 1.2): the largest call, with its
++/// returned rows, once less the resident slab; the cooperative unstarted walkers' stacks summed; the
++/// largest non-cooperative walker stack once; the hyper shape per session as day 33 booked it.
+ fn pending_prime_for_model(
+     owed: &[PrimeOwed],
+     shape: Option<&memra_engine::hybrid_forward::PrimeWorkspaceShape>,
+@@ -6346,23 +6341,19 @@ fn pending_prime_for_model(
+             .map(|o| h.admission_bytes(o.rows))
+             .fold(0usize, usize::saturating_add)
+     });
+-    let snapshots = owed
+-        .iter()
+-        .map(|o| o.snapshot_bytes)
+-        .fold(0usize, usize::saturating_add);
+     let Some(shape) = shape else {
+-        return hyper_bytes.saturating_add(snapshots);
++        return hyper_bytes;
+     };
+     let call_rows = owed
+         .iter()
+         .map(|o| shape.call_rows(o.rows))
+         .max()
+         .unwrap_or(0);
+-    let slab_growth = shape
++    let once = shape
+         .call_row_bytes
++        .saturating_add(shape.prompt_row_bytes)
+         .saturating_mul(call_rows)
+         .saturating_sub(slab_bytes);
+-    let returned = shape.prompt_row_bytes.saturating_mul(call_rows);
+     let stack = |o: &PrimeOwed| shape.prompt_row_bytes.saturating_mul(o.rows);
+     let stacks = owed
+         .iter()
+@@ -6375,58 +6366,16 @@ fn pending_prime_for_model(
+         .map(stack)
+         .max()
+         .unwrap_or(0);
+-    slab_growth
+-        .saturating_add(returned)
+-        .saturating_add(stacks)
++    once.saturating_add(stacks)
+         .saturating_add(noncoop)
+-        .saturating_add(snapshots)
+         .saturating_add(hyper_bytes)
+ }
+ 
+-/// Bytes `Cache::snapshot` copies for `cache`: every recurrent layer's conv and ssm state (the
+-/// recurrent part of `prefix_seed_bytes_at`). 0 for an attention-only cache.
+-fn cache_snapshot_bytes(cache: &Cache) -> usize {
+-    cache
+-        .recur
+-        .iter()
+-        .flatten()
+-        .map(|r| (r.conv_state.len() + r.ssm_state.len()) * 4)
+-        .fold(0usize, usize::saturating_add)
+-}
+-
+-/// The checkpoint snapshots a still-priming session's prime will still take (DAY39 addendum B):
+-/// a plain session with its affinity checkpoint armed and not taken; a spec session whose turn
+-/// checkpoint is armed (`ckpt_at` before its walker starts) or whose walker has not reached the
+-/// checkpoint row. Prefix-seed captures are `pending_seed`'s.
+-fn session_snapshot_bytes_owed(s: &Session) -> usize {
+-    match s.spec.as_ref() {
+-        Some(sp) => {
+-            let owed = match s.mtp_prime.as_ref() {
+-                Some(state) => state.owes_turn_checkpoint(),
+-                None => sp.ckpt_at.is_some(),
+-            };
+-            if owed {
+-                cache_snapshot_bytes(sp.cache_ref())
+-            } else {
+-                0
+-            }
+-        }
+-        None => match s.cache.as_ref() {
+-            Some(cache) if s.ckpt_at.is_some() && s.ckpt_snap.is_none() => {
+-                cache_snapshot_bytes(cache)
+-            }
+-            _ => 0,
+-        },
+-    }
+-}
+-
+-/// The corrected pending-prime term (WP-B day 39, `research/spill-b-20260919/DAY39.md` 1.2 and
+-/// addendum B), per model through `pending_prime_for_model`: the prime slab is retained,
+-/// grow-only and shared by every prime call on the device, and the batched worker runs those calls
+-/// one after another, so a burst owes one call's workspace (the slab part less the slab already
+-/// resident, plus the call's returned rows), each cooperative walker's stack until that walker
+-/// starts, and every checkpoint snapshot the primes will still take, not one whole workspace per
+-/// session.
++/// The corrected pending-prime term (WP-B day 39, `research/spill-b-20260919/DAY39.md` 1.2), per
++/// model through `pending_prime_for_model`: the prime slab is retained, grow-only and shared by every
++/// prime call on the device, and the batched worker runs those calls one after another, so a burst
++/// owes one call's workspace (less the slab already resident) and each cooperative walker's stack
++/// until that walker starts, not one whole workspace per session.
+ fn pending_prime_bytes_v2(
+     active: &[Session],
+     admission_costs: &HashMap<String, AdmissionCostModel>,
+@@ -6446,7 +6395,6 @@ fn pending_prime_bytes_v2(
+                 rows,
+                 unstarted_walker: s.spec.is_some() && s.mtp_prime.is_none(),
+                 cooperative: cooperative(&s.model),
+-                snapshot_bytes: session_snapshot_bytes_owed(s),
+             });
+     }
+     by_model
+@@ -53268,33 +53216,27 @@ mod tests {
+             rows,
+             unstarted_walker,
+             cooperative,
+-            snapshot_bytes: 0,
+         };
+-        let slab = |rows: usize| 400_000 * shape.call_rows(rows);
+-        let returned = |rows: usize| 20_480 * shape.call_rows(rows);
++        let call = |rows: usize| (400_000 + 20_480) * shape.call_rows(rows);
+         // Nothing owed: 0.
+         assert_eq!(
+             super::pending_prime_for_model(&[], Some(&shape), None, 0),
+             0
+         );
+-        // N plain sessions: one call, once, not N: the slab rows plus the call's returned rows.
++        // N plain sessions: one call, once, not N.
+         let plain = vec![o(1_300, false, false); 64];
+         assert_eq!(
+             super::pending_prime_for_model(&plain, Some(&shape), None, 0),
+-            slab(1_300) + returned(1_300)
++            call(1_300)
+         );
+-        // Addendum B: the resident slab covers only the slab rows; the returned rows stay owed.
++        // The resident slab covers the call: only what exceeds it is owed.
+         assert_eq!(
+-            super::pending_prime_for_model(&plain, Some(&shape), None, slab(1_300)),
+-            returned(1_300)
++            super::pending_prime_for_model(&plain, Some(&shape), None, call(1_300)),
++            0
+         );
+         assert_eq!(
+-            super::pending_prime_for_model(&plain, Some(&shape), None, 1 << 40),
+-            returned(1_300)
+-        );
+-        assert_eq!(
+-            super::pending_prime_for_model(&plain, Some(&shape), None, slab(1_300) - 7),
+-            7 + returned(1_300)
++            super::pending_prime_for_model(&plain, Some(&shape), None, call(1_300) - 7),
++            7
+         );
+         // Cooperative unstarted walkers: each whole-prompt stack; a started walker books none.
+         let coop = vec![
+@@ -53304,49 +53246,17 @@ mod tests {
+         ];
+         assert_eq!(
+             super::pending_prime_for_model(&coop, Some(&shape), None, 0),
+-            slab(1_300) + returned(1_300) + 2 * 20_480 * 1_300
++            call(1_300) + 2 * 20_480 * 1_300
+         );
+         // Non-cooperative walkers: only the largest stack (it lives for one call).
+         let noncoop = vec![o(1_000, true, false), o(2_000, true, false)];
+         assert_eq!(
+             super::pending_prime_for_model(&noncoop, Some(&shape), None, 0),
+-            slab(2_000) + returned(2_000) + 20_480 * 2_000
++            call(2_000) + 20_480 * 2_000
+         );
+-        // Addendum B: every owed checkpoint snapshot is booked, once per session that owes one.
+-        let snap = 156_900_000;
+-        let mut ckpt = vec![o(1_300, false, false); 51];
+-        for x in ckpt.iter_mut().take(50) {
+-            x.snapshot_bytes = snap;
+-        }
+-        assert_eq!(
+-            super::pending_prime_for_model(&ckpt, Some(&shape), None, 1 << 40),
+-            returned(1_300) + 50 * snap
+-        );
+-        // A model without a prime shape still books its owed snapshots.
+-        assert_eq!(
+-            super::pending_prime_for_model(&ckpt, None, None, 0),
+-            50 * snap
+-        );
+-    }
+-
+-    /// DAY39 addendum B: the snapshot a session still owes, from its own state.
+-    #[test]
+-    fn owed_checkpoint_snapshots_follow_the_session_state() {
+-        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+-        let worker = squash(include_str!("worker.rs"));
+-        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+-        // Plain: armed and untaken owes one; a taken checkpoint owes none.
+-        assert!(live.contains(
+-            "Some(cache) if s.ckpt_at.is_some() && s.ckpt_snap.is_none() => { cache_snapshot_bytes(cache) }"
+-        ));
+-        // Spec: the session's armed `ckpt_at` before the walker, the walker's own row after it.
+-        assert!(live.contains(
+-            "let owed = match s.mtp_prime.as_ref() { Some(state) => state.owes_turn_checkpoint(), None => sp.ckpt_at.is_some(), };"
+-        ));
+-        // The snapshot bytes are what `Cache::snapshot` copies: conv and ssm of every recurrent
+-        // layer, the same arithmetic as the seed entry's recurrent part.
+-        assert!(live.contains(".map(|r| (r.conv_state.len() + r.ssm_state.len()) * 4)"));
+-        assert!(live.contains("snapshot_bytes: session_snapshot_bytes_owed(s),"));
++        // Never above day 33's per-session sum for the same sessions.
++        let v1: usize = coop.iter().map(|x| shape.admission_bytes(x.rows)).sum();
++        assert!(super::pending_prime_for_model(&coop, Some(&shape), None, 0) <= v1);
+     }
+ 
+     /// The corrected term is computed only with the door armed and replaces day 33's in the one

@@ -1,0 +1,44 @@
+DAY46 P2 card=pro6000 boot=O1-enforce oom_lines=0 parked_oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY46 P1 card=pro6000 boot=O1-enforce r429=79 without_reject_line=[] retry_after_out_of_1_60=[] other_non200=[] -> PASS
+DAY46 P3 card=pro6000 boot=O1-enforce admit_lines=28 over_budget=[] -> PASS
+DAY46 P5-PROBE card=pro6000 boot=O1-enforce probe_booked=0 probe_booked_real=0 -> PASS
+DAY46 READING card=pro6000 boot=O1-enforce budget_bytes=65877946064 peak_booked_bytes=64460736232 sequence_admitted=9/9
+DAY46 READING card=pro6000 boot=O1-enforce wave=burst n=64 ok200=17 r429=47 booked_at_first_line=0 ttft_ms p50=151806.1 p95=151815.0 N=17 time_to_429_ms p50=1065.3 max=1088.6
+DAY46 READING card=pro6000 boot=O1-enforce wave=wave2 n=32 ok200=0 r429=32 booked_at_first_line=64460736232 ttft_ms p50=nan p95=nan N=0 time_to_429_ms p50=5089.9 max=5107.8
+DAY46 P2 card=pro6000 boot=O1-enforce-wrel oom_lines=0 parked_oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY46 P1 card=pro6000 boot=O1-enforce-wrel r429=79 without_reject_line=[] retry_after_out_of_1_60=[] other_non200=[] -> PASS
+DAY46 P3 card=pro6000 boot=O1-enforce-wrel admit_lines=28 over_budget=[] -> PASS
+DAY46 P5-PROBE card=pro6000 boot=O1-enforce-wrel probe_booked=0 probe_booked_real=0 -> PASS
+DAY46 P5 card=pro6000 boot=O1-enforce-wrel w_booked=28 w_release=27 w_retire_unreleased=1 twice=[] bytes_mismatch=[] neither=[] -> PASS
+DAY46 READING card=pro6000 boot=O1-enforce-wrel budget_bytes=65877946064 peak_booked_bytes=64460736232 sequence_admitted=9/9
+DAY46 READING card=pro6000 boot=O1-enforce-wrel wave=burst n=64 ok200=17 r429=47 booked_at_first_line=0 ttft_ms p50=151795.0 p95=151804.0 N=17 time_to_429_ms p50=1051.2 max=1093.1
+DAY46 READING card=pro6000 boot=O1-enforce-wrel wave=wave2 n=32 ok200=0 r429=32 booked_at_first_line=64460736232 ttft_ms p50=nan p95=nan N=0 time_to_429_ms p50=5098.4 max=5121.2
+DAY46 P2-READING card=pro6000 boot=O1-shadow oom_lines=55 parked_oom_lines=0 crash_lines=0 r503=0 -> READING (the before)
+DAY46 P5-PROBE card=pro6000 boot=O1-shadow probe_booked=0 probe_booked_real=0 -> PASS
+DAY46 READING card=pro6000 boot=O1-shadow budget_bytes=65877946064 peak_booked_bytes=231116519944 sequence_admitted=9/9
+DAY46 READING card=pro6000 boot=O1-shadow wave=burst n=64 ok200=11 r429=0 booked_at_first_line=0 ttft_ms p50=523887.3 p95=835796.3 N=11 time_to_429_ms p50=nan max=nan
+DAY46 READING card=pro6000 boot=O1-shadow wave=wave2 n=32 ok200=32 r429=0 booked_at_first_line=41734947544 ttft_ms p50=312231.2 p95=313954.7 N=32 time_to_429_ms p50=nan max=nan
+DAY46 P2 card=pro6000 boot=O2-enforce oom_lines=0 parked_oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY46 P1 card=pro6000 boot=O2-enforce r429=79 without_reject_line=[] retry_after_out_of_1_60=[] other_non200=[] -> PASS
+DAY46 P3 card=pro6000 boot=O2-enforce admit_lines=28 over_budget=[] -> PASS
+DAY46 P5-PROBE card=pro6000 boot=O2-enforce probe_booked=0 probe_booked_real=0 -> PASS
+DAY46 READING card=pro6000 boot=O2-enforce budget_bytes=65877946064 peak_booked_bytes=64460736232 sequence_admitted=9/9
+DAY46 READING card=pro6000 boot=O2-enforce wave=burst n=64 ok200=17 r429=47 booked_at_first_line=0 ttft_ms p50=151775.1 p95=151785.4 N=17 time_to_429_ms p50=1056.6 max=1089.1
+DAY46 READING card=pro6000 boot=O2-enforce wave=wave2 n=32 ok200=0 r429=32 booked_at_first_line=64460736232 ttft_ms p50=nan p95=nan N=0 time_to_429_ms p50=5084.0 max=5114.9
+DAY46 P2 card=pro6000 boot=O2-enforce-wrel oom_lines=0 parked_oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY46 P1 card=pro6000 boot=O2-enforce-wrel r429=79 without_reject_line=[] retry_after_out_of_1_60=[] other_non200=[] -> PASS
+DAY46 P3 card=pro6000 boot=O2-enforce-wrel admit_lines=28 over_budget=[] -> PASS
+DAY46 P5-PROBE card=pro6000 boot=O2-enforce-wrel probe_booked=0 probe_booked_real=0 -> PASS
+DAY46 P5 card=pro6000 boot=O2-enforce-wrel w_booked=28 w_release=27 w_retire_unreleased=1 twice=[] bytes_mismatch=[] neither=[] -> PASS
+DAY46 READING card=pro6000 boot=O2-enforce-wrel budget_bytes=65877946064 peak_booked_bytes=64460736232 sequence_admitted=9/9
+DAY46 READING card=pro6000 boot=O2-enforce-wrel wave=burst n=64 ok200=17 r429=47 booked_at_first_line=0 ttft_ms p50=151782.5 p95=151791.6 N=17 time_to_429_ms p50=1056.4 max=1103.3
+DAY46 READING card=pro6000 boot=O2-enforce-wrel wave=wave2 n=32 ok200=0 r429=32 booked_at_first_line=64460736232 ttft_ms p50=nan p95=nan N=0 time_to_429_ms p50=5086.5 max=5116.4
+DAY46 P2-READING card=pro6000 boot=O2-shadow oom_lines=55 parked_oom_lines=0 crash_lines=0 r503=0 -> READING (the before)
+DAY46 P5-PROBE card=pro6000 boot=O2-shadow probe_booked=0 probe_booked_real=0 -> PASS
+DAY46 READING card=pro6000 boot=O2-shadow budget_bytes=65877946064 peak_booked_bytes=231116519944 sequence_admitted=9/9
+DAY46 READING card=pro6000 boot=O2-shadow wave=burst n=64 ok200=11 r429=0 booked_at_first_line=0 ttft_ms p50=529136.3 p95=837182.5 N=11 time_to_429_ms p50=nan max=nan
+DAY46 READING card=pro6000 boot=O2-shadow wave=wave2 n=32 ok200=32 r429=0 booked_at_first_line=41734947544 ttft_ms p50=315550.7 p95=316117.5 N=32 time_to_429_ms p50=nan max=nan
+DAY46 P4 card=pro6000 order=O1 arm=enforce rows_200_both=18 status_mismatch=79 differ=[] -> PASS
+DAY46 P4 card=pro6000 order=O1 arm=enforce-wrel rows_200_both=18 status_mismatch=79 differ=[] -> PASS
+DAY46 P4 card=pro6000 order=O2 arm=enforce rows_200_both=18 status_mismatch=79 differ=[] -> PASS
+DAY46 P4 card=pro6000 order=O2 arm=enforce-wrel rows_200_both=18 status_mismatch=79 differ=[] -> PASS

@@ -1,0 +1,7 @@
+START utc=2026-09-27T00:37:35Z bin=/root/lane/target-mft/release/memra-server env=MEMRA_ENV_AUDIT=on MEMRA_DSV4_DRAFTER=dspark
+READY after=235s port=56301
+CELL warmup c=1 ok=1/1 agg=77.46 tok/s decode_p50=195.83 tok/s ttft_p50=254 ms tpot_p50=5.11 ms errs=[]
+CELL greedy-c1 c=1 ok=8/8 agg=95.63 tok/s decode_p50=101.70 tok/s ttft_p50=171 ms tpot_p50=9.83 ms errs=[]
+CELL sampled-c1 c=1 ok=8/8 agg=80.50 tok/s decode_p50=82.93 tok/s ttft_p50=180 ms tpot_p50=12.06 ms errs=[]
+CELLS_DONE utc=2026-09-27T00:42:17Z
+TERMINAL rc=0 utc=2026-09-27T00:42:23Z

@@ -1,0 +1,112 @@
+2026-09-24T17:06:10Z serve-smoke runs at c6f9282c26e71349c0263b88dc7beb59c4a57797 in /root/wt-b/target/smoke-wt-c6f9282c26e7 (build rc=0     Finished `release` profile [optimized] target(s) in 2m 33s)
+2026-09-24T17:06:10Z start serve-smoke env=[ ]
+2026-09-24T17:06:10Z done serve-smoke rc=1 door_on=0 door_off=0 serve-smoke: FAIL — cannot observe listening sockets (no ss, no lsof), so this run
+2026-09-24T17:06:12Z start identity-default-on env=[ MEMRA_HOSTGATE_CACHE_MB=256 MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-24T17:06:12Z done identity-default-on rc=1 door_on=0 door_off=0 
+2026-09-24T17:06:12Z start fault-default env=[ MEMRA_HOSTGATE_CACHE_MB=256]
+2026-09-24T17:06:12Z done fault-default rc=1 door_on=0 door_off=0 
+2026-09-24T17:06:12Z start fault-plain env=[ MEMRA_HOSTGATE_CACHE_MB=256 MEMRA_SERVE_SPEC=0]
+2026-09-24T17:06:12Z done fault-plain rc=1 door_on=0 door_off=0 
+2026-09-24T17:06:12Z start hit-off env=[ ]
+2026-09-24T17:06:12Z done hit-off rc=1 door_on=0 door_off=0 
+2026-09-24T17:06:12Z start hit-on env=[ MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-24T17:06:12Z done hit-on rc=1 door_on=0 door_off=0 
+2026-09-24T17:06:12Z start admit-mem-burst env=[ ]
+2026-09-24T17:06:12Z done admit-mem-burst rc=2 door_on=0 door_off=0 
+2026-09-24T17:06:12Z start spec-ctx-edge env=[ ]
+2026-09-24T17:06:12Z done spec-ctx-edge rc=2 door_on=0 door_off=0 
+2026-09-24T17:06:12Z start twin27-off env=[ ]
+2026-09-24T17:07:19Z done twin27-off rc=0 door_on=0 door_off=2 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 i
+2026-09-24T17:07:19Z start twin27-on env=[ MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-24T17:08:28Z done twin27-on rc=0 door_on=0 door_off=2 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 i
+2026-09-24T17:08:28Z gates done arm=pooled
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "research/spill-b-20260919/rtx5090-day37/gates.sh",
+    "3",
+    "pooled",
+    "/root/spill-receipts/b-day37/gates-r4-pooled"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "585.00 W",
+      "power.max_limit": "600.00 W"
+    },
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 50859165859101,
+  "ended_monotonic_ns": 51154746838215,
+  "started_utc": "2026-09-24T17:03:32.851224+00:00",
+  "ended_utc": "2026-09-24T17:08:28.432207+00:00",
+  "elapsed_seconds": 295.580979114,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 2072,
+    "sha256": "7e446940a878c58e69150cc279d58487d0526d6a963b71c82ebc5f7c37ebf7e4"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 123981,
+      "sha256": "9ac67587f98763a6de2f3ba083c348ec11f300ec91d6b18353d30bd5a9f59b8c"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 182,
+    "sha256": "7cbecc1a59fe23b64bf069bf3d488ea9372a42debdc88df55e18743f37fc3da7"
+  }
+}

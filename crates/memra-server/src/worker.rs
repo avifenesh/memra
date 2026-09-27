@@ -1626,6 +1626,10 @@ pub struct Request {
     /// reset the budget forever and bound nothing. `None` off the door and until the first
     /// memory defer.
     pub(crate) memory_defer_since: Option<Instant>,
+    /// WP-B day 42 (`MEMRA_ADMIT_RECLAIM_OFFTICK`): this arrival's off-tick reclaim plan, made at
+    /// its first reclaim pass (`research/spill-b-20260919/DAY42.md` 1.2); `None` otherwise and on
+    /// a park replay (a replayed arrival plans again).
+    pub(crate) reclaim_offtick: Option<ReclaimOffTick>,
     /// Optional provider-declared prompt ceiling. The HTTP layer copies this from the
     /// model metadata; the worker enforces it after rendering/tokenization, before cache
     /// lookup, admission accounting, or any GPU work.
@@ -2022,14 +2026,29 @@ fn decrement_atomic(counter: &std::sync::atomic::AtomicUsize) {
 /// Release the command-channel portion of an HTTP admission. This is separate from the hard
 /// queue reservation because the latter survives while a request waits in the worker queue.
 pub(crate) fn release_pending_admit() {
-    decrement_atomic(&PENDING_ADMITS);
+    release_pending_admit_on(&PENDING_ADMITS);
+}
+
+/// The same on the gauge a reservation was taken on (WP-A day 56 section 3: a pending-admission guard
+/// releases where it reserved; every production reservation is on `PENDING_ADMITS`).
+pub(crate) fn release_pending_admit_on(gauge: &std::sync::atomic::AtomicUsize) {
+    decrement_atomic(gauge);
 }
 
 /// Release a request's hard admission reservation. This is intentionally saturating because
 /// a few embedders/tests inject commands directly without going through the HTTP reservation
 /// path.
 pub(crate) fn release_admission_reservation(lane: Lane) {
-    decrement_atomic(&ADMISSION_RESERVATIONS[lane.idx()]);
+    release_admission_reservation_on(&ADMISSION_RESERVATIONS, lane);
+}
+
+/// The same over the lane counters a reservation was taken on (WP-A day 56: a pending-admission
+/// guard releases where it reserved; every production reservation is on `ADMISSION_RESERVATIONS`).
+pub(crate) fn release_admission_reservation_on(
+    counters: &[std::sync::atomic::AtomicUsize; 3],
+    lane: Lane,
+) {
+    decrement_atomic(&counters[lane.idx()]);
 }
 
 /// Release whichever hard reservation this request holds: its route ticket when a dedicated
@@ -2179,6 +2198,20 @@ pub struct Metrics {
     pub cuda_pool_reserved_bytes: u64,
     pub cuda_pool_used_bytes: u64,
     pub cuda_pool_cached_bytes: u64,
+    /// WP-B day 37 (`MEMRA_KV_ALLOCATOR=vmm`): on-demand K/V planes held by active and parked
+    /// sessions, backed and reserved; their owed growth (active only); the graveyard's pending
+    /// bytes; process counters. All 0 with the door off.
+    pub kv_vmm_mapped_bytes: u64,
+    pub kv_vmm_reserved_bytes: u64,
+    pub kv_vmm_owed_bytes: u64,
+    pub kv_vmm_graveyard_bytes: u64,
+    pub kv_vmm_grows_total: u64,
+    pub kv_vmm_mapper_grows_total: u64,
+    pub kv_vmm_grow_waits_total: u64,
+    pub kv_vmm_grow_failures_total: u64,
+    pub kv_vmm_released_bytes_total: u64,
+    /// DAY37 addendum E3: bytes failed reaps took out of the release path.
+    pub kv_vmm_quarantined_bytes_total: u64,
     /// LCP length histogram (lane/cache-metering): one sample per prefix-cache PROBE —
     /// on a hit, the served entry's token length; on a miss, best_lcp against the pool
     /// (already computed there for the split-learning signal, so the histogram adds no
@@ -2260,6 +2293,17 @@ struct ReuseEntry {
     /// Global park age used by admission and preemptive ceiling reclaim. Per-key vector order
     /// remains unchanged.
     parked_at: Instant,
+    /// EXACT RESUME (WP-B day 44): the entry's id in the settle queue (`next_parked_id`).
+    id: u64,
+    /// EXACT RESUME: the cache holds exactly `fed` under the prime program, on the grid (a settle
+    /// landed); a resume primes the tail from `fed.len()` with no restore.
+    settled: bool,
+}
+
+/// Monotonic ids for parked entries (the settle queue holds ids, never references).
+fn next_parked_id() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 /// A retired PLAIN session's PROMPT-END-class boundary state — the rewind target for
 /// plain-session affinity resume (lane/plain-affinity, 2026-08-09). The plain twin of
@@ -2301,6 +2345,15 @@ struct SpecReuseEntry {
     /// as llama serve's cache_prompt: the suffix's boundary tokenization may differ from a cold
     /// full-retok — committed tokens stay authoritative, spec==greedy exactness is untouched.
     committed_text: String,
+    /// EXACT RESUME (WP-B day 44): the entry's id in the settle queue.
+    id: u64,
+    /// EXACT RESUME: the session holds exactly `committed` under the prime program, on the grid (a
+    /// settle landed); a resume primes the tail with no rewind.
+    settled: bool,
+    /// The public stream's length (`spec_public_len`, WP-B day 41 addendum B3): `committed`
+    /// minus the final burst's accepted drafts past the budget. Read only by the armed
+    /// `MEMRA_RESUME_GRID_REWIND` exact probe, which always rewinds below it.
+    public_len: usize,
     /// SESSION AFFINITY (lane/session-affinity): the conversation this session belongs to, as
     /// the admitting request declared it — `Some(id)` from the explicit tier
     /// (`session_id`/`user`/`x-session-id`), else None. Nomination only; see `affinity`.
@@ -3168,6 +3221,301 @@ const FP_MIN_SEGMENTS: usize = 3;
 /// once with `MEMRA_AFFINITY=0`, and requires identical per-turn `text_sha`. Disabling the pool
 /// outright (`MEMRA_REUSE_POOL=0`) would be a different comparison: it also drops the
 /// token/text-prefix resumes, so a divergence could not be attributed to affinity.
+/// The plain pool's grid rewind (DAY41 1.1): restore the entry to its checkpoint in place (the
+/// affinity path's restore), truncate `fed` to it and carry the checkpoint's logits. `None` (the
+/// entry dropped, the request primes cold) when there is no checkpoint, the ring lapped it, the
+/// prompt does not reproduce the committed tokens through it, or the restore fails.
+fn grid_rewind_plain(
+    engine: &Engine,
+    lm: &LoadedModel,
+    mut e: ReuseEntry,
+    prompt: &[u32],
+    model: &str,
+) -> Option<ReuseEntry> {
+    let committed = e.fed.len();
+    let Some(ckpt) = e.ckpt.take() else {
+        eprintln!("[kv-reuse] grid-rewind: plain declined (no checkpoint); cold");
+        return None;
+    };
+    if !e.cache.can_rollback(&ckpt.snap, 0) {
+        eprintln!("[kv-reuse] grid-rewind: plain declined (ring lapped the checkpoint); cold");
+        return None;
+    }
+    let pos = ckpt.pos;
+    if pos > committed || prompt.len() <= pos || prompt[..pos] != e.fed[..pos] {
+        eprintln!(
+            "[kv-reuse] grid-rewind: plain declined (prompt diverges before checkpoint {pos}); cold"
+        );
+        return None;
+    }
+    if let Err(err) = memra_engine::pp::restore_cache_checkpoint(
+        engine,
+        &lm.model,
+        None,
+        &mut e.cache,
+        &ckpt.snap,
+    ) {
+        eprintln!("[kv-reuse] grid-rewind: plain declined (restore failed: {err}); cold");
+        return None;
+    }
+    e.fed.truncate(pos);
+    e.last_logits = ckpt.last_logits;
+    eprintln!(
+        "[kv-reuse] grid-rewind: plain extension of {committed} committed rows rewound to {pos} \
+         (re-priming {} rows; model {model})",
+        committed - pos
+    );
+    Some(e)
+}
+
+/// The spec pool's exact resume (MEMRA_RESUME_EXACT, DAY44 1.2 (b)): a settled entry resumes
+/// where it stands; an unsettled one rewinds to its turn checkpoint and keeps it (the carry
+/// until the walker captures a newer one). At least `PRIME_MIN_T` rows prime. `None`: cold.
+fn exact_resume_spec(
+    engine: &Engine,
+    lm: &LoadedModel,
+    mut entry: SpecReuseEntry,
+    prompt: &[u32],
+    model: &str,
+) -> Option<memra_engine::spec::SpecSession> {
+    let floor = memra_engine::hybrid_forward::PRIME_MIN_T;
+    let committed = entry.sess.committed.len();
+    if entry.settled {
+        if prompt.len() < committed + floor || prompt[..committed] != entry.sess.committed[..] {
+            eprintln!(
+                "[kv-reuse] exact: declined (the prompt extends the settled rows by fewer than \
+                 the prime floor); cold"
+            );
+            return None;
+        }
+        eprintln!(
+            "[kv-reuse] exact: spec resume from {committed} of {committed} committed rows \
+             (priming {} rows, settled; model {model})",
+            prompt.len() - committed
+        );
+        return Some(entry.sess);
+    }
+    let Some(pos) = entry.sess.rewind_pos() else {
+        eprintln!("[kv-reuse] exact: declined (no turn checkpoint); cold");
+        return None;
+    };
+    if !entry.sess.rewind_is_resident() {
+        eprintln!("[kv-reuse] exact: declined (ring lapped the checkpoint); cold");
+        return None;
+    }
+    if pos > committed || prompt.len() < pos + floor || prompt[..pos] != entry.sess.committed[..pos]
+    {
+        eprintln!(
+            "[kv-reuse] exact: declined (the prompt diverges before the checkpoint or extends \
+             it by fewer than the floor); cold"
+        );
+        return None;
+    }
+    match lm
+        .model
+        .spec_rewind_to_checkpoint_retaining(engine, &mut entry.sess)
+    {
+        Ok(Some(p)) => {
+            eprintln!(
+                "[kv-reuse] exact: spec resume from {p} of {committed} committed rows (priming \
+                 {} rows, checkpoint; model {model})",
+                prompt.len() - p
+            );
+            Some(entry.sess)
+        }
+        Ok(None) => {
+            eprintln!("[kv-reuse] exact: declined (no turn checkpoint); cold");
+            None
+        }
+        Err(err) => {
+            eprintln!("[kv-reuse] exact: declined (rewind failed: {err}); cold");
+            None
+        }
+    }
+}
+
+/// The plain pool's exact resume (MEMRA_RESUME_EXACT, DAY44 1.2 (b)). A settled entry's cache
+/// holds exactly its `fed` under the prime program on the grid, so the request resumes there. An
+/// unsettled entry restores its grid checkpoint (captured inside the prime call that contained
+/// it) and the tail past it primes in one call, cold-exact by the grid law; the checkpoint is
+/// returned as the new session's carry. Every resume primes at least `PRIME_MIN_T` rows, so no
+/// prompt row rides the tokenwise program. `None`: declined, the request primes cold.
+fn exact_resume_plain(
+    engine: &Engine,
+    lm: &LoadedModel,
+    mut e: ReuseEntry,
+    prompt: &[u32],
+    model: &str,
+) -> (Option<ReuseEntry>, Option<PlainCheckpoint>) {
+    let floor = memra_engine::hybrid_forward::PRIME_MIN_T;
+    let committed = e.fed.len();
+    let decline = |why: &str| {
+        eprintln!("[kv-reuse] exact: declined ({why}); cold");
+    };
+    if e.settled {
+        if prompt.len() < committed + floor {
+            decline("the prompt extends the settled rows by fewer than the prime floor");
+            return (None, None);
+        }
+        eprintln!(
+            "[kv-reuse] exact: plain resume from {committed} of {committed} committed rows \
+             (priming {} rows, settled; model {model})",
+            prompt.len() - committed
+        );
+        // DAY44 addendum C: the settle kept the checkpoint at `g`; the session carries it until
+        // its own call's in-call capture replaces it (case 9), so affinity keeps a rewind point.
+        let carry = e.ckpt.take();
+        return (Some(e), carry);
+    }
+    let Some(mut ckpt) = e.ckpt.take() else {
+        decline("no checkpoint");
+        return (None, None);
+    };
+    if !e.cache.can_rollback(&ckpt.snap, 0) {
+        decline("ring lapped the checkpoint");
+        return (None, None);
+    }
+    let pos = ckpt.pos;
+    if pos > committed || prompt.len() < pos + floor || prompt[..pos] != e.fed[..pos] {
+        decline("the prompt diverges before the checkpoint or extends it by fewer than the floor");
+        return (None, None);
+    }
+    if let Err(err) = memra_engine::pp::restore_cache_checkpoint(
+        engine,
+        &lm.model,
+        None,
+        &mut e.cache,
+        &ckpt.snap,
+    ) {
+        decline(&format!("restore failed: {err}"));
+        return (None, None);
+    }
+    e.fed.truncate(pos);
+    e.last_logits = std::mem::take(&mut ckpt.last_logits);
+    eprintln!(
+        "[kv-reuse] exact: plain resume from {pos} of {committed} committed rows (priming {} \
+         rows, checkpoint; model {model})",
+        prompt.len() - pos
+    );
+    (Some(e), Some(ckpt))
+}
+
+/// The spec pool's grid rewind (DAY41 1.1): `spec_rewind_to_checkpoint` (trunk cache, draft
+/// scratch, committed tokens), then the token suffix primes. `None` (cold) when the session keeps
+/// no turn checkpoint, the prompt does not reproduce the committed tokens through it, or the
+/// rewind fails.
+fn grid_rewind_spec(
+    engine: &Engine,
+    lm: &LoadedModel,
+    mut sess: memra_engine::spec::SpecSession,
+    prompt: &[u32],
+    model: &str,
+) -> Option<memra_engine::spec::SpecSession> {
+    let committed = sess.committed.len();
+    let Some(pos) = sess.rewind_pos() else {
+        eprintln!("[kv-reuse] grid-rewind: spec declined (no turn checkpoint); cold");
+        return None;
+    };
+    if !sess.rewind_is_resident() {
+        eprintln!("[kv-reuse] grid-rewind: spec declined (ring lapped the checkpoint); cold");
+        return None;
+    }
+    if pos > committed || prompt.len() <= pos || prompt[..pos] != sess.committed[..pos] {
+        eprintln!(
+            "[kv-reuse] grid-rewind: spec declined (prompt diverges before checkpoint {pos}); cold"
+        );
+        return None;
+    }
+    match lm.model.spec_rewind_to_checkpoint(engine, &mut sess) {
+        Ok(Some(p)) => {
+            eprintln!(
+                "[kv-reuse] grid-rewind: spec extension of {committed} committed rows rewound to {p} \
+                 (re-priming {} rows; model {model})",
+                committed - p
+            );
+            Some(sess)
+        }
+        Ok(None) => {
+            eprintln!("[kv-reuse] grid-rewind: spec declined (no turn checkpoint); cold");
+            None
+        }
+        Err(err) => {
+            eprintln!("[kv-reuse] grid-rewind: spec declined (rewind failed: {err}); cold");
+            None
+        }
+    }
+}
+
+/// MEMRA_RESUME_GRID_REWIND (default unset = OFF; WP-B day 41, O11, a measurement door): a pool
+/// resume that exactly extends a parked session's committed tokens rewinds it to the entry's grid
+/// checkpoint and re-primes from there, instead of resuming on the parked state (which holds the
+/// previous turn's DECODED rows, the near-tie residual `docs/SERVING.md` names). By the grid law a
+/// prime split on the grid is bit-identical to the monolithic prime, so the rewound resume is
+/// cold-identical. Armed, every session also arms its checkpoint (`plain_checkpoint_boundary`),
+/// not only a nominatable prompt. Unset, nothing reads it.
+/// MEMRA_SPEC_BUDGET_CLAMP (default unset, WP-B day 43, OWED O13): `1` makes the Qwen MTP
+/// session route truncate a round that would commit accepted drafts past the request's budget
+/// (`memra_engine::spec::budget_clamp_slot`), so a parked spec session equals the public stream
+/// and the pool's exact probe can resume it. The public stream is unchanged. Unset reads nothing.
+fn spec_budget_clamp_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| {
+        let on = std::env::var("MEMRA_SPEC_BUDGET_CLAMP").as_deref() == Ok("1");
+        if on {
+            eprintln!(
+                "[spec] MEMRA_SPEC_BUDGET_CLAMP=1: the final round commits at the request budget \
+                 (DAY43 measurement door)"
+            );
+        }
+        on
+    })
+}
+
+/// MEMRA_RESUME_EXACT (default unset, WP-B day 44, OWED O11 revised): the exact and fast resume.
+/// `1`: every resumable prime call captures its grid checkpoint inside the call with no stop
+/// (`memra_engine::grid_capture`), an exact-extension hit restores it and primes the prompt's tail
+/// in one call (cold-exact by the grid law), and an off-path settle re-primes a parked entry's
+/// reply rows with the prime program after an idle grace, so the next resume primes only the
+/// tail. It takes precedence over `MEMRA_RESUME_GRID_REWIND`. Unset reads nothing.
+fn resume_exact_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| {
+        let on = std::env::var("MEMRA_RESUME_EXACT").as_deref() == Ok("1");
+        if on {
+            eprintln!(
+                "[kv-reuse] MEMRA_RESUME_EXACT=1: in-call grid checkpoints, one-call exact \
+                 resumes, off-path settles (DAY44 door)"
+            );
+        }
+        on
+    })
+}
+
+/// MEMRA_RESUME_EXACT_FAULT (fault injection of the DAY44 fault boot): `settle-fail` makes every
+/// settle fail after its restore, so the entry is dropped and the next turn primes cold.
+fn resume_exact_fault_settle() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_RESUME_EXACT_FAULT").as_deref() == Ok("settle-fail"))
+}
+
+/// The settle's idle grace (DAY44 1.2 (c)): a zero-gap next turn finds no settle in flight.
+const EXACT_SETTLE_GRACE: Duration = Duration::from_millis(100);
+
+fn resume_grid_rewind_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| {
+        let on = std::env::var("MEMRA_RESUME_GRID_REWIND").as_deref() == Ok("1")
+            && std::env::var("MEMRA_RESUME_EXACT").as_deref() != Ok("1");
+        if on {
+            eprintln!(
+                "[kv-reuse] MEMRA_RESUME_GRID_REWIND=1: exact-extension resumes rewind to the \
+                 entry's grid checkpoint (DAY41 measurement door)"
+            );
+        }
+        on
+    })
+}
+
 fn affinity_enabled() -> bool {
     if memra_engine::pp::pp_host_bounce_active() {
         // Plain-affinity checkpoints call Cache::snapshot through the primary Engine. Hybrid
@@ -3474,6 +3822,53 @@ fn plain_checkpoint_boundary(prompt: &[u32], is_control: &dyn Fn(u32) -> bool) -
     // inside the checkpoint.
     let b = grid_align_boundary_within(n - PLAIN_CKPT_RAW_GUARD, n);
     if b > REUSE_MIN_PREFIX { Some(b) } else { None }
+}
+
+/// The checkpoint an armed `MEMRA_RESUME_GRID_REWIND` session arms (WP-B day 41 addendum B).
+/// Absolute prompt positions, on the grid; `seed` is the resumed depth (0 cold).
+///
+/// - `markers` (the request is named or nominatable): the affinity program's point, the grid
+///   floor of the last control token, never past it, when that floor lies past `seed`; otherwise
+///   (B2: the resumed depth already covers it) the guard window.
+/// - not `markers` (B1: no affinity resume can nominate the session): the guard window,
+///   interior control tokens ignored, since an exact extension resends the whole prompt.
+///
+/// Every boundary clears the fed-start floor (`b >= seed + PRIME_MIN_T`), so no row between the
+/// resumed depth and the checkpoint primes tokenwise, and the snapshot is a prime-produced
+/// state on the grid. `None`: no legal checkpoint (the next resume declines cold).
+fn grid_rewind_checkpoint_boundary(
+    prompt: &[u32],
+    seed: usize,
+    markers: bool,
+    is_control: &dyn Fn(u32) -> bool,
+) -> Option<usize> {
+    let n = prompt.len();
+    if n <= REUSE_MIN_PREFIX + PLAIN_CKPT_RAW_GUARD {
+        return None;
+    }
+    let floor = memra_engine::hybrid_forward::PRIME_MIN_T;
+    let legal = |b: usize| b > REUSE_MIN_PREFIX && b < n && b >= seed + floor;
+    if markers && let Some(last_marker) = prompt.iter().rposition(|&t| is_control(t)) {
+        let b = grid_align_boundary_within(last_marker, n);
+        if b > REUSE_MIN_PREFIX && b < n && b > seed {
+            return legal(b).then_some(b);
+        }
+    }
+    let b = grid_align_boundary_within(n - PLAIN_CKPT_RAW_GUARD, n);
+    legal(b).then_some(b)
+}
+
+/// The public stream length of a parked spec session (WP-B day 41 addendum B3): the request's
+/// prompt plus its public generated tokens when `committed` reproduces the generated tokens
+/// there; otherwise `committed.len()` (today's match key). Rows past it are the final burst's
+/// accepted drafts beyond the budget, which the next prompt never carries.
+fn spec_public_len(committed: &[u32], n_prompt: usize, generated: &[u32]) -> usize {
+    let end = n_prompt + generated.len();
+    if end <= committed.len() && committed[n_prompt..end] == *generated {
+        end
+    } else {
+        committed.len()
+    }
 }
 
 /// PRIME-GRID BOUNDARY ALIGNMENT (lane/spec-longctx-20260821 — the GATES-SMOKE B3/B1-fold
@@ -4829,12 +5224,6 @@ fn host_tier_governor(
     let dimensions = device
         .checked_add(1)
         .ok_or("host tier governor: device ordinal overflow")?;
-    let twice = |bytes: usize| {
-        u64::try_from(bytes)
-            .ok()
-            .and_then(|b| b.checked_mul(2))
-            .ok_or("host tier governor: capacity overflow")
-    };
     // Option C (day 16): a promote's residency charge (`tier_charge`, device=true, taken before
     // the copy) and the registration of its fresh destination planes (`register_device`, released
     // at `take_plane`) are both on this dimension while the H2D runs, over the promoted residents'
@@ -4846,8 +5235,13 @@ fn host_tier_governor(
             .ok_or("host tier governor: capacity overflow")
     };
     let mut capacity = TierBudget::zero(dimensions);
-    capacity.pinned = twice(host_budget)?;
-    capacity.pageable = twice(host_budget)?;
+    // WP-A day 63 (`DAY63.md` design L1.5): one more host budget on the pinned dimension, the lease
+    // pool's idle backings (capped at one budget), so a lease's charge taken while its pooled
+    // backing's charge is still held never refuses.
+    capacity.pinned = thrice(host_budget)?;
+    // WP-A day 51 (design P): a third pageable term, the hash helper's payload reserve (at most
+    // one budget, `HostPayloadReserve::cap`), so its charge is never what refuses a demote.
+    capacity.pageable = thrice(host_budget)?;
     capacity.device[device] = thrice(device_budget)?;
     // Option B: the transfer engine charges one in-flight op per K or V plane of the batch
     // (`submit_batch`); the day-13 ledger left this dimension at zero, which would have refused
@@ -5003,6 +5397,9 @@ fn host_tier_context(
         .and_then(|n| n.checked_mul(3))
         .ok_or("MEMRA_KV_HOST_CONTRACTS=1: in-flight bound overflow")?;
     let governor = host_tier_governor(device, hpx.budget, prefix_cache_budget_bytes(), inflight)?;
+    // WP-A day 51 (design P): the hash helper's payload reserve, capped at one host budget (the
+    // ledger's third pageable term).
+    let reserve = HostPayloadReserve::new(governor.clone(), hpx.budget as u64);
     let ledger: std::rc::Rc<std::cell::RefCell<dyn memra_engine::cache::tiered::BudgetGovernor>> =
         std::rc::Rc::new(std::cell::RefCell::new(HostTierLedger(governor.clone())));
     // WP-A day 17 (memra#536 Move 1): the engine carries a second stream of the same context for
@@ -5020,7 +5417,13 @@ fn host_tier_context(
         "[prefix-host] contracts door: D2H demotes and H2D promotes ride the transfer engine's \
          copy stream and publish at the tick top (memra#536 Move 1)"
     );
-    Ok(HostTierContext {
+    // WP-A day 63 (`DAY63.md` design L1.5): the lease pool's cap is one host budget.
+    transfers.set_lease_pool_cap(hpx.budget as u64);
+    let lease_pool = Some(transfers.lease_pool());
+    // WP-A day 63 (L2.1): the span staging set's lengths, one image's worth over the loaded
+    // models (the max count per length, one demote in flight per worker).
+    let staging_lengths = host_staging_lengths(loaded.values().map(|lm| &lm.model.plan));
+    let ctx = HostTierContext {
         governor,
         programs,
         device: u32::try_from(device)
@@ -5028,9 +5431,87 @@ fn host_tier_context(
         transfers: Some(std::cell::RefCell::new(transfers)),
         inflight,
         fault: std::cell::Cell::new(HostContractFault::from_door(kv_host_fault())),
-        hasher: HostHashWorker::spawn(HostHashFault::from_door(kv_host_fault()))?,
+        hasher: HostHashWorker::spawn(HostHashFault::from_door(kv_host_fault()), reserve)?,
         staging: std::cell::RefCell::new(HostStaging::default()),
-    })
+        lease_pool,
+    };
+    // WP-A day 63 (L2.2, L2.3): the staging set allocated at boot, charged as today; a refusal
+    // leaves the set partial (the first demote allocates the rest) and never fails the boot.
+    let t0 = Instant::now();
+    let (mut n, mut bytes) = (0usize, 0u64);
+    let mut taken = Vec::new();
+    let mut refused = None;
+    'lengths: for &(len, count) in &staging_lengths {
+        for _ in 0..count {
+            match ctx.staging_take(len) {
+                Ok((buf, _)) => {
+                    n += 1;
+                    bytes += len as u64;
+                    taken.push(buf);
+                }
+                Err(e) => {
+                    refused = Some(e);
+                    break 'lengths;
+                }
+            }
+        }
+    }
+    for buf in taken {
+        ctx.staging_put(buf);
+    }
+    match refused {
+        None => eprintln!(
+            "[prefix-host] contracts door: span staging set allocated at boot: {n} buffers, {:.1} \
+             MB in {:.1} ms",
+            bytes as f64 / 1e6,
+            t0.elapsed().as_secs_f64() * 1e3
+        ),
+        Some(e) => eprintln!(
+            "[prefix-host] contracts door: span staging set at boot stopped after {n} buffers \
+             ({:.1} MB): {e}; the first demote allocates the rest",
+            bytes as f64 / 1e6
+        ),
+    }
+    Ok(ctx)
+}
+
+/// WP-A day 63 (`DAY63.md` design L2.1): the span staging lengths of one image over the loaded
+/// models' plans: each recurrent layer's conv plane (`conv_width x (conv_kernel - 1)` f32) and ssm
+/// plane (`state_width` f32), trunk and MTP blocks, as (bytes, count) with each length's count the
+/// maximum over the models (one demote is in flight per worker). Sorted by length.
+fn host_staging_lengths<'a>(
+    plans: impl Iterator<Item = &'a memra_gguf::model_plan::ModelPlan>,
+) -> Vec<(usize, usize)> {
+    use memra_gguf::model_plan::StatePlan;
+    let mut need: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new();
+    for plan in plans {
+        let mut here: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new();
+        for layer in plan
+            .layers
+            .iter()
+            .chain(plan.mtp_blocks.iter().map(|b| &b.layer))
+        {
+            if let StatePlan::Recurrent {
+                conv_width,
+                conv_kernel,
+                state_width,
+            } = layer.state
+            {
+                let conv = conv_width as usize * (conv_kernel as usize).saturating_sub(1) * 4;
+                let ssm = state_width as usize * 4;
+                for len in [conv, ssm] {
+                    if len > 0 {
+                        *here.entry(len).or_default() += 1;
+                    }
+                }
+            }
+        }
+        for (len, c) in here {
+            let e = need.entry(len).or_default();
+            *e = (*e).max(c);
+        }
+    }
+    need.into_iter().collect()
 }
 
 fn kv_host_budget_bytes() -> usize {
@@ -5625,6 +6106,21 @@ fn serve_batching() -> bool {
 /// unset without a drafter = off (nothing to draft with); `0` = the eager/plain kill
 /// switch; explicit K >= 1 = armed at that depth (and REQUIRES MEMRA_DRAFT — boot
 /// refuses loud). Any other value REFUSES LOUD (the mis-typed-seam law).
+/// A drafter path with the route off (memra #478): `MEMRA_DSPARK_DRAFT` set while
+/// `MEMRA_DSPARK_SPEC` is not `1` loads nothing and boots the MTP route, so the operator's drafter
+/// would be discarded in silence. The reverse pairing already refuses by name; this is its twin.
+fn dspark_draft_without_spec(spec: Option<&str>, draft: Option<&str>) -> Option<String> {
+    match (spec, draft) {
+        (spec, Some(draft)) if !draft.is_empty() && spec != Some("1") => Some(format!(
+            "MEMRA_DSPARK_DRAFT={draft:?} is set but MEMRA_DSPARK_SPEC is {}: the drafter will not \
+             be used and the model would serve its MTP route; set MEMRA_DSPARK_SPEC=1 or unset \
+             MEMRA_DSPARK_DRAFT",
+            spec.map_or("unset".to_string(), |v| format!("{v:?}"))
+        )),
+        _ => None,
+    }
+}
+
 /// Boot-time ambiguity refuse list for `MEMRA_DSPARK_SPEC=1` — the 3f4597f02 guard law:
 /// two spec/parallelism programs on one model must never silently coexist, and every
 /// combination that has never been co-gated refuses LOUD at spawn. Pure (env values in,
@@ -6441,6 +6937,156 @@ fn pending_prime_bytes(
         .fold(0usize, usize::saturating_add)
 }
 
+/// One still-priming session as the corrected pending-prime term reads it (WP-B day 39).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PrimeOwed {
+    rows: usize,
+    /// On the MTP spec route with its walker not yet started (its whole-prompt stack is owed).
+    unstarted_walker: bool,
+    /// The walker persists across ticks (`MEMRA_PRIME_YIELD` and the model supports the walk).
+    cooperative: bool,
+    /// Addendum B: the checkpoint snapshots this session's prime will still take, in bytes
+    /// (`Cache::snapshot` copies every recurrent layer's conv and ssm state).
+    snapshot_bytes: usize,
+}
+
+/// The corrected pending-prime term for one model (pure; DAY39 1.2 as revised by addendum B):
+/// the slab's owed growth for the largest call, once; that call's returned rows, once (the slab
+/// does not hold them); the cooperative unstarted walkers' stacks summed; the largest
+/// non-cooperative walker stack once; every owed checkpoint snapshot; the hyper shape per session
+/// as day 33 booked it.
+fn pending_prime_for_model(
+    owed: &[PrimeOwed],
+    shape: Option<&memra_engine::hybrid_forward::PrimeWorkspaceShape>,
+    hyper: Option<&memra_engine::hybrid_forward::HyperPrimeWorkspaceShape>,
+    slab_bytes: usize,
+) -> usize {
+    let hyper_bytes = hyper.map_or(0, |h| {
+        owed.iter()
+            .map(|o| h.admission_bytes(o.rows))
+            .fold(0usize, usize::saturating_add)
+    });
+    let snapshots = owed
+        .iter()
+        .map(|o| o.snapshot_bytes)
+        .fold(0usize, usize::saturating_add);
+    let Some(shape) = shape else {
+        return hyper_bytes.saturating_add(snapshots);
+    };
+    let call_rows = owed
+        .iter()
+        .map(|o| shape.call_rows(o.rows))
+        .max()
+        .unwrap_or(0);
+    let slab_growth = shape
+        .call_row_bytes
+        .saturating_mul(call_rows)
+        .saturating_sub(slab_bytes);
+    let returned = shape.prompt_row_bytes.saturating_mul(call_rows);
+    let stack = |o: &PrimeOwed| shape.prompt_row_bytes.saturating_mul(o.rows);
+    let stacks = owed
+        .iter()
+        .filter(|o| o.unstarted_walker && o.cooperative)
+        .map(stack)
+        .fold(0usize, usize::saturating_add);
+    let noncoop = owed
+        .iter()
+        .filter(|o| o.unstarted_walker && !o.cooperative)
+        .map(stack)
+        .max()
+        .unwrap_or(0);
+    slab_growth
+        .saturating_add(returned)
+        .saturating_add(stacks)
+        .saturating_add(noncoop)
+        .saturating_add(snapshots)
+        .saturating_add(hyper_bytes)
+}
+
+/// Bytes `Cache::snapshot` copies for `cache`: every recurrent layer's conv and ssm state (the
+/// recurrent part of `prefix_seed_bytes_at`). 0 for an attention-only cache.
+fn cache_snapshot_bytes(cache: &Cache) -> usize {
+    cache
+        .recur
+        .iter()
+        .flatten()
+        .map(|r| (r.conv_state.len() + r.ssm_state.len()) * 4)
+        .fold(0usize, usize::saturating_add)
+}
+
+/// The checkpoint snapshots a still-priming session's prime will still take (DAY39 addendum B):
+/// a plain session with its affinity checkpoint armed and not taken; a spec session whose turn
+/// checkpoint is armed (`ckpt_at` before its walker starts) or whose walker has not reached the
+/// checkpoint row. Prefix-seed captures are `pending_seed`'s.
+fn session_snapshot_bytes_owed(s: &Session) -> usize {
+    match s.spec.as_ref() {
+        Some(sp) => {
+            let owed = match s.mtp_prime.as_ref() {
+                Some(state) => state.owes_turn_checkpoint(),
+                None => sp.ckpt_at.is_some(),
+            };
+            if owed {
+                cache_snapshot_bytes(sp.cache_ref())
+            } else {
+                0
+            }
+        }
+        None => match s.cache.as_ref() {
+            // WP-B day 44: an owed in-call grid capture allocates a snapshot even while a carried
+            // checkpoint is held (both live until the capture replaces the carry).
+            Some(cache)
+                if (s.ckpt_at.is_some() && s.ckpt_snap.is_none()) || s.exact_at.is_some() =>
+            {
+                cache_snapshot_bytes(cache)
+            }
+            _ => 0,
+        },
+    }
+}
+
+/// The corrected pending-prime term (WP-B day 39, `research/spill-b-20260919/DAY39.md` 1.2 and
+/// addendum B), per model through `pending_prime_for_model`: the prime slab is retained,
+/// grow-only and shared by every prime call on the device, and the batched worker runs those calls
+/// one after another, so a burst owes one call's workspace (the slab part less the slab already
+/// resident, plus the call's returned rows), each cooperative walker's stack until that walker
+/// starts, and every checkpoint snapshot the primes will still take, not one whole workspace per
+/// session.
+fn pending_prime_bytes_v2(
+    active: &[Session],
+    admission_costs: &HashMap<String, AdmissionCostModel>,
+    slab_bytes: &dyn Fn(&str) -> usize,
+    cooperative: &dyn Fn(&str) -> bool,
+) -> usize {
+    let mut by_model: HashMap<&str, Vec<PrimeOwed>> = HashMap::new();
+    for s in active {
+        let rows = session_pending_prime_rows(s.prefill_done, s.prefill_queue.len());
+        if rows == 0 || !admission_costs.contains_key(&s.model) {
+            continue;
+        }
+        by_model
+            .entry(s.model.as_str())
+            .or_default()
+            .push(PrimeOwed {
+                rows,
+                unstarted_walker: s.spec.is_some() && s.mtp_prime.is_none(),
+                cooperative: cooperative(&s.model),
+                snapshot_bytes: session_snapshot_bytes_owed(s),
+            });
+    }
+    by_model
+        .into_iter()
+        .map(|(name, owed)| {
+            let model = &admission_costs[name];
+            pending_prime_for_model(
+                &owed,
+                model.prime.as_ref(),
+                model.prefill.as_ref(),
+                slab_bytes(name),
+            )
+        })
+        .fold(0usize, usize::saturating_add)
+}
+
 /// Prompt rows of the prefix entry a session will still publish at prime completion (memra#680,
 /// lane B day 35): its armed seed boundary while `seed_prefix` holds, with a live cache and no
 /// vision input, else 0. `maybe_prefix_seed` clears `seed_prefix` whether the insert lands, is
@@ -6535,6 +7181,261 @@ fn pending_seed_bytes(active: &[Session]) -> usize {
             }
         })
         .fold(0usize, usize::saturating_add)
+}
+
+/// WP-B day 37 (`MEMRA_KV_ALLOCATOR=vmm`, DAY37 1.3): the routes whose engine calls the tick-top
+/// ensure bounds. A model is covered when it runs on one device (no ppN stage ownership, no
+/// model-owned peer engines) and its plan has no SWA ring and no latent planes; every other
+/// model keeps pooled planes under the door.
+fn vmm_route_covered(engine: &Engine, lm: &LoadedModel) -> bool {
+    let n_trunk = (lm.model.cfg.n_layer - lm.model.cfg.nextn_predict_layers) as usize;
+    memra_engine::pp::pp_cuts(n_trunk).is_none()
+        && lm.model.owned_engines(engine).len() <= 1
+        && !lm.model.plan.layers.iter().any(|layer| {
+            matches!(
+                layer.state,
+                memra_gguf::model_plan::StatePlan::SlidingKvCache { .. }
+                    | memra_gguf::model_plan::StatePlan::LatentKvCache { .. }
+            )
+        })
+}
+
+/// The spec burst cadence (`MEMRA_SPEC_BURST`, default 32), the rows one spec burst targets.
+fn vmm_spec_burst_t() -> usize {
+    std::env::var("MEMRA_SPEC_BURST")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(32)
+}
+
+/// The construction scope's initial rows for a covered cache of `cap` rows, or `None` when the
+/// door is off or the model is not covered (DAY37 1.2 ensure point 1).
+fn vmm_scope(
+    engine: &Engine,
+    lm: &LoadedModel,
+    cap: usize,
+    prompt_rows: usize,
+    spec_k: usize,
+) -> Option<usize> {
+    if !crate::kv_vmm::armed() || !vmm_route_covered(engine, lm) {
+        return None;
+    }
+    // One tick of either route: the larger of a spec burst and a plain step.
+    let tick = crate::kv_vmm::tick_rows(true, vmm_spec_burst_t(), spec_k, serve_async_chain_k())
+        .max(crate::kv_vmm::tick_rows(false, 0, 0, serve_async_chain_k()));
+    Some(crate::kv_vmm::initial_rows(cap, prompt_rows, tick))
+}
+
+/// Build a cache under the on-demand scope (DAY37 1.2's runtime census): the on-demand planes
+/// the scope allocated must all be reachable by the cache's own ensure visitor, or the cache is
+/// refused before any engine call. `scope == None` is the pooled program, byte for byte.
+fn vmm_build_cache(
+    scope: Option<usize>,
+    build: impl FnOnce() -> Result<Cache, Box<dyn std::error::Error>>,
+) -> Result<Cache, Box<dyn std::error::Error>> {
+    let Some(initial) = scope else {
+        return build();
+    };
+    let (built, count) = memra_engine::cache::with_on_demand_kv(initial, build);
+    let cache = built?;
+    if cache.on_demand_planes() != count {
+        return Err(format!(
+            "vmm: on-demand plane not reachable by ensure (scope allocated {count}, cache reaches {})",
+            cache.on_demand_planes()
+        )
+        .into());
+    }
+    Ok(cache)
+}
+
+/// The spec-session twin of [`vmm_build_cache`]: trunk cache and draft scratch together.
+fn vmm_build_spec<T>(
+    scope: Option<usize>,
+    build: impl FnOnce() -> Result<T, Box<dyn std::error::Error>>,
+    planes: impl Fn(&T) -> usize,
+) -> Result<T, Box<dyn std::error::Error>> {
+    let Some(initial) = scope else {
+        return build();
+    };
+    let (built, count) = memra_engine::cache::with_on_demand_kv(initial, build);
+    let value = built?;
+    if planes(&value) != count {
+        return Err(format!(
+            "vmm: on-demand plane not reachable by ensure (scope allocated {count}, session reaches {})",
+            planes(&value)
+        )
+        .into());
+    }
+    Ok(value)
+}
+
+/// Back one session's on-demand planes through its bound (DAY37 1.2 ensure points 2 and 3):
+/// the spec session's trunk and scratch, and `s.cache`, each against its own position. Returns
+/// every grow as `(label, rows, event)`; a pooled session returns nothing.
+/// Every grow of one ensure: `(plane label, bound rows, event)`.
+type VmmGrows = Vec<(String, usize, memra_engine::cache::GrowEvent)>;
+
+fn vmm_ensure_session(s: &mut Session) -> Result<VmmGrows, Box<dyn std::error::Error>> {
+    let mut out = Vec::new();
+    let floor = s.vmm_floor_rows;
+    if let Some(sp) = s.spec.as_mut()
+        && sp.kv_on_demand_planes() > 0
+    {
+        let tick =
+            crate::kv_vmm::tick_rows(true, vmm_spec_burst_t(), s.spec_k, serve_async_chain_k());
+        let rows = crate::kv_vmm::bound_rows(sp.cache_max_ctx(), sp.kv_position(), floor, tick);
+        for (label, ev) in sp.ensure_kv_rows(rows)? {
+            out.push((label, rows, ev));
+        }
+    }
+    if let Some(c) = s.cache.as_mut()
+        && c.on_demand_planes() > 0
+    {
+        let tick = crate::kv_vmm::tick_rows(false, 0, 0, serve_async_chain_k());
+        let rows = crate::kv_vmm::bound_rows(c.max_ctx, c.pos, floor, tick);
+        for (label, ev) in c.ensure_kv_rows(rows)? {
+            out.push((label, rows, ev));
+        }
+    }
+    Ok(out)
+}
+
+/// Owed growth (DAY37 1.4): the reserved-but-unbacked bytes of every active session's on-demand
+/// planes. Pooled planes are allocated whole at admission, so the pooled gate already sees them;
+/// the armed gate reduces its readings by this so it sees the same future footprint.
+fn vmm_owed_bytes(active: &[Session]) -> usize {
+    active
+        .iter()
+        .map(|s| {
+            let (m1, r1) = s.spec.as_ref().map_or((0, 0), |sp| sp.kv_on_demand_bytes());
+            let (m2, r2) = s.cache.as_ref().map_or((0, 0), |c| c.kv_on_demand_bytes());
+            r1.saturating_sub(m1).saturating_add(r2.saturating_sub(m2))
+        })
+        .sum()
+}
+
+/// Backed and reserved bytes of every on-demand plane the worker holds: active sessions and the
+/// two parked pools (for `/metrics`).
+fn vmm_held_bytes(
+    active: &[Session],
+    reuse: &HashMap<PoolKey, Vec<ReuseEntry>>,
+    spec_reuse: &HashMap<PoolKey, Vec<SpecReuseEntry>>,
+) -> (usize, usize) {
+    let mut acc = (0usize, 0usize);
+    let mut add = |(m, r): (usize, usize)| {
+        acc.0 += m;
+        acc.1 += r;
+    };
+    for s in active {
+        if let Some(sp) = s.spec.as_ref() {
+            add(sp.kv_on_demand_bytes());
+        }
+        if let Some(c) = s.cache.as_ref() {
+            add(c.kv_on_demand_bytes());
+        }
+    }
+    for e in reuse.values().flatten() {
+        add(e.cache.kv_on_demand_bytes());
+    }
+    for e in spec_reuse.values().flatten() {
+        add(e.sess.kv_on_demand_bytes());
+    }
+    acc
+}
+
+/// The owner-tick reap (DAY37 addendum A): the graveyard, every parked session's released tails,
+/// and the active sessions' (addendum E2: a resumed plane's tail past its `want` is released while
+/// it runs; no consumer touches bytes past the live prefix) whose events completed. Returns (bytes
+/// released, bytes still pending): while anything is pending the run loop does not block
+/// indefinitely (addendum D), so releases land at idle. A failed reap is quarantined inside the
+/// plane and leaves nothing pending (addendum E3).
+fn vmm_reap_tick(
+    active: &mut [Session],
+    reuse: &mut HashMap<PoolKey, Vec<ReuseEntry>>,
+    spec_reuse: &mut HashMap<PoolKey, Vec<SpecReuseEntry>>,
+) -> (usize, usize) {
+    let (mut released, _, _) = memra_engine::cache::vmm_reap_graveyard();
+    for s in active.iter_mut() {
+        if let Some(sp) = s.spec.as_mut() {
+            released += sp.reap_kv();
+        }
+        if let Some(c) = s.cache.as_mut() {
+            released += c.reap_kv();
+        }
+    }
+    for e in reuse.values_mut().flatten() {
+        released += e.cache.reap_kv();
+    }
+    for e in spec_reuse.values_mut().flatten() {
+        released += e.sess.reap_kv();
+    }
+    (released, vmm_pending_bytes(reuse, spec_reuse))
+}
+
+/// Bytes scheduled for release and not yet reaped with nothing active (DAY37 addendum E2): the
+/// graveyard and both parked pools. The idle decision reads it right before it chooses between the
+/// indefinite block and the 2 ms poll, so a trim or a drop made by this tick's retires is seen.
+fn vmm_pending_bytes(
+    reuse: &HashMap<PoolKey, Vec<ReuseEntry>>,
+    spec_reuse: &HashMap<PoolKey, Vec<SpecReuseEntry>>,
+) -> usize {
+    memra_engine::cache::vmm_graveyard_bytes()
+        + reuse
+            .values()
+            .flatten()
+            .map(|e| e.cache.kv_pending_release_bytes())
+            .sum::<usize>()
+        + spec_reuse
+            .values()
+            .flatten()
+            .map(|e| e.sess.kv_pending_release_bytes())
+            .sum::<usize>()
+}
+
+/// The idle decision's read (DAY37 addendum E2 and E4): the tick-top reap ran before this tick's
+/// retires, so the releases their trims and drops scheduled are read here, right before the choice
+/// between the indefinite block and the 2 ms poll; the ensure-walls receipt prints its partial
+/// batch. Unarmed it does nothing.
+fn vmm_idle_refresh(
+    vmm_pending: &mut bool,
+    walls: &mut Vec<u64>,
+    reuse: &HashMap<PoolKey, Vec<ReuseEntry>>,
+    spec_reuse: &HashMap<PoolKey, Vec<SpecReuseEntry>>,
+) {
+    if crate::kv_vmm::armed() {
+        *vmm_pending = vmm_pending_bytes(reuse, spec_reuse) > 0;
+        vmm_flush_ensure_walls(walls);
+    }
+}
+
+/// Print the ensure-walls receipt's batch (DAY37 A3 (i)); addendum E4 also prints the partial
+/// batch when the worker goes idle, so the reading is every wall of the boot.
+fn vmm_flush_ensure_walls(walls: &mut Vec<u64>) {
+    if walls.is_empty() {
+        return;
+    }
+    let joined: Vec<String> = walls.iter().map(u64::to_string).collect();
+    eprintln!(
+        "[kv-vmm] ensure-walls n={} us={}",
+        walls.len(),
+        joined.join(",")
+    );
+    walls.clear();
+}
+
+/// The reclaim paths' reap (DAY37 addendum D): the step-OOM teardown and the admin trim drop the
+/// parked pools; under the door their on-demand planes sit in the graveyard, so the path waits on
+/// the graves' own fences and reaps before it trims the device pools back to the driver.
+fn vmm_reap_for(why: &str) {
+    if !crate::kv_vmm::armed() {
+        return;
+    }
+    match memra_engine::cache::vmm_reap_graveyard_blocking() {
+        Ok((released, pending, _)) => {
+            eprintln!("[kv-vmm] reap ({why}) released={released} pending_graves={pending}")
+        }
+        Err(err) => eprintln!("[kv-vmm] reap ({why}) failed (left pending): {err}"),
+    }
 }
 
 fn admission_required(cost: usize, reserve: usize) -> usize {
@@ -7392,30 +8293,57 @@ const STEP_OOM_FAULT_MSG: &str =
 /// answers 200); a value above `MEMRA_STEP_OOM_RETRIES` walks the same session into the
 /// bounded-retry honest error. Malformed values are OFF with a loud warning. NEVER set on
 /// a serving box.
-fn step_oom_fault_remaining() -> &'static std::sync::atomic::AtomicU32 {
-    static R: std::sync::OnceLock<std::sync::atomic::AtomicU32> = std::sync::OnceLock::new();
+/// Where the door may fire (WP-B day 49 addendum D). `Any`: the next step at any of the three
+/// injection points (a plain `<n>`, today's door). `BatchMulti`: only the plain dispatch's
+/// batched decode chunk, and only a chunk carrying at least two sessions (`batch:<n>`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StepOomFaultSite {
+    Any,
+    BatchMulti,
+}
+
+/// Parse the door's value: `<n>` or `batch:<n>`. `None` is malformed (the door stays OFF).
+fn parse_step_oom_fault(raw: &str) -> Option<(StepOomFaultSite, u32)> {
+    match raw.strip_prefix("batch:") {
+        Some(n) => n
+            .parse::<u32>()
+            .ok()
+            .map(|n| (StepOomFaultSite::BatchMulti, n)),
+        None => raw.parse::<u32>().ok().map(|n| (StepOomFaultSite::Any, n)),
+    }
+}
+
+fn step_oom_fault_state() -> &'static (StepOomFaultSite, std::sync::atomic::AtomicU32) {
+    static R: std::sync::OnceLock<(StepOomFaultSite, std::sync::atomic::AtomicU32)> =
+        std::sync::OnceLock::new();
     R.get_or_init(|| {
-        let n = match std::env::var("MEMRA_STEP_OOM_FAULT") {
-            Ok(raw) => match raw.parse::<u32>() {
-                Ok(n) => n,
-                Err(_) => {
+        let (site, n) = match std::env::var("MEMRA_STEP_OOM_FAULT") {
+            Ok(raw) => match parse_step_oom_fault(&raw) {
+                Some(v) => v,
+                None => {
                     eprintln!(
                         "[admit-oom] WARNING: MEMRA_STEP_OOM_FAULT={raw:?} is not an \
                          injection count; the door stays OFF"
                     );
-                    0
+                    (StepOomFaultSite::Any, 0)
                 }
             },
-            Err(_) => 0,
+            Err(_) => (StepOomFaultSite::Any, 0),
         };
         if n > 0 {
+            let (value, at) = match site {
+                StepOomFaultSite::Any => (n.to_string(), "session step(s)"),
+                StepOomFaultSite::BatchMulti => (
+                    format!("batch:{n}"),
+                    "batched decode chunk(s) of at least two sessions",
+                ),
+            };
             eprintln!(
-                "[admit-oom] WARN: MEMRA_STEP_OOM_FAULT={n} armed: the next {n} session \
-                 step(s) will report a SYNTHETIC CUDA OOM (diagnostic door, never a \
-                 serving configuration)"
+                "[admit-oom] WARN: MEMRA_STEP_OOM_FAULT={value} armed: the next {n} {at} will \
+                 report a SYNTHETIC CUDA OOM (diagnostic door, never a serving configuration)"
             );
         }
-        std::sync::atomic::AtomicU32::new(n)
+        (site, std::sync::atomic::AtomicU32::new(n))
     })
 }
 
@@ -7433,8 +8361,24 @@ fn step_oom_fault_consume(remaining: &std::sync::atomic::AtomicU32) -> bool {
     false
 }
 
+/// Whether an injection point may spend the budget: `batch_sessions` is `Some(k)` at the
+/// batched decode chunk (k sessions) and `None` at the spec and non-batching steps.
+fn step_oom_fault_site_admits(site: StepOomFaultSite, batch_sessions: Option<usize>) -> bool {
+    match site {
+        StepOomFaultSite::Any => true,
+        StepOomFaultSite::BatchMulti => batch_sessions.is_some_and(|k| k >= 2),
+    }
+}
+
 fn step_oom_fault_fire() -> bool {
-    step_oom_fault_consume(step_oom_fault_remaining())
+    let (site, remaining) = step_oom_fault_state();
+    step_oom_fault_site_admits(*site, None) && step_oom_fault_consume(remaining)
+}
+
+/// The batched decode chunk's injection point: `sessions` is the chunk's session count.
+fn step_oom_fault_fire_batch(sessions: usize) -> bool {
+    let (site, remaining) = step_oom_fault_state();
+    step_oom_fault_site_admits(*site, Some(sessions)) && step_oom_fault_consume(remaining)
 }
 
 /// Run one allocation retry only when the first failure released reclaimable state. The caller
@@ -8731,6 +9675,101 @@ impl std::fmt::Display for TenantShareRefusal {
 /// Pinned-host spill pool behind the device `PrefixCache`. Plain byte-budgeted LRU, the same
 /// order as the device tier (memra#523 item 2), so a demotion keeps its rank. Keyed exactly like the device
 /// cache: the PC-ISO `(model, cache namespace)` map key plus exact-token prefixes.
+/// WP-A day 52 (`DAY52.md` step 1, log only): one host entry's drop, timed by field group.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct HostDropSplit {
+    meta_ms: f64,
+    kv_ms: f64,
+    kv_leases: usize,
+    f32_ms: f64,
+    f32_payloads: usize,
+    rest_ms: f64,
+}
+
+/// WP-A day 52 (log only): one `host_demote_publish`'s parts: the bind, the tenant reclaim, the
+/// insert (with its drops).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct HostPublishSplit {
+    bind_ms: f64,
+    reclaim_ms: f64,
+    insert_ms: f64,
+    insert: HostInsertSplit,
+}
+
+/// WP-A day 52 (log only): one `insert`'s drops, the replaced twin's and the LRU victims'.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct HostInsertSplit {
+    twin: Option<HostDropSplit>,
+    evicted: usize,
+    evict_ms: f64,
+}
+
+/// WP-A day 52 (`DAY52.md` step 1, log only): drop a host entry exactly as the compiler would,
+/// every field in its declaration order, timing four groups: `meta` (identity to tokens), `kv`
+/// (the KV planes: pinned leases), `f32` (the conv and ssm payloads), `rest` (every later field).
+/// The census `day52_the_publication_split_is_log_only` pins this list against the struct.
+fn host_entry_drop_split(e: HostPrefixEntry) -> HostDropSplit {
+    let HostPrefixEntry {
+        _tier_identity,
+        model_generation,
+        glm,
+        layout_version,
+        pool_key,
+        toks,
+        kv,
+        conv,
+        ssm,
+        pos,
+        last_logits,
+        draft,
+        dspark_draft,
+        last_h,
+        device_bytes,
+        bytes,
+        last_use,
+        id,
+        verify_digest,
+        span_digests,
+        _tier_metadata,
+        _tier_metadata_charge,
+        _tier_charge,
+    } = e;
+    let mut split = HostDropSplit {
+        kv_leases: kv.iter().flatten().count(),
+        f32_payloads: conv.iter().flatten().count() + ssm.iter().flatten().count(),
+        ..Default::default()
+    };
+    let t = Instant::now();
+    drop(_tier_identity);
+    drop(model_generation);
+    drop(glm);
+    let _ = layout_version;
+    drop(pool_key);
+    drop(toks);
+    split.meta_ms = t.elapsed().as_secs_f64() * 1e3;
+    let t = Instant::now();
+    drop(kv);
+    split.kv_ms = t.elapsed().as_secs_f64() * 1e3;
+    let t = Instant::now();
+    drop(conv);
+    drop(ssm);
+    split.f32_ms = t.elapsed().as_secs_f64() * 1e3;
+    let t = Instant::now();
+    let _ = pos;
+    drop(last_logits);
+    drop(draft);
+    drop(dspark_draft);
+    drop(last_h);
+    let _ = (device_bytes, bytes, last_use, id);
+    drop(verify_digest);
+    drop(span_digests);
+    drop(_tier_metadata);
+    drop(_tier_metadata_charge);
+    drop(_tier_charge);
+    split.rest_ms = t.elapsed().as_secs_f64() * 1e3;
+    split
+}
+
 #[derive(Default)]
 struct HostPrefixCache {
     /// WP-A day 17: the one `Demoting` entry, if a contract-routed demote is in flight on the copy
@@ -8849,6 +9888,14 @@ struct HostPrefixCache {
     handoff_imports: u64,
     handoff_import_bytes: u64,
     handoff_skips: u64,
+    /// WP-A day 52 (`DAY52.md` step 1, log only): the last `insert`'s drops, timed, and the last
+    /// `host_demote_publish`'s parts (the demote publication split line reads them; nothing
+    /// decides on them).
+    last_insert_split: HostInsertSplit,
+    last_publish_split: HostPublishSplit,
+    /// WP-A day 54 (`DAY54.md` step 1, log only): why the last capture route answered `OnTick`
+    /// (the caller's `on-tick publish` line prints it; nothing decides on it).
+    on_tick_reason: &'static str,
 }
 
 impl HostPrefixCache {
@@ -9165,6 +10212,15 @@ impl HostPrefixCache {
                 .close("the tier latched off", HOST_HASH_LATCH_JOIN);
             // WP-A day 30: a latched tier demotes nothing more; its span staging set frees.
             tier.staging.borrow_mut().clear();
+            // WP-A day 63 (L1.6): and its lease pool: idle backings free, pool charges release.
+            if let Some(pool) = &tier.lease_pool {
+                let (n, bytes) = pool.close();
+                eprintln!(
+                    "[prefix-host] lease pool closed (the tier latched off): {n} idle backings, \
+                     {:.1} MB freed",
+                    bytes as f64 / 1e6
+                );
+            }
         }
     }
 
@@ -9335,8 +10391,13 @@ impl HostPrefixCache {
             );
             return false;
         }
-        if let Some(i) = self.key_index(key, &e.toks) {
-            let _ = self.remove_at(key, i);
+        // WP-A day 52 (log only): the twin and every LRU victim drop at the same point as before,
+        // through the timed helper (every field in declaration order).
+        let mut split = HostInsertSplit::default();
+        if let Some(i) = self.key_index(key, &e.toks)
+            && let Some(twin) = self.remove_at(key, i)
+        {
+            split.twin = Some(host_entry_drop_split(twin));
         }
         e.id = self.next_id;
         self.next_id += 1;
@@ -9370,9 +10431,13 @@ impl HostPrefixCache {
                 victim_key.0,
                 ns_suffix(&victim_key.1)
             );
-            drop(dead);
+            let t = Instant::now();
+            let _ = host_entry_drop_split(dead);
+            split.evict_ms += t.elapsed().as_secs_f64() * 1e3;
+            split.evicted += 1;
             self.log_arena("LRU eviction");
         }
+        self.last_insert_split = split;
         true
     }
 
@@ -9459,7 +10524,27 @@ impl HostPrefixCache {
         self.purges += 1;
         self.purged_entries += entries as u64;
         self.purged_bytes += bytes as u64;
+        // WP-A day 69 (`DAY69.md` design P.4): the scrub, after the settles and the entries' drop.
+        self.purge_scrub();
         (victims.len(), entries, bytes)
+    }
+
+    /// WP-A day 69 (`DAY69.md` design P.4): the pinned host memory the tier keeps for reuse holds
+    /// no revoked tenant's bytes after a purge. The lease pool drains (every idle backing frees, and
+    /// a lease allocated before the drain frees at its drop instead of parking), and every idle
+    /// buffer of the span staging set is zeroed in place. Every purge, whichever tenant it names.
+    fn purge_scrub(&self) {
+        let Some(tier) = &self.tier else {
+            return;
+        };
+        let (pooled, pooled_bytes) = tier.lease_pool.as_ref().map_or((0, 0), |p| p.drain());
+        let (zeroed, zeroed_bytes) = tier.staging.borrow_mut().scrub();
+        eprintln!(
+            "[prefix-host] purge scrub: lease pool drained ({pooled} idle backings, {:.1} MB freed; \
+             earlier leases free at their drop), staging set zeroed ({zeroed} buffers, {:.1} MB)",
+            pooled_bytes as f64 / 1e6,
+            zeroed_bytes as f64 / 1e6
+        );
     }
 }
 
@@ -9497,6 +10582,8 @@ struct HostTierContext {
     /// buffer is charged to the governor's pinned ledger when it is allocated (`HostStaging`);
     /// the set and its charges free at the tier's latch.
     staging: std::cell::RefCell<HostStaging>,
+    /// WP-A day 63 (`DAY63.md` design L1.6): the transfer engine's lease pool, closed at the latch.
+    lease_pool: Option<std::rc::Rc<memra_engine::tier_transfer::LeasePool>>,
 }
 /// WP-A day 31 (DAY30 owed items: the governor charge of the staging, the staging back on every
 /// post-take refusal): the context's span staging set and its pinned charges. A buffer is
@@ -9529,6 +10616,17 @@ impl HostStaging {
         self.idle.clear();
         self.charges.clear();
         self.charged = 0;
+    }
+    /// WP-A day 69 (`DAY69.md` design P.4): every idle buffer zeroed in place (an idle buffer holds
+    /// the last span that used it); the set keeps its buffers and their charges. Returns (buffers,
+    /// bytes).
+    fn scrub(&mut self) -> (usize, u64) {
+        let mut bytes = 0u64;
+        for buf in &mut self.idle {
+            buf.fill(0);
+            bytes += buf.len() as u64;
+        }
+        (self.idle.len(), bytes)
     }
 }
 /// One loaded model's programs under the door: the plain program (day 13) and, for a model with
@@ -10214,6 +11312,34 @@ struct ContractPlanned {
     capacity: usize,
 }
 
+/// WP-A day 49 (`DAY49.md`, OWED items 7 and 8; log only): the demote's pre-submit segments, printed
+/// once per demote (`demote pre-submit split`). No behavior reads it.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct DemotePresubmitSplit {
+    leases_ms: f64,
+    leases: usize,
+    /// WP-A day 63 (`DAY63.md` L1.7, log only): the leases the pool served.
+    pooled: u64,
+    lease_bytes: u64,
+    leases_minflt: i64,
+    register_submit_ms: f64,
+    spans_ms: f64,
+}
+
+/// WP-A day 49 (log only): the calling thread's minor page faults so far (`getrusage(RUSAGE_THREAD)`),
+/// 0 where the call fails.
+fn thread_minflt() -> i64 {
+    // SAFETY: `getrusage` writes only the `rusage` it is handed, a zeroed stack value.
+    unsafe {
+        let mut ru: libc::rusage = std::mem::zeroed();
+        if libc::getrusage(libc::RUSAGE_THREAD, &mut ru) == 0 {
+            ru.ru_minflt as i64
+        } else {
+            0
+        }
+    }
+}
+
 /// A contract-routed D2H that was submitted and not yet settled (WP-A day 17): the ticket, its
 /// producer fence, the registered planes (their retained twins take them back), the plan and the
 /// per-item sizes, the one-shot fault the submission took, and when it was submitted. Owned by
@@ -10229,6 +11355,9 @@ struct PendingContractDemote {
     /// WP-A day 30 (memra#536 Move 2 owed item 1, the D2H half): the image slots whose f32 spans
     /// ride this ticket, in attach order (`host_spans_submit`); empty for a batch without spans.
     spans: Vec<HostHashSlot>,
+    /// WP-A day 49 (log only): the pre-submit segments (`DemotePresubmitSplit`), boxed so the
+    /// `HostImage::Demoting` variant stays the size it was.
+    split: Box<DemotePresubmitSplit>,
 }
 
 /// What one settle step of a contract-routed D2H produced.
@@ -10562,9 +11691,25 @@ struct HostHashReply {
     seq: u64,
     hashed: Vec<(HostHashPayload, usize, memra_engine::cache::tiered::Digest)>,
     helper_ms: f64,
+    /// WP-A day 49 (`DAY49.md`, log only): the job's staging copies and hashes, apart.
+    split: HostHashSplit,
     /// WP-A day 35: each lease view's byte count and digest, in the order handed over (the views
     /// end with the job: the helper reads nothing after this reply is sent).
     leases: Vec<(HostLeaseSlot, usize, memra_engine::cache::tiered::Digest)>,
+}
+
+/// WP-A day 49 (`DAY49.md`, OWED items 7 and 8; log only): one hash job's staging copies (time,
+/// bytes, the helper thread's minor page faults across them) and hashes (time), accumulated per
+/// payload in the job's own order.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct HostHashSplit {
+    copy_ms: f64,
+    copy_bytes: u64,
+    copy_minflt: i64,
+    hash_ms: f64,
+    /// Day 51 (design P, log only): the staged payloads and how many took a reserve buffer.
+    staged: u32,
+    reserve_hits: u32,
 }
 
 /// WP-A day 35 (`DAY35.md` design M'): which KV lease of the image a view reads and a digest names.
@@ -10788,6 +11933,213 @@ impl HostHashFault {
 /// and an idle 2 ms poll early).
 const HOST_HASH_DEADLINE: Duration = Duration::from_secs(10);
 
+/// WP-A day 51 (`DAY51.md` design P, OWED item 17): the hash helper's reserve of heap payload
+/// buffers whose every page is already written, keyed by exact length. DAY49 placed the helper's
+/// copy into a fresh `Vec` at one minor fault per 4 KiB page (16 ms of a 157 MB job, one tick-top
+/// poll of every publication) while no host entry frees; the reserve moves those faults into the
+/// helper's idle time. Its target is the staged lengths of the last `Hash` job, clamped to `cap`
+/// bytes. It is charged on the governor's pageable ledger for the whole target BEFORE its first
+/// buffer is allocated (a refused charge allocates nothing), and the charge is released at the
+/// retarget and when the helper exits. A hit is written with `copy_from_slice` from the staged
+/// bytes and a miss allocates as before, so the payload's bytes are the same either way.
+struct HostPayloadReserve {
+    governor: memra_engine::cache::tiered::hostprefix::SharedGovernor,
+    cap: u64,
+    /// The lengths (floats) of the current target still to allocate.
+    owed: Vec<usize>,
+    /// Allocated buffers, every element written.
+    ready: Vec<Vec<f32>>,
+    charge: Option<memra_engine::cache::tiered::hostprefix::ResidentCharge>,
+    /// The current target's bytes (the charge's size).
+    target_bytes: u64,
+    /// The governor refused this target's charge: no refill until the next retarget.
+    refused: bool,
+    /// The current target's refill figures, printed when it completes (log only).
+    refill_ms: f64,
+    refill_minflt: i64,
+    yields: u32,
+    /// WP-A day 52 (`DAY52.md` design P2): the arming state. Armed, the last job's staged lengths
+    /// are the target; disarmed, the target is empty (nothing held, no charge).
+    armed: bool,
+}
+
+/// The payload reserve's ledger tenant: it belongs to the context's helper and serves every
+/// request's demote, so its charge names its own digest, disjoint from every `tenant_salt`.
+fn host_payload_reserve_tenant() -> [u8; 32] {
+    memra_engine::cache::record::digest("host-tier-payload-reserve", b"hash helper payload reserve")
+}
+
+impl HostPayloadReserve {
+    fn new(governor: memra_engine::cache::tiered::hostprefix::SharedGovernor, cap: u64) -> Self {
+        Self {
+            governor,
+            cap,
+            owed: Vec::new(),
+            ready: Vec::new(),
+            charge: None,
+            target_bytes: 0,
+            refused: false,
+            refill_ms: 0.0,
+            refill_minflt: 0,
+            yields: 0,
+            armed: true,
+        }
+    }
+    /// WP-A day 52 (`DAY52.md` design P2, the arming rule): after a `Hash` job's copies, the job's
+    /// fresh pages are its copy's minor faults (a miss faults where its memory is new, a hit does
+    /// not) plus, when the job took any reserve buffer, the minor faults of the refill that wrote
+    /// them. Armed when the fresh pages are at least half the job's staged pages: the reserve
+    /// refills to the job's shape (`retarget(lengths)`); disarmed otherwise: it holds nothing
+    /// (`retarget(&[])`), and the next copies are today's, which reuse freed memory. A job with no
+    /// staged payload decides nothing. The one line prints on a change of state.
+    fn after_job(&mut self, lengths: &[usize], copy_minflt: i64, hits: u32) {
+        if lengths.is_empty() {
+            self.retarget(&[]);
+            return;
+        }
+        let pages = lengths
+            .iter()
+            .map(|&l| (l as u64).saturating_mul(4))
+            .sum::<u64>()
+            / 4096;
+        let fresh = copy_minflt.max(0) as u64
+            + if hits > 0 {
+                self.refill_minflt.max(0) as u64
+            } else {
+                0
+            };
+        let armed = fresh.saturating_mul(2) >= pages;
+        if armed != self.armed {
+            eprintln!(
+                "[prefix-host] payload reserve {}: the job took {fresh} fresh pages of {pages} \
+                 (rule >= {pages}/2)",
+                if armed { "armed" } else { "disarmed" }
+            );
+            self.armed = armed;
+        }
+        if armed {
+            self.retarget(lengths);
+        } else {
+            self.retarget(&[]);
+        }
+    }
+    /// A written buffer of exactly `len` floats, if the reserve holds one.
+    fn take(&mut self, len: usize) -> Option<Vec<f32>> {
+        let i = self.ready.iter().position(|v| v.len() == len)?;
+        Some(self.ready.swap_remove(i))
+    }
+    /// After a `Hash` job's copies: the buffers it did not take free, the charge releases (the
+    /// image's own pageable charge covers what the job took), and `lengths` (the job's staged
+    /// payloads, in floats) become the target, clamped to `cap` bytes in the job's order.
+    fn retarget(&mut self, lengths: &[usize]) {
+        self.ready.clear();
+        self.charge = None;
+        self.owed.clear();
+        self.target_bytes = 0;
+        for &len in lengths {
+            let bytes = (len as u64).saturating_mul(4);
+            if self.target_bytes.saturating_add(bytes) > self.cap {
+                break;
+            }
+            self.target_bytes += bytes;
+            self.owed.push(len);
+        }
+        // Allocated from the end of `owed`: reverse so the job's first payload is written first.
+        self.owed.reverse();
+        self.refused = false;
+        self.refill_ms = 0.0;
+        self.refill_minflt = 0;
+        self.yields = 0;
+    }
+    /// One refill step: the charge first (once per target), then one buffer, every element
+    /// written with a value the compiler cannot see is zero (a zeroed allocation would map its
+    /// pages lazily and move the faults back onto the copy). `false` when there is nothing to do.
+    fn refill_step(&mut self) -> bool {
+        use memra_engine::cache::tiered::*;
+        if self.refused || self.owed.is_empty() {
+            return false;
+        }
+        if self.charge.is_none() {
+            let dimensions = self
+                .governor
+                .lock()
+                .map(|g| g.used().device.len())
+                .map_err(|_| "the governor is poisoned".to_string());
+            let charge = dimensions.and_then(|dimensions| {
+                let mut request = BudgetRequest {
+                    bytes: TierBudget::zero(dimensions),
+                    priority: Priority::Backup,
+                    deadline: Deadline(u64::MAX),
+                    tenant: host_payload_reserve_tenant(),
+                };
+                request.bytes.pageable = self.target_bytes;
+                hostprefix::ResidentCharge::reserve(self.governor.clone(), &request)
+                    .map_err(|e| format!("{e:?}"))
+            });
+            match charge {
+                Ok(charge) => self.charge = Some(charge),
+                Err(why) => {
+                    self.refuse(why);
+                    return false;
+                }
+            }
+        }
+        let Some(len) = self.owed.pop() else {
+            return false;
+        };
+        let (t0, f0) = (Instant::now(), thread_minflt());
+        let mut v = Vec::with_capacity(len);
+        v.resize(len, std::hint::black_box(0.0f32));
+        self.ready.push(v);
+        self.refill_minflt += thread_minflt() - f0;
+        self.refill_ms += t0.elapsed().as_secs_f64() * 1e3;
+        if self.owed.is_empty() {
+            eprintln!(
+                "[prefix-host] payload reserve ready: {} buffers, {:.1} MB in {:.2} ms (minflt +{}, \
+                 yielded {} time(s)), charged to the governor's pageable ledger",
+                self.ready.len(),
+                self.target_bytes as f64 / 1e6,
+                self.refill_ms,
+                self.refill_minflt,
+                self.yields,
+            );
+        }
+        true
+    }
+    fn refuse(&mut self, why: String) {
+        self.refused = true;
+        self.owed.clear();
+        eprintln!(
+            "[prefix-host] payload reserve refused ({} bytes): {why}; the next copies allocate",
+            self.target_bytes
+        );
+    }
+    /// The helper's idle time: refill one buffer at a time, checking the job channel before each.
+    /// `Ok(Some(job))` is a job that is waiting (served before the refill resumes), `Ok(None)` the
+    /// reserve complete (or refused, or nothing to do), `Err(())` the channel closed.
+    fn refill_until_job(
+        &mut self,
+        jobs: &std::sync::mpsc::Receiver<HostHelperJob>,
+    ) -> Result<Option<HostHelperJob>, ()> {
+        loop {
+            match jobs.try_recv() {
+                Ok(job) => {
+                    if !self.owed.is_empty() && !self.ready.is_empty() {
+                        self.yields += 1;
+                    }
+                    return Ok(Some(job));
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => return Err(()),
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    if !self.refill_step() {
+                        return Ok(None);
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// One long-lived hash helper per `HostTierContext` (never a thread per demote): a job channel in,
 /// a reply channel out, the thread handle for the join. Between jobs the helper blocks only on its
 /// job channel; inside a job it is busy for as long as the hash takes, which is unbounded when the
@@ -10805,7 +12157,7 @@ struct HostHashWorker {
 /// inside a job is the deadline's cause, and the owner thread must not wait for that job.
 const HOST_HASH_LATCH_JOIN: Duration = Duration::from_millis(50);
 impl HostHashWorker {
-    fn spawn(fault: Option<HostHashFault>) -> Result<Self, String> {
+    fn spawn(fault: Option<HostHashFault>, reserve: HostPayloadReserve) -> Result<Self, String> {
         let (jobs_tx, jobs_rx) = std::sync::mpsc::channel::<HostHelperJob>();
         let (reply_tx, reply_rx) = std::sync::mpsc::channel::<HostHashReply>();
         let (sources_tx, sources_rx) = std::sync::mpsc::channel::<HostSourcesReply>();
@@ -10813,7 +12165,20 @@ impl HostHashWorker {
             .name("memra-host-hash".into())
             .spawn(move || {
                 let mut fault = fault;
-                for job in jobs_rx {
+                // WP-A day 51 (design P): the reserve lives and dies with this thread; its charge
+                // releases when the thread exits by any path.
+                let mut reserve = reserve;
+                loop {
+                    // Design P: the idle time before the next job refills the reserve, one buffer
+                    // at a time; a job that is waiting is served first.
+                    let job = match reserve.refill_until_job(&jobs_rx) {
+                        Ok(Some(job)) => job,
+                        Ok(None) => match jobs_rx.recv() {
+                            Ok(job) => job,
+                            Err(_) => return,
+                        },
+                        Err(()) => return,
+                    };
                     if fault == Some(HostHashFault::HelperGone) {
                         // The red arm: the helper is gone; the job drops with it and the owner
                         // thread finds the reply channel closed.
@@ -10891,18 +12256,43 @@ impl HostHashWorker {
                         }
                     };
                     let t = Instant::now();
+                    let mut split = HostHashSplit::default();
+                    let mut staged_lengths = Vec::new();
                     let hashed = job
                         .payloads
                         .into_iter()
                         .map(|mut p| {
                             // WP-A day 30: a landed f32 span becomes the payload's heap `Vec`.
+                            // Day 49 (log only): the copy and the hash timed apart, in order.
+                            // Day 51 (design P): the `Vec` comes from the reserve when it holds
+                            // one of this length (every element written from the staged bytes),
+                            // else it is allocated as before.
                             if let Some(staged) = &p.staged {
-                                p.data = Arc::new(staged.as_f32_slice().to_vec());
+                                let (c0, f0) = (Instant::now(), thread_minflt());
+                                let src = staged.as_f32_slice();
+                                p.data = Arc::new(match reserve.take(src.len()) {
+                                    Some(mut v) => {
+                                        v.copy_from_slice(src);
+                                        split.reserve_hits += 1;
+                                        v
+                                    }
+                                    None => src.to_vec(),
+                                });
+                                split.copy_minflt += thread_minflt() - f0;
+                                split.copy_ms += c0.elapsed().as_secs_f64() * 1e3;
+                                split.copy_bytes += staged.len() as u64;
+                                split.staged += 1;
+                                staged_lengths.push(src.len());
                             }
+                            let h0 = Instant::now();
                             let (n, d) = host_hash_payload_digest(&p.data);
+                            split.hash_ms += h0.elapsed().as_secs_f64() * 1e3;
                             (p, n, d)
                         })
                         .collect();
+                    // Design P2 (day 52): the job's staged shape is the reserve's next target
+                    // while the job's copies took fresh pages; otherwise the reserve disarms.
+                    reserve.after_job(&staged_lengths, split.copy_minflt, split.reserve_hits);
                     // WP-A day 35 (design M'): the bind's KV re-hash, the same program over the
                     // same lease bytes; the views end here, before the reply is sent.
                     let leases = job
@@ -10914,6 +12304,7 @@ impl HostHashWorker {
                         seq: job.seq,
                         hashed,
                         helper_ms: t.elapsed().as_secs_f64() * 1e3,
+                        split,
                         leases,
                     };
                     if fault == Some(HostHashFault::NeverLands) {
@@ -11124,6 +12515,33 @@ struct PendingContractPromote {
     /// WP-A day 34 (`DAY34.md` design K): `Some` when the KV items' completion checksums are on the
     /// hash helper (the off-tick route); the settle takes the reply before its completion step.
     helper_sums: Option<PendingSources>,
+    /// WP-A day 64 (`DAY64.md` step 1, log only): what the last `Pending` answer waited on
+    /// (`sources`, `copies`, `receipt`, joined by `+`); printed on the promote's timeline.
+    waiting: String,
+}
+
+/// WP-A day 64 (step 1, log only): the requirements a pending promote still waits on: the helper's
+/// source checksums, the batch's copies, the spans' destination-digest receipt.
+fn host_promote_waiting(
+    t: &memra_engine::tier_transfer::CudaTransfers,
+    ticket: &memra_engine::cache::tiered::TransferTicket,
+    sources_pending: bool,
+) -> String {
+    let (copies, receipt) = t.h2d_landing_parts(ticket).unwrap_or((false, false));
+    let mut w = Vec::new();
+    if sources_pending {
+        w.push("sources");
+    }
+    if !copies {
+        w.push("copies");
+    } else if !receipt {
+        w.push("receipt");
+    }
+    if w.is_empty() {
+        "none".into()
+    } else {
+        w.join("+")
+    }
 }
 
 /// WP-A day 34: the hash helper's source-checksum job of one promote: how many views went, when,
@@ -11286,6 +12704,52 @@ struct PendingCapture {
     /// WP-A day 24: the `trace_prefix_entry_state` role the OFF publisher prints (`snapshot` for
     /// the seed and lcp-split publishes, `spec-snapshot` for the spec-boundary publish).
     trace_role: &'static str,
+    /// WP-A day 62 (`DAY62.md` step 1, log only): the source cache's identity (its layer vector's
+    /// heap address, stable while the cache moves between owners) and the copy-stream work the
+    /// worker had in flight when the capture was submitted, by kind. Printed on the publish line;
+    /// nothing decides on either.
+    source_kv: usize,
+    queued_ahead: String,
+    /// WP-A day 62 (design R1.1): the source session's request id.
+    source_request: String,
+}
+
+/// WP-A day 62 (`DAY62.md` design R1.1): whether a retiring session is the pending capture's
+/// source. Either identity is enough: the request id recorded at submission, or the cache's
+/// layer-vector address (a session with no cache matches by id only). Conservative by
+/// construction: a miss would let a source's cache drop or park under the copy.
+fn r1_is_source(
+    request_id: &str,
+    kv: Option<usize>,
+    source_request: &str,
+    source_kv: usize,
+) -> bool {
+    request_id == source_request || kv.is_some_and(|k| k == source_kv)
+}
+
+/// WP-A day 62 (R1): the retire pass settles the pending capture only when its source retires.
+fn r1_settle_at_retire(source_retiring: bool) -> bool {
+    source_retiring
+}
+
+/// WP-A day 62 (step 1, log only): the copy-stream tickets in flight on this worker, by kind.
+fn host_copy_stream_in_flight(hpx: &HostPrefixCache) -> String {
+    let kinds: Vec<&str> = [
+        (hpx.demoting.is_some(), "demote"),
+        (hpx.promoting.is_some(), "promote"),
+        (
+            hpx.restoring.as_ref().is_some_and(|r| r.contract.is_some()),
+            "restore",
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(on, k)| on.then_some(k))
+    .collect();
+    if kinds.is_empty() {
+        "none".into()
+    } else {
+        kinds.join(", ")
+    }
 }
 
 /// What one settle step of a capture batch produced.
@@ -11594,6 +13058,9 @@ fn host_kv_planes_submit_contract(
     //    ledger's, the driver's or the alloc-fail fault's, leaves the entry untouched and the
     //    caller latches the tier exactly as the pre-door alloc path does.
     let mut hosts = Vec::with_capacity(planned.len() * 2);
+    // WP-A day 49 (log only): the pinned destinations' time, count, bytes and minor faults.
+    let (leases_t0, leases_f0) = (Instant::now(), thread_minflt());
+    let pooled0 = t.lease_pool_counts().0;
     for p in &planned {
         for n in [p.kb, p.vb] {
             if kv_host_fault() == "alloc-fail" {
@@ -11609,6 +13076,15 @@ fn host_kv_planes_submit_contract(
             })?);
         }
     }
+    let mut split = DemotePresubmitSplit {
+        leases_ms: leases_t0.elapsed().as_secs_f64() * 1e3,
+        leases: hosts.len(),
+        pooled: t.lease_pool_counts().0 - pooled0,
+        lease_bytes: planned.iter().map(|p| (p.kb + p.vb) as u64).sum(),
+        leases_minflt: thread_minflt() - leases_f0,
+        ..DemotePresubmitSplit::default()
+    };
+    let register_t0 = Instant::now();
     // 3. Device admission probe on the same ledger: `register_device` charges the device
     //    dimension per plane, so probing the sum first means the registration below cannot be
     //    refused by the ledger, and no plane leaves the entry to be dropped by a refusal.
@@ -11836,6 +13312,7 @@ fn host_kv_planes_submit_contract(
         }
     };
     let _ = engine;
+    split.register_submit_ms = register_t0.elapsed().as_secs_f64() * 1e3;
     Ok(PendingContractDemote {
         ticket,
         producer,
@@ -11845,6 +13322,7 @@ fn host_kv_planes_submit_contract(
         fault,
         submitted: Instant::now(),
         spans: Vec::new(),
+        split: Box::new(split),
     })
 }
 
@@ -11862,6 +13340,8 @@ fn host_spans_submit(
     mut pending: PendingContractDemote,
 ) -> Result<PendingContractDemote, HostContractFailure> {
     use memra_engine::tier_transfer::D2hSpan;
+    // WP-A day 49 (log only): the span attach's time, set on both success exits.
+    let spans_t0 = Instant::now();
     let Some(transfers) = &tier.transfers else {
         // Unreachable: the submission that issued `pending` required the engine.
         return Err(HostContractFailure::SourceQuarantined(
@@ -11924,7 +13404,10 @@ fn host_spans_submit(
     }
     let attached = match refused {
         Some(why) => Err((why, spans)),
-        None if spans.is_empty() => return Ok(pending),
+        None if spans.is_empty() => {
+            pending.split.spans_ms = spans_t0.elapsed().as_secs_f64() * 1e3;
+            return Ok(pending);
+        }
         None => t
             .submit_d2h_spans(&pending.ticket, spans)
             .map_err(|(e, back)| (format!("{e:?}"), back)),
@@ -11932,6 +13415,7 @@ fn host_spans_submit(
     let (why, back) = match attached {
         Ok(()) => {
             pending.spans = slots;
+            pending.split.spans_ms = spans_t0.elapsed().as_secs_f64() * 1e3;
             return Ok(pending);
         }
         Err(refusal) => refusal,
@@ -11988,6 +13472,7 @@ fn host_kv_planes_settle_contract(
         fault,
         submitted,
         spans,
+        split,
     } = pending;
     // 6. Completion: the engine's event per item, then its status and its checksum of each
     //    destination (the receipt), then each destination taken exactly once. `Block` is the host
@@ -12018,6 +13503,7 @@ fn host_kv_planes_settle_contract(
                 fault,
                 submitted,
                 spans,
+                split,
             }));
         }
         return Err(SourceQuarantined(
@@ -13074,6 +14560,7 @@ fn host_kv_planes_submit_promote(
         submitted: Instant::now(),
         spans: Vec::new(),
         helper_sums: None,
+        waiting: String::new(),
     })
 }
 
@@ -13102,6 +14589,7 @@ fn host_kv_planes_settle_promote(
         submitted,
         spans,
         mut helper_sums,
+        waiting: _,
     } = pending;
     let Some(transfers) = &tier.transfers else {
         return Err(Latched(
@@ -13145,6 +14633,7 @@ fn host_kv_planes_settle_promote(
                 p.landed = Some((r.bytes, r.helper_ms));
             }
             Ok(None) if wait == ContractWait::Poll && p.handed.elapsed() < HOST_HASH_DEADLINE => {
+                let waiting = host_promote_waiting(&t, &ticket, true);
                 return Ok(PromoteSettle::Pending(PendingContractPromote {
                     ticket,
                     producer,
@@ -13157,6 +14646,7 @@ fn host_kv_planes_settle_promote(
                     submitted,
                     spans,
                     helper_sums,
+                    waiting,
                 }));
             }
             Ok(None) => {
@@ -13199,6 +14689,7 @@ fn host_kv_planes_settle_promote(
         }
     };
     if wait == ContractWait::Poll && !completion.producer_done {
+        let waiting = host_promote_waiting(&t, &ticket, false);
         return Ok(PromoteSettle::Pending(PendingContractPromote {
             ticket,
             producer,
@@ -13211,6 +14702,7 @@ fn host_kv_planes_settle_promote(
             submitted,
             spans,
             helper_sums,
+            waiting,
         }));
     }
     // 6b. Rule 3 (WP-A day 19, `memra_tier::conformance::h2d_reader_fence`, the at-settle install):
@@ -13250,6 +14742,9 @@ fn host_kv_planes_settle_promote(
         bufs: Vec::with_capacity(spans.len()),
     };
     let mut recur: Vec<(HostHashSlot, CudaSlice<f32>)> = Vec::with_capacity(spans.len());
+    // WP-A day 64 (`DAY64.md` section 4 step 1, log only): the span work's phases, read before the
+    // take while the batch still holds its timing events (complete by now; never a wait).
+    let span_timing = t.h2d_span_timing(&ticket);
     if !spans.is_empty() {
         let back = match t.take_h2d_spans(&ticket) {
             Ok(back) => back,
@@ -13543,8 +15038,11 @@ fn host_kv_planes_settle_promote(
         String::new()
     } else {
         format!(
-            "; {} f32 spans landed under the ticket and taken back before the retire",
-            recur.len()
+            "; {} f32 spans landed under the ticket and taken back before the retire{}",
+            recur.len(),
+            span_timing.map_or_else(String::new, |(fill, copies, digests)| format!(
+                " (span receipt: fill {fill:.2} ms, copies {copies:.2} ms, digests {digests:.2} ms)"
+            ))
         )
     };
     // WP-A day 34: where the KV items' checksums ran, after the span term.
@@ -14092,6 +15590,591 @@ fn host_demote_prefix_entry(engine: &Engine, host: &mut HostPrefixCache, mut dea
     // Otherwise `dead` drops here whatever happened: it was already evicted from the device tier.
 }
 
+/// MEMRA_ADMIT_RECLAIM_OFFTICK (default unset = OFF; WP-B day 42, O12): under
+/// `MEMRA_ADMIT_BY_MEMORY` and the host tier's contracts door, the admission reclaim flush drops
+/// its drop set at once and demotes its demote set off the tick, one landing at a time, and the
+/// arrival defers on the landings within the door's defer budget
+/// (`research/spill-b-20260919/DAY42.md` 1.2). Unset, today's on-tick flush runs.
+fn admit_reclaim_offtick_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| {
+        let on = std::env::var("MEMRA_ADMIT_RECLAIM_OFFTICK").as_deref() == Ok("1");
+        if on {
+            eprintln!(
+                "[admit-mem] MEMRA_ADMIT_RECLAIM_OFFTICK=1: the reclaim flush demotes off the tick \
+                 and the arrival waits on the landings (DAY42 door; needs MEMRA_ADMIT_BY_MEMORY=1 \
+                 and MEMRA_KV_HOST_CONTRACTS=1)"
+            );
+        }
+        on
+    })
+}
+
+/// An arrival waiting on the worker's off-tick reclaim (DAY42 addendum E): how many plans it
+/// has made. The demote set itself is the worker's queue, not the arrival's.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) struct ReclaimOffTick {
+    plans: usize,
+}
+
+/// The worker's off-tick demote queue (DAY42 addendum E): every entry an arrival's plan chose
+/// for demotion, oldest first, not yet submitted, with their bytes; and the bytes of the queue's
+/// demote in flight. No plan and no drop set includes a queued entry.
+#[derive(Debug, Default)]
+struct ReclaimQueue {
+    ids: std::collections::VecDeque<(u64, u64)>,
+    inflight_bytes: u64,
+    submitted: usize,
+}
+
+impl ReclaimQueue {
+    fn queued_bytes(&self) -> u64 {
+        self.ids
+            .iter()
+            .map(|&(_, b)| b)
+            .fold(0u64, u64::saturating_add)
+    }
+    fn contains(&self, id: u64) -> bool {
+        self.ids.iter().any(|&(i, _)| i == id)
+    }
+}
+
+/// The plan, pure over the evictable entries oldest first as `(id, bytes)`: today's demote rule
+/// (`evict_all_demoting` demotes while the bytes demoted so far are under the budget) picks the
+/// demote set, and every other evictable entry is the drop set today's flush also drops.
+fn reclaim_offtick_plan(oldest_first: &[(u64, u64)], budget: u64) -> (Vec<u64>, Vec<u64>) {
+    let (mut demote, mut drop, mut planned) = (Vec::new(), Vec::new(), 0u64);
+    for &(id, bytes) in oldest_first {
+        if planned < budget {
+            demote.push(id);
+            planned = planned.saturating_add(bytes);
+        } else {
+            drop.push(id);
+        }
+    }
+    (demote, drop)
+}
+
+/// One admission pass's step for an arrival with a plan (DAY42 1.2), pure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReclaimStep {
+    /// It fits: admit now; the plan's unsubmitted entries stay resident.
+    Admit,
+    /// The demote slot is free and the plan has entries: submit the next one.
+    Submit,
+    /// Short, a landing is in flight (the slot is held), inside the defer budget: wait.
+    Wait,
+    /// Short and past the defer budget while a landing is in flight: the typed refusal.
+    Refuse,
+    /// Short, the slot free and the plan empty: the ladder continues as today.
+    Exhausted,
+}
+
+fn reclaim_offtick_step(
+    fits: bool,
+    slot_busy: bool,
+    plan_left: usize,
+    waited_ms: u64,
+    defer_budget_ms: u64,
+) -> ReclaimStep {
+    if fits {
+        ReclaimStep::Admit
+    } else if slot_busy {
+        if defer_budget_ms > 0 && waited_ms >= defer_budget_ms {
+            ReclaimStep::Refuse
+        } else {
+            ReclaimStep::Wait
+        }
+    } else if plan_left > 0 {
+        ReclaimStep::Submit
+    } else {
+        ReclaimStep::Exhausted
+    }
+}
+
+/// Where an evictable entry with `id` sits, if it is still evictable.
+fn px_find_evictable(px: &PrefixCache, id: u64) -> Option<(PoolKey, usize)> {
+    px.lru
+        .values()
+        .find(|(key, i)| {
+            px.entries
+                .get(key)
+                .and_then(|row| row.get(*i))
+                .is_some_and(|e| e.id == id)
+        })
+        .cloned()
+}
+
+/// The off-tick flush's pass for one arrival (DAY42 1.2, addenda B and E): with Q the bytes the
+/// worker's queue will free (queued plus the queue's demote in flight), an arrival whose shortfall
+/// B exceeds Q plans over the evictable entries not already queued, with today's rule over B - Q:
+/// its demote set joins the queue, its drop set drops at once. Then, the slot free, the queue's next
+/// entry is submitted. Returns the entries removed from the device index this pass.
+fn reclaim_offtick_pass(
+    engine: &Engine,
+    px: &mut PrefixCache,
+    hpx: &mut HostPrefixCache,
+    queue: &mut ReclaimQueue,
+    req: &mut Request,
+    budget: u64,
+) -> usize {
+    let mut removed = 0usize;
+    let inflight = if hpx.demoting.is_some() {
+        queue.inflight_bytes
+    } else {
+        0
+    };
+    let coming = queue.queued_bytes().saturating_add(inflight);
+    let marker = req
+        .reclaim_offtick
+        .get_or_insert_with(ReclaimOffTick::default);
+    if budget > coming {
+        let oldest: Vec<(u64, u64)> = px
+            .lru
+            .values()
+            .filter_map(|(key, i)| px.entries.get(key).and_then(|row| row.get(*i)))
+            .filter(|e| !queue.contains(e.id))
+            .map(|e| (e.id, e.bytes as u64))
+            .collect();
+        let (demote, drop) = reclaim_offtick_plan(&oldest, budget - coming);
+        for id in &drop {
+            if let Some((key, i)) = px_find_evictable(px, *id)
+                && px.remove_at(&key, i).is_some()
+            {
+                removed += 1;
+            }
+        }
+        marker.plans += 1;
+        if !demote.is_empty() || !drop.is_empty() {
+            eprintln!(
+                "[admit-mem] reclaim off-tick: plan {} demote + {} drop ({:.0}MB demote budget, {:.0}MB \
+                 already coming) for {} (plan {})",
+                demote.len(),
+                drop.len(),
+                (budget - coming) as f64 / 1e6,
+                coming as f64 / 1e6,
+                req.request_id,
+                marker.plans
+            );
+        }
+        let bytes: std::collections::HashMap<u64, u64> = oldest.iter().copied().collect();
+        queue.ids.extend(
+            demote
+                .iter()
+                .map(|id| (*id, bytes.get(id).copied().unwrap_or(0))),
+        );
+    }
+    px.evictions += removed as u64;
+    removed + reclaim_queue_drain(engine, px, hpx, queue, &req.request_id)
+}
+
+/// Submit the worker queue's next demote while the tier's slot is free (DAY42 addendum E): the
+/// admission pass calls it, and so does the tick top after its settle calls, so the whole demote
+/// set reaches the host whether or not the arrival that queued it is still waiting. A queued entry
+/// that is no longer evictable (leased, hit or evicted meanwhile) is skipped; a refused submission
+/// dropped its entry (its bytes free now) and the next is tried. Returns the entries removed.
+/// MEMRA_BATCH_OOM_RECOVER (default unset, WP-B day 49, OWED O14): `1` retries a batched decode
+/// chunk once after one reclaim rung when its quoted CUDA OOM came before any session-state write
+/// (`memra_engine::step_guard`). Unset reads nothing.
+fn batch_oom_recover_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_BATCH_OOM_RECOVER").as_deref() == Ok("1"))
+}
+
+/// The batch OOM's reclaim rung (DAY49 1.5): the parked sessions of the three pools are dropped,
+/// the device prefix cache is evicted to half its bytes, the teardown fence runs and the model
+/// pools are trimmed back to the driver. Returns a receipt fragment.
+fn batch_oom_reclaim(
+    engine: &Engine,
+    loaded: &HashMap<String, LoadedModel>,
+    px: &mut PrefixCache,
+    hpx: &mut HostPrefixCache,
+    reuse: &mut HashMap<PoolKey, Vec<ReuseEntry>>,
+    spec_reuse: &mut HashMap<PoolKey, Vec<SpecReuseEntry>>,
+    dspark_reuse: &mut HashMap<PoolKey, Vec<DsparkReuseEntry>>,
+) -> String {
+    let parked = (
+        reuse.values().map(Vec::len).sum::<usize>(),
+        spec_reuse.values().map(Vec::len).sum::<usize>(),
+        dspark_reuse.values().map(Vec::len).sum::<usize>(),
+    );
+    reuse.clear();
+    spec_reuse.clear();
+    dspark_reuse.clear();
+    let before = px.total_bytes;
+    let (evicted_n, _) = px.evict_to_bytes(before / 2);
+    oom_teardown_fence(engine, loaded);
+    host_capture_settle_pending(engine, px, hpx, ContractWait::Block, "a batch OOM");
+    host_restore_settle_pending(px, hpx, ContractWait::Block, "a batch OOM");
+    // DAY49 addendum C: the third reclaim path reaps the VMM graveyard before its trim, as the
+    // step-OOM teardown and the admin trim do (a dropped cache's planes return only when reaped).
+    vmm_reap_for("batch-oom");
+    let reports = trim_model_device_pools(engine, loaded, "batch-oom");
+    let trimmed = reports.len();
+    format!(
+        "parked reuse={} spec={} dspark={} dropped, prefix cache {} entries {}MB -> {}MB, {trimmed} pools trimmed",
+        parked.0,
+        parked.1,
+        parked.2,
+        evicted_n,
+        before >> 20,
+        px.total_bytes >> 20
+    )
+}
+
+/// MEMRA_ADMIT_W_RELEASE (default unset, WP-B day 45, OWED O4): `1` releases each session's prefill
+/// workspace from both admission books when its prime completes. Unset reads nothing.
+fn admit_w_release_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_ADMIT_W_RELEASE").as_deref() == Ok("1"))
+}
+
+/// The prime-completion release (DAY45 1.1): every active session with `prefill_done` and its
+/// workspace still booked releases it from both books and from its own charges, once.
+fn release_primed_workspace(
+    active: &mut [Session],
+    book: &mut crate::admit_predict::AdmissionBook,
+) {
+    for s in active.iter_mut() {
+        if s.booked_w_bytes == 0 || !s.prefill_done {
+            continue;
+        }
+        let w = s.booked_w_bytes;
+        let (real, shadow) = release_split(w, s.booked_kv_bytes, s.shadow_kv_hat);
+        book.release(&s.model, real, shadow);
+        s.booked_kv_bytes -= real;
+        s.shadow_kv_hat -= shadow;
+        s.booked_w_bytes = 0;
+        eprintln!(
+            "[admit-book] w-release id={} model={} bytes={w} booked_real={} booked_shadow={}",
+            s.request_id,
+            s.model,
+            book.booked_total(),
+            book.shadow_booked_total()
+        );
+    }
+}
+
+/// The part of `w` each book releases: never more than the session carries in it (the shadow
+/// book is only booked while the predictive door is armed).
+fn release_split(w: u64, booked_real: u64, booked_shadow: u64) -> (u64, u64) {
+    (w.min(booked_real), w.min(booked_shadow))
+}
+
+/// One queued settle (WP-B day 44, DAY44 1.2 (c)): an entry id in a pool, never a reference.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SettleJob {
+    pool: ParkedPool,
+    key: PoolKey,
+    id: u64,
+}
+
+/// The exact resume's settle queue, newest first: the entry parked last is the one whose next
+/// turn is likeliest to come next. A job whose entry is gone (resumed, evicted, purged) is
+/// skipped when its turn comes (DAY44 1.3 cases 1, 4, 5).
+#[derive(Default)]
+struct SettleQueue {
+    jobs: VecDeque<SettleJob>,
+    /// DAY44 addendum C: the job whose settle waits for the memory reading, printed once.
+    waiting: Option<u64>,
+}
+
+impl SettleQueue {
+    /// Bounded: a busy worker that never idles keeps only the newest jobs (older entries are the
+    /// likeliest to have been resumed or evicted anyway).
+    const CAP: usize = 64;
+    fn push(&mut self, job: SettleJob) {
+        if !self.jobs.contains(&job) {
+            self.jobs.push_back(job);
+        }
+        while self.jobs.len() > Self::CAP {
+            self.jobs.pop_front();
+        }
+    }
+    fn is_empty(&self) -> bool {
+        self.jobs.is_empty()
+    }
+    fn pop(&mut self) -> Option<SettleJob> {
+        self.jobs.pop_back()
+    }
+    /// A tenant purge drops the tenant's jobs (the purge's own namespace predicate).
+    fn purge_tenant(&mut self, tenant: &str) {
+        let row = crate::auth::meter_key(&crate::auth::scope_namespace(tenant, "")).to_string();
+        self.jobs
+            .retain(|j| crate::auth::meter_key(&j.key.1) != row);
+    }
+}
+
+/// The settle point (DAY44 1.2 (c)): the last grid point with `PRIME_MIN_T` committed rows after
+/// it; `None` when it is not at least `PRIME_MIN_T` rows past the checkpoint.
+fn exact_settle_point(committed: usize, ckpt: usize) -> Option<usize> {
+    let floor = memra_engine::hybrid_forward::PRIME_MIN_T;
+    let s = grid_align_boundary_within(committed, committed);
+    (committed >= floor && s >= ckpt + floor && committed - s >= floor).then_some(s)
+}
+
+/// DAY44 1.3 case 6 and addendum C: a settle runs only when the memory reading covers what its
+/// call allocates. `need` is the memory door's pending term for one owed prime of the settle's rows
+/// plus the admission reserve; `reading` is effective free (driver free plus pool cached). No
+/// reading waits too.
+fn settle_reading_covers(need: usize, reading: Option<usize>) -> bool {
+    reading.is_some_and(|free| need <= free)
+}
+
+/// The rows a settle of this entry would prime (`from`, `to`), or `None` when it would not run.
+fn plain_settle_rows(e: &ReuseEntry) -> Option<(usize, usize)> {
+    if e.settled {
+        return None;
+    }
+    let from = e.ckpt.as_ref()?.pos;
+    exact_settle_point(e.fed.len(), from).map(|to| (from, to))
+}
+
+fn spec_settle_rows(e: &SpecReuseEntry) -> Option<(usize, usize)> {
+    if e.settled {
+        return None;
+    }
+    let from = e.sess.rewind_pos()?;
+    let public = e.public_len.min(e.sess.committed.len());
+    exact_settle_point(public, from).map(|to| (from, to))
+}
+
+/// Run the next settle job whose entry still exists (DAY44 1.2 (c)). The entry is moved out of its
+/// pool, restored to its checkpoint, its committed rows up to the settle point primed in one call,
+/// and put back settled; a failure drops it with its line (DAY44 1.3 case 7).
+fn settle_one(
+    engine: &Engine,
+    loaded: &HashMap<String, LoadedModel>,
+    reuse: &mut HashMap<PoolKey, Vec<ReuseEntry>>,
+    spec_reuse: &mut HashMap<PoolKey, Vec<SpecReuseEntry>>,
+    queue: &mut SettleQueue,
+    need_for: &dyn Fn(&str, usize, bool) -> usize,
+    reading: &dyn Fn() -> Option<usize>,
+) {
+    while let Some(job) = queue.pop() {
+        let Some(lm) = loaded.get(&job.key.0) else {
+            continue;
+        };
+        // DAY44 1.3 case 6 (addendum C): the gate reads before the entry moves. A settle the reading
+        // does not cover waits at the head of the queue for the next idle pass.
+        let rows = match job.pool {
+            ParkedPool::Plain => reuse
+                .get(&job.key)
+                .and_then(|pool| pool.iter().find(|e| e.id == job.id))
+                .and_then(plain_settle_rows),
+            ParkedPool::Spec => spec_reuse
+                .get(&job.key)
+                .and_then(|pool| pool.iter().find(|e| e.id == job.id))
+                .and_then(spec_settle_rows),
+            ParkedPool::Dspark => None,
+        };
+        if let Some((from, to)) = rows {
+            let need = need_for(&job.key.0, to - from, job.pool == ParkedPool::Spec);
+            let free = reading();
+            if !settle_reading_covers(need, free) {
+                if queue.waiting != Some(job.id) {
+                    eprintln!(
+                        "[kv-reuse] exact: settle {} waits (needs {:.0}MB, reading {})",
+                        job.id,
+                        need as f64 / 1e6,
+                        free.map_or("none".to_string(), |f| format!("{:.0}MB", f as f64 / 1e6))
+                    );
+                    queue.waiting = Some(job.id);
+                }
+                queue.jobs.push_back(job);
+                return;
+            }
+        }
+        queue.waiting = None;
+        match job.pool {
+            ParkedPool::Plain => {
+                let Some(i) = reuse
+                    .get(&job.key)
+                    .and_then(|pool| pool.iter().position(|e| e.id == job.id))
+                else {
+                    continue;
+                };
+                let mut e = reuse.get_mut(&job.key).expect("found above").remove(i);
+                let t0 = Instant::now();
+                match exact_settle_plain(engine, lm, &mut e) {
+                    Ok(Some((from, to))) => {
+                        eprintln!(
+                            "[kv-reuse] exact: settle {} {from} -> {to} ({} rows, {:.1} ms)",
+                            job.id,
+                            to - from,
+                            t0.elapsed().as_secs_f64() * 1e3
+                        );
+                        reuse.entry(job.key).or_default().insert(i, e);
+                    }
+                    Ok(None) => reuse.entry(job.key).or_default().insert(i, e),
+                    Err(err) => {
+                        eprintln!("[kv-reuse] exact: settle failed ({err}); entry dropped");
+                    }
+                }
+            }
+            ParkedPool::Spec => {
+                let Some(i) = spec_reuse
+                    .get(&job.key)
+                    .and_then(|pool| pool.iter().position(|e| e.id == job.id))
+                else {
+                    continue;
+                };
+                let mut e = spec_reuse.get_mut(&job.key).expect("found above").remove(i);
+                let t0 = Instant::now();
+                match exact_settle_spec(engine, lm, &mut e) {
+                    Ok(Some((from, to))) => {
+                        eprintln!(
+                            "[kv-reuse] exact: settle {} {from} -> {to} ({} rows, {:.1} ms)",
+                            job.id,
+                            to - from,
+                            t0.elapsed().as_secs_f64() * 1e3
+                        );
+                        spec_reuse.entry(job.key).or_default().insert(i, e);
+                    }
+                    Ok(None) => spec_reuse.entry(job.key).or_default().insert(i, e),
+                    Err(err) => {
+                        eprintln!("[kv-reuse] exact: settle failed ({err}); entry dropped");
+                    }
+                }
+            }
+            ParkedPool::Dspark => continue,
+        }
+        return;
+    }
+}
+
+/// The plain settle: restore the checkpoint, prime `fed[ckpt..S]` in one call. `Ok(None)` when
+/// there is nothing to settle (the entry is unchanged).
+fn exact_settle_plain(
+    engine: &Engine,
+    lm: &LoadedModel,
+    e: &mut ReuseEntry,
+) -> Result<Option<(usize, usize)>, String> {
+    if e.settled {
+        return Ok(None);
+    }
+    let Some(ckpt) = e.ckpt.as_ref() else {
+        return Ok(None);
+    };
+    let from = ckpt.pos;
+    let Some(to) = exact_settle_point(e.fed.len(), from) else {
+        return Ok(None);
+    };
+    if !e.cache.can_rollback(&ckpt.snap, 0) {
+        return Ok(None);
+    }
+    memra_engine::pp::restore_cache_checkpoint(engine, &lm.model, None, &mut e.cache, &ckpt.snap)
+        .map_err(|err| format!("restore failed: {err}"))?;
+    if resume_exact_fault_settle() {
+        return Err("fault injection (MEMRA_RESUME_EXACT_FAULT=settle-fail)".into());
+    }
+    let (logits, _, _) = lm
+        .model
+        .prime_cache(engine, &e.fed[from..to], &mut e.cache, 0)
+        .map_err(|err| format!("prime failed: {err}"))?;
+    e.fed.truncate(to);
+    e.last_logits = logits;
+    // DAY44 addendum C: the checkpoint at `g` stays beside the settled state. The settle does not
+    // touch rows `[0, g)` and the snapshot holds the recurrent state at `g`, so plain affinity (a
+    // client that rewrites its history) can still rewind there instead of priming cold.
+    e.settled = true;
+    Ok(Some((from, to)))
+}
+
+/// The spec settle: rewind to the turn checkpoint, prime the public stream's rows up to `S` with
+/// the MTP walker's trunk and draft fill only (`spec_prime_settle`: no boundary token, no init
+/// feed), so every committed row is a prime-program row.
+fn exact_settle_spec(
+    engine: &Engine,
+    lm: &LoadedModel,
+    e: &mut SpecReuseEntry,
+) -> Result<Option<(usize, usize)>, String> {
+    if e.settled {
+        return Ok(None);
+    }
+    let Some(from) = e.sess.rewind_pos() else {
+        return Ok(None);
+    };
+    let public = e.public_len.min(e.sess.committed.len());
+    let Some(to) = exact_settle_point(public, from) else {
+        return Ok(None);
+    };
+    if !e.sess.rewind_is_resident() {
+        return Ok(None);
+    }
+    let tokens = e.sess.committed[from..to].to_vec();
+    // DAY44 addendum C: the retaining rewind keeps the turn checkpoint at `g` (the prime-only walk
+    // takes none of its own), so spec affinity can still rewind a history rewrite there.
+    match lm
+        .model
+        .spec_rewind_to_checkpoint_retaining(engine, &mut e.sess)
+        .map_err(|err| format!("rewind failed: {err}"))?
+    {
+        Some(p) if p == from => {}
+        other => return Err(format!("rewind landed at {other:?}, expected {from}")),
+    }
+    if resume_exact_fault_settle() {
+        return Err("fault injection (MEMRA_RESUME_EXACT_FAULT=settle-fail)".into());
+    }
+    lm.model
+        .spec_prime_settle(engine, &mut e.sess, &tokens)
+        .map_err(|err| format!("prime failed: {err}"))?;
+    if e.sess.committed.len() != to {
+        return Err(format!(
+            "settle left {} committed rows, expected {to}",
+            e.sess.committed.len()
+        ));
+    }
+    let skip = lm
+        .tok
+        .bos_id()
+        .map(|b| e.sess.committed.first() == Some(&b))
+        .unwrap_or(false) as usize;
+    e.committed_text = lm.tok.decode_special(&e.sess.committed[skip..], true);
+    e.fingerprint =
+        conversation_fingerprint(&e.sess.committed, &|t| lm.tok.token_is_control(t), false);
+    e.public_len = to;
+    e.settled = true;
+    Ok(Some((from, to)))
+}
+
+fn reclaim_queue_drain(
+    engine: &Engine,
+    px: &mut PrefixCache,
+    hpx: &mut HostPrefixCache,
+    queue: &mut ReclaimQueue,
+    why: &str,
+) -> usize {
+    let mut removed = 0usize;
+    while hpx.demoting.is_none() {
+        let Some((id, _)) = queue.ids.pop_front() else {
+            break;
+        };
+        let Some((key, i)) = px_find_evictable(px, id) else {
+            continue;
+        };
+        let Some(dead) = px.remove_at(&key, i) else {
+            continue;
+        };
+        removed += 1;
+        let bytes = dead.bytes;
+        host_demote_prefix_entry(engine, hpx, dead);
+        if hpx.demoting.is_some() {
+            queue.submitted += 1;
+            queue.inflight_bytes = bytes as u64;
+            eprintln!(
+                "[admit-mem] reclaim off-tick: submitted {} ({:.0}MB; {} queued) for {}",
+                queue.submitted,
+                bytes as f64 / 1e6,
+                queue.ids.len(),
+                why
+            );
+        }
+    }
+    px.evictions += removed as u64;
+    removed
+}
+
 /// MEMORY-ADMISSION FLUSH (memra#365, door `MEMRA_ADMIT_BY_MEMORY`): the admission reclaim
 /// ladder's device-prefix flush, DEMOTING into the pinned host tier instead of dropping.
 ///
@@ -14349,6 +16432,27 @@ fn host_demote_prefix_ref(
                 dead.pool_key.0,
                 ns_suffix(&dead.pool_key.1)
             );
+            // WP-A day 49 (`DAY49.md`, log only): where the pre-submit went.
+            if let Some(pending) = host.demoting.as_ref()
+                && let Some(c) = pending.contract.as_ref()
+            {
+                let sp = *c.split;
+                let total = pending.owner.presubmit_ms;
+                eprintln!(
+                    "[prefix-host] demote pre-submit split: ticket seq={seq} leases {:.2} ms ({} \
+                     pinned, pooled {} of {}, {:.1} MB, minflt +{}), register {:.2} ms, spans {:.2} ms, \
+                     other {:.2} ms (pre-submit {total:.2} ms)",
+                    sp.leases_ms,
+                    sp.leases,
+                    sp.pooled,
+                    sp.leases,
+                    sp.lease_bytes as f64 / 1e6,
+                    sp.leases_minflt,
+                    sp.register_submit_ms,
+                    sp.spans_ms,
+                    (total - sp.leases_ms - sp.register_submit_ms - sp.spans_ms).max(0.0),
+                );
+            }
             HostDemoteOutcome::Demoting
         }
         Ok(HostImage::Whole(mut e)) => {
@@ -14392,11 +16496,16 @@ fn host_demote_publish(
     t0: Instant,
     hashed: Option<&HostHashDigests>,
 ) -> HostDemoteOutcome {
+    // WP-A day 52 (`DAY52.md` step 1, log only): the parts timed apart.
+    let mut split = HostPublishSplit::default();
+    let t = Instant::now();
     if let Err(err) = host.bind_tier_image(&mut e, hashed) {
         host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "bind refused");
         eprintln!("[prefix-host] demote failed ({err}); nothing published");
         return HostDemoteOutcome::Failed;
     }
+    split.bind_ms = t.elapsed().as_secs_f64() * 1e3;
+    let t = Instant::now();
     // TENANT-SHARE RECLAIM (memra#384), the evictions: the image exists and is bound, so
     // the only refusal left after an eviction is `insert`'s own (booked as wasted below).
     // The plan passed before the copy and nothing since mutates the row on this
@@ -14416,9 +16525,14 @@ fn host_demote_publish(
         );
         return HostDemoteOutcome::Failed;
     }
+    split.reclaim_ms = t.elapsed().as_secs_f64() * 1e3;
     let toks = e.toks.len();
     let bytes = e.bytes;
+    let t = Instant::now();
     if host.insert(&dead.pool_key, e) {
+        split.insert_ms = t.elapsed().as_secs_f64() * 1e3;
+        split.insert = host.last_insert_split;
+        host.last_publish_split = split;
         let ms = t0.elapsed().as_secs_f64() * 1e3;
         host.log_arena("demotion");
         host.demotions += 1;
@@ -15363,9 +17477,12 @@ fn host_demote_settle_hashing(
         Some(&digests),
     );
     let mut dead = dead;
+    let mut pause_ms = 0.0;
     if outcome == HostDemoteOutcome::Demoted {
         dead.disarm();
+        let t = Instant::now();
         host_pause_published(host, pending.release.take(), pending.reinstate, &dead);
+        pause_ms = t.elapsed().as_secs_f64() * 1e3;
     }
     if outcome == HostDemoteOutcome::Demoted {
         let publish_ms = publish_t.elapsed().as_secs_f64() * 1e3;
@@ -15385,6 +17502,39 @@ fn host_demote_settle_hashing(
             pending.polls,
             owner.presubmit_ms + polls_ms + publish_ms,
             pending.t0.elapsed().as_secs_f64() * 1e3
+        );
+        // WP-A day 49 (`DAY49.md`, log only): the helper's staging copies and hashes, apart.
+        let sp = reply.split;
+        eprintln!(
+            "[prefix-host] demote helper split: ticket seq={seq} copy {:.2} ms over {:.1} MB (minflt \
+             +{}), hash {:.2} ms (helper {:.1} ms); reserve {} of {} staged",
+            sp.copy_ms,
+            sp.copy_bytes as f64 / 1e6,
+            sp.copy_minflt,
+            sp.hash_ms,
+            reply.helper_ms,
+            sp.reserve_hits,
+            sp.staged,
+        );
+        // WP-A day 52 (`DAY52.md` step 1, log only): the publication segment's parts.
+        let ps = host.last_publish_split;
+        let twin = ps.insert.twin.unwrap_or_default();
+        eprintln!(
+            "[prefix-host] demote publication split: ticket seq={seq} bind {:.2} ms, reclaim {:.2} \
+             ms, insert {:.2} ms (twin: meta {:.2} ms, kv {:.2} ms over {} leases, f32 {:.2} ms over \
+             {} payloads, rest {:.2} ms; {} evicted in {:.2} ms), pause release {:.2} ms",
+            ps.bind_ms,
+            ps.reclaim_ms,
+            ps.insert_ms,
+            twin.meta_ms,
+            twin.kv_ms,
+            twin.kv_leases,
+            twin.f32_ms,
+            twin.f32_payloads,
+            twin.rest_ms,
+            ps.insert.evicted,
+            ps.insert.evict_ms,
+            pause_ms,
         );
     }
     outcome
@@ -16698,9 +18848,10 @@ fn host_promote_settle_with(
     };
     // WP-A day 33 (log only): this settle step on the promote's timeline.
     let outcome = match &settled {
-        Ok(PromoteSettle::Pending(_)) => "pending",
-        Ok(PromoteSettle::Done(..)) => "complete",
-        Err(_) => "failed",
+        // WP-A day 64 (step 1, log only): and what it still waits on.
+        Ok(PromoteSettle::Pending(c)) => format!("pending on {}", c.waiting),
+        Ok(PromoteSettle::Done(..)) => "complete".to_string(),
+        Err(_) => "failed".to_string(),
     };
     let step = host_promote_mark(host, pending.t0, Instant::now());
     pending.timeline.push(format!(
@@ -16898,32 +19049,53 @@ fn prefix_capture_off_tick(
     last_logits: &[f32],
     model: Option<&HybridModel>,
     why: &str,
+    source_request: &str,
 ) -> CaptureRoute {
+    // WP-A day 54 (log only): every `OnTick` answer records its reason first.
     if hpx.capture_off_tick_disabled || hpx.tier.as_ref().is_none_or(|t| t.transfers.is_none()) {
+        hpx.on_tick_reason = if hpx.capture_off_tick_disabled {
+            "the capture path is latched"
+        } else {
+            "no transfer engine"
+        };
         return CaptureRoute::OnTick;
     }
     let tp_cache = cache.glm5_tp_recur.iter().any(Option::is_some)
         || cache.glm5_tp_latent_peer.iter().any(Option::is_some);
-    if cache.has_swa_ring()
-        || tp_cache
-        || model.is_none()
-        || cache.latent.iter().any(Option::is_some)
-        || cache.pos != toks.len()
-        || last_logits.is_empty()
-        || cache
-            .kv
-            .iter()
-            .flatten()
-            .any(|l| l.len != cache.pos && !(l.len == 0 && cache.pos > 0))
+    let refused = if cache.has_swa_ring() {
+        Some("an SWA ring cache")
+    } else if tp_cache {
+        Some("tensor-parallel shards")
+    } else if model.is_none() {
+        Some("no model")
+    } else if cache.latent.iter().any(Option::is_some) {
+        Some("latent planes")
+    } else if cache.pos != toks.len() {
+        Some("the cache position is off the token boundary")
+    } else if last_logits.is_empty() {
+        Some("no boundary logits")
+    } else if cache
+        .kv
+        .iter()
+        .flatten()
+        .any(|l| l.len != cache.pos && !(l.len == 0 && cache.pos > 0))
     {
+        Some("a KV layer not at the boundary")
+    } else {
+        None
+    };
+    if let Some(reason) = refused {
+        hpx.on_tick_reason = reason;
         return CaptureRoute::OnTick;
     }
     // Never two captures in flight: the pending one settles (and publishes) first.
     host_capture_settle_pending(engine, px, hpx, ContractWait::Block, "a second capture");
     if hpx.capture_off_tick_disabled {
+        hpx.on_tick_reason = "the capture path latched while settling the pending capture";
         return CaptureRoute::OnTick;
     }
     if hpx.tier.as_ref().is_none_or(|t| t.transfers.is_none()) {
+        hpx.on_tick_reason = "no transfer engine";
         return CaptureRoute::OnTick;
     }
     let n = cache.kv.len();
@@ -16966,6 +19138,7 @@ fn prefix_capture_off_tick(
         CaptureSubmit {
             pool_key,
             why,
+            source_request,
             pos: cache.pos,
             toks,
             cache,
@@ -16993,6 +19166,9 @@ fn prefix_capture_off_tick(
 struct CaptureSubmit<'a> {
     pool_key: &'a PoolKey,
     why: &'a str,
+    /// WP-A day 62 (design R1.1): the source session's request id (every capture's source is an
+    /// active session), the retire pass's first source identity.
+    source_request: &'a str,
     pos: usize,
     toks: &'a [u32],
     cache: &'a Cache,
@@ -17024,6 +19200,7 @@ fn host_capture_submit(
     let CaptureSubmit {
         pool_key,
         why,
+        source_request,
         pos,
         toks,
         cache,
@@ -17038,10 +19215,15 @@ fn host_capture_submit(
         recurrent_note,
     } = sub;
     let Some(tier) = hpx.tier.as_ref() else {
+        hpx.on_tick_reason = "no host tier";
         return CaptureRoute::OnTick;
     };
-    let Some(transfers) = tier.transfers.as_ref() else {
+    if tier.transfers.is_none() {
+        hpx.on_tick_reason = "no transfer engine";
         return CaptureRoute::OnTick;
+    }
+    let Some(transfers) = tier.transfers.as_ref() else {
+        unreachable!("checked above");
     };
     let tenant = tier
         .program(pool_key, class)
@@ -17385,6 +19567,7 @@ fn host_capture_submit(
         toks.len(),
         bytes as f64 / 1e6,
     );
+    let queued_ahead = host_copy_stream_in_flight(hpx);
     hpx.capturing = Some(PendingCapture {
         pool_key: pool_key.clone(),
         why: why.to_string(),
@@ -17404,6 +19587,9 @@ fn host_capture_submit(
         settle_after_ms: 0.0,
         settle_held_ms: 0.0,
         trace_role,
+        source_kv: cache.kv.as_ptr() as usize,
+        queued_ahead,
+        source_request: source_request.to_string(),
     });
     CaptureRoute::Submitted
 }
@@ -17440,8 +19626,15 @@ fn prefix_spec_capture_off_tick(
     dspark_tail: bool,
     cap: memra_engine::spec::SpecBoundaryCapture,
     why: &str,
+    source_request: &str,
 ) -> SpecCaptureRoute {
+    // WP-A day 54 (log only): every `OnTick` answer records its reason first.
     if hpx.capture_off_tick_disabled || hpx.tier.as_ref().is_none_or(|t| t.transfers.is_none()) {
+        hpx.on_tick_reason = if hpx.capture_off_tick_disabled {
+            "the capture path is latched"
+        } else {
+            "no transfer engine"
+        };
         return SpecCaptureRoute::OnTick(Box::new(cap));
     }
     let pos = cap.pos;
@@ -17451,21 +19644,33 @@ fn prefix_spec_capture_off_tick(
     // item class in this route: a publisher carrying one keeps the OFF program whole, tail
     // included (revuto on integ40 #643: the route was installed ahead of the tail and would have
     // published trunk and draft and dropped the tail silently).
-    if tp_cache
-        || dspark_tail
-        || cache.latent.iter().any(Option::is_some)
-        || cap.latent_tails.iter().any(Option::is_some)
-        || cap.snap.pos != pos
-        || pos == 0
-        || pos > committed.len()
-        || cache.kv.iter().flatten().any(|l| l.len != 0 && l.len < pos)
-        || cache.kv.iter().flatten().all(|l| l.len == 0)
-    {
+    let refused = if tp_cache {
+        Some("tensor-parallel shards")
+    } else if dspark_tail {
+        Some("a DFlash drafter tail")
+    } else if cache.latent.iter().any(Option::is_some) {
+        Some("latent planes")
+    } else if cap.latent_tails.iter().any(Option::is_some) {
+        Some("latent boundary tails")
+    } else if cap.snap.pos != pos {
+        Some("the capture snapshot is off its boundary")
+    } else if pos == 0 || pos > committed.len() {
+        Some("the boundary is outside the committed tokens")
+    } else if cache.kv.iter().flatten().any(|l| l.len != 0 && l.len < pos) {
+        Some("a KV layer shorter than the boundary")
+    } else if cache.kv.iter().flatten().all(|l| l.len == 0) {
+        Some("no KV rows")
+    } else {
+        None
+    };
+    if let Some(reason) = refused {
+        hpx.on_tick_reason = reason;
         return SpecCaptureRoute::OnTick(Box::new(cap));
     }
     // Never two captures in flight: the pending one settles (and publishes) first.
     host_capture_settle_pending(engine, px, hpx, ContractWait::Block, "a second capture");
     if hpx.capture_off_tick_disabled {
+        hpx.on_tick_reason = "the capture path latched while settling the pending capture";
         return SpecCaptureRoute::OnTick(Box::new(cap));
     }
     if px.has_key(pool_key, &committed[..pos]) {
@@ -17510,6 +19715,7 @@ fn prefix_spec_capture_off_tick(
         CaptureSubmit {
             pool_key,
             why,
+            source_request,
             pos,
             toks: &committed[..pos],
             cache,
@@ -17917,6 +20123,7 @@ fn host_capture_publish(
         settle_after_ms,
         settle_held_ms,
         trace_role,
+        queued_ahead,
         ..
     } = pending;
     let Some(e) = shell else {
@@ -17930,7 +20137,7 @@ fn host_capture_publish(
         "[prefix-cache] capture published off the tick ({why}): {} tokens complete after {polls} \
          poll(s), {copy_ms:.1}ms from submission to completion, {:.1}ms to publication ({settled_by}; \
          the settle held the owner thread {settle_held_ms:.2}ms, entered {settle_after_ms:.1}ms after \
-         submission)",
+         submission; copy stream in flight at submission: {queued_ahead})",
         e.toks.len(),
         t0.elapsed().as_secs_f64() * 1e3,
     );
@@ -18776,11 +20983,19 @@ fn host_restore_park_probe(
         );
         false
     };
-    let mut cache =
-        match memra_engine::pp::new_cache_planned(engine, &lm.model.cfg, &lm.model.plan, ctx_cap) {
-            Ok(c) => c,
-            Err(err) => return refuse(format!("session cache alloc failed: {err}")),
-        };
+    let mut cache = match vmm_build_cache(
+        vmm_scope(
+            engine,
+            lm,
+            ctx_cap,
+            req.prepared_prompt.as_ref().map_or(0, Vec::len),
+            0,
+        ),
+        || memra_engine::pp::new_cache_planned(engine, &lm.model.cfg, &lm.model.plan, ctx_cap),
+    ) {
+        Ok(c) => c,
+        Err(err) => return refuse(format!("session cache alloc failed: {err}")),
+    };
     {
         let e = &px.entries[&pool_key][i];
         if let Err(err) = prefix_restore_validate(&cache, e, &pool_key, e.pos, Some(&lm.model)) {
@@ -20118,9 +22333,14 @@ fn host_handoff_export(
     //    file. Frames go OLDEST-first (selection reversed) so the importer's sequential
     //    inserts reconstruct true LRU recency.
     let tmp = format!("{path}.tmp");
+    // Stage clocks for the handoff's storage cost (lane/spill-f-20260919 B2): serialize and
+    // buffered write, then fsync, measured apart so the durability share is not inferred.
+    // MEMRA_KV_HOST_HANDOFF_IO (OWED 18) picks buffered or O_DIRECT; the bytes are identical.
+    let io_mode = crate::handoff_io::handoff_io_mode()?;
+    let (mut write_ms, mut fsync_ms) = (0.0f64, 0.0f64);
     let write = (|| -> Result<(), String> {
-        let f = std::fs::File::create(&tmp).map_err(|e| format!("create {tmp}: {e}"))?;
-        let mut w = std::io::BufWriter::with_capacity(4 << 20, f);
+        let t_write = Instant::now();
+        let mut w = crate::handoff_io::HandoffWriter::create(&tmp, io_mode)?;
         handoff_write_header(
             &mut w,
             &HandoffHeader {
@@ -20134,11 +22354,12 @@ fn host_handoff_export(
         for (key, i) in selected.iter().rev() {
             handoff_write_entry(&mut w, &handoff_entry_ref(&hpx.entries[key][*i])?)?;
         }
-        let f = w
-            .into_inner()
-            .map_err(|e| format!("handoff flush failed: {e}"))?;
-        f.sync_all()
-            .map_err(|e| format!("handoff fsync failed: {e}"))?;
+        let mut f = w.finish()?;
+        f.complete_writes()?;
+        write_ms = t_write.elapsed().as_secs_f64() * 1e3;
+        let t_fsync = Instant::now();
+        f.sync()?;
+        fsync_ms = t_fsync.elapsed().as_secs_f64() * 1e3;
         std::fs::rename(&tmp, path).map_err(|e| format!("rename {tmp} -> {path}: {e}"))
     })();
     if let Err(err) = write {
@@ -20149,10 +22370,12 @@ fn host_handoff_export(
     let ms = t0.elapsed().as_secs_f64() * 1e3;
     eprintln!(
         "[prefix-host] handoff export: {} entries / {:.1}MB to {path} in {ms:.0}ms \
+         write_ms={write_ms:.1} fsync_ms={fsync_ms:.1} \
          (drain-demoted {demoted} device entries first; {skipped_over_cap} skipped over \
-         the MEMRA_KV_HOST_HANDOFF_MB cap)",
+         the MEMRA_KV_HOST_HANDOFF_MB cap) io={}",
         selected.len(),
         sel_bytes as f64 / 1e6,
+        io_mode.name(),
     );
     Ok(HostHandoffExportReport {
         path: path.to_string(),
@@ -20172,7 +22395,8 @@ fn host_handoff_export(
 /// whole file.
 struct HostHandoffImport {
     path: String,
-    reader: std::io::BufReader<std::fs::File>,
+    reader: crate::handoff_io::HandoffReader,
+    io_mode: crate::handoff_io::HandoffIo,
     max_frame: u64,
     refused_models: std::collections::HashSet<String>,
     header_entries: u64,
@@ -20187,9 +22411,8 @@ fn open_host_handoff_import(
     path: &str,
     local_stamps: &[HandoffModelStamp],
 ) -> Result<(HostHandoffImport, HostHandoffImportStart), String> {
-    let f = std::fs::File::open(path).map_err(|e| format!("open {path}: {e}"))?;
-    let max_frame = f.metadata().map_or(u64::MAX, |m| m.len());
-    let mut reader = std::io::BufReader::with_capacity(4 << 20, f);
+    let io_mode = crate::handoff_io::handoff_io_mode()?;
+    let (mut reader, max_frame) = crate::handoff_io::HandoffReader::open(path, io_mode)?;
     let header = handoff_read_header(&mut reader)?;
     let now = handoff_now_unix();
     let refused = handoff_header_verdict(&header, PREFIX_ENTRY_LAYOUT_VERSION, now, local_stamps)?;
@@ -20208,6 +22431,7 @@ fn open_host_handoff_import(
         HostHandoffImport {
             path: path.to_string(),
             reader,
+            io_mode,
             max_frame,
             refused_models: refused.into_iter().map(|(m, _)| m).collect(),
             header_entries: header.entries,
@@ -20237,12 +22461,13 @@ fn host_handoff_import_step(imp: &mut HostHandoffImport, hpx: &mut HostPrefixCac
         Ok(None) => {
             eprintln!(
                 "[prefix-host] handoff import DONE: {} entries / {:.1}MB re-materialized, \
-                 {} skipped, in {:.1}s from {}",
+                 {} skipped, in {:.1}s from {} io={}",
                 imp.imported,
                 imp.imported_bytes as f64 / 1e6,
                 imp.skipped,
                 imp.started.elapsed().as_secs_f64(),
                 imp.path,
+                imp.io_mode.name(),
             );
             true
         }
@@ -20395,6 +22620,149 @@ fn unsupported_prefix_restore(
     )
 }
 
+/// WP-A day 59 (`research/spill-a-20260919/DAY59.md` step 1, OWED item 10, log only): the owner
+/// thread's time in a snapshot's or a restore's device calls, by kind, accumulated on this thread
+/// and read (and reset) by the fanout's on-tick line. Nothing decides on it.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct PrefixCopySplit {
+    alloc_ms: f64,
+    allocs: u32,
+    copy_ms: f64,
+    copies: u32,
+    clone_ms: f64,
+    clones: u32,
+    set_ms: f64,
+    sets: u32,
+}
+
+thread_local! {
+    static PREFIX_COPY_SPLIT: std::cell::Cell<PrefixCopySplit> =
+        const { std::cell::Cell::new(PrefixCopySplit { alloc_ms: 0.0, allocs: 0, copy_ms: 0.0, copies: 0, clone_ms: 0.0, clones: 0, set_ms: 0.0, sets: 0 }) };
+}
+
+/// Take the split accumulated on this thread since the last take.
+fn prefix_copy_split_take() -> PrefixCopySplit {
+    PREFIX_COPY_SPLIT.with(|c| c.replace(PrefixCopySplit::default()))
+}
+
+/// WP-A day 66 (`DAY66.md`): run `f` with this thread's split scoped to it. Whatever another caller
+/// left since the last take (a retire capture, a park snapshot, a hit restore) is discarded first,
+/// so the returned split holds `f`'s own calls only.
+fn prefix_copy_scoped<T>(f: impl FnOnce() -> T) -> (T, PrefixCopySplit) {
+    let _stale = prefix_copy_split_take();
+    let out = f();
+    (out, prefix_copy_split_take())
+}
+
+/// Time one device call of `kind` into this thread's split (log only; the call is unchanged).
+fn prefix_copy_timed<T>(kind: u8, f: impl FnOnce() -> T) -> T {
+    let t = Instant::now();
+    let out = f();
+    let ms = t.elapsed().as_secs_f64() * 1e3;
+    PREFIX_COPY_SPLIT.with(|c| {
+        let mut sp = c.get();
+        match kind {
+            0 => {
+                sp.alloc_ms += ms;
+                sp.allocs += 1;
+            }
+            1 => {
+                sp.copy_ms += ms;
+                sp.copies += 1;
+            }
+            2 => {
+                sp.clone_ms += ms;
+                sp.clones += 1;
+            }
+            _ => {
+                sp.set_ms += ms;
+                sp.sets += 1;
+            }
+        }
+        c.set(sp);
+    });
+    out
+}
+
+/// Design B1 (DAY59 section 7): a snapshot plane of `bytes`. A plane with bytes is written whole
+/// by [`prefix_snapshot_batch`], so it is allocated without a memset; a zero-byte plane keeps the
+/// zeroed 1-byte buffer the per-plane program allocated.
+fn prefix_plane_alloc(
+    engine: &Engine,
+    bytes: usize,
+) -> Result<CudaSlice<u8>, Box<dyn std::error::Error>> {
+    if bytes > 0 {
+        engine.alloc_u8_uninit(bytes)
+    } else {
+        engine.alloc_u8(1)
+    }
+}
+
+/// Design B1: the snapshot's KV and recurrent copies as ONE launch. Every source keeps its read
+/// event and every destination its write event: the guards are held across the launch, so a
+/// consumer on another stream waits for the batch as it waited for the per-plane copies.
+fn prefix_snapshot_batch(
+    engine: &Engine,
+    cache: &Cache,
+    kv: &mut [Option<PrefixPlane>],
+    conv: &mut [Option<CudaSlice<f32>>],
+    ssm: &mut [Option<CudaSlice<f32>>],
+) -> Result<(), Box<dyn std::error::Error>> {
+    use cudarc::driver::{DevicePtr, DevicePtrMut};
+    let st = engine.stream();
+    let mut items: Vec<(u64, u64, u64)> = Vec::new();
+    let mut guards = Vec::new();
+    for (il, slot) in kv.iter_mut().enumerate() {
+        let (Some(dst), Some(src)) = (slot.as_mut(), cache.kv[il].as_ref()) else {
+            continue;
+        };
+        for (to, from, n) in [
+            (&mut dst.k, &*src.k, dst.len * dst.k_tok_bytes),
+            (&mut dst.v, &*src.v, dst.len * dst.v_tok_bytes),
+        ] {
+            if n == 0 {
+                continue;
+            }
+            if from.len() < n || to.len() < n {
+                return Err(format!(
+                    "prefix snapshot layer {il}: a {n}-byte copy from {} into {} bytes",
+                    from.len(),
+                    to.len()
+                )
+                .into());
+            }
+            let (s, gs) = from.device_ptr(&st);
+            let (d, gd) = to.device_ptr_mut(&st);
+            items.push((s, d, n as u64));
+            guards.push(gs);
+            guards.push(gd);
+        }
+    }
+    for (il, (c, s)) in conv.iter_mut().zip(ssm.iter_mut()).enumerate() {
+        let (Some(c), Some(s), Some(r)) = (c.as_mut(), s.as_mut(), cache.recur[il].as_ref()) else {
+            continue;
+        };
+        for (to, from) in [(c, &r.conv_state), (s, &r.ssm_state)] {
+            if to.len() != from.len() {
+                return Err(format!(
+                    "prefix snapshot recur {il}: {} words into {}",
+                    from.len(),
+                    to.len()
+                )
+                .into());
+            }
+            let (sp, gs) = from.device_ptr(&st);
+            let (dp, gd) = to.device_ptr_mut(&st);
+            items.push((sp, dp, (from.len() * 4) as u64));
+            guards.push(gs);
+            guards.push(gd);
+        }
+    }
+    engine.copy_batch_items_u8(&items, &[])?;
+    drop(guards);
+    Ok(())
+}
+
 fn prefix_snapshot(
     engine: &Engine,
     cache: &Cache,
@@ -20481,14 +22849,10 @@ fn prefix_snapshot(
                 }
                 let kb = l.len * l.k_tok_bytes;
                 let vb = l.len * l.v_tok_bytes;
-                let mut k = engine.alloc_u8(kb.max(1))?;
-                let mut v = engine.alloc_u8(vb.max(1))?;
-                if kb > 0 {
-                    engine.copy_u8_into(&mut k, 0, &l.k, kb)?;
-                }
-                if vb > 0 {
-                    engine.copy_u8_into(&mut v, 0, &l.v, vb)?;
-                }
+                // Design B1 (DAY59 section 7): a plane with bytes is written whole by the batch
+                // below, so it skips the memset; a zero-byte plane keeps its zeroed 1-byte buffer.
+                let k = prefix_copy_timed(0, || prefix_plane_alloc(engine, kb))?;
+                let v = prefix_copy_timed(0, || prefix_plane_alloc(engine, vb))?;
                 bytes += kb + vb;
                 kv.push(Some(PrefixPlane {
                     k,
@@ -20502,8 +22866,12 @@ fn prefix_snapshot(
         }
         match &cache.recur[il] {
             Some(r) => {
-                conv.push(Some(engine.clone_dtod(&r.conv_state)?));
-                ssm.push(Some(engine.clone_dtod(&r.ssm_state)?));
+                conv.push(Some(prefix_copy_timed(0, || {
+                    engine.alloc_f32_uninit(r.conv_state.len())
+                })?));
+                ssm.push(Some(prefix_copy_timed(0, || {
+                    engine.alloc_f32_uninit(r.ssm_state.len())
+                })?));
                 bytes += (r.conv_state.len() + r.ssm_state.len()) * 4;
             }
             None => {
@@ -20512,6 +22880,10 @@ fn prefix_snapshot(
             }
         }
     }
+    // Design B1: every KV and recurrent plane's bytes in one launch, before the TP shards.
+    prefix_copy_timed(1, || {
+        prefix_snapshot_batch(engine, cache, &mut kv, &mut conv, &mut ssm)
+    })?;
     // glm5 TP-2: every rank's shards, on their own devices (gated above).
     let tp = if tp_cache {
         let shards = model
@@ -20793,6 +23165,99 @@ fn prefix_restore_validate(
     Ok(())
 }
 
+/// Design B1: a restore's KV copies (`[0, restore_len * tok_bytes)` of each plane), its length
+/// sets and its recurrent copies as ONE launch. A range too long for its source or destination
+/// fails the request with a named error before any device write. Guards as in
+/// [`prefix_snapshot_batch`].
+fn prefix_restore_batch(
+    engine: &Engine,
+    cache: &mut Cache,
+    e: &PrefixEntry,
+    restore_len: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use cudarc::driver::{DevicePtr, DevicePtrMut};
+    let st = engine.stream();
+    let len_value = i32::try_from(restore_len).map_err(|_| "prefix restore length exceeds i32")?;
+    let mut kv_views = Vec::new();
+    let mut lens = Vec::new();
+    for (il, slot) in cache.kv.iter_mut().enumerate() {
+        let (Some(dst), Some(src)) = (slot.as_mut(), e.kv[il].as_ref()) else {
+            continue;
+        };
+        let kb = restore_len * dst.k_tok_bytes;
+        let vb = restore_len * dst.v_tok_bytes;
+        for (plane, from, n, what) in [(&mut dst.k, &src.k, kb, "K"), (&mut dst.v, &src.v, vb, "V")]
+        {
+            if n == 0 {
+                continue;
+            }
+            let cap = plane.capacity_bytes();
+            if n > cap {
+                return Err(format!(
+                    "prefix restore layer {il} {what}: copy_u8_into dst range [0,{n}) exceeds capacity {cap}"
+                )
+                .into());
+            }
+            if from.len() < n {
+                return Err(format!(
+                    "prefix restore layer {il} {what}: the entry holds {} of {n} bytes",
+                    from.len()
+                )
+                .into());
+            }
+            kv_views.push((plane.as_view_mut(), from, n));
+        }
+        lens.push(&mut dst.len_d);
+    }
+    let mut recur = Vec::new();
+    for (il, slot) in cache.recur.iter_mut().enumerate() {
+        let (Some(dst), Some(c), Some(s)) =
+            (slot.as_mut(), e.conv[il].as_ref(), e.ssm[il].as_ref())
+        else {
+            continue;
+        };
+        for (to, from, what) in [
+            (&mut dst.conv_state, c, "conv"),
+            (&mut dst.ssm_state, s, "ssm"),
+        ] {
+            if to.len() < from.len() {
+                return Err(format!(
+                    "prefix restore recur {il} {what}: {} words into {}",
+                    from.len(),
+                    to.len()
+                )
+                .into());
+            }
+            recur.push((to, from));
+        }
+    }
+    let mut items: Vec<(u64, u64, u64)> = Vec::new();
+    let mut sets: Vec<(u64, i32)> = Vec::new();
+    let mut guards = Vec::new();
+    for (view, from, n) in kv_views.iter_mut() {
+        let (s, gs) = from.device_ptr(&st);
+        let (d, gd) = view.device_ptr_mut(&st);
+        items.push((s, d, *n as u64));
+        guards.push(gs);
+        guards.push(gd);
+    }
+    for (to, from) in recur.iter_mut() {
+        let (s, gs) = from.device_ptr(&st);
+        let (d, gd) = to.device_ptr_mut(&st);
+        items.push((s, d, (from.len() * 4) as u64));
+        guards.push(gs);
+        guards.push(gd);
+    }
+    for len_d in lens.iter_mut() {
+        let (d, gd) = len_d.device_ptr_mut(&st);
+        sets.push((d, len_value));
+        guards.push(gd);
+    }
+    engine.copy_batch_items_u8(&items, &sets)?;
+    drop(guards);
+    Ok(())
+}
+
 fn prefix_restore_at(
     engine: &Engine,
     cache: &mut Cache,
@@ -20803,22 +23268,12 @@ fn prefix_restore_at(
 ) -> Result<(), Box<dyn std::error::Error>> {
     prefix_restore_validate(cache, e, expected_key, restore_len, model)?;
     let max_ctx = cache.max_ctx;
+    // Design B1 (DAY59 section 7): the KV copies, the length sets and the recurrent copies in one
+    // launch, checked before any device write.
+    prefix_copy_timed(1, || prefix_restore_batch(engine, cache, e, restore_len))?;
     for il in 0..cache.kv.len() {
-        if let (Some(dst), Some(src)) = (cache.kv[il].as_mut(), &e.kv[il]) {
-            let kb = restore_len * dst.k_tok_bytes;
-            let vb = restore_len * dst.v_tok_bytes;
-            if kb > 0 {
-                engine.copy_u8_into(&mut dst.k, 0, &src.k, kb)?;
-            }
-            if vb > 0 {
-                engine.copy_u8_into(&mut dst.v, 0, &src.v, vb)?;
-            }
+        if let (Some(dst), Some(_)) = (cache.kv[il].as_mut(), &e.kv[il]) {
             dst.len = restore_len;
-            engine.set_i32_one(&mut dst.len_d, restore_len as i32)?;
-        }
-        if let (Some(dst), Some(c), Some(s)) = (cache.recur[il].as_mut(), &e.conv[il], &e.ssm[il]) {
-            engine.copy_into(&mut dst.conv_state, 0, c, c.len())?;
-            engine.copy_into(&mut dst.ssm_state, 0, s, s.len())?;
         }
         if let (Some(dst), Some(src)) = (cache.latent[il].as_mut(), &e.latent[il]) {
             dst.restore_plane(engine, src, max_ctx)
@@ -21399,6 +23854,7 @@ fn prefix_insert_from_spec_boundary(
     dspark_draft: Option<memra_engine::dflash::DflashKvTail>,
     cap: memra_engine::spec::SpecBoundaryCapture,
     why: &str,
+    source_request: &str,
 ) {
     if memra_engine::pp::pp_host_bounce_active() {
         return;
@@ -21425,6 +23881,7 @@ fn prefix_insert_from_spec_boundary(
         dspark_draft.is_some(),
         cap,
         why,
+        source_request,
     ) {
         SpecCaptureRoute::Routed(CaptureRoute::Submitted | CaptureRoute::Refused) => return,
         SpecCaptureRoute::Routed(CaptureRoute::OnTick) => unreachable!(
@@ -21432,6 +23889,8 @@ fn prefix_insert_from_spec_boundary(
         ),
         SpecCaptureRoute::OnTick(cap) => *cap,
     };
+    // WP-A day 54 (`DAY54.md` step 1, log only): under the door, the on-tick publish is timed.
+    let t_snap = Instant::now();
     // LATENT ARM (lane/glm5-prefix-latent2, 2026-09-01 — the case the old refusal named
     // "unreachable today ... IF A SPEC ARM EVER LANDS FIRST"; the glm5 spec arm landed):
     // a latent-bearing cache publishes ONLY when the capture carries the boundary tails
@@ -21615,8 +24074,19 @@ fn prefix_insert_from_spec_boundary(
         id: 0, // recency identity assigned by PrefixCache::insert
         pins: 0,
     };
+    let snapshot_ms = t_snap.elapsed().as_secs_f64() * 1e3;
+    let mb = e.bytes as f64 / 1e6;
     trace_prefix_entry_state(engine, &e, e.pos, "spec-snapshot", why);
+    let t_insert = Instant::now();
     px.insert_demoting(pool_key, e, why, engine, hpx);
+    if hpx.tier.is_some() {
+        eprintln!(
+            "[prefix-cache] on-tick publish: publisher={why} (the spec route answered on-tick: \
+             {}); snapshot {snapshot_ms:.2} ms, insert {:.2} ms, {mb:.1} MB",
+            hpx.on_tick_reason,
+            t_insert.elapsed().as_secs_f64() * 1e3,
+        );
+    }
 }
 
 /// Device bytes allocated by a plain snapshot, including both TP ranks. Use live lengths,
@@ -21711,14 +24181,28 @@ fn prefix_insert_from_session(
         &s.last_logits,
         model,
         why,
+        &s.request_id,
     ) {
         CaptureRoute::Submitted | CaptureRoute::Refused => return,
         CaptureRoute::OnTick => {}
     }
+    // WP-A day 54 (`DAY54.md` step 1, log only): under the door, the on-tick publish is timed.
+    let t_snap = Instant::now();
     match prefix_snapshot(engine, cache, &pool_key, &s.fed, &s.last_logits, model) {
         Ok(e) => {
+            let snapshot_ms = t_snap.elapsed().as_secs_f64() * 1e3;
+            let mb = e.bytes as f64 / 1e6;
             trace_prefix_entry_state(engine, &e, e.pos, "snapshot", why);
+            let t_insert = Instant::now();
             px.insert_demoting(&pool_key, e, why, engine, hpx);
+            if hpx.tier.is_some() {
+                eprintln!(
+                    "[prefix-cache] on-tick publish: publisher={why} (the capture route answered \
+                     on-tick: {}); snapshot {snapshot_ms:.2} ms, insert {:.2} ms, {mb:.1} MB",
+                    hpx.on_tick_reason,
+                    t_insert.elapsed().as_secs_f64() * 1e3,
+                );
+            }
         }
         Err(err) => eprintln!("[prefix-cache] snapshot failed ({err}); prefix not cached"),
     }
@@ -22753,9 +25237,20 @@ struct Session {
     /// `AdmissionBook` at `active.push` and released at `active.remove`; a step-OOM
     /// park releases too (its KV drops) and the replay re-books at re-admission.
     booked_kv_bytes: u64,
+    /// WP-B day 38 addendum A: the session ended on a typed error. An errored session is never a
+    /// park point (a failed step may have advanced state that `fed` does not describe), and its
+    /// length stays out of the completion history, exactly as an abort's does.
+    errored: bool,
+    /// WP-B day 37 (`MEMRA_KV_ALLOCATOR=vmm`): the rows this request's prompt occupies, the
+    /// floor of the tick-top ensure bound for its on-demand K/V planes (`kv_vmm::bound_rows`).
+    /// Set at admission, including a resume, to that request's prompt rows.
+    vmm_floor_rows: usize,
     /// D2 gap G5: this session's SHADOW kv_hat (P-tenant-p95 book). 0 whenever
     /// `MEMRA_ADMIT_PREDICT_SHADOW` is off.
     shadow_kv_hat: u64,
+    /// WP-B day 45 (O4, `MEMRA_ADMIT_W_RELEASE`): the prefill-workspace term both books carry for
+    /// this session, still booked; 0 once released at prime completion (or never booked).
+    booked_w_bytes: u64,
     /// The predicted TOTAL completion tokens behind `shadow_kv_hat`; with
     /// `generated.len()` this gives the per-session remainder the would-reject
     /// Retry-After hint scans (D2 gap G6).
@@ -22784,6 +25279,9 @@ struct Session {
     /// The captured plain checkpoint, taken when prefill crosses `ckpt_at`. Moved into the parked
     /// `ReuseEntry` at retire. `None` until the boundary is crossed (or if capture failed silently).
     ckpt_snap: Option<PlainCheckpoint>,
+    /// EXACT RESUME (MEMRA_RESUME_EXACT, WP-B day 44): the grid point this session's prime
+    /// captures its checkpoint at, inside the call that contains it (`grid_capture`); taken once.
+    exact_at: Option<usize>,
     /// The LCP sample recorded for a cold prefix-cache miss at admission. Same-window
     /// fanout siblings rewrite this provisional miss into a hit after the leader primes.
     prefix_miss_lcp: Option<usize>,
@@ -22894,6 +25392,7 @@ fn publish_dspark_prefix_capture_inner(
         dspark_tail,
         cap,
         "dspark-boundary",
+        &s.request_id,
     );
 }
 
@@ -22958,6 +25457,7 @@ fn drain_glm5_prefix_capture(
         tail,
         cap,
         "glm5-boundary",
+        &s.request_id,
     );
 }
 
@@ -24058,6 +26558,12 @@ pub fn run(
     // 3f4597f02 guard law: two spec programs on one model must never silently coexist,
     // so arming dspark DISABLES the MTP spec arm for that model (spec_eligible below)
     // and refuses combinations that have never been co-gated.
+    if let Some(msg) = dspark_draft_without_spec(
+        std::env::var("MEMRA_DSPARK_SPEC").ok().as_deref(),
+        std::env::var("MEMRA_DSPARK_DRAFT").ok().as_deref(),
+    ) {
+        panic!("{msg}");
+    }
     let mut dspark_drafts: std::collections::HashMap<String, memra_engine::dflash::DflashDraft> =
         Default::default();
     if std::env::var("MEMRA_DSPARK_SPEC").as_deref() == Ok("1") {
@@ -24721,6 +27227,17 @@ pub fn run(
     let mut n_session_defers = 0u64;
     let mut n_vram_defers = 0u64;
     let mut n_step_oom_parks = 0u64;
+    // WP-B day 37 (DAY37 A3 (i)): the owner's wall at the tick-top ensure point, per tick with
+    // at least one on-demand session, printed 256 at a time. Log-only; empty with the door off.
+    let mut vmm_ensure_walls: Vec<u64> = Vec::new();
+    // WP-B day 37 addendum D: releases scheduled by retires and parks and not yet reaped. While
+    // any are, the idle block polls instead of waiting indefinitely, so they land at idle.
+    let mut vmm_pending = false;
+    // WP-B day 42 addendum E (MEMRA_ADMIT_RECLAIM_OFFTICK): the worker's off-tick demote queue.
+    let mut reclaim_queue = ReclaimQueue::default();
+    // WP-B day 44: the exact resume's settle queue and the last instant the worker had work.
+    let mut settle_queue = SettleQueue::default();
+    let mut last_work = Instant::now();
     // Served-path receipts (lane/dspark-sampled-wave-20260825): admission-time route
     // classification, published to /metrics for the deploy gate's sampled probe.
     let mut n_served_dspark = 0u64;
@@ -24799,6 +27316,37 @@ pub fn run(
     // same receipt the qualification env is derived from.
     let admit_memory_cfg = crate::admit_memory::MemoryAdmitConfig::from_env();
     eprintln!("{}", admit_memory_cfg.boot_line());
+    // ON-DEMAND KV PLANES (WP-B day 37, door MEMRA_KV_ALLOCATOR=vmm, decide-by 2026-10-04,
+    // research/spill-b-20260919/DAY37.md). Read once here; an unknown value, or the door armed on
+    // a device without VMM support, refuses the boot instead of serving pooled under an ON line.
+    let kv_vmm_cfg =
+        match crate::kv_vmm::KvVmmConfig::from_env(&engine.ctx().name().unwrap_or_default()) {
+            Ok(cfg) => cfg,
+            Err(why) => {
+                let _ = ready_tx.send(Err(why));
+                return;
+            }
+        };
+    let kv_vmm_granularity = if kv_vmm_cfg.armed {
+        match memra_engine::cache::vmm_granularity_for(&engine.stream()) {
+            Ok(g) => Some(g),
+            Err(err) => {
+                let _ = ready_tx.send(Err(format!("MEMRA_KV_ALLOCATOR=vmm: {err}")));
+                return;
+            }
+        }
+    } else {
+        None
+    };
+    if kv_vmm_cfg.armed {
+        memra_engine::cache::vmm_set_grow_placement(kv_vmm_cfg.placement);
+        memra_engine::cache::vmm_set_faults(kv_vmm_cfg.faults.clone());
+    }
+    eprintln!("{}", kv_vmm_cfg.boot_line(kv_vmm_granularity));
+    if let Err(why) = crate::kv_vmm::install(kv_vmm_cfg) {
+        let _ = ready_tx.send(Err(why));
+        return;
+    }
     let mut admission_book = crate::admit_predict::AdmissionBook::default();
     let mut completion_history = crate::admit_predict::CompletionHistory::default();
     // AGENT-PAUSE DEMOTION (MEMRA_KV_PAUSE_DEMOTE, lane/kv-pause-demote-20260831, Arc E):
@@ -24880,6 +27428,17 @@ pub fn run(
         // published snapshot demote releases its park (if the session did not resume it meanwhile);
         // a shape-2 entry whose demote ended unpublished goes back into the device index.
         host_pause_drain(&engine, &mut px, &mut hpx, &mut reuse);
+        // WP-B day 42 addendum E: the reclaim flush's demote queue drains here too, one landing at a
+        // time, whether or not the arrival that queued an entry still waits.
+        if !reclaim_queue.ids.is_empty() {
+            reclaim_queue_drain(
+                &engine,
+                &mut px,
+                &mut hpx,
+                &mut reclaim_queue,
+                "the tick top",
+            );
+        }
         // Cheap runtime peer validation stays on its copy-count cadence here, between scheduler
         // ticks on the CUDA owner thread. Idle-only rungs remain pending. A mismatch continues on
         // validated host bounce; only inability to arm that staging reaches the panic ladder.
@@ -24903,6 +27462,7 @@ pub fn run(
         //    nearest deadline, so the sweep fires even on a box with zero active sessions:
         //    exactly the tool-round-trip pause shape at low concurrency.
         if active.is_empty() && queue.is_empty() {
+            vmm_idle_refresh(&mut vmm_pending, &mut vmm_ensure_walls, &reuse, &spec_reuse);
             if pending_constraints.is_empty()
                 && pause_pending.is_empty()
                 && handoff_import.is_none()
@@ -24910,6 +27470,9 @@ pub fn run(
                 && hpx.promoting.is_none()
                 && hpx.capturing.is_none()
                 && hpx.restoring.is_none()
+                && !vmm_pending
+                && reclaim_queue.ids.is_empty()
+                && settle_queue.is_empty()
             {
                 // Do not let an already-arrived request sit behind an idle-only probe. Once the
                 // channel is observed empty, one pending expensive rung may run before the worker
@@ -24982,6 +27545,76 @@ pub fn run(
                 {
                     wait = wait.min(Duration::from_millis(2));
                 }
+                // WP-B day 37 addendum D: a pending on-demand KV release is tick work on an idle box
+                // too: keep the poll running so the tick-top reap lands it without a request.
+                if vmm_pending {
+                    wait = wait.min(Duration::from_millis(2));
+                }
+                // WP-B day 42 addendum E: a queued reclaim demote is tick work on an idle box too: the
+                // tick top submits it once the slot frees, so the loop keeps polling.
+                if !reclaim_queue.ids.is_empty() {
+                    wait = wait.min(Duration::from_millis(2));
+                }
+                // WP-B day 44: a queued settle is idle work: after the grace with no work, one
+                // settle runs per idle pass; before it, the wait ends at the grace.
+                if !settle_queue.is_empty() {
+                    let ready = last_work + EXACT_SETTLE_GRACE;
+                    let now = Instant::now();
+                    if now >= ready {
+                        // DAY44 1.3 case 6 (addendum C): a settle's need is the memory door's
+                        // pending term for one owed prime of its rows, plus the admission reserve.
+                        let need_for = |name: &str, rows: usize, spec: bool| -> usize {
+                            let Some(model) = admission_costs.get(name) else {
+                                return 0;
+                            };
+                            let owed = PrimeOwed {
+                                rows,
+                                unstarted_walker: spec,
+                                cooperative: memra_engine::prime_walker::prime_yield_enabled()
+                                    && loaded
+                                        .get(name)
+                                        .is_some_and(|lm| lm.model.mtp_prime_walk_supported()),
+                                snapshot_bytes: 0,
+                            };
+                            let slab = loaded
+                                .get(name)
+                                .map_or(0, |lm| lm.model.prime_slab_bytes(&engine));
+                            let workspace = pending_prime_for_model(
+                                &[owed],
+                                model.prime.as_ref(),
+                                model.prefill.as_ref(),
+                                slab,
+                            );
+                            workspace.saturating_add(admission_reserve(
+                                true,
+                                workspace,
+                                model.transient_floor,
+                                admit_reserve_override(),
+                            ))
+                        };
+                        let reading = || effective_free_bytes(&engine).map(|(free, _)| free);
+                        let before = settle_queue.jobs.len();
+                        settle_one(
+                            &engine,
+                            &loaded,
+                            &mut reuse,
+                            &mut spec_reuse,
+                            &mut settle_queue,
+                            &need_for,
+                            &reading,
+                        );
+                        // A settle that waits for the reading leaves the queue as it was: the next
+                        // pass reads again after the grace, not in a spin.
+                        if settle_queue.waiting.is_some() && settle_queue.jobs.len() == before {
+                            last_work = Instant::now();
+                            wait = wait.min(EXACT_SETTLE_GRACE);
+                        } else {
+                            wait = Duration::ZERO;
+                        }
+                    } else {
+                        wait = wait.min(ready - now);
+                    }
+                }
                 match rx.recv_timeout(wait) {
                     Ok(cmd) => handle_cmd(
                         cmd,
@@ -24997,6 +27630,10 @@ pub fn run(
                     Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break 'worker,
                 }
             }
+        }
+        // WP-B day 44: the settle grace counts from the last pass with work.
+        if !active.is_empty() || !queue.is_empty() {
+            last_work = Instant::now();
         }
         // BUSY PHASE: work is in flight, so the beat MUST advance every iteration. The
         // stamp is a bare atomic store (no mutex, no syscall) — unlike the metrics publish
@@ -25025,6 +27662,12 @@ pub fn run(
                 }
             }
         }
+        // WP-B day 45 (O4, `MEMRA_ADMIT_W_RELEASE`): the prime-completion seam, one site, after
+        // the command drain and before admission. A session whose prime completed releases its
+        // prefill workspace from both books, once.
+        if admit_w_release_on() {
+            release_primed_workspace(&mut active, &mut admission_book);
+        }
         resolve_constraint_compiles(&constraint_result_rx, &mut pending_constraints, &mut queue);
         expire_constraint_compiles(&mut pending_constraints, Instant::now());
 
@@ -25051,6 +27694,7 @@ pub fn run(
             // until it settles (publish or drop) first.
             host_capture_settle_pending(&engine, &mut px, &mut hpx, ContractWait::Block, "a trim");
             host_restore_settle_pending(&mut px, &mut hpx, ContractWait::Block, "a trim");
+            vmm_reap_for("admin-trim");
             report.devices = trim_model_device_pools(&engine, &loaded, "admin-trim");
             eprintln!(
                 "[trim] pools dropped: reuse={} spec={} dspark={} prefix={}",
@@ -25068,6 +27712,8 @@ pub fn run(
         // bytes straight back into host RAM. Worker-thread execution, same reason as
         // trim: the pools live in this scope and the sweep must not race a demote.
         for (tenant, tx) in pending_purges.drain(..) {
+            // WP-B day 44 (DAY44 1.3 case 5): the purged tenant's settle jobs go with it.
+            settle_queue.purge_tenant(&tenant);
             release_promoted_pin_for_tenant(&mut hpx, &mut px, &tenant);
             // WP-A day 21: the `Restoring` request settles first and the purged tenant's is dropped
             // (cache freed, pin released) before either index purges.
@@ -25880,8 +28526,30 @@ pub fn run(
                 // still allocate; a session mid-prime is counted twice for that chunk (live and
                 // booked), which only errs toward a defer. Unarmed the term is 0 and
                 // `less_pending(0, _)` is the identity, so the door-OFF gate is unchanged.
-                let pending_prime = if admit_memory_cfg.armed {
+                // WP-B day 39 (DAY39 1.2): the slab and one call once, the walker stacks per
+                // unstarted cooperative session. Day 33's per-session sum is kept beside it, printed
+                // on every admit/defer/refuse line as `pending_prime_v1=`.
+                let pending_prime_v1 = if admit_memory_cfg.armed {
                     pending_prime_bytes(&active, &admission_costs)
+                } else {
+                    0
+                };
+                let pending_prime = if admit_memory_cfg.armed {
+                    pending_prime_bytes_v2(
+                        &active,
+                        &admission_costs,
+                        &|name| {
+                            loaded
+                                .get(name)
+                                .map_or(0, |lm| lm.model.prime_slab_bytes(&engine))
+                        },
+                        &|name| {
+                            memra_engine::prime_walker::prime_yield_enabled()
+                                && loaded
+                                    .get(name)
+                                    .is_some_and(|lm| lm.model.mtp_prime_walk_supported())
+                        },
+                    )
                 } else {
                     0
                 };
@@ -25894,9 +28562,14 @@ pub fn run(
                 // evicts or demotes older unleased entries to fit a seed inside the cache's byte
                 // budget before it allocates, so the cache's device bytes can grow by at most
                 // `budget - total_bytes`. A warm, full cache replaces bytes; it does not add them.
+                let pending_seed_uncapped = if admit_memory_cfg.armed {
+                    pending_seed_bytes(&active)
+                } else {
+                    0
+                };
                 let pending_seed = if admit_memory_cfg.armed {
                     seed_booking_cap(
-                        pending_seed_bytes(&active),
+                        pending_seed_uncapped,
                         prefix_cache_budget_bytes(),
                         px.total_bytes,
                     )
@@ -25905,6 +28578,16 @@ pub fn run(
                 };
                 let primary_device = engine.ctx().ordinal();
                 let pending_booked = pending_prime.saturating_add(pending_seed);
+                // OWED GROWTH (WP-B day 37, MEMRA_KV_ALLOCATOR=vmm, DAY37 1.4): an admitted
+                // on-demand session backs only the rows it has reached, so the live reading does
+                // not see the rest of the context the pooled allocator would already hold. Armed,
+                // every reading is reduced by that owed growth too. Unarmed it is 0.
+                let vmm_owed = if crate::kv_vmm::armed() {
+                    vmm_owed_bytes(&active)
+                } else {
+                    0
+                };
+                let pending_booked = pending_booked.saturating_add(vmm_owed);
                 let book =
                     move |h: AdmissionHeadroom| h.less_pending(pending_booked, primary_device);
                 let measured_headroom =
@@ -26015,6 +28698,12 @@ pub fn run(
                                         admit_memory_cfg.defer_budget_ms,
                                     ),
                                 );
+                                // WP-B day 42 (MEMRA_ADMIT_RECLAIM_OFFTICK): with the contracts
+                                // door's off-tick route, the demote set leaves the tick and the
+                                // arrival waits on its landings; unset, today's flush.
+                                let offtick_arm = admit_reclaim_offtick_on()
+                                    && hpx.tier.is_some()
+                                    && (budget > 0 || req.reclaim_offtick.is_some());
                                 // WP-A day 20: a `Capturing` entry settles first (publish or
                                 // drop), so the reclaim's accounting never meets a half-written
                                 // entry; then the reclaim runs over the published set.
@@ -26031,10 +28720,22 @@ pub fn run(
                                     ContractWait::Block,
                                     "the admission reclaim",
                                 );
-                                evict_all_demoting(&engine, &mut px, &mut hpx, budget)
+                                if !offtick_arm {
+                                    evict_all_demoting(&engine, &mut px, &mut hpx, budget)
+                                } else {
+                                    let q = &mut reclaim_queue;
+                                    let n = reclaim_offtick_pass(
+                                        &engine, &mut px, &mut hpx, q, &mut req, budget,
+                                    );
+                                    (n, 0, 0)
+                                }
                             } else {
                                 (px.evict_all(), 0, 0)
                             };
+                        // The arrival waits on a landing while its plan is live (DAY42 1.2): the
+                        // parked-session ladder is not climbed for bytes already on their way.
+                        let reclaim_landing = req.reclaim_offtick.is_some()
+                            && (!reclaim_queue.ids.is_empty() || hpx.demoting.is_some());
                         if demoted_prefix > 0 {
                             eprintln!(
                                 "[admit-mem] reclaim demoted {demoted_prefix} of \
@@ -26068,7 +28769,7 @@ pub fn run(
                         let mut evicted_plain = 0usize;
                         let mut evicted_spec = 0usize;
                         let mut evicted_dspark = 0usize;
-                        while !headroom.sufficient(required) {
+                        while !reclaim_landing && !headroom.sufficient(required) {
                             match evict_oldest_parked(
                                 &mut reuse,
                                 &mut spec_reuse,
@@ -26504,12 +29205,37 @@ pub fn run(
                                     0
                                 },
                             };
-                            let verdict = crate::admit_memory::decide(
+                            let mut verdict = crate::admit_memory::decide(
                                 need,
                                 &tiers,
                                 waited_ms,
                                 admit_memory_cfg.defer_budget_ms,
                             );
+                            // WP-B day 42: an arrival whose off-tick reclaim is still landing
+                            // waits on it inside the door's budget, then gets the typed refusal.
+                            let mut defer_reason: Option<&'static str> = None;
+                            if req.reclaim_offtick.is_some() {
+                                let short_by = need.saturating_sub(device_free);
+                                match reclaim_offtick_step(
+                                    false,
+                                    hpx.demoting.is_some(),
+                                    reclaim_queue.ids.len(),
+                                    waited_ms,
+                                    admit_memory_cfg.defer_budget_ms,
+                                ) {
+                                    ReclaimStep::Wait | ReclaimStep::Submit => {
+                                        verdict =
+                                            crate::admit_memory::MemoryVerdict::Defer { short_by };
+                                        defer_reason = Some("reclaim-landing");
+                                    }
+                                    ReclaimStep::Refuse => {
+                                        verdict =
+                                            crate::admit_memory::MemoryVerdict::Refuse { short_by };
+                                        defer_reason = Some("reclaim-landing-timeout");
+                                    }
+                                    ReclaimStep::Admit | ReclaimStep::Exhausted => {}
+                                }
+                            }
                             let refusing = matches!(
                                 verdict,
                                 crate::admit_memory::MemoryVerdict::Refuse { .. }
@@ -26543,11 +29269,15 @@ pub fn run(
                                             estimate: est,
                                             tiers,
                                             pending_prime_bytes: pending_prime as u64,
+                                            pending_prime_v1_bytes: pending_prime_v1 as u64,
                                             pending_seed_bytes: pending_seed as u64,
+                                            pending_seed_uncapped_bytes: pending_seed_uncapped
+                                                as u64,
                                             inflight: admission_book.inflight(&req.model),
                                             cap: cap as u64,
                                             waited_ms,
                                             retry_after_s,
+                                            reason: defer_reason,
                                         }
                                     )
                                 );
@@ -26563,6 +29293,14 @@ pub fn run(
                         }
                         vram_defers += 1;
                         n_vram_defers += 1;
+                        // WP-B day 42: an arrival waiting on its off-tick reclaim's landing is parked
+                        // on the in-flight demote, so it joins the parked-only bounded wait (the
+                        // guard's `hpx.demoting.is_some()` arm) instead of spinning the owner.
+                        if req.reclaim_offtick.is_some()
+                            && (!reclaim_queue.ids.is_empty() || hpx.demoting.is_some())
+                        {
+                            parked_on_promote += 1;
+                        }
                         requeue.push_back(req); // waits (FIFO), never rejected
                         continue;
                     }
@@ -26600,11 +29338,14 @@ pub fn run(
                                     },
                                 },
                                 pending_prime_bytes: pending_prime as u64,
+                                pending_prime_v1_bytes: pending_prime_v1 as u64,
                                 pending_seed_bytes: pending_seed as u64,
+                                pending_seed_uncapped_bytes: pending_seed_uncapped as u64,
                                 inflight: admission_book.inflight(&req.model),
                                 cap: cap as u64,
                                 waited_ms: crate::admit_memory::waited_ms(req.memory_defer_since),
                                 retry_after_s: None,
+                                reason: None,
                             })
                         );
                     }
@@ -26911,6 +29652,36 @@ pub fn run(
                         )
                         .total();
                     }
+                    // WP-B day 37: the owed growth the gate reduced this admission's reading by.
+                    if crate::kv_vmm::armed() {
+                        let (m1, r1) = s.spec.as_ref().map_or((0, 0), |sp| sp.kv_on_demand_bytes());
+                        let (m2, r2) = s.cache.as_ref().map_or((0, 0), |c| c.kv_on_demand_bytes());
+                        eprintln!(
+                            "[kv-vmm] admit id={} owed_before={} session_mapped={} \
+                             session_reserved={} active={}",
+                            s.request_id,
+                            vmm_owed_bytes(&active),
+                            m1 + m2,
+                            r1 + r2,
+                            active.len()
+                        );
+                    }
+                    // WP-B day 45 (O4): the workspace term both books carry for this session.
+                    if admit_w_release_on() {
+                        let w_bytes = crate::admit_predict::RequestCharge::from_physical_cost(
+                            cost as u64,
+                            context_cap_bytes as u64,
+                            activation_bytes as u64,
+                            draft_state_bytes as u64,
+                            0,
+                        )
+                        .prefill_workspace_bytes;
+                        s.booked_w_bytes = w_bytes;
+                        eprintln!(
+                            "[admit-book] w-booked id={} model={} bytes={w_bytes}",
+                            s.request_id, s.model
+                        );
+                    }
                     admission_book.admit(&s.model, s.booked_kv_bytes, s.shadow_kv_hat);
                     active.push(s);
                 }
@@ -26977,6 +29748,126 @@ pub fn run(
                 finished.push(i);
             }
         }
+        // ON-DEMAND KV (WP-B day 37, MEMRA_KV_ALLOCATOR=vmm, DAY37 1.2 ensure point 2 and
+        // addendum A): the owner-tick reap, then every active on-demand session backed through
+        // its bound before the first engine call of this tick. A grow failure takes the reclaim
+        // retry (the graveyard's release events waited once, the prefix cache and one parked
+        // session evicted, the device pools trimmed back to the driver), then the step-OOM
+        // contract. Unarmed nothing here runs.
+        if crate::kv_vmm::armed() {
+            let (reaped, pending) = vmm_reap_tick(&mut active, &mut reuse, &mut spec_reuse);
+            vmm_pending = pending > 0;
+            if reaped > 0 {
+                eprintln!(
+                    "[kv-vmm] reap released={reaped} pending={}",
+                    memra_engine::cache::vmm_graveyard_bytes()
+                );
+            }
+            let ensure_t0 = Instant::now();
+            let mut ensured_sessions = 0usize;
+            for (i, s) in active.iter_mut().enumerate() {
+                if finished.contains(&i) {
+                    continue;
+                }
+                ensured_sessions += usize::from(
+                    s.spec
+                        .as_ref()
+                        .is_some_and(|sp| sp.kv_on_demand_planes() > 0)
+                        || s.cache.as_ref().is_some_and(|c| c.on_demand_planes() > 0),
+                );
+                let ensured = match vmm_ensure_session(s) {
+                    Ok(evs) => Ok(evs),
+                    Err(err) if is_cuda_oom(&err.to_string()) => {
+                        let _ = memra_engine::cache::vmm_reap_graveyard_blocking();
+                        let evicted_prefix = px.evict_all();
+                        let evicted_parked = evict_oldest_parked(
+                            &mut reuse,
+                            &mut spec_reuse,
+                            &mut dspark_reuse,
+                            &mut reuse_metrics,
+                        );
+                        let _ = memra_engine::cache::vmm_reap_graveyard_blocking();
+                        let _ = trim_model_device_pools(&engine, &loaded, "kv-vmm grow reclaim");
+                        eprintln!(
+                            "[kv-vmm] grow failed ({err}); reclaim-retry: evicted {evicted_prefix} \
+                             prefix entries and {} parked session(s); retrying once",
+                            usize::from(evicted_parked.is_some())
+                        );
+                        vmm_ensure_session(s)
+                    }
+                    Err(err) => Err(err),
+                };
+                match ensured {
+                    Ok(evs) => {
+                        for (label, rows, ev) in evs {
+                            eprintln!(
+                                "{}",
+                                crate::kv_vmm::grow_line(&s.request_id, &label, rows, &ev)
+                            );
+                        }
+                    }
+                    Err(err) => {
+                        let oom = is_cuda_oom(&err.to_string());
+                        if oom
+                            && step_oom_parkable(
+                                s.generated.len(),
+                                s.tokens_emitted,
+                                s.oom_retries,
+                                step_oom_retries(),
+                            )
+                        {
+                            s.oom_retries += 1;
+                            s.oom_teardown = true;
+                            eprintln!(
+                                "[kv-vmm] ensure failed: parked session back to queue (model {}, \
+                                 retry {}/{}): {err}",
+                                s.model,
+                                s.oom_retries,
+                                step_oom_retries()
+                            );
+                            match park_requeue(&loaded, s) {
+                                Some(req) => {
+                                    n_step_oom_parks += 1;
+                                    reserve_internal_admission(req.lane);
+                                    requeue_oom.push_back(req);
+                                }
+                                None => {
+                                    s.errored = true;
+                                    let _ = s.tx.send(Event::Error(EngineError::engine(format!(
+                                        "step error: {err}"
+                                    ))));
+                                }
+                            }
+                        } else {
+                            if oom {
+                                s.oom_teardown = true;
+                            }
+                            eprintln!(
+                                "[kv-vmm] ensure failed: not parked (model {}, retries {}/{}, \
+                                 generated {}, streamed {}): reporting honestly: {err}",
+                                s.model,
+                                s.oom_retries,
+                                step_oom_retries(),
+                                s.generated.len(),
+                                s.tokens_emitted
+                            );
+                            quarantine_request_fault(s, err.as_ref());
+                            s.errored = true;
+                            let _ = s.tx.send(Event::Error(EngineError::engine(format!(
+                                "step error: {err}"
+                            ))));
+                        }
+                        finished.push(i);
+                    }
+                }
+            }
+            if ensured_sessions > 0 {
+                vmm_ensure_walls.push(ensure_t0.elapsed().as_micros() as u64);
+                if vmm_ensure_walls.len() >= 256 {
+                    vmm_flush_ensure_walls(&mut vmm_ensure_walls);
+                }
+            }
+        }
         if !batching {
             #[allow(clippy::needless_range_loop)]
             // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
@@ -26991,6 +29882,20 @@ pub fn run(
                     (active[i].request_id.clone(), fault_route(&active[i]));
                 let step_result =
                     guard_request(&engine, &fault_id, &fault_route, "decode step", || {
+                        // MEMRA_STEP_OOM_FAULT's non-batching injection point (WP-B day 38
+                        // addenda A and D): the forged quoted OOM stands in for this step, before
+                        // any device work; the error arm below is production logic. It fires only
+                        // on a session past its prime (a step that decodes), so the forged failure
+                        // lands where an errored session could otherwise park.
+                        if active[i].prefill_done && step_oom_fault_fire() {
+                            eprintln!(
+                                "[admit-oom] MEMRA_STEP_OOM_FAULT fired: this non-batching step \
+                                 reports a synthetic CUDA OOM (model {}, generated {})",
+                                active[i].model,
+                                active[i].generated.len(),
+                            );
+                            return Err(STEP_OOM_FAULT_MSG.into());
+                        }
                         match step_session_async_chain(&engine, &loaded, &mut active[i]) {
                             Ok(Some(keep)) => Ok(keep),
                             Ok(None) => {
@@ -27014,6 +29919,7 @@ pub fn run(
                     Ok(false) => finished.push(i),
                     Err(err) => {
                         quarantine_request_fault(&mut active[i], err.as_ref());
+                        active[i].errored = true;
                         let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                             "step error: {err}"
                         ))));
@@ -27131,6 +30037,7 @@ pub fn run(
                             None, // MTP publisher: its draft state rides `draft`, not the dspark tail
                             cap,
                             "spec-boundary",
+                            &s.request_id,
                         );
                     }
                 }
@@ -27336,6 +30243,7 @@ pub fn run(
                                         "[spec-gate] glm5 demote flush FAILED (model {}): {err}",
                                         s.model
                                     );
+                                    s.errored = true;
                                     let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                                         "glm5 demote flush failed: {err}"
                                     ))));
@@ -27393,6 +30301,7 @@ pub fn run(
                             // engine's primed-session assertion. Retire with the quoted cause
                             // rather than hand back a session that cannot burst.
                             eprintln!("[spec-gate] demote flush FAILED (model {}): {err}", s.model);
+                            s.errored = true;
                             let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                                 "spec demote flush failed: {err}"
                             ))));
@@ -27509,7 +30418,8 @@ pub fn run(
                 // named. The step itself is SKIPPED (no device work on a card the gate is
                 // pretending is full); the match below (park-vs-honest-error, the
                 // teardown fence, park_requeue, the retry budget) is production logic,
-                // un-doctored. This is the ONLY injection point of the door.
+                // un-doctored. One of the door's three injection points: this spec-phase step, the
+                // batched decode chunk and the non-batching step (WP-B day 38 addendum A).
                 let (fault_id, fault_route) =
                     (active[i].request_id.clone(), fault_route(&active[i]));
                 let step_result =
@@ -27657,6 +30567,7 @@ pub fn run(
                             None => {
                                 // cannot rebuild the request (no prompt to replay) — the
                                 // pre-fix honest error, quoted.
+                                s.errored = true;
                                 let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                                     "step error: {err}"
                                 ))));
@@ -27681,6 +30592,7 @@ pub fn run(
                             );
                         }
                         quarantine_request_fault(&mut active[i], err.as_ref());
+                        active[i].errored = true;
                         let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                             "step error: {err}"
                         ))));
@@ -27791,6 +30703,7 @@ pub fn run(
                         });
                     if let Err(err) = probe {
                         active[i].aborted = true;
+                        active[i].errored = true;
                         let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                             "step error: {err}"
                         ))));
@@ -27867,6 +30780,8 @@ pub fn run(
                             // plain-affinity checkpoint capture needs the same per-session
                             // boundary stop the concat prime cannot honor — prime alone.
                             && s.ckpt_at.is_none()
+                            // WP-B day 44: an in-call grid capture needs the per-sequence prime.
+                            && s.exact_at.is_none()
                             // the grid-aligned seed boundary (memra#602) is the same class
                             // when it stops inside the prompt; a seed at the prompt end is not
                             // a stop and keeps the concat prime.
@@ -27987,6 +30902,7 @@ pub fn run(
                                 );
                                 for &(i, _) in &cand {
                                     active[i].aborted = true;
+                                    active[i].errored = true;
                                     let _ = active[i].tx.send(Event::Error(EngineError::engine(
                                         format!("prime batch: {err}"),
                                     )));
@@ -28136,6 +31052,7 @@ pub fn run(
                     }
                     Err(err) => {
                         quarantine_request_fault(s, err.as_ref());
+                        s.errored = true;
                         let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                             "prefill error: {err}"
                         ))));
@@ -28199,6 +31116,7 @@ pub fn run(
                     Ok(false) => finished.push(i),
                     Err(err) => {
                         quarantine_request_fault(&mut active[i], err.as_ref());
+                        active[i].errored = true;
                         let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                             "step error: {err}"
                         ))));
@@ -28251,6 +31169,7 @@ pub fn run(
                         );
                         if let Err(err) = staged {
                             quarantine_request_fault(&mut active[i], err.as_ref());
+                            active[i].errored = true;
                             let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                                 "constraint mask: {err}"
                             ))));
@@ -28318,45 +31237,115 @@ pub fn run(
                     .map(|&i| active[i].request_id.as_str())
                     .collect::<Vec<_>>()
                     .join(",");
-                let logits = guard_request(&engine, &batch_ids, "batch", "batched decode", || {
-                    // split-borrow: pull the caches out via split_at_mut-style indexing
-                    let mut caches: Vec<&mut Cache> = Vec::with_capacity(idxs.len());
-                    // SAFETY: idxs are unique indices into `active`; we take disjoint &mut.
-                    let base = active.as_mut_ptr();
-                    for &i in &idxs {
-                        let s = unsafe { &mut *base.add(i) };
-                        caches.push(s.cache.as_mut().unwrap());
+                // WP-B day 49 (O14, MEMRA_BATCH_OOM_RECOVER): a quoted CUDA OOM of a chunk that
+                // wrote no session state (the step guard: before the engine call, or the generic
+                // body before any state write) takes one reclaim rung and runs the same batched
+                // step once more; any other failure is the error arm below, as today.
+                let mut batch_attempt = 0usize;
+                let logits = loop {
+                    memra_engine::step_guard::arm();
+                    let attempt = guard_request(
+                        &engine,
+                        &batch_ids,
+                        "batch",
+                        "batched decode",
+                        || {
+                            // MEMRA_STEP_OOM_FAULT's plain-dispatch injection point (WP-B day 38
+                            // addendum A): the forged quoted OOM stands in for this chunk's step, before
+                            // any device work; the chunk's error arm below is production logic.
+                            if step_oom_fault_fire_batch(idxs.len()) {
+                                eprintln!(
+                                    "[admit-oom] MEMRA_STEP_OOM_FAULT fired: this batched decode chunk \
+                             reports a synthetic CUDA OOM ({} session(s))",
+                                    idxs.len()
+                                );
+                                return Err(STEP_OOM_FAULT_MSG.into());
+                            }
+                            // split-borrow: pull the caches out via split_at_mut-style indexing
+                            let mut caches: Vec<&mut Cache> = Vec::with_capacity(idxs.len());
+                            // SAFETY: idxs are unique indices into `active`; we take disjoint &mut.
+                            let base = active.as_mut_ptr();
+                            for &i in &idxs {
+                                let s = unsafe { &mut *base.add(i) };
+                                caches.push(s.cache.as_mut().unwrap());
+                            }
+                            // LEAN LOGITS (inc2 component 3): device-sampled rows skip the
+                            // [n_vocab] D2H — their last_logits comes back EMPTY and the row is
+                            // parked on-device (cache.last_logits_dev) for the retire-time pool
+                            // park below.
+                            // SAFETY: mask_ptrs point at Session.mask_dev fields — disjoint from
+                            // the caches taken above; nothing mutates them for this call's life.
+                            let masks: Vec<Option<(&CudaSlice<u32>, usize)>> = mask_ptrs
+                                .iter()
+                                .map(|m| m.map(|(p, w)| (unsafe { &*p }, w)))
+                                .collect();
+                            match wave_mid {
+                                Some(mid) => {
+                                    lm.model.decode_step_batch_sampled_lean_masked_scheduled(
+                                        &engine,
+                                        &toks,
+                                        &mut caches,
+                                        &samp,
+                                        &masks,
+                                        true,
+                                        mid,
+                                    )
+                                }
+                                None => lm.model.decode_step_batch_sampled_lean_masked(
+                                    &engine,
+                                    &toks,
+                                    &mut caches,
+                                    &samp,
+                                    &masks,
+                                    true,
+                                ),
+                            }
+                        },
+                    );
+                    let guard_state = memra_engine::step_guard::take();
+                    match attempt {
+                        Err(err)
+                            if batch_attempt == 0
+                                && batch_oom_recover_on()
+                                && is_cuda_oom(&err.to_string())
+                                && memra_engine::step_guard::recoverable(guard_state) =>
+                        {
+                            batch_attempt += 1;
+                            let reclaimed = batch_oom_reclaim(
+                                &engine,
+                                &loaded,
+                                &mut px,
+                                &mut hpx,
+                                &mut reuse,
+                                &mut spec_reuse,
+                                &mut dspark_reuse,
+                            );
+                            eprintln!(
+                                "[admit-oom] batch OOM: {} sessions untouched ({guard_state:?}); \
+                                 reclaimed {reclaimed}; retrying the same batched step once",
+                                idxs.len()
+                            );
+                        }
+                        Err(err) => {
+                            if batch_attempt > 0 {
+                                eprintln!(
+                                    "[admit-oom] batch OOM: retry failed ({err}); ended as today"
+                                );
+                            } else if batch_oom_recover_on() && is_cuda_oom(&err.to_string()) {
+                                eprintln!(
+                                    "[admit-oom] batch OOM: torn ({guard_state:?}); ended as today"
+                                );
+                            }
+                            break Err(err);
+                        }
+                        Ok(out) => {
+                            if batch_attempt > 0 {
+                                eprintln!("[admit-oom] batch OOM: retried (ok)");
+                            }
+                            break Ok(out);
+                        }
                     }
-                    // LEAN LOGITS (inc2 component 3): device-sampled rows skip the
-                    // [n_vocab] D2H — their last_logits comes back EMPTY and the row is
-                    // parked on-device (cache.last_logits_dev) for the retire-time pool
-                    // park below.
-                    // SAFETY: mask_ptrs point at Session.mask_dev fields — disjoint from
-                    // the caches taken above; nothing mutates them for this call's life.
-                    let masks: Vec<Option<(&CudaSlice<u32>, usize)>> = mask_ptrs
-                        .iter()
-                        .map(|m| m.map(|(p, w)| (unsafe { &*p }, w)))
-                        .collect();
-                    match wave_mid {
-                        Some(mid) => lm.model.decode_step_batch_sampled_lean_masked_scheduled(
-                            &engine,
-                            &toks,
-                            &mut caches,
-                            &samp,
-                            &masks,
-                            true,
-                            mid,
-                        ),
-                        None => lm.model.decode_step_batch_sampled_lean_masked(
-                            &engine,
-                            &toks,
-                            &mut caches,
-                            &samp,
-                            &masks,
-                            true,
-                        ),
-                    }
-                });
+                };
                 match logits {
                     Ok((rows, next_toks)) => {
                         for (k, &i) in idxs.iter().enumerate() {
@@ -28368,6 +31357,7 @@ pub fn run(
                     Err(err) => {
                         for &i in &idxs {
                             active[i].aborted = true;
+                            active[i].errored = true;
                             let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                                 "batch step: {err}"
                             ))));
@@ -28463,6 +31453,7 @@ pub fn run(
                         || s.capture.is_some()
                         || s.snapshot_at.is_some()
                         || s.ckpt_at.is_some()
+                        || s.exact_at.is_some()
                         || seed_boundary_inside_prompt(
                             s.seed_at,
                             s.fed.len() + s.prefill_queue.len(),
@@ -28546,6 +31537,7 @@ pub fn run(
                                 );
                                 for &i in &dcand {
                                     active[i].aborted = true;
+                                    active[i].errored = true;
                                     let _ = active[i].tx.send(Event::Error(EngineError::engine(
                                         format!("dark prime batch: {err}"),
                                     )));
@@ -28618,6 +31610,7 @@ pub fn run(
                         );
                     } else {
                         quarantine_request_fault(s, err.as_ref());
+                        s.errored = true;
                         let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                             "prefill error: {err}"
                         ))));
@@ -28664,13 +31657,41 @@ pub fn run(
         // to rewrite; either would run under the in-flight read. Settle the `Capturing` entry
         // BLOCKING before any session leaves `active`. One capture per worker.
         if !finished.is_empty() && hpx.capturing.is_some() {
-            host_capture_settle_pending(
-                &engine,
-                &mut px,
-                &mut hpx,
-                ContractWait::Block,
-                "a session retire",
-            );
+            // WP-A day 62 (`DAY62.md` design R1): the capture copies only its source's planes, so
+            // it settles here only when a retiring session is its source, by either identity
+            // (its request id, or its cache's layer-vector address); any other retire goes on.
+            let (source_kv, source_request, ticket) = hpx
+                .capturing
+                .as_ref()
+                .map(|c| {
+                    (
+                        c.source_kv,
+                        c.source_request.clone(),
+                        c.contract.as_ref().map(|k| k.ticket.sequence),
+                    )
+                })
+                .unwrap_or_default();
+            let source_retiring = finished.iter().any(|&i| {
+                r1_is_source(
+                    &active[i].request_id,
+                    active[i].cache.as_ref().map(|c| c.kv.as_ptr() as usize),
+                    &source_request,
+                    source_kv,
+                )
+            });
+            if r1_settle_at_retire(source_retiring) {
+                let why = format!(
+                    "a session retire (source retiring: {})",
+                    if source_retiring { "yes" } else { "no" }
+                );
+                host_capture_settle_pending(&engine, &mut px, &mut hpx, ContractWait::Block, &why);
+            } else if hpx.tier.is_some() {
+                eprintln!(
+                    "[prefix-cache] retire with a capture pending: no retiring session is its \
+                     source (ticket seq={}); no settle",
+                    ticket.map_or_else(|| "none".to_string(), |t| t.to_string())
+                );
+            }
         }
         for &i in finished.iter().rev() {
             let mut s = active.remove(i);
@@ -28691,7 +31712,45 @@ pub fn run(
             // length is a disconnect point, not a completion length (the D2 offline
             // history was built from completed rows only; aborts stay load-only).
             admission_book.retire(&s.model, s.booked_kv_bytes, s.shadow_kv_hat);
-            if !s.oom_teardown && !s.aborted {
+            // WP-B day 45 addendum B: a session that retires with its workspace still booked says why.
+            if s.booked_w_bytes > 0 {
+                eprintln!(
+                    "[admit-book] w-retire-unreleased id={} bytes={} reason={}",
+                    s.request_id,
+                    s.booked_w_bytes,
+                    if s.prefill_done {
+                        "same-tick"
+                    } else {
+                        "prime-incomplete"
+                    }
+                );
+            }
+            // WP-B day 37 (DAY37 A4): what an on-demand session backed against what it used.
+            if crate::kv_vmm::armed() {
+                let (sm, sr) = s.spec.as_ref().map_or((0, 0), |sp| sp.kv_on_demand_bytes());
+                let (cm, cr) = s.cache.as_ref().map_or((0, 0), |c| c.kv_on_demand_bytes());
+                let (su, ss) = s.spec.as_ref().map_or((0, 0), |sp| {
+                    sp.kv_on_demand_used_and_slack(crate::kv_vmm::SLACK)
+                });
+                let (cu, cs) = s.cache.as_ref().map_or((0, 0), |c| {
+                    c.kv_on_demand_used_and_slack(crate::kv_vmm::SLACK)
+                });
+                let planes = s.spec.as_ref().map_or(0, |sp| sp.kv_on_demand_planes())
+                    + s.cache.as_ref().map_or(0, |c| c.on_demand_planes());
+                if planes > 0 {
+                    eprintln!(
+                        "[kv-vmm] retire id={} planes={planes} mapped={} reserved={} used={} \
+                         slack_bytes={} booked={}",
+                        s.request_id,
+                        sm + cm,
+                        sr + cr,
+                        su + cu,
+                        ss + cs,
+                        s.booked_kv_bytes
+                    );
+                }
+            }
+            if !s.oom_teardown && !s.aborted && !s.errored {
                 completion_history.record(
                     crate::auth::meter_key(&s.cache_ns),
                     &s.model,
@@ -28753,7 +31812,7 @@ pub fn run(
                 oom_teardowns += 1;
                 continue;
             }
-            if s.prime_service.pending || !retire_may_park(s.aborted, s.oom_teardown) {
+            if s.prime_service.pending || !retire_may_park(s.aborted, s.oom_teardown, s.errored) {
                 continue;
             }
             // AGENT-PAUSE DEMOTE ARM (MEMRA_KV_PAUSE_DEMOTE, lane/kv-pause-demote-20260831,
@@ -28849,6 +31908,7 @@ pub fn run(
                         .map(|b| toks.first() == Some(&b))
                         .unwrap_or(false) as usize;
                     let committed_text = loaded[&s.model].tok.decode_special(&toks[skip..], true);
+                    let public_len = spec_public_len(toks, s.n_prompt, &s.generated);
                     // SESSION AFFINITY: identity of the conversation this session served, so a
                     // later turn that REWRITES history can still recognize and rewind it. The
                     // fingerprint chain is taken over the COMMITTED tokens (no live tail to
@@ -28866,10 +31926,36 @@ pub fn run(
                         reuse_pool_per_namespace(),
                         reuse_pool_global_cap(),
                     ) {
+                        // ON-DEMAND KV (WP-B day 37, DAY37 1.1 park trim): the parked session
+                        // keeps its virtual range and captured graphs; extents wholly past its
+                        // position plus the slack go back behind a fence each plane records.
+                        if crate::kv_vmm::armed() && sess.kv_on_demand_planes() > 0 {
+                            let keep = sess.kv_position() + crate::kv_vmm::SLACK;
+                            let n = sess.release_kv_beyond_rows(keep);
+                            if n > 0 {
+                                eprintln!(
+                                    "[kv-vmm] trim id={} pool=spec keep_rows={keep} released={n}",
+                                    s.request_id
+                                );
+                            }
+                        }
+                        let parked_id = next_parked_id();
+                        // EXACT RESUME (WP-B day 44): an entry with a turn checkpoint queues its
+                        // off-path settle.
+                        if resume_exact_on() && sess.rewind_pos().is_some() {
+                            settle_queue.push(SettleJob {
+                                pool: ParkedPool::Spec,
+                                key: pool_key.clone(),
+                                id: parked_id,
+                            });
+                        }
                         spec_reuse
                             .entry(pool_key)
                             .or_default()
                             .push(SpecReuseEntry {
+                                id: parked_id,
+                                settled: false,
+                                public_len,
                                 sess,
                                 committed_text,
                                 affinity: s.affinity,
@@ -28994,7 +32080,7 @@ pub fn run(
                             // here and grows back to the resuming request's own cap at
                             // the admit probe. Flag off: the ladder-cap cache parks
                             // whole, byte-identical to today.
-                            let (cache, cap) = if kv_park_compact_on() {
+                            let (mut cache, cap) = if kv_park_compact_on() {
                                 compact_parked_plain_cache(
                                     &engine,
                                     &loaded[&s.model],
@@ -29005,6 +32091,28 @@ pub fn run(
                             } else {
                                 (cache, cap)
                             };
+                            // ON-DEMAND KV (WP-B day 37, DAY37 1.1 park trim): the plain twin of
+                            // the spec park's trim above.
+                            if crate::kv_vmm::armed() && cache.on_demand_planes() > 0 {
+                                let keep = cache.pos + crate::kv_vmm::SLACK;
+                                let n = cache.release_kv_beyond_rows(keep);
+                                if n > 0 {
+                                    eprintln!(
+                                        "[kv-vmm] trim id={} pool=plain keep_rows={keep} released={n}",
+                                        s.request_id
+                                    );
+                                }
+                            }
+                            let parked_id = next_parked_id();
+                            // EXACT RESUME (WP-B day 44): an entry with a grid checkpoint queues
+                            // its off-path settle.
+                            if resume_exact_on() && ckpt.is_some() {
+                                settle_queue.push(SettleJob {
+                                    pool: ParkedPool::Plain,
+                                    key: pool_key.clone(),
+                                    id: parked_id,
+                                });
+                            }
                             reuse.entry(pool_key).or_default().push(ReuseEntry {
                                 fed: s.fed,
                                 cache,
@@ -29014,6 +32122,8 @@ pub fn run(
                                 affinity,
                                 fingerprint,
                                 parked_at: Instant::now(),
+                                id: parked_id,
+                                settled: false,
                             });
                         }
                     }
@@ -29068,6 +32178,7 @@ pub fn run(
             oom_teardown_fence(&engine, &loaded);
             host_capture_settle_pending(&engine, &mut px, &mut hpx, ContractWait::Block, "a trim");
             host_restore_settle_pending(&mut px, &mut hpx, ContractWait::Block, "a trim");
+            vmm_reap_for("oom-teardown");
             let reports = trim_model_device_pools(&engine, &loaded, "oom-teardown");
             let trimmed_total = reports.iter().fold(0usize, |total, report| {
                 total.saturating_add(report.reclaimed_bytes)
@@ -29148,6 +32259,8 @@ pub fn run(
                             .get_mut(&cand.pool_key)
                             .expect("park index came from this pool");
                         let park = &pool[pi];
+                        // WP-A day 54 (`DAY54.md` step 1, log only): the park's snapshot is timed.
+                        let t_snap = Instant::now();
                         match prefix_snapshot(
                             &engine,
                             &park.cache,
@@ -29157,6 +32270,12 @@ pub fn run(
                             loaded.get(&cand.pool_key.0).map(|l| &l.model),
                         ) {
                             Ok(mut entry) => {
+                                eprintln!(
+                                    "[prefix-host] pause park snapshot on the tick: {:.2} ms \
+                                     ({:.1} MB)",
+                                    t_snap.elapsed().as_secs_f64() * 1e3,
+                                    entry.bytes as f64 / 1e6,
+                                );
                                 let fed_len = pool[pi].fed.len();
                                 match host_demote_prefix_ref(
                                     &engine,
@@ -29404,6 +32523,21 @@ pub fn run(
             m.cuda_pool_reserved_bytes = pool_reserved as u64;
             m.cuda_pool_used_bytes = pool_used as u64;
             m.cuda_pool_cached_bytes = engine.pool_cached_bytes() as u64;
+            if crate::kv_vmm::armed() {
+                let (mapped, reserved) = vmm_held_bytes(&active, &reuse, &spec_reuse);
+                m.kv_vmm_mapped_bytes = mapped as u64;
+                m.kv_vmm_reserved_bytes = reserved as u64;
+                m.kv_vmm_owed_bytes = vmm_owed_bytes(&active) as u64;
+                m.kv_vmm_graveyard_bytes = memra_engine::cache::vmm_graveyard_bytes() as u64;
+                let (grows, mapper, waits, failures, released) =
+                    memra_engine::cache::vmm_counters();
+                m.kv_vmm_grows_total = grows;
+                m.kv_vmm_mapper_grows_total = mapper;
+                m.kv_vmm_grow_waits_total = waits;
+                m.kv_vmm_grow_failures_total = failures;
+                m.kv_vmm_released_bytes_total = released;
+                m.kv_vmm_quarantined_bytes_total = memra_engine::cache::vmm_quarantined_bytes();
+            }
             m.lcp_hist = px.lcp_hist;
             m.ns_tokens = ns_tokens.clone();
             m.lane_admitted = lane_admitted;
@@ -29421,10 +32555,14 @@ pub fn run(
                 .moe_pread_stats()
                 .or_else(|| (config_fallbacks != 0).then_some((0, 0, 0, 0, 0, 0, 0)))
             {
+                let stages = engine
+                    .moe_pread_stage_stats()
+                    .map(|s| format!(" {}", s.fields()))
+                    .unwrap_or_default();
                 eprintln!(
                     "[spill-pread] snapshot reads={reads} bytes={bytes} errors={errors} \
                            short_reads={short} config_fallbacks={config_fallbacks} \
-                           fallbacks={fallbacks} buffer_waits={waits} ring_full={ring_full}"
+                           fallbacks={fallbacks} buffer_waits={waits} ring_full={ring_full}{stages}"
                 );
             }
             if let Some((hits, misses, staged_bytes, slots)) = engine.moe_cache_stats() {
@@ -30649,6 +33787,7 @@ fn park_prefill_oom(
             requeue_oom.push_back(req);
         }
         None => {
+            s.errored = true;
             let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                 "prefill error: {err}"
             ))));
@@ -30748,6 +33887,7 @@ fn park_requeue(loaded: &HashMap<String, LoadedModel>, s: &Session) -> Option<Bo
         // logged, and the latch rides along so re-admission cannot log a second row.
         admit_predict_logged: s.admit_predict_logged,
         memory_defer_since: s.memory_defer_since,
+        reclaim_offtick: None,
         max_prompt_tokens: p.max_prompt_tokens,
         cache_ns: s.cache_ns.clone(),
         affinity: s.affinity.clone(),
@@ -31025,6 +34165,9 @@ fn admit(
     // prompt (and whose cache has room) resumes — only the suffix gets primed. The sampler's
     // penalty history is replayed on host (cheap) so sampling matches a cold run exactly.
     let mut reused: Option<ReuseEntry> = None;
+    // EXACT RESUME (WP-B day 44): the checkpoint a resume restored from, carried as the new
+    // session's checkpoint until its own prime captures a newer one (DAY44 1.3 case 9).
+    let mut exact_carry: Option<PlainCheckpoint> = None;
     // DEFAULT-ON (2026-07-05): the identity gate now exists at the engine level — session-gate
     // (bins) pins 3-turn continuation-prime output == fresh-greedy oracle on both models, and the
     // continuation path the reuse pool takes (prime_cache with cache.pos>0 / decode_step) is
@@ -31053,12 +34196,14 @@ fn admit(
             let snap = e.cache.snapshot(engine)?;
             let mut grown_cache = alloc_with_single_reclaim_retry(
                 || {
-                    memra_engine::pp::new_cache_planned(
-                        engine,
-                        &lm.model.cfg,
-                        &lm.model.plan,
-                        ctx_cap,
-                    )
+                    vmm_build_cache(vmm_scope(engine, lm, ctx_cap, prompt.len(), 0), || {
+                        memra_engine::pp::new_cache_planned(
+                            engine,
+                            &lm.model.cfg,
+                            &lm.model.plan,
+                            ctx_cap,
+                        )
+                    })
                 },
                 |err| {
                     let evicted_prefix = px.evict_all();
@@ -31108,6 +34253,21 @@ fn admit(
                 reused = None;
             }
         }
+    }
+    // GRID REWIND (MEMRA_RESUME_GRID_REWIND, WP-B day 41): the exact-extension hit resumes from the
+    // entry's grid checkpoint, not from its decoded rows; no usable checkpoint drops the entry and
+    // the request primes cold. Unset, nothing here runs.
+    // EXACT RESUME (MEMRA_RESUME_EXACT, WP-B day 44): a settled entry resumes where it stands; an
+    // unsettled one restores its grid checkpoint; either way the tail primes in one call.
+    if resume_exact_on()
+        && let Some(e) = reused.take()
+    {
+        (reused, exact_carry) = exact_resume_plain(engine, lm, e, &prompt, &req.model);
+    }
+    if resume_grid_rewind_on()
+        && let Some(e) = reused.take()
+    {
+        reused = grid_rewind_plain(engine, lm, e, &prompt, &req.model);
     }
     if reused.is_some() {
         reuse_metrics.continuation_hits += 1;
@@ -31194,12 +34354,14 @@ fn admit(
             let restored: Result<(), Box<dyn std::error::Error>> = if target_cap > old_cap {
                 match alloc_with_single_reclaim_retry(
                     || {
-                        memra_engine::pp::new_cache_planned(
-                            engine,
-                            &lm.model.cfg,
-                            &lm.model.plan,
-                            target_cap,
-                        )
+                        vmm_build_cache(vmm_scope(engine, lm, target_cap, prompt.len(), 0), || {
+                            memra_engine::pp::new_cache_planned(
+                                engine,
+                                &lm.model.cfg,
+                                &lm.model.plan,
+                                target_cap,
+                            )
+                        })
                     },
                     |err| {
                         let evicted_prefix = px.evict_all();
@@ -31623,18 +34785,22 @@ fn admit(
                     affinity: None,
                     fingerprint: Vec::new(),
                     parked_at: Instant::now(),
+                    id: next_parked_id(),
+                    settled: false,
                 })
             } else {
                 let e = &px.entries[&pool_key][i];
                 // `pp::new_cache`, not `Cache::new` — stage-owned KV under an open ppN door
                 // (see the session-cache site below for the full reason). `prefix_restore`
                 // then copies plane-by-plane into whatever device each layer landed on.
-                match memra_engine::pp::new_cache_planned(
-                    engine,
-                    &lm.model.cfg,
-                    &lm.model.plan,
-                    ctx_cap,
-                ) {
+                match vmm_build_cache(vmm_scope(engine, lm, ctx_cap, prompt.len(), 0), || {
+                    memra_engine::pp::new_cache_planned(
+                        engine,
+                        &lm.model.cfg,
+                        &lm.model.plan,
+                        ctx_cap,
+                    )
+                }) {
                     Ok(mut c) => {
                         match prefix_restore(engine, &mut c, e, &pool_key, Some(&lm.model)) {
                             // A prefix-cache restore is a transient carrier consumed straight into a
@@ -31651,6 +34817,8 @@ fn admit(
                                     affinity: None,
                                     fingerprint: Vec::new(),
                                     parked_at: Instant::now(),
+                                    id: next_parked_id(),
+                                    settled: false,
                                 }
                             }),
                             Err(err) => Err(format!("restore failed: {err}")),
@@ -31785,11 +34953,16 @@ fn admit(
                     let restored = {
                         let e = &px.entries[&pool_key][i];
                         trace_prefix_entry_state(engine, e, lcp, "source", "immediate-partial");
-                        match memra_engine::pp::new_cache_planned(
-                            engine,
-                            &lm.model.cfg,
-                            &lm.model.plan,
-                            ctx_cap,
+                        match vmm_build_cache(
+                            vmm_scope(engine, lm, ctx_cap, prompt.len(), 0),
+                            || {
+                                memra_engine::pp::new_cache_planned(
+                                    engine,
+                                    &lm.model.cfg,
+                                    &lm.model.plan,
+                                    ctx_cap,
+                                )
+                            },
                         ) {
                             Ok(mut c) => match prefix_restore_at(
                                 engine,
@@ -31818,6 +34991,8 @@ fn admit(
                                         affinity: None,
                                         fingerprint: Vec::new(),
                                         parked_at: Instant::now(),
+                                        id: next_parked_id(),
+                                        settled: false,
                                     })
                                 }
                                 Err(err) => Err(format!("partial restore failed: {err}")),
@@ -32188,6 +35363,8 @@ fn admit(
                             affinity: None,
                             fingerprint: Vec::new(),
                             parked_at: Instant::now(),
+                            id: next_parked_id(),
+                            settled: false,
                         });
                     }
                     Err((None, why)) => {
@@ -32652,10 +35829,19 @@ fn admit(
         } else {
             let mut probe = None;
             if let Some(pool) = spec_reuse.get(&pool_key) {
+                // DAY41 addendum B3: armed, the exact key is the public stream (the final
+                // burst's overshoot rows are not required); the hit always rewinds below it.
+                let exact_key = |e: &SpecReuseEntry| -> usize {
+                    if resume_grid_rewind_on() || resume_exact_on() {
+                        e.public_len.min(e.sess.committed.len())
+                    } else {
+                        e.sess.committed.len()
+                    }
+                };
                 if let Some(index) = pool.iter().rposition(|e| {
                     e.sess.cache_max_ctx() >= ctx_cap
-                        && prompt.len() >= e.sess.committed.len()
-                        && prompt.starts_with(&e.sess.committed)
+                        && prompt.len() >= exact_key(e)
+                        && prompt.starts_with(&e.sess.committed[..exact_key(e)])
                         && spec_resume_sampler_admits(&req_sampler, e, &mut sampler_refused)
                 }) {
                     probe = Some(SpecResumeProbe::Exact(index));
@@ -32766,6 +35952,39 @@ fn admit(
             }
 
             match probe {
+                // GRID REWIND (MEMRA_RESUME_GRID_REWIND, WP-B day 41): an exact or text hit
+                // resumes from the session's turn checkpoint and primes the token suffix; no
+                // usable checkpoint primes cold. Unset, both arms are today's.
+                // EXACT RESUME (MEMRA_RESUME_EXACT, WP-B day 44): a settled entry resumes where it
+                // stands, an unsettled one rewinds to its turn checkpoint keeping it as the carry;
+                // either way the tail primes in one walk. A text hit is declined (cold).
+                Some(SpecResumeProbe::Exact(index)) if resume_exact_on() => {
+                    let entry = spec_reuse
+                        .get_mut(&pool_key)
+                        .expect("spec exact candidate pool vanished")
+                        .remove(index);
+                    exact_resume_spec(engine, lm, entry, &prompt, &req.model)
+                }
+                Some(SpecResumeProbe::Text { .. }) if resume_exact_on() => {
+                    eprintln!("[kv-reuse] exact: declined (a text-prefix hit); cold");
+                    None
+                }
+                Some(SpecResumeProbe::Exact(index)) if resume_grid_rewind_on() => {
+                    let sess = spec_reuse
+                        .get_mut(&pool_key)
+                        .expect("spec exact candidate pool vanished")
+                        .remove(index)
+                        .sess;
+                    grid_rewind_spec(engine, lm, sess, &prompt, &req.model)
+                }
+                Some(SpecResumeProbe::Text { index, .. }) if resume_grid_rewind_on() => {
+                    let sess = spec_reuse
+                        .get_mut(&pool_key)
+                        .expect("spec text candidate pool vanished")
+                        .remove(index)
+                        .sess;
+                    grid_rewind_spec(engine, lm, sess, &prompt, &req.model)
+                }
                 Some(SpecResumeProbe::Exact(index)) => Some(
                     spec_reuse
                         .get_mut(&pool_key)
@@ -32796,11 +36015,41 @@ fn admit(
                     let rewound = if target_cap > old_cap {
                         alloc_with_single_reclaim_retry(
                             || {
-                                lm.model.spec_grow_and_rewind_to_checkpoint(
+                                // WP-B day 37: a covered grow rebuilds the trunk cache and the
+                                // draft scratch under the on-demand scope; every on-demand plane
+                                // the scope allocated must be reachable by the session's ensure.
+                                let scope = vmm_scope(
                                     engine,
-                                    &mut entry.sess,
+                                    lm,
                                     target_cap,
-                                )
+                                    prompt.len(),
+                                    spec_k_decision.k,
+                                );
+                                let Some(initial) = scope else {
+                                    return lm.model.spec_grow_and_rewind_to_checkpoint(
+                                        engine,
+                                        &mut entry.sess,
+                                        target_cap,
+                                    );
+                                };
+                                let (grown, count) =
+                                    memra_engine::cache::with_on_demand_kv(initial, || {
+                                        lm.model.spec_grow_and_rewind_to_checkpoint(
+                                            engine,
+                                            &mut entry.sess,
+                                            target_cap,
+                                        )
+                                    });
+                                let grown = grown?;
+                                if count > 0 && entry.sess.kv_on_demand_planes() != count {
+                                    return Err(format!(
+                                        "vmm: on-demand plane not reachable by ensure (scope \
+                                         allocated {count}, session reaches {})",
+                                        entry.sess.kv_on_demand_planes()
+                                    )
+                                    .into());
+                                }
+                                Ok(grown)
                             },
                             |err| {
                                 if !is_cuda_oom(&err.to_string()) {
@@ -32984,7 +36233,16 @@ fn admit(
                         req.model
                     );
                 }
-                match lm.model.new_session(engine, ctx_cap) {
+                // WP-B day 37: under `MEMRA_KV_ALLOCATOR=vmm` a covered model's session is built
+                // with on-demand planes (`vmm_build_spec`); unarmed it is this call unchanged.
+                let vmm_new_session = |cap: usize| {
+                    vmm_build_spec(
+                        vmm_scope(engine, lm, cap, prompt.len(), spec_k_decision.k),
+                        || lm.model.new_session(engine, cap),
+                        |sess: &memra_engine::spec::SpecSession| sess.kv_on_demand_planes(),
+                    )
+                };
+                match vmm_new_session(ctx_cap) {
                     Ok(sess) => Some(sess),
                     Err(first_err) => {
                         let evicted = spec_reuse
@@ -33004,7 +36262,7 @@ fn admit(
                             );
                         }
                         let retried = if evicted > 0 {
-                            lm.model.new_session(engine, ctx_cap).ok()
+                            vmm_new_session(ctx_cap).ok()
                         } else {
                             None
                         };
@@ -33022,7 +36280,7 @@ fn admit(
                                         .unwrap_or(ctx_cap / 2)
                                         .clamp(need, ctx_cap);
                                     loop {
-                                        let landed = match lm.model.new_session(engine, ask) {
+                                        let landed = match vmm_new_session(ask) {
                                             Ok(s) => {
                                                 // transient reserve (see SPEC_SHRINK_RESERVE):
                                                 // a fit that leaves no headroom panics later on
@@ -33602,12 +36860,14 @@ fn admit(
             (None, Some(c)) => Some(c),
             (None, None) => match alloc_with_single_reclaim_retry(
                 || {
-                    memra_engine::pp::new_cache_planned(
-                        engine,
-                        &lm.model.cfg,
-                        &lm.model.plan,
-                        ctx_cap,
-                    )
+                    vmm_build_cache(vmm_scope(engine, lm, ctx_cap, prompt.len(), 0), || {
+                        memra_engine::pp::new_cache_planned(
+                            engine,
+                            &lm.model.cfg,
+                            &lm.model.plan,
+                            ctx_cap,
+                        )
+                    })
                 },
                 |err| {
                     // Headroom discipline: prefix entries always yield before a session errors.
@@ -33833,16 +37093,42 @@ fn admit(
     //     prefix cannot be captured by a prime-stop; that turn simply re-primes next time).
     // The boundary is derived from the prompt's own turn markers (`plain_checkpoint_boundary`),
     // never a hardcoded offset; the exact diff at resume still decides on bytes.
-    let ckpt_at = if affinity_enabled()
+    // EXACT RESUME (MEMRA_RESUME_EXACT, WP-B day 44): the checkpoint is captured INSIDE the
+    // prime call that contains it (`exact_at`), never a stop, at the last grid point with the
+    // prime floor after it and past the resumed depth; no `ckpt_at` stop is armed.
+    let exact_at = (resume_exact_on()
+        && affinity_enabled()
+        && spec.is_none()
+        && vision_state.is_none()
+        && !eager_only_model(lm)
+        && !confidence_trace_enabled())
+    .then(|| {
+        grid_rewind_checkpoint_boundary(&prompt, seed_fed.len(), false, &|t| {
+            lm.tok.token_is_control(t)
+        })
+    })
+    .flatten();
+    let ckpt_at = if !resume_exact_on()
+        && affinity_enabled()
         && spec.is_none()
         && vision_state.is_none()
         && !eager_only_model(lm)
         && !confidence_trace_enabled()
         && (req.affinity.is_some()
-            || plain_ckpt_nominatable(&prompt, &|t| lm.tok.token_is_control(t)))
+            || plain_ckpt_nominatable(&prompt, &|t| lm.tok.token_is_control(t))
+            || resume_grid_rewind_on())
     {
-        plain_checkpoint_boundary(&prompt, &|t| lm.tok.token_is_control(t))
-            .filter(|&b| b > seed_fed.len())
+        if resume_grid_rewind_on() {
+            // DAY41 addendum B (B1, B2): the armed arm's own boundary rule.
+            let markers = req.affinity.is_some()
+                || plain_ckpt_nominatable(&prompt, &|t| lm.tok.token_is_control(t));
+            grid_rewind_checkpoint_boundary(&prompt, seed_fed.len(), markers, &|t| {
+                lm.tok.token_is_control(t)
+            })
+        } else {
+            plain_checkpoint_boundary(&prompt, &|t| lm.tok.token_is_control(t))
+                .filter(|&b| b > seed_fed.len())
+        }
     } else {
         None
     };
@@ -33940,6 +37226,9 @@ fn admit(
         // Booked by the worker loop at active.push (the admission charge is computed
         // there); zero until then so a test-constructed Session books nothing.
         booked_kv_bytes: 0,
+        booked_w_bytes: 0,
+        vmm_floor_rows: n_prompt,
+        errored: false,
         shadow_kv_hat: 0,
         shadow_pred_total: 0,
         decoded_bytes: Vec::new(),
@@ -33949,7 +37238,8 @@ fn admit(
         n_cached,
         snapshot_at,
         ckpt_at,
-        ckpt_snap: None,
+        exact_at,
+        ckpt_snap: exact_carry,
         prefix_miss_lcp,
         seed_prefix,
         seed_at,
@@ -34026,6 +37316,41 @@ fn admit(
                 eprintln!(
                     "[prefix-cache] restore fence failed ({err}); source stays leased, publication skipped"
                 );
+            }
+        }
+    }
+    // ON-DEMAND KV (WP-B day 37, DAY37 1.2 ensure point 3): the admitted session, fresh or
+    // adopted from a pool, is backed through this request's bound before it leaves admission. A
+    // failure waits on the graveyard's release events once and retries; a second failure refuses
+    // the request as the pooled allocator's `cache alloc failed` does.
+    if crate::kv_vmm::armed() {
+        let ensured = match vmm_ensure_session(&mut s) {
+            Ok(evs) => Ok(evs),
+            Err(err) if is_cuda_oom(&err.to_string()) => {
+                let _ = memra_engine::cache::vmm_reap_graveyard_blocking();
+                eprintln!(
+                    "[kv-vmm] admission ensure failed ({err}); graveyard reaped, retrying once"
+                );
+                vmm_ensure_session(&mut s)
+            }
+            Err(err) => Err(err),
+        };
+        match ensured {
+            Ok(evs) => {
+                for (label, rows, ev) in evs {
+                    eprintln!(
+                        "{}",
+                        crate::kv_vmm::grow_line(&s.request_id, &label, rows, &ev)
+                    );
+                }
+            }
+            Err(err) => {
+                return Err((
+                    s.tx,
+                    EngineError::engine(format!(
+                        "cache alloc failed: vmm ensure at admission: {err}"
+                    )),
+                ));
             }
         }
     }
@@ -34267,6 +37592,8 @@ fn prefix_fanout_eligible(s: &Session, eager_only: &std::collections::HashSet<St
         // a checkpoint-capturing session needs its own boundary-stopped prime — fanout
         // primes the shared prefix monolithically and cannot honor the per-session stop.
         && s.ckpt_at.is_none()
+        // WP-B day 44: an in-call grid capture needs the session's own per-sequence prime.
+        && s.exact_at.is_none()
         && s.cache.as_ref().is_some_and(|c| c.pos == 0 && !c.has_swa_ring())
         && !eager_only.contains(&s.model)
         && s.prefill_queue.len() >= PREFIX_CACHE_MIN_TOKENS
@@ -34349,14 +37676,21 @@ fn dedup_interactive_prefixes(
             }
         };
         advanced.insert(leader_i);
-        let snapshot = prefix_snapshot(
-            engine,
-            active[leader_i].cache.as_ref().unwrap(),
-            &key,
-            &prefix,
-            &leader_logits,
-            loaded.get(&key.0).map(|l| &l.model),
-        );
+        // WP-A day 54 (`DAY54.md` step 1, log only): the fanout's on-tick parts, timed.
+        let t_snap = Instant::now();
+        // WP-A day 59 (log only): the snapshot's calls by kind. Day 66: scoped, so a leftover of
+        // another caller on this thread is discarded rather than added to this line.
+        let (snapshot, snap_split) = prefix_copy_scoped(|| {
+            prefix_snapshot(
+                engine,
+                active[leader_i].cache.as_ref().unwrap(),
+                &key,
+                &prefix,
+                &leader_logits,
+                loaded.get(&key.0).map(|l| &l.model),
+            )
+        });
+        let fanout_snapshot_ms = t_snap.elapsed().as_secs_f64() * 1e3;
         {
             let s = &mut active[leader_i];
             s.last_logits = leader_logits;
@@ -34379,6 +37713,8 @@ fn dedup_interactive_prefixes(
             }
         };
 
+        let fanout_mb = entry.bytes as f64 / 1e6;
+        let t_restores = Instant::now();
         let mut participants = vec![leader_i];
         for &i in group.members.iter().skip(1) {
             if finished.contains(&i) {
@@ -34392,6 +37728,7 @@ fn dedup_interactive_prefixes(
                 loaded.get(&key.0).map(|l| &l.model),
             );
             if let Err(err) = restored {
+                active[i].errored = true;
                 let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                     "prefix fanout restore failed: {err}"
                 ))));
@@ -34443,6 +37780,10 @@ fn dedup_interactive_prefixes(
             advanced.insert(i);
         }
 
+        let fanout_restores_ms = t_restores.elapsed().as_secs_f64() * 1e3;
+        // Only the sibling restores ran since the scoped snapshot's take.
+        let restore_split = prefix_copy_split_take();
+        let t_insert = Instant::now();
         let pin = px.insert_pinned_demoting(
             &key,
             entry,
@@ -34451,6 +37792,31 @@ fn dedup_interactive_prefixes(
             engine,
             hpx,
         );
+        if hpx.tier.is_some() {
+            eprintln!(
+                "[prefix-dedup] on-tick publish: snapshot {fanout_snapshot_ms:.2} ms \
+                 ({fanout_mb:.1} MB), {} sibling restore(s) {fanout_restores_ms:.2} ms, insert \
+                 {:.2} ms",
+                participants.len().saturating_sub(1),
+                t_insert.elapsed().as_secs_f64() * 1e3,
+            );
+            let (a, r) = (snap_split, restore_split);
+            eprintln!(
+                "[prefix-dedup] on-tick split: snapshot alloc {:.2} ms over {}, copies {:.2} ms over \
+                 {}, clones {:.2} ms over {}; restores copies {:.2} ms over {}, len sets {:.2} ms \
+                 over {}",
+                a.alloc_ms,
+                a.allocs,
+                a.copy_ms,
+                a.copies,
+                a.clone_ms,
+                a.clones,
+                r.copy_ms,
+                r.copies,
+                r.set_ms,
+                r.sets,
+            );
+        }
         for &i in &participants {
             active[i].seed_prefix = false;
             active[i].seed_at = None;
@@ -34696,6 +38062,15 @@ fn prefill_tick(
                 let tx = s.tx.clone();
                 Box::new(move || tx.is_closed())
             });
+            // EXACT RESUME (MEMRA_RESUME_EXACT, WP-B day 44): this call captures the session's grid
+            // checkpoint inside it when the point lies in it (no stop); the guard disarms on
+            // every path, error included.
+            let exact_here = s.exact_at.filter(|&g| fed_len <= g && g <= fed_len + take);
+            let _exact_guard = exact_here.and_then(|g| {
+                s.cache.as_ref().map(|c| {
+                    memra_engine::grid_capture::arm(g, memra_engine::grid_capture::needed_layers(c))
+                })
+            });
             let (l, _h, x) = lm.model.prime_cache_overlaid(
                 engine,
                 &chunk,
@@ -34703,6 +38078,29 @@ fn prefill_tick(
                 s.prefill_queue.len(),
                 ov_window.as_ref(),
             )?;
+            if let Some(g) = exact_here {
+                s.exact_at = None;
+                let cache = s.cache.as_ref().unwrap();
+                match memra_engine::grid_capture::take().map(|cap| cap.into_snapshot(cache)) {
+                    Some(Ok(snap)) => {
+                        s.ckpt_snap = Some(PlainCheckpoint {
+                            snap,
+                            pos: g,
+                            last_logits: Vec::new(),
+                        });
+                    }
+                    Some(Err(why)) => eprintln!(
+                        "[kv-reuse] exact: capture refused at {g} ({why}); the previous \
+                         checkpoint stays (model {})",
+                        s.model
+                    ),
+                    None => eprintln!(
+                        "[kv-reuse] exact: capture missed at {g} (call {fed_len}+{take}); the \
+                         previous checkpoint stays (model {})",
+                        s.model
+                    ),
+                }
+            }
             (l, x)
         };
         s.last_logits = l;
@@ -34964,6 +38362,7 @@ fn advance_sample_emit(
         (None, Some(c)) => {
             let mut row = s.last_logits.clone();
             if let Err(err) = c.mask_logits(&mut row) {
+                s.errored = true;
                 let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                     "constraint mask: {err}"
                 ))));
@@ -34996,6 +38395,7 @@ fn advance_sample_emit(
     if let Some(c) = s.constraint.as_mut()
         && let Err(err) = c.consume(next)
     {
+        s.errored = true;
         let _ = s.tx.send(Event::Error(EngineError::engine(format!(
             "constraint advance: {err}"
         ))));
@@ -35061,6 +38461,7 @@ fn advance_token_emit(
     if let Some(c) = s.constraint.as_mut()
         && let Err(err) = c.consume(tok)
     {
+        s.errored = true;
         let _ = s.tx.send(Event::Error(EngineError::engine(format!(
             "constraint advance: {err}"
         ))));
@@ -35740,14 +39141,40 @@ fn step_session(
         // undercounts the conversation's segments. Empty-suffix continuation bursts remain
         // zero-prime, and MEMRA_AFFINITY=0 preserves the monolithic control arm.
         let cold = spec.committed.is_empty();
-        let boundary = if !suffix.is_empty()
+        // EXACT RESUME (MEMRA_RESUME_EXACT, WP-B day 44): the turn checkpoint is captured inside
+        // the MTP walker's trunk call that contains it, at the last grid point with the prime
+        // floor after it; no stop, no split. The resume point this suffix primes from is on the
+        // grid (a cold prime, a settled entry or a restored checkpoint), so the suffix-relative
+        // boundary is on the absolute grid.
+        if resume_exact_on()
+            && !suffix.is_empty()
+            && affinity_enabled()
+            && cooperative_prime
+            && s.mtp_prime.is_none()
+        {
+            spec.grid_capture_at =
+                grid_rewind_checkpoint_boundary(&suffix, 0, false, &|t| lm.tok.token_is_control(t))
+                    .map(|b| spec.committed.len() + b);
+        }
+        let boundary = if !resume_exact_on()
+            && !suffix.is_empty()
             && affinity_enabled()
             && (cold
                 && (s.affinity.is_some()
-                    || plain_ckpt_nominatable(&suffix, &|t| lm.tok.token_is_control(t)))
+                    || plain_ckpt_nominatable(&suffix, &|t| lm.tok.token_is_control(t))
+                    || resume_grid_rewind_on())
                 || !cold)
         {
-            plain_checkpoint_boundary(&suffix, &|t| lm.tok.token_is_control(t))
+            if cold && resume_grid_rewind_on() {
+                // DAY41 addendum B (B1): a cold spec session arms the armed arm's rule.
+                let markers = s.affinity.is_some()
+                    || plain_ckpt_nominatable(&suffix, &|t| lm.tok.token_is_control(t));
+                grid_rewind_checkpoint_boundary(&suffix, 0, markers, &|t| {
+                    lm.tok.token_is_control(t)
+                })
+            } else {
+                plain_checkpoint_boundary(&suffix, &|t| lm.tok.token_is_control(t))
+            }
         } else {
             None
         };
@@ -35818,6 +39245,11 @@ fn step_session(
         // the delta is this burst's contribution, merged per-model for /metrics and summed
         // per-request for usage.spec.
         let telem_before = spec.telemetry();
+        // BUDGET CLAMP (MEMRA_SPEC_BUDGET_CLAMP, WP-B day 43): the request's remaining public
+        // budget, not the burst's cadence target; unset leaves the engine's field None.
+        if spec_budget_clamp_on() {
+            spec.budget_room = Some(request_room);
+        }
         // SSE CADENCE (lane/sse-cadence, 2026-08-05): publish at ROUND cadence, not burst
         // cadence. Every committed id in the request-owned budget gets its own Event::Token;
         // UTF-8 fragments may make an individual event's text empty, but ids are never coalesced.
@@ -35919,6 +39351,13 @@ fn step_session(
             if !burst.is_empty() {
                 trace.mark_first_decode();
             }
+        }
+        if let Some((na, n_acc, room)) = spec.budget_clamp_fired.take() {
+            eprintln!(
+                "[spec] budget clamp: round truncated at {na} of {n_acc} accepted ({room} of the \
+                 request's budget left; model {})",
+                s.model
+            );
         }
         let telem_delta = spec.telemetry().delta_since(&telem_before);
         spec_metrics.record(&s.model, telem_delta);
@@ -37287,8 +40726,8 @@ fn prime_cancelled_abort(s: &mut Session, err: &(dyn std::error::Error + 'static
     true
 }
 
-fn retire_may_park(aborted: bool, oom_teardown: bool) -> bool {
-    !aborted && !oom_teardown
+fn retire_may_park(aborted: bool, oom_teardown: bool, errored: bool) -> bool {
+    !aborted && !oom_teardown && !errored
 }
 
 /// Model-owned topology is shared by admission, recovery, calibration and admin trim.
@@ -37715,8 +41154,47 @@ fn run_boot_calibration(
 mod abort_park_tests {
     #[test]
     fn aborted_sessions_never_publish_reusable_kv() {
-        assert!(super::retire_may_park(false, false));
-        assert!(!super::retire_may_park(true, false));
+        assert!(super::retire_may_park(false, false, false));
+        assert!(!super::retire_may_park(true, false, false));
+    }
+
+    /// WP-B day 38 addendum A: a session that ended on a typed error is never a park point.
+    #[test]
+    fn errored_sessions_never_publish_reusable_kv() {
+        assert!(!super::retire_may_park(false, false, true));
+        assert!(!super::retire_may_park(true, true, true));
+    }
+
+    /// Every typed-error send that ends a session in the tick loop's session arms (and in the
+    /// session helpers it calls) marks the session errored first (comment-stripped census).
+    #[test]
+    fn every_session_ending_error_marks_the_session_errored() {
+        let worker = include_str!("worker.rs");
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let lines: Vec<&str> = live.lines().collect();
+        let mut unmarked = Vec::new();
+        for (i, l) in lines.iter().enumerate() {
+            let t = l.trim_start();
+            let session_send = t.starts_with("let _ = s.tx.send(Event::Error(")
+                || t.starts_with("let _ = active[i].tx.send(Event::Error(");
+            if !session_send {
+                continue;
+            }
+            let prev = lines[..i]
+                .iter()
+                .rev()
+                .map(|p| p.trim())
+                .find(|p| !p.is_empty() && !p.starts_with("//"))
+                .unwrap_or("");
+            let marked = prev.ends_with(".errored = true;") || prev.ends_with(".aborted = true;");
+            if !marked {
+                unmarked.push(i + 1);
+            }
+        }
+        assert!(
+            unmarked.is_empty(),
+            "unmarked session error sends at lines {unmarked:?}"
+        );
     }
 
     #[test]
@@ -37725,8 +41203,8 @@ mod abort_park_tests {
         // needs). A pool-park would keep the VRAM alive and starve the requeued retry —
         // and the pending-carry flush would run a GPU pass on a card that just proved
         // full (lane/step37-vram-admission-20260830).
-        assert!(!super::retire_may_park(false, true));
-        assert!(!super::retire_may_park(true, true));
+        assert!(!super::retire_may_park(false, true, false));
+        assert!(!super::retire_may_park(true, true, false));
     }
 }
 
@@ -38084,6 +41562,37 @@ pub fn spawn(
 
 #[cfg(test)]
 mod tests {
+    /// memra #478: a drafter path with the route off refuses by name; the armed pairing and a
+    /// boot with neither stay quiet.
+    #[test]
+    fn a_dspark_drafter_without_the_route_refuses_by_name() {
+        let msg = super::dspark_draft_without_spec(None, Some("/data/q38/dflash2"))
+            .expect("drafter without the route refuses");
+        assert!(
+            msg.contains("MEMRA_DSPARK_DRAFT=\"/data/q38/dflash2\""),
+            "{msg}"
+        );
+        assert!(msg.contains("MEMRA_DSPARK_SPEC is unset"), "{msg}");
+        let msg = super::dspark_draft_without_spec(Some("0"), Some("/d")).expect("spec=0 refuses");
+        assert!(msg.contains("MEMRA_DSPARK_SPEC is \"0\""), "{msg}");
+        assert_eq!(
+            super::dspark_draft_without_spec(Some("1"), Some("/d")),
+            None
+        );
+        assert_eq!(super::dspark_draft_without_spec(None, None), None);
+        assert_eq!(super::dspark_draft_without_spec(Some("0"), None), None);
+        assert_eq!(super::dspark_draft_without_spec(None, Some("")), None);
+    }
+
+    /// WP-A day 51 (design P): a payload reserve on its own governor, for the cells that spawn a
+    /// hash helper and do not read the reserve.
+    fn test_payload_reserve() -> super::HostPayloadReserve {
+        super::HostPayloadReserve::new(
+            super::host_tier_governor(0, 1 << 30, 1 << 30, 4).unwrap(),
+            1 << 30,
+        )
+    }
+
     #[test]
     fn dspark_partial_restore_door_admits_only_strict_prefixes_when_armed() {
         use super::dspark_hit_is_restorable_with as r;
@@ -38393,6 +41902,7 @@ mod tests {
             request_id: String::new(),
             admit_predict_logged: false,
             memory_defer_since: None,
+            reclaim_offtick: None,
             ttft: None,
             images: Vec::new(),
             gemma_images: Vec::new(),
@@ -38795,7 +42305,12 @@ mod tests {
                 }
             });
 
-        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(100);
+        // WP-A day 55 (`research/spill-a-20260919/DAY55.md` section 5, OWED item 22, T-c): the
+        // expiry is judged on the loop's step clock (2 ms a step, the deadline at step 50) and the
+        // heartbeat on a virtual health clock advanced with it, so a starved runner cannot fail the
+        // bounds below; the teeth are the per-step non-blocking guard on the wall clock.
+        let start = std::time::Instant::now();
+        let deadline = start + std::time::Duration::from_millis(100);
         let mut pathological = serde_json::json!({"type": "string"});
         for _ in 0..24 {
             pathological = serde_json::json!({"allOf": [pathological]});
@@ -38808,7 +42323,7 @@ mod tests {
             )
             .unwrap();
         started_rx
-            .recv_timeout(std::time::Duration::from_millis(50))
+            .recv_timeout(std::time::Duration::from_secs(10))
             .expect("test compiler did not start");
 
         let (bad_tx, mut bad_rx) = event_channel();
@@ -38841,6 +42356,7 @@ mod tests {
             request_id: String::new(),
             admit_predict_logged: false,
             memory_defer_since: None,
+            reclaim_offtick: None,
             images: Vec::new(),
             gemma_images: Vec::new(),
             glm5_images: Vec::new(),
@@ -38858,10 +42374,12 @@ mod tests {
 
         // CPU-only worker harness: one normal decode publishes a token every scheduler tick
         // while the pathological constraint compile is held on its background thread.
+        let clock = crate::health::TestClock::start(1_000_000);
         let health = crate::health::WorkerHealth::with_stall_ms(50);
         let (normal_tx, mut normal_rx) = event_channel();
         let mut normal_steps = 0u32;
         while !pending.is_empty() {
+            clock.advance(2);
             health.beat_busy();
             normal_steps += 1;
             normal_tx
@@ -38870,9 +42388,17 @@ mod tests {
                     text: "x".into(),
                 })
                 .unwrap();
+            let t = std::time::Instant::now();
             super::resolve_constraint_compiles(&result_rx, &mut pending, &mut queue);
-            super::expire_constraint_compiles(&mut pending, std::time::Instant::now());
-            std::thread::sleep(std::time::Duration::from_millis(2));
+            assert!(
+                t.elapsed() < std::time::Duration::from_secs(1),
+                "a resolve blocked on the held compile ({:?})",
+                t.elapsed()
+            );
+            super::expire_constraint_compiles(
+                &mut pending,
+                start + std::time::Duration::from_millis(2 * u64::from(normal_steps)),
+            );
         }
 
         let error = ready_rx
@@ -45181,8 +48707,8 @@ mod tests {
         // terminal completions (parks re-admit; aborts are load, not completions).
         assert_eq!(prod.matches("completion_history.record(").count(), 1);
         assert!(
-            prod.contains("if !s.oom_teardown && !s.aborted {"),
-            "history excludes parks and aborts"
+            prod.contains("if !s.oom_teardown && !s.aborted && !s.errored {"),
+            "history excludes parks, aborts and errored sessions"
         );
 
         // G2 metrics: the /metrics gauges derive from the one book, never a twin counter.
@@ -46196,8 +49722,10 @@ mod tests {
             transfers: None,
             inflight: 4,
             fault: std::cell::Cell::new(None),
-            hasher: super::HostHashWorker::spawn(None).unwrap(),
+            hasher: super::HostHashWorker::spawn(None, super::tests::test_payload_reserve())
+                .unwrap(),
             staging: std::cell::RefCell::new(super::HostStaging::default()),
+            lease_pool: None,
         }
     }
 
@@ -46215,6 +49743,7 @@ mod tests {
         dead.toks = toks.clone();
         let image = host_entry(pool_key, toks, 4096);
         let contract = super::PendingContractDemote {
+            split: Default::default(),
             ticket: memra_engine::cache::tiered::TransferTicket {
                 issuer: 7,
                 sequence: 1,
@@ -46477,6 +50006,9 @@ mod tests {
             settle_after_ms: 0.0,
             settle_held_ms: 0.0,
             trace_role: "snapshot",
+            source_kv: 0,
+            queued_ahead: "none".into(),
+            source_request: "seed-request".into(),
         });
     }
 
@@ -47119,12 +50651,18 @@ mod tests {
         let settle = body[..remove]
             .rfind("host_capture_settle_pending(")
             .expect("a pending capture settles before any session leaves active");
+        // (Design R1, day 62 section 8: the no-source branch's line sits between them.)
         assert!(
-            remove - settle < 400,
+            remove - settle < 900,
             "the settle sits right before the retire loop"
         );
         assert!(body[settle..settle + 200].contains("ContractWait::Block"));
-        assert!(body[settle..settle + 200].contains("\"a session retire\""));
+        assert!(
+            body[..settle]
+                .rfind("\"a session retire (source retiring: {})\"")
+                .is_some_and(|w| settle - w < 400),
+            "the retire's why names whether the source retires (day 62)"
+        );
         let route = body.find("fn prefix_capture_off_tick(").unwrap();
         let submit = route
             + body[route..]
@@ -47183,7 +50721,8 @@ mod tests {
         let route = body.find("fn prefix_spec_capture_off_tick(").unwrap();
         let route_body = &body[route..route + body[route..].find("\n}\n").unwrap()];
         for by_name in [
-            "|| dspark_tail",
+            // Day 54: the refusals are one `else if` chain (each records its on-tick reason).
+            "} else if dspark_tail {",
             "cache.latent.iter().any(Option::is_some)",
             "cap.latent_tails.iter().any(Option::is_some)",
             "cap.snap.pos != pos",
@@ -47796,6 +51335,7 @@ mod tests {
             submitted: std::time::Instant::now(),
             spans: Vec::new(),
             helper_sums: None,
+            waiting: String::new(),
         };
         host.promoting = Some(super::PendingPromote {
             pool_key: pool_key.clone(),
@@ -48171,7 +51711,8 @@ mod tests {
         assert!(top[poll..poll + 200].contains("ContractWait::Poll,"));
         assert!(top[poll..poll + 200].contains("\"the tick top\","));
         assert!(demote_poll < pin && pin < memo && memo < poll);
-        assert!(worker[loop_at..loop_at + 4500].contains("&& hpx.promoting.is_none()"));
+        // The idle guard sits at the loop head; the window grew with the head (lane B's idle refresh, integ62).
+        assert!(worker[loop_at..loop_at + 6000].contains("&& hpx.promoting.is_none()"));
         // The admission loop: the probe runs after every defer gate and before `admit(`, with the
         // request still in hand, and a parked request goes on the requeue.
         let admission = worker[run..]
@@ -48585,6 +52126,7 @@ mod tests {
             .collect();
         replies
             .send(super::HostHashReply {
+                split: Default::default(),
                 seq: 5,
                 hashed,
                 helper_ms: 1.0,
@@ -48704,6 +52246,7 @@ mod tests {
             .collect();
         replies
             .send(super::HostHashReply {
+                split: Default::default(),
                 seq: 3,
                 hashed,
                 helper_ms: 1.0,
@@ -48741,6 +52284,7 @@ mod tests {
             .collect();
         replies
             .send(super::HostHashReply {
+                split: Default::default(),
                 seq: 4,
                 hashed,
                 helper_ms: 1.0,
@@ -48762,8 +52306,11 @@ mod tests {
     fn hash_helper_gone_is_a_typed_refusal_that_latches_under_poll_and_under_block() {
         for wait in [super::ContractWait::Poll, super::ContractWait::Block] {
             let (mut host, key) = cpu_door_host();
-            host.tier.as_mut().unwrap().hasher =
-                super::HostHashWorker::spawn(Some(super::HostHashFault::HelperGone)).unwrap();
+            host.tier.as_mut().unwrap().hasher = super::HostHashWorker::spawn(
+                Some(super::HostHashFault::HelperGone),
+                super::tests::test_payload_reserve(),
+            )
+            .unwrap();
             cpu_pending_hashing(&mut host, &key, 5);
             // The helper exits on its first job; under `Poll` the closed channel is observed at
             // the first poll that runs after the exit (bounded here), under `Block` at once.
@@ -48794,8 +52341,11 @@ mod tests {
     fn hash_digests_never_landing_latch_at_the_deadline_under_poll_and_under_block() {
         // Poll: before the deadline the state is kept; at the first poll past it, the latch.
         let (mut host, key) = cpu_door_host();
-        host.tier.as_mut().unwrap().hasher =
-            super::HostHashWorker::spawn(Some(super::HostHashFault::NeverLands)).unwrap();
+        host.tier.as_mut().unwrap().hasher = super::HostHashWorker::spawn(
+            Some(super::HostHashFault::NeverLands),
+            super::tests::test_payload_reserve(),
+        )
+        .unwrap();
         cpu_pending_hashing(&mut host, &key, 6);
         let short = std::time::Duration::from_millis(60);
         let outcome = super::host_demote_settle_with_deadline(
@@ -48822,8 +52372,11 @@ mod tests {
         // Block: the wait is bounded by the deadline, then the same latch; the helper is alive
         // (it discarded one reply) and the latch joined it.
         let (mut host, key) = cpu_door_host();
-        host.tier.as_mut().unwrap().hasher =
-            super::HostHashWorker::spawn(Some(super::HostHashFault::NeverLands)).unwrap();
+        host.tier.as_mut().unwrap().hasher = super::HostHashWorker::spawn(
+            Some(super::HostHashFault::NeverLands),
+            super::tests::test_payload_reserve(),
+        )
+        .unwrap();
         cpu_pending_hashing(&mut host, &key, 7);
         let t = std::time::Instant::now();
         let outcome = super::host_demote_settle_with_deadline(
@@ -48864,6 +52417,7 @@ mod tests {
             let _jobs = jobs_rx;
             let _ = release_rx.recv();
             let reply = super::HostHashReply {
+                split: Default::default(),
                 seq: 1,
                 hashed: Vec::new(),
                 helper_ms: 0.0,
@@ -48918,6 +52472,7 @@ mod tests {
                 })
                 .collect();
             let mut reply = super::HostHashReply {
+                split: Default::default(),
                 seq: 8,
                 hashed,
                 helper_ms: 1.0,
@@ -49115,10 +52670,12 @@ mod tests {
         // One helper per context, spawned once in production, from the existing fault door read.
         assert_eq!(code.matches("HostHashWorker::spawn(").count(), 1);
         assert!(code.contains(
-            "hasher: HostHashWorker::spawn(HostHashFault::from_door(kv_host_fault()))?,"
+            "hasher: HostHashWorker::spawn(HostHashFault::from_door(kv_host_fault()), reserve)?,"
         ));
         assert_eq!(code.matches("HostHashFault::from_door(").count(), 1);
-        let spawn_fn = body("    fn spawn(fault: Option<HostHashFault>) -> Result<Self, String> {");
+        let spawn_fn = body(
+            "    fn spawn(fault: Option<HostHashFault>, reserve: HostPayloadReserve) -> Result<Self, String> {",
+        );
         assert!(
             spawn_fn.contains(".name(\"memra-host-hash\".into())"),
             "the helper is one named thread, spawned inside HostHashWorker::spawn"
@@ -49129,7 +52686,9 @@ mod tests {
         // The helper's program is the bind's: `checksum` over the payload's bytes.
         let digest = body("fn host_hash_payload_digest(");
         assert!(digest.contains("memra_engine::cache::tiered::checksum(bytes)"));
-        let spawn = body("    fn spawn(fault: Option<HostHashFault>) -> Result<Self, String> {");
+        let spawn = body(
+            "    fn spawn(fault: Option<HostHashFault>, reserve: HostPayloadReserve) -> Result<Self, String> {",
+        );
         assert!(spawn.contains("host_hash_payload_digest(&p.data)"));
         // The bind consumes a handed-in digest only after the byte count check.
         let bind = body("    fn bind_tier_image(");
@@ -49179,7 +52738,8 @@ mod tests {
             .find("host_demote_settle_pending(&mut hpx, ContractWait::Poll, \"the tick top\")")
             .unwrap();
         assert!(poll < 700, "the poll is the loop body's first statement");
-        assert!(worker[loop_at..loop_at + 4500].contains("&& hpx.demoting.is_none()"));
+        // The idle guard sits at the loop head; the window grew with the head (lane B's idle refresh, integ62).
+        assert!(worker[loop_at..loop_at + 6000].contains("&& hpx.demoting.is_none()"));
         // (Day 20 extended the cap to the `Capturing` entry; the statement is one `if`.)
         assert!(worker[loop_at..loop_at + 9000].contains(
             "if hpx.demoting.is_some()\n                    || hpx.promoting.is_some()\n                    || hpx.capturing.is_some()\n                    || hpx.restoring.is_some()\n                {"
@@ -49297,7 +52857,7 @@ mod tests {
         );
         let helper = body("impl HostHashWorker {");
         assert!(
-            at(helper, "p.data = Arc::new(staged.as_f32_slice().to_vec());")
+            at(helper, "p.data = Arc::new(match reserve.take(src.len()) {")
                 < at(helper, "host_hash_payload_digest(&p.data)")
         );
         let hashing = body("fn host_demote_settle_hashing(");
@@ -49309,6 +52869,1091 @@ mod tests {
         );
         let disable = body("    fn disable(&mut self, why: &str) {");
         assert!(disable.contains("tier.staging.borrow_mut().clear();"));
+    }
+
+    /// WP-A day 49 (`DAY49.md`, OWED items 7 and 8; CPU census): the split lines are log only. The
+    /// helper's copy and hash stay one per payload in the job's order (each timed apart); the minor
+    /// fault counter is read around the helper's copy and the pre-submit's pinned allocations only;
+    /// the split structs are only written and printed; no decision reads them.
+    #[test]
+    fn day49_the_split_lines_are_log_only() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let at =
+            |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
+        assert_eq!(
+            production.matches("thread_minflt()").count(),
+            7,
+            "the definition, two reads around each of the two copies, and (day 51, design P) two \
+             around the reserve's refill of one buffer"
+        );
+        let job = &production[at(production, "let mut split = HostHashSplit::default();")..];
+        let copy = at(job, "p.data = Arc::new(match reserve.take(src.len()) {");
+        let hash = at(job, "let (n, d) = host_hash_payload_digest(&p.data);");
+        assert!(
+            copy < hash,
+            "the copy then the hash, per payload, as before"
+        );
+        for field in [
+            "split.copy_ms",
+            "split.copy_bytes",
+            "split.copy_minflt",
+            "split.hash_ms",
+        ] {
+            assert!(
+                !production.contains(&format!("if {field}")),
+                "{field} decides nothing"
+            );
+        }
+        assert!(!production.contains("if sp.") && !production.contains("split.leases_ms >"));
+        assert!(production.contains("[prefix-host] demote pre-submit split: ticket seq={seq}"));
+        assert!(production.contains("[prefix-host] demote helper split: ticket seq={seq}"));
+    }
+
+    /// WP-A day 59 (`DAY59.md` step 1, then design B1 of section 7; CPU census): the fanout's
+    /// owner-time split is log only, and B1's program is pinned. The snapshot allocates its planes
+    /// (kind 0) and then issues ONE batch (kind 1); the restore issues ONE batch before its host
+    /// lengths; each batch fn launches `copy_batch_items_u8` once and drops its guards after it; no
+    /// per-plane copy, clone or length set is left in any of the four; the split is taken only by
+    /// the fanout's line and decides nothing.
+    #[test]
+    fn day59_the_fanout_copy_split_is_log_only() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let at =
+            |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
+        // Compare on the source with whitespace and braces removed (rustfmt wraps long closures
+        // in a block).
+        let squash = |x: &str| {
+            x.split_whitespace()
+                .collect::<String>()
+                .replace(['{', '}'], "")
+        };
+        let body = |start: &str| {
+            let b = &production[at(production, start)..];
+            squash(&b[..at(b, "\n}\n")])
+        };
+        let snap = body("fn prefix_snapshot(");
+        let order = [
+            "prefix_copy_timed(0, || prefix_plane_alloc(engine, kb))",
+            "prefix_copy_timed(0, || prefix_plane_alloc(engine, vb))",
+            "prefix_copy_timed(0, || engine.alloc_f32_uninit(r.conv_state.len()))",
+            "prefix_copy_timed(0, || engine.alloc_f32_uninit(r.ssm_state.len()))",
+            "prefix_copy_timed(1, || prefix_snapshot_batch(engine, cache, &mut kv, &mut conv, &mut ssm))",
+            ".glm5_tp_prefix_snapshot(",
+        ];
+        let pos: Vec<usize> = order.iter().map(|n| at(&snap, &squash(n))).collect();
+        assert!(
+            pos.windows(2).all(|w| w[0] < w[1]),
+            "the snapshot allocates, then batches, then takes the TP shards"
+        );
+        let restore = body("fn prefix_restore_at(");
+        let order = [
+            "prefix_restore_validate(",
+            "prefix_copy_timed(1, || prefix_restore_batch(engine, cache, e, restore_len))",
+            "dst.len = restore_len;",
+            ".glm5_tp_prefix_restore(",
+        ];
+        let pos: Vec<usize> = order.iter().map(|n| at(&restore, &squash(n))).collect();
+        assert!(
+            pos.windows(2).all(|w| w[0] < w[1]),
+            "the restore validates, batches, then sets the host lengths"
+        );
+        for f in ["fn prefix_snapshot_batch(", "fn prefix_restore_batch("] {
+            let b = body(f);
+            assert_eq!(
+                b.matches("engine.copy_batch_items_u8(").count(),
+                1,
+                "{f}: one launch"
+            );
+            assert!(
+                at(&b, "engine.copy_batch_items_u8(") < at(&b, "drop(guards);"),
+                "{f}: the guards outlive the launch"
+            );
+        }
+        for f in [
+            "fn prefix_snapshot(",
+            "fn prefix_restore_at(",
+            "fn prefix_snapshot_batch(",
+            "fn prefix_restore_batch(",
+        ] {
+            let b = body(f);
+            for call in ["copy_u8_into(", "clone_dtod(", "copy_into(", "set_i32_one("] {
+                assert!(!b.contains(call), "{f} keeps no per-plane {call}");
+            }
+            assert!(!b.contains("prefix_copy_timed(2,") && !b.contains("prefix_copy_timed(3,"));
+        }
+        assert_eq!(
+            production.matches("prefix_copy_split_take()").count(),
+            4,
+            "the fn, the scoped helper's two, and the restores' take (day 66)"
+        );
+        let fanout = &squash(
+            &production[at(
+                production,
+                "let t_snap = Instant::now();\n        // WP-A day 59",
+            )..],
+        );
+        assert!(
+            at(
+                fanout,
+                &squash("let (snapshot, snap_split) = prefix_copy_scoped(|| {")
+            ) < at(fanout, &squash("prefix_snapshot(")),
+            "the fanout's snapshot runs inside the scoped split (day 66)"
+        );
+        let scoped = &production[at(production, "fn prefix_copy_scoped<T>(")..];
+        let scoped = squash(&scoped[..at(scoped, "\n}\n")]);
+        assert!(
+            at(&scoped, "let_stale=prefix_copy_split_take();") < at(&scoped, "letout=f();"),
+            "the scoped split discards before it runs f"
+        );
+        for f in [
+            "a.alloc",
+            "a.cop",
+            "a.clon",
+            "r.cop",
+            "r.set",
+            "snap_split.",
+            "restore_split.",
+        ] {
+            assert!(
+                !production.contains(&format!("if {f}")),
+                "{f} decides nothing"
+            );
+        }
+        assert!(
+            production.contains("[prefix-dedup] on-tick split: snapshot alloc {:.2} ms over {}")
+        );
+    }
+
+    /// WP-A day 62 (`DAY62.md` step 1; CPU census): the retire seam's lines. `source_kv` and
+    /// `queued_ahead` are written at submission and read only by the retire pass and the publish
+    /// line; since design R1 (section 8) the source test decides whether the retire settles, and
+    /// a settle still precedes any session's removal.
+    #[test]
+    fn day62_the_retire_seam_lines_are_log_only() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        // Design R1 (day 62 section 8) makes the source test a decision: computed, handed to
+        // `r1_settle_at_retire` (its parameter and body), then printed on the settle's why.
+        assert_eq!(
+            production.matches("source_retiring").count(),
+            5,
+            "R1's decision and the why"
+        );
+        assert!(production.contains("if source_retiring { \"yes\" } else { \"no\" }"));
+        assert_eq!(
+            production.matches(".source_kv").count(),
+            1,
+            "read once, by the retire's why"
+        );
+        assert_eq!(
+            production.matches("queued_ahead").count(),
+            5,
+            "the field, the submission's read, the struct literal, the destructure, the print"
+        );
+        let retire = &production[production
+            .find("let (source_kv, source_request, ticket) = hpx")
+            .unwrap()..];
+        let settle = retire.find(
+            "host_capture_settle_pending(&engine, &mut px, &mut hpx, ContractWait::Block, &why);",
+        );
+        let remove = retire.find("let mut s = active.remove(i);");
+        assert!(
+            settle.unwrap() < remove.unwrap(),
+            "the Block settle still precedes the removal"
+        );
+    }
+
+    /// WP-A day 62 design R1 (`DAY62.md` section 8): the source test and the settle decision.
+    #[test]
+    fn day62_r1_settles_only_when_the_source_retires_by_either_identity() {
+        use super::{r1_is_source, r1_settle_at_retire};
+        assert!(
+            r1_is_source("req-7", Some(0x10), "req-7", 0x20),
+            "the request id alone"
+        );
+        assert!(
+            r1_is_source("req-8", Some(0x20), "req-7", 0x20),
+            "the cache address alone"
+        );
+        assert!(
+            r1_is_source("req-7", None, "req-7", 0x20),
+            "no cache, the id"
+        );
+        assert!(!r1_is_source("req-8", Some(0x10), "req-7", 0x20), "neither");
+        assert!(
+            !r1_is_source("req-8", None, "req-7", 0x20),
+            "neither, no cache"
+        );
+        assert!(r1_settle_at_retire(true) && !r1_settle_at_retire(false));
+    }
+
+    /// WP-A day 62 design R1 (CPU census): every capture records its source's request id (the
+    /// seed route from its session, the spec-boundary route from each of its three publishers);
+    /// the retire pass computes the source test from both identities and settles only then; no
+    /// other capture settle site changes.
+    #[test]
+    fn day62_r1_every_capture_names_its_source_and_only_the_retire_settle_changes() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        assert_eq!(
+            production
+                .matches("source_request: source_request.to_string(),")
+                .count(),
+            1
+        );
+        assert_eq!(
+            production
+                .matches("            source_request,\n            pos")
+                .count(),
+            2,
+            "both routes' submits"
+        );
+        for publisher in [
+            "\"dspark-boundary\",\n        &s.request_id,",
+            "\"glm5-boundary\",\n        &s.request_id,",
+            "\"spec-boundary\",\n                            &s.request_id,",
+            "        why,\n        &s.request_id,\n    ) {",
+        ] {
+            assert!(
+                production.contains(publisher),
+                "{publisher} names its source"
+            );
+        }
+        let retire = &production[production
+            .find("let (source_kv, source_request, ticket) = hpx")
+            .unwrap()..];
+        let test = retire.find("r1_is_source(").unwrap();
+        let decide = retire
+            .find("if r1_settle_at_retire(source_retiring) {")
+            .unwrap();
+        let settle = retire.find("host_capture_settle_pending(&engine, &mut px, &mut hpx, ContractWait::Block, &why);").unwrap();
+        assert!(test < decide && decide < settle);
+        for site in [
+            "\"a second capture\"",
+            "\"a trim\"",
+            "\"a tenant purge\"",
+            "\"shutdown\"",
+        ] {
+            assert!(production.contains(site), "{site} keeps its settle");
+        }
+        assert_eq!(production.matches("\"a second capture\"").count(), 2);
+    }
+
+    /// WP-A day 63 (`DAY63.md` design L2.1): the staging lengths of one image, the max count per
+    /// length over the loaded models, trunk and MTP blocks.
+    #[test]
+    fn day63_the_staging_set_at_boot_is_one_image_over_the_models() {
+        use memra_gguf::config::{HfConfig, ModelConfig};
+        let plan = |layers: u32, heads: u32| {
+            memra_gguf::model_plan::ModelPlan::compile(&ModelConfig::from_hf(&HfConfig::parse(
+                &format!(
+                    r#"{{"model_type":"qwen3_5","num_hidden_layers":{layers},"hidden_size":64,
+                "num_attention_heads":2,"num_key_value_heads":1,"head_dim":32,
+                "intermediate_size":128,"vocab_size":16,"max_position_embeddings":128,
+                "full_attention_interval":2,"linear_conv_kernel_dim":3,
+                "linear_key_head_dim":32,"linear_value_head_dim":32,
+                "linear_num_key_heads":1,"linear_num_value_heads":{heads}}}"#
+                ),
+            )))
+            .unwrap()
+        };
+        let a = plan(4, 2);
+        let recurrent = |p: &memra_gguf::model_plan::ModelPlan| {
+            p.layers
+                .iter()
+                .chain(p.mtp_blocks.iter().map(|b| &b.layer))
+                .filter(|l| matches!(l.state, memra_gguf::model_plan::StatePlan::Recurrent { .. }))
+                .count()
+        };
+        let one = super::host_staging_lengths([&a].into_iter());
+        assert_eq!(
+            one.iter().map(|&(_, c)| c).sum::<usize>(),
+            2 * recurrent(&a),
+            "two planes per layer"
+        );
+        assert!(one.iter().all(|&(len, _)| len > 0 && len % 4 == 0));
+        let b = plan(8, 2);
+        let two = super::host_staging_lengths([&a, &b].into_iter());
+        assert_eq!(
+            two,
+            super::host_staging_lengths([&b].into_iter()),
+            "the max count, never the sum"
+        );
+        let c = plan(4, 4);
+        let mixed = super::host_staging_lengths([&a, &c].into_iter());
+        let total: usize = mixed.iter().map(|&(_, n)| n).sum();
+        assert!(total <= 2 * recurrent(&a) + 2 * recurrent(&c));
+        assert!(
+            mixed.windows(2).all(|w| w[0].0 < w[1].0),
+            "sorted by length"
+        );
+    }
+
+    /// WP-A day 63 (design L1.5, L1.6, L2; CPU census): the pinned capacity is three host budgets;
+    /// the lease pool's cap is set to one budget at the context's build and it closes at the latch;
+    /// the staging set is allocated at boot through `staging_take` and put back.
+    #[test]
+    fn day63_the_pool_and_the_boot_staging_are_wired_as_stated() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        assert!(production.contains("capacity.pinned = thrice(host_budget)?;"));
+        let build = &production[production.find("fn host_tier_context(").unwrap()..];
+        let build = &build[..build.find("\n}\n").unwrap()];
+        let cap = build
+            .find("transfers.set_lease_pool_cap(hpx.budget as u64);")
+            .unwrap();
+        let take = build.find("match ctx.staging_take(len) {").unwrap();
+        let put = build.find("ctx.staging_put(buf);").unwrap();
+        assert!(cap < take && take < put);
+        let disable = &production[production
+            .find("    fn disable(&mut self, why: &str) {")
+            .unwrap()..];
+        let disable = &disable[..disable.find("\n    }\n").unwrap()];
+        assert!(disable.contains("let (n, bytes) = pool.close();"));
+    }
+
+    /// WP-A day 64 (`DAY64.md` step 1; CPU census): the promote's waiting labels are log only. The
+    /// engine's parts query is read only by `host_promote_waiting`; `waiting` is written only at the
+    /// two `Pending` answers and read only by the timeline's outcome; no decision reads either.
+    #[test]
+    fn day64_the_promote_waiting_labels_are_log_only() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        assert_eq!(production.matches("h2d_landing_parts(").count(), 1);
+        assert_eq!(
+            production
+                .matches("host_promote_waiting(&t, &ticket, ")
+                .count(),
+            2
+        );
+        assert_eq!(
+            production.matches("c.waiting").count(),
+            1,
+            "the timeline's outcome only"
+        );
+        assert!(!production.contains("if waiting") && !production.contains("waiting =="));
+        assert!(
+            production.contains(
+                "Ok(PromoteSettle::Pending(c)) => format!(\"pending on {}\", c.waiting),"
+            )
+        );
+    }
+
+    /// WP-A day 64 (`DAY64.md` section 4 step 1; CPU census): the span receipt's phase timing is
+    /// log only: read once before the take, printed on the H2D receipt line, never compared.
+    #[test]
+    fn day64_the_span_receipt_timing_is_log_only() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        assert_eq!(production.matches("h2d_span_timing(").count(), 1);
+        assert_eq!(
+            production.matches("span_timing").count(),
+            3,
+            "the engine call, the binding, the print"
+        );
+        let settle = &production[production
+            .find("let span_timing = t.h2d_span_timing(&ticket);")
+            .unwrap()..];
+        assert!(
+            settle.find("let span_timing").unwrap()
+                < settle.find("t.take_h2d_spans(&ticket)").unwrap()
+        );
+        assert!(
+            !production.contains("if span_timing") && !production.contains("span_timing.is_some()")
+        );
+    }
+
+    /// WP-A day 66 (`DAY66.md`): a stray timed call of any kind before a scoped call never reaches
+    /// the scoped split; a second scoped call reads only its own calls.
+    #[test]
+    fn day66_a_stray_copy_before_a_fanout_never_reaches_its_split() {
+        use super::{PrefixCopySplit, prefix_copy_scoped, prefix_copy_timed};
+        let counts = |sp: PrefixCopySplit| (sp.allocs, sp.copies, sp.clones, sp.sets);
+        std::thread::spawn(move || {
+            for kind in 0..4u8 {
+                prefix_copy_timed(kind, || ());
+            }
+            let ((), snap) = prefix_copy_scoped(|| {
+                prefix_copy_timed(0, || ());
+                prefix_copy_timed(2, || ());
+            });
+            assert_eq!(
+                counts(snap),
+                (1, 0, 1, 0),
+                "the stray calls stay out of the scoped split"
+            );
+            prefix_copy_timed(1, || ());
+            let ((), again) = prefix_copy_scoped(|| prefix_copy_timed(3, || ()));
+            assert_eq!(
+                counts(again),
+                (0, 0, 0, 1),
+                "a second scope reads only its own call"
+            );
+        })
+        .join()
+        .unwrap();
+    }
+
+    /// WP-A design B1 (`DAY59.md` section 7, cell (a2)): the batched snapshot and restore are the
+    /// copy program. A tiny hybrid config always, and the checkpoint's own geometry when
+    /// `MEMRA_B1_MODEL` names a GGUF (metadata only). The source planes are filled with random
+    /// bytes at `pos`; the entry's planes equal the source's `[0, len * tok_bytes)`; a restore into
+    /// a cache pre-filled with a pattern writes exactly `[0, kb)`, the lengths and the recurrent
+    /// planes, and leaves a layer absent at capture untouched.
+    #[test]
+    #[ignore = "requires a CUDA GPU (WP-A design B1 cell (a2)); MEMRA_B1_MODEL adds a checkpoint's geometry"]
+    fn b1_snapshot_and_restore_are_the_copy_program() {
+        use super::{Cache, PoolKey, prefix_restore, prefix_snapshot};
+        use memra_gguf::config::{HfConfig, ModelConfig};
+        let engine = memra_engine::Engine::new(0).unwrap();
+        let mut cfgs = vec![(
+            "tiny".to_string(),
+            ModelConfig::from_hf(&HfConfig::parse(
+                r#"{"model_type":"qwen3_5","num_hidden_layers":4,"hidden_size":64,
+                "num_attention_heads":2,"num_key_value_heads":1,"head_dim":32,
+                "intermediate_size":128,"vocab_size":16,"max_position_embeddings":256,
+                "full_attention_interval":2,"linear_conv_kernel_dim":3,
+                "linear_key_head_dim":32,"linear_value_head_dim":32,
+                "linear_num_key_heads":1,"linear_num_value_heads":2}"#,
+            )),
+        )];
+        if let Ok(path) = std::env::var("MEMRA_B1_MODEL") {
+            let g = memra_gguf::GgufFile::open(&path).unwrap();
+            cfgs.push((path, ModelConfig::from_gguf(&g)));
+        }
+        let mut seed = 0x2545_f491_4f6c_dd1du64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        let key: PoolKey = ("b1".into(), String::new());
+        for (name, cfg) in &cfgs {
+            for pos in [1usize, 97] {
+                let mut src = Cache::new(&engine, cfg, 256).unwrap();
+                let n_kv = src.kv.iter().flatten().count();
+                assert!(
+                    n_kv > 0 && src.recur.iter().flatten().count() > 0,
+                    "{name}: a hybrid"
+                );
+                // The last attention layer stands for an allocated-but-unexecuted MTP layer.
+                let absent = src
+                    .kv
+                    .iter()
+                    .rposition(Option::is_some)
+                    .filter(|_| n_kv > 1);
+                let mut kv_fill: Vec<Option<(Vec<u8>, Vec<u8>)>> = vec![None; src.kv.len()];
+                for (il, slot) in src.kv.iter_mut().enumerate() {
+                    let Some(l) = slot.as_mut() else { continue };
+                    if Some(il) == absent {
+                        continue;
+                    }
+                    let k: Vec<u8> = (0..pos * l.k_tok_bytes).map(|_| next() as u8).collect();
+                    let v: Vec<u8> = (0..pos * l.v_tok_bytes).map(|_| next() as u8).collect();
+                    engine.htod_u8_into(&mut l.k, 0, &k).unwrap();
+                    engine.htod_u8_into(&mut l.v, 0, &v).unwrap();
+                    l.len = pos;
+                    kv_fill[il] = Some((k, v));
+                }
+                let mut recur_fill: Vec<Option<(Vec<f32>, Vec<f32>)>> = vec![None; src.recur.len()];
+                for (il, slot) in src.recur.iter_mut().enumerate() {
+                    let Some(r) = slot.as_mut() else { continue };
+                    let c: Vec<f32> = (0..r.conv_state.len())
+                        .map(|_| f32::from_bits(next() as u32))
+                        .collect();
+                    let s: Vec<f32> = (0..r.ssm_state.len())
+                        .map(|_| f32::from_bits(next() as u32))
+                        .collect();
+                    engine.htod_f32_into(&c, &mut r.conv_state).unwrap();
+                    engine.htod_f32_into(&s, &mut r.ssm_state).unwrap();
+                    recur_fill[il] = Some((c, s));
+                }
+                src.pos = pos;
+                let toks: Vec<u32> = (0..pos as u32).collect();
+                let entry = prefix_snapshot(&engine, &src, &key, &toks, &[0.5], None).unwrap();
+                let bits = |x: &[f32]| x.iter().map(|f| f.to_bits()).collect::<Vec<u32>>();
+                for (il, fill) in kv_fill.iter().enumerate() {
+                    match (fill, &entry.kv[il]) {
+                        (Some((k, v)), Some(p)) => {
+                            assert_eq!(
+                                engine.dtoh_u8(&p.k).unwrap(),
+                                *k,
+                                "{name} pos {pos} K {il}"
+                            );
+                            assert_eq!(
+                                engine.dtoh_u8(&p.v).unwrap(),
+                                *v,
+                                "{name} pos {pos} V {il}"
+                            );
+                        }
+                        (None, None) => {}
+                        _ => panic!("{name} pos {pos}: layer {il} captured out of kind"),
+                    }
+                }
+                for (il, fill) in recur_fill.iter().enumerate() {
+                    if let Some((c, s)) = fill {
+                        let (ec, es) = (
+                            entry.conv[il].as_ref().unwrap(),
+                            entry.ssm[il].as_ref().unwrap(),
+                        );
+                        assert_eq!(bits(&engine.dtoh(ec).unwrap()), bits(c), "{name} conv {il}");
+                        assert_eq!(bits(&engine.dtoh(es).unwrap()), bits(s), "{name} ssm {il}");
+                    }
+                }
+                // Restore into a fresh cache whose planes carry a pattern.
+                let mut dst = Cache::new(&engine, cfg, 256).unwrap();
+                for l in dst.kv.iter_mut().flatten() {
+                    let kc = l.k.capacity_bytes();
+                    let vc = l.v.capacity_bytes();
+                    engine.htod_u8_into(&mut l.k, 0, &vec![0xa5; kc]).unwrap();
+                    engine.htod_u8_into(&mut l.v, 0, &vec![0x5a; vc]).unwrap();
+                    engine.set_i32_one(&mut l.len_d, -7).unwrap();
+                }
+                prefix_restore(&engine, &mut dst, &entry, &key, None).unwrap();
+                assert_eq!(dst.pos, pos);
+                for (il, slot) in dst.kv.iter().enumerate() {
+                    let Some(l) = slot.as_ref() else { continue };
+                    let (k, v) = (engine.dtoh_u8(&l.k).unwrap(), engine.dtoh_u8(&l.v).unwrap());
+                    let len_d = engine.dtoh_i32(&l.len_d).unwrap();
+                    match &kv_fill[il] {
+                        Some((fk, fv)) => {
+                            assert_eq!(&k[..fk.len()], &fk[..], "{name} pos {pos} restored K {il}");
+                            assert_eq!(&v[..fv.len()], &fv[..], "{name} pos {pos} restored V {il}");
+                            assert!(k[fk.len()..].iter().all(|&b| b == 0xa5), "K {il} past kb");
+                            assert!(v[fv.len()..].iter().all(|&b| b == 0x5a), "V {il} past vb");
+                            assert_eq!((l.len, len_d), (pos, vec![pos as i32]), "len {il}");
+                        }
+                        None => {
+                            assert!(k.iter().all(|&b| b == 0xa5) && v.iter().all(|&b| b == 0x5a));
+                            assert_eq!(
+                                (l.len, len_d),
+                                (0, vec![-7]),
+                                "absent layer {il} untouched"
+                            );
+                        }
+                    }
+                }
+                for (il, fill) in recur_fill.iter().enumerate() {
+                    if let Some((c, s)) = fill {
+                        let r = dst.recur[il].as_ref().unwrap();
+                        assert_eq!(
+                            bits(&engine.dtoh(&r.conv_state).unwrap()),
+                            bits(c),
+                            "{name} rc {il}"
+                        );
+                        assert_eq!(
+                            bits(&engine.dtoh(&r.ssm_state).unwrap()),
+                            bits(s),
+                            "{name} rs {il}"
+                        );
+                    }
+                }
+                eprintln!(
+                    "[b1 cell] {name} pos={pos}: {n_kv} attention and {} recurrent layers equal",
+                    recur_fill.iter().flatten().count()
+                );
+            }
+        }
+    }
+
+    /// WP-A day 54 (`DAY54.md` step 1; CPU census): the on-tick lines are log only. Every `OnTick`
+    /// answer of both capture routes (and of the shared submit core) records its reason first; the
+    /// routes refuse the same conditions as before, one `else if` chain each; the reason is never
+    /// read by a decision; the publish lines print only under the door; the fanout keeps its order
+    /// (snapshot, sibling restores, insert).
+    #[test]
+    fn day54_the_on_tick_lines_are_log_only() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let at =
+            |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
+        let body = |start: &str| {
+            let a = at(production, start);
+            &production[a..a + production[a..].find("\n}\n").unwrap()]
+        };
+        for (f, ret) in [
+            (
+                "fn prefix_capture_off_tick(",
+                "return CaptureRoute::OnTick;",
+            ),
+            ("fn host_capture_submit(", "return CaptureRoute::OnTick;"),
+            (
+                "fn prefix_spec_capture_off_tick(",
+                "return SpecCaptureRoute::OnTick(Box::new(cap));",
+            ),
+        ] {
+            let b = body(f);
+            let mut from = 0;
+            let mut n = 0;
+            while let Some(i) = b[from..].find(ret) {
+                let r = from + i;
+                // Between the previous `return` (or the fn's start) and this one: a reason.
+                let before = &b[..r];
+                let since = before.rfind("return ").map_or(0, |p| p + "return ".len());
+                assert!(
+                    before[since..].contains("hpx.on_tick_reason ="),
+                    "{f}: an OnTick answer without its reason"
+                );
+                n += 1;
+                from = r + ret.len();
+            }
+            assert!(n >= 2, "{f}: {n} OnTick answers");
+        }
+        let route = body("fn prefix_capture_off_tick(");
+        for cond in [
+            "cache.has_swa_ring()",
+            "} else if tp_cache {",
+            "} else if model.is_none() {",
+            "} else if cache.latent.iter().any(Option::is_some) {",
+            "} else if cache.pos != toks.len() {",
+            "} else if last_logits.is_empty() {",
+            ".any(|l| l.len != cache.pos && !(l.len == 0 && cache.pos > 0))",
+        ] {
+            assert!(
+                route.contains(cond),
+                "the capture route refuses by name: {cond}"
+            );
+        }
+        assert!(
+            !production.contains("if hpx.on_tick_reason")
+                && !production.contains("match hpx.on_tick_reason")
+        );
+        assert_eq!(
+            production
+                .matches("on-tick publish: publisher={why}")
+                .count(),
+            2
+        );
+        for line in [
+            "[prefix-cache] on-tick publish: publisher={why} (the capture route",
+            "[prefix-cache] on-tick publish: publisher={why} (the spec route",
+            "[prefix-dedup] on-tick publish: snapshot",
+        ] {
+            let i = at(production, line);
+            let guard = production[..i]
+                .rfind("if hpx.tier.is_some() {")
+                .expect("the door guard");
+            assert!(i - guard < 200, "{line} prints only under the door");
+        }
+        let fanout = body("fn dedup_interactive_prefixes(");
+        let snap = at(fanout, "let (snapshot, snap_split) = prefix_copy_scoped(");
+        let restore = at(fanout, "let restored = prefix_restore(");
+        let insert = at(fanout, "let pin = px.insert_pinned_demoting(");
+        assert!(
+            snap < restore && restore < insert,
+            "the fanout's order is unchanged"
+        );
+        assert!(production.contains("[prefix-host] pause park snapshot on the tick: {:.2} ms"));
+    }
+
+    /// WP-A day 52 (`DAY52.md` step 1; CPU census): the publication split is log only. The drop
+    /// helper destructures the host entry in its declaration order and drops every field in that
+    /// order (the compiler's own drop order); the insert's replaced twin and every LRU victim drop
+    /// through it at the point they dropped before; no decision reads a split figure.
+    #[test]
+    fn day52_the_publication_split_is_log_only() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let at =
+            |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
+        let ident = |l: &str| {
+            l.trim()
+                .trim_end_matches(',')
+                .split(':')
+                .next()
+                .unwrap()
+                .trim()
+                .to_string()
+        };
+        // The declaration's field names, in order.
+        let decl = &production[at(production, "\nstruct HostPrefixEntry {")..];
+        let decl = &decl[..at(decl, "\n}\n")];
+        let fields: Vec<String> = decl
+            .lines()
+            .skip(1)
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.starts_with("//") && l.contains(':'))
+            .map(ident)
+            .collect();
+        assert!(fields.len() >= 20 && fields[0] == "_tier_identity");
+        // The helper's destructure, in order.
+        let helper = &production[at(production, "fn host_entry_drop_split(e: HostPrefixEntry)")..];
+        let helper = &helper[..at(helper, "\n}\n")];
+        let pat = &helper[at(helper, "let HostPrefixEntry {")..at(helper, "} = e;")];
+        let names: Vec<String> = pat
+            .lines()
+            .skip(1)
+            .map(ident)
+            .filter(|n| !n.is_empty())
+            .collect();
+        assert_eq!(
+            names, fields,
+            "the destructure names every field in declaration order"
+        );
+        // Every field released once, in declaration order.
+        let released: Vec<String> = helper
+            .lines()
+            .map(str::trim)
+            .filter_map(|l| {
+                if let Some(x) = l.strip_prefix("drop(").and_then(|x| x.strip_suffix(");")) {
+                    return Some(vec![x.to_string()]);
+                }
+                l.strip_prefix("let _ = ")
+                    .and_then(|x| x.strip_suffix(';'))
+                    .map(|x| {
+                        x.trim_matches(|c| c == '(' || c == ')')
+                            .split(',')
+                            .map(|n| n.trim().to_string())
+                            .collect()
+                    })
+            })
+            .flatten()
+            .collect();
+        assert_eq!(
+            released, fields,
+            "every field released in declaration order"
+        );
+        // The insert's drops go through the helper, at the old points.
+        let insert = &production[at(
+            production,
+            "    fn insert(&mut self, key: &PoolKey, mut e: HostPrefixEntry)",
+        )..];
+        let insert = &insert[..at(insert, "\n    }\n")];
+        assert!(insert.contains("split.twin = Some(host_entry_drop_split(twin));"));
+        assert!(insert.contains("let _ = host_entry_drop_split(dead);"));
+        assert!(!insert.contains("drop(dead)") && !insert.contains("let _ = self.remove_at("));
+        assert!(
+            at(insert, "self.remove_at(key, i)") < at(insert, "e.id = self.next_id;"),
+            "the twin drops before the new entry is indexed, as before"
+        );
+        // Log only.
+        for field in [
+            "split.",
+            "ps.",
+            "twin.",
+            "self.last_insert_split.",
+            "host.last_publish_split.",
+        ] {
+            assert!(
+                !production.contains(&format!("if {field}")),
+                "{field} decides nothing"
+            );
+        }
+        assert_eq!(
+            production.matches("last_publish_split").count(),
+            3,
+            "field, write, read"
+        );
+        assert!(
+            production.contains("[prefix-host] demote publication split: ticket seq={seq} bind")
+        );
+    }
+
+    /// WP-A day 51 (`DAY51.md` design P, section 1 (a); CPU census): the payload reserve is the
+    /// copy program. A reserve buffer is written only by `copy_from_slice` of the staged slice and
+    /// a miss allocates with `to_vec`, as before; the refill runs only at the top of the helper's
+    /// loop, before the job is read, and checks the job channel before every buffer; the charge
+    /// is reserved before the first allocation and dropped at the retarget; the ledger's pageable
+    /// capacity carries the reserve's term; nothing decides on the new figures.
+    #[test]
+    fn day51_the_payload_reserve_is_the_copy_program() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let at =
+            |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
+        let body = |start: &str| {
+            let a = at(production, start);
+            &production[a..a + production[a..].find("\n    }\n").unwrap()]
+        };
+        // The copy: one take, a hit written from the staged slice, a miss as before.
+        assert_eq!(production.matches("reserve.take(").count(), 1);
+        let job = &production[at(production, "let mut split = HostHashSplit::default();")..];
+        let take = at(job, "p.data = Arc::new(match reserve.take(src.len()) {");
+        let hit = at(job, "v.copy_from_slice(src);");
+        let miss = at(job, "None => src.to_vec(),");
+        let hash = at(job, "let (n, d) = host_hash_payload_digest(&p.data);");
+        assert!(take < hit && hit < miss && miss < hash);
+        assert_eq!(production.matches("copy_from_slice(src)").count(), 1);
+        // The retarget: after the payload map, before the reply is built.
+        let retarget = at(
+            job,
+            "reserve.after_job(&staged_lengths, split.copy_minflt, split.reserve_hits);",
+        );
+        let reply = at(job, "let reply = HostHashReply {");
+        assert!(hash < retarget && retarget < reply);
+        // The refill: once, at the loop's top, before any job is looked at.
+        assert_eq!(
+            production
+                .matches("reserve.refill_until_job(&jobs_rx)")
+                .count(),
+            1
+        );
+        let spawn = body("    fn spawn(fault: Option<HostHashFault>, reserve: HostPayloadReserve)");
+        let refill = at(
+            spawn,
+            "let job = match reserve.refill_until_job(&jobs_rx) {",
+        );
+        let gone = at(spawn, "if fault == Some(HostHashFault::HelperGone) {");
+        assert!(refill < gone);
+        assert!(!spawn.contains("for job in jobs_rx"));
+        let until = body("    fn refill_until_job(");
+        assert!(at(until, "jobs.try_recv()") < at(until, "self.refill_step()"));
+        // The charge before the first allocation; every element written, not a zeroed map.
+        let step = body("    fn refill_step(&mut self) -> bool {");
+        assert!(
+            at(
+                step,
+                "hostprefix::ResidentCharge::reserve(self.governor.clone(), &request)"
+            ) < at(step, "let mut v = Vec::with_capacity(len);")
+        );
+        assert!(step.contains("request.bytes.pageable = self.target_bytes;"));
+        assert!(step.contains("tenant: host_payload_reserve_tenant(),"));
+        assert!(step.contains("v.resize(len, std::hint::black_box(0.0f32));"));
+        assert!(!step.contains("vec![0"));
+        let re = body("    fn retarget(&mut self, lengths: &[usize]) {");
+        assert!(re.contains("self.ready.clear();") && re.contains("self.charge = None;"));
+        assert!(re.contains("if self.target_bytes.saturating_add(bytes) > self.cap {"));
+        // The ledger's third pageable term, and the one production reserve capped at one budget.
+        assert!(production.contains("capacity.pageable = thrice(host_budget)?;"));
+        assert_eq!(production.matches("HostPayloadReserve::new(").count(), 1);
+        assert!(
+            production.contains("HostPayloadReserve::new(governor.clone(), hpx.budget as u64)")
+        );
+        // Log only.
+        for field in [
+            "reserve_hits",
+            "refill_ms",
+            "refill_minflt",
+            "yields",
+            "split.staged",
+        ] {
+            assert!(
+                !production.contains(&format!("if {field}")),
+                "{field} decides nothing"
+            );
+            assert!(
+                !production.contains(&format!("if self.{field}")),
+                "{field} decides nothing"
+            );
+            assert!(
+                !production.contains(&format!("if sp.{field}")),
+                "{field} decides nothing"
+            );
+        }
+        assert!(production.contains("[prefix-host] payload reserve ready: {} buffers"));
+        assert!(production.contains("; reserve {} of {} staged"));
+    }
+
+    /// WP-A day 52 (`DAY52.md` design P2, (a); CPU census): the arming rule reads only the job's
+    /// fresh pages (its copy's faults, and the faults of the refill that wrote the buffers it
+    /// took) against half its staged pages; the state decides only which target the retarget
+    /// takes; the helper passes the job's own split figures.
+    #[test]
+    fn day52_the_arming_rule_reads_only_the_jobs_fresh_pages() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let at =
+            |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
+        let body = &production[at(production, "    fn after_job(")..];
+        let body = &body[..at(body, "\n    }\n")];
+        assert!(body.contains("let armed = fresh.saturating_mul(2) >= pages;"));
+        assert!(body.contains("if hits > 0 {"));
+        assert!(body.contains("self.refill_minflt"));
+        assert!(body.contains("self.retarget(lengths);") && body.contains("self.retarget(&[]);"));
+        assert_eq!(production.matches("reserve.after_job(").count(), 1);
+        assert!(production.contains(
+            "reserve.after_job(&staged_lengths, split.copy_minflt, split.reserve_hits);"
+        ));
+        // `armed` is read in the rule only: inside the reserve's impl, the rule's two uses.
+        let imp = &production[at(production, "impl HostPayloadReserve {")..];
+        let imp = &imp[..at(imp, "\n}\n")];
+        assert_eq!(imp.matches("self.armed").count(), 2);
+        assert_eq!(imp.matches(".armed").count(), 2);
+        assert!(!imp.contains("if self.armed"));
+        let helper = &production[at(
+            production,
+            "    fn spawn(fault: Option<HostHashFault>, reserve",
+        )..];
+        let helper = &helper[..at(helper, "\n    }\n")];
+        assert!(
+            !helper.contains(".armed"),
+            "the helper loop never reads the state"
+        );
+        assert!(
+            production
+                .contains("[prefix-host] payload reserve {}: the job took {fresh} fresh pages")
+        );
+    }
+
+    /// Day 52 (design P2, (a)): a job whose misses take fresh pages arms (the reserve refills to
+    /// its shape); a job whose hits came from a refill that reused memory disarms (nothing held,
+    /// no charge); a disarmed reserve re-arms on a faulting miss; the boundary is half the pages;
+    /// a job with no staged payload decides nothing.
+    #[test]
+    fn day52_the_reserve_arms_while_copies_fault_and_disarms_on_recycled_memory() {
+        let gov = super::host_tier_governor(0, 1 << 30, 1 << 30, 4).unwrap();
+        let used = || gov.lock().unwrap().used().pageable;
+        let mut r = super::HostPayloadReserve::new(gov.clone(), 1 << 30);
+        let lengths = [1024usize; 8]; // 8 x 4 KiB: 8 pages
+        let (_tx, rx) = std::sync::mpsc::channel::<super::HostHelperJob>();
+        // The first job's misses faulted every page: armed, the target is the job's shape.
+        r.after_job(&lengths, 8, 0);
+        assert!(r.armed && r.owed.len() == 8 && r.target_bytes == 8 * 4096);
+        assert!(matches!(r.refill_until_job(&rx), Ok(None)));
+        assert_eq!((r.ready.len(), used()), (8, 8 * 4096));
+        // Hits whose refill took fresh pages (at least half): still armed.
+        r.refill_minflt = 4;
+        r.after_job(&lengths, 0, 8);
+        assert!(r.armed && r.owed.len() == 8 && r.ready.is_empty());
+        assert!(matches!(r.refill_until_job(&rx), Ok(None)));
+        // Hits whose refill reused memory (3 of 8, under half): disarmed, nothing held.
+        r.refill_minflt = 3;
+        r.after_job(&lengths, 0, 8);
+        assert!(!r.armed && r.owed.is_empty() && r.ready.is_empty() && r.charge.is_none());
+        assert_eq!(used(), 0, "a disarmed reserve holds no charge");
+        assert!(matches!(r.refill_until_job(&rx), Ok(None)));
+        assert!(r.ready.is_empty(), "nothing refills while disarmed");
+        // Misses that reuse memory keep it disarmed; the refill's figures do not count without a hit.
+        r.refill_minflt = 1000;
+        r.after_job(&lengths, 3, 0);
+        assert!(!r.armed && r.owed.is_empty());
+        // A faulting miss re-arms (the boundary: 4 of 8 is half).
+        r.after_job(&lengths, 4, 0);
+        assert!(r.armed && r.owed.len() == 8);
+        // A job with no staged payload decides nothing and leaves nothing held.
+        r.after_job(&[], 0, 0);
+        assert!(r.armed && r.owed.is_empty() && r.ready.is_empty());
+        assert_eq!(used(), 0);
+    }
+
+    /// Day 51 (design P, (a)): a reserve hit carries the staged bytes bitwise, special values
+    /// included, as the miss path's `to_vec` does.
+    #[test]
+    fn day51_a_reserve_hit_is_the_staged_bytes_bitwise() {
+        let mut r = test_payload_reserve();
+        r.retarget(&[5, 1030]);
+        let (_tx, rx) = std::sync::mpsc::channel::<super::HostHelperJob>();
+        assert!(matches!(r.refill_until_job(&rx), Ok(None)));
+        let bits = [
+            0x8000_0000u32, // -0.0
+            0x7fc0_0001,    // a NaN with a payload
+            0xffff_ffff,    // a negative NaN, all payload bits set
+            0x0000_0001,    // the smallest denormal
+            0x7f80_0000,    // +inf
+            0x3f80_0000,    // 1.0
+        ];
+        let src: Vec<f32> = (0..1030)
+            .map(|i| f32::from_bits(bits[i % bits.len()]))
+            .collect();
+        let mut v = r.take(1030).expect("a buffer of the job's length");
+        assert!(
+            v.iter().all(|x| x.to_bits() == 0),
+            "every element written by the refill"
+        );
+        v.copy_from_slice(&src);
+        let miss = src.to_vec();
+        assert!(v.iter().zip(&miss).all(|(a, b)| a.to_bits() == b.to_bits()));
+        assert!(r.take(1030).is_none(), "one buffer per staged length");
+        assert_eq!(r.take(5).map(|v| v.len()), Some(5));
+    }
+
+    /// Day 51 (design P, (a)): the refill yields. A job already waiting is returned before any
+    /// buffer is allocated or any charge taken; a job sent mid-refill is returned before the
+    /// reserve completes, and the refill resumes after it.
+    #[test]
+    fn day51_the_refill_yields_to_a_waiting_job() {
+        let gov = super::host_tier_governor(0, 1 << 30, 1 << 30, 4).unwrap();
+        let mut r = super::HostPayloadReserve::new(gov.clone(), 1 << 30);
+        r.retarget(&[4096; 8]);
+        let (tx, rx) = std::sync::mpsc::channel::<super::HostHelperJob>();
+        let job = || {
+            super::HostHelperJob::Hash(super::HostHashJob {
+                seq: 1,
+                payloads: Vec::new(),
+                leases: Vec::new(),
+            })
+        };
+        tx.send(job()).unwrap();
+        assert!(matches!(r.refill_until_job(&rx), Ok(Some(_))));
+        assert!(r.ready.is_empty() && r.charge.is_none() && r.owed.len() == 8);
+        assert_eq!(gov.lock().unwrap().used().pageable, 0);
+        // One buffer, then a job arrives: it is served before the next buffer.
+        assert!(r.refill_step());
+        tx.send(job()).unwrap();
+        assert!(matches!(r.refill_until_job(&rx), Ok(Some(_))));
+        assert_eq!((r.ready.len(), r.owed.len(), r.yields), (1, 7, 1));
+        // The channel empty again: the refill completes.
+        assert!(matches!(r.refill_until_job(&rx), Ok(None)));
+        assert_eq!((r.ready.len(), r.owed.len()), (8, 0));
+        drop(tx);
+        r.retarget(&[4096]);
+        assert!(
+            matches!(r.refill_until_job(&rx), Err(())),
+            "a closed channel ends the refill"
+        );
+        assert!(
+            r.ready.is_empty(),
+            "nothing allocated once the channel is closed"
+        );
+    }
+
+    /// Day 51 (design P, (a)): the reserve's charge is on the pageable ledger for the whole
+    /// target from its first buffer on, never before the first refill step, and gone after the
+    /// retarget and after the reserve drops (the helper's exit); a refusing governor leaves the
+    /// reserve empty; the reserve never holds more than its cap; a shape change frees the old
+    /// buffers.
+    #[test]
+    fn day51_the_reserve_charge_the_cap_and_the_shape_change() {
+        let gov = super::host_tier_governor(0, 1 << 30, 1 << 30, 4).unwrap();
+        let used = || gov.lock().unwrap().used().pageable;
+        let mut r = super::HostPayloadReserve::new(gov.clone(), 1 << 30);
+        r.retarget(&[1024, 2048]);
+        assert_eq!(used(), 0, "no charge before the first refill step");
+        assert!(r.refill_step());
+        assert_eq!(
+            used(),
+            (1024 + 2048) * 4,
+            "the whole target, from the first buffer on"
+        );
+        assert!(r.refill_step() && !r.refill_step());
+        assert_eq!(used(), (1024 + 2048) * 4);
+        r.retarget(&[3000]);
+        assert_eq!(used(), 0, "the retarget releases the charge");
+        assert!(
+            r.take(1024).is_none() && r.take(2048).is_none(),
+            "the old shape is freed"
+        );
+        let (_tx, rx) = std::sync::mpsc::channel::<super::HostHelperJob>();
+        assert!(matches!(r.refill_until_job(&rx), Ok(None)));
+        assert_eq!(used(), 3000 * 4);
+        assert_eq!(r.take(3000).map(|v| v.len()), Some(3000));
+        drop(r);
+        assert_eq!(used(), 0, "the helper's exit releases the charge");
+        // The cap: the job's order, clamped.
+        let mut r = super::HostPayloadReserve::new(gov.clone(), 10_000);
+        r.retarget(&[1000, 1000, 1000]);
+        assert_eq!((r.owed.len(), r.target_bytes), (2, 8000));
+        assert!(matches!(r.refill_until_job(&rx), Ok(None)));
+        assert_eq!((r.ready.len(), used()), (2, 8000));
+        drop(r);
+        // A refusing governor: a 1000-byte budget has 3000 pageable bytes; 4000 are refused.
+        let small = super::host_tier_governor(0, 1000, 1 << 30, 4).unwrap();
+        let mut r = super::HostPayloadReserve::new(small.clone(), 1 << 20);
+        r.retarget(&[1000]);
+        assert!(!r.refill_step());
+        assert!(r.refused && r.ready.is_empty() && r.take(1000).is_none());
+        assert_eq!(small.lock().unwrap().used().pageable, 0);
+        assert!(
+            matches!(r.refill_until_job(&rx), Ok(None)),
+            "refused: nothing to do"
+        );
+        // The next retarget tries again.
+        r.retarget(&[500]);
+        assert!(r.refill_step());
+        assert_eq!(small.lock().unwrap().used().pageable, 2000);
     }
 
     /// WP-A day 47 (`DAY47.md` design V, sections 1 and 1a; CPU census): the pause sweep's two shapes
@@ -49892,7 +54537,7 @@ mod tests {
         let src = include_str!("worker.rs");
         let production = &src[..src.find("\nmod tests {").unwrap()];
         let at = production
-            .find("    fn spawn(fault: Option<HostHashFault>)")
+            .find("    fn spawn(fault: Option<HostHashFault>, reserve: HostPayloadReserve)")
             .unwrap();
         let spawn = &production[at..at + production[at..].find("\n    }\n").unwrap()];
         let sources = spawn.find("HostHelperJob::Sources(job) => {").unwrap();
@@ -49911,7 +54556,9 @@ mod tests {
         assert!(cleared < gone);
         // Behaviour: under each Sources fault a Hash job runs clean (its reply lands).
         for f in [H::SourcesGone, H::SourcesNeverLand, H::SourcesForeignReply] {
-            let helper = super::HostHashWorker::spawn(Some(f)).unwrap();
+            let helper =
+                super::HostHashWorker::spawn(Some(f), super::tests::test_payload_reserve())
+                    .unwrap();
             helper
                 .submit(super::HostHashJob {
                     seq: 9,
@@ -50190,8 +54837,10 @@ mod tests {
             transfers: Some(std::cell::RefCell::new(transfers)),
             inflight,
             fault: std::cell::Cell::new(None),
-            hasher: super::HostHashWorker::spawn(None).unwrap(),
+            hasher: super::HostHashWorker::spawn(None, super::tests::test_payload_reserve())
+                .unwrap(),
             staging: std::cell::RefCell::new(super::HostStaging::default()),
+            lease_pool: None,
         }
     }
 
@@ -50263,6 +54912,15 @@ mod tests {
             && planes.iter().zip(want).all(|(p, (k, v))| {
                 stream.clone_dtoh(&p.k).unwrap() == *k && stream.clone_dtoh(&p.v).unwrap() == *v
             })
+    }
+
+    /// The pinned charge of `gpu_entry`'s six KV leases (three planes of 8 rows: K 272 bytes, V 192
+    /// bytes). WP-A day 70 (`DAY70.md` design Q.1): each lease is charged its length
+    /// (`lease_charge`); these fixtures' pool cap is 0, so no tail is charged to the pool (DAY63
+    /// section 7's class charge, design L1.2, is superseded).
+    fn gpu_lease_charge() -> u64 {
+        use memra_engine::tier_transfer::lease_charge;
+        3 * (lease_charge(8 * 34) + lease_charge(8 * 24))
     }
 
     fn gpu_used(host: &super::HostPrefixCache) -> (u64, u64, u64) {
@@ -50504,7 +55162,7 @@ mod tests {
         assert!(gpu_entry_whole(&engine, &entry, &want));
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58, 0, 0),
+            (gpu_lease_charge(), 0, 0),
             "six leases hold the pinned charge"
         );
         drop(image);
@@ -50560,6 +55218,228 @@ mod tests {
             };
             plane.is_some_and(|p| f32_bits(&stream.clone_dtoh(p).unwrap()) == f32_bits(pattern))
         })
+    }
+
+    /// WP-A day 69 (`DAY69.md` design P, cell (d)): a purge leaves no tenant bytes in the pinned
+    /// memory the tier keeps for reuse. An entry demotes through the real contract route (day 30's
+    /// cell, to its staging back in the set); its KV leases drop into the lease pool; then a purge.
+    /// The pool holds no idle backing and has drained, every idle staging buffer is zero (the set
+    /// keeps its buffers and charges), and the ledger holds the staging charge alone.
+    #[test]
+    #[ignore = "requires one CUDA device; run on the target card under the rig lock"]
+    fn option_b_purge_drains_the_pool_and_zeroes_the_staging_set() {
+        let engine = Engine::new(0).expect("device0");
+        let generation = Arc::new(());
+        let mut host = super::HostPrefixCache::new(1 << 30);
+        host.model_generations
+            .insert("m".into(), generation.clone());
+        let mut ctx = gpu_contracts_context(&engine, "m", generation, 3);
+        {
+            let t = ctx.transfers.as_ref().unwrap().borrow();
+            t.set_lease_pool_cap(1 << 30);
+            ctx.lease_pool = Some(t.lease_pool());
+        }
+        host.tier = Some(ctx);
+        let (mut entry, want) = gpu_entry(&engine);
+        let recur = gpu_recurrent(&engine, &mut entry, None);
+        let (image, pending) = match super::host_entry_from_device(
+            &engine,
+            &mut host,
+            &mut entry,
+            None,
+            super::ContractD2h::OffTick,
+        ) {
+            Ok(super::HostImage::Demoting(image, pending)) => (image, pending),
+            Ok(super::HostImage::Whole(_)) => panic!("an off-tick contract demote came back whole"),
+            Err(e) => panic!("the off-tick demote failed: {e:?}"),
+        };
+        let slots: Vec<super::HostHashSlot> = recur.iter().map(|(s, _)| *s).collect();
+        assert_eq!(
+            pending.spans, slots,
+            "every recurrent plane rides the ticket"
+        );
+        for slot in &slots {
+            let (shell, placeholder) = match *slot {
+                super::HostHashSlot::Conv(i) => (&entry.conv[i], &image.conv[i]),
+                super::HostHashSlot::Ssm(i) => (&entry.ssm[i], &image.ssm[i]),
+                _ => unreachable!(),
+            };
+            assert!(shell.is_none(), "{slot:?}: the engine owns the source");
+            assert!(
+                matches!(placeholder, Some(super::HostF32::Heap(v)) if v.is_empty()),
+                "{slot:?}: the image holds an empty heap placeholder"
+            );
+        }
+        let tier = host.tier.as_ref().unwrap();
+        let (kv, draft, staged, span_id) = match super::host_kv_planes_settle_contract(
+            tier,
+            &mut entry,
+            pending,
+            super::ContractWait::Block,
+        ) {
+            Ok(super::ContractSettle::Done(kv, draft, staged, span_id)) => {
+                (kv, draft, staged, span_id)
+            }
+            Ok(super::ContractSettle::Pending(_)) => panic!("a blocking settle came back pending"),
+            Err(
+                super::HostContractFailure::Alloc(why)
+                | super::HostContractFailure::Refused(why)
+                | super::HostContractFailure::SourceQuarantined(why)
+                | super::HostContractFailure::TicketLeaked(why),
+            ) => panic!("the settle failed: {why}"),
+        };
+        assert_eq!(staged.len(), recur.len());
+        for ((slot, buf), (want_slot, pattern)) in staged.iter().zip(&recur) {
+            assert_eq!(slot, want_slot);
+            assert_eq!(
+                f32_bits(buf.as_f32_slice()),
+                f32_bits(pattern),
+                "{slot:?}: the span landed bit for bit"
+            );
+        }
+        assert!(
+            gpu_recurrent_whole(&engine, &entry, &recur),
+            "every source back in its slot with its bytes"
+        );
+        assert!(gpu_entry_whole(&engine, &entry, &want));
+        assert!(
+            kv.iter()
+                .flatten()
+                .chain(draft.iter())
+                .all(|p| p.k.receipt().is_some() && p.v.receipt().is_some()),
+            "every KV plane crossed through the contract"
+        );
+        // WP-A day 42 (`DAY42.md` design S2): the hand-off as the `Done` arm runs it: every staging
+        // buffer guarded, the quiet flag cleared, the span receipt sealed over the staging in attach
+        // order, then the job to the helper; the receipt observed (its pairs each the four-lane
+        // program over the pattern, source and landed alike) before any staging goes back.
+        let quiet = super::HostStagingQuiet::new();
+        let payloads: Vec<super::HostHashPayload> = staged
+            .into_iter()
+            .map(|(slot, buf)| super::HostHashPayload {
+                slot,
+                data: Default::default(),
+                staged: Some(super::HostStagingHeld::new(buf, &quiet)),
+            })
+            .collect();
+        let id = span_id.expect("a span receipt on the contracts route");
+        quiet.set(false);
+        {
+            let refs: Vec<&memra_engine::PinnedHostBuf> = payloads
+                .iter()
+                .map(|p| p.staged.as_ref().unwrap().buf())
+                .collect();
+            let mut t = tier.transfers.as_ref().unwrap().borrow_mut();
+            t.seal_d2h_span_receipt(id, &refs).unwrap();
+        }
+        tier.hasher
+            .submit(super::HostHashJob {
+                seq: 1,
+                payloads,
+                leases: Vec::new(),
+            })
+            .unwrap();
+        let pairs = tier
+            .transfers
+            .as_ref()
+            .unwrap()
+            .borrow_mut()
+            .d2h_span_receipt_wait(id)
+            .unwrap();
+        assert_eq!(pairs.len(), recur.len());
+        for ((source, landed), (slot, pattern)) in pairs.iter().zip(&recur) {
+            let bytes: Vec<u8> = pattern.iter().flat_map(|x| x.to_le_bytes()).collect();
+            let oracle = memra_engine::tier_transfer::receipt_digest(&bytes);
+            assert_eq!(*source, oracle, "{slot:?}: the source digest");
+            assert_eq!(*landed, oracle, "{slot:?}: the landed digest");
+        }
+        quiet.set(true);
+        let reply = tier
+            .hasher
+            .reply_within(std::time::Duration::from_secs(10))
+            .unwrap()
+            .expect("the helper replied");
+        assert_eq!(reply.hashed.len(), recur.len());
+        for ((p, n, d), (slot, pattern)) in reply.hashed.iter().zip(&recur) {
+            assert_eq!(p.slot, *slot);
+            assert_eq!(
+                (*n, *d),
+                super::host_hash_payload_digest(pattern),
+                "{slot:?}: the helper's digest of the landed span is the owner thread's"
+            );
+            assert_eq!(
+                f32_bits(&p.data),
+                f32_bits(pattern),
+                "{slot:?}: the heap copy"
+            );
+            assert!(p.staged.is_some(), "{slot:?}: the staging comes back");
+        }
+        // WP-A day 31: the staging goes back to the set as the driver puts it; the set's charge
+        // (every buffer charged once, at allocation) is the ledger's only pinned bytes once the
+        // KV planes drop, and the latch frees the set and releases it.
+        let span_bytes: u64 = recur.iter().map(|(_, p)| p.len() as u64 * 4).sum();
+        for (p, _, _) in reply.hashed {
+            let guard = p.staged.expect("the staging came back");
+            tier.staging_put(
+                guard
+                    .into_quiet()
+                    .expect("quiet once the receipt was observed"),
+            );
+        }
+        drop((kv, draft, image));
+        // WP-A day 69 (`DAY69.md` design P, cell (d)): the demote's KV leases parked in the pool and
+        // its landed spans idle in the staging set, both holding the tenant's bytes; the purge's
+        // scrub drains the pool and zeroes the set in place.
+        let pool = tier.lease_pool.clone().expect("the pool");
+        let (taken0, fresh0, idle0) = tier
+            .transfers
+            .as_ref()
+            .unwrap()
+            .borrow()
+            .lease_pool_counts();
+        assert!(idle0 > 0, "the demote's KV leases parked");
+        {
+            let set = tier.staging.borrow();
+            assert_eq!(set.idle.len(), recur.len(), "every buffer back in the set");
+            assert!(
+                set.idle
+                    .iter()
+                    .any(|b| b.as_slice().iter().any(|&x| x != 0)),
+                "the set holds the spans' bytes"
+            );
+        }
+        assert_eq!(gpu_used(&host), (span_bytes + idle0, 0, 0));
+        let epoch = pool.epoch();
+        let _ = host.purge_tenant("org-a");
+        let tier = host.tier.as_ref().unwrap();
+        assert_eq!(pool.epoch(), epoch + 1, "the purge drained the pool");
+        assert_eq!(
+            tier.transfers
+                .as_ref()
+                .unwrap()
+                .borrow()
+                .lease_pool_counts(),
+            (taken0, fresh0, 0),
+            "no idle backing is left"
+        );
+        {
+            let set = tier.staging.borrow();
+            assert_eq!(set.idle.len(), recur.len(), "the set keeps its buffers");
+            assert_eq!(set.charged, span_bytes, "and their charges");
+            assert!(
+                set.idle
+                    .iter()
+                    .all(|b| b.as_slice().iter().all(|&x| x == 0)),
+                "every idle buffer zeroed"
+            );
+        }
+        assert_eq!(
+            gpu_used(&host),
+            (span_bytes, 0, 0),
+            "the staging set's charge alone"
+        );
+        host.disable("day-69 cell: the latch releases the staging charge");
+        assert_eq!(gpu_used(&host), (0, 0, 0));
     }
 
     /// WP-A day 30 (memra#536 Move 2 owed item 1, the D2H half; `d2h_span_batch` through the
@@ -50997,8 +55877,10 @@ mod tests {
             first,
             "the second span needs a second buffer"
         );
-        // A co-tenant charge that leaves room for the six KV destinations and ONE staging buffer.
-        let kv_bytes = 3 * 8 * 58;
+        // A co-tenant charge that leaves room for the six KV destinations and ONE staging buffer
+        // (DAY63 section 7: the pinned capacity is three budgets, design L1.5, and each KV lease is
+        // charged its size class, design L1.2).
+        let kv_bytes = gpu_lease_charge();
         let governor = host.tier.as_ref().unwrap().governor.clone();
         let hog = {
             let dimensions = governor.lock().unwrap().used().device.len();
@@ -51008,7 +55890,7 @@ mod tests {
                 deadline: Deadline(u64::MAX),
                 tenant: hostprefix::tenant_salt("co-tenant"),
             };
-            request.bytes.pinned = 2 * (1u64 << 30) - kv_bytes - first;
+            request.bytes.pinned = 3 * (1u64 << 30) - kv_bytes - first;
             hostprefix::ResidentCharge::reserve(governor.clone(), &request).unwrap()
         };
         let why = match super::host_entry_from_device(
@@ -51051,7 +55933,7 @@ mod tests {
         }
         assert_eq!(
             gpu_used(&host),
-            (2 * (1u64 << 30) - kv_bytes, 0, 0),
+            (3 * (1u64 << 30) - kv_bytes, 0, 0),
             "the KV destinations released; the co-tenant and the one buffer's charge remain"
         );
         drop(hog);
@@ -51252,7 +56134,7 @@ mod tests {
         .map(super::HostImage::whole)
         .expect("a clean demote after the aborted ticket");
         assert!(gpu_entry_whole(&engine, &entry, &want));
-        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        assert_eq!(gpu_used(&host), (gpu_lease_charge(), 0, 0));
         drop(image);
         assert_eq!(gpu_used(&host), (0, 0, 0));
     }
@@ -51277,7 +56159,7 @@ mod tests {
                 .all(|p| p.k.receipt().is_some() && p.v.receipt().is_some()),
             "every plane crossed through the contract"
         );
-        assert_eq!(gpu_used(host), (3 * 8 * 58, 0, 0));
+        assert_eq!(gpu_used(host), (gpu_lease_charge(), 0, 0));
         image
     }
 
@@ -51343,12 +56225,12 @@ mod tests {
         gpu_image_intact_and_sole_owner(&mut image, &want);
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58, 0, 0),
+            (gpu_lease_charge(), 0, 0),
             "the twins dropped with retire_source, the destinations left the registry, in-flight \
              released"
         );
         drop(promoted);
-        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        assert_eq!(gpu_used(&host), (gpu_lease_charge(), 0, 0));
         drop(image);
         assert_eq!(gpu_used(&host), (0, 0, 0));
     }
@@ -51388,14 +56270,14 @@ mod tests {
         gpu_image_intact_and_sole_owner(&mut image, &want);
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58, 0, 0),
+            (gpu_lease_charge(), 0, 0),
             "nothing but the image's leases charged after the unwind"
         );
         let promoted = super::device_entry_from_host(&engine, &image, route)
             .expect("a clean promote after the refusal");
         assert!(gpu_entry_whole(&engine, &promoted, &want));
         gpu_image_intact_and_sole_owner(&mut image, &want);
-        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        assert_eq!(gpu_used(&host), (gpu_lease_charge(), 0, 0));
         drop(promoted);
         drop(image);
         assert_eq!(gpu_used(&host), (0, 0, 0));
@@ -51437,13 +56319,13 @@ mod tests {
         gpu_image_intact_and_sole_owner(&mut image, &want);
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58, 0, 0),
+            (gpu_lease_charge(), 0, 0),
             "in-flight released by retire, twins by retire_source, destinations by take_plane"
         );
         let promoted = super::device_entry_from_host(&engine, &image, route)
             .expect("a clean promote after the aborted ticket");
         assert!(gpu_entry_whole(&engine, &promoted, &want));
-        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        assert_eq!(gpu_used(&host), (gpu_lease_charge(), 0, 0));
         drop(promoted);
         drop(image);
         assert_eq!(gpu_used(&host), (0, 0, 0));
@@ -51485,13 +56367,13 @@ mod tests {
         gpu_image_intact_and_sole_owner(&mut image, &want);
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58, 0, 0),
+            (gpu_lease_charge(), 0, 0),
             "the cancelled ticket retired: in-flight released, destinations released"
         );
         let promoted = super::device_entry_from_host(&engine, &image, route)
             .expect("a clean promote once the bytes match the receipt again");
         assert!(gpu_entry_whole(&engine, &promoted, &want));
-        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        assert_eq!(gpu_used(&host), (gpu_lease_charge(), 0, 0));
         drop(promoted);
         drop(image);
         assert_eq!(gpu_used(&host), (0, 0, 0));
@@ -51536,13 +56418,13 @@ mod tests {
         gpu_image_intact_and_sole_owner(&mut image, &want);
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58, 0, 0),
+            (gpu_lease_charge(), 0, 0),
             "the ticket retired, every fresh destination released, the twins dropped"
         );
         let promoted = super::device_entry_from_host(&engine, &image, route)
             .expect("a clean promote after the partial acceptance");
         assert!(gpu_entry_whole(&engine, &promoted, &want));
-        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        assert_eq!(gpu_used(&host), (gpu_lease_charge(), 0, 0));
         drop(promoted);
         drop(image);
         assert_eq!(gpu_used(&host), (0, 0, 0));
@@ -51589,13 +56471,13 @@ mod tests {
         gpu_image_intact_and_sole_owner(&mut image, &want);
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58, 0, 0),
+            (gpu_lease_charge(), 0, 0),
             "in-flight released by retire against the consumer fence, destinations released"
         );
         let promoted = super::device_entry_from_host(&engine, &image, route)
             .expect("a clean promote after the aborted published ticket");
         assert!(gpu_entry_whole(&engine, &promoted, &want));
-        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        assert_eq!(gpu_used(&host), (gpu_lease_charge(), 0, 0));
         drop(promoted);
         drop(image);
         assert_eq!(gpu_used(&host), (0, 0, 0));
@@ -51738,7 +56620,7 @@ mod tests {
             assert_eq!(set.charged, span_bytes, "charged once, at allocation");
         }
         drop((shell, landed));
-        assert_eq!(gpu_used(&host), (3 * 8 * 58 + span_bytes, 0, 0));
+        assert_eq!(gpu_used(&host), (gpu_lease_charge() + span_bytes, 0, 0));
         drop(image);
         host.disable("day-32 cell: the latch releases the staging charge");
         assert_eq!(gpu_used(&host), (0, 0, 0));
@@ -51806,7 +56688,7 @@ mod tests {
         gpu_image_intact_and_sole_owner(&mut image, &want);
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58, 0, 0),
+            (gpu_lease_charge(), 0, 0),
             "nothing in flight, nothing leaked"
         );
         let (mut shell, kv, draft) = settle(&host, &image).expect("the next clean promote");
@@ -51978,7 +56860,7 @@ mod tests {
         }
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58 + span_bytes, 0, 0),
+            (gpu_lease_charge() + span_bytes, 0, 0),
             "nothing in flight, no destination charged"
         );
         gpu_image_intact_and_sole_owner(&mut image, &want);
@@ -52065,7 +56947,7 @@ mod tests {
         }
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58 + span_bytes, 0, 0),
+            (gpu_lease_charge() + span_bytes, 0, 0),
             "the ledger is clean"
         );
         gpu_image_intact_and_sole_owner(&mut image, &want);
@@ -52876,11 +57758,19 @@ mod tests {
             .unwrap()
             .reserve(&request(budget as u64, 500))
             .unwrap();
-        // A third whole-budget charge is what the LRU could never have made room for.
+        // A third whole-budget charge fits the ledger's third term on both host dimensions (the lease
+        // pool's on the pinned one, design L of WP-A day 63; the payload reserve's on the pageable
+        // one, design P2 re-applied on day 67); a fourth is what neither could make room for.
+        let third = governor
+            .lock()
+            .unwrap()
+            .reserve(&request(budget as u64, 0))
+            .unwrap();
         assert_eq!(
             governor.lock().unwrap().reserve(&request(1, 0)).err(),
             Some(Error::Capacity)
         );
+        governor.lock().unwrap().release(&third).unwrap();
         governor.lock().unwrap().release(&resident).unwrap();
         governor.lock().unwrap().release(&incoming).unwrap();
         assert_eq!(governor.lock().unwrap().used().pinned, 0);
@@ -53352,6 +58242,46 @@ mod tests {
         ));
         assert!(h.promoted_pin.is_some());
         assert_eq!(px.entries[&beta][0].pins, 1);
+    }
+
+    /// WP-A day 69 (`DAY69.md` design P, cell (c), CPU census): the purge's last work is the scrub,
+    /// after its settles and after the tenant's entries drop; the scrub drains the lease pool and
+    /// zeroes the staging set's idle buffers in place (their charges kept).
+    #[test]
+    fn day69_the_purge_ends_with_the_pool_drain_and_the_staging_zero() {
+        let src = include_str!("worker.rs");
+        let code = &src[..src.find("#[cfg(test)]\nmod tests").unwrap()];
+        let body = |sig: &str| {
+            let at = code.find(sig).unwrap_or_else(|| panic!("{sig}"));
+            &code[at..at + code[at..].find("\n    }\n").unwrap()]
+        };
+        let purge = body("    fn purge_tenant(&mut self, tenant: &str) -> (usize, usize, usize) {");
+        let scrub = purge.find("self.purge_scrub();").expect("the purge scrubs");
+        for before in [
+            "host_demote_settle_pending(self, ContractWait::Block, \"a tenant purge\");",
+            "host_promote_settle_contract(self, ContractWait::Block, \"a tenant purge\");",
+            "host_capture_settle_contract(self, ContractWait::Block, \"a tenant purge\");",
+            "if let Some(pool) = self.entries.remove(key) {",
+            "self.tenant_bytes.remove(&row);",
+        ] {
+            assert!(
+                purge.find(before).unwrap() < scrub,
+                "{before} precedes the scrub"
+            );
+        }
+        assert!(
+            purge[scrub..]
+                .trim_start_matches("self.purge_scrub();")
+                .trim()
+                == "(victims.len(), entries, bytes)",
+            "the scrub is the purge's last work"
+        );
+        let f = body("    fn purge_scrub(&self) {");
+        assert!(f.contains("tier.lease_pool.as_ref().map_or((0, 0), |p| p.drain())"));
+        assert!(f.contains("tier.staging.borrow_mut().scrub()"));
+        let staging = body("    fn scrub(&mut self) -> (usize, u64) {");
+        assert!(staging.contains("for buf in &mut self.idle {\n            buf.fill(0);"));
+        assert!(!staging.contains("charges"), "the set keeps its charges");
     }
 
     #[test]
@@ -54247,13 +59177,732 @@ mod tests {
         let worker = squash(include_str!("worker.rs"));
         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
         assert!(live.contains(
-            "let pending_seed = if admit_memory_cfg.armed { seed_booking_cap( pending_seed_bytes(&active), prefix_cache_budget_bytes(), px.total_bytes, ) } else { 0 };"
+            "let pending_seed_uncapped = if admit_memory_cfg.armed { pending_seed_bytes(&active) } else { 0 }; let pending_seed = if admit_memory_cfg.armed { seed_booking_cap( pending_seed_uncapped, prefix_cache_budget_bytes(), px.total_bytes, ) } else { 0 };"
         ));
         assert!(live.contains("let pending_booked = pending_prime.saturating_add(pending_seed);"));
         assert!(live.contains(
             "move |h: AdmissionHeadroom| h.less_pending(pending_booked, primary_device);"
         ));
         assert_eq!(live.matches("pending_seed_bytes(&active)").count(), 1);
+    }
+
+    /// WP-B day 37 (DAY37 1.2 ensure point 2): the tick-top ensure runs after the disconnect
+    /// sweep and before the first engine call of the tick, only with the door armed, and its
+    /// retry is the one reclaim retry.
+    #[test]
+    fn vmm_tick_top_ensure_precedes_every_phase_and_is_armed_only() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let sweep = live
+            .find("if s.tx.is_closed() { abort_log(s); finished.push(i); } }")
+            .expect("the disconnect sweep");
+        let ensure = live
+            .find("if crate::kv_vmm::armed() { let (reaped, pending) = vmm_reap_tick(&mut active, &mut reuse, &mut spec_reuse);")
+            .expect("the tick-top ensure");
+        let first_phase = sweep + live[sweep..].find("if !batching {").expect("the phases");
+        assert!(sweep < ensure && ensure < first_phase);
+        assert_eq!(live.matches("vmm_ensure_session(s)").count(), 2);
+        assert_eq!(
+            live.matches("vmm_reap_tick(&mut active, &mut reuse, &mut spec_reuse)")
+                .count(),
+            1
+        );
+    }
+
+    /// WP-B day 37 (DAY37 1.2 ensure points 1 and 3, 1.3): every session-cache construction in
+    /// the admission paths goes through the on-demand scope, the spec sessions through one
+    /// closure; the only direct constructions left are the park compaction's fed-length cache
+    /// and the boot calibration probe, both pooled by design. The admitted session is ensured
+    /// before it leaves admission. A new construction site fails this census until classified.
+    #[test]
+    fn vmm_every_admission_cache_is_built_under_the_scope() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        assert_eq!(
+            live.matches("memra_engine::pp::new_cache_planned(").count(),
+            7
+        );
+        // Six wrapped sites plus the helper's own definition.
+        assert_eq!(live.matches("vmm_build_cache(").count(), 7);
+        // Eight sites (six caches, the spec closure, the spec grow) plus the definition.
+        assert_eq!(live.matches("vmm_scope(").count(), 9);
+        let compact = live
+            .find("fn compact_parked_plain_cache(")
+            .expect("the park compaction");
+        let compact_end = compact + live[compact..].find("\n}").unwrap_or(live.len() - compact);
+        assert!(live[compact..compact_end].contains(
+            "memra_engine::pp::new_cache_planned(engine, &lm.model.cfg, &lm.model.plan, target)?"
+        ));
+        assert_eq!(live.matches("lm.model.new_session(engine, ").count(), 2);
+        assert!(live.contains("|| lm.model.new_session(engine, cap),"));
+        assert!(live.contains("let mut sess = lm.model.new_session(engine, probe_ctx)?;"));
+        assert_eq!(live.matches("vmm ensure at admission").count(), 1);
+    }
+
+    /// WP-B day 37 (DAY37 1.4): the owed growth joins the one booked reduction, computed only with
+    /// the door armed, and both park sites trim through a recorded event.
+    #[test]
+    fn vmm_owed_growth_joins_the_booked_reduction_and_both_parks_trim() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        assert!(live.contains(
+            "let vmm_owed = if crate::kv_vmm::armed() { vmm_owed_bytes(&active) } else { 0 }; let pending_booked = pending_booked.saturating_add(vmm_owed);"
+        ));
+        assert!(live.contains("let pending_booked = pending_prime.saturating_add(pending_seed);"));
+        assert_eq!(live.matches("pool=spec keep_rows={keep}").count(), 1);
+        assert_eq!(live.matches("pool=plain keep_rows={keep}").count(), 1);
+        // Each plane records its own fence under its lock (DAY37 section 2's review): the worker
+        // records no event for a trim.
+        assert!(!live.contains("release_kv_beyond_rows(keep, &"));
+        assert_eq!(super::vmm_owed_bytes(&[]), 0);
+    }
+
+    /// WP-B day 37 addendum D: pending releases keep the idle block polling, and every reclaim
+    /// path reaps the graveyard before its pool trim (day 49 addendum C adds the batch-OOM one).
+    #[test]
+    fn vmm_pending_releases_keep_the_idle_wait_polling_and_the_reclaims_reap() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        assert!(live.contains(
+            "&& hpx.restoring.is_none() && !vmm_pending && reclaim_queue.ids.is_empty() && settle_queue.is_empty() {"
+        ));
+        assert!(live.contains("if vmm_pending { wait = wait.min(Duration::from_millis(2)); }"));
+        assert!(live.contains("let (reaped, pending) = vmm_reap_tick(&mut active, &mut reuse, &mut spec_reuse); vmm_pending = pending > 0;"));
+        // Addendum E2 and E4: the idle decision re-reads the pending bytes (this tick's retires
+        // trimmed and dropped after the tick-top reap) before it chooses the block, and flushes
+        // the ensure-walls batch.
+        let refresh = "if active.is_empty() && queue.is_empty() { vmm_idle_refresh(&mut vmm_pending, &mut vmm_ensure_walls, &reuse, &spec_reuse); if pending_constraints.is_empty()";
+        let at = live
+            .find(refresh)
+            .expect("the idle decision refreshes the pending flag first");
+        assert!(
+            at < live
+                .find(
+                    "&& hpx.restoring.is_none() && !vmm_pending && reclaim_queue.ids.is_empty() && settle_queue.is_empty() {"
+                )
+                .unwrap()
+        );
+        assert_eq!(live.matches("vmm_idle_refresh(&mut").count(), 1);
+        assert!(live.contains("if crate::kv_vmm::armed() { *vmm_pending = vmm_pending_bytes(reuse, spec_reuse) > 0; vmm_flush_ensure_walls(walls); }"));
+        assert_eq!(
+            live.matches("vmm_pending = pending > 0;").count(),
+            1,
+            "the tick top's read"
+        );
+        // The tick-top reap covers the active sessions' planes too.
+        assert!(live.contains("for s in active.iter_mut() { if let Some(sp) = s.spec.as_mut() { released += sp.reap_kv(); } if let Some(c) = s.cache.as_mut() { released += c.reap_kv(); } }"));
+        assert!(live.contains(
+            "vmm_reap_for(\"oom-teardown\"); let reports = trim_model_device_pools(&engine, &loaded, \"oom-teardown\");"
+        ));
+        assert!(live.contains(
+            "vmm_reap_for(\"admin-trim\"); report.devices = trim_model_device_pools(&engine, &loaded, \"admin-trim\");"
+        ));
+        assert!(live.contains(
+            "vmm_reap_for(\"batch-oom\"); let reports = trim_model_device_pools(engine, loaded, \"batch-oom\");"
+        ));
+        // Every pool trim on a reclaim path follows its reap.
+        assert_eq!(
+            live.matches("vmm_reap_for(\"").count(),
+            3,
+            "the three reclaim paths"
+        );
+    }
+
+    /// WP-B day 42 addendum E: the worker queue's helpers, and the idle wait keeps polling while
+    /// entries are queued (the tick top submits them), so a queue never strands on an idle box.
+    #[test]
+    fn reclaim_queue_counts_its_bytes_and_keeps_the_idle_wait_polling() {
+        let mut q = super::ReclaimQueue::default();
+        assert_eq!(q.queued_bytes(), 0);
+        q.ids.extend([(7, 400), (9, 300)]);
+        assert_eq!(q.queued_bytes(), 700);
+        assert!(q.contains(9) && !q.contains(8));
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        assert!(live.contains(
+            "&& !vmm_pending && reclaim_queue.ids.is_empty() && settle_queue.is_empty() {"
+        ));
+        assert!(live.contains(
+            "if !reclaim_queue.ids.is_empty() { wait = wait.min(Duration::from_millis(2)); }"
+        ));
+    }
+
+    /// WP-B day 42 (DAY42 1.3): the off-tick flush's plan keeps today's demote rule and drop set.
+    #[test]
+    fn reclaim_offtick_plan_keeps_todays_demote_rule_and_drop_set() {
+        let e = [(1, 300), (2, 300), (3, 300), (4, 300)];
+        // Demote while the bytes planned so far are under the budget (today's rule overshoots by
+        // at most one entry), everything else drops.
+        assert_eq!(
+            super::reclaim_offtick_plan(&e, 500),
+            (vec![1, 2], vec![3, 4])
+        );
+        assert_eq!(
+            super::reclaim_offtick_plan(&e, 600),
+            (vec![1, 2], vec![3, 4])
+        );
+        assert_eq!(
+            super::reclaim_offtick_plan(&e, 601),
+            (vec![1, 2, 3], vec![4])
+        );
+        assert_eq!(
+            super::reclaim_offtick_plan(&e, 0),
+            (vec![], vec![1, 2, 3, 4])
+        );
+        assert_eq!(
+            super::reclaim_offtick_plan(&e, 1 << 40),
+            (vec![1, 2, 3, 4], vec![])
+        );
+        assert_eq!(super::reclaim_offtick_plan(&[], 500), (vec![], vec![]));
+    }
+
+    /// DAY42 1.3: one pass's step over every arm, the budget's edge and a slot held by another
+    /// route's demote.
+    #[test]
+    fn reclaim_offtick_step_waits_on_the_landing_inside_the_budget() {
+        use super::ReclaimStep::*;
+        use super::reclaim_offtick_step as step;
+        assert_eq!(
+            step(true, true, 3, 99_999, 8_000),
+            Admit,
+            "a fit admits whatever else holds"
+        );
+        assert_eq!(step(false, false, 2, 0, 8_000), Submit);
+        assert_eq!(
+            step(false, true, 2, 7_999, 8_000),
+            Wait,
+            "a slot held by any route: wait"
+        );
+        assert_eq!(
+            step(false, true, 0, 7_999, 8_000),
+            Wait,
+            "the last landing still in flight"
+        );
+        assert_eq!(
+            step(false, true, 2, 8_000, 8_000),
+            Refuse,
+            "the budget's edge refuses"
+        );
+        assert_eq!(
+            step(false, true, 2, 1 << 40, 0),
+            Wait,
+            "a zero budget keeps the unbounded wait"
+        );
+        assert_eq!(
+            step(false, false, 0, 0, 8_000),
+            Exhausted,
+            "an empty plan climbs the ladder"
+        );
+    }
+
+    /// DAY42 1.3: the arm is read only at the reclaim site with both doors; the pass submits one
+    /// demote per free slot; the waiting arrival skips the parked-session ladder and joins the
+    /// parked-only wait; the defer site names the reason.
+    #[test]
+    fn reclaim_offtick_is_armed_only_at_the_reclaim_site() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let call = format!("admit_reclaim_offtick_on{}", "()");
+        assert_eq!(
+            live.matches(call.as_str()).count(),
+            2,
+            "the definition and the reclaim site"
+        );
+        assert!(live.contains(
+            "let offtick_arm = admit_reclaim_offtick_on() && hpx.tier.is_some() && (budget > 0 || req.reclaim_offtick.is_some());"
+        ));
+        // The site sits inside the armed branch, so unarmed it is today's `px.evict_all()`.
+        assert!(live.contains(
+            "if !offtick_arm { evict_all_demoting(&engine, &mut px, &mut hpx, budget) } else { let q = &mut reclaim_queue; let n = reclaim_offtick_pass( &engine, &mut px, &mut hpx, q, &mut req, budget, ); (n, 0, 0) }"
+        ));
+        let site = live
+            .find("reclaim_offtick_pass( &engine, &mut px, &mut hpx, q, &mut req, budget, )")
+            .unwrap();
+        let armed = live[..site].rfind("if admit_memory_cfg.armed {").unwrap();
+        assert!(site - armed < 3000);
+        // Addendum E: an arrival plans only for the bytes the worker's queue will not already free,
+        // over entries not queued; the queue drains at the pass and at the tick top.
+        assert!(live.contains("if budget > coming {"));
+        assert!(live.contains(".filter(|e| !queue.contains(e.id))"));
+        assert!(live.contains(
+            "if !reclaim_queue.ids.is_empty() { reclaim_queue_drain( &engine, &mut px, &mut hpx, &mut reclaim_queue, \"the tick top\", ); }"
+        ));
+        let drain = live.find("reclaim_queue_drain( &engine, &mut px, &mut hpx, &mut reclaim_queue, \"the tick top\", )").unwrap();
+        let pause = live
+            .find("host_pause_drain(&engine, &mut px, &mut hpx, &mut reuse);")
+            .unwrap();
+        assert!(
+            pause < drain && drain - pause < 400,
+            "the drain follows the tick top's settles"
+        );
+        // One submission per free slot: the pass loops only while the slot is free.
+        assert!(live.contains("while hpx.demoting.is_none() { let Some((id, _)) = queue.ids.pop_front() else { break; };"));
+        assert!(live.contains("host_demote_prefix_entry(engine, hpx, dead);"));
+        // The waiting arrival does not climb the parked-session ladder, and it parks.
+        assert!(live.contains("while !reclaim_landing && !headroom.sufficient(required) {"));
+        assert!(live.contains(
+            "{ parked_on_promote += 1; } requeue.push_back(req); // waits (FIFO), never rejected"
+        ));
+        assert!(live.contains("defer_reason = Some(\"reclaim-landing\");"));
+        assert!(live.contains("defer_reason = Some(\"reclaim-landing-timeout\");"));
+    }
+
+    /// WP-B day 41 (DAY41 1.5): the grid-rewind door is read at the two arming sites and the two
+    /// pools' exact and text hits, and nowhere else; each pool's rewind is the path's own restore.
+    #[test]
+    fn grid_rewind_door_reaches_the_two_pools_and_the_two_arming_sites_only() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let call = format!("resume_grid_rewind_on{}", "()");
+        // The definition, plain arming (the gate and addendum B's rule), spec arming (the gate
+        // and addendum B's cold rule), the plain hit, the spec exact key (addendum B3) and the
+        // spec exact and text hits.
+        assert_eq!(live.matches(call.as_str()).count(), 9);
+        assert!(live.contains("if resume_grid_rewind_on() { // DAY41 addendum B (B1, B2): the armed arm's own boundary rule. let markers = req.affinity.is_some() || plain_ckpt_nominatable(&prompt, &|t| lm.tok.token_is_control(t)); grid_rewind_checkpoint_boundary(&prompt, seed_fed.len(), markers, &|t| { lm.tok.token_is_control(t) }) } else { plain_checkpoint_boundary(&prompt, &|t| lm.tok.token_is_control(t)) .filter(|&b| b > seed_fed.len()) }"));
+        assert!(live.contains("if cold && resume_grid_rewind_on() {"));
+        assert!(live.contains("grid_rewind_checkpoint_boundary(&suffix, 0, markers, &|t| {"));
+        // B3: unset, the exact key is the whole committed stream (today's probe).
+        assert!(live.contains("if resume_grid_rewind_on() || resume_exact_on() { e.public_len.min(e.sess.committed.len()) } else { e.sess.committed.len() }"));
+        assert!(live.contains("&& prompt.starts_with(&e.sess.committed[..exact_key(e)])"));
+        assert!(live.contains("let public_len = spec_public_len(toks, s.n_prompt, &s.generated);"));
+        assert!(live.contains("|| plain_ckpt_nominatable(&prompt, &|t| lm.tok.token_is_control(t)) || resume_grid_rewind_on())"));
+        assert!(live.contains("|| plain_ckpt_nominatable(&suffix, &|t| lm.tok.token_is_control(t)) || resume_grid_rewind_on())"));
+        assert!(live.contains(
+            "if resume_grid_rewind_on() && let Some(e) = reused.take() { reused = grid_rewind_plain(engine, lm, e, &prompt, &req.model); }"
+        ));
+        assert!(live.contains("Some(SpecResumeProbe::Exact(index)) if resume_grid_rewind_on() =>"));
+        assert!(
+            live.contains(
+                "Some(SpecResumeProbe::Text { index, .. }) if resume_grid_rewind_on() =>"
+            )
+        );
+        // The rewind precedes the hit count, so a declined rewind is not a hit.
+        let rewind = live.find("reused = grid_rewind_plain(").unwrap();
+        let hit = live[rewind..]
+            .find("reuse_metrics.continuation_hits += 1;")
+            .unwrap();
+        assert!(hit < 200, "the hit count follows the rewind directly");
+        // Each rewind is its pool's own restore.
+        assert!(live.contains("if let Err(err) = memra_engine::pp::restore_cache_checkpoint( engine, &lm.model, None, &mut e.cache, &ckpt.snap, )"));
+        assert!(live.contains("match lm.model.spec_rewind_to_checkpoint(engine, &mut sess) {"));
+    }
+
+    /// WP-B day 49 (DAY49 1.5): the batch-OOM door is read at the batched chunk only; the retry is
+    /// bounded to one and gated on a quoted CUDA OOM and the step guard's recoverable states.
+    #[test]
+    fn batch_oom_recover_door_reaches_the_batched_chunk_only() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let call = format!("batch_oom_recover_on{}", "()");
+        assert_eq!(
+            live.matches(call.as_str()).count(),
+            3,
+            "definition, the retry arm, the torn line"
+        );
+        assert!(live.contains("if batch_attempt == 0 && batch_oom_recover_on() && is_cuda_oom(&err.to_string()) && memra_engine::step_guard::recoverable(guard_state) =>"));
+        assert_eq!(live.matches("memra_engine::step_guard::arm();").count(), 1);
+        assert!(live.contains("let guard_state = memra_engine::step_guard::take();"));
+        assert!(live.contains("batch_attempt += 1;"));
+        // The fault door's batched injection point stays inside the retried call.
+        let arm = live.find("memra_engine::step_guard::arm();").unwrap();
+        let fault = live[arm..]
+            .find("MEMRA_STEP_OOM_FAULT fired: this batched decode chunk")
+            .unwrap();
+        assert!(
+            fault < 800,
+            "the injection is the first statement of the retried call"
+        );
+    }
+
+    /// WP-B day 45 (DAY45 1.3): the W-release door is read at the admit seam and the one release
+    /// site; the release is exact and happens once.
+    #[test]
+    fn w_release_door_reaches_the_admit_seam_and_one_site() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let call = format!("admit_w_release_on{}", "()");
+        assert_eq!(
+            live.matches(call.as_str()).count(),
+            3,
+            "definition, admit seam, release site"
+        );
+        assert!(live.contains(
+            "if admit_w_release_on() { release_primed_workspace(&mut active, &mut admission_book); }"
+        ));
+        assert_eq!(live.matches("release_primed_workspace(&mut").count(), 1);
+        assert!(live.contains("if s.booked_w_bytes == 0 || !s.prefill_done { continue; }"));
+        assert!(live.contains("s.booked_w_bytes = 0;"));
+        // Addendum B: the retire receipt reads the per-session field, which only the door sets.
+        assert!(live.contains("if s.booked_w_bytes > 0 { eprintln!( \"[admit-book] w-retire-unreleased id={} bytes={} reason={}\","));
+        // Never more than a book carries.
+        assert_eq!(super::release_split(2_000, 5_000, 0), (2_000, 0));
+        assert_eq!(super::release_split(2_000, 1_000, 3_000), (1_000, 2_000));
+    }
+
+    /// WP-B day 44 (DAY44 1.5): the exact-resume door is read at the two arming sites (plain
+    /// `exact_at` with the `ckpt_at` stop disarmed; spec `grid_capture_at` with the boundary stop
+    /// disarmed), the two exact hits, the two park enqueues, and nowhere else.
+    #[test]
+    fn exact_resume_door_reaches_its_sites_only() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let call = format!("resume_exact_on{}", "()");
+        // The definition, 2 park enqueues, the plain hit, the spec exact key, the spec exact and
+        // text arms, the plain arming pair, the spec arming pair.
+        assert_eq!(live.matches(call.as_str()).count(), 11);
+        assert!(live.contains("let exact_at = (resume_exact_on() && affinity_enabled()"));
+        assert!(live.contains("let ckpt_at = if !resume_exact_on() && affinity_enabled()"));
+        assert!(live.contains("let boundary = if !resume_exact_on() && !suffix.is_empty()"));
+        assert!(live.contains(
+            "if resume_exact_on() && let Some(e) = reused.take() { (reused, exact_carry) = exact_resume_plain(engine, lm, e, &prompt, &req.model); }"
+        ));
+        assert!(live.contains("Some(SpecResumeProbe::Exact(index)) if resume_exact_on() =>"));
+        assert!(
+            live.contains("if resume_exact_on() && ckpt.is_some() { settle_queue.push(SettleJob {")
+        );
+        assert!(live.contains(
+            "if resume_exact_on() && sess.rewind_pos().is_some() { settle_queue.push(SettleJob {"
+        ));
+        // The exact door takes precedence over the grid rewind door.
+        assert!(live.contains(
+            "std::env::var(\"MEMRA_RESUME_GRID_REWIND\").as_deref() == Ok(\"1\") && std::env::var(\"MEMRA_RESUME_EXACT\").as_deref() != Ok(\"1\");"
+        ));
+        // The capture rides the prefill tick's own prime call, disarmed on every path.
+        assert!(live.contains(
+            "let exact_here = s.exact_at.filter(|&g| fed_len <= g && g <= fed_len + take);"
+        ));
+        assert!(live.contains(
+            "memra_engine::grid_capture::arm(g, memra_engine::grid_capture::needed_layers(c))"
+        ));
+        // A capturing session primes alone (no batch, fanout or concat path).
+        assert!(live.contains("&& s.ckpt_at.is_none() // WP-B day 44: an in-call grid capture needs the per-sequence prime. && s.exact_at.is_none()"));
+        assert!(live.contains(
+            "|| s.ckpt_at.is_some() || s.exact_at.is_some() || seed_boundary_inside_prompt("
+        ));
+        // The settle runs only on an idle worker, after the grace, and the idle block's
+        // indefinite wait requires an empty settle queue.
+        assert!(live.contains("&& reclaim_queue.ids.is_empty() && settle_queue.is_empty() {"));
+        assert!(live.contains("let ready = last_work + EXACT_SETTLE_GRACE;"));
+        assert!(live.contains("settle_queue.purge_tenant(&tenant);"));
+    }
+
+    /// WP-B day 44 (DAY44 1.2 (c), 1.3): the settle point and the settle queue.
+    /// DAY44 addendum C: the settle keeps the checkpoint affinity nominates on both routes, and a
+    /// settle runs only when the memory reading covers its workspace (case 6), waiting otherwise.
+    #[test]
+    fn settle_keeps_the_affinity_checkpoint_and_waits_for_the_reading() {
+        // The gate's decision: waits while short or unread, runs once the reading covers the need.
+        assert!(!super::settle_reading_covers(10, Some(9)));
+        assert!(!super::settle_reading_covers(10, None));
+        assert!(super::settle_reading_covers(10, Some(10)));
+        assert!(super::settle_reading_covers(0, Some(0)));
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let body = |start: &str| -> &str {
+            let at = live.find(start).expect(start);
+            let end = live[at + 1..]
+                .find("\nfn ")
+                .map_or(live.len(), |n| at + 1 + n);
+            let _ = end;
+            &live[at..(at + 6000).min(live.len())]
+        };
+        // Plain: the settle leaves the checkpoint in place; the settled resume carries it.
+        let plain = body("fn exact_settle_plain(");
+        let plain = &plain[..plain.find("fn exact_settle_spec(").unwrap_or(plain.len())];
+        assert!(
+            !plain.contains("e.ckpt = None;"),
+            "the plain settle keeps the checkpoint at g"
+        );
+        assert!(live.contains("let carry = e.ckpt.take(); return (Some(e), carry);"));
+        // Spec: the retaining rewind.
+        let spec = body("fn exact_settle_spec(");
+        assert!(spec.contains("spec_rewind_to_checkpoint_retaining(engine, &mut e.sess)"));
+        assert!(
+            !spec[..spec.find("fn reclaim_queue_drain(").unwrap_or(spec.len())]
+                .contains(".spec_rewind_to_checkpoint(engine")
+        );
+        // The gate reads before any entry moves out of its pool.
+        let one = body("fn settle_one(");
+        let gate = one
+            .find("if !settle_reading_covers(need, free) {")
+            .expect("the gate");
+        let first_move = one.find(".remove(i);").expect("the move");
+        assert!(gate < first_move, "the gate reads before the entry moves");
+        // The spec prime-only walk takes no prompt-end checkpoint.
+        let prime = squash(include_str!("../../memra-engine/src/spec/prime.rs"));
+        assert!(prime.contains("if s.ckpt_rel.is_none() && !s.grid_requested && !s.prime_only {"));
+    }
+
+    #[test]
+    fn exact_settle_point_and_queue_follow_day44() {
+        use super::{ParkedPool, SettleJob, SettleQueue, exact_settle_point};
+        let grain = memra_engine::Engine::gdn_chunk_size();
+        assert_eq!(grain, 32);
+        // A 6,144-token prompt, checkpoint 6112, a 32-token reply: committed 6176 settles at 6144.
+        assert_eq!(exact_settle_point(6176, 6112), Some(6144));
+        // 6,144 plus 256: committed 6400 settles at 6368 (32 rows after it).
+        assert_eq!(exact_settle_point(6400, 6112), Some(6368));
+        // Nothing past the checkpoint by the floor: no settle.
+        assert_eq!(exact_settle_point(6140, 6112), None);
+        assert_eq!(
+            exact_settle_point(6160, 6112),
+            Some(6144),
+            "32 rows past the checkpoint"
+        );
+        let job = |id: u64, ns: &str| SettleJob {
+            pool: ParkedPool::Plain,
+            key: ("m".into(), ns.into()),
+            id,
+        };
+        let mut q = SettleQueue::default();
+        q.push(job(1, "a"));
+        q.push(job(1, "a"));
+        q.push(job(2, "b"));
+        assert_eq!(q.pop(), Some(job(2, "b")), "newest first");
+        assert_eq!(q.pop(), Some(job(1, "a")), "one job per entry");
+        assert!(q.is_empty());
+        for id in 0..100 {
+            q.push(job(id, "c"));
+        }
+        assert_eq!(q.jobs.len(), SettleQueue::CAP);
+        assert_eq!(q.pop(), Some(job(99, "c")), "the newest kept");
+    }
+
+    /// WP-B day 43 (DAY43 1.3): the budget-clamp door is read once, where the qwen spec arm hands
+    /// the session its request budget; the firing is reported with the model.
+    #[test]
+    fn spec_budget_clamp_door_is_read_at_the_qwen_spec_burst_only() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let call = format!("spec_budget_clamp_on{}", "()");
+        assert_eq!(
+            live.matches(call.as_str()).count(),
+            2,
+            "the definition and one read"
+        );
+        assert!(
+            live.contains("if spec_budget_clamp_on() { spec.budget_room = Some(request_room); }")
+        );
+        assert_eq!(
+            live.matches("budget_room").count(),
+            1,
+            "only the qwen arm sets it"
+        );
+        let set = live.find("spec.budget_room = Some(request_room);").unwrap();
+        let burst = live[set..]
+            .find("generate_spec_session_sampled_prime_split(")
+            .unwrap();
+        assert!(burst < 4000, "the budget is set right before the burst");
+        assert!(live.contains("if let Some((na, n_acc, room)) = spec.budget_clamp_fired.take() {"));
+    }
+
+    /// WP-B day 41 addendum B (B1, B2): the armed arm's checkpoint boundary.
+    #[test]
+    fn grid_rewind_checkpoint_boundary_follows_addendum_b() {
+        use super::{grid_rewind_checkpoint_boundary as rule, plain_checkpoint_boundary};
+        let grain = memra_engine::Engine::gdn_chunk_size();
+        let floor = memra_engine::hybrid_forward::PRIME_MIN_T;
+        const M: u32 = 7;
+        let is_m = |t: u32| t == M;
+        let plain = |n: usize| (0..n).map(|i| 100 + (i as u32 % 50)).collect::<Vec<u32>>();
+        let n = 40 * grain;
+        let guard = super::grid_align_boundary_within(n - super::PLAIN_CKPT_RAW_GUARD, n);
+        // A markerless prompt: the guard window, with or without markers searched.
+        let p = plain(n);
+        assert_eq!(rule(&p, 0, false, &is_m), Some(guard));
+        assert_eq!(rule(&p, 0, true, &is_m), Some(guard));
+        assert_eq!(
+            rule(&p, 0, true, &is_m),
+            plain_checkpoint_boundary(&p, &is_m)
+        );
+        // B1: an interior control token in an unnominatable prompt is ignored.
+        let mut q = plain(n);
+        q[10 * grain + 3] = M;
+        assert_eq!(rule(&q, 0, false, &is_m), Some(guard));
+        // A nominatable prompt keeps the affinity point, cold: today's boundary.
+        assert_eq!(rule(&q, 0, true, &is_m), Some(10 * grain));
+        assert_eq!(
+            rule(&q, 0, true, &is_m),
+            plain_checkpoint_boundary(&q, &is_m)
+        );
+        // B2: resumed past the last control token, the tail's guard window.
+        assert_eq!(rule(&q, 10 * grain, true, &is_m), Some(guard));
+        assert_eq!(rule(&q, 20 * grain, false, &is_m), Some(guard));
+        // A control token at or past the resumed depth: its grid floor, never past it.
+        assert_eq!(rule(&q, 5 * grain, true, &is_m), Some(10 * grain));
+        // The fed-start floor: a boundary fewer than PRIME_MIN_T rows past the resumed depth is
+        // no checkpoint at all, never a tokenwise one.
+        assert_eq!(rule(&q, guard - floor + 1, false, &is_m), None);
+        assert_eq!(rule(&q, guard - floor, false, &is_m), Some(guard));
+        assert_eq!(
+            rule(&q, 10 * grain - floor + 1, true, &is_m),
+            None,
+            "the marker floor, not a later point"
+        );
+        // Too short for any checkpoint.
+        assert_eq!(
+            rule(
+                &plain(super::REUSE_MIN_PREFIX + super::PLAIN_CKPT_RAW_GUARD),
+                0,
+                false,
+                &is_m
+            ),
+            None
+        );
+    }
+
+    /// WP-B day 41 addendum B3: the public stream of an overshooting park.
+    #[test]
+    fn spec_public_len_drops_the_final_bursts_overshoot() {
+        use super::spec_public_len;
+        let prompt: Vec<u32> = (0..64).collect();
+        let generated: Vec<u32> = (1000..1032).collect();
+        let mut committed = prompt.clone();
+        committed.extend_from_slice(&generated);
+        assert_eq!(
+            spec_public_len(&committed, 64, &generated),
+            96,
+            "no overshoot"
+        );
+        committed.extend_from_slice(&[5000, 5001, 5002]);
+        assert_eq!(
+            spec_public_len(&committed, 64, &generated),
+            96,
+            "three overshoot rows"
+        );
+        // Committed does not reproduce the generated tokens: today's key.
+        let mut other = committed.clone();
+        other[70] = 9;
+        assert_eq!(spec_public_len(&other, 64, &generated), other.len());
+        // A generated list longer than committed: today's key.
+        assert_eq!(spec_public_len(&committed[..80], 64, &generated), 80);
+    }
+
+    /// WP-B day 39 (DAY39 1.6): the corrected pending-prime term, one model.
+    #[test]
+    fn corrected_pending_prime_books_one_call_once_and_unstarted_walker_stacks() {
+        let shape = memra_engine::hybrid_forward::PrimeWorkspaceShape {
+            call_row_bytes: 400_000,
+            prompt_row_bytes: 20_480,
+            n_layers: 64,
+        };
+        let o = |rows, unstarted_walker, cooperative| super::PrimeOwed {
+            rows,
+            unstarted_walker,
+            cooperative,
+            snapshot_bytes: 0,
+        };
+        let slab = |rows: usize| 400_000 * shape.call_rows(rows);
+        let returned = |rows: usize| 20_480 * shape.call_rows(rows);
+        // Nothing owed: 0.
+        assert_eq!(
+            super::pending_prime_for_model(&[], Some(&shape), None, 0),
+            0
+        );
+        // N plain sessions: one call, once, not N: the slab rows plus the call's returned rows.
+        let plain = vec![o(1_300, false, false); 64];
+        assert_eq!(
+            super::pending_prime_for_model(&plain, Some(&shape), None, 0),
+            slab(1_300) + returned(1_300)
+        );
+        // Addendum B: the resident slab covers only the slab rows; the returned rows stay owed.
+        assert_eq!(
+            super::pending_prime_for_model(&plain, Some(&shape), None, slab(1_300)),
+            returned(1_300)
+        );
+        assert_eq!(
+            super::pending_prime_for_model(&plain, Some(&shape), None, 1 << 40),
+            returned(1_300)
+        );
+        assert_eq!(
+            super::pending_prime_for_model(&plain, Some(&shape), None, slab(1_300) - 7),
+            7 + returned(1_300)
+        );
+        // Cooperative unstarted walkers: each whole-prompt stack; a started walker books none.
+        let coop = vec![
+            o(1_300, true, true),
+            o(1_300, true, true),
+            o(1_300, false, true),
+        ];
+        assert_eq!(
+            super::pending_prime_for_model(&coop, Some(&shape), None, 0),
+            slab(1_300) + returned(1_300) + 2 * 20_480 * 1_300
+        );
+        // Non-cooperative walkers: only the largest stack (it lives for one call).
+        let noncoop = vec![o(1_000, true, false), o(2_000, true, false)];
+        assert_eq!(
+            super::pending_prime_for_model(&noncoop, Some(&shape), None, 0),
+            slab(2_000) + returned(2_000) + 20_480 * 2_000
+        );
+        // Addendum B: every owed checkpoint snapshot is booked, once per session that owes one.
+        let snap = 156_900_000;
+        let mut ckpt = vec![o(1_300, false, false); 51];
+        for x in ckpt.iter_mut().take(50) {
+            x.snapshot_bytes = snap;
+        }
+        assert_eq!(
+            super::pending_prime_for_model(&ckpt, Some(&shape), None, 1 << 40),
+            returned(1_300) + 50 * snap
+        );
+        // A model without a prime shape still books its owed snapshots.
+        assert_eq!(
+            super::pending_prime_for_model(&ckpt, None, None, 0),
+            50 * snap
+        );
+    }
+
+    /// DAY39 addendum B: the snapshot a session still owes, from its own state.
+    #[test]
+    fn owed_checkpoint_snapshots_follow_the_session_state() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        // Plain: armed and untaken owes one; a taken checkpoint owes none.
+        assert!(live.contains(
+            "Some(cache) if (s.ckpt_at.is_some() && s.ckpt_snap.is_none()) || s.exact_at.is_some() => { cache_snapshot_bytes(cache) }"
+        ));
+        // Spec: the session's armed `ckpt_at` before the walker, the walker's own row after it.
+        assert!(live.contains(
+            "let owed = match s.mtp_prime.as_ref() { Some(state) => state.owes_turn_checkpoint(), None => sp.ckpt_at.is_some(), };"
+        ));
+        // The snapshot bytes are what `Cache::snapshot` copies: conv and ssm of every recurrent
+        // layer, the same arithmetic as the seed entry's recurrent part.
+        assert!(live.contains(".map(|r| (r.conv_state.len() + r.ssm_state.len()) * 4)"));
+        assert!(live.contains("snapshot_bytes: session_snapshot_bytes_owed(s),"));
+    }
+
+    /// The corrected term is computed only with the door armed and replaces day 33's in the one
+    /// booked reduction; day 33's value rides the lines as `pending_prime_v1`.
+    #[test]
+    fn corrected_pending_prime_is_armed_only_and_prints_v1_beside_it() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        assert!(live.contains(
+            "let pending_prime_v1 = if admit_memory_cfg.armed { pending_prime_bytes(&active, &admission_costs) } else { 0 };"
+        ));
+        assert!(
+            live.contains(
+                "let pending_prime = if admit_memory_cfg.armed { pending_prime_bytes_v2("
+            )
+        );
+        assert_eq!(
+            live.matches("pending_prime_v1_bytes: pending_prime_v1 as u64,")
+                .count(),
+            2
+        );
     }
 
     /// memra#680: a session owes prime workspace only while it is still priming.
@@ -54383,12 +60032,25 @@ mod tests {
         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
         let live_sq = squash(live);
         let pred = format!("step_oom_parkable{}", "(");
-        // 1. Exactly one definition, the step guard's call, and the memra#680 prefill-OOM
-        //    predicate's call in live code.
+        // 1. Exactly one definition, the step guard's call, the memra#680 prefill-OOM
+        //    predicate's call, and the WP-B day 37 on-demand ensure guard (MEMRA_KV_ALLOCATOR=vmm)
+        //    in live code.
         assert_eq!(
             live.matches(pred.as_str()).count(),
-            3,
-            "expected the predicate's definition, the step guard and the prefill-OOM predicate"
+            4,
+            "expected the predicate's definition, the step guard, the prefill-OOM predicate and \
+             the on-demand ensure guard"
+        );
+        // 1a. The on-demand ensure guard feeds BOTH markers too.
+        assert!(
+            live_sq.contains(
+                format!(
+                    "if oom && {pred} s.generated.len(), s.tokens_emitted, s.oom_retries, \
+                     step_oom_retries(), )"
+                )
+                .as_str()
+            ),
+            "the on-demand ensure park must gate on the predicate fed BOTH markers"
         );
         // 1b. The prefill-OOM predicate feeds BOTH markers too, and both prefill arms feed it
         //     the session's own markers.
@@ -54486,6 +60148,28 @@ mod tests {
         assert!(!super::step_oom_fault_consume(&off));
     }
 
+    /// DAY49 addendum D: `batch:<n>` aims the door at a batched chunk of at least two sessions;
+    /// a plain `<n>` fires anywhere, as before; anything else is malformed (OFF).
+    #[test]
+    fn step_oom_fault_site_value_parses_and_aims() {
+        use super::StepOomFaultSite::{Any, BatchMulti};
+        assert_eq!(super::parse_step_oom_fault("1"), Some((Any, 1)));
+        assert_eq!(super::parse_step_oom_fault("0"), Some((Any, 0)));
+        assert_eq!(
+            super::parse_step_oom_fault("batch:2"),
+            Some((BatchMulti, 2))
+        );
+        for bad in ["", "batch:", "batch:x", "spec:1", "-1", "batch:-1", " 1"] {
+            assert_eq!(super::parse_step_oom_fault(bad), None, "{bad:?}");
+        }
+        assert!(super::step_oom_fault_site_admits(Any, None));
+        assert!(super::step_oom_fault_site_admits(Any, Some(1)));
+        assert!(!super::step_oom_fault_site_admits(BatchMulti, None));
+        assert!(!super::step_oom_fault_site_admits(BatchMulti, Some(1)));
+        assert!(super::step_oom_fault_site_admits(BatchMulti, Some(2)));
+        assert!(super::step_oom_fault_site_admits(BatchMulti, Some(8)));
+    }
+
     /// The door's SCOPE contract (battery-20260831 tenancy-gates T2): injection only in
     /// the step path, exactly one injection point, sitting in front of the production
     /// step dispatch so the forged error flows into the SAME `match step_result` the real
@@ -54506,30 +60190,64 @@ mod tests {
             &s[at..end]
         }
         let worker = strip(include_str!("worker.rs"));
-        // One definition, one call site: the door cannot grow a second seam silently.
-        // Needles are assembled so this test's own literals never self-match.
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        // One definition and exactly three call sites (the spec phase's step dispatch, and since
+        // WP-B day 38 addendum A the batched decode chunk and the non-batching step): the door
+        // cannot grow a fourth seam silently. Needles are assembled so this test never self-matches.
         let call = format!("step_oom_fault_fire{}", "()");
         assert_eq!(
-            worker.matches(call.as_str()).count(),
-            2,
-            "expected exactly one fault-door call beside its definition"
+            live.matches(call.as_str()).count(),
+            3,
+            "expected the fault door's definition and its spec and non-batching call sites"
         );
-        let at = worker
-            .find(format!("if {call}").as_str())
-            .expect("the injection sits at the step dispatch");
-        let body = window(&worker, at, 4000);
-        assert!(
-            body.contains("Err(STEP_OOM_FAULT_MSG.into())"),
-            "the injection must forge the quoted CUDA OOM constant"
+        // DAY49 addendum D: the batched chunk's site passes its session count (the `batch:` site).
+        let batch_call = format!("step_oom_fault_fire_batch{}", "(idxs.len())");
+        assert_eq!(live.matches(batch_call.as_str()).count(), 1);
+        assert_eq!(
+            live.matches("fn step_oom_fault_fire_batch(sessions: usize) -> bool")
+                .count(),
+            1
         );
-        assert!(
-            body.contains("step_dspark_spec(") && body.contains("step_session("),
-            "the injection must gate the production step dispatch, not a copy of it"
+        // Addendum D: the non-batching site fires only on a session past its prime.
+        let gated = format!("if active[i].prefill_done && {call}");
+        let mut sites: Vec<usize> = live
+            .match_indices(format!("if {call}").as_str())
+            .map(|(at, _)| at)
+            .collect();
+        assert_eq!(sites.len(), 1, "the spec site fires on any step it reaches");
+        assert_eq!(live.matches(gated.as_str()).count(), 1);
+        sites.extend(live.match_indices(gated.as_str()).map(|(at, _)| at));
+        sites.extend(
+            live.match_indices(format!("if {batch_call}").as_str())
+                .map(|(at, _)| at),
         );
-        assert!(
-            body.contains("match step_result"),
-            "the forged error must reach the same match the real step errors take"
-        );
+        assert_eq!(sites.len(), 3);
+        for &at in &sites {
+            let body = window(live, at, 4000);
+            assert!(
+                body.contains("Err(STEP_OOM_FAULT_MSG.into())"),
+                "every injection must forge the quoted CUDA OOM constant"
+            );
+        }
+        // Each site gates a production dispatch whose result reaches the production match.
+        let spec = sites
+            .iter()
+            .map(|&at| window(live, at, 4000))
+            .find(|b| b.contains("step_dspark_spec("))
+            .expect("the spec-phase site gates the spec dispatch");
+        assert!(spec.contains("step_session(") && spec.contains("match step_result"));
+        let nonbatch = sites
+            .iter()
+            .map(|&at| window(live, at, 4000))
+            .find(|b| b.contains("step_session_async_chain("))
+            .expect("the non-batching site gates the non-batching step");
+        assert!(nonbatch.contains("match step_result"));
+        let batch = sites
+            .iter()
+            .map(|&at| window(live, at, 6500))
+            .find(|b| b.contains("decode_step_batch_sampled_lean_masked"))
+            .expect("the batched site gates the batched decode chunk");
+        assert!(batch.contains("\"batch step: {err}\""));
     }
 
     #[test]
@@ -54609,6 +60327,7 @@ mod tests {
             request_id: String::new(),
             admit_predict_logged: false,
             memory_defer_since: None,
+            reclaim_offtick: None,
             images: Vec::new(),
             gemma_images: Vec::new(),
             glm5_images: Vec::new(),
@@ -56802,6 +62521,92 @@ mod host_handoff_tests {
         let mut r: &[u8] = &huge;
         let err = handoff_read_entry(&mut r, 1024).unwrap_err();
         assert!(err.contains("exceeds the file-size bound"), "{err}");
+    }
+
+    /// OWED 18: the file layer under both `MEMRA_KV_HOST_HANDOFF_IO` arms. Frames written
+    /// through either writer are byte-identical on disk, either reader restores them exactly,
+    /// and a truncated file breaks the stream the same way under both readers.
+    #[test]
+    fn host_handoff_file_arms_are_byte_identical_and_cross_readable() {
+        use crate::handoff_io::{HandoffIo, HandoffReader, HandoffWriter};
+        let dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/handoff-io-tests");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = |tag: &str| {
+            dir.join(format!("frames-{tag}-{}", std::process::id()))
+                .to_string_lossy()
+                .into_owned()
+        };
+        let a = handoff_fixture("m", "ns-a", 7);
+        let b = handoff_fixture("m", "ns-b", 91);
+        let write = |p: &str, mode: HandoffIo| -> Result<(), String> {
+            let mut w = HandoffWriter::create(p, mode)?;
+            handoff_write_header(&mut w, &handoff_header_fixture(1000))?;
+            handoff_write_entry(&mut w, &a.as_wire_ref())?;
+            handoff_write_entry(&mut w, &b.as_wire_ref())?;
+            let mut f = w.finish()?;
+            f.complete_writes()?;
+            f.sync()
+        };
+        let (pb, pd) = (path("buffered"), path("direct"));
+        write(&pb, HandoffIo::Buffered).unwrap();
+        if let Err(e) = write(&pd, HandoffIo::Direct) {
+            assert!(e.contains("O_DIRECT open refused"), "{e}");
+            eprintln!("SKIP: the test filesystem refuses O_DIRECT: {e}");
+            let _ = std::fs::remove_file(&pb);
+            return;
+        }
+        let bytes = std::fs::read(&pb).unwrap();
+        assert_eq!(
+            bytes,
+            std::fs::read(&pd).unwrap(),
+            "both arms write the same bytes"
+        );
+        for file in [&pb, &pd] {
+            for mode in [HandoffIo::Buffered, HandoffIo::Direct] {
+                let (mut r, max) = HandoffReader::open(file, mode).unwrap();
+                assert_eq!(max, bytes.len() as u64);
+                assert_eq!(
+                    handoff_read_header(&mut r).unwrap(),
+                    handoff_header_fixture(1000)
+                );
+                assert_eq!(
+                    handoff_read_entry(&mut r, max).unwrap().unwrap().unwrap(),
+                    a
+                );
+                assert_eq!(
+                    handoff_read_entry(&mut r, max).unwrap().unwrap().unwrap(),
+                    b
+                );
+                assert!(
+                    handoff_read_entry(&mut r, max).unwrap().is_none(),
+                    "clean EOF"
+                );
+            }
+        }
+        // Truncate mid-frame B: both readers see a broken stream after frame A.
+        let cut = bytes.len() as u64 - 40;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&pd)
+            .unwrap()
+            .set_len(cut)
+            .unwrap();
+        for mode in [HandoffIo::Buffered, HandoffIo::Direct] {
+            let (mut r, _) = HandoffReader::open(&pd, mode).unwrap();
+            handoff_read_header(&mut r).unwrap();
+            assert_eq!(
+                handoff_read_entry(&mut r, 1 << 20)
+                    .unwrap()
+                    .unwrap()
+                    .unwrap(),
+                a
+            );
+            let err = handoff_read_entry(&mut r, 1 << 20).unwrap_err();
+            assert!(err.contains("failed"), "{mode:?}: {err}");
+        }
+        let _ = std::fs::remove_file(&pb);
+        let _ = std::fs::remove_file(&pd);
     }
 
     #[test]

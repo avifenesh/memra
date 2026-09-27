@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# DAY44 boots (1.6): one boot per spec through run-day26-cell.sh (it takes the rig lock), after a bounded idle
+# wait (at most 7200 s: lock free, no compute app, >= 24 GB host memory). Never a signal to anything this lane did not
+# start. usage: day44-run.sh <receipt root> <name>:<arm>:<route>:<shape> ...
+#   arm = keep | exact | offprev | fault   route = plain | spec   shape = RX | RXg (1,000 ms turn gap) | RX6 | RXg6 |
+#   RW6 (addendum C: the history rewrite at 6,144 with the 1,000 ms gap)
+#   The spec route runs every arm with MEMRA_SPEC_BUDGET_CLAMP=1; every boot with MEMRA_TTFT_TRACE=1.
+# env: WT, RIG_LOCK (/tmp/memra-5090.lock), BIN, PREV_BIN, MODEL, MODEL_KEY, BOOT_CTX (65536; empty = the checkpoint's),
+#      LENGTHS (6144,30720), NO_SCOPE, EXTERNAL_LOCK (1: the caller holds the rig lock).
+set -uo pipefail
+R=${1:?receipt root}; shift
+WT=${WT:-$HOME/projects/wt-spill-b}
+RIG_LOCK=${RIG_LOCK:-/tmp/memra-5090.lock}
+BIN=${BIN:-$WT/target/day44/tip/memra-server}
+PREV_BIN=${PREV_BIN:-$WT/target/day44/offprev/memra-server}
+LENGTHS=${LENGTHS:-6144,30720}
+cd "$WT" || exit 1
+mkdir -p "$R/boots"
+log() { echo "$(date -u +%FT%TZ) $*" >> "$R/run.log"; }
+# EXTERNAL_LOCK=1 (the integ battery, 2026-09-27): the caller already holds the rig lock on an inherited FD, so this
+# runner neither waits for the lock nor lets run-day26-cell.sh take it (LOCK=none); the compute-app and memory checks stay.
+EXTERNAL_LOCK=${EXTERNAL_LOCK:-0}
+idle() {
+  [ "$EXTERNAL_LOCK" = 1 ] || flock -n "$RIG_LOCK" true || return 1
+  [ -z "$(nvidia-smi --query-compute-apps=pid --format=csv,noheader)" ] || return 1
+  [ "$(free -g | awk '/^Mem:/{print $7}')" -ge 24 ] || return 1
+}
+BOOT_CTX=${BOOT_CTX-65536}
+if [ -n "$BOOT_CTX" ]; then export MEMRA_CTX=$BOOT_CTX; else unset MEMRA_CTX; fi
+LOCK_FOR_CELL=$RIG_LOCK; [ "$EXTERNAL_LOCK" = 1 ] && LOCK_FOR_CELL=none
+export LOCK=$LOCK_FOR_CELL RIGDIR="$R/boots" N=5 CLIENT=day44-client.py PARSER=day44-parse.py MEMRA_TIMEOUT_MS_MAX=3600000
+for spec in "$@"; do
+  IFS=: read -r name arm route shape <<< "$spec"
+  uenv=(-u MEMRA_RESUME_GRID_REWIND -u MEMRA_RESUME_EXACT -u MEMRA_RESUME_EXACT_FAULT -u MEMRA_SPEC_BUDGET_CLAMP
+        -u MEMRA_SERVE_SPEC -u MEMRA_PREFIX_CACHE_MB -u MEMRA_TTFT_TRACE)
+  aenv=(MEMRA_TTFT_TRACE=1)
+  B=$BIN
+  case $arm in
+    keep) ;;
+    exact) aenv+=(MEMRA_RESUME_EXACT=1) ;;
+    fault) aenv+=(MEMRA_RESUME_EXACT=1 MEMRA_RESUME_EXACT_FAULT=settle-fail) ;;
+    offprev) B=$PREV_BIN ;;
+    *) log "boot $name: unknown arm $arm"; exit 1 ;;
+  esac
+  case $route in
+    plain) aenv+=(MEMRA_SERVE_SPEC=0) ;;
+    spec) aenv+=(MEMRA_SPEC_BUDGET_CLAMP=1) ;;
+    *) log "boot $name: unknown route $route"; exit 1 ;;
+  esac
+  case $shape in
+    RX) aenv+=(MEMRA_PREFIX_CACHE_MB=0); args="--shapes RX --lengths $LENGTHS" ;;
+    RX6) aenv+=(MEMRA_PREFIX_CACHE_MB=0); args="--shapes RX --lengths 6144" ;;
+    RXg) aenv+=(MEMRA_PREFIX_CACHE_MB=0); args="--shapes RX --lengths $LENGTHS --turn-gap-ms 1000" ;;
+    RXg6) aenv+=(MEMRA_PREFIX_CACHE_MB=0); args="--shapes RX --lengths 6144 --turn-gap-ms 1000" ;;
+    RW6) aenv+=(MEMRA_PREFIX_CACHE_MB=0); args="--shapes RW --lengths 6144 --turn-gap-ms 1000" ;;
+    *) log "boot $name: unknown shape $shape"; exit 1 ;;
+  esac
+  [ -x "$B" ] || { log "boot $name: no binary $B; not run"; exit 1; }
+  deadline=$((SECONDS + 7200)); waited=0
+  until idle; do
+    [ $SECONDS -ge $deadline ] && { log "boot $name: rig not idle after 7200 s; not run"; exit 3; }
+    [ $waited = 0 ] && log "boot $name: waiting for an idle rig"
+    waited=1; sleep 30
+  done
+  log "boot $name start arm=$arm route=$route shape=$shape bin=$(sha256sum "$B" | cut -c1-16) env=[${aenv[*]}] args=[$args]"
+  printf 'arm=%s\nroute=%s\nshape=%s\nbin_sha256=%s\nenv=%s\nclient_args=%s\n' "$arm" "$route" "$shape" \
+    "$(sha256sum "$B" | cut -d' ' -f1)" "${aenv[*]}" "$args" > "$R/boots/$name.arm.txt"
+  env "${uenv[@]}" "${aenv[@]}" CLIENT_ARGS="$args" bash research/spill-b-20260919/run-day26-cell.sh "$name" AB "$B" \
+    > "$R/boots/$name.launch.log" 2>&1
+  rc=$?
+  log "boot $name rc=$rc $(tail -1 "$R/boots/$name/REPORT.txt" 2>/dev/null | cut -c1-160)"
+  sleep "${YIELD_S:-5}" # the lane yields the card between cells when YIELD_S is set (lead, 2026-09-26)
+done
+log "boots done: $*"

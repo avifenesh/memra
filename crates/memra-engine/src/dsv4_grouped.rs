@@ -2532,6 +2532,562 @@ mod tests {
         );
     }
 
+    /// memra #710: the fused pair over a TP/EP rank's partition writes the contribution plane
+    /// `dsv4_ep::execute_matrix_local` writes (cleared plane, partition routes, the stream
+    /// visitors, scatter), bit for bit, for both halves of the bank: slots spread over both
+    /// ranks, every slot on one rank (the other rank's plane stays all zero), a duplicated
+    /// expert, and each red fixture's fault bit.
+    #[test]
+    #[ignore = "requires one CUDA GPU; fused partition MoE identity only"]
+    fn cuda_fused_partition_moe_is_the_tp_ep_chain_bit_for_bit() {
+        use super::{
+            GroupedWork, MOE_FAULT_INPUT_MIRROR, MOE_FAULT_INTERMEDIATE_MIRROR, MOE_FAULT_ROUTE,
+            MoeFault, modelopt_table,
+        };
+        use crate::dsv4_ep::{EpCompute, EpScratch};
+        use crate::dsv4_ffi as k;
+        use cudarc::driver::{CudaSlice, DevicePtr, DevicePtrMut};
+
+        fn view(x: &mut EpScratch) -> EpCompute<'_> {
+            EpCompute {
+                xq: &x.xq,
+                xs: &x.xs,
+                ids: &x.ids,
+                weights: &x.weights,
+                g1: &mut x.g1,
+                g3: &mut x.g3,
+                h: &mut x.h,
+                hq: &mut x.hq,
+                hs: &mut x.hs,
+                contribution: &mut x.contribution,
+            }
+        }
+        fn bits(values: &[f32]) -> Vec<u32> {
+            values.iter().map(|value| value.to_bits()).collect()
+        }
+
+        assert!(crate::moe_f16g_mode() >= 2);
+        assert!(crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT));
+        assert!(crate::moe_f16g_tail_on() && crate::dsv4_moe_m1_stream_on());
+        assert!(!crate::moe_f16g_m1_tc_on() && !crate::moe_f16g_down_m1_half2_on());
+        assert!(super::route_validation_enabled() && super::mirror_validation_enabled());
+        let gpu = memra_runtime::Gpu::new(0).unwrap();
+        let s = gpu.stream();
+
+        let (ne, hidden, inter, topk, limit) = (16, 4096, 2048, 6, 10.0f32);
+        let wb = hidden * inter / 2;
+        let sb = hidden * inter / 16;
+        let mut state = 0x6a09_e667_f3bc_c908u64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let weight_data: Vec<u8> = (0..ne * 3 * wb).map(|_| (next() >> 24) as u8).collect();
+        let scale_data: Vec<u8> = (0..ne * 3 * sb).map(|i| 0x30 + (i % 9) as u8).collect();
+        let weights = s.clone_htod(&weight_data).unwrap();
+        let scales = s.clone_htod(&scale_data).unwrap();
+        drop(weight_data);
+        drop(scale_data);
+        // Each rank's table over its own half, as the TP/EP loader builds it.
+        let mut shard_tables = Vec::new();
+        let mut shard_bytes = Vec::new();
+        for first in [0, ne / 2] {
+            let mut w = s.alloc_zeros::<u8>(ne / 2 * 3 * wb).unwrap();
+            let mut sc = s.alloc_zeros::<u8>(ne / 2 * 3 * sb).unwrap();
+            s.memcpy_dtod(
+                &weights.slice(first * 3 * wb..(first + ne / 2) * 3 * wb),
+                &mut w,
+            )
+            .unwrap();
+            s.memcpy_dtod(
+                &scales.slice(first * 3 * sb..(first + ne / 2) * 3 * sb),
+                &mut sc,
+            )
+            .unwrap();
+            shard_tables.push(modelopt_table(&s, &w, &sc, ne / 2, hidden, inter).unwrap());
+            shard_bytes.push((w, sc));
+        }
+        // Macro scales keep global ids on both ranks.
+        let scale2_host: Vec<f32> = (0..ne * 3)
+            .map(|i| 2.0_f32.powi((i % 5) as i32 - 6))
+            .collect();
+        let scale2 = s.clone_htod(&scale2_host).unwrap();
+        let mut word = s.alloc_zeros::<i32>(1).unwrap();
+        let fault = MoeFault(word.device_ptr(&s).0);
+        let mut fused_h = s.alloc_zeros::<f32>(topk * inter).unwrap();
+        let mut shared_run = s.alloc_zeros::<i32>(1).unwrap();
+        let mut fused_c = s.alloc_zeros::<f32>(topk * hidden).unwrap();
+        let take_word = |word: &mut CudaSlice<i32>| {
+            let mut host = [0i32];
+            s.memcpy_dtoh(word, &mut host[..]).unwrap();
+            s.synchronize().unwrap();
+            s.memset_zeros(word).unwrap();
+            host[0]
+        };
+
+        #[derive(Clone, Copy, Debug, PartialEq)]
+        enum Red {
+            Clean,
+            Route,
+            Input,
+            Intermediate,
+        }
+        fn lossy(row: &mut [f32]) {
+            for (i, v) in row.iter_mut().enumerate().take(256) {
+                *v = match i {
+                    0 => 1.0e-4,
+                    1..128 => 1.0e-9 * (1 + i % 3) as f32,
+                    _ => 1.0e4,
+                };
+            }
+        }
+        let input_row = |red: Red, seed: usize| -> Vec<f32> {
+            let mut row: Vec<f32> = (0..hidden)
+                .map(|i| (((i * 7919 + seed * 104_729) % 2001) as f32 - 1000.0) / 256.0)
+                .collect();
+            if red == Red::Input {
+                lossy(&mut row);
+            }
+            row
+        };
+        let selections: [[i32; 6]; 4] = [
+            [3, 11, 0, 7, 15, 9],   // spread over both ranks
+            [14, 10, 8, 13, 9, 12], // every slot on the upper rank
+            [5, 5, 2, 12, 12, 12],  // duplicated experts on both ranks
+            [9, 4, 13, 6, 10, 15],
+        ];
+        let before = crate::dsv4_moe_fused_dispatches();
+        let mut launches = 0u64;
+        let mut exact = 0;
+        for (case, sel) in selections.iter().enumerate() {
+            for (rank, first) in [0usize, ne / 2].into_iter().enumerate() {
+                let count = ne / 2;
+                let table = &shard_tables[rank];
+                let first_local = sel
+                    .iter()
+                    .position(|&e| (first..first + count).contains(&(e as usize)));
+                for red in [Red::Clean, Red::Route, Red::Input, Red::Intermediate] {
+                    // A mirror red needs a slot this rank computes.
+                    if matches!(red, Red::Input | Red::Intermediate) && first_local.is_none() {
+                        continue;
+                    }
+                    let mut selected = sel.to_vec();
+                    if red == Red::Route {
+                        selected[4] = ne as i32 + 3;
+                    }
+                    let routing: Vec<f32> = (0..topk)
+                        .map(|p| (p % 7 + 1) as f32 / 16.0 + case as f32 / 64.0)
+                        .collect();
+                    let x = s.clone_htod(&input_row(red, case)).unwrap();
+                    let mut scratch =
+                        EpScratch::new(&gpu, &gpu, 1, topk, hidden, inter, None).unwrap();
+                    s.memcpy_htod(&selected, &mut scratch.ids.slice_mut(..topk))
+                        .unwrap();
+                    s.memcpy_htod(&routing, &mut scratch.weights.slice_mut(..topk))
+                        .unwrap();
+                    // Poison the plane: the chain and the fused pair must both clear it.
+                    s.memcpy_htod(
+                        &vec![f32::NAN; scratch.contribution.len()],
+                        &mut scratch.contribution,
+                    )
+                    .unwrap();
+
+                    // The TP/EP chain (`execute_matrix_local`).
+                    unsafe {
+                        k::ck(
+                            "partition fixture FP8 input",
+                            k::memra_dsv4_act_quant_fp8(
+                                x.device_ptr(&s).0 as *const f32,
+                                scratch.xq.device_ptr_mut(&s).0 as *mut std::ffi::c_void,
+                                scratch.xs.device_ptr_mut(&s).0 as *mut f32,
+                                1,
+                                hidden as i32,
+                                s.cu_stream().cast(),
+                            ),
+                        )
+                        .unwrap();
+                    }
+                    s.memset_zeros(&mut scratch.contribution).unwrap();
+                    let mut work =
+                        GroupedWork::new_partition(&s, ne, first, count, topk, hidden, inter)
+                            .unwrap();
+                    work.defer_faults(Some(fault));
+                    work.prepare(
+                        &gpu,
+                        &view(&mut scratch),
+                        &scale2,
+                        &scale2_host,
+                        1,
+                        topk,
+                        true,
+                    )
+                    .unwrap();
+                    work.gate_up(&gpu, table, &mut view(&mut scratch), limit)
+                        .unwrap();
+                    if red == Red::Intermediate {
+                        s.memcpy_htod(&[0x7fu8], &mut scratch.hq.slice_mut(5..6))
+                            .unwrap();
+                    }
+                    work.down(&gpu, table, &mut view(&mut scratch)).unwrap();
+                    let chain_word = take_word(&mut word);
+                    let chain_c = s
+                        .clone_dtoh(&scratch.contribution.slice(..topk * hidden))
+                        .unwrap();
+
+                    // The fused partition pair.
+                    s.memcpy_htod(&vec![f32::NAN; fused_c.len()], &mut fused_c)
+                        .unwrap();
+                    s.memset_zeros(&mut fused_c).unwrap();
+                    let ids = &scratch.ids;
+                    let gu = unsafe {
+                        k::memra_dsv4_moe_fused_gu_part(
+                            table.device_ptr(&s).0 as *const u64,
+                            count as i32,
+                            ne as i32,
+                            first as i32,
+                            ids.device_ptr(&s).0 as *const i32,
+                            scratch.weights.device_ptr(&s).0 as *const f32,
+                            scale2.device_ptr(&s).0 as *const f32,
+                            x.device_ptr(&s).0 as *const f32,
+                            std::ptr::null(),
+                            std::ptr::null(),
+                            fused_h.device_ptr_mut(&s).0 as *mut f32,
+                            shared_run.device_ptr_mut(&s).0 as *mut i32,
+                            topk as i32,
+                            1,
+                            hidden as i32,
+                            inter as i32,
+                            limit,
+                            word.device_ptr(&s).0 as *mut i32,
+                            s.cu_stream().cast(),
+                        )
+                    };
+                    assert_eq!(gu, 0, "fused partition gate/up rc");
+                    if red == Red::Clean {
+                        // The router launch's x mirror (memra #710): the gate/up launch that
+                        // loads it writes the same h as the one that mirrors x itself.
+                        let raw = s.alloc_zeros::<f32>(ne).unwrap();
+                        let tok = s.alloc_zeros::<i32>(1).unwrap();
+                        let mut rsel = s.alloc_zeros::<i32>(topk).unwrap();
+                        let mut rselw = s.alloc_zeros::<f32>(topk).unwrap();
+                        let mut rorder = s.alloc_zeros::<i32>(topk).unwrap();
+                        let mut xm = s.alloc_zeros::<u32>(hidden / 2).unwrap();
+                        let mut xrs = s.alloc_zeros::<f32>(1).unwrap();
+                        let mut h2 = s.alloc_zeros::<f32>(topk * inter).unwrap();
+                        let mut run2 = s.alloc_zeros::<i32>(1).unwrap();
+                        let rc = unsafe {
+                            k::memra_dsv4_route_mirror_m(
+                                raw.device_ptr(&s).0 as *const f32,
+                                std::ptr::null(),
+                                std::ptr::null(),
+                                tok.device_ptr(&s).0 as *const i32,
+                                1,
+                                ne as i32,
+                                topk as i32,
+                                1.0,
+                                rsel.device_ptr_mut(&s).0 as *mut i32,
+                                rselw.device_ptr_mut(&s).0 as *mut f32,
+                                rorder.device_ptr_mut(&s).0 as *mut i32,
+                                x.device_ptr(&s).0 as *const f32,
+                                hidden as i32,
+                                xm.device_ptr_mut(&s).0 as *mut u32,
+                                xrs.device_ptr_mut(&s).0 as *mut f32,
+                                word.device_ptr(&s).0 as *mut i32,
+                                s.cu_stream().cast(),
+                            )
+                        };
+                        assert_eq!(rc, 0, "router x mirror rc");
+                        let gu2 = unsafe {
+                            k::memra_dsv4_moe_fused_gu_part(
+                                table.device_ptr(&s).0 as *const u64,
+                                count as i32,
+                                ne as i32,
+                                first as i32,
+                                ids.device_ptr(&s).0 as *const i32,
+                                scratch.weights.device_ptr(&s).0 as *const f32,
+                                scale2.device_ptr(&s).0 as *const f32,
+                                x.device_ptr(&s).0 as *const f32,
+                                xm.device_ptr(&s).0 as *const u32,
+                                xrs.device_ptr(&s).0 as *const f32,
+                                h2.device_ptr_mut(&s).0 as *mut f32,
+                                run2.device_ptr_mut(&s).0 as *mut i32,
+                                topk as i32,
+                                1,
+                                hidden as i32,
+                                inter as i32,
+                                limit,
+                                word.device_ptr(&s).0 as *mut i32,
+                                s.cu_stream().cast(),
+                            )
+                        };
+                        assert_eq!(gu2, 0, "fused gate/up over the router's mirror rc");
+                        launches += 1;
+                        let own: Vec<usize> = sel
+                            .iter()
+                            .enumerate()
+                            .filter(|&(_, &e)| (first..first + count).contains(&(e as usize)))
+                            .map(|(i, _)| i)
+                            .collect();
+                        let a = s.clone_dtoh(&fused_h).unwrap();
+                        let b = s.clone_dtoh(&h2).unwrap();
+                        for slot in own {
+                            assert_eq!(
+                                bits(&a[slot * inter..(slot + 1) * inter]),
+                                bits(&b[slot * inter..(slot + 1) * inter]),
+                                "router mirror h case={case} rank={rank} slot={slot}"
+                            );
+                        }
+                    }
+                    if red == Red::Intermediate {
+                        let slot = first_local.unwrap();
+                        let mut row = vec![1.0f32; inter];
+                        lossy(&mut row);
+                        s.memcpy_htod(
+                            &row,
+                            &mut fused_h.slice_mut(slot * inter..(slot + 1) * inter),
+                        )
+                        .unwrap();
+                    }
+                    let down = unsafe {
+                        k::memra_dsv4_moe_fused_down_part(
+                            table.device_ptr(&s).0 as *const u64,
+                            count as i32,
+                            ne as i32,
+                            first as i32,
+                            ids.device_ptr(&s).0 as *const i32,
+                            scale2.device_ptr(&s).0 as *const f32,
+                            fused_h.device_ptr(&s).0 as *const f32,
+                            fused_c.device_ptr_mut(&s).0 as *mut f32,
+                            std::ptr::null(),
+                            std::ptr::null_mut(),
+                            std::ptr::null_mut(),
+                            topk as i32,
+                            1,
+                            inter as i32,
+                            hidden as i32,
+                            word.device_ptr(&s).0 as *mut i32,
+                            s.cu_stream().cast(),
+                        )
+                    };
+                    assert_eq!(down, 0, "fused partition down rc");
+                    launches += 2;
+                    let fused_word = take_word(&mut word);
+                    let want = match red {
+                        Red::Clean => 0,
+                        Red::Route => MOE_FAULT_ROUTE,
+                        Red::Input => MOE_FAULT_INPUT_MIRROR,
+                        Red::Intermediate => MOE_FAULT_INTERMEDIATE_MIRROR,
+                    };
+                    if red != Red::Clean {
+                        assert_ne!(
+                            chain_word & want,
+                            0,
+                            "chain {red:?} case={case} rank={rank}"
+                        );
+                        assert_ne!(
+                            fused_word & want,
+                            0,
+                            "fused {red:?} case={case} rank={rank}"
+                        );
+                        println!(
+                            "RED fused partition {red:?} case={case} rank={rank} fused={fused_word:#x} chain={chain_word:#x}"
+                        );
+                        continue;
+                    }
+                    assert_eq!(
+                        (chain_word, fused_word),
+                        (0, 0),
+                        "clean case={case} rank={rank}"
+                    );
+                    // The shared expert's owner word: fewer routed slots, rank 0 on a tie.
+                    let mine = sel
+                        .iter()
+                        .filter(|&&e| (first..first + count).contains(&(e as usize)))
+                        .count();
+                    let theirs =
+                        sel.iter().filter(|&&e| e >= 0 && (e as usize) < ne).count() - mine;
+                    assert_eq!(
+                        s.clone_dtoh(&shared_run).unwrap()[0],
+                        i32::from(mine < theirs || (mine == theirs && first == 0)),
+                        "shared owner word case={case} rank={rank} mine={mine} theirs={theirs}"
+                    );
+                    let fc = s.clone_dtoh(&fused_c.slice(..topk * hidden)).unwrap();
+                    assert!(
+                        chain_c.iter().all(|v| v.is_finite()),
+                        "clean fixture overflowed"
+                    );
+                    assert_eq!(
+                        bits(&chain_c),
+                        bits(&fc),
+                        "contribution case={case} rank={rank}"
+                    );
+                    let own = sel
+                        .iter()
+                        .filter(|&&e| (first..first + count).contains(&(e as usize)))
+                        .count();
+                    println!(
+                        "EXACT fused partition case={case} rank={rank} sel={sel:?} own_slots={own} contribution word=0"
+                    );
+                    exact += 1;
+                }
+            }
+        }
+        assert_eq!(exact, 8, "every clean case on both ranks");
+        assert_eq!(
+            crate::dsv4_moe_fused_dispatches() - before,
+            launches,
+            "fused receipt"
+        );
+        // A partition that asks for the in-kernel slot sum refuses.
+        let mut tile_cnt = s.alloc_zeros::<i32>(hidden / 32).unwrap();
+        let mut y = s.alloc_zeros::<f32>(hidden).unwrap();
+        let order = s.clone_htod(&[0i32, 1, 2, 3, 4, 5]).unwrap();
+        let ids = s.clone_htod(&selections[0].to_vec()).unwrap();
+        let refused = unsafe {
+            k::memra_dsv4_moe_fused_down_part(
+                shard_tables[1].device_ptr(&s).0 as *const u64,
+                (ne / 2) as i32,
+                ne as i32,
+                (ne / 2) as i32,
+                ids.device_ptr(&s).0 as *const i32,
+                scale2.device_ptr(&s).0 as *const f32,
+                fused_h.device_ptr(&s).0 as *const f32,
+                fused_c.device_ptr_mut(&s).0 as *mut f32,
+                order.device_ptr(&s).0 as *const i32,
+                y.device_ptr_mut(&s).0 as *mut f32,
+                tile_cnt.device_ptr_mut(&s).0 as *mut i32,
+                topk as i32,
+                1,
+                inter as i32,
+                hidden as i32,
+                std::ptr::null_mut(),
+                s.cu_stream().cast(),
+            )
+        };
+        assert_eq!(refused, 40004, "a partition with the in-kernel sum refuses");
+
+        // Several token rows in one launch (a B-row step, a verify round): the chain runs the
+        // multi-row visitor, which puts rows of one expert in one pass; the fused pair runs
+        // each slot alone. Experts repeat across rows and both ranks own some of them.
+        let rows = 3usize;
+        let slots = rows * topk;
+        let sel_rows: Vec<i32> = vec![3, 11, 0, 7, 15, 9, 3, 12, 0, 9, 4, 14, 11, 3, 8, 7, 1, 12];
+        let routing_rows: Vec<f32> = (0..slots).map(|p| (p % 5 + 1) as f32 / 16.0).collect();
+        let x_rows: Vec<f32> = (0..rows)
+            .flat_map(|r| input_row(Red::Clean, 7 + r))
+            .collect();
+        let x_dev = s.clone_htod(&x_rows).unwrap();
+        let mut fused_h_rows = s.alloc_zeros::<f32>(slots * inter).unwrap();
+        let mut fused_c_rows = s.alloc_zeros::<f32>(slots * hidden).unwrap();
+        for (rank, first) in [0usize, ne / 2].into_iter().enumerate() {
+            let count = ne / 2;
+            let table = &shard_tables[rank];
+            let mut scratch = EpScratch::new(&gpu, &gpu, rows, topk, hidden, inter, None).unwrap();
+            s.memcpy_htod(&sel_rows, &mut scratch.ids.slice_mut(..slots))
+                .unwrap();
+            s.memcpy_htod(&routing_rows, &mut scratch.weights.slice_mut(..slots))
+                .unwrap();
+            unsafe {
+                k::ck(
+                    "multi-row partition fixture FP8 input",
+                    k::memra_dsv4_act_quant_fp8(
+                        x_dev.device_ptr(&s).0 as *const f32,
+                        scratch.xq.device_ptr_mut(&s).0 as *mut std::ffi::c_void,
+                        scratch.xs.device_ptr_mut(&s).0 as *mut f32,
+                        rows as i32,
+                        hidden as i32,
+                        s.cu_stream().cast(),
+                    ),
+                )
+                .unwrap();
+            }
+            s.memset_zeros(&mut scratch.contribution).unwrap();
+            let mut work =
+                GroupedWork::new_partition(&s, ne, first, count, slots, hidden, inter).unwrap();
+            work.defer_faults(Some(fault));
+            work.prepare(
+                &gpu,
+                &view(&mut scratch),
+                &scale2,
+                &scale2_host,
+                rows,
+                topk,
+                true,
+            )
+            .unwrap();
+            work.gate_up(&gpu, table, &mut view(&mut scratch), limit)
+                .unwrap();
+            work.down(&gpu, table, &mut view(&mut scratch)).unwrap();
+            let chain_word = take_word(&mut word);
+            let chain_c = s
+                .clone_dtoh(&scratch.contribution.slice(..slots * hidden))
+                .unwrap();
+            s.memset_zeros(&mut fused_c_rows).unwrap();
+            let gu = unsafe {
+                k::memra_dsv4_moe_fused_gu_part(
+                    table.device_ptr(&s).0 as *const u64,
+                    count as i32,
+                    ne as i32,
+                    first as i32,
+                    scratch.ids.device_ptr(&s).0 as *const i32,
+                    scratch.weights.device_ptr(&s).0 as *const f32,
+                    scale2.device_ptr(&s).0 as *const f32,
+                    x_dev.device_ptr(&s).0 as *const f32,
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    fused_h_rows.device_ptr_mut(&s).0 as *mut f32,
+                    std::ptr::null_mut(),
+                    topk as i32,
+                    rows as i32,
+                    hidden as i32,
+                    inter as i32,
+                    limit,
+                    word.device_ptr(&s).0 as *mut i32,
+                    s.cu_stream().cast(),
+                )
+            };
+            assert_eq!(gu, 0, "multi-row fused partition gate/up rc");
+            let down = unsafe {
+                k::memra_dsv4_moe_fused_down_part(
+                    table.device_ptr(&s).0 as *const u64,
+                    count as i32,
+                    ne as i32,
+                    first as i32,
+                    scratch.ids.device_ptr(&s).0 as *const i32,
+                    scale2.device_ptr(&s).0 as *const f32,
+                    fused_h_rows.device_ptr(&s).0 as *const f32,
+                    fused_c_rows.device_ptr_mut(&s).0 as *mut f32,
+                    std::ptr::null(),
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    topk as i32,
+                    rows as i32,
+                    inter as i32,
+                    hidden as i32,
+                    word.device_ptr(&s).0 as *mut i32,
+                    s.cu_stream().cast(),
+                )
+            };
+            assert_eq!(down, 0, "multi-row fused partition down rc");
+            let fused_word = take_word(&mut word);
+            assert_eq!((chain_word, fused_word), (0, 0), "multi-row rank={rank}");
+            let fc = s.clone_dtoh(&fused_c_rows).unwrap();
+            assert!(
+                chain_c.iter().all(|v| v.is_finite()),
+                "multi-row fixture overflowed"
+            );
+            assert_eq!(
+                bits(&chain_c),
+                bits(&fc),
+                "multi-row contribution rank={rank}"
+            );
+            println!("EXACT fused partition rows={rows} rank={rank} contribution word=0");
+        }
+        drop(shard_bytes);
+    }
+
     /// memra #679: a deferred TP/EP partition leaves its live count on the device and launches
     /// over every input slot, yet writes the synchronous arm's bits, keeps its fault word clear
     /// while every inert row past the live prefix is poisoned, and reports each red fixture's

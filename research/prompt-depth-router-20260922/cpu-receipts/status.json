@@ -1,0 +1,387 @@
+{
+  "status": "passed",
+  "commands": [
+    {
+      "name": "rustc-version",
+      "argv": [
+        "rustc",
+        "-Vv"
+      ],
+      "returncode": 0,
+      "wall_ns": 10368534384
+    },
+    {
+      "name": "python-syntax",
+      "argv": [
+        "/usr/bin/python3",
+        "-c",
+        "import ast,pathlib; [ast.parse(p.read_text(),filename=str(p)) for p in pathlib.Path('.').glob('*.py')]"
+      ],
+      "returncode": 0,
+      "wall_ns": 31724889
+    },
+    {
+      "name": "profile-tests",
+      "argv": [
+        "/usr/bin/python3",
+        "-m",
+        "unittest",
+        "test_fit_profile",
+        "-v"
+      ],
+      "returncode": 0,
+      "wall_ns": 264164132
+    },
+    {
+      "name": "format",
+      "argv": [
+        "rustfmt",
+        "--edition",
+        "2024",
+        "--check",
+        "main.rs",
+        "router.rs"
+      ],
+      "returncode": 0,
+      "wall_ns": 31924423
+    },
+    {
+      "name": "build-tests",
+      "argv": [
+        "rustc",
+        "--edition=2024",
+        "-D",
+        "warnings",
+        "-C",
+        "opt-level=3",
+        "--test",
+        "main.rs",
+        "-o",
+        "/home/runner/work/_temp/prompt-depth-router/router-tests"
+      ],
+      "returncode": 0,
+      "wall_ns": 818124337
+    },
+    {
+      "name": "tests",
+      "argv": [
+        "/home/runner/work/_temp/prompt-depth-router/router-tests",
+        "--nocapture"
+      ],
+      "returncode": 0,
+      "wall_ns": 3540175
+    },
+    {
+      "name": "build",
+      "argv": [
+        "rustc",
+        "--edition=2024",
+        "-D",
+        "warnings",
+        "-C",
+        "opt-level=3",
+        "main.rs",
+        "-o",
+        "/home/runner/work/_temp/prompt-depth-router/prompt-depth-router"
+      ],
+      "returncode": 0,
+      "wall_ns": 469382692
+    },
+    {
+      "name": "cli-0-0",
+      "argv": [
+        "/home/runner/work/_temp/prompt-depth-router/prompt-depth-router",
+        "classify",
+        "2,4,4,4",
+        "8"
+      ],
+      "returncode": 0,
+      "wall_ns": 1586290
+    },
+    {
+      "name": "cli-0-1",
+      "argv": [
+        "/home/runner/work/_temp/prompt-depth-router/prompt-depth-router",
+        "classify",
+        "2,4,4,4",
+        "8"
+      ],
+      "returncode": 0,
+      "wall_ns": 1352047
+    },
+    {
+      "name": "cli-0-2",
+      "argv": [
+        "/home/runner/work/_temp/prompt-depth-router/prompt-depth-router",
+        "classify",
+        "2,4,4,4",
+        "8"
+      ],
+      "returncode": 0,
+      "wall_ns": 1289691
+    },
+    {
+      "name": "cli-0-3",
+      "argv": [
+        "/home/runner/work/_temp/prompt-depth-router/prompt-depth-router",
+        "classify",
+        "2,4,4,4",
+        "8"
+      ],
+      "returncode": 0,
+      "wall_ns": 1296166
+    },
+    {
+      "name": "cli-0-4",
+      "argv": [
+        "/home/runner/work/_temp/prompt-depth-router/prompt-depth-router",
+        "classify",
+        "2,4,4,4",
+        "8"
+      ],
+      "returncode": 0,
+      "wall_ns": 1281051
+    },
+    {
+      "name": "cli-1-0",
+      "argv": [
+        "/home/runner/work/_temp/prompt-depth-router/prompt-depth-router",
+        "classify",
+        "2,4,4,4",
+        "8"
+      ],
+      "returncode": 0,
+      "wall_ns": 1283402
+    },
+    {
+      "name": "cli-1-1",
+      "argv": [
+        "/home/runner/work/_temp/prompt-depth-router/prompt-depth-router",
+        "classify",
+        "2,4,4,4",
+        "8"
+      ],
+      "returncode": 0,
+      "wall_ns": 1263483
+    },
+    {
+      "name": "cli-1-2",
+      "argv": [
+        "/home/runner/work/_temp/prompt-depth-router/prompt-depth-router",
+        "classify",
+        "2,4,4,4",
+        "8"
+      ],
+      "returncode": 0,
+      "wall_ns": 1265362
+    },
+    {
+      "name": "cli-1-3",
+      "argv": [
+        "/home/runner/work/_temp/prompt-depth-router/prompt-depth-router",
+        "classify",
+        "2,4,4,4",
+        "8"
+      ],
+      "returncode": 0,
+      "wall_ns": 1267545
+    },
+    {
+      "name": "cli-1-4",
+      "argv": [
+        "/home/runner/work/_temp/prompt-depth-router/prompt-depth-router",
+        "classify",
+        "2,4,4,4",
+        "8"
+      ],
+      "returncode": 0,
+      "wall_ns": 1253080
+    },
+    {
+      "name": "cli-2-0",
+      "argv": [
+        "/home/runner/work/_temp/prompt-depth-router/prompt-depth-router",
+        "classify",
+        "2,4,4,4",
+        "8"
+      ],
+      "returncode": 0,
+      "wall_ns": 1274551
+    },
+    {
+      "name": "cli-2-1",
+      "argv": [
+        "/home/runner/work/_temp/prompt-depth-router/prompt-depth-router",
+        "classify",
+        "2,4,4,4",
+        "8"
+      ],
+      "returncode": 0,
+      "wall_ns": 1266651
+    },
+    {
+      "name": "cli-2-2",
+      "argv": [
+        "/home/runner/work/_temp/prompt-depth-router/prompt-depth-router",
+        "classify",
+        "2,4,4,4",
+        "8"
+      ],
+      "returncode": 0,
+      "wall_ns": 1266558
+    },
+    {
+      "name": "cli-2-3",
+      "argv": [
+        "/home/runner/work/_temp/prompt-depth-router/prompt-depth-router",
+        "classify",
+        "2,4,4,4",
+        "8"
+      ],
+      "returncode": 0,
+      "wall_ns": 1214303
+    },
+    {
+      "name": "cli-2-4",
+      "argv": [
+        "/home/runner/work/_temp/prompt-depth-router/prompt-depth-router",
+        "classify",
+        "2,4,4,4",
+        "8"
+      ],
+      "returncode": 0,
+      "wall_ns": 1268406
+    },
+    {
+      "name": "cli-3-0",
+      "argv": [
+        "/home/runner/work/_temp/prompt-depth-router/prompt-depth-router",
+        "classify",
+        "2,4,4,4",
+        "8"
+      ],
+      "returncode": 0,
+      "wall_ns": 1256378
+    },
+    {
+      "name": "cli-3-1",
+      "argv": [
+        "/home/runner/work/_temp/prompt-depth-router/prompt-depth-router",
+        "classify",
+        "2,4,4,4",
+        "8"
+      ],
+      "returncode": 0,
+      "wall_ns": 1262228
+    },
+    {
+      "name": "cli-3-2",
+      "argv": [
+        "/home/runner/work/_temp/prompt-depth-router/prompt-depth-router",
+        "classify",
+        "2,4,4,4",
+        "8"
+      ],
+      "returncode": 0,
+      "wall_ns": 1268576
+    },
+    {
+      "name": "cli-3-3",
+      "argv": [
+        "/home/runner/work/_temp/prompt-depth-router/prompt-depth-router",
+        "classify",
+        "2,4,4,4",
+        "8"
+      ],
+      "returncode": 0,
+      "wall_ns": 1276641
+    },
+    {
+      "name": "cli-3-4",
+      "argv": [
+        "/home/runner/work/_temp/prompt-depth-router/prompt-depth-router",
+        "classify",
+        "2,4,4,4",
+        "8"
+      ],
+      "returncode": 0,
+      "wall_ns": 1270852
+    },
+    {
+      "name": "cli-oversized",
+      "argv": [
+        "/home/runner/work/_temp/prompt-depth-router/prompt-depth-router",
+        "classify",
+        "2,4,4,4",
+        "8"
+      ],
+      "returncode": 0,
+      "wall_ns": 1768035
+    },
+    {
+      "name": "bench-0",
+      "argv": [
+        "/home/runner/work/_temp/prompt-depth-router/prompt-depth-router",
+        "bench",
+        "/home/runner/work/memra/memra/research/prompt-depth-router-20260922/cases.tsv",
+        "2,4,4,4",
+        "8",
+        "20000"
+      ],
+      "returncode": 0,
+      "wall_ns": 2620245029
+    },
+    {
+      "name": "bench-1",
+      "argv": [
+        "/home/runner/work/_temp/prompt-depth-router/prompt-depth-router",
+        "bench",
+        "/home/runner/work/memra/memra/research/prompt-depth-router-20260922/cases.tsv",
+        "2,4,4,4",
+        "8",
+        "20000"
+      ],
+      "returncode": 0,
+      "wall_ns": 2570618125
+    },
+    {
+      "name": "bench-2",
+      "argv": [
+        "/home/runner/work/_temp/prompt-depth-router/prompt-depth-router",
+        "bench",
+        "/home/runner/work/memra/memra/research/prompt-depth-router-20260922/cases.tsv",
+        "2,4,4,4",
+        "8",
+        "20000"
+      ],
+      "returncode": 0,
+      "wall_ns": 2619651695
+    },
+    {
+      "name": "bench-3",
+      "argv": [
+        "/home/runner/work/_temp/prompt-depth-router/prompt-depth-router",
+        "bench",
+        "/home/runner/work/memra/memra/research/prompt-depth-router-20260922/cases.tsv",
+        "2,4,4,4",
+        "8",
+        "20000"
+      ],
+      "returncode": 0,
+      "wall_ns": 2619383558
+    },
+    {
+      "name": "bench-4",
+      "argv": [
+        "/home/runner/work/_temp/prompt-depth-router/prompt-depth-router",
+        "bench",
+        "/home/runner/work/memra/memra/research/prompt-depth-router-20260922/cases.tsv",
+        "2,4,4,4",
+        "8",
+        "20000"
+      ],
+      "returncode": 0,
+      "wall_ns": 2567407017
+    }
+  ]
+}

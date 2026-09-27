@@ -1,0 +1,33 @@
+
+running 4 tests
+TIMING dense m=512 n=1024 k=4096 rep=0 tile_ms=0.356 gemv_ms=0.780 speedup=2.19 tile_tflops=12.1
+TIMING dots s=512 n=1024 k=4096 bf16=true rep=0 tile_ms=0.391 loop_ms=0.474 speedup=1.21
+TIMING dense m=512 n=1024 k=4096 rep=1 tile_ms=1.685 gemv_ms=0.428 speedup=0.25 tile_tflops=2.5
+TIMING dots s=512 n=1024 k=4096 bf16=true rep=1 tile_ms=0.372 loop_ms=1.374 speedup=3.69
+TIMING dots s=512 n=1024 k=4096 bf16=false rep=0 tile_ms=0.370 loop_ms=0.796 speedup=2.15
+TIMING dots s=512 n=1024 k=4096 bf16=false rep=1 tile_ms=0.413 loop_ms=0.409 speedup=0.99
+TIMING dots s=512 n=512 k=4096 bf16=true rep=0 tile_ms=1.848 loop_ms=0.798 speedup=0.43
+TIMING dots s=512 n=512 k=4096 bf16=true rep=1 tile_ms=4.448 loop_ms=0.764 speedup=0.17
+TIMING dense m=512 n=32768 k=1024 rep=0 tile_ms=3.118 gemv_ms=11.093 speedup=3.56 tile_tflops=11.0
+DSV4_DOTS_TILE EXACT cases=40
+TIMING dots s=512 n=512 k=4096 bf16=false rep=0 tile_ms=0.881 loop_ms=12.302 speedup=13.96
+TIMING dense m=512 n=32768 k=1024 rep=1 tile_ms=2.800 gemv_ms=10.354 speedup=3.70 tile_tflops=12.3
+TIMING dots s=512 n=512 k=4096 bf16=false rep=1 tile_ms=4.304 loop_ms=0.212 speedup=0.05
+test prefill_dots_tile_is_the_mrow_loop_bit_for_bit ... ok
+TIMING dense m=512 n=4096 k=8192 rep=0 tile_ms=1.791 gemv_ms=1.780 speedup=0.99 tile_tflops=19.2
+TIMING dots s=512 n=256 k=4096 bf16=true rep=0 tile_ms=0.099 loop_ms=6.878 speedup=69.75
+TIMING dots s=512 n=256 k=4096 bf16=true rep=1 tile_ms=0.259 loop_ms=0.260 speedup=1.00
+TIMING dense m=512 n=4096 k=8192 rep=1 tile_ms=1.779 gemv_ms=3.221 speedup=1.81 tile_tflops=19.3
+TIMING dots s=512 n=256 k=4096 bf16=false rep=0 tile_ms=0.264 loop_ms=1.657 speedup=6.27
+TIMING dense m=512 n=512 k=4096 rep=0 tile_ms=0.131 gemv_ms=0.131 speedup=1.00 tile_tflops=16.4
+DSV4_DENSE_TILE EXACT cases=106 shapes=9 widths=[33, 48, 64, 100, 256, 512] red_arm=1
+TIMING dots s=512 n=256 k=4096 bf16=false rep=1 tile_ms=0.103 loop_ms=0.942 speedup=9.19
+TIMING dense m=512 n=512 k=4096 rep=1 tile_ms=0.130 gemv_ms=0.553 speedup=4.24 tile_tflops=16.5
+test prefill_dots_tile_timing ... ok
+test prefill_dense_tile_is_the_gemv_loop_bit_for_bit ... ok
+TIMING dense m=512 n=2048 k=4096 rep=0 tile_ms=0.462 gemv_ms=0.983 speedup=2.13 tile_tflops=18.6
+TIMING dense m=512 n=2048 k=4096 rep=1 tile_ms=0.462 gemv_ms=0.983 speedup=2.13 tile_tflops=18.6
+test prefill_dense_tile_timing ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.39s
+

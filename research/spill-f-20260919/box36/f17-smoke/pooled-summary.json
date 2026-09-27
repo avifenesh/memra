@@ -1,0 +1,69 @@
+{
+ "rounds": [
+  1
+ ],
+ "fallback_unclean_rule": true,
+ "visits_with_mmap_fallbacks": 0,
+ "cells": {
+  "0": "f17-smoke"
+ },
+ "visits": 3,
+ "refused_arms": [],
+ "gpu_cotenant_unclean_visits": 0,
+ "registered": {
+  "regime_scored": true,
+  "contaminated_visits": {
+   "worker16": 0,
+   "bypass-staged": 0,
+   "bypass-mapped": 0
+  },
+  "arms": {
+   "bypass-staged": {
+    "verdict": "insufficient",
+    "n_pairs": 1,
+    "median_ratio": 0.9973380656610471,
+    "ratios_forward": [
+     0.9973380656610471
+    ],
+    "ratios_reverse": []
+   },
+   "bypass-mapped": {
+    "verdict": "insufficient",
+    "n_pairs": 1,
+    "median_ratio": 0.8775510204081634,
+    "ratios_forward": [
+     0.8775510204081634
+    ],
+    "ratios_reverse": []
+   }
+  }
+ },
+ "post_hoc_read_gate": {
+  "regime_scored": true,
+  "contaminated_visits": {
+   "worker16": 0,
+   "bypass-staged": 0,
+   "bypass-mapped": 0
+  },
+  "arms": {
+   "bypass-staged": {
+    "verdict": "insufficient",
+    "n_pairs": 1,
+    "median_ratio": 0.9973380656610471,
+    "ratios_forward": [
+     0.9973380656610471
+    ],
+    "ratios_reverse": []
+   },
+   "bypass-mapped": {
+    "verdict": "insufficient",
+    "n_pairs": 1,
+    "median_ratio": 0.8775510204081634,
+    "ratios_forward": [
+     0.8775510204081634
+    ],
+    "ratios_reverse": []
+   }
+  }
+ }
+}

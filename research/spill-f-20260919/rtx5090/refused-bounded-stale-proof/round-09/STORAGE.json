@@ -1,0 +1,77 @@
+{
+  "class": "m1-proof-refused",
+  "nvme_proven": false,
+  "nvme_name_hint": true,
+  "label": "overlay/unproven \u2014 not NVMe, not spill speed",
+  "allow_unproven_storage": false,
+  "root": "/data/cache",
+  "commands": [
+    {
+      "command": [
+        "findmnt",
+        "-J",
+        "-T",
+        "/data/cache"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "storage-findmnt.log",
+        "bytes": 191,
+        "sha256": "623fc505f246e701fce3f2e374f22b5ed9ded08beaab4b2848ac40a062d23f48"
+      }
+    },
+    {
+      "command": [
+        "lsblk",
+        "-J",
+        "-o",
+        "NAME,TYPE,SIZE,ROTA,TRAN,MOUNTPOINTS"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "storage-lsblk.log",
+        "bytes": 14659,
+        "sha256": "b075e9e61d2a81a8d06e9e24d1addf57d2e503b49d4b0488a2a75da345585fd7"
+      }
+    },
+    {
+      "command": [
+        "findmnt",
+        "-n",
+        "-o",
+        "SOURCE",
+        "-T",
+        "/data/cache"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "storage-source.log",
+        "bytes": 26,
+        "sha256": "4f9aad26a8bc671240296413f38c8911c8e9de5d90677c82c4366c5bf52d972c"
+      }
+    },
+    {
+      "command": [
+        "lsblk",
+        "-s",
+        "-r",
+        "-n",
+        "-o",
+        "KNAME",
+        "/dev/mapper/data--vg-data"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "storage-ancestry.log",
+        "bytes": 13,
+        "sha256": "67edd78ef43e4540d1b39c677ee242666f745fb3eddf229cafa4ae9fde86d943"
+      }
+    }
+  ],
+  "qualification": false,
+  "m1_proof_refusal": "storage proof identity is not this mount"
+}

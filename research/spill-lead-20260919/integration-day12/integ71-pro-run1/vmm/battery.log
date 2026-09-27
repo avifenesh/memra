@@ -1,0 +1,19 @@
+2026-09-27T04:19:09Z collector hold taken on /tmp/memra-gpu.lock (fd 9) tree=e8af7cf537235bf0a00faeb1c75476f01bd3826e
+2026-09-27T04:19:09Z start serve-smoke env=[MEMRA_KV_ALLOCATOR=vmm]
+2026-09-27T04:19:30Z done serve-smoke rc=1 serve-smoke: 1 failed
+2026-09-27T04:19:30Z binary after serve-smoke's build: 9054b7d0a5e2cc0b
+2026-09-27T04:19:30Z start identity-default-on env=[MEMRA_KV_ALLOCATOR=vmm MEMRA_HOSTGATE_CACHE_MB=64 MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-27T04:19:40Z done identity-default-on rc=0 KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+2026-09-27T04:19:40Z start fault-default env=[MEMRA_KV_ALLOCATOR=vmm MEMRA_HOSTGATE_CACHE_MB=64]
+2026-09-27T04:22:34Z done fault-default rc=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+2026-09-27T04:22:34Z start fault-plain env=[MEMRA_KV_ALLOCATOR=vmm MEMRA_HOSTGATE_CACHE_MB=64 MEMRA_SERVE_SPEC=0]
+2026-09-27T04:25:35Z done fault-plain rc=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+2026-09-27T04:25:35Z start hit-off env=[MEMRA_KV_ALLOCATOR=vmm]
+2026-09-27T04:25:51Z done hit-off rc=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+2026-09-27T04:25:51Z start hit-on env=[MEMRA_KV_ALLOCATOR=vmm MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-27T04:26:12Z done hit-on rc=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+2026-09-27T04:26:12Z start admit-mem-burst env=[MEMRA_KV_ALLOCATOR=vmm]
+2026-09-27T04:31:18Z done admit-mem-burst rc=0 ADMIT-MEM BURST GATE: ALL GREEN
+2026-09-27T04:31:18Z start spec-ctx-edge env=[MEMRA_KV_ALLOCATOR=vmm]
+2026-09-27T04:31:29Z done spec-ctx-edge rc=0 SPEC-CTX-EDGE GATE: ALL GREEN
+2026-09-27T04:31:29Z collector hold released; INTEG71-VMM-DONE

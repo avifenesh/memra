@@ -1,0 +1,44 @@
+{
+   "blockdevices": [
+      {
+         "name": "nvme0n1",
+         "type": "disk",
+         "size": "7.3T",
+         "rota": false,
+         "tran": "nvme",
+         "mountpoints": [
+             null
+         ],
+         "children": [
+            {
+               "name": "nvme0n1p1",
+               "type": "part",
+               "size": "1G",
+               "rota": false,
+               "tran": "nvme",
+               "mountpoints": [
+                   null
+               ]
+            },{
+               "name": "nvme0n1p2",
+               "type": "part",
+               "size": "256G",
+               "rota": false,
+               "tran": "nvme",
+               "mountpoints": [
+                   "/usr/lib/xorg/modules/extensions/libglxserver_nvidia.so.610.57.04", "/usr/lib/xorg/modules/drivers/nvidia_drv.so", "/usr/share/glvnd/egl_vendor.d/10_nvidia.json", "/usr/share/egl/egl_external_platform.d/20_nvidia_xlib.json", "/usr/share/egl/egl_external_platform.d/20_nvidia_xcb.json", "/usr/share/egl/egl_external_platform.d/15_nvidia_gbm.json", "/usr/share/egl/egl_external_platform.d/09_nvidia_wayland2.json", "/usr/share/X11/xorg.conf.d/nvidia-drm-outputclass.conf", "/usr/lib/x86_64-linux-gnu/vdpau/libvdpau_nvidia.so.610.57.04", "/usr/lib/firmware/nvidia/610.57.04/ucodes_tu10x.bin", "/usr/lib/firmware/nvidia/610.57.04/ucodes_ga10x.bin", "/usr/lib/firmware/nvidia/610.57.04/gsp_tu10x.bin", "/usr/lib/firmware/nvidia/610.57.04/gsp_ga10x.bin", "/usr/share/nvidia/nvoptix.bin", "/usr/lib/x86_64-linux-gnu/libnvoptix.so.610.57.04", "/usr/lib/x86_64-linux-gnu/libnvidia-vksc-core.so.610.57.04", "/usr/lib/x86_64-linux-gnu/libnvidia-tls.so.610.57.04", "/usr/lib/x86_64-linux-gnu/libnvidia-tileiras.so.610.57.04", "/usr/lib/x86_64-linux-gnu/libnvidia-sandboxutils.so.610.57.04", "/usr/lib/x86_64-linux-gnu/libnvidia-rtcore.so.610.57.04", "/usr/lib/x86_64-linux-gnu/libnvidia-ptxjitcompiler.so.610.57.04", "/usr/lib/x86_64-linux-gnu/libnvidia-present.so.610.57.04", "/usr/lib/x86_64-linux-gnu/libnvidia-pkcs11-openssl3.so.610.57.04", "/usr/lib/x86_64-linux-gnu/libnvidia-opticalflow.so.610.57.04", "/usr/lib/x86_64-linux-gnu/libnvidia-opencl.so.610.57.04", "/usr/lib/x86_64-linux-gnu/libnvidia-nvvm70.so.4", "/usr/lib/x86_64-linux-gnu/libnvidia-nvvm.so.610.57.04", "/usr/lib/x86_64-linux-gnu/libnvidia-ngx.so.610.57.04", "/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.610.57.04", "/usr/lib/x86_64-linux-gnu/libnvidia-gpucomp.so.610.57.04", "/usr/lib/x86_64-linux-gnu/libnvidia-glvkspirv.so.610.57.04", "/usr/lib/x86_64-linux-gnu/libnvidia-glsi.so.610.57.04", "/usr/lib/x86_64-linux-gnu/libnvidia-glcore.so.610.57.04", "/usr/lib/x86_64-linux-gnu/libnvidia-fbc.so.610.57.04", "/usr/lib/x86_64-linux-gnu/libnvidia-encode.so.610.57.04", "/usr/lib/x86_64-linux-gnu/libnvidia-eglcore.so.610.57.04", "/usr/lib/x86_64-linux-gnu/libnvidia-egl-xlib.so.1.0.6", "/usr/lib/x86_64-linux-gnu/libnvidia-egl-xcb.so.1.0.6", "/usr/lib/x86_64-linux-gnu/libnvidia-egl-wayland2.so.1.0.2", "/usr/lib/x86_64-linux-gnu/libnvidia-egl-gbm.so.1.1.4", "/usr/lib/x86_64-linux-gnu/libnvidia-cfg.so.610.57.04", "/usr/lib/x86_64-linux-gnu/libnvidia-allocator.so.610.57.04", "/usr/lib/x86_64-linux-gnu/libnvcuvid.so.610.57.04", "/usr/lib/x86_64-linux-gnu/libcudadebugger.so.610.57.04", "/usr/lib/x86_64-linux-gnu/libcuda.so.610.57.04", "/usr/lib/x86_64-linux-gnu/libGLX_nvidia.so.610.57.04", "/usr/lib/x86_64-linux-gnu/libGLESv2_nvidia.so.610.57.04", "/usr/lib/x86_64-linux-gnu/libGLESv1_CM_nvidia.so.610.57.04", "/usr/lib/x86_64-linux-gnu/libEGL_nvidia.so.610.57.04", "/etc/vulkan/implicit_layer.d/nvidia_layers.json", "/etc/vulkan/icd.d/nvidia_icd.json", "/etc/OpenCL/vendors/nvidia.icd", "/usr/bin/nvidia-smi", "/usr/bin/nvidia-persistenced", "/usr/bin/nvidia-debugdump", "/usr/bin/nvidia-cuda-mps-server", "/usr/bin/nvidia-cuda-mps-control"
+               ]
+            },{
+               "name": "nvme0n1p3",
+               "type": "part",
+               "size": "7T",
+               "rota": false,
+               "tran": "nvme",
+               "mountpoints": [
+                   "/etc/hosts", "/etc/hostname", "/etc/resolv.conf", "/scratch"
+               ]
+            }
+         ]
+      }
+   ]
+}

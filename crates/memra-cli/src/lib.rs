@@ -1352,10 +1352,14 @@ fn template_contract_error(pack: &ModelPack, artifact_has_template: bool) -> Opt
 
 fn local_hf_template(path: &Path) -> Result<Option<String>, String> {
     let config_path = path.join("tokenizer_config.json");
-    if let Ok(config) = std::fs::read_to_string(&config_path)
-        && let Some(template) = template_from_tokenizer_config(&config)
-    {
-        return nonempty_template(template).map(Some);
+    match std::fs::read_to_string(&config_path) {
+        Ok(config) => {
+            if let Some(template) = template_from_tokenizer_config(&config)? {
+                return Ok(Some(template));
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(format!("read {}: {error}", config_path.display())),
     }
     let template_path = path.join("chat_template.jinja");
     match std::fs::read_to_string(&template_path) {
@@ -1373,14 +1377,17 @@ fn inspect_remote_hf_tokenizer(base: &str) -> Result<TokenizerEvidence, String> 
         http_text(&format!("{base}/tokenizer_config.json")).map_err(|error| error.to_string())?;
     let template = config
         .as_deref()
-        .and_then(template_from_tokenizer_config)
-        .or_else(|| {
-            http_text(&format!("{base}/chat_template.jinja"))
-                .ok()
-                .flatten()
-        })
-        .map(nonempty_template)
-        .transpose()?;
+        .map(template_from_tokenizer_config)
+        .transpose()?
+        .flatten();
+    let template = if template.is_some() {
+        template
+    } else {
+        http_text(&format!("{base}/chat_template.jinja"))
+            .map_err(|error| error.to_string())?
+            .map(nonempty_template)
+            .transpose()?
+    };
     Ok(TokenizerEvidence {
         source: TokenizerSource::TokenizerJson,
         tokenizer_sha256: hex_sha256(tokenizer.as_bytes()),
@@ -1391,11 +1398,16 @@ fn inspect_remote_hf_tokenizer(base: &str) -> Result<TokenizerEvidence, String> 
     })
 }
 
-fn template_from_tokenizer_config(config: &str) -> Option<String> {
-    let config = memra_gguf::config::JsonObj::parse(config);
-    config
-        .string("chat_template")
-        .filter(|value| !value.trim().is_empty())
+fn template_from_tokenizer_config(config: &str) -> Result<Option<String>, String> {
+    let config = memra_tokenizer::json::parse(config)
+        .map_err(|error| format!("tokenizer_config.json: {error}"))?;
+    match config.get("chat_template") {
+        None | Some(memra_tokenizer::json::Value::Null) => Ok(None),
+        Some(memra_tokenizer::json::Value::Str(template)) => {
+            nonempty_template(template.clone()).map(Some)
+        }
+        Some(_) => Err("tokenizer_config.json chat_template must be a string or null".into()),
+    }
 }
 
 fn nonempty_template(template: String) -> Result<String, String> {
@@ -2122,6 +2134,20 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hf_template_lock_uses_decoded_json_and_refuses_malformed_sidecars() {
+        let encoded = r#"{"chat_template":"<|im_start|>user\n\u05e9\""}"#;
+        let template = template_from_tokenizer_config(encoded).unwrap().unwrap();
+        assert_eq!(template, "<|im_start|>user\nש\"");
+        assert_eq!(
+            template_from_tokenizer_config(r#"{"chat_template":null}"#).unwrap(),
+            None
+        );
+        assert!(template_from_tokenizer_config(r#"{"chat_template":"   "}"#).is_err());
+        assert!(template_from_tokenizer_config(r#"{"chat_template":[]}"#).is_err());
+        assert!(template_from_tokenizer_config(r#"{"chat_template":"valid"} trailing"#).is_err());
+    }
 
     #[test]
     fn gguf_tokenizer_identity_binds_validated_input_program() {

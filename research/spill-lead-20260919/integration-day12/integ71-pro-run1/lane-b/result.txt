@@ -1,0 +1,12 @@
+c01 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.69s skipped_lines=0
+c02 A4 CONTINUATION GATE: PASS
+c03 exact=4 of 4
+c04 exit=0
+c05-27b exit=0 k_lines=8 pass_lines=8 acc0=0 === SELF-CONSISTENCY PASS ===
+c05-9b exit=0 k_lines=8 pass_lines=8 acc0=0 === SELF-CONSISTENCY PASS ===
+c06 match=2 mismatch=0
+c07 health-fault-gate: arms=g,h,j pass=6 documented=1 fail=0 receipts=/root/integ71-pro/lane-b/c07-hfg/hfg chunk_sessions=3 
+c08 health-fault-gate: arms=j pass=2 documented=0 fail=0 receipts=/root/integ71-pro/lane-b/c08-hfg-vmm/hfg reap_j=1 reap_jred=1 door_on=2
+c09 GROW-G1 PASS (grows=28 unequal=0 planes=34 planes_crossed=34 min_crossings_per_plane=12 rule>=5 drift=0 tokens_equal=true logits_equal=true prefix_state_equal=true final_state_equal=true) committed=32768 generated=128
+c11 DAY44 E5 card=pro6000 boot=fault-plain-rxg6 oom_lines=0 crash_lines=0 r503=0 -> PASS|DAY44 E5 card=pro6000 boot=rx-plain-rx-O1-exact oom_lines=0 crash_lines=0 r503=0 -> PASS|DAY44 E5 card=pro6000 boot=rx-plain-rx-O1-keep oom_lines=0 crash_lines=0 r503=0 -> PASS|DAY44 E5 card=pro6000 boot=rx-spec-rx-O1-exact oom_lines=0 crash_lines=0 r503=0 -> PASS|DAY44 E5 card=pro6000 boot=rx-spec-rx-O1-keep oom_lines=0 crash_lines=0 r503=0 -> PASS|DAY44 E1 card=pro6000 boot=rx-plain-rx-O1-exact resumed=20 differ_vs_cold=[] exact_lines=20 -> PASS|DAY44 E3 card=pro6000 boot=rx-plain-rx-O1-exact turns=20 resumed=20 frac=1.00 -> PASS|DAY44 E1 card=pro6000 boot=rx-spec-rx-O1-exact resumed=20 differ_vs_cold=[] exact_lines=20 -> PASS|DAY44 E3 card=pro6000 boot=rx-spec-rx-O1-exact turns=20 resumed=20 frac=1.00 -> PASS|DAY44 E4-FAULT card=pro6000 boot=fault-plain-rxg6 settle_failed_lines=56 later_turns=20 resumed_after_drop=[] cold_differ=[] -> PASS|
+c12 ADMIT-MEM BURST GATE: ALL GREEN

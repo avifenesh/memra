@@ -153,13 +153,10 @@ fn main() {
         .unwrap();
     // The model, weights and request allocations remain stable throughout both arms.
     unsafe {
-        gpu.arm_full_token_replay_for_gate(&mut measured, cfg)
-            .unwrap();
+        gpu.arm_full_token_replay(&mut measured, cfg).unwrap();
     }
     // Capture the default variants and commit graph, outside the 64 steps.
-    let warm = gpu
-        .decode_sample_full_token_for_gate(first, &mut measured)
-        .unwrap();
+    let warm = gpu.decode_sample_full_token(first, &mut measured).unwrap();
     census(&gpu, &measured);
     unsafe { prepare() };
     gpu.restore_full_token_prefix_for_gate(&mut measured, &prefix)
@@ -174,9 +171,7 @@ fn main() {
         assert_ne!(carry, tokenizer.eos_id());
         tokens.push(carry);
         unsafe { begin() };
-        carry = gpu
-            .decode_sample_full_token_for_gate(carry, &mut measured)
-            .unwrap();
+        carry = gpu.decode_sample_full_token(carry, &mut measured).unwrap();
         unsafe { finish(position) };
         assert_eq!(measured.pos, position as usize + 1);
     }
@@ -208,9 +203,7 @@ fn main() {
     carry = first;
     for &token in &tokens {
         assert_eq!(carry, token);
-        carry = gpu
-            .decode_sample_full_token_for_gate(carry, &mut measured)
-            .unwrap();
+        carry = gpu.decode_sample_full_token(carry, &mut measured).unwrap();
     }
     assert_eq!((carry, identity(&gpu, &measured)), actual);
     let mut hash = Sha256::new();

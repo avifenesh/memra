@@ -1623,6 +1623,12 @@ pub struct PrimeWorkspaceShape {
 }
 
 impl PrimeWorkspaceShape {
+    /// The rows one prime call carries for a `prompt_rows` prime under the deployment's chunking
+    /// (WP-B day 39: the admission door books one call's workspace once, not once per session).
+    pub fn call_rows(&self, prompt_rows: usize) -> usize {
+        prompt_rows.min(prime_chunk_tokens(prompt_rows, self.n_layers).max(1))
+    }
+
     /// The charge for `prompt_rows` with an explicit per-call row count (pure arithmetic,
     /// what the tests pin).
     pub fn admission_bytes_with_call_rows(&self, prompt_rows: usize, call_rows: usize) -> usize {
@@ -6549,6 +6555,28 @@ impl HybridModel {
     /// its OWN slabs on its own device (a dev0 slab dereferenced by a dev1 kernel would be
     /// a peer read per GEMM operand, the exact class Lever B removes). Single-device rigs
     /// see one entry, byte-identical behavior.
+    /// WP-B day 39 (`research/spill-b-20260919/DAY39.md` 1.2): the prime slab set's allocated bytes
+    /// on `e`'s device, 0 before the first prime. The slab is retained and grow-only, and every prime
+    /// call on the device uses it in turn, so the admission door books only its owed growth.
+    pub fn prime_slab_bytes(&self, e: &Engine) -> usize {
+        let dev = e.ctx().ordinal();
+        let slabs = self.prime_slabs.lock().unwrap_or_else(|p| p.into_inner());
+        slabs.get(&dev).map_or(0, |sl| {
+            let s = sl.lock().unwrap_or_else(|p| p.into_inner());
+            let f32s = s.h.len()
+                + s.x1.len()
+                + s.z.len()
+                + s.act.len()
+                + s.xa.len()
+                + s.xb.len()
+                + s.gate.len()
+                + s.up.len()
+                + s.ffn_out.len()
+                + s.mixed.len();
+            f32s * 4 + s.h16.len() + s.z16.len()
+        })
+    }
+
     pub fn prime_slabs_get(
         &self,
         e: &Engine,
@@ -6644,6 +6672,10 @@ impl HybridModel {
             seq_end >= base + t,
             "prime_chunk: seq_end must cover this chunk"
         );
+        // GRID CAPTURE (WP-B day 44, `grid_capture`): a capture at this call's start is the live
+        // state; one inside it rides the layer walk below; one at its end is taken after it.
+        crate::grid_capture::note_boundary(e, cache);
+        crate::grid_capture::begin_call(base, t);
         let pos: Vec<i32> = (base as i32..(base + t) as i32).collect();
         let pos_d = e.htod_i32(&pos)?;
 
@@ -6696,7 +6728,9 @@ impl HybridModel {
             cache.qwen_prime_graph = None;
             e.trim_device_graph_mem()?;
         }
-        self.prime_chunk_epilogue(e, x, t, cache)
+        let out = self.prime_chunk_epilogue(e, x, t, cache)?;
+        crate::grid_capture::note_boundary(e, cache);
+        Ok(out)
     }
 
     /// PRIME RANGE SUBGRAPH (lane/pp-leverb, 2026-08-08): layers `[lo, hi)` of the chunked
@@ -9131,6 +9165,14 @@ impl HybridModel {
             hk,
             pad_len,
         )?;
+        // GRID CAPTURE (WP-B day 44, `grid_capture`): the ring at the capture point inside this
+        // call, from this call's own input rows. Unpadded per-sequence primes only.
+        if pad_len.is_none()
+            && let Some(rows) = crate::grid_capture::layer_rel()
+        {
+            let ring = e.ssm_conv_ring_capture(qkv_mixed, conv_dim, rows, d_conv)?;
+            crate::grid_capture::put_conv(il, ring);
+        }
         let mut q_l2 = e.uninit(d_state * hk * t)?;
         // mirror-fold (round 35): q's bf16 twin (wgmma K45/K2 A-operand) in-epilogue too.
         // Emitted only where a consumer exists (the wgmma config) — on other arches the
@@ -9434,13 +9476,21 @@ impl HybridModel {
         // verify keep the sequential kernel).
         let mut o = e.uninit(d_state * num_v * t)?;
         let rl = cache.recur[il].as_mut().unwrap();
+        // GRID CAPTURE (WP-B day 44, `grid_capture`): the scan also writes the state at the
+        // capture point inside this call. Unpadded per-sequence primes only.
+        let capture_rows = if pad_len.is_none() {
+            crate::grid_capture::layer_rel()
+        } else {
+            None
+        };
+        let mut captured: Option<CudaSlice<f32>> = None;
         {
             let crate::cache::RecurLayer {
                 ssm_state,
                 ssm_state_alt,
                 ..
             } = rl;
-            e.gdn_scan_prefill(
+            e.gdn_scan_prefill_capture(
                 &prep.q_l2,
                 &prep.k_l2,
                 &prep.v_g,
@@ -9455,7 +9505,11 @@ impl HybridModel {
                 t,
                 scale,
                 prep.hk,
+                capture_rows.map(|rows| (rows, &mut captured)),
             )?;
+        }
+        if let Some(state) = captured {
+            crate::grid_capture::put_ssm(il, state);
         }
         std::mem::swap(&mut rl.ssm_state, &mut rl.ssm_state_alt);
 
@@ -18831,8 +18885,12 @@ impl HybridModel {
                     (PROJ_DOWN, &m.down_exps),
                 ] {
                     let id = BlockId::new(il, proj, ex as u16);
-                    let DispatchSlot::Resident(_) =
-                        c.dispatch_source(id, exps.expert_source(ex_usize), eng)?;
+                    if !matches!(
+                        c.dispatch_source(id, exps.expert_source(ex_usize), eng)?,
+                        DispatchSlot::Resident(_)
+                    ) {
+                        return Err("dispatch_source returned a bypass slot".into());
+                    }
                 }
             }
             // PASS 2 — take the fixed slot addresses, with nothing left to admit.
@@ -19747,7 +19805,7 @@ impl HybridModel {
         aq: &CudaSlice<i8>,
         ad: &CudaSlice<f32>,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        use crate::moe_cache::{BlockId, DispatchSlot, PROJ_GATE, PROJ_UP};
+        use crate::moe_cache::{BlockId, PROJ_GATE, PROJ_UP};
         let exps = match proj {
             PROJ_GATE => &m.gate_exps,
             PROJ_UP => &m.up_exps,
@@ -19757,20 +19815,25 @@ impl HybridModel {
         let id = BlockId::new(il, proj, ex as u16);
         let source = exps.expert_source(ex);
         e.with_moe_cache(max_block, |c, eng| {
-            let slot = c.dispatch_source(id, source, eng)?;
-            let DispatchSlot::Resident(sl) = slot;
-            let buf = c.slot(sl);
-            eng.qmatvec_expert_q8(
-                buf,
-                0..layout.len,
-                aq,
-                ad,
-                1,
-                exps.in_f,
-                exps.out_f,
-                layout.qtype,
-                layout.row_bytes,
-            )
+            // OWED 17: the kernel is enqueued inside this scope, so a cold first miss may be
+            // served without admission (`MEMRA_MOE_COLD_BYPASS`); `consumed` follows the launch.
+            let slot = c.dispatch_source_once(id, source, eng)?;
+            let out = {
+                let (buf, range) = c.payload(slot, layout.len);
+                eng.qmatvec_expert_q8(
+                    buf,
+                    range,
+                    aq,
+                    ad,
+                    1,
+                    exps.in_f,
+                    exps.out_f,
+                    layout.qtype,
+                    layout.row_bytes,
+                )
+            };
+            c.consumed(slot, eng)?;
+            out
         })
     }
 
@@ -19783,7 +19846,7 @@ impl HybridModel {
         max_block: usize,
         x: &cudarc::driver::CudaView<f32>,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        use crate::moe_cache::{BlockId, DispatchSlot, PROJ_GATE, PROJ_UP};
+        use crate::moe_cache::{BlockId, PROJ_GATE, PROJ_UP};
         let exps = match proj {
             PROJ_GATE => &m.gate_exps,
             PROJ_UP => &m.up_exps,
@@ -19794,22 +19857,25 @@ impl HybridModel {
         let source = exps.expert_source(ex);
         // dispatch under the lock (lookup/admit/memcpy-issue), then resolve the slot and GEMM.
         e.with_moe_cache(max_block, |c, eng| {
-            let slot = c.dispatch_source(id, source, eng)?;
-            // resolve the device buffer for this slot; the GEMM is enqueued on the compute stream
-            // (the same stream the memcpy was issued on, so ordering holds without extra sync).
-            let DispatchSlot::Resident(sl) = slot;
-            let buf = c.slot(sl);
-            m.qmatvec_view(
-                eng,
-                buf,
-                0..layout.len,
-                x,
-                1,
-                exps.in_f,
-                exps.out_f,
-                layout.qtype,
-                layout.row_bytes,
-            )
+            // OWED 17: see moe_cached_gemm_q8; the GEMM is enqueued on the compute stream (the
+            // same stream as any copy), then `consumed` fences a mapped buffer after it.
+            let slot = c.dispatch_source_once(id, source, eng)?;
+            let out = {
+                let (buf, range) = c.payload(slot, layout.len);
+                m.qmatvec_view(
+                    eng,
+                    buf,
+                    range,
+                    x,
+                    1,
+                    exps.in_f,
+                    exps.out_f,
+                    layout.qtype,
+                    layout.row_bytes,
+                )
+            };
+            c.consumed(slot, eng)?;
+            out
         })
     }
 

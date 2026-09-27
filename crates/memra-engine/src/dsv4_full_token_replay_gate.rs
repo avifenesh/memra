@@ -240,13 +240,13 @@ fn run_impl(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, reverse: bool,
         inputs.push(carry);
         let before = gpu.full_token_ar_epochs_for_gate().unwrap();
         let expected = if cadence {
-            gpu.decode_sample_full_token_for_gate(carry, &mut control)
+            gpu.decode_sample_full_token(carry, &mut control)
                 .expect("full replay oracle")
         } else {
             eager_step(gpu, &mut control, &mut control_sampler, &cfg, carry)
         };
         let actual = gpu
-            .decode_sample_full_token_for_gate(carry, &mut graph)
+            .decode_sample_full_token(carry, &mut graph)
             .expect("full replay");
         assert_eq!(actual, expected, "sample at position {}", PRIME + step + 1);
         assert_eq!(graph.pos, control.pos);
@@ -305,7 +305,7 @@ fn run_impl(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, reverse: bool,
                 .unwrap();
             arm(gpu, &mut failed, cfg, cadence);
             for &token in &inputs[..position - PRIME] {
-                gpu.decode_sample_full_token_for_gate(token, &mut failed)
+                gpu.decode_sample_full_token(token, &mut failed)
                     .expect("fault setup");
             }
             let before = gpu.tp_ep_cache_digest_for_gate(&failed).unwrap();
@@ -314,7 +314,7 @@ fn run_impl(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, reverse: bool,
             gpu.arm_attention_tp_join_refusal_for_gate(layer, rank, code)
                 .unwrap();
             let error = gpu
-                .decode_sample_full_token_for_gate(inputs[position - PRIME], &mut failed)
+                .decode_sample_full_token(inputs[position - PRIME], &mut failed)
                 .unwrap_err();
             assert!(error.contains("one-shot reduction refused"), "{error}");
             let mut words = [0, 0];
@@ -335,7 +335,7 @@ fn run_impl(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, reverse: bool,
                 );
             }
             assert!(
-                gpu.decode_sample_full_token_for_gate(inputs[position - PRIME], &mut failed)
+                gpu.decode_sample_full_token(inputs[position - PRIME], &mut failed)
                     .unwrap_err()
                     .contains("unfinished transaction")
             );
@@ -402,7 +402,7 @@ fn run_impl(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, reverse: bool,
             assert_ne!(carry, tokenizer.eos_id(), "early EOS row is not eligible");
             tokens.push(carry);
             carry = if graph_arm || cadence {
-                gpu.decode_sample_full_token_for_gate(carry, active)
+                gpu.decode_sample_full_token(carry, active)
                     .expect("scored replay")
             } else {
                 eager_step(gpu, active, &mut control_sampler, &cfg, carry)
@@ -567,11 +567,9 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
     gpu.restore_full_token_prefix_for_gate(&mut candidate, &prefix)
         .unwrap();
     // Safety: gpu/weights/config remain borrowed and unchanged until both states drop.
-    unsafe { gpu.arm_full_token_replay_for_gate(&mut candidate, cfg) }.unwrap();
+    unsafe { gpu.arm_full_token_replay(&mut candidate, cfg) }.unwrap();
     let expected = eager_step(gpu, &mut control, &mut sampler, &cfg, first);
-    let actual = gpu
-        .decode_sample_full_token_for_gate(first, &mut candidate)
-        .unwrap();
+    let actual = gpu.decode_sample_full_token(first, &mut candidate).unwrap();
     assert_eq!(actual, expected);
     assert_eq!(identity(gpu, &candidate), identity(gpu, &control));
     capture_once(gpu, &candidate, cadence);
@@ -650,8 +648,7 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
                 assert_ne!(carry, tokenizer.eos_id(), "profile early EOS");
                 tokens.push(carry);
                 carry = if graph_arm {
-                    gpu.decode_sample_full_token_for_gate(carry, active)
-                        .unwrap()
+                    gpu.decode_sample_full_token(carry, active).unwrap()
                 } else {
                     eager_step(gpu, active, &mut sampler, &cfg, carry)
                 };

@@ -1,0 +1,221 @@
+RESOURCE on=0 registers=40 shared=1536 local=0 blocks_per_sm=12 resident_warps=48 grid=512 threads=128 symbol=_Z32dsv4_dense_exact_tail_fp8_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii
+RESOURCE on=1 registers=40 shared=2048 local=0 blocks_per_sm=6 resident_warps=48 grid=256 threads=256 symbol=_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi1EEvPKhPKfiPKtPfiiiiii
+PASS rank=0 kind=0 n=512 k=4096 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=40 shared=1536 local=0 blocks_per_sm=12 resident_warps=48 grid=1024 threads=128 symbol=_Z32dsv4_dense_exact_tail_fp8_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii
+RESOURCE on=1 registers=40 shared=2048 local=0 blocks_per_sm=6 resident_warps=48 grid=512 threads=256 symbol=_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi1EEvPKhPKfiPKtPfiiiiii
+PASS rank=0 kind=0 n=1024 k=4096 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=40 shared=1536 local=0 blocks_per_sm=12 resident_warps=48 grid=2048 threads=128 symbol=_Z32dsv4_dense_exact_tail_fp8_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii
+RESOURCE on=1 registers=40 shared=2048 local=0 blocks_per_sm=6 resident_warps=48 grid=1024 threads=256 symbol=_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi1EEvPKhPKfiPKtPfiiiiii
+PASS rank=0 kind=0 n=2048 k=4096 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=40 shared=1536 local=0 blocks_per_sm=12 resident_warps=48 grid=4096 threads=128 symbol=_Z32dsv4_dense_exact_tail_fp8_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii
+RESOURCE on=1 registers=40 shared=2048 local=0 blocks_per_sm=6 resident_warps=48 grid=2048 threads=256 symbol=_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi1EEvPKhPKfiPKtPfiiiiii
+PASS rank=0 kind=0 n=4096 k=2048 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=40 shared=1536 local=0 blocks_per_sm=12 resident_warps=48 grid=4096 threads=128 symbol=_Z32dsv4_dense_exact_tail_fp8_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii
+RESOURCE on=1 registers=40 shared=2048 local=0 blocks_per_sm=6 resident_warps=48 grid=2048 threads=256 symbol=_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi1EEvPKhPKfiPKtPfiiiiii
+PASS rank=0 kind=0 n=4096 k=4096 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=40 shared=1536 local=0 blocks_per_sm=12 resident_warps=48 grid=8192 threads=128 symbol=_Z32dsv4_dense_exact_tail_fp8_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii
+RESOURCE on=1 registers=40 shared=2048 local=0 blocks_per_sm=6 resident_warps=48 grid=4096 threads=256 symbol=_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi1EEvPKhPKfiPKtPfiiiiii
+PASS rank=0 kind=0 n=8192 k=1024 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=40 shared=1536 local=0 blocks_per_sm=12 resident_warps=48 grid=16384 threads=128 symbol=_Z32dsv4_dense_exact_tail_fp8_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii
+RESOURCE on=1 registers=40 shared=2048 local=0 blocks_per_sm=6 resident_warps=48 grid=8192 threads=256 symbol=_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi1EEvPKhPKfiPKtPfiiiiii
+PASS rank=0 kind=0 n=16384 k=1024 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=4 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=4 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=0 kind=1 n=4 k=16384 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=24 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=24 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=0 kind=1 n=24 k=16384 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=256 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=256 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=0 kind=1 n=256 k=4096 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=512 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=512 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=0 kind=1 n=512 k=4096 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=1024 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=1024 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=0 kind=1 n=1024 k=4096 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=129280 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=129280 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=0 kind=2 n=129280 k=4096 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=40 shared=1536 local=0 blocks_per_sm=12 resident_warps=48 grid=512 threads=128 symbol=_Z32dsv4_dense_exact_tail_fp8_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii
+RESOURCE on=1 registers=40 shared=2048 local=0 blocks_per_sm=6 resident_warps=48 grid=256 threads=256 symbol=_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi1EEvPKhPKfiPKtPfiiiiii
+PASS rank=1 kind=0 n=512 k=4096 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=40 shared=1536 local=0 blocks_per_sm=12 resident_warps=48 grid=1024 threads=128 symbol=_Z32dsv4_dense_exact_tail_fp8_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii
+RESOURCE on=1 registers=40 shared=2048 local=0 blocks_per_sm=6 resident_warps=48 grid=512 threads=256 symbol=_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi1EEvPKhPKfiPKtPfiiiiii
+PASS rank=1 kind=0 n=1024 k=4096 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=40 shared=1536 local=0 blocks_per_sm=12 resident_warps=48 grid=2048 threads=128 symbol=_Z32dsv4_dense_exact_tail_fp8_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii
+RESOURCE on=1 registers=40 shared=2048 local=0 blocks_per_sm=6 resident_warps=48 grid=1024 threads=256 symbol=_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi1EEvPKhPKfiPKtPfiiiiii
+PASS rank=1 kind=0 n=2048 k=4096 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=40 shared=1536 local=0 blocks_per_sm=12 resident_warps=48 grid=4096 threads=128 symbol=_Z32dsv4_dense_exact_tail_fp8_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii
+RESOURCE on=1 registers=40 shared=2048 local=0 blocks_per_sm=6 resident_warps=48 grid=2048 threads=256 symbol=_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi1EEvPKhPKfiPKtPfiiiiii
+PASS rank=1 kind=0 n=4096 k=2048 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=40 shared=1536 local=0 blocks_per_sm=12 resident_warps=48 grid=4096 threads=128 symbol=_Z32dsv4_dense_exact_tail_fp8_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii
+RESOURCE on=1 registers=40 shared=2048 local=0 blocks_per_sm=6 resident_warps=48 grid=2048 threads=256 symbol=_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi1EEvPKhPKfiPKtPfiiiiii
+PASS rank=1 kind=0 n=4096 k=4096 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=40 shared=1536 local=0 blocks_per_sm=12 resident_warps=48 grid=8192 threads=128 symbol=_Z32dsv4_dense_exact_tail_fp8_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii
+RESOURCE on=1 registers=40 shared=2048 local=0 blocks_per_sm=6 resident_warps=48 grid=4096 threads=256 symbol=_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi1EEvPKhPKfiPKtPfiiiiii
+PASS rank=1 kind=0 n=8192 k=1024 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=40 shared=1536 local=0 blocks_per_sm=12 resident_warps=48 grid=16384 threads=128 symbol=_Z32dsv4_dense_exact_tail_fp8_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii
+RESOURCE on=1 registers=40 shared=2048 local=0 blocks_per_sm=6 resident_warps=48 grid=8192 threads=256 symbol=_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi1EEvPKhPKfiPKtPfiiiiii
+PASS rank=1 kind=0 n=16384 k=1024 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=4 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=4 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=1 kind=1 n=4 k=16384 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=24 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=24 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=1 kind=1 n=24 k=16384 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=256 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=256 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=1 kind=1 n=256 k=4096 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=512 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=512 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=1 kind=1 n=512 k=4096 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=1024 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=1024 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=1 kind=1 n=1024 k=4096 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=129280 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=129280 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=1 kind=2 n=129280 k=4096 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+PASS canonical128_tree_cancellation expected=0 warp_first_would_be=2
+RESOURCE on=0 registers=40 shared=1536 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z32dsv4_dense_exact_tail_fp8_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii
+RESOURCE on=1 registers=40 shared=2048 local=0 blocks_per_sm=6 resident_warps=48 grid=2 threads=256 symbol=_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi1EEvPKhPKfiPKtPfiiiiii
+PASS rank=0 kind=0 n=3 k=8 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=40 shared=1536 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z32dsv4_dense_exact_tail_fp8_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii
+RESOURCE on=1 registers=40 shared=2048 local=0 blocks_per_sm=6 resident_warps=48 grid=2 threads=256 symbol=_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi1EEvPKhPKfiPKtPfiiiiii
+PASS rank=0 kind=0 n=3 k=1016 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=40 shared=1536 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z32dsv4_dense_exact_tail_fp8_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii
+RESOURCE on=1 registers=40 shared=2048 local=0 blocks_per_sm=6 resident_warps=48 grid=2 threads=256 symbol=_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi1EEvPKhPKfiPKtPfiiiiii
+PASS rank=0 kind=0 n=3 k=1024 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=40 shared=1536 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z32dsv4_dense_exact_tail_fp8_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii
+RESOURCE on=1 registers=40 shared=2048 local=0 blocks_per_sm=6 resident_warps=48 grid=2 threads=256 symbol=_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi1EEvPKhPKfiPKtPfiiiiii
+PASS rank=0 kind=0 n=3 k=1032 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=40 shared=1536 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z32dsv4_dense_exact_tail_fp8_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii
+RESOURCE on=1 registers=40 shared=2048 local=0 blocks_per_sm=6 resident_warps=48 grid=2 threads=256 symbol=_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi1EEvPKhPKfiPKtPfiiiiii
+PASS rank=0 kind=0 n=3 k=2048 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=40 shared=1536 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z32dsv4_dense_exact_tail_fp8_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii
+RESOURCE on=1 registers=40 shared=2048 local=0 blocks_per_sm=6 resident_warps=48 grid=2 threads=256 symbol=_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi1EEvPKhPKfiPKtPfiiiiii
+PASS rank=0 kind=0 n=3 k=4096 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=0 kind=1 n=3 k=8 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=0 kind=1 n=3 k=1016 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=0 kind=1 n=3 k=1024 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=0 kind=1 n=3 k=1032 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=0 kind=1 n=3 k=2048 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=0 kind=1 n=3 k=4096 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=0 kind=2 n=3 k=8 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=0 kind=2 n=3 k=1016 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=0 kind=2 n=3 k=1024 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=0 kind=2 n=3 k=1032 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=0 kind=2 n=3 k=2048 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=0 kind=2 n=3 k=4096 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+PASS canonical128_tree_cancellation expected=0 warp_first_would_be=2
+RESOURCE on=0 registers=40 shared=1536 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z32dsv4_dense_exact_tail_fp8_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii
+RESOURCE on=1 registers=40 shared=2048 local=0 blocks_per_sm=6 resident_warps=48 grid=2 threads=256 symbol=_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi1EEvPKhPKfiPKtPfiiiiii
+PASS rank=1 kind=0 n=3 k=8 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=40 shared=1536 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z32dsv4_dense_exact_tail_fp8_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii
+RESOURCE on=1 registers=40 shared=2048 local=0 blocks_per_sm=6 resident_warps=48 grid=2 threads=256 symbol=_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi1EEvPKhPKfiPKtPfiiiiii
+PASS rank=1 kind=0 n=3 k=1016 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=40 shared=1536 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z32dsv4_dense_exact_tail_fp8_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii
+RESOURCE on=1 registers=40 shared=2048 local=0 blocks_per_sm=6 resident_warps=48 grid=2 threads=256 symbol=_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi1EEvPKhPKfiPKtPfiiiiii
+PASS rank=1 kind=0 n=3 k=1024 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=40 shared=1536 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z32dsv4_dense_exact_tail_fp8_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii
+RESOURCE on=1 registers=40 shared=2048 local=0 blocks_per_sm=6 resident_warps=48 grid=2 threads=256 symbol=_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi1EEvPKhPKfiPKtPfiiiiii
+PASS rank=1 kind=0 n=3 k=1032 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=40 shared=1536 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z32dsv4_dense_exact_tail_fp8_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii
+RESOURCE on=1 registers=40 shared=2048 local=0 blocks_per_sm=6 resident_warps=48 grid=2 threads=256 symbol=_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi1EEvPKhPKfiPKtPfiiiiii
+PASS rank=1 kind=0 n=3 k=2048 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=40 shared=1536 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z32dsv4_dense_exact_tail_fp8_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii
+RESOURCE on=1 registers=40 shared=2048 local=0 blocks_per_sm=6 resident_warps=48 grid=2 threads=256 symbol=_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi1EEvPKhPKfiPKtPfiiiiii
+PASS rank=1 kind=0 n=3 k=4096 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=1 kind=1 n=3 k=8 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=1 kind=1 n=3 k=1016 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=1 kind=1 n=3 k=1024 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=1 kind=1 n=3 k=1032 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=1 kind=1 n=3 k=2048 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=1 kind=1 n=3 k=4096 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=1 kind=2 n=3 k=8 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=1 kind=2 n=3 k=1016 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=1 kind=2 n=3 k=1024 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=1 kind=2 n=3 k=1032 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=1 kind=2 n=3 k=2048 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+RESOURCE on=0 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+RESOURCE on=1 registers=36 shared=512 local=0 blocks_per_sm=12 resident_warps=48 grid=3 threads=128 symbol=_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+PASS rank=1 kind=2 n=3 k=4096 real=0 bits=1 guards=1 immutable=1 retained_graphs=1
+PASS pair rank=0 kind=0 na=2048 nb=2048 k=4096 m=1 bits=1 one_launch=1 symbol=_Z31dsv4_dense_fast_fp8_kernel_pairILi2ELi1EEvPKhPKfiPfiiS1_S3_iS4_iiiPKtii
+PASS pair rank=0 kind=0 na=1024 nb=512 k=4096 m=1 bits=1 one_launch=1 symbol=_Z31dsv4_dense_fast_fp8_kernel_pairILi2ELi1EEvPKhPKfiPfiiS1_S3_iS4_iiiPKtii
+PASS pair rank=0 kind=2 na=1024 nb=1024 k=4096 m=1 bits=1 one_launch=1 symbol=_Z32dsv4_dense_fast_dots_kernel_pairILi1EEvPKfPKvPfiS3_S4_iii
+PASS pair rank=0 kind=2 na=256 nb=256 k=4096 m=1 bits=1 one_launch=1 symbol=_Z32dsv4_dense_fast_dots_kernel_pairILi1EEvPKfPKvPfiS3_S4_iii
+PASS pair rank=0 kind=0 na=2048 nb=2048 k=4096 m=2 bits=1 one_launch=1 symbol=_Z31dsv4_dense_fast_fp8_kernel_pairILi2ELi2EEvPKhPKfiPfiiS1_S3_iS4_iiiPKtii
+PASS pair rank=0 kind=0 na=1024 nb=512 k=4096 m=2 bits=1 one_launch=1 symbol=_Z31dsv4_dense_fast_fp8_kernel_pairILi2ELi2EEvPKhPKfiPfiiS1_S3_iS4_iiiPKtii
+PASS pair rank=0 kind=2 na=1024 nb=1024 k=4096 m=2 bits=1 one_launch=1 symbol=_Z32dsv4_dense_fast_dots_kernel_pairILi2EEvPKfPKvPfiS3_S4_iii
+PASS pair rank=0 kind=2 na=256 nb=256 k=4096 m=2 bits=1 one_launch=1 symbol=_Z32dsv4_dense_fast_dots_kernel_pairILi2EEvPKfPKvPfiS3_S4_iii
+PASS pair rank=0 kind=0 na=2048 nb=2048 k=4096 m=4 bits=1 one_launch=1 symbol=_Z31dsv4_dense_fast_fp8_kernel_pairILi2ELi4EEvPKhPKfiPfiiS1_S3_iS4_iiiPKtii
+PASS pair rank=0 kind=0 na=1024 nb=512 k=4096 m=4 bits=1 one_launch=1 symbol=_Z31dsv4_dense_fast_fp8_kernel_pairILi2ELi4EEvPKhPKfiPfiiS1_S3_iS4_iiiPKtii
+PASS pair rank=0 kind=2 na=1024 nb=1024 k=4096 m=4 bits=1 one_launch=1 symbol=_Z32dsv4_dense_fast_dots_kernel_pairILi4EEvPKfPKvPfiS3_S4_iii
+PASS pair rank=0 kind=2 na=256 nb=256 k=4096 m=4 bits=1 one_launch=1 symbol=_Z32dsv4_dense_fast_dots_kernel_pairILi4EEvPKfPKvPfiS3_S4_iii
+PASS pair rank=0 kind=0 na=2048 nb=2048 k=4096 m=6 bits=1 one_launch=1 symbol=_Z31dsv4_dense_fast_fp8_kernel_pairILi2ELi6EEvPKhPKfiPfiiS1_S3_iS4_iiiPKtii
+PASS pair rank=0 kind=0 na=1024 nb=512 k=4096 m=6 bits=1 one_launch=1 symbol=_Z31dsv4_dense_fast_fp8_kernel_pairILi2ELi6EEvPKhPKfiPfiiS1_S3_iS4_iiiPKtii
+PASS pair rank=0 kind=2 na=1024 nb=1024 k=4096 m=6 bits=1 one_launch=1 symbol=_Z32dsv4_dense_fast_dots_kernel_pairILi6EEvPKfPKvPfiS3_S4_iii
+PASS pair rank=0 kind=2 na=256 nb=256 k=4096 m=6 bits=1 one_launch=1 symbol=_Z32dsv4_dense_fast_dots_kernel_pairILi6EEvPKfPKvPfiS3_S4_iii
+PASS pair rank=1 kind=0 na=2048 nb=2048 k=4096 m=1 bits=1 one_launch=1 symbol=_Z31dsv4_dense_fast_fp8_kernel_pairILi2ELi1EEvPKhPKfiPfiiS1_S3_iS4_iiiPKtii
+PASS pair rank=1 kind=0 na=1024 nb=512 k=4096 m=1 bits=1 one_launch=1 symbol=_Z31dsv4_dense_fast_fp8_kernel_pairILi2ELi1EEvPKhPKfiPfiiS1_S3_iS4_iiiPKtii
+PASS pair rank=1 kind=2 na=1024 nb=1024 k=4096 m=1 bits=1 one_launch=1 symbol=_Z32dsv4_dense_fast_dots_kernel_pairILi1EEvPKfPKvPfiS3_S4_iii
+PASS pair rank=1 kind=2 na=256 nb=256 k=4096 m=1 bits=1 one_launch=1 symbol=_Z32dsv4_dense_fast_dots_kernel_pairILi1EEvPKfPKvPfiS3_S4_iii
+PASS pair rank=1 kind=0 na=2048 nb=2048 k=4096 m=2 bits=1 one_launch=1 symbol=_Z31dsv4_dense_fast_fp8_kernel_pairILi2ELi2EEvPKhPKfiPfiiS1_S3_iS4_iiiPKtii
+PASS pair rank=1 kind=0 na=1024 nb=512 k=4096 m=2 bits=1 one_launch=1 symbol=_Z31dsv4_dense_fast_fp8_kernel_pairILi2ELi2EEvPKhPKfiPfiiS1_S3_iS4_iiiPKtii
+PASS pair rank=1 kind=2 na=1024 nb=1024 k=4096 m=2 bits=1 one_launch=1 symbol=_Z32dsv4_dense_fast_dots_kernel_pairILi2EEvPKfPKvPfiS3_S4_iii
+PASS pair rank=1 kind=2 na=256 nb=256 k=4096 m=2 bits=1 one_launch=1 symbol=_Z32dsv4_dense_fast_dots_kernel_pairILi2EEvPKfPKvPfiS3_S4_iii
+PASS pair rank=1 kind=0 na=2048 nb=2048 k=4096 m=4 bits=1 one_launch=1 symbol=_Z31dsv4_dense_fast_fp8_kernel_pairILi2ELi4EEvPKhPKfiPfiiS1_S3_iS4_iiiPKtii
+PASS pair rank=1 kind=0 na=1024 nb=512 k=4096 m=4 bits=1 one_launch=1 symbol=_Z31dsv4_dense_fast_fp8_kernel_pairILi2ELi4EEvPKhPKfiPfiiS1_S3_iS4_iiiPKtii
+PASS pair rank=1 kind=2 na=1024 nb=1024 k=4096 m=4 bits=1 one_launch=1 symbol=_Z32dsv4_dense_fast_dots_kernel_pairILi4EEvPKfPKvPfiS3_S4_iii
+PASS pair rank=1 kind=2 na=256 nb=256 k=4096 m=4 bits=1 one_launch=1 symbol=_Z32dsv4_dense_fast_dots_kernel_pairILi4EEvPKfPKvPfiS3_S4_iii
+PASS pair rank=1 kind=0 na=2048 nb=2048 k=4096 m=6 bits=1 one_launch=1 symbol=_Z31dsv4_dense_fast_fp8_kernel_pairILi2ELi6EEvPKhPKfiPfiiS1_S3_iS4_iiiPKtii
+PASS pair rank=1 kind=0 na=1024 nb=512 k=4096 m=6 bits=1 one_launch=1 symbol=_Z31dsv4_dense_fast_fp8_kernel_pairILi2ELi6EEvPKhPKfiPfiiS1_S3_iS4_iiiPKtii
+PASS pair rank=1 kind=2 na=1024 nb=1024 k=4096 m=6 bits=1 one_launch=1 symbol=_Z32dsv4_dense_fast_dots_kernel_pairILi6EEvPKfPKvPfiS3_S4_iii
+PASS pair rank=1 kind=2 na=256 nb=256 k=4096 m=6 bits=1 one_launch=1 symbol=_Z32dsv4_dense_fast_dots_kernel_pairILi6EEvPKfPKvPfiS3_S4_iii
+PASS dense_fast_components

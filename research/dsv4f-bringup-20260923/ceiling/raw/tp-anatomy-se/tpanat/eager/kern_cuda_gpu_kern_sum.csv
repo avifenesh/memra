@@ -1,0 +1,50 @@
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+26.0,2542932437,26144,97266.4,97312.0,4448,149953,12866.8,"void moe_kq_sktail_gu_kernel<(int)108, (bool)1, (bool)1>(const unsigned long long *, int, const int *, long, const __half *, float *, const float *, const float *, const float *, const float *, const int *, int, int, int, int, float)"
+16.1,1570627041,195776,8022.6,7296.0,3008,16832,3486.1,"void dsv4_dense_fast_fp8_kernel<(int)2, (bool)0>(const unsigned char *, const float *, int, const unsigned short *, float *, int, int, int, int, int, int)"
+10.6,1038617697,26144,39726.8,39424.0,5504,62240,5857.3,"void moe_kq_sktail_kernel<(int)108, (bool)1, (bool)1>(const unsigned long long *, int, int, const int *, long, const __half *, float *, const float *, const int *, int, int, int, int, int, int)"
+7.2,703962607,102144,6891.9,4384.0,3167,694050,37457.8,"void dsv4_dense_fast_dots_kernel<(int)1>(const float *, const void *, int, float *, int, int)"
+6.3,614897630,52288,11759.8,12704.0,8256,69920,4281.2,"memra_tp_ar_gather_rows_f32_kernel(const float *, const float *, float *, MemraArSignal *, MemraArSignal *, int, long, long, int *, long long, const unsigned long long *, int)"
+4.4,433233078,26144,16571.0,8832.0,7904,215136,23450.6,"memra_tp_ar_1stage_kernel(const float *, const float *, float *, MemraArSignal *, MemraArSignal *, int, long, int *, long long, const unsigned long long *, int, MemraArPhase *, unsigned long long *, long, unsigned int, int, long long)"
+3.9,377106336,52288,7212.1,7232.0,6912,7904,128.6,"void dsv4_hc_finish_f32_fixed_order_kernel<(int)16>(const float *, const float *, float *, const float *, const float *, float *, float *, float *, float *, const float *, float *, __nv_bfloat16 *, int, float, float)"
+3.5,341415132,26144,13059.0,13024.0,12576,14464,222.7,"void dsv4_dense_fast_fp8_kernel<(int)2, (bool)1>(const unsigned char *, const float *, int, const unsigned short *, float *, int, int, int, int, int, int)"
+2.9,282739118,52288,5407.3,4128.0,992,7328,1473.7,dsv4_fp8_gather_half_kernel
+2.1,203118562,26144,7769.2,5984.0,4896,11648,2124.4,"dsv4_sink_softout_st_f32acc_kernel(const float *, const int *, const float *, const float *, float *, int, int, int, int, const int *, int, int, int)"
+1.5,145878475,12768,11425.3,11424.0,10848,12096,146.2,dsv4_indexer_score_f32acc_kernel
+1.4,136189840,26144,5209.2,5312.0,3200,5856,415.9,dsv4_route_m_kernel
+1.3,125638677,26144,4805.6,4832.0,4512,5472,154.6,"dsv4_sink_scores_st_f32acc_kernel(const float *, const float *, const int *, float *, int, int, int, int, float, const int *, int, int, int)"
+1.2,121910500,26144,4663.0,4640.0,4288,5344,145.5,dsv4_small_norm_pack_f32_fixed_order_kernel
+1.2,119519659,52288,2285.8,2240.0,2048,3040,140.7,"void dsv4_hc_dot_split_partial_kernel<(int)16>(const float *, const float *, float *)"
+1.0,100275970,91200,1099.5,1056.0,864,1888,199.8,dsv4_rope_kernel
+1.0,96523141,52288,1846.0,1728.0,1536,2432,204.5,dsv4_act_quant_fp8_kernel
+0.8,75327777,104576,720.3,736.0,608,1056,36.1,dsv4_cvt_bf16_kernel
+0.7,63836708,12768,4999.7,5408.0,4032,5728,557.7,dsv4_topk_idx_numeric_kernel
+0.6,62749895,52288,1200.1,1216.0,1088,1888,44.6,dsv4_hc_post_kernel
+0.6,60998693,52288,1166.6,1184.0,736,1696,83.9,dsv4_scatter_rows_kernel
+0.5,47712705,26144,1825.0,1824.0,1664,2144,58.7,dsv4_headrms_f32acc_kernel
+0.5,47091832,26144,1801.2,1792.0,832,2464,229.2,"void dsv4_grouped_scatter_kernel<(bool)1>(const int *, const float *, const float *, const int *, int *, int *, float *, float *, float *, float *, int, int, int)"
+0.5,45951816,6464,7108.9,6560.0,5888,58496,5652.0,dsv4_compressor_pool_kernel
+0.4,40031934,12768,3135.3,3104.0,2880,4064,140.7,"void dsv4_gemv_bf16_m_kernel<(int)1>(const unsigned short *, const unsigned short *, float *, int, int, int, int)"
+0.4,37852686,26144,1447.9,1440.0,1280,1888,67.2,dsv4_combine_rows_m_kernel
+0.4,37119989,32912,1127.9,1152.0,864,2240,127.0,dsv4_rmsnorm_f32acc_kernel
+0.4,36441193,26144,1393.9,1408.0,1280,1696,45.9,"dsv4_grouped_partition_prefix_kernel(const int *, const int *, int *, int *, int *, int, int, int, int *, int)"
+0.3,33928656,15960,2125.9,2176.0,1856,2432,122.2,dsv4_hadamard_kernel
+0.3,32718339,29416,1112.3,1120.0,1024,1440,46.3,dsv4_act_quant_kernel
+0.3,30739881,26144,1175.8,1216.0,960,1632,106.7,"void dsv4_grouped_count_kernel<(bool)1>(const int *, int *, int, int *, int *, float *, float *, float *, float *, int)"
+0.2,24130015,26144,923.0,928.0,768,1248,62.1,dsv4_swiglu_kernel
+0.2,23394200,26144,894.8,896.0,768,1280,52.6,dsv4_scale_rows_kernel
+0.2,22342235,26144,854.6,864.0,704,1280,64.6,dsv4_add_inplace_kernel
+0.2,21573949,15960,1351.8,1376.0,1088,1664,104.9,dsv4_fp4_act_quant_kernel
+0.2,16424758,12768,1286.4,1280.0,1184,1568,34.6,dsv4_q_transpose_m_kernel
+0.1,12728239,13376,951.6,928.0,864,1216,36.8,dsv4_build_idx_redirect_m_kernel
+0.1,10960289,5168,2120.8,2272.0,1056,3840,906.5,"dsv4_sample_merge(const unsigned long *, unsigned long *, int, int)"
+0.1,10745005,12768,841.6,832.0,768,1120,39.2,dsv4_build_idx_redirect_kernel
+0.1,8343132,304,27444.5,27393.0,27392,27744,84.5,"dsv4_sample_offsets(double *, int)"
+0.1,5821193,6464,900.6,1024.0,640,1376,202.8,dsv4_rope_at_kernel
+0.0,2471916,304,8131.3,8096.0,7264,8448,128.0,"dsv4_sample_draw(const unsigned long *, const double *, const double *, int, double, double, unsigned int *, const double *)"
+0.0,2342728,304,7706.3,7712.0,7648,7904,37.9,"dsv4_sample_exp_scan(const float *, const unsigned long *, double *, double *, int, double)"
+0.0,1058786,304,3482.8,3488.0,3392,3776,53.5,dsv4_rowsq_scale_f32acc_kernel
+0.0,980768,608,1613.1,1600.0,1504,1920,72.4,dsv4_embed_rows_kernel
+0.0,589792,608,970.1,960.0,896,1184,39.0,dsv4_repeat_hc_kernel
+0.0,457857,304,1506.1,1472.0,1408,1856,99.2,"dsv4_sample_prepare(const float *, float *, unsigned long *, const int *, int, float, float, float, unsigned int *)"
+0.0,337249,304,1109.4,1088.0,1024,1376,47.6,dsv4_hc_collapse_kernel
+0.0,326177,304,1073.0,1056.0,1024,1344,52.4,dsv4_hc_head_pre_m_kernel

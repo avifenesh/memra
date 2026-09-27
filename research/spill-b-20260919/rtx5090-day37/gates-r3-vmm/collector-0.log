@@ -1,0 +1,107 @@
+2026-09-24T14:58:41Z serve-smoke runs at d5923ccae634c064a0efab107b991c37355bbdf6 in /home/avifenesh/projects/wt-spill-b/target/smoke-wt-d5923ccae634 (build rc=0     Finished `release` profile [optimized] target(s) in 2m 54s)
+2026-09-24T14:58:41Z start serve-smoke env=[MEMRA_KV_ALLOCATOR=vmm ]
+2026-09-24T14:58:52Z done serve-smoke rc=0 door_on=0 door_off=0 serve-smoke: 0 failed
+2026-09-24T14:58:53Z start identity-default-on env=[MEMRA_KV_ALLOCATOR=vmm MEMRA_HOSTGATE_CACHE_MB=64 MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-24T14:59:08Z done identity-default-on rc=0 door_on=2 door_off=0 KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+2026-09-24T14:59:08Z start fault-default env=[MEMRA_KV_ALLOCATOR=vmm MEMRA_HOSTGATE_CACHE_MB=64]
+2026-09-24T15:01:08Z done fault-default rc=0 door_on=14 door_off=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+2026-09-24T15:01:08Z start fault-plain env=[MEMRA_KV_ALLOCATOR=vmm MEMRA_HOSTGATE_CACHE_MB=64 MEMRA_SERVE_SPEC=0]
+2026-09-24T15:02:49Z done fault-plain rc=0 door_on=14 door_off=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+2026-09-24T15:02:49Z start hit-off env=[MEMRA_KV_ALLOCATOR=vmm ]
+2026-09-24T15:03:11Z done hit-off rc=0 door_on=2 door_off=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+2026-09-24T15:03:11Z start hit-on env=[MEMRA_KV_ALLOCATOR=vmm MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-24T15:03:37Z done hit-on rc=0 door_on=2 door_off=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+2026-09-24T15:03:37Z start admit-mem-burst env=[MEMRA_KV_ALLOCATOR=vmm ]
+2026-09-24T15:09:49Z done admit-mem-burst rc=0 door_on=1 door_off=0 ADMIT-MEM BURST GATE: ALL GREEN
+2026-09-24T15:09:49Z start spec-ctx-edge env=[MEMRA_KV_ALLOCATOR=vmm ]
+2026-09-24T15:10:06Z done spec-ctx-edge rc=0 door_on=3 door_off=0 SPEC-CTX-EDGE GATE: ALL GREEN
+2026-09-24T15:10:06Z start twin27-off env=[MEMRA_KV_ALLOCATOR=vmm ]
+2026-09-24T15:12:22Z done twin27-off rc=0 door_on=2 door_off=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 i
+2026-09-24T15:12:22Z start twin27-on env=[MEMRA_KV_ALLOCATOR=vmm MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-24T15:14:34Z done twin27-on rc=0 door_on=2 door_off=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 i
+2026-09-24T15:14:34Z gates done arm=vmm
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "research/spill-b-20260919/rtx5090-day37/gates.sh",
+    "3",
+    "vmm",
+    "/home/avifenesh/projects/wt-spill-b/research/spill-b-20260919/rtx5090-day37/gates-r3-vmm"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "[N/A]",
+      "power.max_limit": "175.00 W"
+    }
+  ],
+  "started_monotonic_ns": 365961756966348,
+  "ended_monotonic_ns": 367094489954086,
+  "started_utc": "2026-09-24T14:55:41.807425+00:00",
+  "ended_utc": "2026-09-24T15:14:34.540414+00:00",
+  "elapsed_seconds": 1132.732987738,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 2514,
+    "sha256": "0dedf5cf2eab893e7d431b8b27a29d726471befaa338436e0f2a5e66a7c062d9"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 469745,
+      "sha256": "e49e6c25b41d986fed24cc8e421521c4b224669681bdd0425e79373f7bbdf2fa"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 176,
+    "sha256": "dcb17b61c672c6c1abd4bc4e9c6a9c7ff69efc7ddf1d5cd8f9847e59430d9842"
+  }
+}

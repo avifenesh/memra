@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include "memra_pdl_chain.cuh"
 
 // Host gate selection is thread-local and never read by a device kernel. Capture
 // freezes the chosen kernel function, so later selection cannot mutate a graph.
@@ -111,6 +112,7 @@ __global__ void dsv4_dense_exact_tail_fp8_kernel(const uint8_t* __restrict__ w,
                                        const uint16_t* __restrict__ x, float* __restrict__ y,
                                        int n, int k, int xstride, int ystride,
                                        int group_xstride, int group_ystride) {
+    MEMRA_PDL_CHAIN_ENTRY();
     int flat = blockIdx.x;
     int row = GROUPED ? flat % n : flat;
     if (row >= n) return;
@@ -215,6 +217,7 @@ template <int M>
 __global__ void dsv4_dense_exact_tail_dots_kernel(const float* __restrict__ x,
                                              const void* __restrict__ w, int w_is_bf16,
                                              float* __restrict__ y, int k, int n) {
+    MEMRA_PDL_CHAIN_ENTRY();
     int j = blockIdx.x;
     if (j >= n) return;
     float part[M];
@@ -283,16 +286,19 @@ __global__ void dsv4_dense_exact_tail_dots_kernel(const float* __restrict__ x,
 // GROUPED: n is rows per group and the grid covers every group's rows; a flat
 // row is group*n+row, the weight row stays flat, and only the activation and
 // output planes move by group. The launcher sizes the grid exactly.
-template <int ROWS, bool GROUPED = false>
-__global__ void dsv4_dense_fast_fp8_kernel(const uint8_t* __restrict__ w,
+// M > 1 (memra #710 B-row, verify rows): M token rows share each weight load, each with
+// its own accumulator in the same leaf order, and each row reduces through the same
+// tree, so row t's bits equal its M=1 launch (and dsv4_gemv_fp8_m_kernel<M>'s).
+template <int ROWS, bool GROUPED = false, int M = 1>
+__device__ __forceinline__ void dsv4_dense_fast_fp8_body(const uint8_t* __restrict__ w,
                                        const float* __restrict__ sc, int sc_cols,
                                        const uint16_t* __restrict__ x, float* __restrict__ y,
                                        int n, int k, int xstride, int ystride,
-                                       int group_xstride, int group_ystride) {
-    constexpr int M = 1;
+                                       int group_xstride, int group_ystride, int bid) {
+    static_assert(M == 1 || !GROUPED, "the grouped plane is one token row");
     const int leaf = threadIdx.x % 128;
     const int tile_row = threadIdx.x / 128;
-    const int flat = blockIdx.x * ROWS + tile_row;
+    const int flat = bid * ROWS + tile_row;
     const int group = GROUPED ? flat / n : 0;
     const int row = GROUPED ? flat % n : flat;
     const int weight_row = flat;
@@ -303,13 +309,12 @@ __global__ void dsv4_dense_fast_fp8_kernel(const uint8_t* __restrict__ w,
     for (int i = threadIdx.x; i < 256; i += blockDim.x) e4m3_tab[i] = dsv4_e4m3((uint8_t)i);
     __syncthreads();
     __shared__ float red[ROWS * 128];
-    float leaf_sum = 0.0f;
-    if (row < n) {
-    const uint8_t* wr = w + (long)weight_row * k;
-    const float* srow = sc + (long)(weight_row >> 7) * sc_cols;
     float part[M];
 #pragma unroll
     for (int t = 0; t < M; t++) part[t] = 0.0f;
+    if (row < n) {
+    const uint8_t* wr = w + (long)weight_row * k;
+    const float* srow = sc + (long)(weight_row >> 7) * sc_cols;
     // Unroll-by-2, early weight loads — the m=1 twin's note applies: load scheduling
     // only, per-(t)-accumulation order verbatim, bit-identical.
     int stride = 128 * 8;
@@ -384,21 +389,53 @@ __global__ void dsv4_dense_fast_fp8_kernel(const uint8_t* __restrict__ w,
             part[t] = acc;
         }
     }
-    leaf_sum = part[0];
     }
-    red[threadIdx.x] = leaf_sum;
-    __syncthreads();
-    if (leaf < 32) {
-        float v = dsv4_dense_exact_tail_reduce(red + tile_row * 128);
-        if (leaf == 0 && row < n) y_group[row] = v;
+#pragma unroll
+    for (int t = 0; t < M; t++) {
+        if (t > 0) __syncthreads();  // red free from the previous row's tree
+        red[threadIdx.x] = part[t];
+        __syncthreads();
+        if (leaf < 32) {
+            float v = dsv4_dense_exact_tail_reduce(red + tile_row * 128);
+            if (leaf == 0 && row < n) y_group[(long)t * ystride + row] = v;
+        }
     }
 }
 
+template <int ROWS, bool GROUPED = false, int M = 1>
+__global__ void dsv4_dense_fast_fp8_kernel(const uint8_t* __restrict__ w,
+                                       const float* __restrict__ sc, int sc_cols,
+                                       const uint16_t* __restrict__ x, float* __restrict__ y,
+                                       int n, int k, int xstride, int ystride,
+                                       int group_xstride, int group_ystride) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    dsv4_dense_fast_fp8_body<ROWS, GROUPED, M>(w, sc, sc_cols, x, y, n, k, xstride, ystride,
+                                                 group_xstride, group_ystride, blockIdx.x);
+}
+
+// Two weight matrices over the same activation rows in one launch (memra #710): blocks
+// [0, nblk_a) run matrix a's launch and the rest matrix b's, each block the body its own launch
+// runs with its own block index, so both outputs keep their bits. One launch ramp instead of two.
+template <int ROWS, int M = 1>
+__global__ void dsv4_dense_fast_fp8_kernel_pair(
+        const uint8_t* __restrict__ wa, const float* __restrict__ sca, int sc_cols_a,
+        float* __restrict__ ya, int na, int ystride_a,
+        const uint8_t* __restrict__ wb, const float* __restrict__ scb, int sc_cols_b,
+        float* __restrict__ yb, int nb, int ystride_b, int nblk_a,
+        const uint16_t* __restrict__ x, int k, int xstride) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    if ((int)blockIdx.x < nblk_a)
+        dsv4_dense_fast_fp8_body<ROWS, false, M>(wa, sca, sc_cols_a, x, ya, na, k, xstride,
+                                                   ystride_a, 0, 0, blockIdx.x);
+    else
+        dsv4_dense_fast_fp8_body<ROWS, false, M>(wb, scb, sc_cols_b, x, yb, nb, k, xstride,
+                                                   ystride_b, 0, 0, blockIdx.x - nblk_a);
+}
+
 template <int M>
-__global__ void dsv4_dense_fast_dots_kernel(const float* __restrict__ x,
+__device__ __forceinline__ void dsv4_dense_fast_dots_body(const float* __restrict__ x,
                                              const void* __restrict__ w, int w_is_bf16,
-                                             float* __restrict__ y, int k, int n) {
-    int j = blockIdx.x;
+                                             float* __restrict__ y, int k, int n, int j) {
     if (j >= n) return;
     float part[M];
 #pragma unroll
@@ -450,14 +487,43 @@ __global__ void dsv4_dense_fast_dots_kernel(const float* __restrict__ x,
             }
         }
     }
-    static_assert(M == 1, "exact-tail candidate is M=1 only");
+    // M > 1 (memra #710 B-row, verify rows): each row reduces through the same tree as
+    // dsv4_dots_f32acc_mrow_kernel<M>, so row t's bits equal its M=1 launch.
     __shared__ float red[128];
-    red[threadIdx.x] = part[0];
-    __syncthreads();
-    if (threadIdx.x < 32) {
-        float v = dsv4_dense_exact_tail_reduce(red);
-        if (threadIdx.x == 0) y[j] = v;
+#pragma unroll
+    for (int t = 0; t < M; t++) {
+        if (t > 0) __syncthreads();  // red free from the previous row's tree
+        red[threadIdx.x] = part[t];
+        __syncthreads();
+        if (threadIdx.x < 32) {
+            float v = dsv4_dense_exact_tail_reduce(red);
+            if (threadIdx.x == 0) y[(long)t * n + j] = v;
+        }
     }
+}
+
+template <int M>
+__global__ void dsv4_dense_fast_dots_kernel(const float* __restrict__ x,
+                                             const void* __restrict__ w, int w_is_bf16,
+                                             float* __restrict__ y, int k, int n) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    dsv4_dense_fast_dots_body<M>(x, w, w_is_bf16, y, k, n, blockIdx.x);
+}
+
+// Two weight matrices of one storage over the same activation rows in one launch (memra #710):
+// rows [0, na) are matrix a's, the rest matrix b's, each block the body its own launch runs.
+template <int M>
+__global__ void dsv4_dense_fast_dots_kernel_pair(const float* __restrict__ x,
+                                                  const void* __restrict__ wa,
+                                                  float* __restrict__ ya, int na,
+                                                  const void* __restrict__ wb,
+                                                  float* __restrict__ yb, int nb, int w_is_bf16,
+                                                  int k) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    if ((int)blockIdx.x < na)
+        dsv4_dense_fast_dots_body<M>(x, wa, w_is_bf16, ya, k, na, blockIdx.x);
+    else
+        dsv4_dense_fast_dots_body<M>(x, wb, w_is_bf16, yb, k, nb, blockIdx.x - na);
 }
 
 // Raw candidates refuse unsupported arguments before enqueue. Production-facing
@@ -471,7 +537,7 @@ extern "C" int memra_dsv4_dense_exact_tail_fp8(const void* w, const float* sc, i
         if (rc) return rc;
     }
     if (dsv4_dense_fast_enabled) {
-        dsv4_dense_fast_fp8_kernel<2><<<(n + 1LL) / 2, 256, 0, (cudaStream_t)raw_stream>>>(
+        memra_chain_launch(dsv4_dense_fast_fp8_kernel<2>,(n + 1LL) / 2, 256, 0, (cudaStream_t)raw_stream)(
             (const uint8_t*)w, sc, sc_cols, (const uint16_t*)x, y, n, k,
             xstride > 0 ? xstride : k, ystride > 0 ? ystride : n, 0, 0);
         auto rc = cudaGetLastError();
@@ -479,7 +545,7 @@ extern "C" int memra_dsv4_dense_exact_tail_fp8(const void* w, const float* sc, i
         ++dsv4_dense_fast_enqueues[0];
         return 0;
     }
-    dsv4_dense_exact_tail_fp8_kernel<1, false><<<n, 128, 0, (cudaStream_t)raw_stream>>>(
+    memra_chain_launch(dsv4_dense_exact_tail_fp8_kernel<1, false>,n, 128, 0, (cudaStream_t)raw_stream)(
         (const uint8_t*)w, sc, sc_cols, (const uint16_t*)x, y, n, k,
         xstride > 0 ? xstride : k, ystride > 0 ? ystride : n, 0, 0);
     auto rc = cudaGetLastError();
@@ -495,14 +561,14 @@ extern "C" int memra_dsv4_dense_exact_tail_dots(const float* x, const void* w,
         if (rc) return rc;
     }
     if (dsv4_dense_fast_enabled) {
-        dsv4_dense_fast_dots_kernel<1><<<n, 128, 0, (cudaStream_t)raw_stream>>>(
+        memra_chain_launch(dsv4_dense_fast_dots_kernel<1>,n, 128, 0, (cudaStream_t)raw_stream)(
             x, w, w_is_bf16, y, k, n);
         auto rc = cudaGetLastError();
         if (rc != cudaSuccess) return 10000 + (int)rc;
         ++dsv4_dense_fast_enqueues[1];
         return 0;
     }
-    dsv4_dense_exact_tail_dots_kernel<1><<<n, 128, 0, (cudaStream_t)raw_stream>>>(
+    memra_chain_launch(dsv4_dense_exact_tail_dots_kernel<1>,n, 128, 0, (cudaStream_t)raw_stream)(
         x, w, w_is_bf16, y, k, n);
     auto rc = cudaGetLastError();
     if (rc != cudaSuccess) return 10000 + (int)rc;
@@ -535,6 +601,7 @@ extern "C" int memra_dsv4_hc_dot_split_slices_for_gate() {
 template<int S>
 __global__ void dsv4_hc_dot_split_partial_kernel(const float* __restrict__ x,
     const float* __restrict__ w, float* __restrict__ partial) {
+    MEMRA_PDL_CHAIN_ENTRY();
     x += (long)blockIdx.y * 16384;
     partial += (long)blockIdx.y * 24 * S;
     const int row = blockIdx.x / S;
@@ -567,6 +634,7 @@ __global__ void dsv4_hc_dot_split_partial_kernel(const float* __restrict__ x,
 template<int S>
 __global__ void dsv4_hc_dot_split_reduce_kernel(const float* __restrict__ partial,
     float* __restrict__ y) {
+    MEMRA_PDL_CHAIN_ENTRY();
     partial += (long)blockIdx.x * 24 * S;
     y += (long)blockIdx.x * 24;
     const int row = threadIdx.x;
@@ -579,10 +647,10 @@ __global__ void dsv4_hc_dot_split_reduce_kernel(const float* __restrict__ partia
 }
 template<int S> static int dsv4_hc_dot_split_launch(const float* x, const float* w,
     float* partial, float* y, int m, cudaStream_t stream) {
-    dsv4_hc_dot_split_partial_kernel<S><<<dim3(24 * S, m), 128, 0, stream>>>(x, w, partial);
+    memra_chain_launch(dsv4_hc_dot_split_partial_kernel<S>,dim3(24 * S, m), 128, 0, stream)(x, w, partial);
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) return (int)err;
-    dsv4_hc_dot_split_reduce_kernel<S><<<m, 32, 0, stream>>>(partial, y);
+    memra_chain_launch(dsv4_hc_dot_split_reduce_kernel<S>,m, 32, 0, stream)(partial, y);
     return (int)cudaGetLastError();
 }
 // `m` token rows of x [m][k] into y [m][n]; partial holds m * 24 * slices floats.
@@ -611,9 +679,9 @@ extern "C" int memra_dsv4_hc_dot_split_partial(const float* x, const float* w,
     const auto stream = (cudaStream_t)raw_stream;
     const dim3 grid(24 * slices, m);
     switch (slices) {
-        case 8: dsv4_hc_dot_split_partial_kernel<8><<<grid, 128, 0, stream>>>(x, w, partial); break;
-        case 16: dsv4_hc_dot_split_partial_kernel<16><<<grid, 128, 0, stream>>>(x, w, partial); break;
-        case 32: dsv4_hc_dot_split_partial_kernel<32><<<grid, 128, 0, stream>>>(x, w, partial); break;
+        case 8: memra_chain_launch(dsv4_hc_dot_split_partial_kernel<8>,grid, 128, 0, stream)(x, w, partial); break;
+        case 16: memra_chain_launch(dsv4_hc_dot_split_partial_kernel<16>,grid, 128, 0, stream)(x, w, partial); break;
+        case 32: memra_chain_launch(dsv4_hc_dot_split_partial_kernel<32>,grid, 128, 0, stream)(x, w, partial); break;
         default: return 40075;
     }
     return (int)cudaGetLastError();

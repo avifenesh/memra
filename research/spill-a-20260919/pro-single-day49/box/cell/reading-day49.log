@@ -1,0 +1,5 @@
+DAY49 READING arm=nofree helper N=40 copy_ms=23.73 mb=156.9 minflt=38306 hash_ms=59.05 helper_ms=83.50 | pre-submit N=40 leases_ms=0.61 leases=32 lease_mb=1.9 lease_minflt=512 register_ms=0.15 spans_ms=0.16 other_ms=0.06 pre_ms=0.98
+DAY49 READING arm=free helper N=30 copy_ms=7.64 mb=156.9 minflt=0 hash_ms=59.23 helper_ms=67.60 | pre-submit N=30 leases_ms=0.12 leases=32 lease_mb=1.9 lease_minflt=0 register_ms=0.14 spans_ms=0.16 other_ms=0.06 pre_ms=0.48
+DAY49 READING arm=long helper N=27 copy_ms=24.03 mb=156.9 minflt=38306 hash_ms=59.21 helper_ms=139.80 | pre-submit N=27 leases_ms=19.26 leases=32 lease_mb=151.1 lease_minflt=36896 register_ms=0.17 spans_ms=0.17 other_ms=0.06 pre_ms=19.66
+DAY49 ITEM8 pages=38306 nofree_minflt=38306 (rule >= 19153) free_minflt=0 (rule <= 9576) copy_ms nofree=23.73 free=7.64 diff=+16.09 (rule >= +5.0) -> H attributed
+DAY49 ITEM7 -> b1 step attributed to H (the heap first touch) (the current pre-submit split above)

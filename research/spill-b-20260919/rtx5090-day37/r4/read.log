@@ -1,0 +1,37 @@
+DAY37 A2 card=rtx5090 receipt=grow-32768-r4/receipt/GROW.txt GROW-G1 PASS (grows=28 unequal=0 planes=34 planes_crossed=34 min_crossings_per_plane=12 rule>=5 drift=0 tokens_equal=true logits_equal=true prefix_state_equal=true final_state_equal=true) committed=32768 generated=128
+DAY37 A1-GATE card=rtx5090 cell=admit-mem-burst pooled=[rc=1 no-verdict] vmm=[rc=0 ALL GREEN] ok_lines=0/0 door_on/off pooled=0/1 vmm=1/0 -> FAIL
+DAY37 A1-GATE card=rtx5090 cell=fault-default pooled=[rc=0 ALL GREEN] vmm=[rc=0 ALL GREEN] ok_lines=160/160 door_on/off pooled=0/14 vmm=14/0 -> PASS
+DAY37 A1-GATE card=rtx5090 cell=fault-plain pooled=[rc=0 ALL GREEN] vmm=[rc=0 ALL GREEN] ok_lines=160/160 door_on/off pooled=0/14 vmm=14/0 -> PASS
+DAY37 A1-GATE card=rtx5090 cell=hit-off pooled=[rc=0 ALL GREEN (qwen)] vmm=[rc=0 ALL GREEN (qwen)] ok_lines=61/61 door_on/off pooled=0/2 vmm=2/0 -> PASS
+DAY37 A1-GATE card=rtx5090 cell=hit-on pooled=[rc=0 ALL GREEN (qwen)] vmm=[rc=0 ALL GREEN (qwen)] ok_lines=68/68 door_on/off pooled=0/2 vmm=2/0 -> PASS
+DAY37 A1-GATE card=rtx5090 cell=identity-default-on pooled=[rc=0 ALL GREEN (teeth=0)] vmm=[rc=0 ALL GREEN (teeth=0)] ok_lines=12/12 door_on/off pooled=0/2 vmm=2/0 -> PASS
+DAY37 A1-GATE card=rtx5090 cell=serve-smoke pooled=[rc=0 serve-smoke: 0 failed] vmm=[rc=0 serve-smoke: 0 failed] ok_lines=31/31 door_on/off pooled=0/1 vmm=1/0 -> PASS
+DAY37 A1-GATE card=rtx5090 cell=spec-ctx-edge pooled=[rc=0 ALL GREEN] vmm=[rc=0 ALL GREEN] ok_lines=0/0 door_on/off pooled=0/3 vmm=3/0 -> PASS
+DAY37 A1-GATE card=rtx5090 cell=twin27-off pooled=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] vmm=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] ok_lines=0/0 door_on/off pooled=0/2 vmm=2/0 -> PASS
+DAY37 A1-GATE card=rtx5090 cell=twin27-on pooled=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] vmm=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] ok_lines=0/0 door_on/off pooled=0/2 vmm=2/0 -> PASS
+DAY37 A1-MIX card=rtx5090 kind=spec order=O1 compared=44 equal=44 differ=0 excluded=1 differ_tags=[] faults_pooled=0 faults_vmm=0 door_on_vmm=1 -> PASS
+DAY37 A1-MIX card=rtx5090 kind=spec order=O2 compared=44 equal=44 differ=0 excluded=1 differ_tags=[] faults_pooled=0 faults_vmm=0 door_on_vmm=1 -> PASS
+DAY37 A1-MIX card=rtx5090 kind=plain order=O1 compared=44 equal=44 differ=0 excluded=1 differ_tags=[] faults_pooled=0 faults_vmm=0 door_on_vmm=1 -> PASS
+DAY37 A1-MIX card=rtx5090 kind=plain order=O2 compared=44 equal=44 differ=0 excluded=1 differ_tags=[] faults_pooled=0 faults_vmm=0 door_on_vmm=1 -> PASS
+DAY37 A1-STREAM card=rtx5090 pairs=10 differing_rows=0 -> PASS
+DAY37 A3-ii card=rtx5090 order=both ttft_p50 pooled=956.17(N=10) vmm=965.90(N=10) ratio=1.0102 rule<=1.05 ok; itl_p99 pooled=28.00(N=10) vmm=27.98(N=10) ratio=0.9993 rule<=1.05 ok; tpot_p50 pooled=24.46(N=10) vmm=24.41(N=10) ratio=0.9980 rule<=1.02 ok; out_tok_per_s pooled=280.48(N=10) vmm=279.49(N=10) ratio=0.9965 rule>=0.98 ok -> PASS
+DAY37 A3-ii card=rtx5090 order=O1 ttft_p50 pooled=955.60(N=5) vmm=964.30(N=5) ratio=1.0091 rule<=1.05 ok; itl_p99 pooled=27.62(N=5) vmm=27.95(N=5) ratio=1.0119 rule<=1.05 ok; tpot_p50 pooled=24.40(N=5) vmm=24.06(N=5) ratio=0.9861 rule<=1.02 ok; out_tok_per_s pooled=281.76(N=5) vmm=280.78(N=5) ratio=0.9965 rule>=0.98 ok
+DAY37 A3-ii card=rtx5090 order=O2 ttft_p50 pooled=960.86(N=5) vmm=967.50(N=5) ratio=1.0069 rule<=1.05 ok; itl_p99 pooled=28.56(N=5) vmm=28.00(N=5) ratio=0.9804 rule<=1.05 ok; tpot_p50 pooled=24.50(N=5) vmm=24.54(N=5) ratio=1.0016 rule<=1.02 ok; out_tok_per_s pooled=280.19(N=5) vmm=279.01(N=5) ratio=0.9958 rule>=0.98 ok
+DAY37 A3-i card=rtx5090 placement=helper tick_ensure_walls N=65014 p50_us=2.0 p99_us=6.0 max_us=686 owner_grows_waited N=0 p99_us=nan rule N>=20 p99<=500 -> PASS
+DAY37 A4 card=rtx5090 retires=438 within_bound=36 worst_over_bound_bytes=121175040 boots_without_granularity=[] rule mapped-used<=planes*granule+slack -> FAIL
+DAY37 A4-IDLE card=rtx5090 boot=mix-plain-O1-pooled driver_free=10929635328 pool_cached=1905736728 pool_reserved=13925089280 vmm_mapped=0 vmm_reserved=0 spec_pool=0 continuation_pool=2
+DAY37 A4-IDLE card=rtx5090 boot=mix-plain-O1-vmm driver_free=13618184192 pool_cached=840383800 pool_reserved=10670309376 vmm_mapped=377487360 vmm_reserved=2264924160 spec_pool=0 continuation_pool=2
+DAY37 A4-IDLE card=rtx5090 boot=mix-plain-O2-pooled driver_free=9923002368 pool_cached=2912369688 pool_reserved=14931722240 vmm_mapped=0 vmm_reserved=0 spec_pool=0 continuation_pool=2
+DAY37 A4-IDLE card=rtx5090 boot=mix-plain-O2-vmm driver_free=13618184192 pool_cached=840383800 pool_reserved=10670309376 vmm_mapped=377487360 vmm_reserved=2264924160 spec_pool=0 continuation_pool=2
+DAY37 A4-IDLE card=rtx5090 boot=mix-spec-O1-pooled driver_free=8413052928 pool_cached=3286873784 pool_reserved=16408117248 vmm_mapped=0 vmm_reserved=0 spec_pool=2 continuation_pool=0
+DAY37 A4-IDLE card=rtx5090 boot=mix-spec-O1-vmm driver_free=11474894848 pool_cached=2028582872 pool_reserved=12717129728 vmm_mapped=419430400 vmm_reserved=2508193792 spec_pool=2 continuation_pool=0
+DAY37 A4-IDLE card=rtx5090 boot=mix-spec-O2-pooled driver_free=8413052928 pool_cached=3286873784 pool_reserved=16408117248 vmm_mapped=0 vmm_reserved=0 spec_pool=2 continuation_pool=0
+DAY37 A4-IDLE card=rtx5090 boot=mix-spec-O2-vmm driver_free=11474894848 pool_cached=2028582872 pool_reserved=12717129728 vmm_mapped=419430400 vmm_reserved=2508193792 spec_pool=2 continuation_pool=0
+DAY37 A5-MAPPER card=rtx5090 against=mix-spec-O1-pooled compared=44 equal=44 differ=0 owner_grows_waited=1070 faults=0 -> PASS
+DAY37 A5-ENSURE card=rtx5090 reclaim_retry_lines=1 outcomes=['not parked'] errored_rows=['burst-b11', 'burst-b12', 'burst-b14', 'burst-b15', 'burst-b16', 'burst-b21'] dependent_rows=['iii-L0-r0'] peers_compared=44 equal=44 differ=0 differ_tags=[] faults=0 -> PASS
+DAY37 A5-BUILD1 card=rtx5090 retry_lines=11 cache_alloc_failed_lines=0 non200_rows=19 faults=0 -> PASS
+DAY37 A5-BUILD64 card=rtx5090 retry_lines=9 cache_alloc_failed_lines=52 non200_rows=52 faults=0 -> PASS
+DAY37 A6 card=rtx5090 lane_boot=mix-spec-O1-pooled compared=44 equal=44 differ=0 lane_kv_vmm_lines=1 main_kv_vmm_lines=0 -> PASS
+DAY37 A7 card=rtx5090 shape=g2 oom_lines=0 r503=0 grow_failures=0 admit_lines=61 est_over_booked_free=0 status={200: 61, 429: 19} faults=0 -> PASS
+DAY37 A7 card=rtx5090 shape=l64 oom_lines=0 r503=0 grow_failures=0 admit_lines=35 est_over_booked_free=0 status={200: 35, 429: 45} faults=0 -> PASS
+DAY37 A7 card=rtx5090 shape=boff oom_lines=0 r503=0 grow_failures=0 admit_lines=0 est_over_booked_free=0 status={200: 80} faults=0 -> PASS

@@ -1,0 +1,187 @@
+[storage-bench] stages put_ns=3851164705 commit_ns=1254691608 lease_ns=1253236347 read_ns=2221201852 verify_ns=776822796 total_ns=9827061685
+{"version":1,"fixture":"opaque-affine-mod251-v1-roundtrip-development-linux-io-not-spill-speed","backend_requested":"direct","backend_actual":"linux-o-direct-read-write","status":"byte-exact","valid_bytes":933232640,"padded_bytes":933232640,"io_bytes":5617037312,"physical_bytes":null,"queue_ns":null,"io_ns":2221201852,"h2d_ns":null,"d2h_ns":null,"p2p_ns":null,"total_ns":9827061685,"inflight":1,"pinned_bytes":0,"pageable_bytes":null,"fallbacks":0,"payload_checksum":[21,138,13,78,153,225,231,89,49,37,18,191,27,225,214,42,235,239,79,17,5,129,205,90,169,252,38,242,239,124,208,72]}
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "/scratch/spill-f/bin/storage-bench",
+    "roundtrip",
+    "/scratch/spill-f/b1/rt-933232640-r8-direct",
+    "933232640",
+    "direct"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 387506313801228,
+  "ended_monotonic_ns": 387516468205858,
+  "started_utc": "2026-09-25T17:53:07.636876+00:00",
+  "ended_utc": "2026-09-25T17:53:17.791282+00:00",
+  "elapsed_seconds": 10.15440463,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": {
+    "class": "nvme-local-direct",
+    "nvme_proven": true,
+    "nvme_name_hint": false,
+    "label": "M1 proof: physical local NVMe (nvme-local-direct); not measured spill speed",
+    "allow_unproven_storage": false,
+    "root": "/scratch/spill-f/b1",
+    "commands": [
+      {
+        "command": [
+          "findmnt",
+          "-J",
+          "-T",
+          "/scratch/spill-f/b1"
+        ],
+        "exit_code": 0,
+        "timed_out": false,
+        "raw_log": {
+          "path": "storage-findmnt.log",
+          "bytes": 260,
+          "sha256": "a78a7aff744771d0a0b292844a2908e8dc3d38bf959fdcb3f7f4265e94dde138"
+        }
+      },
+      {
+        "command": [
+          "lsblk",
+          "-J",
+          "-o",
+          "NAME,TYPE,SIZE,ROTA,TRAN,MOUNTPOINTS"
+        ],
+        "exit_code": 0,
+        "timed_out": false,
+        "raw_log": {
+          "path": "storage-lsblk.log",
+          "bytes": 4174,
+          "sha256": "2289aa6d5b1944536abc239309cb48358e3c170a8752677e2ccea800442bef64"
+        }
+      },
+      {
+        "command": [
+          "findmnt",
+          "-n",
+          "-o",
+          "SOURCE",
+          "-T",
+          "/scratch/spill-f/b1"
+        ],
+        "exit_code": 0,
+        "timed_out": false,
+        "raw_log": {
+          "path": "storage-source.log",
+          "bytes": 42,
+          "sha256": "0c45cc2bb3ee8c12068aa3404b5f748ddb35dae115994d2cfdbece44721d0cb6"
+        }
+      },
+      {
+        "command": [
+          "lsblk",
+          "-s",
+          "-r",
+          "-n",
+          "-o",
+          "KNAME",
+          "/dev/nvme0n1p3"
+        ],
+        "exit_code": 32,
+        "timed_out": false,
+        "raw_log": {
+          "path": "storage-ancestry.log",
+          "bytes": 42,
+          "sha256": "b67470269669175458deed3ea5edc911c509b799a5fa2fcefff20fe54d29b718"
+        }
+      }
+    ],
+    "qualification": false,
+    "m1_proof": {
+      "receipt": {
+        "path": "STORAGE-PROOF.json",
+        "bytes": 3710,
+        "sha256": "6e08ea9a5f468273f14b9192a1aa4afff2897af76ad1e051d8b78002e2c000f9"
+      },
+      "tool_sha256": "d59851b624339e16d2290b21b94567a593645266eb0e5dd83d4490decbb78864",
+      "identity": {
+        "device": 66307,
+        "filesystem_id": 66307,
+        "mount_id": 577
+      },
+      "proof_utc": "2026-09-25T16:41:09.179488+00:00"
+    },
+    "object_binding": {
+      "root": "/scratch/spill-f/b1",
+      "object": "/scratch/spill-f/b1/rt-933232640-r8-direct",
+      "root_filesystem": {
+        "device": 66307,
+        "filesystem_id": 66307,
+        "mount_id": 577
+      },
+      "object_filesystem": {
+        "device": 66307,
+        "filesystem_id": 66307,
+        "mount_id": 577
+      },
+      "method": "stat-device+statfs-id+linux-mount-id"
+    },
+    "object_argument": "/scratch/spill-f/b1/rt-933232640-r8-direct"
+  },
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 725,
+    "sha256": "bb0e65f2c41cb2bd253fbaf4f86c5764c84dc77fddcbaa47a8f5b50fb3e10333"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 4278,
+      "sha256": "2aad66ea036324608f04e3da3b628b736b8b58be3122ff76a6e2461c20a416e6"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false
+}

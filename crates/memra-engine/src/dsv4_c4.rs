@@ -375,6 +375,66 @@ impl C4Gather {
     }
 }
 
+/// Query rows one position-split gather covers (memra #710): a prefill chunk's attention runs
+/// in sub-batches of this many rows, so the gather workspace stays 32 x 640 rows.
+pub(crate) const SPLIT_GATHER_ROWS: usize = 32;
+
+/// The position-split C4 gather (memra #710): each of `nq` query rows' `slots` selected rows,
+/// from the local store, the local recent ring or the peer's store, into the workspace, with
+/// the indices rewritten to it. Returns the workspace's (values, indices).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn split_gather(
+    work: &mut Option<C4Gather>,
+    stream: &Arc<CudaStream>,
+    local: *const f32,
+    peer: *const f32,
+    recent: *const f32,
+    tags: *const i32,
+    recent_rows: usize,
+    rank: usize,
+    indices: *const i32,
+    nq: usize,
+    slots: usize,
+    stride: usize,
+    cap_blocks: usize,
+    logical_transient: usize,
+    transient_rows: usize,
+    local_transient: usize,
+) -> Res<(*const f32, *const i32)> {
+    if nq == 0 || nq > SPLIT_GATHER_ROWS || slots == 0 || slots > 640 || stride < slots {
+        return Err("invalid position-split C4 gather shape".into());
+    }
+    C4Gather::ensure(work, stream, nq, stride)?;
+    let w = work.as_mut().expect("C4 gather workspace");
+    let (out, _out_record) = w.values.device_ptr_mut(stream);
+    let (out_idx, _out_idx_record) = w.indices.device_ptr_mut(stream);
+    unsafe {
+        crate::dsv4_ffi::ck(
+            "C4 split gather",
+            crate::dsv4_ffi::memra_dsv4_c4_split_gather(
+                local,
+                peer,
+                recent,
+                tags,
+                recent_rows as i32,
+                rank as i32,
+                indices,
+                out as *mut f32,
+                out_idx as *mut i32,
+                nq as i32,
+                slots as i32,
+                stride as i32,
+                cap_blocks as i32,
+                logical_transient as i32,
+                transient_rows as i32,
+                local_transient as i32,
+                stream.cu_stream().cast(),
+            ),
+        )?;
+    }
+    Ok((out as *const f32, out_idx as *const i32))
+}
+
 fn row_range(row: usize, elements: usize, capacity: usize) -> Res<std::ops::Range<usize>> {
     if !elements.is_multiple_of(HD) {
         return Err("C4 writes must contain whole 512-value rows".into());

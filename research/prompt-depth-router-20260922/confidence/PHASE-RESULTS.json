@@ -1,0 +1,81 @@
+{
+  "status": "probability-overhead-isolated",
+  "scope": "post-result sampled source-path diagnostic at max_new=512 with phase synchronization; not pooled into native serving-rate evidence",
+  "source_binary_sha256": "3b9e6c3e8f8bd50b4d7e6c7859da35ec70ce02b569f5fb84c4066b703c38fa71",
+  "source_runtime_sha256": "98a0a0118155663aa9abae29acdef845838b9367c6f6d17e87da7fe2fb1957a9",
+  "matched_loop_exclusions": [],
+  "off_prob_identity": [
+    {
+      "cycle": 0,
+      "off_prob_equal_no_cut": true
+    },
+    {
+      "cycle": 1,
+      "off_prob_equal_no_cut": true
+    }
+  ],
+  "code": {
+    "off": {
+      "requests": 8,
+      "tokens": 4096,
+      "native_request_seconds": 40.221509519,
+      "native_tokens_per_second": 101.83605859111564,
+      "rounds": 1486,
+      "confidence_shortened_rounds": 0,
+      "phase_ms": {
+        "draft_ms": 4525.0,
+        "verify_issue_ms": 20235.4,
+        "verify_wait_ms": 0.0,
+        "commit_host_ms": 1956.4
+      },
+      "phase_ms_per_100_tokens": {
+        "draft_ms": 110.4736328125,
+        "verify_issue_ms": 494.02832031250006,
+        "verify_wait_ms": 0.0,
+        "commit_host_ms": 47.763671875
+      }
+    },
+    "prob": {
+      "requests": 8,
+      "tokens": 4096,
+      "native_request_seconds": 40.237716654,
+      "native_tokens_per_second": 101.7950405889351,
+      "rounds": 1486,
+      "confidence_shortened_rounds": 0,
+      "phase_ms": {
+        "draft_ms": 4563.5,
+        "verify_issue_ms": 20206.6,
+        "verify_wait_ms": 0.0,
+        "commit_host_ms": 1962.7
+      },
+      "phase_ms_per_100_tokens": {
+        "draft_ms": 111.41357421875,
+        "verify_issue_ms": 493.32519531249994,
+        "verify_wait_ms": 0.0,
+        "commit_host_ms": 47.91748046875
+      }
+    },
+    "cut": {
+      "requests": 8,
+      "tokens": 4096,
+      "native_request_seconds": 39.916419421,
+      "native_tokens_per_second": 102.61441430403192,
+      "rounds": 1486,
+      "confidence_shortened_rounds": 152,
+      "phase_ms": {
+        "draft_ms": 4489.7,
+        "verify_issue_ms": 19986.1,
+        "verify_wait_ms": 0.0,
+        "commit_host_ms": 1945.6
+      },
+      "phase_ms_per_100_tokens": {
+        "draft_ms": 109.61181640625,
+        "verify_issue_ms": 487.94189453124994,
+        "verify_wait_ms": 0.0,
+        "commit_host_ms": 47.5
+      }
+    }
+  },
+  "prob_vs_off_draft_ms_per_100_tokens": 0.93994140625,
+  "prob_vs_off_draft_percent": 0.8508287292817718
+}

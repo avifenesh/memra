@@ -1,0 +1,149 @@
+{
+ "pass": true,
+ "visits": [
+  {
+   "pass": 1,
+   "arm": "worker2",
+   "rc": 0,
+   "seconds": 92.3,
+   "tok_s": 8.29,
+   "tokens_equal_oracle": true,
+   "fallbacks": 0,
+   "demand_waits": 5774,
+   "demand_wait_ns": 4202928083,
+   "prefetch_cancels": 0,
+   "demand_wait_timeouts": 0,
+   "gpu_telemetry": {
+    "samples": 367,
+    "sm_clock_mhz_median": 2715.0,
+    "sm_clock_mhz_min": 1725.0,
+    "sm_clock_max_mhz": 3090.0,
+    "power_w_median": 94.93,
+    "power_w_max": 104.48,
+    "temperature_c_max": 79.0,
+    "reason_share": {}
+   },
+   "ok": true
+  },
+  {
+   "pass": 1,
+   "arm": "worker16",
+   "rc": 0,
+   "seconds": 53.3,
+   "tok_s": 15.14,
+   "tokens_equal_oracle": true,
+   "fallbacks": 0,
+   "demand_waits": 1930,
+   "demand_wait_ns": 1307622758,
+   "prefetch_cancels": 0,
+   "demand_wait_timeouts": 0,
+   "gpu_telemetry": {
+    "samples": 212,
+    "sm_clock_mhz_median": 2707.0,
+    "sm_clock_mhz_min": 1770.0,
+    "sm_clock_max_mhz": 3090.0,
+    "power_w_median": 103.76,
+    "power_w_max": 109.91,
+    "temperature_c_max": 80.0,
+    "reason_share": {}
+   },
+   "ok": true
+  },
+  {
+   "pass": 1,
+   "arm": "bypass-mapped",
+   "rc": 0,
+   "seconds": 70.5,
+   "tok_s": 10.43,
+   "tokens_equal_oracle": true,
+   "fallbacks": 0,
+   "demand_waits": 4672,
+   "demand_wait_ns": 2527191880,
+   "prefetch_cancels": 0,
+   "demand_wait_timeouts": 0,
+   "gpu_telemetry": {
+    "samples": 280,
+    "sm_clock_mhz_median": 2745.0,
+    "sm_clock_mhz_min": 1762.0,
+    "sm_clock_max_mhz": 3090.0,
+    "power_w_median": 85.66,
+    "power_w_max": 93.41,
+    "temperature_c_max": 81.0,
+    "reason_share": {}
+   },
+   "ok": true
+  },
+  {
+   "pass": 2,
+   "arm": "bypass-mapped",
+   "rc": 0,
+   "seconds": 70.0,
+   "tok_s": 10.19,
+   "tokens_equal_oracle": true,
+   "fallbacks": 0,
+   "demand_waits": 3979,
+   "demand_wait_ns": 2124309042,
+   "prefetch_cancels": 0,
+   "demand_wait_timeouts": 0,
+   "gpu_telemetry": {
+    "samples": 279,
+    "sm_clock_mhz_median": 2752.0,
+    "sm_clock_mhz_min": 1770.0,
+    "sm_clock_max_mhz": 3090.0,
+    "power_w_median": 85.01,
+    "power_w_max": 96.09,
+    "temperature_c_max": 76.0,
+    "reason_share": {}
+   },
+   "ok": true
+  },
+  {
+   "pass": 2,
+   "arm": "worker16",
+   "rc": 0,
+   "seconds": 54.1,
+   "tok_s": 14.68,
+   "tokens_equal_oracle": true,
+   "fallbacks": 0,
+   "demand_waits": 1843,
+   "demand_wait_ns": 1161250537,
+   "prefetch_cancels": 0,
+   "demand_wait_timeouts": 0,
+   "gpu_telemetry": {
+    "samples": 215,
+    "sm_clock_mhz_median": 2707.0,
+    "sm_clock_mhz_min": 1747.0,
+    "sm_clock_max_mhz": 3090.0,
+    "power_w_median": 101.93,
+    "power_w_max": 108.43,
+    "temperature_c_max": 79.0,
+    "reason_share": {}
+   },
+   "ok": true
+  },
+  {
+   "pass": 2,
+   "arm": "worker2",
+   "rc": 0,
+   "seconds": 103.6,
+   "tok_s": 7.68,
+   "tokens_equal_oracle": true,
+   "fallbacks": 0,
+   "demand_waits": 7406,
+   "demand_wait_ns": 5635230184,
+   "prefetch_cancels": 0,
+   "demand_wait_timeouts": 0,
+   "gpu_telemetry": {
+    "samples": 412,
+    "sm_clock_mhz_median": 2722.0,
+    "sm_clock_mhz_min": 1785.0,
+    "sm_clock_max_mhz": 3090.0,
+    "power_w_median": 92.89,
+    "power_w_max": 102.83,
+    "temperature_c_max": 79.0,
+    "reason_share": {}
+   },
+   "ok": true
+  }
+ ]
+}

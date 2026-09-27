@@ -1,0 +1,29 @@
+{
+ "object": "text_completion",
+ "model": "gate",
+ "choices": [
+  {
+   "index": 0,
+   "text": "\nOutput Format:\n**Monthly Inspection Cycle**\n[Table list]\n**Annual Recalibration**\n[Paragraph]\n**Workload Analysis**\n[Text]\n\n**Monthly Inspection Cycle**\n| Month | Target |",
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 119,
+  "completion_tokens": 48,
+  "total_tokens": 167,
+  "prompt_tokens_details": {
+   "cached_tokens": 96
+  },
+  "elapsed_s": 0.177455025,
+  "spec": {
+   "rounds": 16,
+   "drafted": 48,
+   "accepted": 31,
+   "acceptance_rate": 0.6458333333333334
+  }
+ },
+ "id": "cmpl-79ef1ea1d809d5036d4a7452274f88f4",
+ "created": 1790403301,
+ "system_fingerprint": "memra-0.138.0-0dfce08d75ba"
+}

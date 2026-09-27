@@ -337,7 +337,7 @@ fn refusal_cells(
             let first = failed.prepare(gpu);
             let before_host = enqueues();
             for &token in &inputs[..position - PRIME] {
-                gpu.decode_sample_full_token_for_gate(token, &mut failed.state)
+                gpu.decode_sample_full_token(token, &mut failed.state)
                     .expect("fault setup");
             }
             failed.check_enqueues(before_host, first);
@@ -363,7 +363,7 @@ fn refusal_cells(
             gpu.arm_attention_tp_join_refusal_for_gate(layer, rank, code)
                 .unwrap();
             let error = gpu
-                .decode_sample_full_token_for_gate(inputs[position - PRIME], &mut failed.state)
+                .decode_sample_full_token(inputs[position - PRIME], &mut failed.state)
                 .unwrap_err();
             assert!(error.contains("one-shot reduction refused"), "{error}");
             let mut words = [0, 0];
@@ -387,7 +387,7 @@ fn refusal_cells(
                 expected_variants(on, position, position + 1, false),
             );
             assert!(
-                gpu.decode_sample_full_token_for_gate(inputs[position - PRIME], &mut failed.state)
+                gpu.decode_sample_full_token(inputs[position - PRIME], &mut failed.state)
                     .unwrap_err()
                     .contains("unfinished transaction")
             );
@@ -461,7 +461,7 @@ fn run(
             let host = enqueues();
             let arm_epochs = gpu.full_token_ar_epochs_for_gate().unwrap();
             let actual = gpu
-                .decode_sample_full_token_for_gate(carry, &mut arm.state)
+                .decode_sample_full_token(carry, &mut arm.state)
                 .expect("correctness full replay");
             assert_eq!(
                 actual, next,
@@ -525,9 +525,7 @@ fn run(
         let mut token = first;
         for &expected in &inputs {
             assert_eq!(token, expected);
-            token = gpu
-                .decode_sample_full_token_for_gate(token, &mut arm.state)
-                .unwrap();
+            token = gpu.decode_sample_full_token(token, &mut arm.state).unwrap();
         }
         assert_eq!(token, expected_next);
         assert_eq!(identity(gpu, &arm.state), expected_identity);
@@ -609,7 +607,7 @@ fn run(
             assert_ne!(carry, tokenizer.eos_id(), "early EOS row");
             tokens.push(carry);
             carry = gpu
-                .decode_sample_full_token_for_gate(carry, &mut active.state)
+                .decode_sample_full_token(carry, &mut active.state)
                 .expect("scored replay");
         }
         drain(gpu);

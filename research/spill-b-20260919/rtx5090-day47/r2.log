@@ -1,0 +1,19 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 0.12s
+== health-fault-gate: arms=g,h port=8189 out=/home/avifenesh/projects/wt-spill-b/research/spill-b-20260919/rtx5090-day47/r2 ==
+--- arm g: a step OOM parks, requeues and completes; peers complete (and the red twin) ---
+  [g] ready after 3309 ms (pid 789610)
+HFG (g) step-oom-parks-and-completes: fault=1 parked_lines=0 completed=0/3 codes={r0:200,r1:200,r2:200} http_5xx=0 panic_lines=0 health_after=200 -> FAIL
+  [g] exit 0
+  [g-red] ready after 3095 ms (pid 790257)
+HFG (g-red) step-oom-past-the-retry-budget: fault=4 parked_lines=0 completed=0/3 codes={r0:200,r1:200,r2:200} faulted_error={r0:"message":"the model is temporarily at capacity; retry after the Retry-After delay";r1:"message":"the model is temporarily at capacity; retry after the Retry-After delay";r2:"message":"the model is temporarily at capacity; retry after the Retry-After delay";} http_5xx=0 panic_lines=0 green_assertion_fired=true -> FAIL
+  [g-red] exit 0
+--- arm h: a client disconnect retires the session within one tick; the peer completes (and the red twin) ---
+  [h] ready after 3094 ms (pid 790914)
+HFG (h) client-disconnect-retires-within-1000ms: frames_at_close=11 abort_lines=1 close_to_abort_line_ms=96 peer_complete=true peer_finish=length active_sessions_after=0 health_after=200 -> PASS
+  [h] exit 0
+  [h-red] ready after 3093 ms (pid 791857)
+HFG (h-red) no-disconnect: frames_at_close=15 abort_lines=0 closed_request_complete=true peer_complete=true green_assertion_fired=true -> PASS
+  [h-red] exit 0
+health-fault-gate: arms=g,h pass=2 documented=0 fail=2 receipts=/home/avifenesh/projects/wt-spill-b/research/spill-b-20260919/rtx5090-day47/r2
