@@ -120,6 +120,23 @@ never found the lock free, because the load re-took it at once. The not-run rece
 - The binary, the cell, the arms, the shapes and V1 to V6 are addendum C's. The rerun is the same command on the lane
   tip. Closed runners keep the poll they ran with; their receipts record it.
 
+### 1.9 Addendum E (2026-09-27, V5 observed as registered: the owner's ruling via the lead, before its code)
+
+The owner ruled on 2.2: V5's clause stays as written. The lane adds the physical debt line on every admission, then a
+sitting, so V5 is observed as registered. As the lead read 2.2, the clause is about admissions: a `reject-kv` verdict
+never reaches the physical gate, and the 11 admissions with no physical line are what left it unmet.
+
+- **The line:** with `MEMRA_ADMIT_PREDICT_VG_DEBT=1`, the physical `[admission] dspark verify-graph pool debt: +<MB>
+  reserved ...` line prints on every admission whose physical debt is above 0, not only when the admission's (cap, spec,
+  cost) key changes. It ends in ` id=<request id>`. Unset, the line is today's, byte for byte, so the door-off program
+  and log do not move.
+- **The reader:** `DAY48 V5E` pairs each `verdict=admit` predictive line with `vg_debt` above 0 to the physical line of
+  the same id. PASS when every such admission has its physical line and the MB equal the predictive `vg_debt` rounded to
+  MB. The registered V5 line (sequential pairing) prints beside it, unchanged.
+- **The sitting:** the twentieth (`pro-single-b-sitting20.sh`, receipts `b-day48c`), the DAY48 cell on the lane's crates
+  at this change, the same model, arms and shapes as addendum C. V1 to V4 and V6 read as registered.
+- A server test pins the line: printed on every admission with the door on, and only under `log_estimate` with it off.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
