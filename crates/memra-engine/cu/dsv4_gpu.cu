@@ -7056,14 +7056,15 @@ extern "C" int memra_dsv4_hc_pre_v4(const float* x, const float* mixes, const fl
 
 // position's own raw/sel/selw/order slices and its OWN token id — the hash layers'
 // tid2eid row is per token, which is exactly why a round needs a token ARRAY).
-extern "C" __global__ void dsv4_route_m_kernel(const float* __restrict__ raw_all,
-                                               const float* __restrict__ bias,
-                                               const int* __restrict__ tid2eid,
-                                               const int* __restrict__ tok, int ne, int topk,
-                                               float route_scale, int* __restrict__ sel_all,
-                                               float* __restrict__ selw_all,
-                                               int* __restrict__ order_all) {
-    MEMRA_PDL_CHAIN_ENTRY();
+// The router's body, shared by dsv4_route_m_kernel and dsv4_route_mirror_m_kernel: every thread
+// runs the score pass and its barrier, then warp 0 selects and finishes and the rest return.
+__device__ __forceinline__ void dsv4_route_m_body(const float* __restrict__ raw_all,
+                                                  const float* __restrict__ bias,
+                                                  const int* __restrict__ tid2eid,
+                                                  const int* __restrict__ tok, int ne, int topk,
+                                                  float route_scale, int* __restrict__ sel_all,
+                                                  float* __restrict__ selw_all,
+                                                  int* __restrict__ order_all) {
     int p = blockIdx.x;
     const float* raw = raw_all + (long)p * ne;
     int* sel = sel_all + (long)p * topk;
@@ -7145,6 +7146,18 @@ extern "C" __global__ void dsv4_route_m_kernel(const float* __restrict__ raw_all
         kord[b + 1] = o;
     }
     for (int k = 0; k < topk; k++) order[k] = kord[k];
+}
+
+extern "C" __global__ void dsv4_route_m_kernel(const float* __restrict__ raw_all,
+                                               const float* __restrict__ bias,
+                                               const int* __restrict__ tid2eid,
+                                               const int* __restrict__ tok, int ne, int topk,
+                                               float route_scale, int* __restrict__ sel_all,
+                                               float* __restrict__ selw_all,
+                                               int* __restrict__ order_all) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    dsv4_route_m_body(raw_all, bias, tid2eid, tok, ne, topk, route_scale, sel_all, selw_all,
+                      order_all);
 }
 
 extern "C" int memra_dsv4_route_m(const float* raw, const float* bias, const int* tid2eid,
@@ -8601,7 +8614,15 @@ __device__ __forceinline__ float dsv4_warp_max(float v) {
 // dsv4_act_quant_fp8_kernel then dsv4_fp8_gather_half_kernel on one row, written straight into
 // the swizzled half staging of the stream body. A max is exact in any order, so the warp
 // reductions give those kernels' group amax and row scale. Returns this thread's lossy flag.
-template<int NW>
+// The mirror's block barrier: __syncthreads, or named barrier BAR over its NW warps when the
+// mirror warps share the CTA with other work (dsv4_route_mirror_m_kernel).
+template<int NW, int BAR>
+__device__ __forceinline__ void dsv4_mirror_sync() {
+    if constexpr (BAR == 0) __syncthreads();
+    else asm volatile("bar.sync %0, %1;" ::"n"(BAR), "n"(NW * 32) : "memory");
+}
+
+template<int NW, int BAR = 0>
 __device__ __forceinline__ bool dsv4_moe_fused_mirror(const float* __restrict__ xrow, int cols,
                                                       uint32_t* As, float* s_scale, float* s_rs,
                                                       int warp, int lane) {
@@ -8618,14 +8639,14 @@ __device__ __forceinline__ bool dsv4_moe_fused_mirror(const float* __restrict__ 
         const float inv = (float)(1.0 / 448.0);
         if (lane == 0) s_scale[g] = dsv4_pow2_ceil(amax * inv);
     }
-    __syncthreads();
+    dsv4_mirror_sync<NW, BAR>();
     if (warp == 0) {
         float m = 0.0f;
         for (int g = lane; g < groups; g += 32) m = fmaxf(m, s_scale[g]);
         m = dsv4_warp_max(m);
         if (lane == 0) *s_rs = ldexpf(m, -7);
     }
-    __syncthreads();
+    dsv4_mirror_sync<NW, BAR>();
     const float rs = *s_rs;
     bool bad = !(rs > 0.0f) || !isfinite(rs);
     for (int g = warp; g < groups; g += NW) {
@@ -8655,6 +8676,48 @@ __device__ __forceinline__ bool dsv4_moe_fused_mirror(const float* __restrict__ 
 
 constexpr int DSV4_MOE_FUSED_WARPS = 4, DSV4_MOE_FUSED_KC = 256, DSV4_MOE_FUSED_STAGES = 2;
 
+// The router plus the fused gate/up launch's x mirror, once per token row (memra #710): warp 0
+// routes exactly as dsv4_route_m_kernel does, while warps 1..7 build the row's mirror, the
+// function every gate/up CTA used to run for itself, into xm[p] and xrs[p], with the lossy flag
+// as fault bit 0x2. The gate/up launch then loads it. Same function over the same row, so the
+// same bits.
+constexpr int DSV4_ROUTE_MIRROR_WARPS = 7;
+
+extern "C" __global__ void __launch_bounds__(256) dsv4_route_mirror_m_kernel(
+        const float* __restrict__ raw_all, const float* __restrict__ bias,
+        const int* __restrict__ tid2eid, const int* __restrict__ tok, int ne, int topk,
+        float route_scale, int* __restrict__ sel_all, float* __restrict__ selw_all,
+        int* __restrict__ order_all, const float* __restrict__ xf, int in_f,
+        uint32_t* __restrict__ xm, float* __restrict__ xrs, int* __restrict__ fault) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    dsv4_route_m_body(raw_all, bias, tid2eid, tok, ne, topk, route_scale, sel_all, selw_all,
+                      order_all);
+    const int warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
+    if (warp == 0) return;
+    __shared__ float s_scale[64];
+    __shared__ float s_rs;
+    const long p = blockIdx.x;
+    const bool bad = dsv4_moe_fused_mirror<DSV4_ROUTE_MIRROR_WARPS, 1>(
+        xf + p * in_f, in_f, xm + p * (in_f / 2), s_scale, &s_rs, warp - 1, lane);
+    if (warp == 1 && lane == 0) xrs[p] = s_rs;
+    if (bad && fault) atomicOr(fault, 2);
+}
+
+extern "C" int memra_dsv4_route_mirror_m(const float* raw, const float* bias, const int* tid2eid,
+                                         const int* tok, int s, int ne, int topk,
+                                         float route_scale, int* sel, float* selw, int* order,
+                                         const float* xf, int in_f, unsigned int* xm, float* xrs,
+                                         int* fault, void* stream_v) {
+    if (ne > 256 || topk > 32) return 40007;
+    if (s < 1) return 40020;
+    if (!xf || !xm || !xrs || in_f % 128 || in_f / 128 > 64) return 40004;
+    memra_chain_launch(dsv4_route_mirror_m_kernel, (unsigned)s, 256, 0, (cudaStream_t)stream_v)(
+        raw, bias, tid2eid, tok, ne, topk, route_scale, sel, selw, order, xf, in_f,
+        (uint32_t*)xm, xrs, fault);
+    DSV4_ERR();
+    return 0;
+}
+
 // grid (out_f / (8*WP), topk), block (32, 2*WP): warps [0,WP) gate, [WP,2WP) up, same columns.
 template<int WP, int KC, int STAGES>
 static __global__ void __launch_bounds__(2 * WP * 32)
@@ -8662,6 +8725,7 @@ dsv4_moe_fused_gu_kernel(const unsigned long long* __restrict__ table, int n_exp
                          int global_experts, int first_expert, int slots_per_row,
                          const int* __restrict__ sel, const float* __restrict__ selw,
                          const float* __restrict__ scale2, const float* __restrict__ xf,
+                         const uint32_t* __restrict__ xm, const float* __restrict__ xrs,
                          float* __restrict__ H, int* __restrict__ shared_run, int in_f,
                          int out_f, float limit, long row_bytes, int* __restrict__ fault) {
     MEMRA_PDL_CHAIN_ENTRY();
@@ -8716,11 +8780,23 @@ dsv4_moe_fused_gu_kernel(const unsigned long long* __restrict__ table, int n_exp
         dsv4_m1_issue<KC, STAGES>(ring, wq0, ws0, row_bytes, sc_row, nch, c, lane, valid);
     // Slot p belongs to token row p / slots_per_row (memra #710: several rows per launch on
     // the partition form, a B-row step or a verify round); one row is slots_per_row = topk.
-    const bool bad = dsv4_moe_fused_mirror<2 * WP>(xf + (size_t)(p / slots_per_row) * in_f,
-                                                    in_f, As, s_scale, &s_rs, warp, lane);
-    const bool any_bad = __syncthreads_or(bad);
+    const int xrow = p / slots_per_row;
     const bool first = lane == 0 && warp == 0;
-    if (first && fault && any_bad && blockIdx.x == 0) atomicOr(fault, 2);
+    if (xm) {
+        // The router launch built this row's mirror (dsv4_route_mirror_m_kernel) and reported
+        // its lossy flag.
+        const uint4* src = reinterpret_cast<const uint4*>(xm + (size_t)xrow * (in_f / 2));
+        const int tid = warp * 32 + lane;
+        for (int i = tid; i < in_f / 8; i += 2 * WP * 32)
+            reinterpret_cast<uint4*>(As)[i] = __ldcg(src + i);
+        if (tid == 0) s_rs = __ldcg(xrs + xrow);
+        __syncthreads();
+    } else {
+        const bool bad = dsv4_moe_fused_mirror<2 * WP>(xf + (size_t)xrow * in_f, in_f, As,
+                                                        s_scale, &s_rs, warp, lane);
+        const bool any_bad = __syncthreads_or(bad);
+        if (first && fault && any_bad && blockIdx.x == 0) atomicOr(fault, 2);
+    }
     const int gq = lane >> 2, t = lane & 3;
     if (!valid) {
         asm volatile("cp.async.wait_group 0;" ::: "memory");
@@ -8858,7 +8934,8 @@ static bool dsv4_moe_fused_shape_ok(int n_expert, int topk, int in_f, int out_f,
 extern "C" int memra_dsv4_moe_fused_gu_part(const unsigned long long* table, int n_expert,
                                             int global_experts, int first, const int* sel,
                                             const float* selw, const float* scale2,
-                                            const float* xf, float* h, int* shared_run,
+                                            const float* xf, const unsigned int* xm,
+                                            const float* xrs, float* h, int* shared_run,
                                             int topk, int rows, int in_f, int out_f, float limit,
                                             int* fault, void* stream_v) {
     constexpr int WP = DSV4_MOE_FUSED_WARPS, KC = DSV4_MOE_FUSED_KC, ST = DSV4_MOE_FUSED_STAGES;
@@ -8872,7 +8949,8 @@ extern "C" int memra_dsv4_moe_fused_gu_part(const unsigned long long* table, int
     memra_chain_launch(dsv4_moe_fused_gu_kernel<WP, KC, ST>,
         dim3((unsigned)(out_f / (8 * WP)), (unsigned)(rows * topk)), dim3(32, 2 * WP), smem,
            (cudaStream_t)stream_v)(table, n_expert, global_experts, first, topk, sel, selw,
-                                     scale2, xf, h, shared_run, in_f, out_f, limit,
+                                     scale2, xf, (const uint32_t*)xm, xrs, h, shared_run, in_f,
+                                     out_f, limit,
                                      (long)(in_f / 2), fault);
     DSV4_ERR();
     g_dsv4_moe_fused_dispatches.fetch_add(1, std::memory_order_relaxed);
@@ -8883,8 +8961,9 @@ extern "C" int memra_dsv4_moe_fused_gu(const unsigned long long* table, int n_ex
                                        const int* sel, const float* selw, const float* scale2,
                                        const float* xf, float* h, int topk, int in_f, int out_f,
                                        float limit, int* fault, void* stream_v) {
-    return memra_dsv4_moe_fused_gu_part(table, n_expert, n_expert, 0, sel, selw, scale2, xf, h,
-                                        nullptr, topk, 1, in_f, out_f, limit, fault, stream_v);
+    return memra_dsv4_moe_fused_gu_part(table, n_expert, n_expert, 0, sel, selw, scale2, xf,
+                                        nullptr, nullptr, h, nullptr, topk, 1, in_f, out_f,
+                                        limit, fault, stream_v);
 }
 
 // One token: h is [topk][in_f] (in_f = moe_inter), contribution [topk][out_f], y [out_f];

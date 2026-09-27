@@ -578,6 +578,8 @@ unsafe extern "C" {
         selw: *const f32,
         scale2: *const f32,
         xf: *const f32,
+        xm: *const u32,
+        xrs: *const f32,
         h: *mut f32,
         shared_run: *mut i32,
         topk: i32,
@@ -1643,6 +1645,28 @@ unsafe extern "C" {
         sel: *mut i32,
         selw: *mut f32,
         order: *mut i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// `memra_dsv4_route_m` plus the fused gate/up launch's x mirror of each row (memra #710):
+    /// `xm[s][in_f / 2]` swizzled halves and `xrs[s]` row scales, a lossy row as fault bit 0x2.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_route_mirror_m(
+        raw: *const f32,
+        bias: *const f32,
+        tid2eid: *const i32,
+        tok: *const i32,
+        s: i32,
+        ne: i32,
+        topk: i32,
+        route_scale: f32,
+        sel: *mut i32,
+        selw: *mut f32,
+        order: *mut i32,
+        xf: *const f32,
+        in_f: i32,
+        xm: *mut u32,
+        xrs: *mut f32,
+        fault: *mut i32,
         stream: *mut c_void,
     ) -> i32;
     #[allow(clippy::too_many_arguments)]

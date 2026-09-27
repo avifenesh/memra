@@ -564,3 +564,33 @@ Every value is those kernels' op in their order.
 | sampled c1 | 96.04 / 96.11 | 96.86 / 96.81 |
 | greedy c2 | 127.96 / 128.49 | 128.92 / 128.55 |
 | greedy c4 | 162.02 / 162.97 | 163.11 / 162.92 |
+
+## The x mirror built once per row by the router launch (adopted)
+
+Lane `lane/dsv4-xmirror-route-20260927`, measured against main `afd367804` on the second SE pair
+(`raw/se2-xmirror-s2zg/`). The one-card bench put about 5 us of the one-row gate/up launch in its
+x mirror, which every CTA builds for itself and nothing overlaps.
+
+**What changed.**
+- On a TP/EP step the fused pair takes, the router launch runs as `dsv4_route_mirror_m_kernel`,
+  with 256 threads. Warp 0 routes with the router's own body, now shared as `dsv4_route_m_body`.
+- Warps 1..7 build `dsv4_moe_fused_mirror` over the row on named barrier 1, into a per-row
+  buffer. A lossy row sets fault bit 0x2.
+- The gate/up CTAs then load the mirror. It is the same function over the same row.
+
+**Correctness.**
+- The partition fixture compares the h rows from gate/up launches with and without the router's
+  mirror, bit for bit (`raw/se2-xmirror-s2zg/xmirror-comp-s2zh/`, 5 passed).
+- The long gate hash is `fbce1a0492d69635`.
+- The TP/EP rows gate and the DSpark TP/EP gate pass.
+
+**Long gate,** M X X M M X: 10.17 .. 10.29 ms/token against 10.08 .. 10.21, about -0.8%.
+
+**Served,** cells-pdl M X X M, N=2:
+
+| cell | main | lane |
+|---|---|---|
+| greedy c1 | 94.39 / 94.53 (decode 99.2) | 95.87 / 95.89 (decode 100.5 / 100.6), **+1.5%** |
+| sampled c1 | 94.53 / 94.55 | 96.04 / 96.22, +1.7% |
+| greedy c2 | 125.80 / 126.03 | 126.96 / 127.25, +1.0% |
+| greedy c4 | 160.03 / 159.32 | 161.37 / 163.76, +1.5% |
