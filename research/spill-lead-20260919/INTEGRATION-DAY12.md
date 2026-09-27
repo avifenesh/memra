@@ -4464,6 +4464,64 @@ burst, spec-ctx-edge and the pause gate `ALL GREEN`; `tier-transfer-gate conform
 governor zero after controlled drain`; `roundtrip` six byte-exact lines to 268435456 bytes; `kv-tier-gate` with the 27B,
 all seven fault arms `FAULT-ARM PASS` (the missing-host arm's `pinned-released` check reads the plane's length again).
 
+## integ70 (`lane/spill-integ70-20260927`): lane A's design P2 (the hash helper's payload reserve with its arming rule); lane C's I21 and I22 (the MoE door's residency and bank reads by catalog position); lane F's OWED 26 (a demand read waits for a worker buffer instead of falling back to mmap)
+
+Lane tips merged on main `b1fcf40aa` (#801), clean: C `075b479c1`, F `d58f4bfd8`, and A's integ branch
+`lane/spill-a-integ70-20260927` at `d5156f468` (cut from `b1fcf40aa` by A: P2's code as the adopted sitting ran it,
+cherry-picked with one resolved test-module conflict in `worker.rs` where main's DSpark refusal test and P2's
+`test_payload_reserve` both sat at the top, both kept; plus A's records to the lane tip `aa1616662`). F edits
+`moe_cache.rs` and re-pinned the day-4 fixture in its lane; C does not touch the file, so the pin holds on the merged
+file. Lane B is not in this integ: it is 345 commits behind main with about 7,700 lines of engine, kv and server code
+(3,247 in `worker.rs`, where main now carries L', design Q, the purge scrub and P2), so B merges main in its own lane
+first and goes into integ71. The change:
+- `worker.rs` (A, P2, DAY52 over L', DAY67): the hash helper reserves and refills the demote's payload buffers so the
+  demote copy does not fault on fresh pages, armed only while the copy it replaces would fault (a hit does not refill).
+- `memra-tier` bank and `banked_residency/native.rs` (C, I21 and I22, DAY84 and DAY85): the lease path reads host
+  residency by catalog position (the SLRU keeps a position view equal to its table at every change, charged to the
+  SLRU metadata), and I22 moves the bank's remaining per-record hashed reads (the host cache, the SLRU hit, the catalog
+  entry, the adapter's `validated`) to positions.
+- `moe_cache.rs`, `spill_pread.rs` (F, OWED 26): a demand read that finds the worker ring busy waits for a buffer,
+  evicting a prefetch other than its own block, instead of falling back to mmap; the 5090 G2 transfer table (item 23)
+  and the queue's card sharing (release and a 300 s wait after every registered cell).
+- `.gitattributes` in four receipt dirs (F's `owed26/` and `box36/owed26-cells/`, C's `day81-cpu/` and `day82-cpu/`)
+  exempting raw logs and red-arm patches from whitespace checks as their sibling dirs are, and F's `STATE.md` and
+  `owed26/CENSUS.md` lose a trailing blank line (the lead's, so `git diff --check` passes).
+
+**Lanes, verbatim.** A: `DAY52 P2 (b)` to `(g)` PASS on the target card (demote wall -12.40 ms both orders, copy
+-16.29, e2e within +0.34, hump xp2 +0.028 against the control's +0.534), and (a)'s unit step repeated whole on
+`a2419d3e1` all green (`unit-cells parallel=3/3 engine-serial-rc=0 door-rc=0 cpu-rc=0 engine-census-rc=0 tier-rc=0`),
+so DAY67 section 5: P2 ADOPTED. C: `DAY84 VERDICT rig=pro-single integrity=ok i21=flat door=i21 vs_ref=loses` on the
+285K and `i21=improves ... vs_ref=loses` on the 9950X rerun (the first 9950X half void, inadmissible, bimodal door
+boots on a host with 19 h of sittings, which DAY86 now tests); `DAY85 VERDICT ... i22=flat door=i22 vs_ref=matches` on
+the 285K and `i22=improves door=i22 vs_ref=matches` on the 9950X: the tuned door matches REF on both classes, OWED
+C11's acceptance. F: `OWED26-SERVE-CHECK PASS` on the corrected build; G2 closed (pinned wins from 64 KiB up in both
+directions on the 5090, pageable wins host to device at 4 and 16 KiB there; the PRO 6000 had pinned ahead at every
+size); the bounded B3 regime on the 5090 is unscored (contaminated, and the pre-fix build fell back on every worker
+visit, which is the OWED 26 defect).
+
+**Lead review.** P2: the reserve is the DAY51 program with one arming rule read from the job's own page faults, the
+refill never runs on a hit, and its payload reserve is charged; the cherry-pick's only conflict was two test functions.
+C: the position view is checked against the table after every step of the day-43 randomized trace (250,000
+operations) and the day-4 fixture, and the positioned adapter equals a twin bank on the hashed path across randomized
+demand and prefetch traces. F: the demand wait evicts only a prefetch other than its own block; two of the new GPU cells carry red arms
+(`owed26/5090/owed26-cells/round-01/red-*`).
+
+**Ruling 65:** P2 is the naked program on the target card (its 5090 half owed by A, as L' and R1). C's I21 and I22
+stay; the door matches REF on both classes (C11 accepted), while the door's default and the registered pool stay the
+owner's (DAY80 section 4a, C1(c), C10). F's OWED 26 fix is in; items 17 and 18 wait on their 5090 rows, item 20 on the
+owner.
+
+**Checks.**
+- CPU battery 15 of 15 on `72fcc4a76` (`integ70-cpu-battery/`: server lib 957, tier 105, engine lib 589), after the
+  C and F tree read 14 of 15 on whitespace alone.
+- GPU battery on BOX43 (a Ryzen 9 9950X with one RTX PRO 6000 WS; `integ70-pro-run1/`, 572 receipts mirrored and
+  checked), tree `1d317fcb7`, binary `60f4359d`, one hold 01:20Z to 01:38Z then the pause gate's hold, with integ69 run
+  5's cells and tier gate binaries plus lane F's seven ignored `spill_pread::tests::` cells: serve-smoke 1 failed (the
+  Q35 arm, #777, its summary line identical to integ69's runs 4 and 5); engine cells `26 passed` (the seven
+  `spill_pread` cells among them); worker span cells `19 passed`; identity, fault default and plain, hit OFF and ON,
+  admit-mem burst, spec-ctx-edge and the pause gate `ALL GREEN`; `tier-transfer-gate` conformance 13 PASS lines and six
+  byte-exact roundtrips; all seven `kv-tier-gate` fault arms `FAULT-ARM PASS` with the 27B.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
