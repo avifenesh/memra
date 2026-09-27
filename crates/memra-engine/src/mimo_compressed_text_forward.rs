@@ -1024,7 +1024,9 @@ mod tests {
         let prepared = text.modal_embedding_gpu_chunk(&cards[0], &ids, &[], &[], &[])?;
         let mut batch = text.compressed_text_forward(engines, TOKENS + 1, [FOUR_GIB; 2])?;
         batch.profile_first_chunk = true;
+        let moe_profile_guard = crate::mimo_source_moe::start_batch_phase_profile();
         let batch_step = batch.consume_embedding_chunk_batched(&prepared)?;
+        let moe_profile = moe_profile_guard.finish();
         let batch_next = batch.token(220)?;
         let mut serial = text.compressed_text_forward(engines, TOKENS + 1, [FOUR_GIB; 2])?;
         let serial_step = serial.consume_embedding_chunk(&prepared)?;
@@ -1050,10 +1052,15 @@ mod tests {
         if batch.profile_rows.len() != LAYERS {
             return Err("MiMo stage profile omitted a layer".into());
         }
-        println!("format\tmimo-first-chunk-stage-profile-v1");
+        if moe_profile.len() != LAYERS - 1 {
+            return Err("MiMo stage profile omitted a routed MoE layer".into());
+        }
+        println!("format\tmimo-first-chunk-stage-profile-v2");
         println!("source\tXiaomiMiMo/MiMo-V2.6-Flash-RL@3b38d063180c3e4aed9691fdc735f3d10b266ee4");
         println!("shape\tfresh_text_tokens=128\tcontext=129");
-        println!("method\textra_stream_sync_after_each_profiled_category");
+        println!(
+            "method\tintrusive_diagnostic_wall_ms_with_stream_completion_at_stage_and_moe_phase_boundaries"
+        );
         println!("columns\tlayer\tstage\tqkv_ms\tkv_attention_ms\tattention_output_ms\tmlp_ms");
         let mut stages = [[0.0f64; 4]; 2];
         for (expected, (index, times)) in batch.profile_rows.iter().enumerate() {
@@ -1077,6 +1084,30 @@ mod tests {
         }
         println!("transfer_ms\t{:.6}", batch.profile_stage_transfer_ms);
         println!("head_ms\t{:.6}", batch.profile_head_ms);
+        println!(
+            "moe_columns\tlayer\tstage\tf32_exact_router_ms\ttopk_host_validation_ms\tinput_activation_quant_ms\tgate_ms\tup_ms\tactivation_requant_ms\tdown_ms\ttoken_weight_reduction_ms"
+        );
+        let mut moe_stages = [[0.0f64; 8]; 2];
+        for (expected, row) in (1..LAYERS).zip(&moe_profile) {
+            if row.layer != expected {
+                return Err("MiMo stage profile MoE layer order changed".into());
+            }
+            let stage = usize::from(row.layer >= STAGE_CUT);
+            for (total, time) in moe_stages[stage].iter_mut().zip(row.wall_ms) {
+                *total += time;
+            }
+            let ms = row.wall_ms;
+            println!(
+                "moe_layer\t{}\t{stage}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}",
+                row.layer, ms[0], ms[1], ms[2], ms[3], ms[4], ms[5], ms[6], ms[7],
+            );
+        }
+        for (stage, ms) in moe_stages.iter().enumerate() {
+            println!(
+                "moe_stage\t{stage}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}",
+                ms[0], ms[1], ms[2], ms[3], ms[4], ms[5], ms[6], ms[7],
+            );
+        }
         Ok(())
     }
 
