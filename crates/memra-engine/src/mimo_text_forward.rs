@@ -212,7 +212,7 @@ fn append_kv(
     Ok(())
 }
 
-fn normalized(
+pub(crate) fn normalized(
     engine: &Engine,
     input: &CudaSlice<f32>,
     weight: &CudaSlice<f32>,
@@ -304,7 +304,7 @@ fn attention_token(
     engine.matmul(&row.attention.output, &context, 1)
 }
 
-fn dense_token(
+pub(crate) fn dense_token(
     engine: &Engine,
     input: &CudaSlice<f32>,
     weights: &MiMoDenseWeights,
