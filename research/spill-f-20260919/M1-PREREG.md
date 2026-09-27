@@ -679,3 +679,13 @@ Box: 2x RTX PRO 6000 Blackwell (the qualified PP-2 topology), both cards the onl
 maximum power; host `MemTotal` below 101,072,240,640 bytes (64 GB preferred, so the page cache can
 hold at most about half of the bank); a local PCIe NVMe scratch (ext4 or xfs) that passes the M1
 proof with at least 300 GB free; at least 16 CPU threads; root or unlimited memlock; no swap in use.
+
+Section F decision (2026-09-27, after both rows): PRO 6000 (BOX36, scored): `bypass-staged` flat
+(cold 1.0018, bounded 1.0095), `bypass-mapped` loser (cold 0.8725, bounded 0.8958). 5090 (ten
+rounds, unscored: 6 to 7 contaminated visits per arm on the shared volume; zero fallbacks):
+descriptive `bypass-staged` 1.0010, `bypass-mapped` 0.6945. No row on either rig supports turning
+either value on, so no per-rig default exists. Under door hygiene the lane that measured it deletes
+`MEMRA_MOE_COLD_BYPASS` whole: the env read, both values, the doorkeeper, the bypass dispatch and
+its call sites, the mapped pinned-buffer views, their GPU cells and the FLAGS row; the verdict and
+receipt pointers move to the FLAGS "Removed doors" ledger. The OWED 26 demand wait stays; only its
+guard for mapped buffers (`awaiting_consumer`) goes with the door.

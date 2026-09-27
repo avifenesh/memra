@@ -8300,9 +8300,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let next = vec![0xF8; block_len];
         let queued = cache.prefetch(next_id, &next, &keep, &e)?;
         let hidden_while_pending = cache.resident(next_id).is_none();
-        let DispatchSlot::Resident(next_slot) = cache.dispatch(next_id, &next, &e)? else {
-            return Err("dispatch returned a bypass slot".into());
-        };
+        let DispatchSlot::Resident(next_slot) = cache.dispatch(next_id, &next, &e)?;
         // slots carry a +8 tail pad (wide-load expert dots, b6f0ffe) — compare payload only.
         let next_got = e.dtoh_u8(cache.slot(next_slot))?[..block_len].to_vec();
         let visible_after_wait = cache.resident(next_id) == Some(next_slot);
