@@ -513,6 +513,32 @@ fn main() {
             // arithmetic from the oracle contract.
             "cu/dsv4_gpu.cu",
             "cu/dsv4_sampler.cu",
+            // Pinned MiMo source QKV shard outputs gathered on-device.
+            "cu/mimo_qkv_gather.cu",
+            // Bounded f32 MiMo attention reference component with learned sink.
+            "cu/mimo_sink_attn.cu",
+            // Fresh MiMo text causal chunk attention for global and local layers.
+            "cu/mimo_text_chunk_attn.cu",
+            // Bounded preprojected MiMo ViT attention over independent patch sequences.
+            "cu/mimo_vision_attn.cu",
+            // Source axial height/width RoPE for BF16 Q/K vision projections.
+            "cu/mimo_vision_rope.cu",
+            // Pinned MiMo ViT block BF16 boundaries and fused-QKV split.
+            "cu/mimo_vision_block.cu",
+            // Source-inspection split attention over q8_0 K and NVFP4 V.
+            "cu/mimo_mixed_attn.cu",
+            // Model-owned local attention over a fixed 128-token KV ring.
+            "cu/mimo_swa_ring_attn.cu",
+            // Source-inspection NVFP4 cache row codec.
+            "cu/mimo_kv_nvfp4.cu",
+            // Source BF16 speech-table gather for the MiMo audio patch encoder.
+            "cu/mimo_audio_embed.cu",
+            // Four-token noncausal MiMo audio patch attention after QKV and RoPE.
+            "cu/mimo_audio_attn.cu",
+            "cu/mimo_audio_patch_forward.cu",
+            "cu/mimo_audio_codec_frontend.cu",
+            "cu/mimo_audio_codec_layer.cu",
+            "cu/mimo_audio_codec_rvq.cu",
             // Small-message cross-rank all-reduce for TP decode (lane/tp-allreduce-20260906).
             // Portable CUDA C; peer stores plus a bounded flag wait, no oracle to match, so it
             // takes the default flags rather than dsv4_gpu.cu's -fmad=false.
@@ -647,6 +673,10 @@ fn main() {
                 } else {
                     args.push("-fmad=false".into());
                 }
+            }
+            if mmq_src.ends_with("mimo_audio_codec_rvq.cu") {
+                // Keep the source's separate F32 products and sums.
+                args.push("-fmad=false".into());
             }
             args.extend([
                 "-c".into(),

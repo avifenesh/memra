@@ -84,6 +84,7 @@ fn tiny_plan() -> Result<ModelPlan, PlanCompileError> {
             in_channels: 3,
             patch_input_width: 3 * 2 * 2 * 2,
         })),
+        mimo_audio_patch: None,
         multimodal: Some(VisionTokenInjectionPlan {
             placeholder_token_id: 3,
             tokens_per_image: None,

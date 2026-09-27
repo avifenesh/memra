@@ -16,6 +16,7 @@ pub mod glm5_next;
 pub mod glm_dsa;
 pub mod hy3;
 pub mod llama_dense;
+pub mod mimo_v2;
 pub mod minimax_m3;
 /// Speech packs use their own config normalization until the CLI accepts audio artifacts.
 pub mod nemotron_rnnt;
@@ -194,7 +195,11 @@ pub const PACKS: &[&ModelPack] = &[
 
 /// Explicit artifact-storage profiles used by `model inspect`. They never participate in
 /// automatic family selection because several profiles can intentionally share one ModelPlan.
-pub const ONBOARDING_PROFILES: &[&ModelPack] = &[&hy3::NVFP4_PACK];
+pub const ONBOARDING_PROFILES: &[&ModelPack] = &[
+    &hy3::NVFP4_PACK,
+    &mimo_v2::MINT_PROFILE,
+    &mimo_v2::SOURCE_PROFILE,
+];
 
 pub fn by_alias(alias: &str) -> Option<&'static ModelPack> {
     PACKS
