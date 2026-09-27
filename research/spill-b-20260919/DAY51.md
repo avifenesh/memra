@@ -152,4 +152,3 @@ G4: Overloaded/OOM lines = 0: PASS
 - **What it means:** the booking point works as the owner approved it. No request grows the FA partial pool after ready
   on this model and card. The cost is the reachable envelope, 774 MiB, booked at boot, and the admission budget is
   smaller by that much. The 5090 half runs from `rtx5090-day51/run.sh`.
-

@@ -21,3 +21,6 @@ Author's review of the full diff `main..lane/spill-integ73-20260927`, posted as 
 
 ## Push regime
 Engine and server source changed, so the branch goes up with `MEMRA_RELEASE_QUALIFICATION_MODE=development`. No tag. Revuto: if capped or unavailable, this comment is the review.
+
+## GPU battery (added after the run)
+All green on BOX44 at `8767e9e57`: every serving boot ran under the new defaults (`[batch-oom] recover=ON source=pro6000-class-default`, `[fa-pool] pre-grown`), and every gate reads ALL GREEN. Engine cells 26, worker cells 19, the tier gates PASS, and the health gate `pass=6 fail=0`. serve-smoke's Q35 arm is #777 again.

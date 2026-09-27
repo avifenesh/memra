@@ -4705,6 +4705,49 @@ reader checks, or a physical line on every admission, lane B's next addendum) is
   clean; DSv4 only, so this last merge is gated by the PR's CI on the merged head (which builds and runs every suite
   the CPU battery runs) rather than a sixth local battery.
 
+## integ73 (`lane/spill-integ73-20260927`): lane A's design T-H' (the hash helper's parallel fill and hash); lane B's batch-OOM recovery on by default on the RTX PRO 6000 class, memra#476's boot pre-grow of the FA partition pools, DAY44's R1 as the owner accepted it, DAY48's physical debt line under its door
+
+Lane A's integ branch `lane/spill-a-integ73-20260927` at `20bf78b42` (T-H' cherry-picked onto main `21ce97836`, no
+conflict, byte for byte the sitting's program; plus A's records) and lane B's tip `c6d7f034f` with its DAY51
+target-card reading `227b924b4`, on main `a8d8b60f8`, clean; the fixture pin holds. The owner's rulings of 2026-09-27
+behind it: the clear items accepted (among them the batch-OOM default, R1-D, V5's physical line, memra#476's booking
+point, T-H' as a new experiment). The change:
+- `worker.rs` (A, T-H'): the hash helper fills and hashes on up to 8 threads (`host_hash_threads`, `host_scoped_map`),
+  T-H's code re-applied. DAY65 section 10: `TH2 VERDICT -> ADOPT (T-H prime is the naked program)` on BOX44 (a Core
+  Ultra 9 285K with one RTX PRO 6000 WS): (a) 11 gates 0; (b') the chain cell's helper 82.8 to 29.8 and 82.7 to 30.9 ms
+  on 8 threads, the wall 370.8 to 313.8 and 370.9 to 313.4 ms; (c) the chained request 315.2 to 249.4 and 249.6 ms; (d)
+  within bounds. Its 5090 half is owed by A.
+- `worker.rs`, `parallel.rs` (B, DAY49 addendum F): `MEMRA_BATCH_OOM_RECOVER` resolves at worker boot from the device
+  name: unset is ON on the RTX PRO 6000 Blackwell class and OFF elsewhere (the 5090's flip waits for its serving boots);
+  `0` is the rollback seam (decide-by 2026-10-11). Decision record `docs/decisions/BATCH-OOM-RECOVER-DEFAULT.md`.
+- `worker.rs`, engine (B, memra#476, DAY51): every model pre-grows its FA partition pools before boot calibration, sized
+  from the ModelPlan (full, sliding-window and MTP layers) at the served context and `max(wave cap, spec K+1)` rows.
+  DAY51 2.1 on the target card: `[fa-pool] pre-grown model="q38" ... served_ctx=262144 rows=16 o_len=201326592
+  ml_len=786432 bytes=811597824`, `grows after ready = 0`, G3 exact, G4 0 Overloaded and 0 OOM, 25 of 25 at 200. Boot
+  cost: the admission budget 877 MB smaller on the 27B at 262k (812 MB pre-grow, 70 MB floor), 129 MiB on the 9B at
+  65,536; that is the envelope a batch would otherwise reach mid-life. G2's underbook (7.26 GB, not a registered clause)
+  is DAY28's in-flight retention with no graph term in it.
+- B: DAY44 R1 as the owner accepted it (addendum D); DAY48's physical debt line on every admission under
+  `MEMRA_ADMIT_PREDICT_VG_DEBT=1`, ending in the request id (addendum E). The twentieth sitting read V5E PASS (45 paired
+  by id on both enforce-vg boots); its receipts ride lane B's next push.
+
+**Lead review.** The batch-OOM default is resolved once at worker boot, before the serve loop's reads; the boot line
+prints the armed value beside its source. The pre-grow adds nothing for MLA, GatedDeltaNet and Kimi layers and takes
+the ladder's maximum over every key length. Revuto round 1 on #885 APPROVED `8767e9e57` with no concerns.
+
+**Ruling 68:** T-H' is the naked program on the target card (its 5090 half owed); the batch-OOM recovery is on by
+default on the RTX PRO 6000 class; memra#476's pre-grow lands (the issue closes on the merge); R1-D is DAY44's R1.
+
+**Checks.**
+- CPU battery 16 of 16 with CI's gates job on `6dad60e26` (`integ73-cpu-battery/`: server lib 993, engine lib 601).
+- GPU battery on BOX44 (`integ73-pro-run1/`, 682 receipts mirrored and checked), tree `8767e9e57`, 19:35Z to 20:11Z:
+  integ72's cells with every serving boot under the new defaults (each boot prints `[batch-oom] recover=ON
+  source=pro6000-class-default` and a `[fa-pool] pre-grown` line); serve-smoke 1 failed (the Q35 arm, #777, its summary
+  line identical to integ69 to integ72); engine cells `26 passed`; worker span cells `19 passed`; identity, fault default
+  and plain, hit OFF and ON, admit-mem burst, spec-ctx-edge and the pause gate `ALL GREEN`; `tier-transfer-gate` and all
+  seven `kv-tier-gate` fault arms PASS; the health gate `arms=g,h,j pass=6 documented=1 fail=0`.
+- `research/spill-b-20260919/DAY51.md` loses a trailing blank line (the lead's, so `git diff --check` passes).
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
