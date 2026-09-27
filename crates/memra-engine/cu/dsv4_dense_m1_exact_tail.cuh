@@ -289,13 +289,15 @@ __global__ void dsv4_dense_exact_tail_dots_kernel(const float* __restrict__ x,
 // M > 1 (memra #710 B-row, verify rows): M token rows share each weight load, each with
 // its own accumulator in the same leaf order, and each row reduces through the same
 // tree, so row t's bits equal its M=1 launch (and dsv4_gemv_fp8_m_kernel<M>'s).
+// GROUPED with M > 1 (the grouped output projection of a multi-request step): token row t of
+// group g reads x + t * xstride + g * group_xstride and writes y + t * ystride + g *
+// group_ystride, the addresses each group's own M-row launch reads and writes.
 template <int ROWS, bool GROUPED = false, int M = 1>
 __device__ __forceinline__ void dsv4_dense_fast_fp8_body(const uint8_t* __restrict__ w,
                                        const float* __restrict__ sc, int sc_cols,
                                        const uint16_t* __restrict__ x, float* __restrict__ y,
                                        int n, int k, int xstride, int ystride,
                                        int group_xstride, int group_ystride, int bid) {
-    static_assert(M == 1 || !GROUPED, "the grouped plane is one token row");
     const int leaf = threadIdx.x % 128;
     const int tile_row = threadIdx.x / 128;
     const int flat = bid * ROWS + tile_row;

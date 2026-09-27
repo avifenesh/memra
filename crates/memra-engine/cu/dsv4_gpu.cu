@@ -5132,6 +5132,63 @@ extern "C" int memra_dsv4_gemv_fp8_grouped_m1(
     return 0;
 }
 
+// The grouped output projection over m = 2..8 rows (memra #710 B-row): the per-group M-row
+// launches' dense-fast body in one launch. Token row t of group g reads x + t * xstride +
+// g * x_group_stride and writes y + t * ystride + g * rows_per_group; the flat weight row and
+// its scale row are the ones the group's own launch addresses from its offset slices, so each
+// output keeps its bits. Returns 1 without launching when the transport does not admit the
+// slices, and the caller runs the per-group launches.
+#define DSV4_DENSE_FAST_FP8_GROUPED_M_CASE(MM)                                              \
+    case MM:                                                                               \
+        memra_chain_launch(dsv4_dense_fast_fp8_kernel<2, true, MM>, (unsigned)(total / 2), 256, \
+                           0, stream)(                                                     \
+            (const uint8_t*)w_codes, sc_f32, sc_cols, (const uint16_t*)x_bf16, y,          \
+            rows_per_group, k, xstride, ystride, x_group_stride, rows_per_group);          \
+        break;
+extern "C" int memra_dsv4_gemv_fp8_grouped_m(
+        const void* w_codes, const float* sc_f32, int sc_cols, const void* x_bf16, float* y,
+        int groups, int rows_per_group, int k, int x_group_stride, int m, int xstride,
+        int ystride, void* stream_v) {
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    if (groups <= 0 || rows_per_group <= 0 || k <= 0 || k % 8 != 0 || m < 2 || m > 8 ||
+        sc_cols < (k / 128 + (k % 128 != 0)) || x_group_stride < k ||
+        xstride < groups * x_group_stride || ystride < groups * rows_per_group ||
+        rows_per_group % 128 != 0 || x_group_stride % 8 != 0 || xstride % 8 != 0) {
+        return 40020;
+    }
+    long total = (long)groups * rows_per_group;
+    if (total > 2147483647L) return 40011;
+    if (!(dsv4_dense_exact_tail_enabled && !dsv4_dense_exact_tail_suppressed &&
+          dsv4_dense_fast_enabled &&
+          dsv4_dense_exact_tail_fp8_admits(w_codes, sc_f32, sc_cols, x_bf16, y, 1,
+                                           rows_per_group, k))) {
+        return 1;
+    }
+    if (dsv4_dense_fast_observer) {
+        for (int g = 0; g < groups; g++) {
+            long row0 = (long)g * rows_per_group;
+            int rc = dsv4_dense_fast_observer(0, (const uint8_t*)w_codes + row0 * k,
+                sc_f32 + (row0 >> 7) * sc_cols, sc_cols,
+                (const uint16_t*)x_bf16 + (long)g * x_group_stride, rows_per_group, k,
+                stream_v);
+            if (rc) return rc;
+        }
+    }
+    for (int g = 0; g < groups; g++)
+        dsv4_dense_census_note(DSV4_DENSE_ENTRY_GEMV_FP8, m, rows_per_group, k);
+    switch (m) {
+        DSV4_DENSE_FAST_FP8_GROUPED_M_CASE(2)
+        DSV4_DENSE_FAST_FP8_GROUPED_M_CASE(3)
+        DSV4_DENSE_FAST_FP8_GROUPED_M_CASE(4)
+        DSV4_DENSE_FAST_FP8_GROUPED_M_CASE(5)
+        DSV4_DENSE_FAST_FP8_GROUPED_M_CASE(6)
+        DSV4_DENSE_FAST_FP8_GROUPED_M_CASE(7)
+        DSV4_DENSE_FAST_FP8_GROUPED_M_CASE(8)
+    }
+    DSV4_ERR();
+    return 0;
+}
+
 // ---- f32-island dots, batched rows with the weight row hoisted (f64 accumulation arm).
 // Per (t, j) the element order and the f64 halving tree are dsv4_dots_f32_kernel's.
 template <int M>

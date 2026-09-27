@@ -2269,6 +2269,9 @@ static DSV4_AR_PHASE_ARMED: AtomicBool = AtomicBool::new(false);
 /// The positions a full-token replay covers at most: its indexer scores up to 4096 compressed
 /// blocks, 16384 positions at ratio 4 (memra #710).
 const REPLAY_LIMIT: usize = 16384;
+/// Rows per hoisted compressor projection launch in a multi-request step: the widest M-row dots
+/// launch on the dense-fast transport (memra #710).
+const CMP_HOIST_CHUNK: usize = 8;
 
 /// The smallest session capacity a full-token replay admits; the served TP/EP route rounds a
 /// shorter plain session up to it so the session can arm.
@@ -15797,10 +15800,10 @@ impl Dsv4Gpu {
                 sh_out: f(tmax * hidden)?,
                 cmp_emit: f(2 * max_d)?,
                 cmp_shift: f(max_shift.max(1))?,
-                // The hoisted projections run for groups of up to 8 rows, in a workspace of any
-                // width (memra #667: a 16-row workspace still takes 2- to 8-row batches).
+                // The hoisted projections cover every row of a multi-request batch, in chunks
+                // of up to CMP_HOIST_CHUNK rows (memra #667, #710).
                 cmp_hoist: {
-                    let n = tmax.min(8) * max_latent;
+                    let n = tmax * max_latent;
                     [f(n)?, f(n)?, f(n)?, f(n)?]
                 },
                 sink_scores: f(tmax * heads * idx_stride)?,
@@ -16103,6 +16106,61 @@ impl Dsv4Gpu {
                 ),
             )?;
         }
+        DSV4_DENSE_WO_A_GROUPED_DISPATCHES.fetch_add(1, Ordering::Relaxed);
+        Ok(true)
+    }
+
+    /// [`Self::gemv_wo_a_grouped_fp8_m1_dev`] for `m` rows of 2 to 8 (memra #710 B-row): row `t`
+    /// of group `g` reads `x + t * xstride + g * x_group_stride` and writes `y + t * ystride +
+    /// g * rows_per_group`. `Ok(false)` when the dense-fast transport does not admit the slices;
+    /// the caller then runs the per-group launches.
+    #[allow(clippy::too_many_arguments)]
+    fn gemv_wo_a_grouped_fp8_m_dev(
+        st: &Stage,
+        w: DW,
+        x_ptr: *const c_void,
+        y_ptr: *mut f32,
+        groups: usize,
+        rows_per_group: usize,
+        kdim: usize,
+        x_group_stride: usize,
+        m: usize,
+        xstride: usize,
+        ystride: usize,
+    ) -> Res<bool> {
+        let DW::Fp8 {
+            codes,
+            scales,
+            sc_cols,
+        } = w
+        else {
+            return Ok(false);
+        };
+        if !DSV4_DENSE_WO_A_GROUPED.load(Ordering::Acquire) {
+            return Ok(false);
+        }
+        let stream = st.gpu.stream();
+        let rc = unsafe {
+            k::memra_dsv4_gemv_fp8_grouped_m(
+                codes,
+                scales,
+                sc_cols,
+                x_ptr,
+                y_ptr,
+                groups as i32,
+                rows_per_group as i32,
+                kdim as i32,
+                x_group_stride as i32,
+                m as i32,
+                xstride as i32,
+                ystride as i32,
+                sp(&stream),
+            )
+        };
+        if rc == 1 {
+            return Ok(false);
+        }
+        ck("gemv_fp8 grouped wo_a m", rc)?;
         DSV4_DENSE_WO_A_GROUPED_DISPATCHES.fetch_add(1, Ordering::Relaxed);
         Ok(true)
     }
@@ -17748,7 +17806,9 @@ impl Dsv4Gpu {
 
         // ---- the row groups' compressor projections, once over every row (memra #710 B-row):
         // one launch reads each compressor's weights for all the requests instead of one each.
-        let hoisted = groups.len() > 1 && layer.ratio != 0 && t <= 8;
+        // Rows go in chunks of up to 8, the widths the M-row dots launches take on the dense-fast
+        // transport, so a 16-row step reads the weights twice instead of once per request.
+        let hoisted = groups.len() > 1 && layer.ratio != 0;
         if hoisted {
             let mut plan: Vec<(&CmpDev, usize)> = Vec::new();
             if let Some(ix) = &layer.idx {
@@ -17756,36 +17816,40 @@ impl Dsv4Gpu {
             }
             plan.push((layer.cmp.as_ref().expect("ratio!=0 has compressor"), 2));
             for (cmp, slot) in plan {
-                if cmp.wkv.flag() == cmp.wgate.flag() {
-                    // kv and gate projections in one launch (memra #710).
-                    let ya = vws.cmp_hoist[slot].device_ptr_mut(&stream).0 as *mut f32;
-                    let yb = vws.cmp_hoist[slot + 1].device_ptr_mut(&stream).0 as *mut f32;
-                    self.dots_m_dev_pair(
-                        st,
-                        dpf!(vws.x, &stream),
-                        cmp.wkv.ptr(&stream),
-                        ya,
-                        cmp.latent,
-                        cmp.wgate.ptr(&stream),
-                        yb,
-                        cmp.latent,
-                        cmp.wkv.flag(),
-                        t,
-                        hidden,
-                    )?;
-                    continue;
-                }
-                for (w, out) in [(&cmp.wkv, slot), (&cmp.wgate, slot + 1)] {
-                    self.dots_m_dev(
-                        st,
-                        dpf!(vws.x, &stream),
-                        w.ptr(&stream),
-                        w.flag(),
-                        t,
-                        hidden,
-                        cmp.latent,
-                        vws.cmp_hoist[out].device_ptr_mut(&stream).0 as *mut f32,
-                    )?;
+                for c0 in (0..t).step_by(CMP_HOIST_CHUNK) {
+                    let s = (t - c0).min(CMP_HOIST_CHUNK);
+                    let x_c = dpf_row!(vws.x, &stream, c0, hidden);
+                    if cmp.wkv.flag() == cmp.wgate.flag() {
+                        // kv and gate projections in one launch (memra #710).
+                        let ya = dpm_row!(vws.cmp_hoist[slot], &stream, c0, cmp.latent);
+                        let yb = dpm_row!(vws.cmp_hoist[slot + 1], &stream, c0, cmp.latent);
+                        self.dots_m_dev_pair(
+                            st,
+                            x_c,
+                            cmp.wkv.ptr(&stream),
+                            ya,
+                            cmp.latent,
+                            cmp.wgate.ptr(&stream),
+                            yb,
+                            cmp.latent,
+                            cmp.wkv.flag(),
+                            s,
+                            hidden,
+                        )?;
+                        continue;
+                    }
+                    for (w, out) in [(&cmp.wkv, slot), (&cmp.wgate, slot + 1)] {
+                        self.dots_m_dev(
+                            st,
+                            x_c,
+                            w.ptr(&stream),
+                            w.flag(),
+                            s,
+                            hidden,
+                            cmp.latent,
+                            dpm_row!(vws.cmp_hoist[out], &stream, c0, cmp.latent),
+                        )?;
+                    }
                 }
             }
         }
@@ -18438,6 +18502,21 @@ impl Dsv4Gpu {
                 gw,
                 gw,
                 o_lora,
+            )?
+        } else if (2..=8).contains(&t) && !vws.is_prefill {
+            // A multi-request step or a verify round: every group's M rows in one launch.
+            Self::gemv_wo_a_grouped_fp8_m_dev(
+                st,
+                wo_a_dw,
+                vws.o_b.device_ptr(&stream).0 as *const c_void,
+                vws.og.device_ptr_mut(&stream).0 as *mut f32,
+                o_groups,
+                o_lora,
+                gw,
+                gw,
+                t,
+                heads * hd,
+                o_groups * o_lora,
             )?
         } else {
             false
@@ -25275,6 +25354,135 @@ mod dense_wo_a_grouped_fp8_component_tests {
         println!(
             "PASS grouped wo_a FP8: groups=8 rows/group=1024 k=4096 bit-exact, padding guarded, dispatch_delta=1, small=2x128, malformed strides refused"
         );
+    }
+
+    /// The grouped M-row launch (memra #710 B-row) against each group's own M-row launch, bit
+    /// for bit, at M = 2..8 on the attention TP2 rank shape and the one-card shape, with the
+    /// padding between token rows left untouched; malformed shapes refuse.
+    #[test]
+    #[ignore = "requires an exclusively locked CUDA device; grouped M-row wo_a FP8 component identity"]
+    fn cuda_gemv_fp8_grouped_m_matches_per_group_m_row_launches() {
+        let gpu = memra_runtime::Gpu::new(0).expect("GPU");
+        let stream = gpu.stream();
+        let mut cells = 0;
+        for (groups, rows, kdim) in [
+            (4usize, 1024usize, 4096usize),
+            (8, 1024, 4096),
+            (2, 128, 4096),
+        ] {
+            let sc_cols = kdim / 128;
+            let x_group_stride = kdim;
+            let xstride = groups * x_group_stride + 64;
+            let ystride = groups * rows + 8;
+            let codes_host: Vec<u8> = (0..groups * rows * kdim)
+                .map(|index| finite_e4m3(index * 29 + index / (rows * kdim) * 7))
+                .collect();
+            let scales_host: Vec<f32> = (0..groups * rows / 128 * sc_cols)
+                .map(|index| {
+                    let sign = if index.is_multiple_of(7) { -1.0 } else { 1.0 };
+                    sign * (0.0625 + (index % 19) as f32 / 16.0)
+                })
+                .collect();
+            let codes = stream.clone_htod(&codes_host).unwrap();
+            let scales = stream.clone_htod(&scales_host).unwrap();
+            for m in 2..=8usize {
+                let x_host: Vec<u16> = (0..m * xstride)
+                    .map(|index| {
+                        let col = index % xstride;
+                        if col >= groups * x_group_stride {
+                            0x7fc1
+                        } else {
+                            bf16_bits(((index * 13 + m * 5) % 97) as f32 / 48.0 - 1.0)
+                        }
+                    })
+                    .collect();
+                let x = stream.clone_htod(&x_host).unwrap();
+                let sentinel = 0x7fc04321u32;
+                let fill = vec![f32::from_bits(sentinel); m * ystride];
+                let mut old_y = stream.clone_htod(&fill).unwrap();
+                let mut new_y = stream.clone_htod(&fill).unwrap();
+                for g in 0..groups {
+                    let row0 = g * rows;
+                    k::ck("per-group m-row control", unsafe {
+                        k::memra_dsv4_gemv_fp8_m(
+                            (codes.device_ptr(&stream).0 as usize + row0 * kdim) as *const c_void,
+                            (scales.device_ptr(&stream).0 as usize + (row0 / 128) * sc_cols * 4)
+                                as *const f32,
+                            sc_cols as i32,
+                            (x.device_ptr(&stream).0 as usize + g * x_group_stride * 2)
+                                as *const c_void,
+                            (old_y.device_ptr_mut(&stream).0 as usize + g * rows * 4) as *mut f32,
+                            m as i32,
+                            rows as i32,
+                            kdim as i32,
+                            xstride as i32,
+                            ystride as i32,
+                            stream.cu_stream().cast(),
+                        )
+                    })
+                    .unwrap();
+                }
+                let rc = unsafe {
+                    k::memra_dsv4_gemv_fp8_grouped_m(
+                        codes.device_ptr(&stream).0 as *const c_void,
+                        scales.device_ptr(&stream).0 as *const f32,
+                        sc_cols as i32,
+                        x.device_ptr(&stream).0 as *const c_void,
+                        new_y.device_ptr_mut(&stream).0 as *mut f32,
+                        groups as i32,
+                        rows as i32,
+                        kdim as i32,
+                        x_group_stride as i32,
+                        m as i32,
+                        xstride as i32,
+                        ystride as i32,
+                        stream.cu_stream().cast(),
+                    )
+                };
+                assert_eq!(rc, 0, "grouped m={m} launch (dense fast admitted)");
+                stream.synchronize().unwrap();
+                let old = stream.clone_dtoh(&old_y).unwrap();
+                let new = stream.clone_dtoh(&new_y).unwrap();
+                for (i, (a, b)) in old.iter().zip(&new).enumerate() {
+                    assert_eq!(
+                        a.to_bits(),
+                        b.to_bits(),
+                        "grouped m={m} groups={groups} rows={rows} bit mismatch at token {} col {}",
+                        i / ystride,
+                        i % ystride
+                    );
+                }
+                assert!(
+                    (0..m).all(|t| new[t * ystride + groups * rows..(t + 1) * ystride]
+                        .iter()
+                        .all(|v| v.to_bits() == sentinel)),
+                    "token-row padding untouched"
+                );
+                cells += 1;
+            }
+        }
+        let refuse = |m: i32, xgs: i32, ystride: i32| unsafe {
+            k::memra_dsv4_gemv_fp8_grouped_m(
+                std::ptr::null(),
+                std::ptr::null(),
+                8,
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                4,
+                1024,
+                1024,
+                xgs,
+                m,
+                4 * 1024,
+                ystride,
+                stream.cu_stream().cast(),
+            )
+        };
+        assert_eq!(refuse(1, 1024, 4096), 40020, "m=1 belongs to the m1 launch");
+        assert_eq!(refuse(9, 1024, 4096), 40020, "m>8 refuses");
+        assert_eq!(refuse(4, 1020, 4096), 40020, "short group stride refuses");
+        assert_eq!(refuse(4, 1024, 4095), 40020, "short output row refuses");
+        println!("PASS grouped wo_a FP8 m-row: {cells} cells bit-exact against per-group launches");
     }
 
     unsafe extern "C" {
