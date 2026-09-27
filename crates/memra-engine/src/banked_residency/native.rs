@@ -168,13 +168,19 @@ impl Engine {
             Qualification::Off(_) => None,
         };
         self.set_moe_prefetch_default(qualified.is_some());
+        let env = std::env::var("MEMRA_MOE_PREFETCH").ok();
+        let effective =
+            crate::hybrid_forward::moe_prefetch_decision(env.as_deref(), qualified.is_some());
         eprintln!(
-            "[moe-prefetch] default={}",
+            "[moe-prefetch] default={} effective={}{}",
             if qualified.is_some() {
                 "on (a qualified artifact)"
             } else {
                 "off"
-            }
+            },
+            if effective { "on" } else { "off" },
+            env.map(|v| format!(" (MEMRA_MOE_PREFETCH={v})"))
+                .unwrap_or_default()
         );
         self.set_expert_host_mapped(false);
         let why = if rollback {
