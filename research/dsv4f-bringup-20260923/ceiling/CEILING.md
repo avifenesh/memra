@@ -1,4 +1,4 @@
-# DSv4-Flash on 2x RTX PRO 6000: bounds, achieved, and the gap (2026-09-24, updated 2026-09-25)
+# DSv4-Flash on 2x RTX PRO 6000: bounds, achieved, and the gap (2026-09-24, updated 2026-09-28)
 
 Scope: one model (`tiyuvta/DeepSeek-V4-Flash-0731-NVFP4@bafd09f8cab4f4f4f25e1cdafbcdefc05b90ee38`), one
 hardware shape (2x RTX PRO 6000 Blackwell). Every number cites its receipt under `raw/` or a sibling
@@ -162,25 +162,136 @@ output element's dot on one rank. That removes the per-token imbalance the reduc
 expected max of a Binomial(6, 0.5) split is 3.94 experts against 3, 31% more MoE time on the
 critical path. The cost is one more small join per layer, for the intermediate.
 
-## The gap, by lever, largest first
+## Close, 2026-09-27
 
-1. **Concurrency on TP/EP.** The B-row step: several requests' rows in one TP step, each weight
-   read once for all of them. Lane `lane/dsv4-tp-rows-20260925`.
-2. **Dense FP8 GEMV at the half shapes.** 3.1 ms of the 13.1 ms dev1 step. Those bytes stream at
-   well under the MoE visitor's rate.
-3. **The head.** A vocab-parallel head, with rows split exactly across the ranks, would move
-   about 0.6 ms off dev1 and balance the two cards.
-4. **The collectives.** About 1.85 ms per card of row gathers and the expert all-reduce: 43 layers
-   times three one-shot collectives. Fewer or fused joins per layer would cut it.
-5. **Small chains.** About 2.9 ms per card, a latency floor per layer.
-6. **Context under TP/EP.** Not a speed lever. Closed for plain by the position-split C4 store
-   (`../kv-split/`): 1M plain, 500k DSpark, at 0.4% to 2.0% decode. The decode cost is the
-   remote row reads; an owner-push of the rows both ranks know are selected would trade them for
-   posted writes plus one join per C4 layer.
-7. **Prefill.** About 360 tok/s at 8k prompts on the exact CUDA-core tiles (#713). The owner ruled
-   PP-2 is not the target, so prefill work follows the TP program.
+Source: `raw/close-se-v6y/`. First SE pair, served, one boot per row, 8 requests per cell unless
+noted. B is main `359e850d0` from the morning, F is main `80f734c77` from the evening. In between
+landed the Sinkhorn warp, the prefill tile, the shared expert's owner, 16 lanes, the joined MoE
+tail, the attention fusions and the router's x mirror. Every text both arms served is identical:
+40 of 40 on the c1-c4 cells and 76 of 76 on the c4-c24 cells.
+
+| cell | B | F | change |
+|---|---|---|---|
+| greedy c1 | 89.20 / 89.10 (TPOT 10.6 ms) | 97.10 / 97.26 (TPOT 9.8 ms) | +9.0% |
+| sampled c1 | 89.84 / 89.87 | 97.96 / 97.97 | +9.0% |
+| greedy c2 | 121.64 / 121.56 | 130.18 / 130.28 | +7.1% |
+| greedy c4 | 155.75 / 155.89 | 165.98 / 165.27 | +6.3% |
+| greedy c2, 1500-word context | 21.76 / 21.76 (TTFT 9.19 s) | 25.95 / 25.94 (TTFT 7.45 s) | +19.2% |
+| greedy c8, 16 requests | 153.79 | 206.15 | +34% |
+| greedy c16 | 154.17 (TPOT 24.3 ms) | 202.72 (TPOT 73.6 ms) | +31% |
+| greedy c24 | 128.06, 20 of 24 served | 201.69, 24 of 24 | |
+| sampled c8 | 152.45 | 195.32 | +28% |
+| TTFT, 8k prompt | 17.70 s | 14.31 s | -19.1% |
+| TTFT, 32k prompt | 73.93 s | 61.01 s | -17.5% |
+
+Long gate, order B F F B: 9.84 .. 9.97 ms per token against 10.70 .. 10.81, -7.9%, the same
+`PROGRAM_SHA256` in every run.
+
+Two things set the c8 to c24 rows. B served one lane at a time. F runs 16 lanes in one B-row step,
+but captured B-row steps stopped at 8 rows, so a wider step walked eagerly: 73.6 ms at 16 rows,
+bound by the host issuing about 20,000 launches. The B-row diet lane (`../levers-20260927/`)
+takes a captured step to 16 rows and turns each per-row attention and compressor stage into one
+launch for every row.
+
+## The step's floors (2026-09-27)
+
+Source: `raw/floors-se-v7a/`. First SE pair, the replayed one-row step of main `80f734c77`'s
+program (the build also carried a greedy argmax change the long gate found flat and that was
+dropped).
+
+**Launch floor.** The long gate's floor mode (`DSV4_REPLAY_GATE_FLOOR=1`, `docs/TESTING.md`)
+launches the captured forward and commit graphs of both ranks 200 times back to back with no host
+step. It then launches clones with every kernel node replaced by an empty kernel on the node's
+own grid and block, with edges, copies and memsets unchanged, and clones that keep only the 129
+cross-rank joins. Three rotating reps, ms per step:
+
+| clone | PDL on | PDL off |
+|---|---|---|
+| captured graphs | 9.47 .. 9.59 | 9.96 .. 10.02 |
+| every kernel empty (1,709 kernel nodes per rank in the forward graph) | 1.42 .. 1.46 | 1.69 .. 1.71 |
+| empty except the joins | 1.64 | 2.23 |
+
+A node costs about 0.85 us of launch and dependency time with PDL, and the joins' handshakes add
+about 0.19 ms per step.
+
+**Byte floor.** nsys GPU metrics (`gb20x` set, 20 kHz) over 64 replayed steps. The graphs are busy
+98% of the 641.8 ms span:
+- DRAM read averages 41.6% of the metric's peak on rank 0 and 39.6% on rank 1;
+- SMs are active 67% and 66% of the time;
+- SM issue slots are 16% used;
+- the tensor pipes are active under 2%.
+
+The metric's 100% is not the 1.79 TB/s of the spec sheet. The streaming probe (`bw_read.cu`)
+reads 4 GiB at 1.537 TB/s and shows 95.9%, so 100% is about 1.60 TB/s, the memory clock's 12,481
+MHz on a 512-bit bus. At that scale a step reads 6.68 GB on rank 0 and 6.37 GB on rank 1. The
+tensor census gives about 6.0 to 6.2 GB of weights per rank, and the KV rows, activations and
+scratch make up the rest. The average read rate over the step is 0.67 TB/s, 43% of the practical
+1.54 TB/s.
+
+**The ceiling of this program.** Streaming 6.68 GB at 1.54 TB/s takes 4.34 ms. With the 1.64 ms
+launch-and-join floor on top, a step that ran every kernel at practical bandwidth would take
+about 6.0 ms, 167 tok/s of device time. Overlapping launches with streaming could shave that
+somewhat, but not past the 4.34 ms of bytes. The captured step takes 9.5 ms of device time, 97
+tok/s served with the host step. The 3.5 ms between the two sits in three places:
+- streaming kernels that run well under practical bandwidth: short GEMVs pay their ramp, and the
+  fused MoE pair is bound by its MMA numeric class;
+- the work of about 1,200 kernels under 3 us, beyond their launch cost;
+- the reduce's wait for the slower rank.
+
+vLLM with b12x kernels reaches 130.8 tok/s plain on the same card shape, 7.6 ms per token, on a
+different numeric program (`../PRIOR-ART.md`). That is between this program's step and its floor.
+Moving the floor itself takes fewer graph nodes, at 0.85 us each, or a persistent program that
+keeps a layer's kernels resident. The second is a large lane and an owner call.
+
+## The gap, by lever, largest first (rewritten 2026-09-28)
+
+The 2026-09-25 list's first four levers have landed:
+- the B-row step, then the B-row diet (#906) and dense-fast to 16 rows (#909);
+- the vocab-parallel head (#783);
+- the push joins (#782), with the owned-row expert join measuring.
+
+What is left, measured on the one-row replayed step unless noted:
+
+1. **Concurrency past 16 rows and the 16-row step itself.** After #906 and #909 a 16-row
+   captured step takes 37.4 ms, 427 tok/s, against 68.3 ms on main `80f734c77`. Served c16 goes
+   from about 200 to 338 tok/s. The rest of that step is the union of the rows' experts in the
+   fused MoE pair, about 14 ms, and the expert join. The join carries all seven slot rows of
+   every token over the fabric, 3.9 ms at 16 rows; the owned-row join
+   (`lane/dsv4-owned-join-20260928`) pushes only each rank's own rows.
+2. **Streaming efficiency.** A step reads 6.7 GB per rank at an average 0.67 TB/s, 43% of the
+   practical 1.54. The short GEMVs pay their ramp, and the fused MoE pair is bound by its MMA
+   numeric class. Changing that class is an owner call.
+3. **Graph nodes.** 1,709 kernel nodes per rank cost 1.45 ms of launch and dependency time
+   before any work (0.85 us each). The fusions of 2026-09-26/27 took about 400 of them out;
+   about 1,200 kernels under 3 us remain.
+4. **The expert reduce's wait.** The reduce waits for the slower rank. The shared expert already
+   runs on the rank with fewer routed slots. Splitting every expert's rows across both ranks
+   would end the imbalance, at the cost of one more small join per layer.
+5. **Context under TP/EP.** Not a speed lever. Closed for plain by the position-split C4 store
+   (`../kv-split/`): 1M plain, 500k DSpark, at 0.4% to 2.0% decode. The C4 gather's remote row
+   reads are about 9 us per C4 layer at c1; an owner-push of the selected rows would trade them
+   for posted writes.
+6. **Prefill.** The exact CUDA-core tile's register diet took TTFT -19% at 8k (#852). The
+   tensor-core prefill (#472) is a numeric-class change and an owner call.
 
 ## What a realistic ceiling looks like
+
+The 2026-09-25 estimate (below, kept as written) took 85% of practical bandwidth plus guessed
+latency floors. It put TP-2 plain c1 at about 135 tok/s. The floors are now measured
+(`## The step's floors`):
+- the byte floor is 4.34 ms, 6.68 GB at 1.54 TB/s;
+- the launch floor is 1.45 ms and the join handshakes add 0.19 ms;
+- together that is about 6.0 ms, about 167 tok/s of device time, for this program at its current
+  node count;
+- at the 2026-09-25 rule's 85% of practical bandwidth it is about 6.8 ms, about 147 tok/s.
+
+The captured step takes 9.5 ms, and memra serves 97 tok/s greedy c1 on the SE pair: 1.56x the 62.4
+tok/s PP-2 served on the same pair on 2026-09-25. vLLM with b12x kernels serves 130.8 tok/s on the
+same card shape with a different numeric program. Closing the rest within this program means
+streaming nearer the practical bandwidth and fewer nodes; moving the floor itself means a
+persistent program. Both are listed above.
+
+As written on 2026-09-25:
 
 Take 85% of practical bandwidth on every weight byte, plus the measured small-kernel floor:
 - **PP-2 plain c1:** 11.44 GB / (0.85 x 1.54 TB/s) is 8.7 ms, plus about 1 ms of latency-bound
