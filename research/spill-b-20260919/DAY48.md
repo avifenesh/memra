@@ -263,3 +263,26 @@ DAY48 V4 card=pro6000 order=O2 rows_200_both=45 status_mismatch=4 differ=[] -> P
   `521fdbbbc`, its growing-pool engine test, and now V5E). What the door changes on this model and card stays
   nothing measurable (2.1). The door stays default off, and the owner decides at its decide-by (2026-10-11).
 
+### 2.4 The 5090 (Ornith-1.5-35B-A3B NVFP4 MTP at `MEMRA_CTX=65536`, B = 32, L = 6,144, `rtx5090-day48/`, 2026-09-27 06:03 to 13:49Z)
+
+The binary built from `5a6f1898f`, addendum A's door before addendum B's peek (sha256 `5f6349e5...`). queue-o ran it
+under the idle wait, between other lanes' cells. The artifact is 2.1's (sha256 `72ff9600...`). Every boot `rc=0`.
+Verbatim (`read.log`; the boots of both orders read alike):
+
+```
+DAY48 V1 card=rtx5090 boot=O1-enforce-vg pool_engaged_lines=1 physical_debt_lines=2 physical_debt_mb_max=34 vg_debt_lines=59 vg_debt_max=33554432 -> PASS
+DAY48 READING card=rtx5090 boot=O1-enforce-vg wave=burst n=32 ok200=0 r429=32 ttft_ms p50=nan p95=nan N=0
+DAY48 READING card=rtx5090 boot=O1-enforce-vg wave=wave2 n=16 ok200=0 r429=16 ttft_ms p50=nan p95=nan N=0
+DAY48 V4 card=rtx5090 order=O1 rows_200_both=2 status_mismatch=0 differ=[] -> PASS
+DAY48 V4 card=rtx5090 order=O2 rows_200_both=2 status_mismatch=0 differ=[] -> PASS
+```
+
+- **V1 to V4 PASS on all four boots.** The pool engaged on every boot at 34 MB of debt, and `enforce-vg` carries
+  `vg_debt=` on its 59 predictive lines. There is no OOM, parked OOM, 503 or crash, and all 57 refusals per boot are
+  typed.
+- **On this card the enforcing door refuses the whole burst and the whole second wave on both arms** (0 of 32, 0 of 16).
+  The 35B at 6,144-token prompts on a 24 GB card leaves the predictive budget room for none of them. Only the two
+  sequence requests end `200` on every boot, and their digests match across the arms.
+- The door's 34 MB therefore moves nothing here either. V5 was registered for the target card only (addendum C), and
+  this binary predates the peek. 2.3 is O8's reading.
+

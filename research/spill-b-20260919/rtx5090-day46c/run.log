@@ -9,3 +9,20 @@
 2026-09-27T05:46:19Z boot O1-enforce-wrel: rig not idle after 7200 s; not run
 2026-09-27T05:46:19Z boots rc=3
 2026-09-27T05:46:19Z done
+2026-09-27T07:02:48Z boot O1-enforce-wrel: waiting for an idle rig
+2026-09-27T07:05:18Z boot O1-enforce-wrel start arm=enforce-wrel bin=b619eb4228e283af env=[MEMRA_ADMIT_PREDICT_SHADOW=1 MEMRA_ADMIT_PREDICT_ENFORCE=1 MEMRA_ADMIT_W_RELEASE=1] args=[--burst 32 --length 6144 --max-tokens 64]
+2026-09-27T07:06:18Z boot O1-enforce-wrel rc=0 DAY46 BOOT rows=59 ok=24 r429=35 rejects=35 w_release=23 oom=0
+2026-09-27T07:10:18Z boot O2-enforce-wrel: waiting for an idle rig
+2026-09-27T09:10:19Z boot O2-enforce-wrel: rig not idle after 7200 s; not run
+2026-09-27T09:10:19Z boot O2-enforce-wrel: waiting for an idle rig
+2026-09-27T11:10:19Z boot O2-enforce-wrel: rig not idle after 7200 s; not run
+2026-09-27T11:10:19Z boot O2-enforce-wrel: waiting for an idle rig
+2026-09-27T12:28:50Z boot O2-enforce-wrel start arm=enforce-wrel bin=b619eb4228e283af env=[MEMRA_ADMIT_PREDICT_SHADOW=1 MEMRA_ADMIT_PREDICT_ENFORCE=1 MEMRA_ADMIT_W_RELEASE=1] args=[--burst 32 --length 6144 --max-tokens 64]
+2026-09-27T12:29:49Z boot O2-enforce-wrel rc=0 DAY46 BOOT rows=59 ok=24 r429=35 rejects=35 w_release=23 oom=0
+2026-09-27T12:33:49Z boot O2-enforce: waiting for an idle rig
+2026-09-27T14:03:50Z boot O2-enforce start arm=enforce bin=b619eb4228e283af env=[MEMRA_ADMIT_PREDICT_SHADOW=1 MEMRA_ADMIT_PREDICT_ENFORCE=1] args=[--burst 32 --length 6144 --max-tokens 64]
+2026-09-27T14:04:45Z boot O2-enforce rc=0 DAY46 BOOT rows=59 ok=19 r429=40 rejects=40 w_release=0 oom=0
+2026-09-27T14:08:45Z boot O2-shadow: waiting for an idle rig
+2026-09-27T14:10:16Z boot O2-shadow start arm=shadow bin=b619eb4228e283af env=[MEMRA_ADMIT_PREDICT_SHADOW=1] args=[--burst 32 --length 6144 --max-tokens 64]
+2026-09-27T14:12:14Z boot O2-shadow rc=0 DAY46 BOOT rows=59 ok=59 r429=0 rejects=41 w_release=0 oom=0
+2026-09-27T14:16:14Z boots done: O2-enforce-wrel:enforce-wrel O2-enforce:enforce O2-shadow:shadow

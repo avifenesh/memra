@@ -329,3 +329,30 @@ line, `-> PASS` (the defect as it reads). The chunk held 2 or 3 sessions on this
   `O2-on` (9 of 9 `200`, one retry each). Then `O2-off`'s idle wait ran out (`rig not idle after 7200 s; not run`),
   and the runner stopped there. queue-n asks again for the five unrun boots on green rebuilt at the same commit; that
   reading follows.
+
+### 2.7 Addendum D's serving shape on the 5090, complete (the 9B, `rtx5090-day49d/`, 2026-09-27)
+
+2.6 read three of the eight boots. queue-n ran the other five on green, rebuilt at the same commit `8926ccfb3` (sha256
+`a16045ad...` against the first build's `634f9730...`; same source, the build path differs). Burst 8 x 6,144,
+`MEMRA_STEP_OOM_FAULT=batch:1`. Verbatim (`read-serve.log`):
+
+```
+DAY49D SERVE card=rtx5090 boot=O1-off arm=off route=spec-default batch_fired=[8] other_fired=0 retry_lines=0 retried_ok=0 retry_failed=0 rows=9 status={200: 1, 503: 8} error_rows=8 -> READING (the before)
+DAY49D SERVE card=rtx5090 boot=O1-on arm=on route=spec-default batch_fired=[8] other_fired=0 retry_lines=1 retried_ok=1 retry_failed=0 rows=9 status={200: 9} error_rows=0 -> PASS
+DAY49D SERVE card=rtx5090 boot=O2-off arm=off route=spec-default batch_fired=[8] other_fired=0 retry_lines=0 retried_ok=0 retry_failed=0 rows=9 status={200: 1, 503: 8} error_rows=8 -> READING (the before)
+DAY49D SERVE card=rtx5090 boot=O2-on arm=on route=spec-default batch_fired=[2] other_fired=0 retry_lines=1 retried_ok=1 retry_failed=0 rows=9 status={200: 9} error_rows=0 -> PASS
+DAY49D SERVE card=rtx5090 boot=P1-off arm=off-plain route=plain batch_fired=[2] other_fired=0 retry_lines=0 retried_ok=0 retry_failed=0 rows=9 status={200: 7, 503: 2} error_rows=2 -> READING (the before)
+DAY49D SERVE card=rtx5090 boot=P1-on arm=on-plain route=plain batch_fired=[8] other_fired=0 retry_lines=1 retried_ok=1 retry_failed=0 rows=9 status={200: 9} error_rows=0 -> PASS
+DAY49D SERVE card=rtx5090 boot=P2-off arm=off-plain route=plain batch_fired=[8] other_fired=0 retry_lines=0 retried_ok=0 retry_failed=0 rows=9 status={200: 1, 503: 8} error_rows=8 -> READING (the before)
+DAY49D SERVE card=rtx5090 boot=P2-on arm=on-plain route=plain batch_fired=[8] other_fired=0 retry_lines=1 retried_ok=1 retry_failed=0 rows=9 status={200: 9} error_rows=0 -> PASS
+DAY49D SERVE-ROUTE card=rtx5090 route=plain boots=4 reached=4
+DAY49D SERVE-ROUTE card=rtx5090 route=spec-default boots=4 reached=4
+```
+
+- **The serving clause PASS on every `on` boot, both routes, both orders:** 9 of 9 `200`, one retry and one
+  `retried (ok)`. The aimed fault reached the batched chunk on every boot and nowhere else. The chunk held 8 sessions,
+  or 2 when the burst's arrivals split across two waves (O2-on, P1-off).
+- **The before (`off`):** the chunk's sessions end `503`, 8 of 9 (or 2 of 9 on the 2-session chunk).
+- **O14 is read on the 5090 as well:** the gates (2.6) and the full serving shape. The owner's ruling put the 5090's own
+  flip on these boots (addendum F), so the flip is registered as its own addendum before its code.
+

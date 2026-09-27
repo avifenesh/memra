@@ -21,3 +21,21 @@
 2026-09-27T05:46:57Z boot O2-off: rig not idle after 7200 s; not run
 2026-09-27T05:46:57Z boots rc=3
 2026-09-27T05:47:01Z done
+2026-09-27T14:20:23Z boot O2-off: waiting for an idle rig
+2026-09-27T14:36:23Z boot O2-off start arm=off bin=a16045ad6804a19e env=[MEMRA_STEP_OOM_FAULT=batch:1] args=[--warm-n 0 --burst 8 --length 6144 --max-tokens 64]
+2026-09-27T14:36:54Z boot O2-off rc=0 DAY45 BOOT rows=9 ok=1 w_booked=0 w_release=0 predict_lines=10 oom=8
+2026-09-27T14:40:54Z boot P1-off: waiting for an idle rig
+2026-09-27T15:29:24Z boot P1-off start arm=off-plain bin=a16045ad6804a19e env=[MEMRA_STEP_OOM_FAULT=batch:1 MEMRA_SERVE_SPEC=0] args=[--warm-n 0 --burst 8 --length 6144 --max-tokens 64]
+2026-09-27T15:29:58Z boot P1-off rc=0 DAY45 BOOT rows=9 ok=7 w_booked=0 w_release=0 predict_lines=10 oom=2
+2026-09-27T15:33:58Z boot P1-on: waiting for an idle rig
+2026-09-27T16:29:28Z boot P1-on start arm=on-plain bin=a16045ad6804a19e env=[MEMRA_STEP_OOM_FAULT=batch:1 MEMRA_SERVE_SPEC=0 MEMRA_BATCH_OOM_RECOVER=1] args=[--warm-n 0 --burst 8 --length 6144 --max-tokens 64]
+2026-09-27T16:29:58Z boot P1-on rc=0 DAY45 BOOT rows=9 ok=9 w_booked=0 w_release=0 predict_lines=10 oom=0
+2026-09-27T16:33:58Z boot P2-on: waiting for an idle rig
+2026-09-27T18:33:59Z boot P2-on: rig not idle after 7200 s; not run
+2026-09-27T18:33:59Z boot P2-on: waiting for an idle rig
+2026-09-27T19:25:00Z boot P2-on start arm=on-plain bin=a16045ad6804a19e env=[MEMRA_STEP_OOM_FAULT=batch:1 MEMRA_SERVE_SPEC=0 MEMRA_BATCH_OOM_RECOVER=1] args=[--warm-n 0 --burst 8 --length 6144 --max-tokens 64]
+2026-09-27T19:25:37Z boot P2-on rc=0 DAY45 BOOT rows=9 ok=9 w_booked=0 w_release=0 predict_lines=10 oom=0
+2026-09-27T19:29:37Z boot P2-off: waiting for an idle rig
+2026-09-27T19:43:07Z boot P2-off start arm=off-plain bin=a16045ad6804a19e env=[MEMRA_STEP_OOM_FAULT=batch:1 MEMRA_SERVE_SPEC=0] args=[--warm-n 0 --burst 8 --length 6144 --max-tokens 64]
+2026-09-27T19:51:26Z boot P2-off rc=0 DAY45 BOOT rows=9 ok=1 w_booked=0 w_release=0 predict_lines=10 oom=8
+2026-09-27T19:55:26Z boots done: P2-on:on-plain P2-off:off-plain

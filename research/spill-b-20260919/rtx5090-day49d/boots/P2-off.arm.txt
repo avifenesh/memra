@@ -1,0 +1,4 @@
+arm=off-plain
+bin_sha256=a16045ad6804a19eae43fe7770311a1391ed02308b37d1f0ad22e3a29134512f
+env=MEMRA_STEP_OOM_FAULT=batch:1 MEMRA_SERVE_SPEC=0
+client_args=--warm-n 0 --burst 8 --length 6144 --max-tokens 64
