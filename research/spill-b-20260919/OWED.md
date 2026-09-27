@@ -233,7 +233,9 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
 - What: `MEMRA_RESUME_GRID_REWIND` (default unset) makes a plain or spec pool exact-extension resume rewind to the
   entry's grid checkpoint and re-prime from there, so the resumed turn is cold-identical by the grid law; the cells
   price it against keeping the decoded rows (re-primed rows, TTFT, throughput, memory, fanout reach), both cards.
-- Status: `running`, revised on the owner's direction ("resume vs rewind - i think its not or or question, but more
+- Status (2026-09-27, the owner's rulings): DAY44 addendum D accepted by the owner, so R1 is its clause and reads
+  PASS on all four RW boots (DAY44 2.3). `MEMRA_RESUME_EXACT` stays default off: E2 still fails, and DAY50 arm O is its
+  fix. Earlier: `running`, revised on the owner's direction ("resume vs rewind - i think its not or or question, but more
   of we didnt make it right yet"): the exact AND fast resume, DAY44 (`MEMRA_RESUME_EXACT`, decide-by 2026-10-10). Code:
   the in-call grid capture (`35ece04e7`), the door, exact hits and settle queue (`9fa281cff`, `138790651`), the
   prime-only spec settle (`7a4abb4c9`). GPU on the 5090: the capture equals a split prime's state bitwise; a resume
