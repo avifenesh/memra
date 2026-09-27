@@ -108,6 +108,12 @@ jobs:
         run: |
           python3 tools/test_release_input_view.py
 
+      - name: Local development selection and immutable reuse controls (CPU-only)
+        run: |
+          tools/unittest-floor.sh tools test_local_build_cache.py 19
+          tools/unittest-floor.sh tools/fast-gate test_plan.py 28
+          tools/unittest-floor.sh tools/fast-gate test_component.py 4
+
       - name: Cache qualification harness regressions (unittest floor 15; 16 measured 2026-09-21)
         run: tools/unittest-floor.sh tools test_cache_qualification.py 15
 
