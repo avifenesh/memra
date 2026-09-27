@@ -81,6 +81,14 @@
 //!           stopped and snapshotted at the grid boundary b, the same K tokens decoded, a
 //!           rollback to b, then the sequence from b primed; expected EXACT against mono.
 //!           Each of hist and rewind prints a `cost` line (suffix rows, wall ms).
+//!   callcost <model> callcost --prompt-a <txt|@file> --prompt-tokens L [--rows 32,64,288] [--reps 5]
+//!                             [--gap-ms 50]
+//!           WP-B day 50 stage 0 (research/spill-b-20260919/DAY50.md 1.2): the wall of ONE prime call of R
+//!           rows at context L, the settle and resume shape. Primes [0, L) once, snapshots, then per R and
+//!           rep restores the snapshot, sleeps --gap-ms (so a kernel trace separates the calls by an idle
+//!           gap), and times prime_cache([L, L+R)) between two stream synchronizes. One untimed warm-up
+//!           call per R; the same idle gap also precedes each restore. Prints `callcost L=.. R=.. N=.. wall_ms
+//!           p50=.. min=.. max=.. all=[..]`.
 //!   tickshape <model> tickshape --ids-a <json> --ids-b <json> --ids-c <json> [--tick 1024]
 //!                               [--steps 32] [--join 4] [--arms ref,ref2,tick,bp,bps,wave]
 //!                               [--canary]
@@ -1591,6 +1599,77 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // PRIME-PATH DIVERGENCE PROFILER — see the module doc. The GATES-SMOKE-20260821 B3
         // shapes at engine level: monolithic vs boundary-stopped vs decode-history prime
         // programs over ONE token sequence, with the near-tie-vs-defect discriminators.
+        "callcost" => {
+            // WP-B day 50 stage 0 (DAY50 1.2): one prime call of R rows at context L, timed.
+            let pa = text_arg(&rest, "--prompt-a").expect("--prompt-a");
+            let l: usize = arg(&rest, "--prompt-tokens")
+                .and_then(|v| v.parse().ok())
+                .expect("--prompt-tokens L");
+            let rows: Vec<usize> = arg(&rest, "--rows")
+                .unwrap_or_else(|| "32,64,288".into())
+                .split(',')
+                .filter_map(|v| v.trim().parse().ok())
+                .collect();
+            let reps: usize = arg(&rest, "--reps")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(5);
+            let gap_ms: u64 = arg(&rest, "--gap-ms")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(50);
+            let min_t = memra_engine::hybrid_forward::PRIME_MIN_T;
+            let r_max = rows.iter().copied().max().expect("--rows");
+            assert!(
+                rows.iter().all(|&r| r >= min_t),
+                "every R must be >= PRIME_MIN_T={min_t}"
+            );
+            let mut ta = encode_prompt(&cx.tok, &pa, chat);
+            let need = l + r_max;
+            while ta.len() < need {
+                let more = ta.clone();
+                ta.extend_from_slice(&more);
+            }
+            ta.truncate(need);
+            let mut c = Cache::new(&cx.e, &cx.model.cfg, cx.ctx_len.max(need + 8))?;
+            let t0 = std::time::Instant::now();
+            let _ = cx.model.prime_cache(&cx.e, &ta[..l], &mut c, 0)?;
+            cx.e.stream().synchronize()?;
+            println!(
+                "callcost setup: L={l} primed in {:.1} ms",
+                t0.elapsed().as_secs_f64() * 1e3
+            );
+            let snap = c.snapshot(&cx.e)?;
+            for &r in &rows {
+                let mut walls: Vec<f64> = Vec::with_capacity(reps);
+                for rep in 0..=reps {
+                    // An idle gap before the restore and before the call, so a kernel trace reads
+                    // setup, restore, call, restore, call ... as separate clusters.
+                    std::thread::sleep(std::time::Duration::from_millis(gap_ms));
+                    memra_engine::pp::restore_cache_checkpoint(
+                        &cx.e, &cx.model, None, &mut c, &snap,
+                    )?;
+                    cx.e.stream().synchronize()?;
+                    assert_eq!(c.pos, l, "the restore landed off the snapshot");
+                    std::thread::sleep(std::time::Duration::from_millis(gap_ms));
+                    let t0 = std::time::Instant::now();
+                    let _ = cx.model.prime_cache(&cx.e, &ta[l..l + r], &mut c, 0)?;
+                    cx.e.stream().synchronize()?;
+                    let w = t0.elapsed().as_secs_f64() * 1e3;
+                    if rep > 0 {
+                        walls.push(w);
+                    }
+                }
+                let mut sorted = walls.clone();
+                sorted.sort_by(|a, b| a.total_cmp(b));
+                let all: Vec<String> = walls.iter().map(|w| format!("{w:.2}")).collect();
+                println!(
+                    "callcost L={l} R={r} N={reps} wall_ms p50={:.2} min={:.2} max={:.2} all=[{}]",
+                    sorted[sorted.len() / 2],
+                    sorted[0],
+                    sorted[sorted.len() - 1],
+                    all.join(",")
+                );
+            }
+        }
         "primepath" => {
             let pa = text_arg(&rest, "--prompt-a").expect("--prompt-a");
             let steps: usize = arg(&rest, "--steps")
