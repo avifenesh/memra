@@ -135,6 +135,20 @@ unsafe extern "C" {
         window: i32,
         stream: *mut c_void,
     ) -> i32;
+    #[cfg(test)]
+    fn memra_bf16_pp_gemm_bias_out_bf16(
+        weight: *const c_void,
+        input: *const f32,
+        converted_input: *mut c_void,
+        bias: *const c_void,
+        output: *mut c_void,
+        rows: i32,
+        out_channels: i32,
+        in_channels: i32,
+        workspace: *mut c_void,
+        workspace_bytes: usize,
+        stream: *mut c_void,
+    ) -> i32;
 }
 
 #[derive(Clone, Copy)]
@@ -459,6 +473,72 @@ impl MiMoAudioCodecEncoderWeights {
             return Err("MiMo source fc2 diagnostic matrix geometry changed".into());
         }
         projected(engine, input, &weights.fc2, tokens)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn project_layer0_fc2_fused_bias_source_input(
+        &self,
+        engine: &Engine,
+        input: &CudaSlice<f32>,
+        tokens: usize,
+    ) -> Result<Vec<f32>, Fail> {
+        if tokens != 5 || input.len() != tokens * 4_096 || input.ordinal() != self.device_ordinal {
+            return Err("MiMo fused-bias fc2 diagnostic input extent or GPU changed".into());
+        }
+        engine.gpu.ctx.bind_to_thread()?;
+        self.check_device(engine)?;
+        let weights = self.encoder_layer_bf16(0)?;
+        let fc2 = &weights.fc2;
+        let bias = fc2
+            .bias
+            .ok_or("MiMo fused-bias fc2 diagnostic lost source bias")?;
+        if fc2.input != 4_096 || fc2.output != HIDDEN {
+            return Err("MiMo fused-bias fc2 diagnostic matrix geometry changed".into());
+        }
+        let stream = engine.stream();
+        let mut converted = engine.alloc_u8_uninit(tokens * fc2.input * 2)?;
+        let mut output = engine.alloc_u8_uninit(tokens * HIDDEN * 2)?;
+        let mut workspace = engine.alloc_u8_uninit(crate::f16_ffi::F16_WS_BYTES)?;
+        let (weight_ptr, weight_guard) = fc2.weight.device_ptr(&stream);
+        let (input_ptr, input_guard) = input.device_ptr(&stream);
+        let (converted_ptr, converted_guard) = converted.device_ptr_mut(&stream);
+        let (bias_ptr, bias_guard) = bias.device_ptr(&stream);
+        let (output_ptr, output_guard) = output.device_ptr_mut(&stream);
+        let (workspace_ptr, workspace_guard) = workspace.device_ptr_mut(&stream);
+        let rc = unsafe {
+            memra_bf16_pp_gemm_bias_out_bf16(
+                weight_ptr as *const c_void,
+                input_ptr as *const f32,
+                converted_ptr as *mut c_void,
+                bias_ptr as *const c_void,
+                output_ptr as *mut c_void,
+                tokens as i32,
+                HIDDEN as i32,
+                fc2.input as i32,
+                workspace_ptr as *mut c_void,
+                crate::f16_ffi::F16_WS_BYTES,
+                stream.cu_stream() as *mut c_void,
+            )
+        };
+        drop((
+            weight_guard,
+            input_guard,
+            converted_guard,
+            bias_guard,
+            output_guard,
+            workspace_guard,
+        ));
+        if rc != 0 {
+            return Err(format!("MiMo fused-bias fc2 diagnostic returned {rc}").into());
+        }
+        let bytes = engine.dtoh_u8(&output)?;
+        if bytes.len() != tokens * HIDDEN * 2 {
+            return Err("MiMo fused-bias fc2 diagnostic output extent changed".into());
+        }
+        Ok(bytes
+            .chunks_exact(2)
+            .map(|pair| f32::from_bits(u32::from(u16::from_le_bytes([pair[0], pair[1]])) << 16))
+            .collect())
     }
 
     /// Execute exactly one selected transformer layer over one frontended,

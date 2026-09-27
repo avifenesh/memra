@@ -418,12 +418,22 @@ fn prepared_mel_target_features_and_rvq_diagnostic() -> Result<(), Fail> {
     assert_eq!(layer0_stages.len(), 5);
     let publisher_fc2_input =
         decode_bf16_width(PUBLISHER_GPU_LAYER0_FC2_INPUT_LINEAR_CONTROL, 5, 4_096)?;
+    let publisher_fc2_input_gpu = engine.htod(&publisher_fc2_input)?;
     let memra_fc2_from_source =
-        weights.project_layer0_fc2_source_input(&engine, &engine.htod(&publisher_fc2_input)?, 5)?;
+        weights.project_layer0_fc2_source_input(&engine, &publisher_fc2_input_gpu, 5)?;
+    let publisher_fc2_output = decode_bf16(PUBLISHER_GPU_LAYER0_FC2_LINEAR_CONTROL, 5)?;
     feature_stats(
         "memra_fc2_from_source_input_vs_gpu_publisher_linear_control",
         &engine.dtoh(&memra_fc2_from_source)?,
-        &decode_bf16(PUBLISHER_GPU_LAYER0_FC2_LINEAR_CONTROL, 5)?,
+        &publisher_fc2_output,
+        5,
+    )?;
+    let fused_fc2 =
+        weights.project_layer0_fc2_fused_bias_source_input(&engine, &publisher_fc2_input_gpu, 5)?;
+    feature_stats(
+        "memra_fused_bias_fc2_from_source_input_vs_gpu_publisher_linear_control",
+        &fused_fc2,
+        &publisher_fc2_output,
         5,
     )?;
     let fused_layer0_values = engine.dtoh(&fused_layer0)?;

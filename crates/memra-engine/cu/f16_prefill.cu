@@ -565,7 +565,8 @@ extern "C" int memra_bf16_pp_gemm_bias_out_bf16(
     const void* bias_bf16, void* y_bf16,
     int m, int n, int k, void* ws, size_t ws_bytes, void* stream_v) {
     if (!w_bf16 || !x_f32 || !xb_bf16 || !bias_bf16 || !y_bf16 || !ws
-        || m != 5 || n != 1024 || k != 3072 || ws_bytes < (64ull << 20)) return 40030;
+        || m != 5 || n != 1024 || (k != 3072 && k != 4096)
+        || ws_bytes < (64ull << 20)) return 40030;
     int rc = memra_bf16_cvt(x_f32, xb_bf16, (size_t)m * (size_t)k, stream_v);
     if (rc != 0) return rc;
 
