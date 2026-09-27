@@ -104,6 +104,7 @@ mod dsv4_admit;
 mod dsv4_serve;
 mod embed_api;
 mod handoff_io;
+mod histogram;
 /// `MEMRA_KV_ALLOCATOR=vmm` (WP-B day 37, decide-by 2026-10-04): the serving arm of the
 /// `--kv-allocator vmm` door, on-demand fixed-address K/V planes for covered sessions.
 mod kv_vmm;
@@ -6747,11 +6748,108 @@ fn insert_peer_probe_metrics(
 }
 
 /// Flat serving counters + engine-truth step latency percentiles.
+/// memra#522: `Accept: text/plain` (any `text/plain` media range, e.g. the standard
+/// Prometheus client's `text/plain;version=0.0.4`) asks for the Prometheus exposition
+/// instead of the default JSON body. Absent or non-matching `Accept` keeps today's JSON
+/// response byte-for-byte, so no existing scraper's behavior changes.
+fn wants_prometheus(headers: &HeaderMap) -> bool {
+    headers
+        .get(axum::http::header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.to_ascii_lowercase().contains("text/plain"))
+}
+
+/// Render the Prometheus text exposition (memra#522) from the same authorized snapshot the
+/// JSON body reads. Gated identically: process-wide counters only with
+/// [`MetricsScope::process_wide`], per-route detail only with [`MetricsScope::operator`] (the
+/// route block is operator-only in the JSON body too, memra#501).
+fn render_prometheus_metrics(
+    m: &worker::Metrics,
+    routes: &[route_telemetry::RouteLoadSnapshot],
+    metrics_scope: &MetricsScope,
+) -> String {
+    let mut out = String::new();
+    if metrics_scope.process_wide() {
+        out.push_str("# TYPE memra_requests_admitted_total counter\n");
+        out.push_str(&format!("memra_requests_admitted_total {}\n", m.admitted));
+        out.push_str("# TYPE memra_requests_completed_total counter\n");
+        out.push_str(&format!("memra_requests_completed_total {}\n", m.completed));
+        out.push_str("# TYPE memra_tokens_out_total counter\n");
+        out.push_str(&format!("memra_tokens_out_total {}\n", m.tokens_out));
+        out.push_str("# TYPE memra_prompt_tokens_in_total counter\n");
+        out.push_str(&format!(
+            "memra_prompt_tokens_in_total {}\n",
+            m.prompt_tokens_in
+        ));
+        out.push_str("# TYPE memra_cached_tokens_in_total counter\n");
+        out.push_str(&format!(
+            "memra_cached_tokens_in_total {}\n",
+            m.cached_tokens_in
+        ));
+        out.push_str("# TYPE memra_step_latency_seconds gauge\n");
+        out.push_str(&format!(
+            "memra_step_latency_seconds{{quantile=\"0.5\"}} {}\n",
+            m.step_p50_ms as f64 / 1000.0
+        ));
+        out.push_str(&format!(
+            "memra_step_latency_seconds{{quantile=\"0.99\"}} {}\n",
+            m.step_p99_ms as f64 / 1000.0
+        ));
+    }
+    if metrics_scope.operator() {
+        out.push_str("# TYPE memra_route_requests_total counter\n");
+        out.push_str("# TYPE memra_route_queue_wait_seconds histogram\n");
+        out.push_str("# TYPE memra_route_e2e_seconds histogram\n");
+        out.push_str("# TYPE memra_route_round_seconds histogram\n");
+        out.push_str("# TYPE memra_route_tokens_out_total counter\n");
+        out.push_str("# TYPE memra_route_waiting gauge\n");
+        out.push_str("# TYPE memra_route_running gauge\n");
+        out.push_str("# TYPE memra_route_capacity gauge\n");
+        for r in routes {
+            let labels = format!("route=\"{}\"", r.name);
+            for (code, count) in [
+                ("completed", r.completed),
+                ("failed", r.failed),
+                ("cancelled", r.cancelled),
+                ("refused", r.refused),
+            ] {
+                out.push_str(&format!(
+                    "memra_route_requests_total{{{labels},code=\"{code}\"}} {count}\n"
+                ));
+            }
+            out.push_str(&format!(
+                "memra_route_tokens_out_total{{{labels}}} {}\n",
+                r.tokens_out
+            ));
+            out.push_str(&format!("memra_route_waiting{{{labels}}} {}\n", r.waiting));
+            out.push_str(&format!("memra_route_running{{{labels}}} {}\n", r.running));
+            out.push_str(&format!(
+                "memra_route_capacity{{{labels}}} {}\n",
+                r.capacity
+            ));
+            out.push_str(
+                &r.queue_wait_hist
+                    .render_prometheus("memra_route_queue_wait_seconds", &labels),
+            );
+            out.push_str(
+                &r.e2e_hist
+                    .render_prometheus("memra_route_e2e_seconds", &labels),
+            );
+            out.push_str(
+                &r.round_hist
+                    .render_prometheus("memra_route_round_seconds", &labels),
+            );
+        }
+    }
+    out
+}
+
 async fn get_metrics(State(st): State<AppState>, headers: HeaderMap) -> Response {
     let metrics_scope = match authorize_metrics(&st.api_auth, &st.metrics_auth, &headers) {
         Ok(scope) => scope,
         Err(response) => return response,
     };
+    let wants_text = wants_prometheus(&headers);
     let mut m = st.metrics.lock().map(|m| m.clone()).unwrap_or_default();
     // Dedicated routes (memra#501) serve outside the central worker, so its meter never sees
     // their requests. Fold each route's served counters into this scrape's copy: `admitted`,
@@ -7033,6 +7131,20 @@ async fn get_metrics(State(st): State<AppState>, headers: HeaderMap) -> Response
         &metrics_scope,
         memra_engine::pp::peer_probe_metrics,
     );
+    if wants_text {
+        // memra#522: content negotiation only, never a change to the JSON path above. The
+        // `body` map is built and then discarded on this arm, so the JSON response for a
+        // caller that does not ask for `text/plain` stays byte-for-byte what it was.
+        let text = render_prometheus_metrics(&m, &routes, &metrics_scope);
+        return (
+            [(
+                axum::http::header::CONTENT_TYPE,
+                "text/plain; version=0.0.4; charset=utf-8",
+            )],
+            text,
+        )
+            .into_response();
+    }
     Json(body).into_response()
 }
 
@@ -18950,6 +19062,75 @@ default_reasoning_effort = "always"
         );
     }
 
+    /// memra#522: the route's queue-wait and E2E histograms move for a request served
+    /// through the real completions handler (not seeded directly), and the same served
+    /// request shows up in the Prometheus text exposition negotiated by `Accept:
+    /// text/plain`, while a caller that does not ask for it still gets the unchanged JSON
+    /// body.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: the admission counters guard serializes this test against its route-reading peers
+    async fn a_fake_route_request_moves_its_histograms_and_the_prometheus_exposition() {
+        let _counters = admission_counters_guard();
+        let mut st = fake_worker_state_with_steps(3, std::time::Duration::ZERO);
+        st.models = Arc::new(vec!["t522-fake-route".into()]);
+        let route = route_telemetry::register("t522-fake-route", 1);
+        let resp = completions(
+            State(st.clone()),
+            HeaderMap::new(),
+            None,
+            Json(
+                serde_json::from_value(json!({"model": "t522-fake-route", "prompt": "t"})).unwrap(),
+            ),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let snap = route.snapshot();
+        assert_eq!(snap.completed, 1);
+        assert_eq!(
+            snap.e2e_hist.count, 1,
+            "the served request records one E2E sample"
+        );
+        assert_eq!(
+            snap.queue_wait_hist.count, 1,
+            "the served request records one queue-wait sample, even an idle-route ~0 s one"
+        );
+
+        // Default Accept (none): JSON, unchanged shape.
+        let json_resp = get_metrics(State(st.clone()), HeaderMap::new()).await;
+        assert_eq!(json_resp.status(), StatusCode::OK);
+        let json_body = body_value(json_resp).await;
+        assert!(json_body["routes"].is_array());
+
+        // Accept: text/plain negotiates the Prometheus exposition.
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::ACCEPT,
+            "text/plain;version=0.0.4".parse().unwrap(),
+        );
+        let prom_resp = get_metrics(State(st.clone()), headers).await;
+        assert_eq!(prom_resp.status(), StatusCode::OK);
+        assert!(
+            prom_resp
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with("text/plain")
+        );
+        let bytes = axum::body::to_bytes(prom_resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let text = String::from_utf8(bytes.to_vec()).unwrap();
+        assert!(text.contains("memra_route_e2e_seconds_count{route=\"t522-fake-route\"} 1"));
+        assert!(text.contains("memra_route_queue_wait_seconds_count{route=\"t522-fake-route\"} 1"));
+        assert!(text.contains(
+            "memra_route_requests_total{route=\"t522-fake-route\",code=\"completed\"} 1"
+        ));
+        assert!(text.contains("le=\"+Inf\""));
+    }
+
     /// A fake DSv4-shaped route whose worker runs the route's real memory door
     /// (`dsv4_admit::admit_session`), outcome mapping (`dsv4_serve::admission_answer`) and
     /// booking (`dsv4_serve::settle`) against scripted per-card readings (memra#503), end to end
@@ -21822,7 +22003,12 @@ temperature = 0.6
                 // A model with a registered dedicated route is served the way that route
                 // serves it (memra#501, dsv4_serve's loop): running rises, then the ticket
                 // releases at dequeue, then the run is admitted and booked on the route.
-                let mut route_run = route_telemetry::lookup(&req.model).map(|l| l.begin());
+                let route = route_telemetry::lookup(&req.model);
+                let mut route_run = route.as_ref().map(|l| l.begin());
+                // memra#522: mirror dsv4_serve's queue-wait record, before the ticket drops.
+                if let (Some(l), Some(ticket)) = (&route, req.route_ticket.as_ref()) {
+                    l.record_wait(ticket.waited());
+                }
                 worker::release_request_reservation(&mut req);
                 if let Some(run) = route_run.as_mut() {
                     run.admit();

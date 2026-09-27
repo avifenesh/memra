@@ -21,10 +21,11 @@
 //! served model name. Registration is get-or-create so a worker respawn keeps the book (and
 //! every outstanding ticket) continuous.
 
+use crate::histogram::{Histogram, HistogramSnapshot};
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// Service-time samples kept for the estimate (most recent first out).
 const SERVICE_WINDOW: usize = 64;
@@ -85,6 +86,16 @@ pub(crate) struct RouteLoad {
     served_rounds: AtomicU64,
     service_ms: Mutex<Window>,
     round_ms: Mutex<Window>,
+    /// memra#522: bounded-cardinality latency histograms alongside the existing percentile
+    /// windows. One label (this route's name, already the model) so cardinality is exactly
+    /// the registry size, not per-request. `queue_wait` is reservation-to-dequeue (the time a
+    /// request actually waited before the route started serving it); `e2e` is admit-to-finish
+    /// on the SUCCESS path only (`RouteRun::finish`), so a failure/cancel/refusal never widens
+    /// the latency a client-facing SLO reads; `round` is the same per-round sample already fed
+    /// to `round_ms`, the emitted-token-gap proxy for a dedicated route.
+    queue_wait_hist: Histogram,
+    e2e_hist: Histogram,
+    round_hist: Histogram,
 }
 
 /// What a finished request reports to its route's book.
@@ -120,6 +131,12 @@ pub(crate) struct RouteLoadSnapshot {
     pub service_p99_ms: Option<u64>,
     pub round_p50_ms: Option<u64>,
     pub round_p99_ms: Option<u64>,
+    /// memra#522: bounded latency histograms, Prometheus-exposition shape. Not carried into
+    /// the JSON `/metrics` body (that body stays byte-for-byte unchanged for existing
+    /// consumers); read only by the new Prometheus text renderer.
+    pub queue_wait_hist: HistogramSnapshot,
+    pub e2e_hist: HistogramSnapshot,
+    pub round_hist: HistogramSnapshot,
 }
 
 impl RouteLoad {
@@ -142,6 +159,9 @@ impl RouteLoad {
             served_rounds: AtomicU64::new(0),
             service_ms: Mutex::new(Window::new(SERVICE_WINDOW)),
             round_ms: Mutex::new(Window::new(ROUND_WINDOW)),
+            queue_wait_hist: Histogram::new(),
+            e2e_hist: Histogram::new(),
+            round_hist: Histogram::new(),
         })
     }
 
@@ -191,6 +211,7 @@ impl RouteLoad {
             .map(|_| RouteTicket {
                 load: self.clone(),
                 lane,
+                reserved_at: Instant::now(),
             })
     }
 
@@ -224,6 +245,14 @@ impl RouteLoad {
         if let Ok(mut w) = self.round_ms.lock() {
             w.push(ms);
         }
+        self.round_hist.record_ms(ms);
+    }
+
+    /// Record how long a dequeued request sat reserved before the route started serving it
+    /// (memra#522 queue-wait histogram). Called once per admitted request, at dequeue,
+    /// before its [`RouteTicket`] is dropped.
+    pub(crate) fn record_wait(&self, waited: Duration) {
+        self.queue_wait_hist.record(waited.as_secs_f64());
     }
 
     /// Seconds one request occupies the route: the mean rounds a completed request took times
@@ -294,6 +323,9 @@ impl RouteLoad {
             service_p99_ms,
             round_p50_ms,
             round_p99_ms,
+            queue_wait_hist: self.queue_wait_hist.snapshot(),
+            e2e_hist: self.e2e_hist.snapshot(),
+            round_hist: self.round_hist.snapshot(),
         }
     }
 }
@@ -307,11 +339,19 @@ fn decrement(counter: &AtomicUsize) {
 pub(crate) struct RouteTicket {
     load: Arc<RouteLoad>,
     lane: usize,
+    reserved_at: Instant,
 }
 
 impl RouteTicket {
     pub(crate) fn route(&self) -> &str {
         self.load.name()
+    }
+
+    /// How long this ticket has been reserved (memra#522 queue-wait histogram). The
+    /// dequeuing route calls this once, before dropping the ticket, and feeds the result to
+    /// [`RouteLoad::record_wait`].
+    pub(crate) fn waited(&self) -> Duration {
+        self.reserved_at.elapsed()
     }
 }
 
@@ -379,9 +419,11 @@ impl RouteRun {
             .fetch_add(stats.n_cached as u64, Ordering::Relaxed);
         l.served_rounds
             .fetch_add(stats.rounds as u64, Ordering::Release);
+        let elapsed = self.t0.elapsed();
         if let Ok(mut w) = l.service_ms.lock() {
-            w.push(self.t0.elapsed().as_millis() as u64);
+            w.push(elapsed.as_millis() as u64);
         }
+        l.e2e_hist.record(elapsed.as_secs_f64());
         self.done = true;
     }
 
@@ -549,6 +591,47 @@ mod tests {
         drop(t);
         drop(t2);
         assert_eq!(r.waiting_total(), 0);
+    }
+
+    /// memra#522: a ticket's wait feeds the queue-wait histogram exactly once per
+    /// `record_wait` call, a completed run feeds the E2E histogram, and a cancelled or
+    /// refused run does NOT (the success-only E2E contract in `RouteRun::finish`'s doc
+    /// comment).
+    #[test]
+    fn histograms_record_queue_wait_e2e_and_rounds_on_the_success_path_only() {
+        let r = RouteLoad::new("t-hist", 1);
+        let t = r.try_reserve(0, 0).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        r.record_wait(t.waited());
+        drop(t);
+        let mut run = r.begin();
+        run.admit();
+        run.finish(ServeStats {
+            tokens_out: 1,
+            n_prompt: 1,
+            n_cached: 0,
+            rounds: 0,
+        });
+        r.note_round(12);
+        let s = r.snapshot();
+        assert_eq!(s.queue_wait_hist.count, 1, "one wait sample recorded");
+        assert!(
+            s.queue_wait_hist.sum_seconds > 0.0,
+            "a real (nonzero) sleep must show up in the sum"
+        );
+        assert_eq!(s.e2e_hist.count, 1, "one E2E sample on the success path");
+        assert_eq!(s.round_hist.count, 1, "one round sample");
+        let (_, last) = *s.e2e_hist.cumulative.last().unwrap();
+        assert_eq!(last, 1, "every sample lands in some bucket, including +Inf");
+
+        // A cancelled and a refused run move neither the E2E nor the round histogram.
+        r.begin().cancel();
+        r.begin().refuse();
+        let s2 = r.snapshot();
+        assert_eq!(
+            s2.e2e_hist.count, 1,
+            "cancel/refuse are not E2E success samples"
+        );
     }
 
     #[test]
