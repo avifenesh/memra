@@ -196,8 +196,17 @@ for n in names:
     settles = SETTLE.findall(t)
     differ = [tg for tg in rw if r[tg]["content_sha256"] is None
               or r[tg]["content_sha256"] != r.get(tg + "-cold", {}).get("content_sha256")]
+    # Addendum D: a later RW turn resumes through affinity or through the exact path (a settled prefix the rewrite
+    # extends), and none primes cold.
+    exact_resumes = len([m for m in RESUME.findall(t) if m[4] == "settled" or m[4] == "checkpoint"])
+    cold = [tg for tg in rw if (r[tg].get("cached_tokens") or 0) == 0]
+    ok1 = len(aff) + exact_resumes >= len(rw) and not cold
     say(f"DAY44 R1 card={card} boot={n} rw_later_turns={len(rw)} affinity_rewinds={len(aff)} "
-        f"affinity_declined={declined} -> {'PASS' if len(aff) >= len(rw) else 'FAIL'}")
+        f"exact_resumes={exact_resumes} cold_later_turns={len(cold)} affinity_declined={declined} -> "
+        f"{'PASS' if ok1 else 'FAIL'}")
+    gs = sorted({r[tg]["G"] for tg in rw})
+    say(f"DAY44 R1a READING card={card} boot={n} affinity_rewinds={len(aff)} "
+        + " ".join(f"G={g}:later={sum(1 for tg in rw if r[tg]['G'] == g)}" for g in gs))
     say(f"DAY44 R2 card={card} boot={n} rw_later_turns={len(rw)} differ_vs_cold={differ[:6]} -> "
         f"{'PASS' if not differ else 'FAIL'}")
     say(f"DAY44 R3 READING card={card} boot={n} settles={len(settles)} "
