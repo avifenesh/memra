@@ -4692,6 +4692,12 @@ clause is the owner's. The pool did not grow during the burst, so the defect's c
 
 **Ruling 67, addendum:** the door lands default-off with the peek; V5's clause revision (to the paired-equality the
 reader checks, or a physical line on every admission, lane B's next addendum) is the owner's, beside DAY44's R1.
+- GPU battery run 2 on BOX43 on the final code (`integ72-pro-run2/`, mirrored and checked), tree `32681801b`, 13:38Z to
+  14:18Z, right after lane C's slow86: serve-smoke 1 failed (the Q35 arm, #777, the same line); engine cells
+  `26 passed`; worker span cells `19 passed`; identity, fault default and plain, hit OFF and ON, admit-mem burst,
+  spec-ctx-edge and the pause gate `ALL GREEN`; `tier-transfer-gate` and all seven `kv-tier-gate` fault arms PASS; the
+  admit-mem burst gate with `MEMRA_ADMIT_PREDICT_VG_DEBT=1` `ALL GREEN`. Lane C reads BOX43 as having an hourly host-wide
+  stall at about half past each hour (DAY86); no cell here failed on a timeout.
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.

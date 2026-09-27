@@ -25,3 +25,13 @@ Author's review of the full diff `main..lane/spill-integ72-20260927`, posted as 
 ## Push regime
 Server source changed, so the branch goes up with `MEMRA_RELEASE_QUALIFICATION_MODE=development`. No tag. Revuto: if
 capped or unavailable, this comment is the review.
+
+## Round 2, after revuto round 1
+Revuto found a real defect in the DAY48 door that my review missed: I checked the door is inert when off, not that its
+on path calls a function with side effects. `dspark_vg_admission_debt` records a pool observation, so with the door on
+the predictive call changed the physical gate's reserve. Lane B's fix (`521fdbbbc`) reads a non-recording peek at the
+predictive seam; the physical call is unchanged. What I checked: the peek runs the same projection from the recorded
+observation, the physical call still records exactly once per admission, and the engine test fails on the old double
+read. Revuto round 2 approved it. Lane B's DAY48 rerun on the fix passed V1 to V5 on the target card (V5 apart=[] on both
+enforce-vg boots); its first attempt did not run because I launched it into lane C's load window, and lane B's runner now
+holds the lock before its idle check. GPU run 2 on the final code is all green (Q35 is #777); CPU battery 16 of 16.
