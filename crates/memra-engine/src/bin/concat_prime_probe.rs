@@ -96,6 +96,11 @@
 //!           tick batches, in solo tick calls, and through a [B, C] decode wave, each arm
 //!           teacher-forced and compared bitwise (logits, hidden rows, cache digests, every
 //!           decode step) against prime_cache(B) in one call. Gate: tools/prime-tick-exact-gate.sh.
+//!   tfwide  <model> tfwide --prompt-a <txt|@file> --window N --arms 'ref:K=V;b:K=V' [--stride 8]
+//!                          [--budget 1024] [--batch 128] [--jsonl out] [--tag s]
+//!           wide teacher-forced arm cell: every arm primes the same window through the serve
+//!           tick loop, every --stride'th row gets argmax, margin, next-token NLL and the
+//!           full-vocab logit delta against the first arm. Built for memra #902 (FA2 door).
 
 use memra_engine::Engine;
 use memra_engine::cache::Cache;
@@ -2109,6 +2114,236 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "  flip @pos {p}: legacy margin {m:.6} = {:.3}x median ({pct:.1}th pctile)",
                     m / med
                 );
+            }
+        }
+
+        // WIDE TEACHER-FORCED ARM CELL (darklanes research/qwen-fa2-quality-20260928, memra
+        // #902): the tfcmp protocol at long context and for any env-selected arm. Each arm
+        // primes the SAME window through the serve tick loop (--budget rows per
+        // prime_cache call, PRIME_MIN_T tail merge, queued_after = the remainder, exactly
+        // ppprime --budget), so a 131k window never needs a whole-prompt hidden stack on the
+        // device. Only every --stride'th row's pre-norm hidden is kept on host; the lm_head
+        // then runs over those rows in --batch row batches for every arm. Row p predicts
+        // ids[p+1], so each row carries both arms' argmax, top1-top2 margin and the NLL of
+        // the true next token, plus max|d| and RMS of the full-vocab logit delta against
+        // the FIRST arm (the reference). A summary line per arm states whether its sampled
+        // hiddens are bit-identical to the reference (a twin arm must be; an arm that is
+        // bit-identical when it should not be proves the instrument never moved).
+        //   tfwide <model> tfwide --prompt-a <txt|@f> --window N [--stride 8] [--budget 1024]
+        //          [--batch 128] --arms 'ref:K=V,K=V;fa2:K=V' [--jsonl out] [--tag s]
+        "tfwide" => {
+            let pa = text_arg(&rest, "--prompt-a").expect("--prompt-a");
+            let window: usize = arg(&rest, "--window")
+                .and_then(|v| v.parse().ok())
+                .expect("--window");
+            let stride: usize = arg(&rest, "--stride")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(8)
+                .max(1);
+            let budget: usize = arg(&rest, "--budget")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1024);
+            let batch: usize = arg(&rest, "--batch")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(128)
+                .max(1);
+            let tag = arg(&rest, "--tag").unwrap_or_default();
+            let arms_spec = arg(&rest, "--arms").expect("--arms 'name:K=V,..;name:K=V'");
+            let arms: Vec<(String, Vec<(String, String)>)> = arms_spec
+                .split(';')
+                .filter(|s| !s.trim().is_empty())
+                .map(|s| {
+                    let (name, kvs) = s.split_once(':').expect("arm is name:K=V,..");
+                    let kv = kvs
+                        .split(',')
+                        .filter(|p| !p.is_empty())
+                        .map(|p| {
+                            let (k, v) = p.split_once('=').expect("K=V");
+                            (k.trim().to_string(), v.trim().to_string())
+                        })
+                        .collect();
+                    (name.trim().to_string(), kv)
+                })
+                .collect();
+            assert!(
+                arms.len() >= 2,
+                "tfwide needs a reference arm and at least one more"
+            );
+            let ids_all = cx.tok.encode(&pa, true);
+            assert!(
+                ids_all.len() >= window,
+                "prompt has {} tokens, window {window} needs more text",
+                ids_all.len()
+            );
+            let ids = &ids_all[..window];
+            let t = ids.len();
+            let n_embd = cx.model.cfg.n_embd as usize;
+            let n_vocab = cx.model.output.out_features();
+            let rows: Vec<usize> = (0..t - 1).step_by(stride).collect();
+            let min_t = memra_engine::hybrid_forward::PRIME_MIN_T;
+            let saved: Vec<(String, Option<String>)> = arms
+                .iter()
+                .flat_map(|(_, kv)| kv.iter().map(|(k, _)| k.clone()))
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .map(|k| {
+                    let v = std::env::var(&k).ok();
+                    (k, v)
+                })
+                .collect();
+            let mut hiddens: Vec<Vec<f32>> = Vec::with_capacity(arms.len());
+            let mut prime_s: Vec<f64> = Vec::with_capacity(arms.len());
+            for (_, kv) in &arms {
+                for (k, v) in &saved {
+                    match v {
+                        Some(v) => unsafe { std::env::set_var(k, v) },
+                        None => unsafe { std::env::remove_var(k) },
+                    }
+                }
+                for (k, v) in kv {
+                    unsafe { std::env::set_var(k, v) };
+                }
+                let mut c = memra_engine::pp::new_cache(&cx.e, &cx.model.cfg, t + 8)?;
+                let mut kept = vec![0f32; rows.len() * n_embd];
+                let mut ri = 0usize;
+                let mut fed = 0usize;
+                let t0 = std::time::Instant::now();
+                while fed < t {
+                    let q = t - fed;
+                    let mut take = if budget == 0 { q } else { q.min(budget) };
+                    if q - take > 0 && q - take < min_t {
+                        take = q;
+                    }
+                    let (_, _, hid) = cx.model.prime_cache(
+                        &cx.e,
+                        &ids[fed..fed + take],
+                        &mut c,
+                        t - fed - take,
+                    )?;
+                    let h = cx.e.dtoh(&hid)?;
+                    assert!(
+                        h.len() >= take * n_embd,
+                        "prime_cache returned {} hidden floats for {take} rows",
+                        h.len()
+                    );
+                    while ri < rows.len() && rows[ri] < fed + take {
+                        let local = rows[ri] - fed;
+                        kept[ri * n_embd..(ri + 1) * n_embd]
+                            .copy_from_slice(&h[local * n_embd..(local + 1) * n_embd]);
+                        ri += 1;
+                    }
+                    fed += take;
+                }
+                cx.e.stream().synchronize()?;
+                prime_s.push(t0.elapsed().as_secs_f64());
+                assert_eq!(ri, rows.len(), "every sampled row must be captured");
+                hiddens.push(kept);
+            }
+            for (k, v) in &saved {
+                match v {
+                    Some(v) => unsafe { std::env::set_var(k, v) },
+                    None => unsafe { std::env::remove_var(k) },
+                }
+            }
+            let mut out = arg(&rest, "--jsonl")
+                .map(|p| {
+                    std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(p)
+                })
+                .transpose()?;
+            let na = arms.len();
+            let mut flips = vec![0usize; na];
+            let mut max_abs = vec![0f32; na];
+            let mut sum_sq = vec![0f64; na];
+            let mut nll_sum = vec![0f64; na];
+            let lse_row = |row: &[f32]| -> f64 {
+                let mx = row.iter().cloned().fold(f32::NEG_INFINITY, f32::max) as f64;
+                mx + row
+                    .iter()
+                    .map(|&v| ((v as f64) - mx).exp())
+                    .sum::<f64>()
+                    .ln()
+            };
+            for b0 in (0..rows.len()).step_by(batch) {
+                let nb = (rows.len() - b0).min(batch);
+                let mut logits: Vec<Vec<f32>> = Vec::with_capacity(na);
+                for h in &hiddens {
+                    let dh = cx.e.htod(&h[b0 * n_embd..(b0 + nb) * n_embd])?;
+                    let mut hn = cx.e.uninit(nb * n_embd)?;
+                    cx.e.rms_norm(
+                        &dh,
+                        cx.model.output_norm.float_data(),
+                        &mut hn,
+                        n_embd,
+                        nb,
+                        cx.model.cfg.rms_eps,
+                    )?;
+                    let l = cx.e.matmul(&cx.model.output, &hn, nb)?;
+                    logits.push(cx.e.dtoh(&l)?);
+                }
+                for j in 0..nb {
+                    let p = rows[b0 + j];
+                    let next = ids[p + 1] as usize;
+                    let r0 = &logits[0][j * n_vocab..(j + 1) * n_vocab];
+                    let (a0, _, _, _) = top2(r0);
+                    let mut line =
+                        format!("{{\"tag\":\"{tag}\",\"window\":{t},\"pos\":{p},\"next\":{next}");
+                    for (ai, (name, _)) in arms.iter().enumerate() {
+                        let r = &logits[ai][j * n_vocab..(j + 1) * n_vocab];
+                        let (a, v1, i2, v2) = top2(r);
+                        let nll = lse_row(r) - r[next] as f64;
+                        nll_sum[ai] += nll;
+                        let (mut mx, mut ss) = (0f32, 0f64);
+                        for (x, y) in r.iter().zip(r0) {
+                            let d = (x - y).abs();
+                            mx = mx.max(d);
+                            ss += (d as f64) * (d as f64);
+                        }
+                        let rms = (ss / n_vocab as f64).sqrt();
+                        max_abs[ai] = max_abs[ai].max(mx);
+                        sum_sq[ai] += ss;
+                        let flip = a != a0;
+                        flips[ai] += usize::from(flip);
+                        // delta at the two contending ids: a flip is possible iff the
+                        // cross-arm swing at (ref argmax, this argmax) exceeds the margin
+                        let swing = (r[a] - r0[a]) - (r[a0] - r0[a0]);
+                        line.push_str(&format!(
+                            ",\"{name}\":{{\"argmax\":{a},\"second\":{i2},\"margin\":{},\"nll\":{nll},\"max_abs\":{mx},\"rms\":{rms},\"flip\":{flip},\"swing\":{swing}}}",
+                            v1 - v2
+                        ));
+                    }
+                    line.push('}');
+                    if let Some(f) = out.as_mut() {
+                        use std::io::Write;
+                        writeln!(f, "{line}")?;
+                    }
+                }
+            }
+            let n = rows.len();
+            for (ai, (name, kv)) in arms.iter().enumerate() {
+                let bit_identical = hiddens[ai]
+                    .iter()
+                    .zip(&hiddens[0])
+                    .all(|(x, y)| x.to_bits() == y.to_bits());
+                let line = format!(
+                    "{{\"summary\":true,\"tag\":\"{tag}\",\"arm\":\"{name}\",\"env\":\"{}\",\"window\":{t},\"rows\":{n},\"stride\":{stride},\"budget\":{budget},\"prime_s\":{},\"hidden_bit_identical_to_ref\":{bit_identical},\"flips\":{},\"max_abs\":{},\"rms\":{},\"mean_nll\":{}}}",
+                    kv.iter()
+                        .map(|(k, v)| format!("{k}={v}"))
+                        .collect::<Vec<_>>()
+                        .join(","),
+                    prime_s[ai],
+                    flips[ai],
+                    max_abs[ai],
+                    (sum_sq[ai] / (n as f64 * n_vocab as f64)).sqrt(),
+                    nll_sum[ai] / n as f64
+                );
+                println!("{line}");
+                if let Some(f) = out.as_mut() {
+                    use std::io::Write;
+                    writeln!(f, "{line}")?;
+                }
             }
         }
 
