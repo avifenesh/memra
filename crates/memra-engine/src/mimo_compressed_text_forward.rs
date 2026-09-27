@@ -1275,6 +1275,81 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires pinned MiMo source and a dedicated two-card GPU lane"]
+    fn source_f32_kv_against_compressed_128_diagnostic() -> Result<(), Fail> {
+        use std::path::Path;
+        use std::sync::Arc;
+        use std::time::Instant;
+
+        use memra_gguf::source::SafetensorsSource;
+
+        const FOUR_GIB: usize = 4 * 1024 * 1024 * 1024;
+        const TOKENS: usize = 128;
+        let root = std::env::var("MIMO_PINNED_SOURCE_ROOT")?;
+        let source = Arc::new(SafetensorsSource::open(Path::new(&root))?);
+        let cards = [Engine::new(0)?, Engine::new(1)?];
+        let engines = [&cards[0], &cards[1]];
+        let text = MiMoTextWeights::load(engines, source)?;
+        let ids = (42..42 + TOKENS as u32).collect::<Vec<_>>();
+
+        let mut source_kv = text.text_forward(engines)?;
+        let start = Instant::now();
+        let mut source_last = Vec::new();
+        for &id in &ids {
+            source_last = source_kv.token(id)?;
+        }
+        let source_ms = start.elapsed().as_secs_f64() * 1e3;
+        let source_next = source_kv.token(220)?;
+        let mut compressed = text.compressed_text_forward(engines, TOKENS + 1, [FOUR_GIB; 2])?;
+        let start = Instant::now();
+        let mut compressed_last = Vec::new();
+        for &id in &ids {
+            compressed_last = compressed.token(id)?;
+        }
+        let compressed_ms = start.elapsed().as_secs_f64() * 1e3;
+        let compressed_next = compressed.token(220)?;
+        println!(
+            "mimo_f32_kv\tshape=text128\tsource_ms={source_ms:.6}\tcompressed_ms={compressed_ms:.6}"
+        );
+        for (name, f32_kv, packed_kv) in [
+            ("last", source_last.as_slice(), compressed_last.as_slice()),
+            (
+                "continuation",
+                source_next.as_slice(),
+                compressed_next.as_slice(),
+            ),
+        ] {
+            if f32_kv.len() != VOCAB || packed_kv.len() != VOCAB {
+                return Err("MiMo F32 KV comparison logits are incomplete".into());
+            }
+            let (diff, base) = f32_kv.iter().zip(packed_kv).fold(
+                (0.0f64, 0.0f64),
+                |(diff, base), (&got, &want)| {
+                    (
+                        diff + f64::from(got - want).powi(2),
+                        base + f64::from(want).powi(2),
+                    )
+                },
+            );
+            let argmax = |values: &[f32]| {
+                values
+                    .iter()
+                    .enumerate()
+                    .max_by(|(_, a), (_, b)| a.total_cmp(b))
+                    .map(|(index, _)| index)
+                    .unwrap()
+            };
+            println!(
+                "mimo_f32_kv\tstage={name}\trel_l2={:.9e}\tf32_argmax={}\tcompressed_argmax={}",
+                (diff / base).sqrt(),
+                argmax(f32_kv),
+                argmax(packed_kv),
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
     fn compressed_forward_plan_keeps_source_value_scale_and_stage_census() {
         let config = ModelConfig::from_hf(&HfConfig::parse(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
