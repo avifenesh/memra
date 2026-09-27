@@ -28,8 +28,12 @@
 #                                                runs the self-test backstop and this fixture
 #   8. MEMRA_SKIP_PERF_CI=1                 -> retired waiver explicitly refused
 #   9. rewritten topic based on newer main    -> boundary scan excludes already-remote commits
+#  10. a committed FLAGS.md row over the       -> push REFUSED by the census's row-shape half
+#      row-shape cap (memra#127)                  (memra#127); the same row split into a short
+#                                                 row plus a linked FLAGS-HISTORY.md section
+#                                                 -> push SUCCEEDS
 #
-# SCOPE, since the filename is narrower than the content: arms 1-4, 6 and 7 are the census arm;
+# SCOPE, since the filename is narrower than the content: arms 1-4, 6, 7 and 10 are the census arm;
 # arms 5 and 8 cover the hook's ESCAPE HATCHES, which are a property of the hook rather than of
 # any one gate in it. They live here because this is the only fixture that drives the real
 # tools/hooks/pre-push end to end, and a near-duplicate file to hold two arms would be a second
@@ -42,9 +46,10 @@ set -uo pipefail
 here=$(cd -- "$(dirname -- "$0")/.." && pwd)
 hook=$here/tools/hooks/pre-push
 census=$here/tools/check-flags.sh
+shape=$here/tools/flags-row-shape.py
 range=$here/tools/push-range.sh
 
-for required in "$hook" "$census" "$range"; do
+for required in "$hook" "$census" "$shape" "$range"; do
     [[ -f "$required" ]] || { echo "test_flags_guard: missing $required" >&2; exit 2; }
 done
 command -v rg >/dev/null || { echo "test_flags_guard: rg is required" >&2; exit 2; }
@@ -93,8 +98,10 @@ stage() {
 
         cp "$hook" tools/hooks/pre-push
         cp "$census" tools/check-flags.sh
+        cp "$shape" tools/flags-row-shape.py
         cp "$range" tools/push-range.sh
-        chmod +x tools/hooks/pre-push tools/check-flags.sh tools/push-range.sh
+        chmod +x tools/hooks/pre-push tools/check-flags.sh tools/flags-row-shape.py \
+            tools/push-range.sh
 
         # Stubs for the hook's other arms. Python, because the hook invokes them as
         # `python3 tools/<name>.py` — a shell stub under that name would fail as a syntax error
@@ -122,7 +129,9 @@ stage() {
         # `research/docsync3-20260811/flags-drift.txt` and creating it here would make the gate
         # refuse (rc=2) on every arm below — the fixture would report a census failure that is
         # really a re-grant refusal. Nothing else here needed the file: it was always empty.
-        printf '# Flags\n\n' > docs/FLAGS.md
+        # One placeholder row: the census's row-shape half (memra#127) refuses a registry with no
+        # rows at all (rc=2, a parser or registry break), which would red every arm below.
+        printf '# Flags\n\n| `MEMRA_FIXTURE_PLACEHOLDER` | fixture row |\n' > docs/FLAGS.md
         # An empty crate src keeps the census non-vacuous-by-construction (it refuses outright
         # when no crates/*/src exists) while reading zero flags, so the seed push is green.
         : > crates/memra-tokenizer/src/lib.rs
@@ -376,13 +385,54 @@ ${out:-}"
 fi
 
 # ---------------------------------------------------------------------------
+# Arm 10: the row-shape half of the census (memra#127). A documented read whose row grew past
+# the cap must REFUSE the push through the same hook arm, attributably; the same row split into
+# a short contract row plus a linked docs/FLAGS-HISTORY.md section must then PASS. The pass half
+# is what keeps the refusal from being satisfied by a hook that now refuses every FLAGS edit.
+# ---------------------------------------------------------------------------
+stage arm10
+plant_read "$work"
+(
+    cd "$work" || exit 1
+    python3 -c 'import sys; print("| `%s` | off | %s |" % (sys.argv[1], "x" * 4000))' \
+        "$FIXTURE_FLAG" >> docs/FLAGS.md
+    git add docs/FLAGS.md && git commit -qm "flags row over the row-shape cap"
+) >/dev/null
+out=$(push "$work"); rc=$?
+if (( rc != 0 )) && [[ "$out" == *"cap 4000"* && "$out" == *"flags census is red"* ]]; then
+    ok "arm10: a row over the row-shape cap REFUSES the push, attributed to the flags census"
+else
+    bad "arm10: over-cap row was not refused by the flags census (rc=$rc)
+$out"
+fi
+(
+    cd "$work" || exit 1
+    python3 - "$FIXTURE_FLAG" <<'PY'
+import sys
+flag = sys.argv[1]
+lines = open("docs/FLAGS.md").read().split("\n")
+lines = [l for l in lines if not l.startswith("| `%s`" % flag)]
+lines.insert(len(lines) - 1, "| `%s` | off | Rollback: unset. History: [FLAGS-HISTORY.md](FLAGS-HISTORY.md#%s) |" % (flag, flag.lower()))
+open("docs/FLAGS.md", "w").write("\n".join(lines))
+open("docs/FLAGS-HISTORY.md", "w").write("# FLAGS history\n\n## %s\n\nThe long row, moved.\n" % flag)
+PY
+    git add docs/FLAGS.md docs/FLAGS-HISTORY.md && git commit -qm "split the row"
+) >/dev/null
+if out=$(push "$work"); then
+    ok "arm10: the split row (short row + linked FLAGS-HISTORY.md section) PASSES"
+else
+    bad "arm10: the split row was refused
+$out"
+fi
+
+# ---------------------------------------------------------------------------
 # The fixture's own floor, the shape test_check_flags.sh uses: a run that records FEWER
 # assertions than it should is BROKEN, not green. Every `bad` path above is paired so the count
 # is invariant to which branch was taken.
 #   arms 1-2: 2 | arm 3: 1 | arm 4: 1 | arm 5: 2 | arm 6: 1 | arm 7: 3 | arm 8: 1
-#   arm 9: 1  = 12
+#   arm 9: 1 | arm 10: 2  = 14
 # ---------------------------------------------------------------------------
-EXPECTED_ASSERTIONS=12
+EXPECTED_ASSERTIONS=14
 total=$((pass + fail))
 printf '\ntest_flags_guard: %d passed, %d failed (%d assertions, expected %d)\n' \
     "$pass" "$fail" "$total" "$EXPECTED_ASSERTIONS"

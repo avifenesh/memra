@@ -21,6 +21,8 @@ set -uo pipefail
 cd -- "$(dirname -- "$0")/.."
 SCRIPT=$PWD/tools/check-flags.sh
 [[ -x "$SCRIPT" ]] || { echo "test_check_flags: missing $SCRIPT" >&2; exit 2; }
+SHAPE=$PWD/tools/flags-row-shape.py
+[[ -x "$SHAPE" ]] || { echo "test_check_flags: missing $SHAPE" >&2; exit 2; }
 command -v rg >/dev/null || { echo "test_check_flags: rg is required" >&2; exit 2; }
 # TEETH HARNESS ONLY (tools/test_gate_integrity_r2.sh, the same shape round 1 used for
 # MEMRA_PUSH_RANGE). Pointing this at a census that CANNOT SEE a flag is how the live block below
@@ -49,9 +51,13 @@ fixture() {
         [[ -f "$root/crates/$legacy/src/lib.rs" ]] || : > "$root/crates/$legacy/src/lib.rs"
     done
     cp "$SCRIPT" "$root/tools/check-flags.sh"
+    cp "$SHAPE" "$root/tools/flags-row-shape.py"
     printf '%s\n' "$body" > "$root/crates/$crate/src/lib.rs"
+    # The placeholder row keeps the registry non-empty when a case documents nothing: the row-shape
+    # half refuses (rc=2) a registry with no rows at all, which is a parser or registry break.
     {
         printf '# Flags\n\n'
+        printf '| `MEMRA_FIXTURE_PLACEHOLDER` | fixture row |\n'
         [[ -n "$documented" ]] && printf '| `%s` | documented in the fixture |\n' "$documented"
     } > "$root/docs/FLAGS.md"
     printf '%s' "$root"
@@ -210,6 +216,95 @@ fi
 rm -rf "$env_root"
 
 # ---------------------------------------------------------------------------
+# ROW SHAPE (memra#127). check-flags.sh also runs tools/flags-row-shape.py: a row states one
+# current contract and its history lives in docs/FLAGS-HISTORY.md. One red arm per rule, a green
+# arm that uses every rule's legal form, an off-by-one arm at the cap, and the refusal when the
+# checker is missing. Every arm documents its read, so the coverage half is green and the verdict
+# comes from the shape half alone.
+# ---------------------------------------------------------------------------
+SHAPE_READ='pub fn on() -> bool {
+    std::env::var("MEMRA_FIXTURE_SHAPE").as_deref() == Ok("1")
+}'
+
+shape_fixture() {
+    # shape_fixture <FLAGS.md body> [FLAGS-HISTORY.md body]; `-` for no history file
+    local root
+    root=$(fixture memra-engine "$SHAPE_READ" MEMRA_FIXTURE_SHAPE)
+    printf '# Flags\n\n%s\n' "$1" > "$root/docs/FLAGS.md"
+    [[ "${2:--}" == "-" ]] || printf '%s\n' "$2" > "$root/docs/FLAGS-HISTORY.md"
+    printf '%s' "$root"
+}
+pad() { python3 -c 'import sys; print("x" * int(sys.argv[1]), end="")' "$1"; }
+
+HDR='| flag | default | what it does |
+| --- | --- | --- |'
+GOOD_ROW='| `MEMRA_FIXTURE_SHAPE` | **OFF**; decide-by: 2026-10-01 | `1` arms it. Rollback: unset. History: [FLAGS-HISTORY.md](FLAGS-HISTORY.md#memra_fixture_shape) |'
+GOOD_HIST='# FLAGS history
+
+## MEMRA_FIXTURE_SHAPE
+
+The row before the split.'
+
+check "shape: a conforming row with a linked history section passes" 0 \
+    "history sections all linked" \
+    "$(shape_fixture "$HDR
+$GOOD_ROW" "$GOOD_HIST")"
+
+# A row exactly at the cap is legal; one character more is not (the cap is inclusive).
+row_prefix='| `MEMRA_FIXTURE_SHAPE` | off | '
+at_cap="$row_prefix$(pad $((4000 - ${#row_prefix} - 2))) |"
+check "shape: a row of exactly 4000 chars passes (cap is inclusive)" 0 \
+    "rows within 4000 chars" \
+    "$(shape_fixture "$HDR
+$at_cap")"
+
+check "shape: a row over 4000 chars is RED" 1 \
+    "cap 4000" \
+    "$(shape_fixture "$HDR
+${at_cap% |}x |")"
+
+check "shape: a default cell over 300 chars is RED" 1 \
+    "default cell is 301 chars" \
+    "$(shape_fixture "$HDR
+| \`MEMRA_FIXTURE_SHAPE\` | $(pad 301) | short |")"
+
+check "shape: two decide-by dates in one row is RED (one of them is stale)" 1 \
+    "row names 2 decide-by dates" \
+    "$(shape_fixture "$HDR
+| \`MEMRA_FIXTURE_SHAPE\` | **OFF**; decide-by: 2026-10-01 | decide-by 2026-09-20 passed |")"
+
+check "shape: a history link with no section is RED" 1 \
+    "has no \`## \` section with that anchor" \
+    "$(shape_fixture "$HDR
+$GOOD_ROW" "# FLAGS history")"
+
+check "shape: a history section no row links is RED" 1 \
+    "is linked from no row" \
+    "$(shape_fixture "$HDR
+$GOOD_ROW" "$GOOD_HIST
+
+## MEMRA_FIXTURE_ORPHAN
+
+History no row admits to.")"
+
+check "shape: a duplicate history section is RED" 1 \
+    "duplicate section" \
+    "$(shape_fixture "$HDR
+$GOOD_ROW" "$GOOD_HIST
+
+## MEMRA_FIXTURE_SHAPE
+
+A second copy.")"
+
+# The shape half cannot be skipped by deleting it: a census without its checker refuses.
+noshape_root=$(shape_fixture "$HDR
+$GOOD_ROW" "$GOOD_HIST")
+rm -f "$noshape_root/tools/flags-row-shape.py"
+check "shape: a missing flags-row-shape.py is refused (rc=2), not skipped" 2 \
+    "missing tools/flags-row-shape.py" \
+    "$noshape_root"
+
+# ---------------------------------------------------------------------------
 # The live tree: the flags that motivated all of this must be IN THE CENSUS, not merely
 # mentioned in a doc.
 #
@@ -287,6 +382,21 @@ else
     printf 'FAIL live: gate is red\n%s\n' "$live_out" >&2; fail=$((fail+1))
 fi
 
+# The row-shape half on the live tree, NON-VACUOUS: a parser that found no rows, or a split that
+# moved no history, would report green over nothing. The gate-green arm above already fails on
+# any shape violation; this arm fails if the shape census stopped seeing the registry.
+shape_out=$(python3 tools/flags-row-shape.py docs/FLAGS.md 2>&1); shape_rc=$?
+shape_rows=$(printf '%s' "$shape_out" | sed -n 's/^flags-row-shape: \([0-9]*\) rows.*/\1/p')
+shape_secs=$(printf '%s' "$shape_out" | sed -n 's/.*, \([0-9]*\) history sections all linked$/\1/p')
+if (( shape_rc == 0 )) && (( ${shape_rows:-0} >= 500 )) && (( ${shape_secs:-0} >= 40 )); then
+    printf 'ok   live: row shape green over %s rows and %s history sections\n' "$shape_rows" "$shape_secs"
+    pass=$((pass+1))
+else
+    printf 'FAIL live: row shape rc=%s rows=%s sections=%s (want 0, >=500, >=40)\n%s\n' \
+        "$shape_rc" "${shape_rows:-0}" "${shape_secs:-0}" "$shape_out" >&2
+    fail=$((fail+1))
+fi
+
 # The retired baseline must STAY gone in this tree. The throwaway arms above prove the gate
 # refuses a reappearance; this proves nobody has restored it here — the difference between "the
 # refusal works" and "there is nothing to refuse".
@@ -307,10 +417,11 @@ fi
 # count — and the summary line would still say "0 failed".
 #
 # 8 original `check` cases + 4 grandfather-retirement arms + 3 flags x 3 live assertions
-# + census size + gate-green + baseline-still-absent = 24.
+# + census size + gate-green + baseline-still-absent = 24; + 9 row-shape arms and the live
+# row-shape arm (memra#127, 2026-09-27) = 34.
 # (This constant caught its own first draft: it was written 23 and the run refused at 19. It
 # went 19 -> 24 on 2026-08-23 when the grandfather list was deleted.)
-EXPECTED_ASSERTIONS=24
+EXPECTED_ASSERTIONS=34
 total=$((pass + fail))
 printf '\ntest_check_flags: %d passed, %d failed (%d assertions, expected %d)\n' \
     "$pass" "$fail" "$total" "$EXPECTED_ASSERTIONS"
@@ -323,5 +434,5 @@ fi
 
 # Sibling fixture over the same registry: docs/FLAGS.md table shape (memra #22). Chained here so
 # it has a caller in the step ci.yml already runs ("Flags census self-test"); it keeps its own
-# assertion count, so the 24 above stay exactly what they were.
+# assertion count, so the 34 above stay exactly what they were.
 exec tools/test_docs_registry_census.sh

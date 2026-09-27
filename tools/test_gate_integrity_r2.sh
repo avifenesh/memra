@@ -94,8 +94,9 @@ assert_rc "A-9 control: the live tree is green" 0 "$RC"
 # census's 75-name grandfather list was deleted and four retirement arms plus a
 # baseline-still-absent live arm were added. If you change EXPECTED_ASSERTIONS in
 # tools/test_check_flags.sh, change this line in the same commit — this arm exists precisely so
-# that is not optional. (It caught that bump within one run, which is the pin working.)
-assert_has "A-9 control: the fixture reports its assertion count" "$out" "expected 24"
+# that is not optional. (It caught that bump within one run, which is the pin working.) It went
+# 24 -> 34 on 2026-09-27 with the row-shape arms (memra#127).
+assert_has "A-9 control: the fixture reports its assertion count" "$out" "expected 34"
 
 echo "=== A-16: the port guard refuses rather than measuring a stranger ==="
 # TEETH: a real listener on the port. `python3 -c` binds, prints the port, and holds it until

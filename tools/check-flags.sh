@@ -200,3 +200,25 @@ if [[ -s "$uncovered_file" ]]; then
 fi
 echo "check-flags: no uncovered runtime names"
 echo "check-flags: every runtime MEMRA_* name resolves against '$flag_doc' (no grandfather list)"
+
+# ---- row shape (memra#127) ----
+# Coverage above says every read has a row; this says every row still states ONE contract.
+# Long rows accumulated self-contradictions one clause at a time (memra#119 review found a fresh
+# one in three consecutive rounds of a single ~16k-character row), so the rows carry the current
+# contract and the receipt history lives in docs/FLAGS-HISTORY.md. tools/flags-row-shape.py holds
+# the rules and their reasons. It runs HERE rather than as its own step so that the pre-push flags
+# arm and ci.yml's "Flags census self-test" live arm both enforce it with no second caller to
+# forget. A missing checker is a refusal (rc=2), never a pass.
+shape=tools/flags-row-shape.py
+[[ -f "$shape" ]] || { echo "check-flags: missing $shape (the row-shape half of this census)" >&2; exit 2; }
+command -v python3 >/dev/null || { echo "check-flags: python3 is required for $shape" >&2; exit 2; }
+shape_rc=0
+python3 "$shape" "$flag_doc" || shape_rc=$?
+if (( shape_rc == 1 )); then
+    echo "check-flags: $flag_doc row shape is red (violations above). Keep the current contract in" >&2
+    echo "    the row and move the history to docs/FLAGS-HISTORY.md, in the same commit." >&2
+    exit 1
+elif (( shape_rc != 0 )); then
+    echo "check-flags: $shape could not read the registry (rc=$shape_rc)" >&2
+    exit 2
+fi
