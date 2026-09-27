@@ -1,0 +1,10 @@
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+55.4,588564135,3886,151457.6,60544.0,17248,553023,182155.3,"void dsv4_gemv_fp8_m_kernel<(int)32, (bool)0>(const unsigned char *, const float *, int, const unsigned short *, float *, int, int, int, int, int, int)"
+23.8,252808480,318,794995.2,284735.5,4960,2792922,945025.7,"void dsv4_gemm_fp8_tile_kernel<(int)4, (int)4, (int)8, (int)1, (int)6>(const unsigned char *, const float *, int, const unsigned short *, float *, int, int, int, int, int)"
+15.3,162801031,4252,38288.1,35904.0,15360,97760,7037.7,"void dsv4_dots_f32acc_mrow_kernel<(int)32>(const float *, const void *, int, float *, int, int)"
+5.4,57138595,292,195680.1,173984.0,6080,756351,119159.8,"void dsv4_dots_f32acc_tile_kernel<(int)8, (int)8>(const float *, const void *, int, float *, int, int, int)"
+0.1,1053661,18,58536.7,19040.0,9056,278943,84020.3,"void dsv4_gemv_fp8_m_kernel<(int)16, (bool)0>(const unsigned char *, const float *, int, const unsigned short *, float *, int, int, int, int, int, int)"
+0.0,317887,18,17660.4,7120.0,3616,77215,22968.0,"void dsv4_gemv_fp8_m_kernel<(int)4, (bool)0>(const unsigned char *, const float *, int, const unsigned short *, float *, int, int, int, int, int, int)"
+0.0,157184,18,8732.4,4368.0,1696,37856,11160.9,"void dsv4_gemv_fp8_m_kernel<(int)1, (bool)0>(const unsigned char *, const float *, int, const unsigned short *, float *, int, int, int, int, int, int)"
+0.0,78464,10,7846.4,6848.0,2848,15328,3946.4,"void dsv4_dots_f32acc_mrow_kernel<(int)4>(const float *, const void *, int, float *, int, int)"
+0.0,38400,10,3840.0,3488.0,1312,8192,2032.3,"void dsv4_dots_f32acc_mrow_kernel<(int)1>(const float *, const void *, int, float *, int, int)"
