@@ -2273,8 +2273,11 @@ const REPLAY_LIMIT: usize = 16384;
 /// launch on the dense-fast transport (memra #710).
 const CMP_HOIST_CHUNK: usize = 8;
 /// The one-pass stage of `attention_rows_dev`'s per-request loop; a multi-request replay step
-/// runs stages 0, 1 and 2 instead.
+/// without the two-launch sink attention runs its stage 2 (the attention) only.
 const ROWS_STAGE_ALL: u8 = u8::MAX;
+/// Rows a multi-request replay step's multi-row launches take (cu/dsv4_gpu.cu `DSV4_ROWS_MAX`);
+/// wider steps run the per-request loop.
+const ROWS_BATCH_MAX: usize = 16;
 
 /// Which compressor of a layer [`Dsv4Gpu::cmp_rows_replay_dev`] advances.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -17059,6 +17062,254 @@ impl Dsv4Gpu {
         Ok(())
     }
 
+    /// The per-request section of [`Self::attention_rows_dev`] for a multi-request replay step
+    /// (memra #710 B-row), one multi-row launch set per stage: the ring writes, the indexer
+    /// compressors, the index lists and the indexer, the attention compressors, and with
+    /// `attention` the position-split gather and the two-launch sink attention. Row y is
+    /// request y's one-row replay program on its own cache, checkpoint and workspace rows.
+    #[allow(clippy::too_many_arguments)]
+    fn attention_rows_replay_batch_dev(
+        &self,
+        st: &Stage,
+        layer: &LayerDev,
+        groups: &mut [AttnRows<'_>],
+        vws: &mut VerifyWs,
+        sink: *const f32,
+        heads: usize,
+        hd: usize,
+        rd: usize,
+        eps: f32,
+        attention: bool,
+    ) -> Res<()> {
+        let stream = st.gpu.stream();
+        let win = self.model.cfg().sliding_window as usize;
+        let n = groups.len();
+        let ratio = layer.ratio;
+        let stride = vws.idx_stride;
+        if n > ROWS_BATCH_MAX
+            || groups
+                .iter()
+                .enumerate()
+                .any(|(y, g)| g.t != 1 || g.row0 != y || g.cache.c4_host.is_some())
+        {
+            return Err(
+                "multi-row replay attention takes one row per request, rows in order, \
+                        device-resident caches"
+                    .into(),
+            );
+        }
+        let pos = vws.pos_dev.device_ptr(&stream).0 as *const i32;
+        let idx = vws.idx.device_ptr_mut(&stream).0 as *mut i32;
+        let trans: Vec<i32> = groups.iter().map(|g| g.lck.trans_base as i32).collect();
+        let dsts: Vec<*mut f32> = groups
+            .iter_mut()
+            .map(|g| {
+                let physical = g
+                    .cache
+                    .split
+                    .as_ref()
+                    .map_or(g.lck.trans_base, |sp_| win + sp_.local_rows);
+                (g.cache.kvc.device_ptr_mut(&stream).0 as usize + physical * hd * 4) as *mut f32
+            })
+            .collect();
+        unsafe {
+            ck(
+                "rows ring write",
+                k::memra_dsv4_rows_copy(
+                    dsts.as_ptr(),
+                    n as i32,
+                    dpf!(vws.kv, &stream),
+                    hd as i32,
+                    sp(&stream),
+                ),
+            )?;
+        }
+        if let Some(blocks_max) = vws.replay_limit.checked_div(ratio) {
+            if let Some(ix) = &layer.idx {
+                self.cmp_rows_replay_dev(st, &ix.cmp, groups, vws, CmpRowsSel::Indexer, rd, eps)?;
+                let cap = win + ix.topk.min(blocks_max);
+                let wscale = ((ix.hd as f64).powf(-0.5) * (ix.heads as f64).powf(-0.5)) as f32;
+                let ikv: Vec<*mut f32> = groups
+                    .iter_mut()
+                    .map(|g| g.cache.ikvc.as_mut().map(|c| dpm!(*c, &stream)))
+                    .collect::<Option<_>>()
+                    .ok_or("ikvc")?;
+                let score_row = vws.score.len() / vws.tmax.max(1);
+                unsafe {
+                    ck(
+                        "rows replay fine indices",
+                        k::memra_dsv4_replay_indices_rows(
+                            idx,
+                            pos,
+                            trans.as_ptr(),
+                            n as i32,
+                            win as i32,
+                            ratio as i32,
+                            cap as i32,
+                            stride as i32,
+                            1,
+                            ix.topk as i32,
+                            sp(&stream),
+                        ),
+                    )?;
+                    ck(
+                        "rows replay indexer",
+                        k::memra_dsv4_replay_indexer_rows(
+                            dpf!(vws.qi, &stream),
+                            ikv.as_ptr(),
+                            dpf!(vws.wproj, &stream),
+                            wscale,
+                            dpm!(vws.score, &stream),
+                            score_row as i64,
+                            idx.add(win),
+                            stride as i32,
+                            pos,
+                            n as i32,
+                            ix.heads as i32,
+                            ix.hd as i32,
+                            blocks_max as i32,
+                            ratio as i32,
+                            ix.topk as i32,
+                            win as i32,
+                            sp(&stream),
+                        ),
+                    )?;
+                }
+            } else {
+                unsafe {
+                    ck(
+                        "rows replay coarse indices",
+                        k::memra_dsv4_replay_indices_rows(
+                            idx,
+                            pos,
+                            trans.as_ptr(),
+                            n as i32,
+                            win as i32,
+                            ratio as i32,
+                            (win + blocks_max) as i32,
+                            stride as i32,
+                            0,
+                            i32::MAX,
+                            sp(&stream),
+                        ),
+                    )?;
+                }
+            }
+            self.cmp_rows_replay_dev(
+                st,
+                layer.cmp.as_ref().expect("ratio!=0 has compressor"),
+                groups,
+                vws,
+                CmpRowsSel::Attention,
+                rd,
+                eps,
+            )?;
+        } else {
+            unsafe {
+                ck(
+                    "rows replay window indices",
+                    k::memra_dsv4_replay_indices_rows(
+                        idx,
+                        pos,
+                        trans.as_ptr(),
+                        n as i32,
+                        win as i32,
+                        0,
+                        win as i32,
+                        stride as i32,
+                        0,
+                        0,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+        }
+        if !attention {
+            return Ok(());
+        }
+        let topk = layer.idx.as_ref().map_or(i32::MAX, |ix| ix.topk as i32);
+        let slots_max = win
+            + vws
+                .replay_limit
+                .checked_div(ratio)
+                .map_or(0, |b| b.min(topk as usize));
+        let splits = groups.iter().filter(|g| g.cache.split.is_some()).count();
+        let (kvs, attention_idx): (Vec<*mut f32>, *const i32) = if splits == n {
+            let mut rows = Vec::with_capacity(n);
+            let mut rank = None;
+            for g in groups.iter_mut() {
+                let peer = g.peer_kvc;
+                let trans_base = g.lck.trans_base;
+                let LayerCache { kvc, split, .. } = &mut *g.cache;
+                let sp_ = split.as_ref().expect("counted split");
+                if *rank.get_or_insert(sp_.rank) != sp_.rank {
+                    return Err("multi-row replay attention: split ranks differ".into());
+                }
+                let local_trans = win + sp_.local_rows;
+                rows.push(k::Dsv4SplitRow {
+                    local: dpf!(*kvc, &stream),
+                    peer,
+                    recent: dpf!(sp_.recent, &stream),
+                    tags: sp_.tags.device_ptr(&stream).0 as *const i32,
+                    recent_rows: sp_.recent_rows as i32,
+                    cap_blocks: sp_.cap_blocks as i32,
+                    logical_transient: trans_base as i32,
+                    transient_rows: (kvc.len() / hd - local_trans) as i32,
+                    local_transient: local_trans as i32,
+                    pad: 0,
+                });
+            }
+            let (kv_g, idx_g) = crate::dsv4_c4::split_gather_rows(
+                &mut vws.c4_gather,
+                &stream,
+                &rows,
+                rank.unwrap_or(0),
+                idx as *const i32,
+                slots_max,
+                stride,
+            )?;
+            (vec![kv_g as *mut f32; n], idx_g)
+        } else if splits == 0 {
+            (
+                groups
+                    .iter_mut()
+                    .map(|g| dpm!(g.cache.kvc, &stream))
+                    .collect(),
+                idx as *const i32,
+            )
+        } else {
+            return Err("multi-row replay attention: split and unsplit caches in one step".into());
+        };
+        unsafe {
+            ck(
+                "rows replay attention st",
+                k::memra_dsv4_sink_attn_st_rows(
+                    dpf!(vws.q, &stream),
+                    kvs.as_ptr(),
+                    attention_idx,
+                    sink,
+                    dpm!(vws.sink_scores, &stream),
+                    (heads * stride) as i64,
+                    dpm!(vws.o, &stream),
+                    n as i32,
+                    heads as i32,
+                    hd as i32,
+                    slots_max as i32,
+                    stride as i32,
+                    (hd as f64).powf(-0.5) as f32,
+                    pos,
+                    win as i32,
+                    ratio as i32,
+                    topk,
+                    sp(&stream),
+                ),
+            )?;
+        }
+        self.sink_st_calls
+            .fetch_add(n as u64, std::sync::atomic::Ordering::Relaxed);
+        Ok(())
+    }
+
     /// One compressor of every row in a multi-request replay step (memra #710 B-row): the
     /// snapshot, row record and slot append, then the emission, as the multi-row launches of
     /// `memra_dsv4_cmp_rows_replay`. Each row reads its own pending rings, checkpoint, hoisted
@@ -18029,35 +18280,23 @@ impl Dsv4Gpu {
         }
 
         // ---- per request: ring write, index lists, compressors and sink attention on its own
-        // cache and rows. A multi-request replay step runs the loop in three stages with each
-        // compressor's multi-row launches between them (memra #710 B-row): the ring writes, the
-        // indexer compressors, the index lists, the attention compressors, then the attention.
+        // cache and rows. A multi-request replay step of up to 16 rows takes each of those as
+        // one multi-row launch set instead (memra #710 B-row), and with the two-launch sink
+        // attention it skips the per-request loop; without it the loop runs the attention only.
         // Each row keeps its own order and no row reads another row's cache.
-        let multi_rows = replay_pos.is_some() && groups.len() > 1;
-        let stages: &[u8] = if multi_rows {
-            &[0, 1, 2]
-        } else {
-            &[ROWS_STAGE_ALL]
+        let multi_rows = replay_pos.is_some() && groups.len() > 1 && groups.len() <= ROWS_BATCH_MAX;
+        if multi_rows {
+            self.attention_rows_replay_batch_dev(
+                st, layer, groups, vws, sink, heads, hd, rd, eps, sink_st,
+            )?;
+        }
+        let stages: &[u8] = match (multi_rows, sink_st) {
+            (false, _) => &[ROWS_STAGE_ALL],
+            (true, true) => &[],
+            (true, false) => &[2],
         };
         for &stage in stages {
             let run = |k: u8| stage == ROWS_STAGE_ALL || stage == k;
-            if stage == 1
-                && layer.ratio != 0
-                && let Some(ix) = &layer.idx
-            {
-                self.cmp_rows_replay_dev(st, &ix.cmp, groups, vws, CmpRowsSel::Indexer, rd, eps)?;
-            }
-            if stage == 2 && layer.ratio != 0 {
-                self.cmp_rows_replay_dev(
-                    st,
-                    layer.cmp.as_ref().expect("ratio!=0 has compressor"),
-                    groups,
-                    vws,
-                    CmpRowsSel::Attention,
-                    rd,
-                    eps,
-                )?;
-            }
             for g in groups.iter_mut() {
                 let (pos0, t, row0) = (g.pos0, g.t, g.row0);
                 // Under replay each group is one row, reading its position at its own row of the

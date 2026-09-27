@@ -435,6 +435,45 @@ pub(crate) fn split_gather(
     Ok((out as *const f32, out_idx as *const i32))
 }
 
+/// [`split_gather`] for a multi-request replay step (memra #710 B-row): query row q is request
+/// q's one-row gather, from its own stores and recent ring (`rows[q]`), into workspace rows
+/// `q * slots`. Returns the workspace's (values, indices).
+pub(crate) fn split_gather_rows(
+    work: &mut Option<C4Gather>,
+    stream: &Arc<CudaStream>,
+    rows: &[crate::dsv4_ffi::Dsv4SplitRow],
+    rank: usize,
+    indices: *const i32,
+    slots: usize,
+    stride: usize,
+) -> Res<(*const f32, *const i32)> {
+    let nq = rows.len();
+    if nq == 0 || nq > SPLIT_GATHER_ROWS || slots == 0 || slots > 640 || stride < slots {
+        return Err("invalid position-split C4 gather shape".into());
+    }
+    C4Gather::ensure(work, stream, nq, stride)?;
+    let w = work.as_mut().expect("C4 gather workspace");
+    let (out, _out_record) = w.values.device_ptr_mut(stream);
+    let (out_idx, _out_idx_record) = w.indices.device_ptr_mut(stream);
+    unsafe {
+        crate::dsv4_ffi::ck(
+            "C4 split gather rows",
+            crate::dsv4_ffi::memra_dsv4_c4_split_gather_rows(
+                rows.as_ptr(),
+                nq as i32,
+                rank as i32,
+                indices,
+                out as *mut f32,
+                out_idx as *mut i32,
+                slots as i32,
+                stride as i32,
+                stream.cu_stream().cast(),
+            ),
+        )?;
+    }
+    Ok((out as *const f32, out_idx as *const i32))
+}
+
 fn row_range(row: usize, elements: usize, capacity: usize) -> Res<std::ops::Range<usize>> {
     if !elements.is_multiple_of(HD) {
         return Err("C4 writes must contain whole 512-value rows".into());

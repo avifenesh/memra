@@ -28,7 +28,111 @@ pub struct Dsv4CmpRowPtrs {
     pub pad: i32,
 }
 
+/// One row of `memra_dsv4_c4_split_gather_rows`'s table (cu/dsv4_gpu.cu `Dsv4SplitRow`).
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct Dsv4SplitRow {
+    pub local: *const f32,
+    pub peer: *const f32,
+    pub recent: *const f32,
+    pub tags: *const i32,
+    pub recent_rows: i32,
+    pub cap_blocks: i32,
+    pub logical_transient: i32,
+    pub transient_rows: i32,
+    pub local_transient: i32,
+    pub pad: i32,
+}
+
 unsafe extern "C" {
+    /// A multi-request replay step's ring writes (memra #710 B-row): row y's `width` floats at
+    /// `src + y * width` to `dst[y]` (host array of at most 16).
+    pub fn memra_dsv4_rows_copy(
+        dst: *const *mut f32,
+        n_rows: i32,
+        src: *const f32,
+        width: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// A multi-request replay step's index lists (memra #710 B-row): `memra_dsv4_replay_indices`
+    /// per row, or with ratio 0 the window-only list, row y at `idx + y * stride` with position
+    /// `pos[y]` and transient base `trans_base[y]` (host array).
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_replay_indices_rows(
+        idx: *mut i32,
+        pos: *const i32,
+        trans_base: *const i32,
+        n_rows: i32,
+        win: i32,
+        ratio: i32,
+        cap: i32,
+        stride: i32,
+        fine: i32,
+        topk: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// A multi-request replay step's indexer (memra #710 B-row): `memra_dsv4_replay_indexer` per
+    /// row, row y reading `q + y * heads * hd`, its store `kv[y]` (host array), `w + y * heads`
+    /// and position `pos[y]`, scoring into `score + y * score_row` and selecting into
+    /// `idx_tail + y * stride`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_replay_indexer_rows(
+        q: *const f32,
+        kv: *const *mut f32,
+        w: *const f32,
+        scale: f32,
+        score: *mut f32,
+        score_row: i64,
+        idx_tail: *mut i32,
+        stride: i32,
+        pos: *const i32,
+        n_rows: i32,
+        heads: i32,
+        hd: i32,
+        nb_max: i32,
+        ratio: i32,
+        topk: i32,
+        win: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// A multi-request replay step's position-split C4 gather (memra #710 B-row): query row q
+    /// is request q's one-row gather from its table row, into workspace rows `q * slots`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_c4_split_gather_rows(
+        rows: *const Dsv4SplitRow,
+        n_rows: i32,
+        rank: i32,
+        indices: *const i32,
+        out: *mut f32,
+        out_indices: *mut i32,
+        slots: i32,
+        stride: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// A multi-request replay step's sink attention (memra #710 B-row): request y is the
+    /// one-row replay launch over its q, o and index rows, its store `kv[y]` (host array) and
+    /// its position `pos[y]`, with its scores at `scores + y * scores_row`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_sink_attn_st_rows(
+        q: *const f32,
+        kv: *const *mut f32,
+        idxs: *const i32,
+        sink: *const f32,
+        scores: *mut f32,
+        scores_row: i64,
+        o: *mut f32,
+        n_rows: i32,
+        heads: i32,
+        hd: i32,
+        slots_max: i32,
+        idx_stride: i32,
+        scale: f32,
+        pos: *const i32,
+        win: i32,
+        ratio: i32,
+        topk: i32,
+        stream: *mut c_void,
+    ) -> i32;
     /// The compressor of every row of a multi-request replay step (memra #710 B-row): the
     /// snapshot, row record and slot append, the pooled block, then the overlap shift, RMS norm,
     /// RoPE, QAT and store, as three launches per 16 rows. `rows` is host memory, copied into
