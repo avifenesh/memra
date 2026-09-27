@@ -106,6 +106,7 @@ mod embed_api;
 mod handoff_io;
 mod histogram;
 mod hybrid_telemetry;
+mod image_fetch;
 /// In-memory reference implementation of `metering::JobStore` (memra#550,
 /// `docs/decisions/COMPLETE-RESULT-PATH-V1.md`): the bounded, TTL'd buffer a background
 /// (`background: true`) job's output would live in between the worker finishing and the
@@ -10628,6 +10629,13 @@ async fn chat_completions_with_admission(
     };
     if let Err(message) = validate_chat_messages(&req.messages) {
         return with_request_id(&env.id, bad_request(message, Some("messages")));
+    }
+    // memra#533: rewrite any `http(s)` image_url into a base64 data URI BEFORE anything
+    // below reads message content (capture, vision-permit gating, the template walkers).
+    // No-op unless MEMRA_FETCH_URLS=1; disabled, an http(s) image_url reaches the walker's
+    // existing "http(s) fetch is disabled" 400 unchanged.
+    if let Err(err) = image_fetch::resolve_remote_image_urls_in_messages(&mut req.messages).await {
+        return with_request_id(&env.id, err.into_response());
     }
     // HONESTY GATE (gap-scan F4): semantic params we can't honor 400 loudly, never
     // silent downgrades. response_format json_object/json_schema are now REAL
