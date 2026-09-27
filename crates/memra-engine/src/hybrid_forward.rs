@@ -5878,6 +5878,8 @@ impl HybridModel {
         // split stays reachable through MEMRA_PRIME_PIPE=0 and is the exactness oracle.
         if crate::pp::prime_pipe_on() && crate::pp::prime_pp_on() && !crate::pp::pp2_streams_off() {
             if let Some(fence) = crate::pp::pp_cuts(self.layers.len()).filter(|f| f.len() == 3) {
+                // No lift without this family's stage-0 intake seam and substituted-token
+                // bit-identity gate; copying the glm5 overlay fix here is the memra #21 trap.
                 if overlay.is_some() {
                     return Err(
                         "vision embedding overlay + pipelined PP prime unsupported (v1); \
@@ -5908,6 +5910,8 @@ impl HybridModel {
                     stages,
                     ranges.len(),
                 ) {
+                    // No lift without this family's stage-0 intake seam and substituted-token
+                    // bit-identity gate; copying the glm5 overlay fix here is the memra #21 trap.
                     if overlay.is_some() {
                         return Err(
                             "vision embedding overlay + pipelined PP prime unsupported; \
@@ -6652,6 +6656,13 @@ impl HybridModel {
             && crate::pp::prime_pp_on()
             && let Some(fence) = crate::pp::pp_cuts(self.layers.len())
         {
+            // DO NOT LIFT THIS REFUSAL BY COPYING THE GLM5 FIX (memra #21). The glm5 hc walk
+            // serves an overlay under PP because it has a stage-0 embedding-intake seam and a
+            // substituted-token bit-identity gate (`glm5-hyper-ppn-gate` arm 5, with a span-shift
+            // red arm). The qwen, gemma and step37 walks through this function have neither.
+            // Setting MEMRA_VISION_OVERLAY_PUBLISH on this path would answer fluently with the
+            // wrong image rows and every counter green. Lifting it for a family owes that family
+            // its own intake seam and its own substituted-token gate first.
             if overlay.is_some() {
                 return Err("vision embedding overlay + PP prime unsupported (v1); \
                          run single-device or MEMRA_PRIME_PP=0"
