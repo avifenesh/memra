@@ -5,7 +5,7 @@ use cudarc::driver::CudaSlice;
 use memra_gguf::GgmlType;
 use memra_gguf::checkpoint_binding::{CheckpointBinding, RecordingSource};
 use memra_gguf::config::{Arch, ModelConfig};
-use memra_gguf::model_packs::mimo_v2::bind_pinned_text_source;
+use memra_gguf::model_packs::mimo_v2::{bind_pinned_text_source, verify_pinned_source_config};
 use memra_gguf::model_plan::{MlpPlan, ModelPlan};
 use memra_gguf::source::{SafetensorsSource, TensorSource};
 use memra_gguf::tensor_contract::{LayerTensor, TensorId};
@@ -159,6 +159,10 @@ fn skip_modal_tensor(id: &TensorId) -> bool {
 }
 
 impl MiMoTextWeights {
+    pub(crate) fn verify_source_config(&self) -> Result<(), Fail> {
+        verify_pinned_source_config(self.source.as_ref()).map_err(Into::into)
+    }
+
     pub(crate) fn shares_source(&self, source: &Arc<SafetensorsSource>) -> bool {
         Arc::ptr_eq(&self.source, source)
     }

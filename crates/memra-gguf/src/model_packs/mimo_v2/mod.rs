@@ -113,12 +113,9 @@ pub static SOURCE_PROFILE: ModelPack = ModelPack {
     tiny_plan: None,
 };
 
-/// Explicit source binding for MiMo text diagnostics. A caller may use the
-/// resulting semantic binding to acquire native text weights; this does not
-/// register the profile for automatic HybridModel or customer serving.
-pub fn bind_pinned_text_source(
-    source: &SafetensorsSource,
-) -> Result<(ModelConfig, ModelPlan, CheckpointBinding), String> {
+/// Recheck the exact source config bytes before a modal overlay reads rows.
+/// A source already bound by the text loader may still change on disk.
+pub fn verify_pinned_source_config(source: &SafetensorsSource) -> Result<(), String> {
     let dir = source
         .st_dir()
         .ok_or("MiMo source has no safetensors directory")?;
@@ -130,6 +127,16 @@ pub fn bind_pinned_text_source(
             "MiMo source config changed: got {config_sha}, expected {PINNED_SOURCE_CONFIG_SHA256}"
         ));
     }
+    Ok(())
+}
+
+/// Explicit source binding for MiMo text diagnostics. A caller may use the
+/// resulting semantic binding to acquire native text weights; this does not
+/// register the profile for automatic HybridModel or customer serving.
+pub fn bind_pinned_text_source(
+    source: &SafetensorsSource,
+) -> Result<(ModelConfig, ModelPlan, CheckpointBinding), String> {
+    verify_pinned_source_config(source)?;
     source.verify_pinned_mimo_source_headers()?;
     let config = source.try_config()?;
     config
