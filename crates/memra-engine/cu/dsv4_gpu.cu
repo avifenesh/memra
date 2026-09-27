@@ -8112,7 +8112,8 @@ extern "C" int memra_dsv4_replay_census(void* graph, unsigned long long* out) {
                strstr(name,"memra_tp_ar_push_reduce_kernel") ||
                strstr(name,"memra_tp_ar_push_gather_rows_kernel")) ++out[2];
             if(strstr(name,"dsv4_embed_rows_kernel")) ++out[3];
-            if(strstr(name,"dsv4_hc_post_kernel")) ++out[4];
+            // The joined MoE tail (memra #710) is the FFN site's hc_post, fused with its sum.
+            if(strstr(name,"dsv4_hc_post_kernel") || strstr(name,"dsv4_moe_tail_hc_post_kernel")) ++out[4];
         }else if(type==cudaGraphNodeTypeMemcpy || type==cudaGraphNodeTypeMemset) ++out[5];
         else if(type!=cudaGraphNodeTypeEmpty) ++out[6];
     }
