@@ -1344,6 +1344,25 @@ unsafe extern "C" {
         sstride: i64,
         stream: *mut c_void,
     ) -> i32;
+    /// MiMo selected-MXFP4 grouped gate/up pair. One CTA per group/column block
+    /// writes both original-slot outputs with independent exact warp trees.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_fp4_gemm_sel_mimo_gate_up_reuse(
+        a_codes: *const c_void,
+        a_scales: *const f32,
+        w_base: *const c_void,
+        sc_base: *const c_void,
+        groups: *const i32,
+        out_gate: *mut f32,
+        out_up: *mut f32,
+        slots: i32,
+        group_count: i32,
+        n: i32,
+        kdim: i32,
+        wstride: i64,
+        sstride: i64,
+        stream: *mut c_void,
+    ) -> i32;
     #[allow(clippy::too_many_arguments)]
     pub fn memra_dsv4_combine_rows_m(
         contrib: *const f32,
