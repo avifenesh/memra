@@ -4249,17 +4249,57 @@ __device__ __forceinline__ void dsv4_tile_tree(float (&part)[TT][TN], float* red
 // (token, output) pair of the tile. Every output's 128 partials then take the GEMV's halving tree.
 // So each y[t][n] is the GEMV's bits, while an activation chunk is read once per TN outputs and a
 // weight chunk once per TT tokens. -fmad=false applies to this file as to the GEMV.
-template <int TT, int TN>
-__global__ void __launch_bounds__(128) dsv4_gemm_fp8_tile_kernel(
+// Register diet (memra #710, prefill TTFT): Nsight Compute put the 8x8 tile at 214 registers,
+// two blocks (8 warps) per SM and 15% FMA-pipe activity. SUB splits each 8-element chunk into
+// passes of SUB elements: every (token, output) accumulator still takes its chunk's elements in
+// ascending order, only interleaved with the other accumulators', so the bits cannot move, while
+// the decoded weights held at once shrink from TN*8 to TN*SUB floats. DEC 1 decodes the E4M3 codes
+// with cvt.rn.f16x2.e4m3x2 after clearing the two NaN codes to +0 (dsv4_e4m3's value for them),
+// which is exact for every other code, instead of a shared-memory table lookup. MINB is the
+// occupancy the launch bounds ask the register allocator for.
+#ifndef DSV4_TILE_TT
+#define DSV4_TILE_TT 8
+#endif
+#ifndef DSV4_TILE_TN
+#define DSV4_TILE_TN 8
+#endif
+#ifndef DSV4_TILE_SUB
+#define DSV4_TILE_SUB 8
+#endif
+#ifndef DSV4_TILE_DEC
+#define DSV4_TILE_DEC 0
+#endif
+#ifndef DSV4_TILE_MINB
+#define DSV4_TILE_MINB 1
+#endif
+
+__device__ __forceinline__ uint32_t dsv4_e4m3fn_clear_nan4(uint32_t w) {
+    const uint32_t nan = ((w & 0x7F7F7F7Fu) + 0x01010101u) & 0x80808080u;
+    return w & ~((nan >> 7) * 0xFFu);
+}
+// Bytes 2i and 2i+1 of a NaN-cleared word as two exact floats.
+__device__ __forceinline__ void dsv4_e4m3x2_f32(uint32_t w, int i, float& a, float& b) {
+    uint32_t d;
+    const unsigned short v = (unsigned short)(w >> (16 * i));
+    asm("cvt.rn.f16x2.e4m3x2 %0, %1;" : "=r"(d) : "h"(v));
+    a = __half2float(__ushort_as_half((unsigned short)(d & 0xFFFFu)));
+    b = __half2float(__ushort_as_half((unsigned short)(d >> 16)));
+}
+
+template <int TT, int TN, int SUB, int DEC, int MINB>
+__global__ void __launch_bounds__(128, MINB) dsv4_gemm_fp8_tile_kernel(
         const uint8_t* __restrict__ w, const float* __restrict__ sc, int sc_cols,
         const uint16_t* __restrict__ x, float* __restrict__ y, int m, int n, int k, int xstride,
         int ystride) {
+    static_assert(SUB == 8 || SUB == 4 || SUB == 2, "chunk passes of 8, 4 or 2 elements");
     MEMRA_PDL_CHAIN_ENTRY();
-    __shared__ float e4m3_tab[256];
+    __shared__ float e4m3_tab[DEC ? 1 : 256];
     extern __shared__ float tile_red[];  // [TT * TN][64], reused for the 32-leaf stage
     const int v = threadIdx.x;
-    for (int i = v; i < 256; i += 128) e4m3_tab[i] = dsv4_e4m3((uint8_t)i);
-    __syncthreads();
+    if (!DEC) {
+        for (int i = v; i < 256; i += 128) e4m3_tab[i] = dsv4_e4m3((uint8_t)i);
+        __syncthreads();
+    }
     const int n0 = blockIdx.x * TN, t0 = blockIdx.y * TT;
     float part[TT][TN];
 #pragma unroll
@@ -4267,41 +4307,61 @@ __global__ void __launch_bounds__(128) dsv4_gemm_fp8_tile_kernel(
 #pragma unroll
         for (int r = 0; r < TN; r++) part[t][r] = 0.0f;
     for (int c = v * 8; c < k; c += 1024) {
-        float wv[TN][8];
+        uint2 wr[TN];
+        float s[TN];
 #pragma unroll
         for (int r = 0; r < TN; r++) {
             const int row = n0 + r;
             if (row < n) {
-                const uint2 wr = *(const uint2*)(w + (long)row * k + c);
-                const float s = sc[(long)(row >> 7) * sc_cols + (c >> 7)];
-                const unsigned wb[2] = {wr.x, wr.y};
-#pragma unroll
-                for (int j = 0; j < 4; j++) {
-                    wv[r][2 * j] = e4m3_tab[(wb[j >> 1] >> (((j & 1) * 2) * 8)) & 0xFFu] * s;
-                    wv[r][2 * j + 1] = e4m3_tab[(wb[j >> 1] >> (((j & 1) * 2 + 1) * 8)) & 0xFFu] * s;
+                wr[r] = *(const uint2*)(w + (long)row * k + c);
+                s[r] = sc[(long)(row >> 7) * sc_cols + (c >> 7)];
+                if (DEC) {
+                    wr[r].x = dsv4_e4m3fn_clear_nan4(wr[r].x);
+                    wr[r].y = dsv4_e4m3fn_clear_nan4(wr[r].y);
                 }
             } else {
-#pragma unroll
-                for (int e = 0; e < 8; e++) wv[r][e] = 0.0f;
+                wr[r] = make_uint2(0u, 0u);
+                s[r] = 0.0f;
             }
         }
 #pragma unroll
-        for (int t = 0; t < TT; t++) {
-            if (t0 + t >= m) break;
-            const uint4 xv = *(const uint4*)(x + (long)(t0 + t) * xstride + c);
-            const unsigned xw[4] = {xv.x, xv.y, xv.z, xv.w};
-            float xf[8];
-#pragma unroll
-            for (int j = 0; j < 4; j++) {
-                xf[2 * j] = __uint_as_float((xw[j] & 0xFFFFu) << 16);
-                xf[2 * j + 1] = __uint_as_float(xw[j] & 0xFFFF0000u);
-            }
+        for (int e0 = 0; e0 < 8; e0 += SUB) {
+            float wv[TN][SUB];
 #pragma unroll
             for (int r = 0; r < TN; r++) {
-                float acc = part[t][r];
+                const bool live = n0 + r < n;
 #pragma unroll
-                for (int e = 0; e < 8; e++) acc += wv[r][e] * xf[e];
-                part[t][r] = acc;
+                for (int e = e0; e < e0 + SUB; e += 2) {
+                    const uint32_t word = e < 4 ? wr[r].x : wr[r].y;
+                    float a, b;
+                    if (DEC) {
+                        dsv4_e4m3x2_f32(word, (e & 3) >> 1, a, b);
+                    } else {
+                        a = e4m3_tab[(word >> ((e & 3) * 8)) & 0xFFu];
+                        b = e4m3_tab[(word >> (((e & 3) + 1) * 8)) & 0xFFu];
+                    }
+                    wv[r][e - e0] = live ? a * s[r] : 0.0f;
+                    wv[r][e - e0 + 1] = live ? b * s[r] : 0.0f;
+                }
+            }
+#pragma unroll
+            for (int t = 0; t < TT; t++) {
+                if (t0 + t >= m) break;
+                const uint4 xv = *(const uint4*)(x + (long)(t0 + t) * xstride + c);
+                const unsigned xw[4] = {xv.x, xv.y, xv.z, xv.w};
+                float xf[SUB];
+#pragma unroll
+                for (int e = e0; e < e0 + SUB; e += 2) {
+                    xf[e - e0] = __uint_as_float((xw[e >> 1] & 0xFFFFu) << 16);
+                    xf[e - e0 + 1] = __uint_as_float(xw[e >> 1] & 0xFFFF0000u);
+                }
+#pragma unroll
+                for (int r = 0; r < TN; r++) {
+                    float acc = part[t][r];
+#pragma unroll
+                    for (int e = 0; e < SUB; e++) acc += wv[r][e] * xf[e];
+                    part[t][r] = acc;
+                }
             }
         }
     }
@@ -4324,15 +4384,16 @@ template <int TT, int TN>
 static void dsv4_gemm_fp8_tile_launch(const void* w_codes, const float* sc_f32, int sc_cols,
                                       const void* x_bf16, float* y, int m, int n, int k,
                                       int xstride, int ystride, cudaStream_t stream) {
+    constexpr int SUB = DSV4_TILE_SUB, DEC = DSV4_TILE_DEC, MINB = DSV4_TILE_MINB;
     const size_t smem = (size_t)TT * TN * 64 * sizeof(float);
     static bool attr = false;
     if (!attr) {
-        cudaFuncSetAttribute(dsv4_gemm_fp8_tile_kernel<TT, TN>,
+        cudaFuncSetAttribute(dsv4_gemm_fp8_tile_kernel<TT, TN, SUB, DEC, MINB>,
                              cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
         attr = true;
     }
     dim3 grid((unsigned)((n + TN - 1) / TN), (unsigned)((m + TT - 1) / TT));
-    memra_chain_launch(dsv4_gemm_fp8_tile_kernel<TT, TN>,grid, 128, smem, stream)(
+    memra_chain_launch(dsv4_gemm_fp8_tile_kernel<TT, TN, SUB, DEC, MINB>,grid, 128, smem, stream)(
         (const uint8_t*)w_codes, sc_f32, sc_cols, (const uint16_t*)x_bf16, y, m, n, k, xstride,
         ystride);
 }
@@ -4410,7 +4471,8 @@ static int dsv4_gemm_fp8_tile(const void* w_codes, const float* sc_f32, int sc_c
                               int ystride, cudaStream_t stream) {
     // 8 token rows x 8 output rows: the sweep's winner on 4 of 5 DSv4 shapes (16x4, 16x8 and 32x4
     // were measured and deleted; research/dsv4f-bringup-20260923/prefill-tile/RESULTS.md).
-    dsv4_gemm_fp8_tile_launch<8, 8>(w_codes, sc_f32, sc_cols, x_bf16, y, m, n, k, xstride, ystride, stream);
+    dsv4_gemm_fp8_tile_launch<DSV4_TILE_TT, DSV4_TILE_TN>(w_codes, sc_f32, sc_cols, x_bf16, y, m, n,
+                                                          k, xstride, ystride, stream);
     g_dsv4_gemm_fp8_tile_launches.fetch_add(1, std::memory_order_relaxed);
     return 0;
 }
