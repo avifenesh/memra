@@ -72,7 +72,7 @@ jobs:
     # and cannot skip a commit, which is the next change here (see the decision record).
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The whole point is history the checkout does not carry.
           fetch-depth: 0

@@ -32,7 +32,7 @@ echo "$out" | grep -q 'owner/workflow/.github/workflows/reuse.yml@main' \
   || fail "reusable-job mutable ref was not reported: $out"
 
 sed -i \
-  -e 's#actions/checkout@v4#actions/checkout@11d5960a326750d5838078e36cf38b85af677262#' \
+  -e 's#actions/checkout@v4#actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1#' \
   -e 's#owner/workflow/.github/workflows/reuse.yml@main#owner/workflow/.github/workflows/reuse.yml@1111111111111111111111111111111111111111#' \
   "$tmp/.github/workflows/test.yml"
 (cd "$tmp" && tools/check-action-pins.sh) \
