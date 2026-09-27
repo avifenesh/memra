@@ -4,6 +4,28 @@ Two regimes, one rule: **the full battery gates every merge and tag, unchanged; 
 accelerates the dev loop between battery points.** Nothing in this document weakens the
 merge/tag bar: a fast-gate green is a *keep going* signal, never a *ship* signal.
 
+## Plan and reuse development feedback
+
+Start with `tools/fast-gate/fast-gate.sh --plan --diff origin/main`. The plan names
+matching legacy probes, transitive dependencies, missing model coverage and
+conservative expansion. Native selection remains in shadow mode. An expanded
+plan stops before compilation unless `--probes` explicitly requests named
+diagnostics. The tier descriptions below describe those individual diagnostics.
+
+The two admitted CPU contract suites use isolated source/runtime views and
+input-bound receipts:
+
+```sh
+tools/fast-gate/fast-gate.sh --component qualification-contracts --cache "$HOME/.cache/memra/components"
+tools/fast-gate/fast-gate.sh --component release-inputs --cache "$HOME/.cache/memra/components"
+```
+
+See [development feedback](../tools/fast-gate/README.md) for admission and shadow
+controls, and [controlled build reuse](../tools/fast-gate/BUILD-REUSE.md) for
+immutable build-only or GPU capsules. Reuse can avoid repeating a completed build
+at the same exact candidate. It does not replace a changed candidate's build,
+model gates or the full merge/tag battery.
+
 ## DSV4 norm-fusion gates, REMOVED 2026-09-11
 
 The two sections that stood here documented `dsv4_compose_densefast_normfuse_gate`

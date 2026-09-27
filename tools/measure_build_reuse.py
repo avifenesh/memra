@@ -5,12 +5,20 @@ This runs the existing native build producer. It never runs a model, a GPU gate,
 or a release capture. The output is preparation evidence only.
 """
 import argparse
+import atexit
 import json
 from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
+import tempfile
 import time
+
+_PY_CACHE = tempfile.TemporaryDirectory(prefix="memra-build-measure-python-")
+atexit.register(_PY_CACHE.cleanup)
+sys.pycache_prefix = _PY_CACHE.name
+sys.dont_write_bytecode = True
 
 import local_build_cache as cache
 

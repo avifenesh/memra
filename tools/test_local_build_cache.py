@@ -2,10 +2,13 @@
 import copy
 import io
 import json
+import os
+import py_compile
 from pathlib import Path
 import shutil
 import subprocess
 import sys
+import struct
 import tarfile
 import tempfile
 import unittest
@@ -54,6 +57,35 @@ class BuildCacheTests(unittest.TestCase):
 
     def load(self):
         return cache.load(self.repo, self.storage, self.expected, self.out)
+
+    def test_cli_ignores_timestamp_matching_project_bytecode(self):
+        controller = self.root / "controller"
+        controller.mkdir()
+        names = ("local_build_cache.py", "gpu-ci.py", "release_qualification.py", "release_inputs.py",
+                 "release_input_view.py", "check_hardware_gate.py")
+        for name in names:
+            shutil.copy2(ROOT / "tools" / name, controller / name)
+        poison = self.root / "poison.py"
+        poison.write_text("raise RuntimeError('STALE_PROJECT_BYTECODE_USED')\n")
+        for name in ("release_qualification.py", "release_inputs.py"):
+            source = controller / name
+            bytecode = controller / "__pycache__" / (source.stem + "." + sys.implementation.cache_tag + ".pyc")
+            bytecode.parent.mkdir(exist_ok=True)
+            py_compile.compile(str(poison), cfile=str(bytecode), doraise=True)
+            data = bytearray(bytecode.read_bytes())
+            data[4:16] = struct.pack("<III", 0, int(source.stat().st_mtime), source.stat().st_size)
+            bytecode.write_bytes(data)
+        env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPYCACHEPREFIX", "PYTHONPATH")}
+        control = subprocess.run([sys.executable, "-c", "import release_inputs"],
+                                 cwd=controller, env=env, text=True, capture_output=True)
+        self.assertNotEqual(control.returncode, 0)
+        self.assertIn("STALE_PROJECT_BYTECODE_USED", control.stderr)
+        result = subprocess.run([sys.executable, str(controller / "local_build_cache.py"), "describe",
+            "--repo", str(self.repo), "--build", str(self.build), "--out", str(self.root / "described.json")],
+            env=env, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("STALE_PROJECT_BYTECODE_USED", result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "described")
 
     def assert_refused(self, action, message=None):
         with self.assertRaises((q.GateError, cache.ci.Refused, OSError, tarfile.TarError)) as error:

@@ -7,6 +7,7 @@ content cache, not a signer, compiler cache, or model qualification mechanism.
 from __future__ import annotations
 
 import argparse
+import atexit
 import importlib.util
 import json
 import os
@@ -17,6 +18,11 @@ import tarfile
 import tempfile
 import time
 
+# Ignore project bytecode even when its timestamp and size match edited source.
+# -B/dont_write_bytecode prevents writes, but still permits stale cache reads.
+_PY_CACHE = tempfile.TemporaryDirectory(prefix="memra-build-cache-python-")
+atexit.register(_PY_CACHE.cleanup)
+sys.pycache_prefix = _PY_CACHE.name
 sys.dont_write_bytecode = True
 import release_qualification as q
 import release_inputs

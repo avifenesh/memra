@@ -40,6 +40,33 @@ def verify_checkout(repo, head="HEAD"):
     head = q.commit(repo, head)
     expected = q.tree_files(repo, head)
     links = q.source_symlink_targets(repo, head, expected)
+    # Configuration can refuse a build before the full source byte scan.
+    configs = []
+    for directory in (repo, *repo.parents):
+        for name in (".cargo/config", ".cargo/config.toml"):
+            path = directory / name
+            if not path.exists() and not path.is_symlink():
+                continue
+            q.require(directory == repo,
+                      f"unrecorded ancestor/Cargo configuration: {path}")
+            q.require(name in expected, f"untracked or ignored build/gate input: {name}")
+            # The preflight must not read a replaced config or follow an actual
+            # filesystem link beyond the already-validated Git source closure.
+            try:
+                resolved = path.resolve(strict=True)
+            except (OSError, RuntimeError) as error:
+                raise q.GateError(f"tracked input cannot resolve: {name}") from error
+            q.require(resolved.is_relative_to(repo),
+                      f"Cargo configuration escaped checkout: {name}")
+            q.require(actual_blob(path, expected[name]["mode"]) == expected[name]["blob"],
+                      f"actual tracked input differs from Git source: {name}")
+            # The repository currently needs only build.jobs. Refuse env forcing,
+            # target overrides, rustflags and compiler wrappers rather than assert
+            # DOCS_RS/architecture values that Cargo can silently override.
+            text = "\n".join(line.split("#", 1)[0] for line in path.read_text().splitlines()).strip()
+            q.require(not text or re.fullmatch(r"\[build\]\s+jobs\s*=\s*[1-9][0-9]*\s*", text),
+                      f"unsupported effective Cargo configuration: {name}; only build.jobs is admitted")
+            configs.append({"path": name, "sha256": q.sha256_file(path)})
     for name, entry in expected.items():
         path = repo / name
         try:
@@ -66,21 +93,6 @@ def verify_checkout(repo, head="HEAD"):
             if "__pycache__" in Path(name).parts and name.endswith(".pyc"):
                 continue  # the producer/children never consume this cache
             raise q.GateError(f"untracked or ignored build/gate input: {name}")
-    configs = []
-    for directory in (repo, *repo.parents):
-        for name in (".cargo/config", ".cargo/config.toml"):
-            path = directory / name
-            if not path.exists() and not path.is_symlink():
-                continue
-            q.require(directory == repo and name in expected,
-                      f"unrecorded ancestor/Cargo configuration: {path}")
-            # The repository currently needs only build.jobs. Refuse env forcing,
-            # target overrides, rustflags and compiler wrappers rather than assert
-            # DOCS_RS/architecture values that Cargo can silently override.
-            text = "\n".join(line.split("#", 1)[0] for line in path.read_text().splitlines()).strip()
-            q.require(not text or re.fullmatch(r"\[build\]\s+jobs\s*=\s*[1-9][0-9]*\s*", text),
-                      f"unsupported effective Cargo configuration: {name}; only build.jobs is admitted")
-            configs.append({"path": name, "sha256": q.sha256_file(path)})
     return configs
 
 

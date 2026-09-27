@@ -7,12 +7,19 @@ Only the separately isolated CPU components have admitted result reuse.
 from __future__ import annotations
 
 import argparse
+import atexit
 import fnmatch
 import json
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
 import sys
+import tempfile
+
+_PY_CACHE = tempfile.TemporaryDirectory(prefix="memra-dev-plan-python-")
+atexit.register(_PY_CACHE.cleanup)
+sys.pycache_prefix = _PY_CACHE.name
+sys.dont_write_bytecode = True
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]

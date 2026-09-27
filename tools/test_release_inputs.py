@@ -96,8 +96,11 @@ class ReleaseInputTests(unittest.TestCase):
     def test_ancestor_config_and_compiler_wrapper_controls(self):
         ancestor = self.root / ".cargo/config.toml"
         ancestor.parent.mkdir(); ancestor.write_text('[env]\nDOCS_RS={value="1",force=true}\n')
-        with self.assertRaisesRegex(q.GateError, "unrecorded ancestor/Cargo configuration"):
-            capture.clean_source(self.f.repo)
+        # The expensive source byte scan cannot make an unsupported configuration
+        # admissible. Prove this refusal happens before reading any source bodies.
+        with patch.object(capture.release_inputs, "actual_blob", side_effect=AssertionError("late preflight")):
+            with self.assertRaisesRegex(q.GateError, "unrecorded ancestor/Cargo configuration"):
+                capture.clean_source(self.f.repo)
         ancestor.unlink()
         with patch.dict(os.environ, {"PATH": "/usr/bin", "DOCS_RS": "1", "CARGO_HOME": "/untrusted",
                 "RUSTC_WRAPPER": "wrapper", "RUSTC_WORKSPACE_WRAPPER": "wrapper2",
@@ -112,6 +115,24 @@ class ReleaseInputTests(unittest.TestCase):
         self.assertEqual(env["MEMRA_CUDA_ARCH"], "120a")
         self.assertEqual(env["RUSTC"], "/rust/bin/rustc")
         self.assertEqual(env["CUDA_VISIBLE_DEVICES"], "")
+
+    def test_config_preflight_never_reads_an_escaped_actual_link(self):
+        config = self.f.repo / ".cargo/config.toml"
+        config.parent.mkdir()
+        config.write_text("[build]\njobs=2\n")
+        self.f.commit("tracked config")
+        outside = self.root / "outside-config"
+        outside.write_text("must not become a configuration input")
+        config.unlink()
+        config.symlink_to(outside)
+        self.f.git("update-index", "--assume-unchanged", ".cargo/config.toml")
+        with self.assertRaisesRegex(q.GateError, "Cargo configuration escaped checkout"):
+            capture.release_inputs.verify_checkout(self.f.repo)
+        for destination in (config, self.root / "missing-config"):
+            config.unlink()
+            config.symlink_to(destination)
+            with self.assertRaisesRegex(q.GateError, "tracked input cannot resolve"):
+                capture.release_inputs.verify_checkout(self.f.repo)
 
     def test_owned_source_contains_git_bytes_and_omits_ignored_caller_files(self):
         (self.f.repo / ".gitignore").write_text("hidden.bin\n")
