@@ -786,6 +786,8 @@ mod tests {
             health: crate::health::WorkerHealth::new(),
             bg: None,
             audio: shared_audio(false),
+            job_store: Arc::new(crate::job_store::InMemoryJobStore::from_env()),
+            background_cancel: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
 
