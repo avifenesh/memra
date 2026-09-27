@@ -729,6 +729,8 @@ extern "C" __global__ void spec_seed_gather(
 // slots (tokp[2j] = PRE-remap argmax idx) mapped through d2t (identity when d2t == nullptr).
 // Also derives the p-min break vector: brk[0] = k_used = number of draft slots the host walk
 // would have kept (first j with p < p_min, respecting j>0-only unless pmin0&&base, capped K).
+// The round-stream chain is greedy-only, so p is the argmax pick's probability, which is the
+// row max: the draw-independent statistic memra_sampling::spec_stop requires (memra#673).
 extern "C" __global__ void spec_assemble_verify(
         const unsigned int* __restrict__ tokp,   // [2K] packed (idx, p-bits) per chain step
         const unsigned int* __restrict__ pend,   // [1] pending bonus or 0xFFFFFFFF

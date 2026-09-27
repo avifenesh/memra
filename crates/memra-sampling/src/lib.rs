@@ -8,6 +8,8 @@
 
 use std::collections::HashMap;
 
+pub mod spec_stop;
+
 /// Sampler configuration. Defaults = greedy (temp 0). Order of application matches llama.cpp.
 #[derive(Clone, Debug)]
 pub struct SamplerConfig {
