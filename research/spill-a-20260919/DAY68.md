@@ -251,3 +251,13 @@ GPU. Both registrations said "the 5090 half follows"; this file fixes how, befor
     - P2's half, then T-H''s half (section 11);
     - item 16 with the warm-up doubled, S4 and V (section 9).
   - An `IN-USE.txt` at the root names the owner and the chain, so a sweep can see the directory is live.
+- **The lead's finding (2026-09-27):** no Claude transcript on this rig (the lead's, the lanes', other projects') holds
+  a delete-like command between 19:20Z and 19:26Z, and the journal shows no timer or sweep touching home at 19:23:49Z.
+  Recorded as **deleted, cause unknown**. The lead raises it with the owner.
+- **The second start.** The rebuild chain was stopped in its build phase, before any hold: R1's build was done and
+  P2's under way. This lane stopped its own process group. Its worktrees were removed through git and the old root
+  deleted.
+  - The cell root moved to `/home/avifenesh/.local/share/memra-lane-a-cells/`, off the home directory's top level that
+    disk-cleanup sessions list. `IN-USE.txt` stays at the root.
+  - The first start's log is banked as `rtx5090-r1/incident-20260927/chain-day68c-first-start.log`. The chain, drivers
+    and order are otherwise unchanged.

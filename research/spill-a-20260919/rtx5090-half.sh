@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # DAY68 section 1: one owed 5090 half (r1 or l2) on the local RTX 5090 Laptop GPU, fixed before it runs.
 #   rtx5090-half.sh prepare <half>  from the lane worktree: the scratch tree at the half's tip under
-#                                   /home/avifenesh/spill-a-cells/<half>/tree, the derived scripts and this file copied
+#                                   /home/avifenesh/.local/share/memra-lane-a-cells/<half>/tree, the derived scripts and this file copied
 #                                   to <half>/scripts (the frozen copy), then the derived build.sh (outside any hold).
 #   rtx5090-half.sh card <half>     from the frozen copy only: ONE bounded hold of /tmp/memra-5090.lock (180 x 120 s
 #                                   behind the other lanes; then no compute app and >= 20000 MiB free, 15 x 60 s;
@@ -14,7 +14,7 @@
 # Executed-not-qualified. No host, id or price here.
 set -uo pipefail
 ACT=$1; HALF=$2
-S=/home/avifenesh/spill-a-cells/$HALF
+S=/home/avifenesh/.local/share/memra-lane-a-cells/$HALF
 case $HALF in
   r1) TIP=15d7ed351; BASE=40821db01 ;;
   l2) TIP=21984b527; BASE=217ace3fd ;;

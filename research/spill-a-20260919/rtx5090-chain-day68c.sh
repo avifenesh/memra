@@ -3,10 +3,12 @@
 # 19:23:49Z on 2026-09-27 (section 12). Every build first, outside every hold, from a frozen snapshot of the lane (a
 # detached worktree at the commit that holds this file); then each half in its own bounded hold(s), in the lead's order:
 # R1 (its card whole: the gates, then the timed cell the lead's ruling asks to repeat), P2, T-H', then item 16 with the
-# warm-up doubled, S4 and V. Run as a copy: cp this file to /home/avifenesh/spill-a-cells/chain-day68c.sh and run that
-# copy with the lane commit as its argument. Executed-not-qualified.
+# warm-up doubled, S4 and V. The cell root sits under ~/.local/share since DAY68 section 12's second start, off the home
+# directory's top level that disk-cleanup sessions list. Run as a copy: cp this file to
+# /home/avifenesh/.local/share/memra-lane-a-cells/chain-day68c.sh and run that copy with the lane commit as its argument.
+# Executed-not-qualified.
 set -uo pipefail
-S=/home/avifenesh/spill-a-cells
+S=/home/avifenesh/.local/share/memra-lane-a-cells
 LANE=/home/avifenesh/projects/wt-spill-a
 COMMIT=${1:?lane commit}
 MODEL9=/home/avifenesh/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
