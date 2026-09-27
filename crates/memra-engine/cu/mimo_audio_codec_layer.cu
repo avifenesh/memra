@@ -25,11 +25,6 @@ __global__ void check_values(const float* values, int elements, bool require_bf1
     }
 }
 
-__global__ void check_weights(const uint16_t* values, int elements, int* fault) {
-    const int index = blockIdx.x * blockDim.x + threadIdx.x;
-    if (index < elements && !isfinite(read_bf16(values, index))) atomicOr(fault, 1);
-}
-
 __global__ void layer_norm(const float* input, const uint16_t* weight,
                            const uint16_t* bias, float* output) {
     const int row = blockIdx.x;
@@ -158,16 +153,6 @@ extern "C" int memra_mimo_codec_layer_check_values(
     check_values<<<(elements + 255) / 256, 256, 0,
                    static_cast<cudaStream_t>(stream_v)>>>(
         values, elements, require_bf16 != 0, fault);
-    return launch_status();
-}
-
-extern "C" int memra_mimo_codec_layer_check_weights(
-    const uint16_t* values, int elements, int* fault, void* stream_v) {
-    if (!values || !fault || !stream_v || elements < 1 || elements > 4096 * 1024)
-        return 40001;
-    check_weights<<<(elements + 255) / 256, 256, 0,
-                    static_cast<cudaStream_t>(stream_v)>>>(
-        values, elements, fault);
     return launch_status();
 }
 

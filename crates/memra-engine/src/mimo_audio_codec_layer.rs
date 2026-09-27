@@ -26,12 +26,6 @@ unsafe extern "C" {
         fault: *mut i32,
         stream: *mut c_void,
     ) -> i32;
-    fn memra_mimo_codec_layer_check_weights(
-        values: *const u16,
-        elements: i32,
-        fault: *mut i32,
-        stream: *mut c_void,
-    ) -> i32;
     fn memra_mimo_codec_layer_norm(
         input: *const f32,
         weight: *const u16,
@@ -102,11 +96,7 @@ fn checked_rc(op: &str, rc: i32) -> Result<(), Fail> {
     Ok(())
 }
 
-fn check_finite(
-    engine: &Engine,
-    input: &CudaSlice<f32>,
-    weights: &CodecEncoderBf16Layer<'_>,
-) -> Result<(), Fail> {
+fn check_input(engine: &Engine, input: &CudaSlice<f32>) -> Result<(), Fail> {
     let stream = engine.stream();
     let mut fault = engine.htod_i32(&[0])?;
     let (input_ptr, input_guard) = input.device_ptr(&stream);
@@ -122,39 +112,8 @@ fn check_finite(
     };
     drop((input_guard, fault_guard));
     checked_rc("input finite check", rc)?;
-    let rows = [
-        weights.attention_norm.weight,
-        weights.attention_norm.bias,
-        weights.query.weight,
-        weights.query.bias.expect("pinned query bias"),
-        weights.key.weight,
-        weights.value.weight,
-        weights.value.bias.expect("pinned value bias"),
-        weights.attention_output.weight,
-        weights.attention_output.bias.expect("pinned output bias"),
-        weights.final_norm.weight,
-        weights.final_norm.bias,
-        weights.fc1.weight,
-        weights.fc1.bias.expect("pinned fc1 bias"),
-        weights.fc2.weight,
-        weights.fc2.bias.expect("pinned fc2 bias"),
-    ];
-    for row in rows {
-        let (row_ptr, row_guard) = row.device_ptr(&stream);
-        let (fault_ptr, fault_guard) = fault.device_ptr_mut(&stream);
-        let rc = unsafe {
-            memra_mimo_codec_layer_check_weights(
-                row_ptr as *const u16,
-                (row.len() / 2) as i32,
-                fault_ptr as *mut i32,
-                stream.cu_stream() as *mut c_void,
-            )
-        };
-        drop((row_guard, fault_guard));
-        checked_rc("weight finite check", rc)?;
-    }
     if engine.dtoh_i32(&fault)? != [0] {
-        return Err("MiMo codec one-layer input or source weight has non-finite values".into());
+        return Err("MiMo codec one-layer input is non-finite or not BF16-valued".into());
     }
     Ok(())
 }
@@ -395,7 +354,7 @@ impl MiMoAudioCodecEncoderWeights {
             return Err("MiMo codec input belongs to another GPU".into());
         }
         let weights = self.encoder_layer_bf16(layer_index)?;
-        check_finite(engine, input, &weights)?;
+        check_input(engine, input)?;
         let attention_input = normalized(engine, input, &weights.attention_norm, tokens)?;
         let mut query = projected(engine, &attention_input, &weights.query, tokens)?;
         let mut key = projected(engine, &attention_input, &weights.key, tokens)?;

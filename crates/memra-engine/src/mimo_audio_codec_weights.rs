@@ -298,6 +298,13 @@ fn audit_selected_rows(rows: &[EncoderRow], uploaded: &BTreeSet<String>) -> Resu
     Ok(())
 }
 
+fn finite_bf16_payload(bytes: &[u8]) -> bool {
+    bytes.len().is_multiple_of(2)
+        && bytes
+            .chunks_exact(2)
+            .all(|pair| u16::from_le_bytes([pair[0], pair[1]]) & 0x7f80 != 0x7f80)
+}
+
 impl MiMoAudioCodecEncoderWeights {
     pub fn tensor(&self, name: &str) -> Option<&CodecEncoderTensor> {
         self.tensors.get(name)
@@ -495,6 +502,13 @@ impl MiMoAudioCodecEncoderWeights {
             if bytes.len() != row.byte_len()? {
                 return Err(format!("MiMo codec encoder {} byte extent changed", row.name).into());
             }
+            if row.dtype == CodecEncoderDtype::Bf16 && !finite_bf16_payload(bytes) {
+                return Err(format!(
+                    "MiMo codec encoder {} has non-finite BF16 weights",
+                    row.name
+                )
+                .into());
+            }
             let tensor = CodecEncoderTensor {
                 bytes: engine.htod_bytes(bytes)?,
                 dtype: row.dtype,
@@ -595,6 +609,14 @@ mod tests {
         let row = rows.remove("encoder.conv1.bias").unwrap();
         rows.insert("unexpected.conv1.bias".into(), row);
         assert!(select_encoder_rows(&rows).is_err());
+    }
+
+    #[test]
+    fn bf16_payload_finiteness_is_checked_once_before_upload() {
+        assert!(finite_bf16_payload(&[0x80, 0x3f, 0x00, 0xc0]));
+        assert!(!finite_bf16_payload(&[0x80, 0x7f]));
+        assert!(!finite_bf16_payload(&[0xc1, 0xff]));
+        assert!(!finite_bf16_payload(&[0x80]));
     }
 
     #[test]
