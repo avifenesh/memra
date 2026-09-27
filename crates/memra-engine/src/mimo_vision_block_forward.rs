@@ -1,4 +1,4 @@
-//! One pinned MiMo ViT block over projected, BF16-valued patch rows.
+//! Pinned MiMo ViT blocks over projected, BF16-valued patch rows.
 //! The input and output use row order. Column blocks reorder intact 2x2
 //! merge units around attention, as the publisher's tower does.
 
@@ -410,6 +410,26 @@ fn forward_block(
 }
 
 impl MiMoVisionWeights {
+    /// Project source-prepared `[patches, 3, 2, 16, 16]` pixel rows and run
+    /// all 28 ViT blocks. The patch projector currently admits at most 256
+    /// patches per call. The result is before the merger.
+    pub fn forward_patchified_blocks(
+        &self,
+        engine: &Engine,
+        config: &ModelConfig,
+        grids: &[MiMoVisionGrid],
+        pixels: &CudaSlice<f32>,
+    ) -> Result<CudaSlice<f32>, Fail> {
+        let layout = pinned_vision_layout(config, grids)?;
+        let patches = layout.row_positions.len();
+        if patches > 256 {
+            return Err("MiMo vision patch projector exceeds 256 patches".into());
+        }
+        let projected =
+            engine.mimo_vision_patch_project(&self.patch_projection, pixels, patches)?;
+        self.forward_projected_blocks(engine, config, grids, &projected)
+    }
+
     /// Run exactly one of the 28 source ViT blocks on already projected
     /// BF16-valued `[patches,1280]` rows in source row order. The result is
     /// also row ordered. This does not run patchification, merger, or serving.
@@ -430,6 +450,43 @@ impl MiMoVisionWeights {
             .ok_or("MiMo vision block index is out of range")?;
         let request = request(config, &block.plan, layer, grids, hidden.len())?;
         forward_block(block, engine, hidden, &request)
+    }
+
+    /// Run all 28 bound source ViT blocks over projected BF16 patch rows.
+    /// Input and output are in merge-unit row order. This returns patch
+    /// features before the merger; it does not decode image pixels or produce
+    /// text-sized modality embeddings.
+    pub fn forward_projected_blocks(
+        &self,
+        engine: &Engine,
+        config: &ModelConfig,
+        grids: &[MiMoVisionGrid],
+        hidden: &CudaSlice<f32>,
+    ) -> Result<CudaSlice<f32>, Fail> {
+        if self.blocks.len() != 28 {
+            return Err("MiMo vision needs all 28 bound source blocks".into());
+        }
+        let request = request(config, &self.blocks[0].plan, 0, grids, hidden.len())?;
+        let device = engine.stream().context().ordinal();
+        if hidden.ordinal() != device {
+            return Err("MiMo vision hidden crossed GPU devices".into());
+        }
+        // Check the whole source program before launching its first block.
+        for (layer, block) in self.blocks.iter().enumerate() {
+            if pinned_attention_plan(config, layer as u32)? != block.plan {
+                return Err(
+                    format!("MiMo vision block {layer} plan differs from pinned source").into(),
+                );
+            }
+            ordered_positions(&block.plan, &request.layout)?;
+            check_block(block, device)?;
+        }
+        let mut output = None;
+        for block in &self.blocks {
+            let input = output.as_ref().unwrap_or(hidden);
+            output = Some(forward_block(block, engine, input, &request)?);
+        }
+        output.ok_or_else(|| "MiMo vision has no source blocks".into())
     }
 }
 
