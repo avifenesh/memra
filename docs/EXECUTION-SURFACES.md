@@ -64,6 +64,7 @@ pre-existing allowlists for every operation, pinned by
 | `VisionDownsample` | — | — | — | — | — | — | — | — | — | — |
 | `VisionProjection` | — | — | — | — | — | — | — | — | — | — |
 | `VisionTokenInjection` | — | — | — | — | — | — | — | — | — | — |
+| `MiMoVisionTower` | — | — | — | — | — | — | — | — | — | — |
 | `RmsNorm` | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
 | `FullAttention` | yes | yes | yes | yes | yes | yes | — | — | yes | yes |
 | `SlidingWindowAttention` | — | — | yes | — | yes | yes | — | — | yes | yes |

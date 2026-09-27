@@ -289,6 +289,12 @@ pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, Refer
         Some(memra_gguf::model_plan::VisionPlan::Glm5Fused(vision)) => {
             Some(add_vision_fixture_glm5(&mut weights, vision)?)
         }
+        Some(memra_gguf::model_plan::VisionPlan::MiMo(_)) => {
+            return Err(ReferenceError::UnsupportedOperation {
+                layer: None,
+                operation: "MiMo V2.6 vision fixture",
+            });
+        }
         None => None,
     };
     if let Some(mixer) = plan.exit_mixer {
@@ -2436,6 +2442,12 @@ pub fn execute_vision(
         memra_gguf::model_plan::VisionPlan::Factored(vision) => vision,
         memra_gguf::model_plan::VisionPlan::Glm5Fused(vision) => {
             return execute_vision_glm5(vision, weights, input);
+        }
+        memra_gguf::model_plan::VisionPlan::MiMo(_) => {
+            return Err(ReferenceError::UnsupportedOperation {
+                layer: None,
+                operation: "MiMo V2.6 vision execution",
+            });
         }
     };
     if vision.clipped_linears {

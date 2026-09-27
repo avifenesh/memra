@@ -11,6 +11,12 @@
 //! executable vision path or model support.
 
 use crate::config::{Arch, MiMoVisionConfig, ModelConfig};
+use crate::model_plan::{
+    ActivationPlan, AttentionScale, DenseMlpPlan, MiMoMergerActivation, MiMoMergerBiasPlan,
+    MiMoVisionBlockPlan, MiMoVisionDtype, MiMoVisionMergerPlan, MiMoVisionPatchPlan,
+    MiMoVisionPlan, MiMoVisionRopePlan, MiMoVisionRopeRotation, NormKind, NormPlan,
+    PlanCompileError, WeightTransform,
+};
 use crate::tensor_contract::{
     FloatType, QuantConstraint, TensorContractError, TensorId, TensorMatch, TensorOwner,
     TensorRequirement, TensorTransform, VisionTensor,
@@ -24,25 +30,7 @@ const FUSED_QKV_ROWS: u64 = 3_072;
 const ATTENTION_PROJECTION_INPUT: u64 = 2_048;
 const MERGER_WIDTH: u64 = 5_120;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MiMoPatchOrder {
-    Row,
-    Column,
-}
-
-/// Source ViT attention, distinct from the text mixer's causal sink denominator.
-/// `sink_first_key` adds a learned score bias to the first patch in each image;
-/// a masked first patch remains masked. Q/K already carry two-axis RoPE.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MiMoVisionAttentionPlan {
-    pub layer: u32,
-    pub query_heads: usize,
-    pub kv_heads: usize,
-    pub head_dim: usize,
-    pub symmetric_window: Option<usize>,
-    pub sink_first_key: bool,
-    pub patch_order: MiMoPatchOrder,
-}
+pub use crate::model_plan::{MiMoPatchOrder, MiMoVisionAttentionPlan};
 
 /// One source `grid_thw` row after temporal pairs and 16x16 spatial patches
 /// have been formed. Height and width count patch rows, not pixels.
@@ -194,18 +182,88 @@ pub fn pinned_attention_plan(
     if layer >= vision.depth {
         return Err("MiMo vision layer is out of range");
     }
+    Ok(attention_for_layer(vision, layer))
+}
+
+fn attention_for_layer(vision: &MiMoVisionConfig, layer: u32) -> MiMoVisionAttentionPlan {
     let global = FULL_ATTENTION_BLOCKS.contains(&layer);
-    Ok(MiMoVisionAttentionPlan {
+    MiMoVisionAttentionPlan {
         layer,
         query_heads: 32,
         kv_heads: 8,
         head_dim: 64,
+        scale: AttentionScale::InverseSqrtKeyDim,
+        rope: MiMoVisionRopePlan {
+            axes: 2,
+            axis_dimensions: 32,
+            base: 10_000.0,
+            rotation: MiMoVisionRopeRotation::SplitHalf,
+            rotate_in_f32: true,
+        },
+        frame_isolated: true,
         symmetric_window: (!global).then_some(64),
         sink_first_key: !global,
         patch_order: if vision.vit_window_attn_types[layer as usize] == 1 {
             MiMoPatchOrder::Column
         } else {
             MiMoPatchOrder::Row
+        },
+        fused_qkv_bias: true,
+        output_projection_bias: true,
+    }
+}
+
+/// Compile only the publisher's pinned source geometry. The same complete
+/// config check guards the BF16 tensor census and diagnostic layout.
+pub(crate) fn pinned_vision_plan(
+    vision: &MiMoVisionConfig,
+    text_hidden_size: u32,
+) -> Result<MiMoVisionPlan, PlanCompileError> {
+    if !pinned_geometry(vision, text_hidden_size) {
+        return Err(PlanCompileError::InvalidVisionConfig {
+            field: "MiMo V2.6 vision config differs from pinned source",
+        });
+    }
+    let rms_norm = NormPlan {
+        kind: NormKind::Rms,
+        epsilon: 1e-6,
+        weight_transform: WeightTransform::Identity,
+    };
+    let blocks = (0..vision.depth)
+        .map(|index| MiMoVisionBlockPlan {
+            index,
+            input_norm: rms_norm,
+            attention: attention_for_layer(vision, index),
+            pre_mlp_norm: rms_norm,
+            mlp: DenseMlpPlan {
+                intermediate_size: vision.intermediate_size,
+                activation: ActivationPlan::Silu,
+            },
+            mlp_linear_biases: true,
+            norm_output_dtype: MiMoVisionDtype::Bf16,
+        })
+        .collect();
+    Ok(MiMoVisionPlan {
+        checkpoint_dtype: MiMoVisionDtype::Bf16,
+        patch: MiMoVisionPatchPlan {
+            channels: vision.in_chans,
+            temporal_patch_size: vision.temporal_patch_size,
+            spatial_patch_size: vision.patch_size,
+            hidden_size: vision.hidden_size,
+            convolution_bias: false,
+        },
+        blocks,
+        merger: MiMoVisionMergerPlan {
+            merge_size: vision.spatial_merge_size,
+            input_norm: NormPlan {
+                kind: NormKind::LayerNorm,
+                epsilon: 1e-6,
+                weight_transform: WeightTransform::Identity,
+            },
+            intermediate_size: vision.hidden_size * vision.spatial_merge_size.pow(2),
+            activation: MiMoMergerActivation::GeluErf,
+            output_size: vision.out_hidden_size,
+            biases: MiMoMergerBiasPlan::ZeroDerivedFromAbsentCheckpoint,
         },
     })
 }
@@ -573,7 +631,9 @@ mod tests {
     #[test]
     fn changed_config_fails_closed() {
         let (vision, text_hidden_size) = pinned_config();
+        assert!(pinned_vision_plan(&vision, text_hidden_size).is_ok());
         assert!(pinned_vision_requirements(&vision, text_hidden_size + 1).is_err());
+        assert!(pinned_vision_plan(&vision, text_hidden_size + 1).is_err());
         macro_rules! changed {
             ($field:ident, $value:expr) => {{
                 let mut altered = vision.clone();
@@ -581,6 +641,11 @@ mod tests {
                 assert!(
                     pinned_vision_requirements(&altered, text_hidden_size).is_err(),
                     "accepted changed {}",
+                    stringify!($field)
+                );
+                assert!(
+                    pinned_vision_plan(&altered, text_hidden_size).is_err(),
+                    "plan accepted changed {}",
                     stringify!($field)
                 );
             }};
