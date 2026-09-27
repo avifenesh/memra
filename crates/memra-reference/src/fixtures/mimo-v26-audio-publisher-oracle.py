@@ -266,6 +266,11 @@ def run_publisher(source, encoder, mel, frames, codec, torch, device, capture_st
     stage_snapshots = {}
     handles = []
     if capture_stages:
+        def before_conv2(_module, args):
+            stage_snapshots["conv1"] = args[0].detach().transpose(1, 2).reshape(
+                frames, codec["d_model"]
+            ).clone()
+
         def before_frontend_layer(_module, args):
             stage_snapshots["frontend"] = args[0].detach().clone()
 
@@ -273,6 +278,7 @@ def run_publisher(source, encoder, mel, frames, codec, torch, device, capture_st
             stage_snapshots["stack"] = output.detach().clone()
 
         handles = [
+            encoder.conv2.register_forward_pre_hook(before_conv2),
             encoder.layers[0].register_forward_pre_hook(before_frontend_layer),
             encoder.layer_norm.register_forward_hook(after_stack_norm),
         ]
@@ -337,8 +343,8 @@ def run_publisher(source, encoder, mel, frames, codec, torch, device, capture_st
     stage_bytes = {}
     if capture_stages:
         stage_snapshots["pre_rvq"] = pre_rvq.detach().clone()
-        expected = {"frontend": (frames + 1) // 2, "stack": (frames + 1) // 2,
-                    "pre_rvq": tokens}
+        expected = {"conv1": frames, "frontend": (frames + 1) // 2,
+                    "stack": (frames + 1) // 2, "pre_rvq": tokens}
         if stage_snapshots.keys() != expected.keys():
             raise ValueError("publisher stage hooks omitted a source stage")
         for name, tensor in stage_snapshots.items():
