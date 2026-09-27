@@ -231,6 +231,20 @@ second.
   - Arms `keep` and `exact` on both routes, at 6,144 on both cards.
 - **Cells to rerun:** the integ battery's DAY44 mini cell (the E lines), and the RW cell on both routes.
 
+### 1.13 Addendum D (2026-09-27, after 2.2, the RW cell's R1 reading, before the reader change)
+
+2.2 places R1's FAIL on its wording, not on the server. R1 as registered counted only affinity rewinds. On `exact`, a
+later RW turn at G = 32 resumes through the exact-extension path instead. The settle point `S` is the grid point at the
+prompt end (6,144 and then 6,240), and the rewrite diverges at that same row, so the rewritten prompt extends the
+settled rows exactly. That resume starts later (6,144 against affinity's 6,112), and it is exact (R2).
+- **R1 revised:** on every boot, every RW turn 2 and 3 resumes, either through affinity (its `rewound to` line) or
+  through the exact path (its `exact: ... resume ... settled` line), and none primes cold (`cached_tokens > 0` on the
+  row). Per boot the counts must add up to the later turns: `affinity_rewinds + exact_resumes >= rw_later_turns`, and
+  `cold_later_turns = 0`.
+- **R1a (a reading):** the affinity rewinds alone, by G. The G = 256 turns, whose settle point lies past the rewrite's
+  divergence, are the ones that exercise affinity after a settle.
+- R2 and R3 are unchanged. The RW cell reruns on the lane tip under the revised reader.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
@@ -301,3 +315,37 @@ files; box manifest OK). Note (2026-09-27, from the lead): the `MANIFEST.sha256`
   fails at the 8 cells above. The door stays default off. The overlap revision of 1.4 is owed from these receipts:
   DAY50, pre-registered before any code. `MEMRA_RESUME_GRID_REWIND` stays a measurement arm, since its deletion
   follows a PROMOTE-ELIGIBLE reading. The 5090 half runs from queue-m (item 8).
+
+### 2.2 The RW cell on the target card (integ71's fix run, one RTX PRO 6000 Blackwell Workstation Edition, tree `451ccd0c3`)
+
+The lead ran addendum C's RW cell on BOX43 on integ71's tree (the fixes branch `f0b824ff5` on main). Receipts in the
+integration record: `research/spill-lead-20260919/integration-day12/integ71-pro-fix-run1/lane-b/c13-rw/`. Verbatim:
+
+```
+DAY44 R1 card=pro6000 boot=rw-plain-O1-exact rw_later_turns=20 affinity_rewinds=10 affinity_declined=0 -> FAIL
+DAY44 R2 card=pro6000 boot=rw-plain-O1-exact rw_later_turns=20 differ_vs_cold=[] -> PASS
+DAY44 R3 READING card=pro6000 boot=rw-plain-O1-exact settles=56 settle_waits=0
+DAY44 R1 card=pro6000 boot=rw-plain-O1-keep rw_later_turns=20 affinity_rewinds=20 affinity_declined=0 -> PASS
+DAY44 R2 card=pro6000 boot=rw-plain-O1-keep rw_later_turns=20 differ_vs_cold=[] -> PASS
+DAY44 R1 card=pro6000 boot=rw-spec-O1-exact rw_later_turns=20 affinity_rewinds=10 affinity_declined=0 -> FAIL
+DAY44 R2 card=pro6000 boot=rw-spec-O1-exact rw_later_turns=20 differ_vs_cold=[] -> PASS
+DAY44 R3 READING card=pro6000 boot=rw-spec-O1-exact settles=60 settle_waits=0
+DAY44 R1 card=pro6000 boot=rw-spec-O1-keep rw_later_turns=20 affinity_rewinds=20 affinity_declined=0 -> PASS
+DAY44 R2 card=pro6000 boot=rw-spec-O1-keep rw_later_turns=20 differ_vs_cold=[] -> PASS
+```
+
+- **R1 reads FAIL as registered on both exact boots, and R2 PASS on all four.**
+- **Placed from the boot logs before any change: every rewritten later turn resumed, and none went cold.**
+  - On both exact boots all 20 later turns have `cached_tokens > 0`.
+  - The 10 G = 256 turns resume through affinity: `plain-affinity` (and `spec-affinity`) `rewound to 6112 of 6240` and
+    `6208 of 6336`, 5 each. These are the turns whose settle point lies past the rewrite's divergence (6,368 and
+    6,464 against 6,144 and 6,240), and the settle kept their checkpoint at `g` (addendum C's fix).
+  - The 10 G = 32 turns resume through the exact path: `exact: plain resume from 6144 of 6144 committed rows (priming 96
+    rows, settled)` (5) and `from 6240 of 6240` (5), on the spec boot the same with `spec resume`. There the settle
+    point is the prompt end itself: 6,176 committed rows settle to 6,144, which is where the rewrite diverges. So the
+    rewritten prompt extends the settled rows, and the exact path serves it from a later row than affinity would.
+  - `affinity_declined=0` on every boot.
+- **What it means:** revuto's finding 1 is fixed on both routes. After a settle, a history rewrite resumes from the
+  checkpoint at `g` or from the settled rows, is exact against cold, and never primes cold. R1's registered wording was
+  narrower than its intent and missed the second path. Addendum D revises the reader, and the cell reruns on the lane
+  tip.
