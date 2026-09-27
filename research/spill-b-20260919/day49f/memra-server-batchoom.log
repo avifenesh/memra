@@ -1,0 +1,12 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-b-integ72/crates/memra-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 18.24s
+     Running unittests src/lib.rs (target/debug/deps/memra_server-961ff6d5ac2122ff)
+
+running 2 tests
+test worker::tests::batch_oom_recover_defaults_per_card_class ... ok
+test worker::tests::batch_oom_recover_door_reaches_the_batched_chunk_only ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 1015 filtered out; finished in 0.12s
+

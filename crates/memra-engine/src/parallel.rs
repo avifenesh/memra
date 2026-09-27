@@ -60,6 +60,13 @@ impl HardwareTarget {
     }
 }
 
+/// The first-class card class a CUDA device name reads as (the same names
+/// `HardwareTarget::from_device_name` keys on), or `None` for any other device. The serving
+/// side keys its per-card defaults on it (`MEMRA_BATCH_OOM_RECOVER`, WP-B DAY49 addendum F).
+pub fn hardware_target_of(name: &str) -> Option<HardwareTarget> {
+    HardwareTarget::from_device_name(name).ok()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TopologyRequest {
     pub pipeline: usize,

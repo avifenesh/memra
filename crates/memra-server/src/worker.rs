@@ -15768,17 +15768,56 @@ fn reclaim_offtick_pass(
     removed + reclaim_queue_drain(engine, px, hpx, queue, &req.request_id)
 }
 
-/// Submit the worker queue's next demote while the tier's slot is free (DAY42 addendum E): the
-/// admission pass calls it, and so does the tick top after its settle calls, so the whole demote
-/// set reaches the host whether or not the arrival that queued it is still waiting. A queued entry
-/// that is no longer evictable (leased, hit or evicted meanwhile) is skipped; a refused submission
-/// dropped its entry (its bytes free now) and the next is tried. Returns the entries removed.
-/// MEMRA_BATCH_OOM_RECOVER (default unset, WP-B day 49, OWED O14): `1` retries a batched decode
-/// chunk once after one reclaim rung when its quoted CUDA OOM came before any session-state write
-/// (`memra_engine::step_guard`). Unset reads nothing.
+/// MEMRA_BATCH_OOM_RECOVER (WP-B day 49, OWED O14; the default per card, DAY49 addendum F): the
+/// batched decode chunk's OOM recovery retries the chunk once after one reclaim rung when its
+/// quoted CUDA OOM came before any session-state write (`memra_engine::step_guard`). Resolved once
+/// at worker boot from the device name (`batch_oom_recover_init`); read before that, it resolves
+/// with no card default.
+static BATCH_OOM_RECOVER: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+
 fn batch_oom_recover_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_BATCH_OOM_RECOVER").as_deref() == Ok("1"))
+    *BATCH_OOM_RECOVER.get_or_init(|| {
+        batch_oom_recover_decision(std::env::var("MEMRA_BATCH_OOM_RECOVER").ok().as_deref(), "").0
+    })
+}
+
+/// The recovery's arm for a door value and a device name, and the boot line's `source=`. Unset:
+/// ON on the RTX PRO 6000 Blackwell class (the target card read in full, DAY49 2.3 and 2.4; the
+/// owner's ruling 2026-09-27), OFF on every other card (the RTX 5090's flip waits for its serving
+/// boots). `0` is OFF and `1` is ON on any card; `0` is the rollback seam (decide-by 2026-10-11).
+/// Any other value keeps the card's default and names the value it ignored.
+fn batch_oom_recover_decision(value: Option<&str>, device_name: &str) -> (bool, String) {
+    let class_default = matches!(
+        memra_engine::parallel::hardware_target_of(device_name),
+        Some(memra_engine::parallel::HardwareTarget::RtxPro6000Blackwell)
+    );
+    let default_source = if class_default {
+        "pro6000-class-default"
+    } else {
+        "no default on this card"
+    };
+    match value.map(str::trim) {
+        None | Some("") => (class_default, default_source.to_string()),
+        Some("0") => (false, "MEMRA_BATCH_OOM_RECOVER=0".to_string()),
+        Some("1") => (true, "MEMRA_BATCH_OOM_RECOVER=1".to_string()),
+        Some(other) => (
+            class_default,
+            format!("{default_source} (MEMRA_BATCH_OOM_RECOVER={other:?} is not 0 or 1; ignored)"),
+        ),
+    }
+}
+
+/// Resolves the recovery's arm for this worker's device, once, and returns its boot line.
+fn batch_oom_recover_init(device_name: &str) -> String {
+    let (on, source) = batch_oom_recover_decision(
+        std::env::var("MEMRA_BATCH_OOM_RECOVER").ok().as_deref(),
+        device_name,
+    );
+    let armed = *BATCH_OOM_RECOVER.get_or_init(|| on);
+    format!(
+        "[batch-oom] recover={} source={source}",
+        if armed { "ON" } else { "OFF" }
+    )
 }
 
 /// The batch OOM's reclaim rung (DAY49 1.5): the parked sessions of the three pools are dropped,
@@ -16138,6 +16177,11 @@ fn exact_settle_spec(
     Ok(Some((from, to)))
 }
 
+/// Submit the worker queue's next demote while the tier's slot is free (DAY42 addendum E): the
+/// admission pass calls it, and so does the tick top after its settle calls, so the whole demote
+/// set reaches the host whether or not the arrival that queued it is still waiting. A queued entry
+/// that is no longer evictable (leased, hit or evicted meanwhile) is skipped; a refused submission
+/// dropped its entry (its bytes free now) and the next is tried. Returns the entries removed.
 fn reclaim_queue_drain(
     engine: &Engine,
     px: &mut PrefixCache,
@@ -27358,6 +27402,11 @@ pub fn run(
         memra_engine::cache::vmm_set_faults(kv_vmm_cfg.faults.clone());
     }
     eprintln!("{}", kv_vmm_cfg.boot_line(kv_vmm_granularity));
+    // The batched decode chunk's OOM recovery: its per-card default (DAY49 addendum F).
+    eprintln!(
+        "{}",
+        batch_oom_recover_init(&engine.ctx().name().unwrap_or_default())
+    );
     if let Err(why) = crate::kv_vmm::install(kv_vmm_cfg) {
         let _ = ready_tx.send(Err(why));
         return;
@@ -41761,6 +41810,7 @@ mod tests {
     }
 
     use super::SpecTelemetryWindow;
+    use super::batch_oom_recover_decision;
     use super::context_cache_bytes;
     use super::dead_prime_kill_switch_refusal;
     use super::plain_chat_render_path;
@@ -59519,6 +59569,54 @@ mod tests {
         // Each rewind is its pool's own restore.
         assert!(live.contains("if let Err(err) = memra_engine::pp::restore_cache_checkpoint( engine, &lm.model, None, &mut e.cache, &ckpt.snap, )"));
         assert!(live.contains("match lm.model.spec_rewind_to_checkpoint(engine, &mut sess) {"));
+    }
+
+    /// DAY49 addendum F: the recovery is the naked default on the RTX PRO 6000 Blackwell class
+    /// (every variant), off elsewhere until the card's own flip; `0` and `1` decide on any card.
+    #[test]
+    fn batch_oom_recover_defaults_per_card_class() {
+        let pro = [
+            "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+            "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+            "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+        ];
+        let other = [
+            "NVIDIA GeForce RTX 5090 Laptop GPU",
+            "NVIDIA GeForce RTX 5090",
+            "NVIDIA H100 80GB HBM3",
+            "",
+        ];
+        for name in pro {
+            assert_eq!(
+                batch_oom_recover_decision(None, name),
+                (true, "pro6000-class-default".to_string()),
+                "{name}"
+            );
+            assert!(batch_oom_recover_decision(Some(""), name).0, "{name}");
+            assert_eq!(
+                batch_oom_recover_decision(Some("0"), name),
+                (false, "MEMRA_BATCH_OOM_RECOVER=0".to_string()),
+                "the rollback seam: {name}"
+            );
+            let (on, source) = batch_oom_recover_decision(Some("off"), name);
+            assert!(
+                on && source.contains("\"off\" is not 0 or 1; ignored"),
+                "{source}"
+            );
+        }
+        for name in other {
+            assert_eq!(
+                batch_oom_recover_decision(None, name),
+                (false, "no default on this card".to_string()),
+                "{name}"
+            );
+            assert_eq!(
+                batch_oom_recover_decision(Some("1"), name),
+                (true, "MEMRA_BATCH_OOM_RECOVER=1".to_string()),
+                "{name}"
+            );
+            assert!(!batch_oom_recover_decision(Some("yes"), name).0, "{name}");
+        }
     }
 
     /// WP-B day 49 (DAY49 1.5): the batch-OOM door is read at the batched chunk only; the retry is
