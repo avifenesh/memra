@@ -36,7 +36,10 @@ pub static PACK: ModelPack = ModelPack {
     config_layout: ConfigLayout::FlatOrTextConfig,
     tokenizer_sources: &[TokenizerSource::TokenizerJson],
     template: TemplateContract::ArtifactRequired,
-    // Loader lane: inspection/census only, native plan execution unsupported.
+    // Inspect-only: no support state. The tiny plan does execute in the reference executor
+    // (memra-reference `qwen4exp_tiny_plan_executes_gated_residual_qsa_ple_moe_and_mtp`), but
+    // no record in docs/support-records.toml claims a state for this family yet, so
+    // `memra model verify tiny` refuses it. Promotion is a record plus this line, together.
     support: None,
     gates: &[
         Gate::Config,

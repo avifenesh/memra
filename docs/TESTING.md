@@ -57,7 +57,7 @@ MEMRA_CUDA_ARCH=100a cargo test --release -p memra-engine \
 These gates compile the production translation units, inspect static-archive ABI/SASS, run the
 exact host-constexpr operand/scale layout contract, and prove the release installer still refuses
 an unpublished B200 prebuilt. They never open the CUDA driver. They are CI-wired in the `100a`
-release-arch mirror. A green dry gate alone is not `NativeQualified` and does not replace the sealed
+release-arch mirror. A green dry gate alone is not `NativeQualified` <!-- support: none --> and does not replace the sealed
 B200 `kernel-check`, model parity, sampled serving, concurrency, context, rollback, or performance
 battery under `research/b200-kernel-twins-dry-20260901/receipts/`.
 

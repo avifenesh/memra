@@ -2,7 +2,7 @@
 
 | | Recommended use |
 |---|---|
-| **Status** | Supported on the qualified GGUF pipeline path — PP-2 serving, image input, structured output, and graphed draft chains; FP8 tuning is separate work |
+| **Status** | Served on the hand-written GGUF pipeline path with its own receipts: PP-2 serving, image input, structured output, and graphed draft chains. The `step35` model pack declares no support state (`support: None`). FP8 tuning is separate work |
 | **Best starting path** | IQ4_XS trunk with the Q8_0 MTP head on two-card PP-2 |
 | **Hardware** | 2× RTX PRO 6000 Blackwell |
 | **Use this when** | The model does not fit one card and you want the qualified pipeline-parallel path |

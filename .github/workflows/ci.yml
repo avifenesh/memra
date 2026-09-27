@@ -150,6 +150,16 @@ jobs:
           command -v rg >/dev/null || sudo apt-get install -y -q ripgrep
           tools/docs-registry-census.sh
 
+      # Support-state census (memra#551): every pack declares exactly the highest state its
+      # own family's records in docs/support-records.toml prove, each passed gate is backed
+      # by a tracked same-family gates.txt or the verify-tiny test below, and every state token
+      # in the docs names the record behind it. The second command is the red fixture: each
+      # arm plants one overclaim in a scratch copy and requires the census to fail on it.
+      - name: Support-state census
+        run: |
+          python3 tools/check-support-states.py
+          python3 tools/test_check_support_states.py
+
       # Teeth for the PRE-PUSH flags-census arm (2026-08-23): drives a real `git push`
       # through the real hook into a bare local origin, so the wiring is exercised rather
       # than grepped, and the escape hatch is proven to announce AND log itself.

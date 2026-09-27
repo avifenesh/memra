@@ -82,8 +82,8 @@ library embedded in your application.
 [Gemma 4 E4B](docs/models/gemma4-e4b.md) ·
 [Step 3.7 Flash](docs/models/step37-flash.md) ·
 [DeepSeek V4 Flash](docs/models/deepseek-v4-flash.md) ·
-[GLM-5.3 Flash](docs/models/glm53-flash.md) (NativeReference) ·
-[Hy3](docs/models/hy3.md) (NativeReference · NVFP4 NativeQualified)
+[GLM-5.3 Flash](docs/models/glm53-flash.md) (NativeReference) <!-- support: glm5_next-reference --> ·
+[Hy3](docs/models/hy3.md) (NativeReference) <!-- support: hy3-bf16-reference,hy3_nvfp4-modelopt-w4a16 -->
 
 **By hardware:** [RTX PRO 6000 Blackwell](docs/rigs/rtx-pro-6000-blackwell.md) ·
 [RTX 5090 / 50-series](docs/rigs/rtx-5090.md) · [H100](docs/rigs/h100.md) ·
@@ -127,11 +127,14 @@ Support is specific to a model, quantization, and drafter combination, never to 
 are exactly three positive states, the enum `NativeSupport` in
 `crates/memra-gguf/src/model_packs/mod.rs`:
 
-- **NativeReference**: the plan compiles and runs in memra's reference executor. Bring-up
+- **NativeReference**: the plan compiles and runs in memra's reference executor. Bring-up <!-- support: none -->
   evidence only.
-- **NativeQualified**: the required checkpoint and serving gates pass.
-- **NativeTuned**: qualified, plus current receipts for the optimized rewrites the deployment
+- **NativeQualified**: the required checkpoint and serving gates pass. <!-- support: none -->
+- **NativeTuned**: qualified, plus current receipts for the optimized rewrites the deployment <!-- support: none -->
   selects.
+
+Each pack's state is backed by a record in [`docs/support-records.toml`](docs/support-records.toml),
+and `tools/check-support-states.py` fails CI when a pack or a doc claims more than its records.
 
 "Loads", "shares an architecture name", and "works through another engine" are not support
 states. [docs/MODELS.md](docs/MODELS.md) is the support matrix; each entry in

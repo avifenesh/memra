@@ -1,0 +1,335 @@
+# Support-state records: the only source a pack's declared `support` may come from.
+#
+# One record = one qualified (or reference-level) capability, keyed by the exact pack family,
+# the artifact, the numeric program, the hardware/topology and the serving route. A record
+# names the evidence that backs each passed gate. `tools/check-support-states.py` (CI, gates
+# job) enforces:
+#
+#   * every ModelPack static and speech SUPPORT const declares exactly the highest state its
+#     own family's records prove, and `support: None` packs have no positive record;
+#   * a record names one family; nothing inherits from a sibling family, a shared loader or a
+#     similar architecture name;
+#   * each passed gate is backed by a tracked `gates.txt` (family taken from its artifact.lock
+#     or tiny-gate.tsv) that says `Gate=passed` for the same family, or, for Config and
+#     TinyParity only, by the hosted memra-cli test that runs `verify tiny` for every
+#     supported pack (`ci:verify-tiny`);
+#   * NativeReference needs Config and TinyParity; NativeQualified adds TokenizerTemplate,
+#     TensorCensus, CheckpointParity and Serve on a pinned, non-tiny artifact with a memra
+#     commit, topology and route; NativeTuned adds RewriteParity;
+#   * every NativeReference/NativeQualified/NativeTuned token in README.md, STATUS.md,
+#     CLAUDE.md and docs/ carries a `<!-- support: <id>[,<id>] -->` marker naming records in
+#     that state, or `<!-- support: none -->` on a definition, negation or pending mention.
+#     A line that names a state only to deny it adds `; not <State> [<State>...]` to the marker
+#     (`<!-- support: hy3-bf16-reference; not NativeQualified -->`); a denied state must rank
+#     above every named record, so a marker can never deny what its records prove.
+#
+# Gates not passed are listed as "pending". A pending gate is the honest state, never a gap to
+# paper over. Evidence outside this repository never backs a gate here: a receipt that cannot
+# be re-read from the tree is noted in `notes` and does not count.
+#
+# Fields: id, pack, state, artifact, numeric_program, topology, route, memra_commit (required
+# for NativeQualified and NativeTuned), gates (Gate = "passed" | "pending"),
+# evidence (Gate = [paths or "ci:verify-tiny"]), notes.
+
+[[record]]
+id = "qwen3-tiny-random"
+pack = "qwen3"
+state = "NativeReference"
+artifact = "tiny-random/qwen3@84ad45b4ecda2d4849aac0b768d520c239ff5875"
+numeric_program = "f32 reference executor"
+topology = "cpu"
+route = "memra model verify tiny/checkpoint/serve onboarding path"
+notes = "CheckpointParity and Serve passed on a tiny random checkpoint. A tiny fixture never promotes a pack, so the state stays NativeReference."
+[record.gates]
+Config = "passed"
+TokenizerTemplate = "passed"
+TensorCensus = "passed"
+TinyParity = "passed"
+CheckpointParity = "passed"
+RewriteParity = "pending"
+Serve = "passed"
+[record.evidence]
+Config = ["research/modelplan-onboarding-20260822/qwen3/gates.txt", "ci:verify-tiny"]
+TokenizerTemplate = ["research/modelplan-onboarding-20260822/qwen3/gates.txt"]
+TensorCensus = ["research/modelplan-onboarding-20260822/qwen3/gates.txt"]
+TinyParity = ["research/modelplan-onboarding-20260822/qwen3/gates.txt", "ci:verify-tiny"]
+CheckpointParity = ["research/modelplan-onboarding-20260822/qwen3/gates.txt"]
+Serve = ["research/modelplan-onboarding-20260822/qwen3/gates.txt"]
+
+[[record]]
+id = "qwen3_moe-reference"
+pack = "qwen3_moe"
+state = "NativeReference"
+artifact = "tiny fixture"
+numeric_program = "f32 reference executor"
+topology = "cpu"
+route = "memra model verify tiny"
+[record.gates]
+Config = "passed"
+TinyParity = "passed"
+TokenizerTemplate = "pending"
+TensorCensus = "pending"
+CheckpointParity = "pending"
+RewriteParity = "pending"
+Serve = "pending"
+[record.evidence]
+Config = ["ci:verify-tiny"]
+TinyParity = ["ci:verify-tiny"]
+
+[[record]]
+id = "qwen35-9b-nvfp4-gguf"
+pack = "qwen35"
+state = "NativeReference"
+artifact = "michaelw9999/Qwen3.5-9B-NVFP4-MTP-GGUF@640ced996727af23f39fd0946b6d2bbabad58cd2 sha256:52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de"
+numeric_program = "f32 reference executor; census over the NVFP4 GGUF"
+topology = "cpu"
+route = "memra model inspect + verify tiny"
+notes = "CheckpointParity and Serve are pending in the tracked record."
+[record.gates]
+Config = "passed"
+TokenizerTemplate = "passed"
+TensorCensus = "passed"
+TinyParity = "passed"
+CheckpointParity = "pending"
+RewriteParity = "passed"
+Serve = "pending"
+[record.evidence]
+Config = ["research/modelplan-onboarding-20260822/qwen35/gates.txt", "ci:verify-tiny"]
+TokenizerTemplate = ["research/modelplan-onboarding-20260822/qwen35/gates.txt"]
+TensorCensus = ["research/modelplan-onboarding-20260822/qwen35/gates.txt"]
+TinyParity = ["research/modelplan-onboarding-20260822/qwen35/gates.txt", "ci:verify-tiny"]
+RewriteParity = ["research/modelplan-onboarding-20260822/qwen35/gates.txt"]
+
+[[record]]
+id = "qwen35-9b-nvfp4-b200-w4a8"
+pack = "qwen35"
+state = "NativeReference"
+artifact = "michaelw9999/Qwen3.5-9B-NVFP4-MTP-GGUF@640ced996727af23f39fd0946b6d2bbabad58cd2 sha256:52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de"
+numeric_program = "NVFP4 weights, W4A8 split-plane prefill (default); W4A4 and F8F4 explicit"
+topology = "1x B200 (sm_100a)"
+route = "memra-server GGUF route, MTP speculation"
+memra_commit = "69a2eb3684e14c64dc01516dbaddc1b261ffd1ca"
+notes = "research/b200-kernel-twins-dry-20260901 passed kernel exactness, cross-arm greedy identity, K=1..8 self-consistency and sampled serving on this tuple, and called it NativeQualified. It has no checkpoint-parity receipt against an external oracle, and the tracked onboarding record for the same artifact shows CheckpointParity pending, so the state is NativeReference until that gate runs."
+[record.gates]
+Config = "passed"
+TinyParity = "passed"
+TokenizerTemplate = "passed"
+TensorCensus = "passed"
+CheckpointParity = "pending"
+RewriteParity = "pending"
+Serve = "pending"
+[record.evidence]
+Config = ["ci:verify-tiny"]
+TinyParity = ["ci:verify-tiny"]
+TokenizerTemplate = ["research/modelplan-onboarding-20260822/qwen35/gates.txt"]
+TensorCensus = ["research/modelplan-onboarding-20260822/qwen35/gates.txt"]
+
+[[record]]
+id = "qwen38-27b-fp8-b200"
+pack = "qwen35"
+state = "NativeReference"
+artifact = "Qwen/Qwen3.8-27B-FP8@017b9c7af6b5689d5dd426a76e0bc077eb5ca20a"
+numeric_program = "block-FP8 E4M3 128x128, explicit MEMRA_FP8_MMQ=1 tcgen05 twin"
+topology = "1x B200 (sm_100a)"
+route = "memra-server safetensors route"
+notes = "research/b200-kernel-twins-dry-20260901: synthetic twin exact, sampled serving coherent, top-20 overlap 17/20 on teacher-forced logits, 0.173x the fallback. Reference only."
+[record.gates]
+Config = "passed"
+TinyParity = "passed"
+TokenizerTemplate = "pending"
+TensorCensus = "pending"
+CheckpointParity = "pending"
+RewriteParity = "pending"
+Serve = "pending"
+[record.evidence]
+Config = ["ci:verify-tiny"]
+TinyParity = ["ci:verify-tiny"]
+
+[[record]]
+id = "qwen35_moe-reference"
+pack = "qwen35_moe"
+state = "NativeReference"
+artifact = "Qwen3.6-35B-A3B-UD-IQ4_XS.gguf (local, unpinned)"
+numeric_program = "f32 reference executor; census over IQ4_XS GGUF"
+topology = "cpu"
+route = "memra model inspect + verify tiny"
+[record.gates]
+Config = "passed"
+TokenizerTemplate = "passed"
+TensorCensus = "passed"
+TinyParity = "passed"
+CheckpointParity = "pending"
+RewriteParity = "pending"
+Serve = "pending"
+[record.evidence]
+Config = ["research/spill-c-20260919/pro-single-day11/inspect/gates.txt", "ci:verify-tiny"]
+TokenizerTemplate = ["research/spill-c-20260919/pro-single-day11/inspect/gates.txt"]
+TensorCensus = ["research/spill-c-20260919/pro-single-day11/inspect/gates.txt"]
+TinyParity = ["ci:verify-tiny"]
+
+[[record]]
+id = "glm5_next-reference"
+pack = "glm5_next"
+state = "NativeReference"
+artifact = "zai-org/GLM-5.3-Flash@04c4e9e95c5da8862dced7e5056455116f83a7e0"
+numeric_program = "f32 reference executor; census over FP8 e4m3 safetensors"
+topology = "cpu"
+route = "memra model inspect + verify tiny"
+notes = "The TP, vision and MTP receipts on the model card are hand-written glm5_next path gates. They are not pack gates and do not qualify the pack."
+[record.gates]
+Config = "passed"
+TokenizerTemplate = "passed"
+TensorCensus = "passed"
+TinyParity = "passed"
+CheckpointParity = "pending"
+RewriteParity = "pending"
+Serve = "pending"
+[record.evidence]
+Config = ["research/glm53-flash-bringup-20260827/inspect-receipts/gates.txt", "ci:verify-tiny"]
+TokenizerTemplate = ["research/glm53-flash-bringup-20260827/inspect-receipts/gates.txt"]
+TensorCensus = ["research/glm53-flash-bringup-20260827/inspect-receipts/gates.txt"]
+TinyParity = ["ci:verify-tiny"]
+
+[[record]]
+id = "glm_dsa-reference"
+pack = "glm_dsa"
+state = "NativeReference"
+artifact = "tiny fixture"
+numeric_program = "f32 reference executor"
+topology = "cpu"
+route = "memra model verify tiny"
+[record.gates]
+Config = "passed"
+TinyParity = "passed"
+TokenizerTemplate = "pending"
+TensorCensus = "pending"
+CheckpointParity = "pending"
+RewriteParity = "pending"
+Serve = "pending"
+[record.evidence]
+Config = ["ci:verify-tiny"]
+TinyParity = ["ci:verify-tiny"]
+
+[[record]]
+id = "gemma4_dense-reference"
+pack = "gemma4_dense"
+state = "NativeReference"
+artifact = "tiny fixture (text, vision and multimodal oracles)"
+numeric_program = "f32 reference executor"
+topology = "cpu"
+route = "memra model verify tiny"
+[record.gates]
+Config = "passed"
+TinyParity = "passed"
+TokenizerTemplate = "pending"
+TensorCensus = "pending"
+CheckpointParity = "pending"
+RewriteParity = "pending"
+Serve = "pending"
+[record.evidence]
+Config = ["ci:verify-tiny"]
+TinyParity = ["ci:verify-tiny"]
+
+[[record]]
+id = "gemma4_moe-reference"
+pack = "gemma4_moe"
+state = "NativeReference"
+artifact = "tiny fixture (text, vision and multimodal oracles)"
+numeric_program = "f32 reference executor"
+topology = "cpu"
+route = "memra model verify tiny"
+[record.gates]
+Config = "passed"
+TinyParity = "passed"
+TokenizerTemplate = "pending"
+TensorCensus = "pending"
+CheckpointParity = "pending"
+RewriteParity = "pending"
+Serve = "pending"
+[record.evidence]
+Config = ["ci:verify-tiny"]
+TinyParity = ["ci:verify-tiny"]
+
+[[record]]
+id = "deepseek_v4_dspark-reference"
+pack = "deepseek_v4_dspark"
+state = "NativeReference"
+artifact = "tiny fixture"
+numeric_program = "f32 reference executor"
+topology = "cpu"
+route = "memra model verify tiny"
+notes = "The deepseek_v4 target pack stays support None. The drafter pack's reference state says nothing about the target."
+[record.gates]
+Config = "passed"
+TinyParity = "passed"
+TokenizerTemplate = "pending"
+TensorCensus = "pending"
+CheckpointParity = "pending"
+RewriteParity = "pending"
+Serve = "pending"
+[record.evidence]
+Config = ["ci:verify-tiny"]
+TinyParity = ["ci:verify-tiny"]
+
+[[record]]
+id = "llama_dense-reference"
+pack = "llama_dense"
+state = "NativeReference"
+artifact = "tiny fixture"
+numeric_program = "f32 reference executor"
+topology = "cpu"
+route = "memra model verify tiny"
+[record.gates]
+Config = "passed"
+TinyParity = "passed"
+TokenizerTemplate = "pending"
+TensorCensus = "pending"
+CheckpointParity = "pending"
+RewriteParity = "pending"
+Serve = "pending"
+[record.evidence]
+Config = ["ci:verify-tiny"]
+TinyParity = ["ci:verify-tiny"]
+
+[[record]]
+id = "hy3-bf16-reference"
+pack = "hy3"
+state = "NativeReference"
+artifact = "tencent/Hy3@a960ebc3da325ba167f069f76c41eb62c9280d22 (BF16); tencent/Hy3-FP8@ecc1d8e194e093f33177f2f0ef7ce8f397b2d68b (census)"
+numeric_program = "f32 reference executor; census over BF16 and FP8 safetensors"
+topology = "cpu"
+route = "memra model inspect + verify tiny"
+[record.gates]
+Config = "passed"
+TokenizerTemplate = "passed"
+TensorCensus = "passed"
+TinyParity = "passed"
+CheckpointParity = "pending"
+RewriteParity = "pending"
+Serve = "pending"
+[record.evidence]
+Config = ["research/modelplan-onboarding-hy3-20260830/bf16-inspect/gates.txt", "research/modelplan-onboarding-hy3-20260830/fp8-inspect/gates.txt", "ci:verify-tiny"]
+TokenizerTemplate = ["research/modelplan-onboarding-hy3-20260830/bf16-inspect/gates.txt", "research/modelplan-onboarding-hy3-20260830/fp8-inspect/gates.txt"]
+TensorCensus = ["research/modelplan-onboarding-hy3-20260830/bf16-inspect/gates.txt", "research/modelplan-onboarding-hy3-20260830/fp8-inspect/gates.txt"]
+TinyParity = ["research/modelplan-onboarding-hy3-20260830/tiny/gates.txt", "ci:verify-tiny"]
+
+[[record]]
+id = "hy3_nvfp4-modelopt-w4a16"
+pack = "hy3_nvfp4"
+state = "NativeReference"
+artifact = "Memra ModelOpt 0.46.0 all-expert W4A16 mint of tencent/Hy3@a960ebc3da325ba167f069f76c41eb62c9280d22, 108-file manifest d63f8c3da9ab144d42dbfc1136d05294e26d5b7b7a40b114bf4b301359f4092c"
+numeric_program = "routed experts NVFP4 weight-only with BF16-rounded activations; everything else BF16/F32"
+topology = "4x RTX PRO 6000 Blackwell Server, automatic whole-expert EP-4"
+route = "memra-server safetensors route, embedded MTP eager draft chain"
+notes = "The 2026-08-30 qualification run reported a same-artifact external-oracle pass, greedy MTP identity at K=1..8 and sampled serving gates at memra bfd5a2d88ef653576e2ea5bfc8711408eb2d1cac. None of those receipts is tracked in this repository, and the only tracked machine record of the minted artifact lists TinyParity, CheckpointParity and Serve pending with support=unsupported. The pack therefore declares NativeReference, backed by its own tiny plan in ci:verify-tiny, until CheckpointParity and Serve are re-run and their gates.txt is tracked."
+[record.gates]
+Config = "passed"
+TinyParity = "passed"
+TokenizerTemplate = "pending"
+TensorCensus = "pending"
+CheckpointParity = "pending"
+RewriteParity = "pending"
+Serve = "pending"
+[record.evidence]
+Config = ["ci:verify-tiny"]
+TinyParity = ["ci:verify-tiny"]

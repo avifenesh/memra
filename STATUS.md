@@ -103,7 +103,7 @@ score only under the new hash's name.
 4. RNNT beyond three clips and one arm: a real corpus, the `[56,3]`/`[56,6]`/`[56,13]` arms if
    they are ever wanted, session revision semantics, cancellation and reset.
 
-The measured ladder, including everything `NativeReference` and `NativeQualified` still need,
+The measured ladder, including everything `NativeReference` and `NativeQualified` still need, <!-- support: none -->
 is the "Measured status ladder" section of `ASR-MODALITY-PLAN.md`.
 
 ## Rules this lane runs under

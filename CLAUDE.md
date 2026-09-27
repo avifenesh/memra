@@ -53,10 +53,13 @@ The model-onboarding structure is authoritative:
 - `crates/memra-cli/` owns `memra model inspect`, `scaffold`, and `verify`; onboarding evidence and
   immutable receipts live under a dated `research/modelplan-onboarding-*` namespace.
 
-There are exactly three positive support states: `NativeReference`, `NativeQualified`, and
-`NativeTuned`. `NativeReference` means the plan compiles and runs in Memra's reference executor;
-`NativeQualified` means the required checkpoint and serving gates pass; `NativeTuned` additionally
-means the selected optimized rewrites have current receipts. "Loads", "shares an architecture
+There are exactly three positive support states: `NativeReference`, `NativeQualified`, and <!-- support: none -->
+`NativeTuned`. `NativeReference` means the plan compiles and runs in Memra's reference executor; <!-- support: none -->
+`NativeQualified` means the required checkpoint and serving gates pass; `NativeTuned` additionally <!-- support: none -->
+means the selected optimized rewrites have current receipts. A pack's `support` field and every
+state named in the docs must match a record in `docs/support-records.toml`
+(`tools/check-support-states.py`, CI gates job); a new state lands with its record and its
+tracked gate receipts in the same PR. "Loads", "shares an architecture
 name", and "works through another engine" are not support states.
 
 ### Bring up a model from now on

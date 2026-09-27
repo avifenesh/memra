@@ -43,9 +43,9 @@ question from what is supported:
 | Step-3.7-Flash 196B-A11B | **GGUF** (IQ4_XS + Q8_0 MTP head, two-card PP-2) since v0.73.1 | FP8 — not Q8 |
 | Gemma, rest of the family | GGUF | NVFP4 safetensors rework in progress |
 | DeepSeek-V4-Flash | **safetensors** checkpoint dir through its own two-card door — **experimental engine support**, functional and gated, **not serving-grade** (see its section below) | performance ([#4](https://github.com/avifenesh/memra/issues/4)) |
-| GLM-5.3-Flash | **safetensors** (FP8 e4m3, MIT) on the hand-written `glm5_next` path — **NativeReference**; multi-card TP serving, vision, and MTP spec gated (see [its card](models/glm53-flash.md)) | — |
+| GLM-5.3-Flash | **safetensors** (FP8 e4m3, MIT) on the hand-written `glm5_next` path. The `glm5_next` pack is **NativeReference**; multi-card TP serving, vision, and MTP spec are gated on the hand-written path and do not qualify the pack (see [its card](models/glm53-flash.md)) | - <!-- support: glm5_next-reference --> |
 | Qwen3.8-Flash-Next | **bring-up only** — hand-written `qwen4_exp` gate path on the minted NVFP4 artifact, real-checkpoint eager gate green; ModelPlan loader not wired, no serving surface (see [its card](models/qwen38-flash-next.md)) | — |
-| Hy3 | **safetensors** — canonical BF16 plan **NativeReference**; the exact all-expert ModelOpt W4A16 artifact is **NativeQualified** on four-card Blackwell receipts (see [its card](models/hy3.md)) | — |
+| Hy3 | **safetensors**: canonical BF16 plan and the exact all-expert ModelOpt W4A16 profile (`hy3_nvfp4`) are both **NativeReference**. The four-card Blackwell qualification receipts are not tracked, so checkpoint parity and serve are pending (see [its card](models/hy3.md)) | - <!-- support: hy3-bf16-reference,hy3_nvfp4-modelopt-w4a16 --> |
 | everything else in the table | GGUF | — |
 
 Nothing above is a roadmap. It is where the code is, and it changes by decision. A row moving
@@ -88,9 +88,10 @@ weight than a wishlist, and they are read.
   lane (2026-09-02); run the gates directly on Hopper hardware.
 - **Ada `sm_89`** — portable source-build lane, not a tuned performance target.
 - **B200 `sm_100a`** — runtime-qualified source backend with automatic source-build detection;
-  no prebuilt is published. Pinned Qwen3.5-9B NVFP4 is `NativeQualified` on default W4A8.
+  no prebuilt is published. Pinned Qwen3.5-9B NVFP4 is `NativeReference` on default W4A8: <!-- support: qwen35-9b-nvfp4-b200-w4a8 -->
+  kernel, self-consistency and sampled serving gates pass, checkpoint parity is still pending.
   Opt-in W4A4 is correct but 0.521x raw W4A8 prefill. Pinned Qwen3.8-27B block-FP8 is
-  `NativeReference`; its explicit FP8-MMQ twin is correct but 0.173x the fallback, so it is not
+  `NativeReference`; its explicit FP8-MMQ twin is correct but 0.173x the fallback, so it is not <!-- support: qwen38-27b-fp8-b200 -->
   tuned or default. See [the B200 card](rigs/b200.md).
   Other architectures are not a tuned support promise.
 
