@@ -140,4 +140,36 @@ mod tests {
         assert!(validate_stage_layout(0, 0, 0).is_err());
         assert!(validate_stage_layout(2, 1, 2).is_err());
     }
+
+    #[test]
+    #[ignore = "requires the pinned MiMo source and a dedicated two-card GPU lane"]
+    fn pinned_modal_upload_matches_bound_source_rows() -> Result<(), Fail> {
+        use std::path::Path;
+        use std::sync::Arc;
+
+        use memra_gguf::source::SafetensorsSource;
+        use memra_reference::mimo_modal_overlay::{AUDIO_TOKEN_ID, IMAGE_TOKEN_ID, VIDEO_TOKEN_ID};
+
+        let root = std::env::var("MIMO_PINNED_SOURCE_ROOT")?;
+        let source = Arc::new(SafetensorsSource::open(Path::new(&root))?);
+        let cards = [Engine::new(0)?, Engine::new(1)?];
+        let text = MiMoTextWeights::load([&cards[0], &cards[1]], source)?;
+        let tokens = [42, IMAGE_TOKEN_ID, AUDIO_TOKEN_ID, VIDEO_TOKEN_ID, 43];
+        let image = vec![vec![1.007_812_5; HIDDEN]];
+        let audio = vec![vec![-0.531_25; HIDDEN]];
+        let video = vec![vec![0.328_125; HIDDEN]];
+        let expected = text.modal_embedding_host_chunk(&tokens, &image, &video, &audio)?;
+        let actual = text.modal_embedding_gpu_chunk(&cards[0], &tokens, &image, &video, &audio)?;
+        assert_eq!(actual.token_count(), tokens.len());
+        assert!(actual.requires_payload_identity());
+        let uploaded = cards[0].dtoh(actual.embeddings())?;
+        assert_eq!(uploaded.len(), expected.rows().len());
+        assert!(
+            uploaded
+                .iter()
+                .zip(expected.rows())
+                .all(|(got, want)| got.to_bits() == want.to_bits())
+        );
+        Ok(())
+    }
 }
