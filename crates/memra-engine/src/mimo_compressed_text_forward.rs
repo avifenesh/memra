@@ -145,6 +145,8 @@ pub struct MiMoCompressedTextForward<'a> {
     trace_rows: Vec<(usize, Vec<f32>)>,
     #[cfg(test)]
     trace_stages: Vec<(usize, &'static str, Vec<f32>)>,
+    #[cfg(test)]
+    batch_packed_attention: bool,
 }
 
 impl MiMoTextWeights {
@@ -183,6 +185,8 @@ impl<'a> MiMoCompressedTextForward<'a> {
             trace_rows: Vec::new(),
             #[cfg(test)]
             trace_stages: Vec::new(),
+            #[cfg(test)]
+            batch_packed_attention: false,
         })
     }
 
@@ -383,14 +387,35 @@ impl<'a> MiMoCompressedTextForward<'a> {
                     tensor,
                 )?;
             }
-            let context = engine.mimo_text_chunk_attention(
-                &plan.attention,
-                &qkv.query,
-                &qkv.key,
-                &qkv.value,
-                row.attention.sink.as_ref(),
-                tokens,
-            )?;
+            #[cfg(test)]
+            let context = if self.batch_packed_attention {
+                self.kv.append_prefill_layer(index, &qkv.key, &qkv.value)?;
+                self.kv.attend_prefill_layer_rows(index, &qkv.query)?
+            } else {
+                let context = engine.mimo_text_chunk_attention(
+                    &plan.attention,
+                    &qkv.query,
+                    &qkv.key,
+                    &qkv.value,
+                    row.attention.sink.as_ref(),
+                    tokens,
+                )?;
+                self.kv.append_prefill_layer(index, &qkv.key, &qkv.value)?;
+                context
+            };
+            #[cfg(not(test))]
+            let context = {
+                let context = engine.mimo_text_chunk_attention(
+                    &plan.attention,
+                    &qkv.query,
+                    &qkv.key,
+                    &qkv.value,
+                    row.attention.sink.as_ref(),
+                    tokens,
+                )?;
+                self.kv.append_prefill_layer(index, &qkv.key, &qkv.value)?;
+                context
+            };
             #[cfg(test)]
             trace_stage(
                 &mut self.trace_stages,
@@ -402,7 +427,6 @@ impl<'a> MiMoCompressedTextForward<'a> {
                 engine,
                 &context,
             )?;
-            self.kv.append_prefill_layer(index, &qkv.key, &qkv.value)?;
             drop((qkv, projections, norm));
             let attention_output = engine.matmul(&row.attention.output, &context, tokens)?;
             #[cfg(test)]
@@ -997,7 +1021,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires pinned MiMo source and a dedicated two-card GPU lane"]
-    fn first_batch_chunk_layerwise_diagnostic() -> Result<(), Fail> {
+    fn first_batch_chunk_packed_layerwise_diagnostic() -> Result<(), Fail> {
         use std::path::Path;
         use std::sync::Arc;
 
@@ -1020,6 +1044,7 @@ mod tests {
         let (batched, batched_rows, batched_stages) = {
             let mut sequence = text.compressed_text_forward(engines, 4, [FOUR_GIB; 2])?;
             sequence.trace_position = Some(3);
+            sequence.batch_packed_attention = true;
             let step = sequence.consume_embedding_chunk_batched(&prepared)?;
             (step, sequence.trace_rows, sequence.trace_stages)
         };
