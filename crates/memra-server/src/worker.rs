@@ -25825,10 +25825,35 @@ pub(crate) fn validate_admit_predict_enforce_deployment(
     Ok(())
 }
 
+/// The physical verify-graph pool debt line for one admission, or `None` when none prints: a
+/// debt of 0 prints nothing; with the predictive debt door off the line prints under
+/// `log_estimate` only (the request-cost line's dedup); with it on (DAY48 addendum E) it prints on
+/// every admission and ends in ` id=<request id>`.
+fn vg_debt_physical_line(
+    vg_debt: usize,
+    log_estimate: bool,
+    door_on: bool,
+    request_id: &str,
+) -> Option<String> {
+    if vg_debt == 0 || !(log_estimate || door_on) {
+        return None;
+    }
+    let mut line = format!(
+        "[admission] dspark verify-graph pool debt: +{:.0}MB reserved (projected remaining pool \
+         growth; MEMRA_DSPARK_VG_MAX is the valve)",
+        vg_debt as f64 / 1e6,
+    );
+    if door_on {
+        line.push_str(&format!(" id={request_id}"));
+    }
+    Some(line)
+}
+
 /// MEMRA_ADMIT_PREDICT_VG_DEBT (default unset, WP-B day 48, OWED O8): `1` makes the predictive
 /// verdict subtract the verify-graph pool debt the physical side reserves at the same admission
 /// (`dspark_vg_admission_debt`) from its budget, and prints it as `vg_debt=` on the
-/// `[admit-predict]` line. Unset reads nothing: the verdict and the line are today's.
+/// `[admit-predict]` line. With it on, the physical debt line also prints on every admission
+/// (DAY48 addendum E). Unset reads nothing: the verdict and the lines are today's.
 fn admit_predict_vg_debt_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_ADMIT_PREDICT_VG_DEBT").as_deref() == Ok("1"))
@@ -28421,13 +28446,16 @@ pub fn run(
                 // `dspark_drafts.contains_key` gate; the debt fn self-gates on its
                 // doors and returns 0 when no pool can engage.
                 let vg_debt = loaded[&model_key].model.dspark_vg_admission_debt(&engine);
-                if vg_debt > 0 && log_estimate {
-                    eprintln!(
-                        "[admission] dspark verify-graph pool debt: +{:.0}MB reserved \
-                         (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the \
-                         valve)",
-                        vg_debt as f64 / 1e6,
-                    );
+                // WP-B DAY48 addendum E: with the predictive debt door on, the physical line
+                // prints on EVERY admission and names its request, so each predictive
+                // `vg_debt` pairs with its physical debt; off, it is today's deduplicated line.
+                if let Some(line) = vg_debt_physical_line(
+                    vg_debt,
+                    log_estimate,
+                    admit_predict_vg_debt_on(),
+                    &req.request_id,
+                ) {
+                    eprintln!("{line}");
                 }
                 let reserve = reserve.saturating_add(vg_debt);
                 let request_state = match loaded[&model_key]
@@ -59648,17 +59676,19 @@ mod tests {
     }
 
     /// WP-B day 48 (DAY48 addendum A, OWED O8): the verify-graph debt door is read at the predictive
-    /// seam only, and its debt reaches the verdict's budget and the line; the budget helper saturates.
+    /// seam, where its debt reaches the verdict's budget and the line, and (addendum E) at the
+    /// physical debt line, which it only makes print on every admission; the budget helper
+    /// saturates.
     #[test]
-    fn vg_debt_door_reaches_the_predictive_seam_only() {
+    fn vg_debt_door_reaches_the_predictive_seam_and_the_physical_line_only() {
         let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
         let worker = squash(include_str!("worker.rs"));
         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
         let call = format!("admit_predict_vg_debt_on{}", "()");
         assert_eq!(
             live.matches(call.as_str()).count(),
-            2,
-            "definition and the predictive seam"
+            3,
+            "definition, the predictive seam, the physical debt line"
         );
         assert!(live.contains("let vg_debt = admit_predict_vg_debt_on().then(|| { loaded[&model_key] .model .dspark_vg_admission_debt_peek(&engine) as u64 });"));
         // The physical gate keeps the recording read (the door-off program).
@@ -59677,6 +59707,28 @@ mod tests {
             super::predictive_budget_less_vg_debt(Some(100), Some(30)),
             Some(70)
         );
+        // DAY48 addendum E: the physical line on every admission with the door on, naming its
+        // request; off, only under the request-cost line's dedup, and byte for byte today's.
+        let today = "[admission] dspark verify-graph pool debt: +34MB reserved (projected \
+                     remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)";
+        assert_eq!(
+            super::vg_debt_physical_line(33_554_432, true, false, "cmpl-a").as_deref(),
+            Some(today)
+        );
+        assert_eq!(
+            super::vg_debt_physical_line(33_554_432, false, false, "cmpl-a"),
+            None
+        );
+        assert_eq!(
+            super::vg_debt_physical_line(33_554_432, false, true, "cmpl-a"),
+            Some(format!("{today} id=cmpl-a"))
+        );
+        assert_eq!(
+            super::vg_debt_physical_line(33_554_432, true, true, "cmpl-b"),
+            Some(format!("{today} id=cmpl-b"))
+        );
+        assert_eq!(super::vg_debt_physical_line(0, true, true, "cmpl-a"), None);
+        assert!(live.contains("if let Some(line) = vg_debt_physical_line( vg_debt, log_estimate, admit_predict_vg_debt_on(), &req.request_id, ) {"));
         assert_eq!(
             super::predictive_budget_less_vg_debt(Some(100), Some(300)),
             Some(0)
