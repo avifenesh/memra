@@ -107,6 +107,47 @@ second holds kernels, and prints `restore_call_shape=off` (not read) when either
 content checks set the split, not any time value. The re-read below ran on the fixed reader before this addendum was
 pushed, and it is recorded that way. No clause, rule or reading changes.
 
+### 1.9 Addendum C (2026-09-27, arm O's precondition census and design questions, before any arm-O code)
+
+1.3's precondition is a census of the shared state the prime path touches. It was read from the code at `bdaaf311f`
+(file and line references in the lane's notes; no file changed). The dense Qwen prime reaches `prime_chunk` →
+`prime_layers`. What a second compute stream would share today, and how arm O must treat each:
+
+- **Written by every prime and shared per device:** the prime slabs (`HybridModel::prime_slabs`, keyed by CUDA ordinal,
+  not by engine). Arm O keys them by (device, stream), so the settle stream gets its own set.
+- **Written by every prime and held by the Engine:** the bf16 KV dequant workspace `prime_deqw_ws` (written by
+  `fa_dequant_kv_ws_bf16`, read by `fa_prefill_qw*`), the fp16 GEMM scratch `f16_scratch` (inert for NVFP4 weights, live
+  when fp16 mirrors exist), `verify_exact` (the batched decode sets it for B = 9 to 16), `capture_keep` (decode graph
+  capture), and the function cache. `verify_exact` matters most: it switches the prime's kernel class, so a settle beside
+  a batched decode would run a different numeric program. Arm O runs its settles on a second `Engine` on the same
+  device, as PP already does for its stages. That gives each stream its own copy of every Engine-held item, and the
+  settle engine never sets `verify_exact`.
+- **The 27B's captured prime graph** bakes the slab and workspace addresses. A settle call runs eager, as a capturing
+  call already does (a byte-identical twin by the graph's own contract).
+- **Process-wide:** the fp16 C-side cuBLASLt handle and its plan cache, keyed by device (used only when fp16 mirrors
+  exist; arm O refuses those models until the handle is per stream), and context-wide event tracking, which is off.
+  Cross-stream order therefore needs explicit events: the settle waits on an event the main stream records at park,
+  and the worker reads a completion event before it swaps.
+- **Per call, safe:** the NVFP4 and Q5_K GEMM scratch, the q8_1 quantize output, the GDN chunk buffers and the logits
+  are allocated per call on the calling stream's pool.
+
+**The shadow.** The settle cannot write the parked entry's cache in place. An arrival for that entry must be able to
+take the checkpoint path at once (1.3), and the checkpoint's KV rows below `g` live in that cache. So the settle primes
+into a shadow that holds the recurrent state from `g` and its own KV rows `[g, S)`, attends to the entry's rows `[0, g)`
+read-only, and is swapped in only after its completion event. Whether the prefill attention can read the prefix from
+one plane and the tail from another decides the shadow's form: a split view (no copy) or a full copy of rows `[0, g)`
+(a D2D copy and a transient booking at the entry's context).
+
+**Stage 1 (before the design is final),** on both cards, from the probe binary:
+- the KV bytes per row per model and the D2D copy time of rows `[0, g)` at 6,144, 30,720 and 122,880;
+- whether `fa_prefill_qw*` can take the prefix and the tail as two planes;
+- the decode TPOT with a settle-shaped prime on a second engine's stream beside it (E7's question), measured before
+  arm O is built.
+
+**Price, revised:** stage 1 about 0.5 agent-day plus about 1 h on each card. Arm O about 4 to 6 agent-days, up from
+3 to 4, for the second-engine settle path, the per-stream slab key, the shadow and its swap, the arrival rule, the
+event ordering and the bit-identity GPU tests against the one-stream settle.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
