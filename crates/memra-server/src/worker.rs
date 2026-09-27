@@ -25781,6 +25781,21 @@ pub(crate) fn validate_admit_predict_enforce_deployment(
     Ok(())
 }
 
+/// MEMRA_ADMIT_PREDICT_VG_DEBT (default unset, WP-B day 48, OWED O8): `1` makes the predictive
+/// verdict subtract the verify-graph pool debt the physical side reserves at the same admission
+/// (`dspark_vg_admission_debt`) from its budget, and prints it as `vg_debt=` on the
+/// `[admit-predict]` line. Unset reads nothing: the verdict and the line are today's.
+fn admit_predict_vg_debt_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_ADMIT_PREDICT_VG_DEBT").as_deref() == Ok("1"))
+}
+
+/// The predictive budget with the day-48 verify-graph debt taken off (saturating); `None`
+/// stays `None` (no budget arm), and a `None` debt leaves the budget as it is.
+fn predictive_budget_less_vg_debt(budget_bytes: Option<u64>, vg_debt: Option<u64>) -> Option<u64> {
+    budget_bytes.map(|b| b.saturating_sub(vg_debt.unwrap_or(0)))
+}
+
 /// memra#187: evaluate static predictive admission verdict.
 /// The static predictor evaluates total predicted demand against static capacity:
 ///   request_hat + booked_hat <= static_budget
@@ -27955,6 +27970,7 @@ pub fn run(
                         exempt: admit_predict_cfg.is_exempt(&tenant_row),
                         enforce: admit_predict_cfg.enforce,
                         live_free_bytes: None,
+                        vg_debt_bytes: None,
                     })
                 );
             }
@@ -28204,10 +28220,20 @@ pub fn run(
                 // The physical live check reuses the exact AdmissionCostModel and per-device
                 // admission_headroom later in the pipeline, with NO active-session book added again
                 // (active-session allocations are already absent from live_free).
+                // WP-B day 48 (O8): the verify-graph pool debt the physical side reserves later in this
+                // same admission, read here only with the door on (no device work runs between the two
+                // seams, so both read the same pool).
+                // Day 48 addendum B: the non-recording peek, so the physical gate's own read below
+                // returns the same debt and its reserve is the door-off one.
+                let vg_debt = admit_predict_vg_debt_on().then(|| {
+                    loaded[&model_key]
+                        .model
+                        .dspark_vg_admission_debt_peek(&engine) as u64
+                });
                 let verdict = evaluate_predictive_admission_verdict(
                     request_kv_hat,
                     booked,
-                    admit_predict_cfg.budget_bytes,
+                    predictive_budget_less_vg_debt(admit_predict_cfg.budget_bytes, vg_debt),
                 );
                 let retry_after_s = if verdict == crate::admit_predict::Verdict::RejectKv {
                     // Any in-flight completion returns bytes to the book, so the KV
@@ -28241,6 +28267,7 @@ pub fn run(
                         exempt: admit_predict_cfg.is_exempt(&tenant_row),
                         enforce: admit_predict_cfg.enforce,
                         live_free_bytes,
+                        vg_debt_bytes: vg_debt,
                     })
                 );
                 // memra#153: ENFORCE. The request has cost no device work yet (post-tokenize,
@@ -59519,6 +59546,60 @@ mod tests {
         assert!(
             fault < 800,
             "the injection is the first statement of the retried call"
+        );
+    }
+
+    /// WP-B day 48 (DAY48 addendum A, OWED O8): the verify-graph debt door is read at the predictive
+    /// seam only, and its debt reaches the verdict's budget and the line; the budget helper saturates.
+    #[test]
+    fn vg_debt_door_reaches_the_predictive_seam_only() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let call = format!("admit_predict_vg_debt_on{}", "()");
+        assert_eq!(
+            live.matches(call.as_str()).count(),
+            2,
+            "definition and the predictive seam"
+        );
+        assert!(live.contains("let vg_debt = admit_predict_vg_debt_on().then(|| { loaded[&model_key] .model .dspark_vg_admission_debt_peek(&engine) as u64 });"));
+        // The physical gate keeps the recording read (the door-off program).
+        assert!(
+            live.contains(
+                "let vg_debt = loaded[&model_key].model.dspark_vg_admission_debt(&engine);"
+            )
+        );
+        assert!(
+            live.contains(
+                "predictive_budget_less_vg_debt(admit_predict_cfg.budget_bytes, vg_debt),"
+            )
+        );
+        assert!(live.contains("vg_debt_bytes: vg_debt,"));
+        assert_eq!(
+            super::predictive_budget_less_vg_debt(Some(100), Some(30)),
+            Some(70)
+        );
+        assert_eq!(
+            super::predictive_budget_less_vg_debt(Some(100), Some(300)),
+            Some(0)
+        );
+        assert_eq!(
+            super::predictive_budget_less_vg_debt(Some(100), None),
+            Some(100)
+        );
+        assert_eq!(super::predictive_budget_less_vg_debt(None, Some(5)), None);
+        // The debt moves the verdict: admitted against the full budget, refused against the rest.
+        assert_eq!(
+            super::evaluate_predictive_admission_verdict(60, 30, Some(100)),
+            crate::admit_predict::Verdict::Admit
+        );
+        assert_eq!(
+            super::evaluate_predictive_admission_verdict(
+                60,
+                30,
+                super::predictive_budget_less_vg_debt(Some(100), Some(20))
+            ),
+            crate::admit_predict::Verdict::RejectKv
         );
     }
 

@@ -107,6 +107,47 @@ second holds kernels, and prints `restore_call_shape=off` (not read) when either
 content checks set the split, not any time value. The re-read below ran on the fixed reader before this addendum was
 pushed, and it is recorded that way. No clause, rule or reading changes.
 
+### 1.9 Addendum C (2026-09-27, arm O's precondition census and design questions, before any arm-O code)
+
+1.3's precondition is a census of the shared state the prime path touches. It was read from the code at `bdaaf311f`
+(file and line references in the lane's notes; no file changed). The dense Qwen prime reaches `prime_chunk` →
+`prime_layers`. What a second compute stream would share today, and how arm O must treat each:
+
+- **Written by every prime and shared per device:** the prime slabs (`HybridModel::prime_slabs`, keyed by CUDA ordinal,
+  not by engine). Arm O keys them by (device, stream), so the settle stream gets its own set.
+- **Written by every prime and held by the Engine:** the bf16 KV dequant workspace `prime_deqw_ws` (written by
+  `fa_dequant_kv_ws_bf16`, read by `fa_prefill_qw*`), the fp16 GEMM scratch `f16_scratch` (inert for NVFP4 weights, live
+  when fp16 mirrors exist), `verify_exact` (the batched decode sets it for B = 9 to 16), `capture_keep` (decode graph
+  capture), and the function cache. `verify_exact` matters most: it switches the prime's kernel class, so a settle beside
+  a batched decode would run a different numeric program. Arm O runs its settles on a second `Engine` on the same
+  device, as PP already does for its stages. That gives each stream its own copy of every Engine-held item, and the
+  settle engine never sets `verify_exact`.
+- **The 27B's captured prime graph** bakes the slab and workspace addresses. A settle call runs eager, as a capturing
+  call already does (a byte-identical twin by the graph's own contract).
+- **Process-wide:** the fp16 C-side cuBLASLt handle and its plan cache, keyed by device (used only when fp16 mirrors
+  exist; arm O refuses those models until the handle is per stream), and context-wide event tracking, which is off.
+  Cross-stream order therefore needs explicit events: the settle waits on an event the main stream records at park,
+  and the worker reads a completion event before it swaps.
+- **Per call, safe:** the NVFP4 and Q5_K GEMM scratch, the q8_1 quantize output, the GDN chunk buffers and the logits
+  are allocated per call on the calling stream's pool.
+
+**The shadow.** The settle cannot write the parked entry's cache in place. An arrival for that entry must be able to
+take the checkpoint path at once (1.3), and the checkpoint's KV rows below `g` live in that cache. So the settle primes
+into a shadow that holds the recurrent state from `g` and its own KV rows `[g, S)`, attends to the entry's rows `[0, g)`
+read-only, and is swapped in only after its completion event. Whether the prefill attention can read the prefix from
+one plane and the tail from another decides the shadow's form: a split view (no copy) or a full copy of rows `[0, g)`
+(a D2D copy and a transient booking at the entry's context).
+
+**Stage 1 (before the design is final),** on both cards, from the probe binary:
+- the KV bytes per row per model and the D2D copy time of rows `[0, g)` at 6,144, 30,720 and 122,880;
+- whether `fa_prefill_qw*` can take the prefix and the tail as two planes;
+- the decode TPOT with a settle-shaped prime on a second engine's stream beside it (E7's question), measured before
+  arm O is built.
+
+**Price, revised:** stage 1 about 0.5 agent-day plus about 1 h on each card. Arm O about 4 to 6 agent-days, up from
+3 to 4, for the second-engine settle path, the per-stream slab key, the shadow and its swap, the arrival rule, the
+event ordering and the bit-identity GPU tests against the one-stream settle.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
@@ -158,3 +199,25 @@ DAY50 S0 card=pro6000 L=122880 R=288 N=5 wall_ms p50=235.86 gpu_span_ms p50=235.
   small-M prime kernel can keep the cold prime's exact numbers (the same K-reduction order per output) is a separate
   improvement. It would shorten `keep`'s resume too, so it does not change E2's ratio, and it is recorded as a
   candidate, not an arm of this day. The 5090 half (`rtx5090-day50/`) waits for the card.
+
+### 2.2 Stage 0 on the 5090 (the 9B, `rtx5090-day50/`, 2026-09-27 to 03:31Z)
+
+The probe `5d94e26ae`'s mode, built in the lane checkout at `3c6d98784` (sha256 `d51c26e6...`). The run's own
+`read-L*.log` came from the reader before addendum B, and at both L it printed "not read". The re-read under addendum B
+is `stage0/reread-L*.log` (at 30,720 the setup prime of 30,720 tokens leaves 38 leading clusters; the pair shape
+checks ok at both L). The trace CSVs are gzipped with their raw sha256, and the four nsys files are outside git, by hash
+in `EXCLUDED.sha256`. Verbatim:
+
+```
+DAY50 S0 card=rtx5090 L=6144 R=32 N=5 wall_ms p50=37.96 gpu_span_ms p50=37.66 gpu_busy_ms p50=37.27 busy_share=0.982 in_span_gaps_ms p50=0.39 host_outside_span_ms p50=0.30 attn_ms=0.15 gdn_ms=0.87 gemm_ms=22.91 other_ms=13.37
+DAY50 S0 card=rtx5090 L=6144 R=64 N=5 wall_ms p50=37.98 gpu_span_ms p50=37.72 gpu_busy_ms p50=37.35 busy_share=0.983 in_span_gaps_ms p50=0.38 host_outside_span_ms p50=0.26 attn_ms=0.16 gdn_ms=1.06 gemm_ms=22.10 other_ms=14.02
+DAY50 S0 card=rtx5090 L=6144 R=288 N=5 wall_ms p50=88.66 gpu_span_ms p50=88.40 gpu_busy_ms p50=87.98 busy_share=0.992 in_span_gaps_ms p50=0.42 host_outside_span_ms p50=0.26 attn_ms=0.68 gdn_ms=3.36 gemm_ms=53.84 other_ms=30.10
+DAY50 S0 card=rtx5090 L=30720 R=32 N=5 wall_ms p50=55.69 gpu_span_ms p50=55.46 gpu_busy_ms p50=55.09 busy_share=0.989 in_span_gaps_ms p50=0.36 host_outside_span_ms p50=0.23 attn_ms=0.15 gdn_ms=0.87 gemm_ms=21.72 other_ms=32.17
+DAY50 S0 card=rtx5090 L=30720 R=64 N=5 wall_ms p50=56.68 gpu_span_ms p50=56.48 gpu_busy_ms p50=56.07 busy_share=0.989 in_span_gaps_ms p50=0.41 host_outside_span_ms p50=0.20 attn_ms=0.16 gdn_ms=1.06 gemm_ms=21.88 other_ms=32.74
+DAY50 S0 card=rtx5090 L=30720 R=288 N=5 wall_ms p50=103.69 gpu_span_ms p50=103.45 gpu_busy_ms p50=103.07 busy_share=0.994 in_span_gaps_ms p50=0.37 host_outside_span_ms p50=0.24 attn_ms=0.64 gdn_ms=3.24 gemm_ms=49.77 other_ms=49.55
+```
+
+- **The rule of 1.3 selects arm O on the 5090 class too.** The 32-row call is GPU-busy for 98.2% and 98.9% of its
+  wall. The shape matches the target card's: the GEMM costs the same 22 ms for 32 and 64 rows, and the prefill
+  attention grows with the context (in `other`).
+- Timings stay on this card and are not compared with the target card's.

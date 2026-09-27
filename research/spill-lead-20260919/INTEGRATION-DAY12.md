@@ -4626,6 +4626,85 @@ approving. The RW cell's R1 stays FAIL as registered. Lane B's DAY44 addendum D 
 result, so under the rule that a gate is never relaxed after a result it goes to the owner, as T-H' did; until the owner
 rules, R1 as registered stands beside DAY44's E2 as a blocker on flipping `MEMRA_RESUME_EXACT`.
 
+## integ72 (`lane/spill-integ72-20260927`): lane B's DAY48 door (the verify-graph pool debt in the predictive verdict, default off) and the CRLF restore of the lane's header captures; lane C's DAY85 to DAY87 records; lane A's STATE
+
+Lane B's tip `6cf62be2a` (B merged main `9852e3b12` in its lane at `3848bc338`: one conflict, the lane's
+`.gitattributes`, where main's file is a superset of the lane's, taken whole), lane C `eadb7efe8` (records only), and
+lane A's `research/spill-a-20260919/` at its tip `915b0b3ff` (its STATE; the lane's code there is design Q and the F
+revert, both already in main, so the lane tip itself is not merged), on main `9852e3b12`; main then moved to
+`f2b1030d7` (#856, DSv4 only), merged in clean. The fixture pin holds. The change:
+- `admit_predict.rs`, `worker.rs` (B, DAY48, OWED O8): `MEMRA_ADMIT_PREDICT_VG_DEBT` (default off, decide-by
+  2026-10-11) makes the predictive admission check subtract the verify-graph pool debt the physical admission already
+  reserves for the same request; with it unset the verdict and the `[admit-predict]` line are unchanged.
+- The 209 HTTP header captures lane B committed before `core.autocrlf=input` was answered by `-text`, re-stored with
+  their captured CRLF bytes (`hdr-crlf-record.tsv` lists each file's LF and CRLF hashes and its manifest; the 90 box
+  captures now hash to their manifests; commits before `463c8a530` hold the LF form).
+- Records: B's DAY44 addenda C and D (D, a post-result revision of the RW cell's R1, marked PENDING THE OWNER), DAY46 2.2,
+  DAY39 2.4, DAY48 2.1, DAY49 2.6, DAY50 2.1, 2.2 and addendum C; C's DAY85 to DAY87 and the door decision packet
+  (C3, 60 quoted lines checked against main); A's STATE.
+
+**Lanes, verbatim.** B: `DAY48 V1 ... -> PASS`, `V2 ... oom_lines=0 ... -> PASS`, `V3 ... r429=60 without_reject_line=[]
+... -> PASS` on all four target-card boots; the enforce and enforce-vg arms admit the same (burst 35 of 64, second
+wave 1 of 32), the verify-graph debt at most 34 MB against a budget of tens of GB, so the door changes nothing
+measurable on this model and card and stays off. C: `DAY87 PACKET LINES tree=359e850d0 checked=60 missing=0 -> PASS`.
+
+**Ruling 67:** B's DAY48 door lands default-off (its default the owner's at 2026-10-11). The RW cell's R1 revision
+(DAY44 addendum D) stays pending the owner.
+
+**Checks.**
+- CPU battery 16 of 16 with CI's gates job on `e66726e1f` (`integ72-cpu-battery/`: server lib 988, engine lib 596).
+- CPU battery 16 of 16 with CI's gates job on the merged head `50bad99d2` (main `f2b1030d7` in;
+  `integ72-cpu-battery-main856/`: server lib 988, engine lib 596).
+- GPU battery run 1 on BOX43 (`integ72-pro-run1/`, 585 receipts mirrored and checked), tree `50bad99d2`, 09:43Z to
+  10:23Z: serve-smoke 1 failed (the Q35 arm, #777, the same line as integ69 to integ71); engine cells `26 passed`;
+  worker span cells `19 passed`; identity, fault default and plain, hit OFF and ON, admit-mem burst, spec-ctx-edge and
+  the pause gate `ALL GREEN`; `tier-transfer-gate` and all seven `kv-tier-gate` fault arms PASS; the admit-mem burst gate
+  with `MEMRA_ADMIT_PREDICT_VG_DEBT=1` `ALL GREEN`, with no `vg_debt=` line (the 9B has no verify-graph pool, so that
+  cell barely reaches the door; lane B's DAY48 sitting on the Ornith 35B is the door's coverage).
+
+**Revuto round 1 on #857 found a real defect in the DAY48 door, fixed in lane B.** Review comment 4114891741:
+`dspark_vg_admission_debt` is not read-only; `DsparkVerifyGraphs::admission_debt` records `(captures, reserved)`
+whenever captures grew, and the physical gate calls it again later in the same admission. With the door on, the
+predictive call consumed the marginal reading, so the physical call fell to the bootstrap branch (up to a whole extra
+pool's worth of reserve) and the two sides logged different debts. Registered first as DAY48 addendum B, fixed in
+`521fdbbbc`: the predictive seam reads a non-recording peek (`admission_debt_peek`); the physical gate's call is
+unchanged and still records, so it returns what the peek returned and its reserve is the door-off one. The engine test
+`the_peek_leaves_the_physical_debt_unchanged_across_a_growing_pool` runs seven admissions over a growing pool and
+asserts equal physical debts door off and on, equal logged debts, and that the old double read differs. Revuto round
+2 on `4ecb9bb9b` APPROVED. The lead's review had missed it: it checked the door is inert when off, not that the door's
+on path calls a function with side effects.
+
+**Lane B's DAY48 rerun on the fix (the nineteenth sitting).** The first attempt did not run: `boot O1-enforce: waiting
+for an idle rig` at 10:28:26Z, then `rig not idle after 7200 s; not run`, `boots stopped rc=3` at 12:28:27Z. Lane C's
+DAY86 load runs back-to-back door runs, taking the lock per run, so the boot's idle poll (`flock -n`, then no compute
+app) never found a free window; the lead had launched it into the load window (its receipts are kept as
+`pro-single-day48/box-b-notrun`). Lane B's runner now takes the lock blocking first and checks idle under the hold
+(DAY48 addendum D, `a6ea7c49f`, a scratch-lock test with a back-to-back taker: the old poll found the lock free on 0 of
+20 probes, the hold got in within 1 s). The rerun (`pro-single-day48/box-b`, tree `b094f619d`, binary on `521fdbbbc`,
+12:41Z to 12:56Z, between the load's runs): V1 to V3 PASS on all four boots, V4 PASS in both orders (`differ=[]`), V5
+`paired=38 apart=[]` and `paired=41 apart=[]` PASS on both enforce-vg boots, V6 the physical debt `distinct_mb=[34]`
+everywhere. Lane B records V5's clause as written not met beside the reader's PASS: 11 admissions printed no physical
+line (the estimate log dedups a repeated cost key), so their debts are unobserved, not apart; any revision of the
+clause is the owner's. The pool did not grow during the burst, so the defect's case is covered by the engine test alone.
+- Main moved to `286c0c54c` (#862, DSv4 only), merged clean with lane B's `08fa610e1` (the sitting's receipts and
+  reading). CPU battery 16 of 16 with CI's gates job on the final code `2aa19a0ac` (`integ72-cpu-battery-final/`:
+  server lib 988, engine lib 597); on `b62118980` too (`integ72-cpu-battery-fix/`).
+
+**Ruling 67, addendum:** the door lands default-off with the peek; V5's clause revision (to the paired-equality the
+reader checks, or a physical line on every admission, lane B's next addendum) is the owner's, beside DAY44's R1.
+- GPU battery run 2 on BOX43 on the final code (`integ72-pro-run2/`, mirrored and checked), tree `32681801b`, 13:38Z to
+  14:18Z, right after lane C's slow86: serve-smoke 1 failed (the Q35 arm, #777, the same line); engine cells
+  `26 passed`; worker span cells `19 passed`; identity, fault default and plain, hit OFF and ON, admit-mem burst,
+  spec-ctx-edge and the pause gate `ALL GREEN`; `tier-transfer-gate` and all seven `kv-tier-gate` fault arms PASS; the
+  admit-mem burst gate with `MEMRA_ADMIT_PREDICT_VG_DEBT=1` `ALL GREEN`. Lane C reads BOX43 as having an hourly host-wide
+  stall at about half past each hour (DAY86); no cell here failed on a timeout.
+- Main moved after GPU run 2 to `83225c1dc` (#871 and #874: DSv4 serving lanes and B-row width to 16, the fused MoE
+  tail, DSv4 FLAGS and TESTING rows), merged in clean (`a775249bd`); none of it is reachable from the spill cells (DSv4
+  only), so this merge is gated by a CPU battery on the merged head (`integ72-cpu-battery-main874/`) and the PR's CI.
+- Main moved again to `60bed3b51` (#875, DSv4 attention fusions: `dsv4_gpu.cu`, its FFI and KERNELS rows), merged in
+  clean; DSv4 only, so this last merge is gated by the PR's CI on the merged head (which builds and runs every suite
+  the CPU battery runs) rather than a sixth local battery.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.

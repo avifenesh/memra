@@ -289,3 +289,22 @@ DAY49D SERVE-ROUTE card=pro6000 route=spec-default boots=4 reached=4
   `O1-on` never started: `rig not idle after 7200 s; not run`. The `boots rc=0` that queue-l logged after it is `date`'s
   exit, as noted in queue-l's log. The unaimed shape is superseded by addendum D's aimed shape, which the 5090 half of
   DAY49D runs (`rtx5090-day49d/run.sh`).
+
+### 2.6 Addendum D on the 5090 (the 9B, `rtx5090-day49d/`, 2026-09-26 23:50Z to 2026-09-27 03:42Z)
+
+Green and red built in worktrees at `8926ccfb3` (red with `day49d-noreap.patch`); sha256s in `binaries.sha256`. The gate
+lines read, on `j1` and `j2` alike:
+
+```
+HFG (j) aimed-batch-oom-recovers: fired_lines=1 other_fired=0 chunk_sessions=3 untouched=3 retry_lines=1 retried_ok=1 completed=3/3 error_events=0 http_5xx=0 panic_lines=0 ... -> PASS
+HFG (j-red) aimed-batch-oom-retry-also-fails: fired_lines=2 other_fired=0 chunk_sessions=3 retry_lines=1 retry_failed=1 completed=0/3 error_events=3 http_5xx=0 panic_lines=0 green_assertion_fired=true -> PASS
+```
+
+and `read-vmm.log` reads the pair as registered: green one reap per retry, before it, `-> PASS`; red retries with no reap
+line, `-> PASS` (the defect as it reads). The chunk held 2 or 3 sessions on this card.
+
+- **Arm j and j-vmm PASS on the 5090 class,** as on the target card (2.3).
+- **The serving shape is partly read.** Three of eight boots ran: `O1-off` (the before: 8 of 9 `503`), `O1-on` and
+  `O2-on` (9 of 9 `200`, one retry each). Then `O2-off`'s idle wait ran out (`rig not idle after 7200 s; not run`),
+  and the runner stopped there. queue-n asks again for the five unrun boots on green rebuilt at the same commit; that
+  reading follows.

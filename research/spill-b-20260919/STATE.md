@@ -1,3 +1,44 @@
+# WP-B checkpoint 2026-09-27 13:2xZ: the nineteenth sitting read (DAY48 2.2; the hold runner took the box lock in 9 to
+12 s per boot). V1 to V4 PASS on all four boots; V5 by the reader PASS (38 and 41 pairs, none apart); V5 by its clause
+not met and recorded as it reads (60 rejects per boot never reach the physical gate; 7 and 4 admissions with no physical
+line under the estimate-log dedup, their debt unobserved); V6 distinct_mb=[34], the pool did not grow on the box. Receipts
+committed for integ72; nothing else goes to the lane until integ72 merges. Next: DAY50 arm O stage 1 (local), the V5
+coverage addendum after integ72, the local 5090 readings as they land.
+# WP-B checkpoint 2026-09-27 12:4xZ (NEED TARGET CARD, the nineteenth sitting's rerun): the nineteenth sitting did not
+run (its idle poll never saw the box lock free while another lane's load re-took it per run, 10:28 to 12:28Z; the lead
+banks the not-run receipts). DAY48 addendum D (b25a4b763) and its runner (a6ea7c49f): day48-run.sh holds the lock, checks
+idle under the hold, boots with LOCK=none (rig-hold.sh, test-rig-hold.sh all PASS). The lead reruns the same command on
+the lane tip after the other lane's load; integ72 waits for it.
+# WP-B checkpoint 2026-09-27 13:xxZ (NEED TARGET CARD, the nineteenth sitting): revuto's DAY48 finding fixed (the peek,
+521fdbbbc; lane tip 02b45bb48); DAY48 2.1 unaffected; sitting 19 reruns the DAY48 cell with V5.
+# WP-B checkpoint 2026-09-27 12:xxZ: integ71 merged (#844, main 9852e3b12); main merged into the lane for integ72 at
+3848bc338 (one add/add conflict in the lane's .gitattributes, main's superset taken; suites green). Trees: commits go
+from wt-b-integ72 (branch merge/spill-b-integ72). wt-b-integ71 stays while queue-n and the DAY48 local runner read it;
+the live wt-spill-b stays at 1df7e7852 while queue-m and chain-r5 read it; fast-forward and remove the others after.
+wt-b-fix71 and fix/spill-b-integ71 removed (in main).
+# WP-B checkpoint 2026-09-27 11:5xZ: DAY44 addendum D is pending the owner, not adopted (the lead): R1 stays FAIL as
+registered, beside E2, as a blocker on flipping MEMRA_RESUME_EXACT. The reader prints both R1 lines. The c13 receipts are
+copied into integ71-c13-rw/ and read there; never run a reader inside the lead's worktrees.
+# WP-B checkpoint 2026-09-27 11:3xZ: integ71 merges with the doors-off program green (revuto round 2 approved 451ccd0c3).
+The RW cell's R1 FAIL placed on its wording (the G=32 later turns resume through the exact path at the settle point;
+all 20 resumed on both exact boots, R2 matched cold); DAY44 2.2 and addendum D; the revised reader at f7901d987; the
+lead reruns c13 on the lane tip. lane/spill-b-integ71-fixes not needed after the merge; remove wt-b-fix71 then.
+# WP-B checkpoint 2026-09-27 07:0xZ: the four #844 items fixed on 24bddc8cb's line (lane/spill-b-integ71-fixes at
+f0b824ff5: the kv fault OOM formats without libcuda, the remove-var allowlist, DAY44 addendum C's settle checkpoint and
+memory gate with the RW cell), merged into the lane (2d84b98a5); DAY48 2.1 read (V1 to V4 PASS, no measurable change).
+GPU owed on the fix tree: the DAY44 mini cell, the RW cell (R1, R2), cell 12 with MEMRA_RESUME_EXACT=1.
+The fix worktree wt-b-fix71 (branch fix/spill-b-integ71) goes once integ71 merges.
+# WP-B checkpoint 2026-09-27 05:3xZ: integ71's GPU battery on BOX43 (e8af7cf53) all green for this lane's twelve cells
+(the lead's receipts: research/spill-lead-20260919/integration-day12/integ71-pro-run1/lane-b/; serve-smoke fails only
+#777's Q35 line). The lead's CRLF finding: 209 committed *.hdr captures had been stored LF under core.autocrlf=input
+(90 checked against their manifests, 119 local against the untouched working copies); restored to their CRLF bytes
+with research/spill-b-20260919/.gitattributes (*.hdr, *.body -text -whitespace) and listed in hdr-crlf-record.tsv.
+# WP-B checkpoint 2026-09-27 05:0xZ: DAY39 2.4 (the 5090 GREEN; O5 read on both classes) and DAY50 2.2 (the 5090 stage 0:
+arm O on this class too) read; DAY50 addendum C registered (arm O's census, the shadow, stage 1 next); the eighteenth
+sitting (DAY48) queued on BOX43 behind integ71's battery; local: DAY49D, DAY46C, DAY48, queue-m (DAY40), chain-r5 (gates).
+# WP-B checkpoint 2026-09-27 04:3xZ (NEED TARGET CARD, the eighteenth sitting, DAY48): DAY46 2.2 read (the W release
+admits 11 of 32 of the second wave against 1 of 32); DAY48 coded (`5a6f1898f`, after integ71's base 24bddc8cb, so it
+goes into the next integ); the DAY46C and DAY48 local runners run from wt-b-integ71; integ71's battery runs on BOX43.
 # WP-B checkpoint 2026-09-27 03:4xZ: integ71's GPU cells for this lane sent to the lead (12 cells: grid_capture_gpu,
 the continuation gate, the rewind probe, prime-gate, run-spec, run-gen, the health gate g,h,j and j under VMM, the VMM grow
 series, the serving gates under VMM, a DAY44 mini cell with EXTERNAL_LOCK=1, admit-mem burst with the W release); tip

@@ -97,7 +97,8 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   the eleventh sitting: DAY45 2.2, every clause PASS on the target card (W1 and W4 on 4 boots, W2 53 booked = 48
   released + 5 same-tick retire receipts, W3 53 rows equal in both orders; no OOM, no 503). The release lands 217 to
   459 s after booking, after the second wave was refused, so the books read the same on both arms: its value is read
-  by O6's `enforce-wrel` (DAY46 addendum A). The 5090 half runs from queue-m (item 9, `target/day45` from `09badfe57`).
+  by O6's `enforce-wrel` (DAY46 addendum A); read in DAY46 2.2: 11 of 32 second-wave requests admitted with the
+  release against 1 of 32 without it. The 5090 half runs from queue-m (item 9, `target/day45` from `09badfe57`).
 
 ### O5. The shared prime slab charged per request
 
@@ -108,8 +109,8 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   the same over-count on a burst. The fix is the door's booking measured at its best, and it feeds O3.
 - Status: `receipts banked` on the target card: DAY39 2.2 GREEN (v3: no OOM, 46 x 200 against v1's 44; v2 reproduces
   the 10 OOMs). The 5090 class: the registered half (DAY39 2.3, on the revision without addendum B) NOT-GREEN (the
-  green arm parks 3 prefill OOMs per G2 burst); addendum B's 5090 half and the admission gate on v3 run from queue-m
-  (item 2, `rtx5090-day39b`; v2-G2 ran at 15:20Z under queue-k). Feeds O3.
+  green arm parks 3 prefill OOMs per G2 burst); addendum B's 5090 half (DAY39 2.4): GREEN, the admission gate ALL GREEN on
+  v3, v2 reproducing the red (3 parked OOMs at G2). Read on both card classes. Feeds O3.
 - Price: about 0.5 agent-day plus a cell on each card.
 
 ### O6. The enforcing predictive door on the fuller charge
@@ -119,7 +120,11 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   the fuller charge"). Dropped from STATE at day 33 with no closing record; restored here.
 - Acceptance to pre-register: `MEMRA_ADMIT_PREDICT_ENFORCE=1` against a budget arm on both cards, the day-24 sequence
   and a burst, before and after the day-24 charge, every refusal a typed 429 with its `Retry-After`, no OOM.
-- Status: `running`. Target card (DAY46 2.1, the fifteenth sitting): P1 to P5 PASS on all four enforcing boots
+- Status: target card `read` (DAY46 2.2, the seventeenth sitting, addendum C): P1 to P5 PASS on all four enforcing
+  boots, both orders. The W release takes the book from 60.60 GB to 20.47 GB by the second wave, and the enforcing door
+  admits 11 of 32 of that wave with the release against 1 of 32 without it (39 against 29 over the boot, no OOM on
+  either arm). The owner's input for both doors; no default moves. The 5090 half runs from `rtx5090-day46c/run.sh`.
+  Before: Target card (DAY46 2.1, the fifteenth sitting): P1 to P5 PASS on all four enforcing boots
   (burst 17 of 64 admitted, 47 + 32 typed 429s, no OOM, within the 65.9 GB budget, W released 27 of 28); shadow OOMs as
   the before reading. The value reading (the second wave on `enforce-wrel` against `enforce`) was not measured: the
   client released the second wave at the burst's first 429. Addendum C fixes the trigger (the first 200); the whole cell
@@ -150,7 +155,21 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   as `vg_debt`; the predictive book does not carry it; not measurable on the dense 9B and 27B).
 - Needs a MoE plus linear-attention model: a 35B-A3B NVFP4 artifact of that family is on the local disk (20 GB, a
   tight fit on the 24 GB card) and must be staged on the target card.
-- Status: `pre-registered` (DAY48.md, text only until DAY46 reads): `MEMRA_ADMIT_PREDICT_VG_DEBT` makes the
+- Status: revuto on integ72 found the door's debt read recording the pool observation the physical gate then reads
+  (DAY48 addendum B); fixed with a non-recording peek (`521fdbbbc`, a growing-pool test); the eighteenth sitting's
+  reading is unaffected (every debt 34 MB on both arms); the nineteenth sitting reruns the cell with V5 (one debt per
+  admission). Its first attempt did not run (the idle poll starved behind a per-run lock taker, 7200 s); the runner now
+  holds the lock before its idle check (DAY48 addendum D, `a6ea7c49f`) and the sitting is requeued. Read (DAY48 2.2):
+  V1 to V4 PASS on all four boots; V5 by the reader PASS (38 and 41 pairs, none apart), by its clause not met (7 and 4
+  admissions with no physical line under the estimate-log dedup, plus 60 rejects per boot outside the physical gate),
+  recorded as it reads; V6 the pool held at 34 MB, so the growing-pool case is the engine test's alone. Open: a physical
+  debt line on every admission and a sitting to observe V5's coverage as registered (its own addendum, after integ72
+  merges); a clause revision is the owner's. Before: target card `read` (DAY48 2.1, the eighteenth sitting): V1 to V4 PASS on all four boots; the pool's remaining
+  debt is at most 34 MB, so both arms admit the same (35 of 64, 1 of 32). The owner's input; the 5090 half runs. Before:
+  `running`. DAY46 read, so DAY48 left text only: addendum A (the door and the cell as built); code `5a6f1898f`
+  (`MEMRA_ADMIT_PREDICT_VG_DEBT`, default off, decide-by 2026-10-11; memra-server lib 987 passed, clippy clean); the
+  cells: the eighteenth sitting (`pro-single-b-sitting18.sh`, Ornith 35B-A3B staged on the box) and the 5090
+  (`rtx5090-day48/run.sh`). Before: `pre-registered` (DAY48.md, text only until DAY46 reads): `MEMRA_ADMIT_PREDICT_VG_DEBT` makes the
   predictive verdict subtract the same `vg_debt` the physical side reserves; the cell runs the Ornith-1.5-35B-A3B NVFP4
   MTP artifact (20 GB, on the local disk, to be staged on the target card) with `enforce` against `enforce-vg`, V1 the
   pool engages, V2 no OOM, V3 typed refusals, V4 identity. Price: about 0.3 agent-day plus about 1 h on the 5090 and
@@ -230,7 +249,15 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   call is GPU-bound (94.9 to 98.3% busy; host outside the span 0.2 ms), so the rule selects arm O (settles on a second
   stream with its own scratch set). The NVFP4 GEMM's 128-row tile (56 ms for 32 or 64 rows) and the prefill attention at
   long context (127 ms at 122,880) make up the call; a small-M prime kernel that keeps the cold prime's numbers is a
-  recorded candidate. Arm O's design addendum and code are next. The door stays default off. The measurement arms' readings stay banked (DAY41 2.1 and 2.2); `MEMRA_RESUME_GRID_REWIND` stays a
+  recorded candidate. The 5090 class reads the same (DAY50 2.2: 98 to 99% busy). Addendum C records arm O's
+  precondition census: the per-device prime slabs, the Engine-held workspaces and `verify_exact` (a second Engine on the
+  same device, as PP does), the eager path for settles, explicit cross-stream events, and the shadow the settle must
+  write into. Stage 1 (the KV bytes per row, the prefix D2D copy time, whether the prefill attention takes two planes,
+  the decode TPOT beside a second-stream prime) comes before the design is final. Price revised to 4 to 6 agent-days.
+  The door stays default off. integ71 (DAY44 addendum C): the settle keeps the affinity checkpoint and waits for the
+  memory reading; the RW cell (DAY44 2.2) resumes every rewritten later turn, through affinity or the exact path, and
+  matches cold on both routes. R1 reads FAIL as registered and stays a blocker on the flip, beside E2; addendum D's
+  revision (count the exact path too) is pending the owner, not adopted. The measurement arms' readings stay banked (DAY41 2.1 and 2.2); `MEMRA_RESUME_GRID_REWIND` stays a
   measurement arm until DAY44 reads.
 
 ### O12. The admission reclaim flush off the tick (lead's ruling at integ62)

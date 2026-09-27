@@ -1,0 +1,9 @@
+2026-09-27T05:41:39Z boot O1-enforce start arm=enforce bin=dc3e6327573f15cb env=[MEMRA_ADMIT_PREDICT_SHADOW=1 MEMRA_ADMIT_PREDICT_ENFORCE=1] args=[--burst 64 --length 30720 --max-tokens 64]
+2026-09-27T05:44:12Z boot O1-enforce rc=0 DAY48 BOOT rows=107 ok=47 r429=60 rejects=60 vg_debt_lines=0 pool_engaged=1 oom=0
+2026-09-27T05:44:17Z boot O1-enforce-vg start arm=enforce-vg bin=dc3e6327573f15cb env=[MEMRA_ADMIT_PREDICT_SHADOW=1 MEMRA_ADMIT_PREDICT_ENFORCE=1 MEMRA_ADMIT_PREDICT_VG_DEBT=1] args=[--burst 64 --length 30720 --max-tokens 64]
+2026-09-27T05:46:52Z boot O1-enforce-vg rc=0 DAY48 BOOT rows=107 ok=47 r429=60 rejects=60 vg_debt_lines=105 pool_engaged=1 oom=0
+2026-09-27T05:46:57Z boot O2-enforce-vg start arm=enforce-vg bin=dc3e6327573f15cb env=[MEMRA_ADMIT_PREDICT_SHADOW=1 MEMRA_ADMIT_PREDICT_ENFORCE=1 MEMRA_ADMIT_PREDICT_VG_DEBT=1] args=[--burst 64 --length 30720 --max-tokens 64]
+2026-09-27T05:49:31Z boot O2-enforce-vg rc=0 DAY48 BOOT rows=107 ok=47 r429=60 rejects=60 vg_debt_lines=105 pool_engaged=1 oom=0
+2026-09-27T05:49:36Z boot O2-enforce start arm=enforce bin=dc3e6327573f15cb env=[MEMRA_ADMIT_PREDICT_SHADOW=1 MEMRA_ADMIT_PREDICT_ENFORCE=1] args=[--burst 64 --length 30720 --max-tokens 64]
+2026-09-27T05:52:10Z boot O2-enforce rc=0 DAY48 BOOT rows=107 ok=47 r429=60 rejects=60 vg_debt_lines=0 pool_engaged=1 oom=0
+2026-09-27T05:52:15Z boots done: O1-enforce:enforce O1-enforce-vg:enforce-vg O2-enforce-vg:enforce-vg O2-enforce:enforce

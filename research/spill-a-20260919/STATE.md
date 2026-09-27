@@ -1,4 +1,4 @@
-# WP-A resumable state (2026-09-27: integ69 fixes `4f297e7bd` (DAY69 P) and `a57f85897` (DAY70 Q) pushed; P2 ADOPTED for the next integ (`409be61f8`); F REVERTED; the DAY68 5090 chain running)
+# WP-A resumable state (2026-09-27: integ69 merged as b1fcf40aa with P and Q; integ70 takes `lane/spill-a-integ70-20260927` (P2 + the records); F REVERTED; the DAY68 5090 chain running)
 
 - Lane `lane/spill-a-20260919`; worktree `wt-spill-a`. integ67 takes B1 (`e522a9417`, adopted on both cards) and the
   grid refusal (`231fba087`, cherry-picked as 95f275859).
@@ -37,3 +37,10 @@
 - Scratch to remove when the lane closes: the four lines added to the shared
   `/home/avifenesh/projects/memra/.git/info/exclude`, and `/home/avifenesh/spill-a-cells/` (the DAY68 trees, target
   dirs and binaries while the halves run).
+
+- **integ70:** `lane/spill-a-integ70-20260927` at `d5156f468` on main `b1fcf40aa`: `6ae34c277` (P2, the p2 arm's
+  program; one textual conflict with main's new test at the top of `worker.rs`'s test module, both kept) and
+  `d5156f468` (this directory at `aa1616662`, records only). Not built here (the DAY68 chain's timed cells); the
+  lead's CPU battery is its first build. P2 adds no GPU cell (its `day51_`/`day52_` cells are CPU); its 5090 half is
+  owed after the DAY68 chain, registered then. `lane/spill-a-p2-20260926` is superseded by it (delete once integ70
+  merges).

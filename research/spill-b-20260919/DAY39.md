@@ -313,3 +313,29 @@ ADMIT-MEM BURST GATE: RED
 - It places DAY37 2.7's A1 red too: that gate ran the same binary (`580fe677...`) and read the same (7 parked prefill
   OOMs, `pending_prime=0`). Addendum B's term (`v3`) is the fix; its 5090 half (DAY39B, the gate on `v3`) and DAY37
   addendum G's repro run from queue-k.
+
+### 2.4 Addendum B's 5090 half (`rtx5090-day39b/`, the 9B at `MEMRA_CTX=65536`, 2026-09-26 15:20Z to 2026-09-27 03:42Z)
+
+The binaries of `target/b2`: `v3` (the revision), `v2` (the revision reverted) and `v1` (the day-39 change reverted),
+one detached-worktree build each. queue-k ran `v2-G2`. queue-m ran the rest, and asked again for three boots whose idle
+wait ran out while another lane held the card (`v2-L64`, `v3-G2-r2`, `v1-L64`); each then ran once, as the run log
+shows. Verbatim (`SUMMARY.txt`'s verdict and the gate):
+
+```
+DAY33 G-NOOM card=rtx5090 boot=v2-G2 role=red shape=G2 oom_lines=3 burst_503=0 crash_lines=0 burst_200=45 other_non200=0 r429=19 refuse_lines=19 retry_after_in_1_60=True -> FAIL
+DAY33 G-NOOM card=rtx5090 boot=v3-G2-r1 role=green shape=G2 oom_lines=0 burst_503=0 crash_lines=0 burst_200=39 other_non200=0 r429=25 refuse_lines=25 retry_after_in_1_60=True -> PASS
+DAY33 G-NOOM card=rtx5090 boot=v3-G2-r2 role=green shape=G2 oom_lines=0 burst_503=0 crash_lines=0 burst_200=39 other_non200=0 r429=25 refuse_lines=25 retry_after_in_1_60=True -> PASS
+DAY33 VERDICT card=rtx5090 boots=8 v_boot_all=True green_noom_book_all=True v_id_fix_all=True v_id_all=True v_off_all=True -> GREEN
+ADMIT-MEM BURST GATE: ALL GREEN
+```
+
+- **The card verdict is GREEN under addendum B, and the admission gate reads ALL GREEN on `v3`.** G-NOOM and G-BOOK
+  PASS on every `v3` burst boot (no OOM line, no 503, every refusal typed). V-ID-FIX, V-ID and V-OFF pass with 16 of
+  16 rows equal. `v2` reproduces the red: 3 parked prefill OOM lines at G2, the same signature as the registered half
+  (2.3).
+- **Readings (`READINGS.txt`):**
+  - At G2 the burst ends with 45 of 64 requests `200` on `v2` (with its 3 OOMs), 39 on `v3` (no OOM) and 32 on `v1`.
+  - At L64, 19 of 64 on every arm.
+  - The peak `pending_prime` on `v3` is 2.08 GB at G2 and 0.97 GB at L64, against the day-39 first term's 18.0 to
+    18.4 GB and 7.5 to 8.3 GB.
+- With 2.2, O5 is read on both card classes.

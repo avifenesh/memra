@@ -711,6 +711,9 @@ pub(crate) struct VerdictLine<'a> {
     /// request when the door is on; `None` in shadow mode. The arm the enforced verdict
     /// used is `min(budget_bytes, live_free_bytes - admission reserve)`.
     pub live_free_bytes: Option<u64>,
+    /// WP-B day 48 (`MEMRA_ADMIT_PREDICT_VG_DEBT=1`): the verify-graph pool debt the verdict's
+    /// budget subtracted; `None` when the door is unset (the line carries no field then).
+    pub vg_debt_bytes: Option<u64>,
 }
 
 /// One grep-stable receipt line, `[admit-predict]`-prefixed, all fields `key=value`.
@@ -737,7 +740,9 @@ pub(crate) fn shadow_verdict_line(line: &VerdictLine<'_>) -> String {
         u8::from(line.exempt),
         u8::from(line.enforce),
         line.live_free_bytes.map_or("-".into(), |v| v.to_string()),
-    )
+    ) + &line
+        .vg_debt_bytes
+        .map_or(String::new(), |v| format!(" vg_debt={v}"))
 }
 
 /// memra#153: the client sentence for an enforced `reject-kv`. Stable text, no numbers: the
@@ -802,6 +807,7 @@ mod tests {
             exempt: false,
             enforce: false,
             live_free_bytes: None,
+            vg_debt_bytes: None,
         }
     }
 
@@ -822,6 +828,18 @@ mod tests {
                 .chars()
                 .any(|c| c.is_ascii_digit())
         );
+    }
+
+    /// WP-B day 48: the verify-graph debt field is trailing and present only when the door set it,
+    /// so the unset line is byte for byte today's.
+    #[test]
+    fn verdict_line_vg_debt_is_trailing_and_door_only() {
+        let off = shadow_verdict_line(&line(Verdict::Admit));
+        assert!(!off.contains("vg_debt="), "{off}");
+        let mut l = line(Verdict::Admit);
+        l.vg_debt_bytes = Some(123_456);
+        let on = shadow_verdict_line(&l);
+        assert_eq!(on, format!("{off} vg_debt=123456"));
     }
 
     /// Locks the receipt's field NAMES and joinability: request id, verdict, reason,

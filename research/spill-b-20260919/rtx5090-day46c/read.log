@@ -1,0 +1,13 @@
+DAY46 P2 card=rtx5090 boot=O1-enforce oom_lines=0 parked_oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY46 P1 card=rtx5090 boot=O1-enforce r429=40 without_reject_line=[] retry_after_out_of_1_60=[] other_non200=[] -> PASS
+DAY46 P3 card=rtx5090 boot=O1-enforce admit_lines=19 over_budget=[] -> PASS
+DAY46 P5-PROBE card=rtx5090 boot=O1-enforce probe_booked=0 probe_booked_real=0 -> PASS
+DAY46 READING card=rtx5090 boot=O1-enforce budget_bytes=12760827008 peak_booked_bytes=12149568536 sequence_admitted=9/9
+DAY46 READING card=rtx5090 boot=O1-enforce wave=burst n=32 ok200=7 r429=25 booked_at_first_line=0 ttft_ms p50=8558.8 p95=8560.1 N=7 time_to_429_ms p50=783.0 max=791.4
+DAY46 READING card=rtx5090 boot=O1-enforce wave=wave2 n=16 ok200=1 r429=15 booked_at_first_line=10366394448 ttft_ms p50=1337.4 p95=1337.4 N=1 time_to_429_ms p50=10.6 max=14.5
+DAY46 P2-READING card=rtx5090 boot=O1-shadow oom_lines=0 parked_oom_lines=0 crash_lines=0 r503=0 -> READING (the before)
+DAY46 P5-PROBE card=rtx5090 boot=O1-shadow probe_booked=0 probe_booked_real=0 -> PASS
+DAY46 READING card=rtx5090 boot=O1-shadow budget_bytes=12760827008 peak_booked_bytes=77747958360 sequence_admitted=9/9
+DAY46 READING card=rtx5090 boot=O1-shadow wave=burst n=32 ok200=32 r429=0 booked_at_first_line=0 ttft_ms p50=43239.7 p95=43242.0 N=32 time_to_429_ms p50=nan max=nan
+DAY46 READING card=rtx5090 boot=O1-shadow wave=wave2 n=16 ok200=16 r429=0 booked_at_first_line=51831972240 ttft_ms p50=21631.3 p95=22892.9 N=16 time_to_429_ms p50=nan max=nan
+DAY46 P4 card=rtx5090 order=O1 arm=enforce rows_200_both=19 status_mismatch=40 differ=[] -> PASS

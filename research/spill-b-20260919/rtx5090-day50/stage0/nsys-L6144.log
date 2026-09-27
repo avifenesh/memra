@@ -1,0 +1,19 @@
+WARNING: CPU IP/backtrace sampling not supported, disabling.
+Try the 'nsys status --environment' command to learn more.
+
+WARNING: CPU context switch tracing not supported, disabling.
+Try the 'nsys status --environment' command to learn more.
+
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers)
+callcost setup: L=6144 primed in 1570.8 ms
+callcost L=6144 R=32 N=5 wall_ms p50=37.96 min=37.23 max=41.86 all=[41.86,37.23,39.05,37.94,37.96]
+callcost L=6144 R=64 N=5 wall_ms p50=37.98 min=37.79 max=39.26 all=[37.82,38.01,37.79,37.98,39.26]
+callcost L=6144 R=288 N=5 wall_ms p50=88.66 min=84.87 max=93.98 all=[85.28,84.87,88.66,91.50,93.98]
+Collecting data...
+Generating '/tmp/nsys-report-9770.qdstrm'
+[1/1] [0%                          ] nsys-L6144.nsys-rep[1/1] [0%                          ] nsys-L6144.nsys-rep[1/1] [=======37%                  ] nsys-L6144.nsys-rep[1/1] [====26%                     ] nsys-L6144.nsys-rep[1/1] [==20%                       ] nsys-L6144.nsys-rep[1/1] [========40%                 ] nsys-L6144.nsys-rep[1/1] [=========43%                ] nsys-L6144.nsys-rep[1/1] [==========47%               ] nsys-L6144.nsys-rep[1/1] [=======38%                  ] nsys-L6144.nsys-rep[1/1] [=====32%                    ] nsys-L6144.nsys-rep[1/1] [=====31%                    ] nsys-L6144.nsys-rep[1/1] [=========44%                ] nsys-L6144.nsys-rep[1/1] [=============58%            ] nsys-L6144.nsys-rep[1/1] [================71%         ] nsys-L6144.nsys-rep[1/1] [====================84%     ] nsys-L6144.nsys-rep[1/1] [=====================88%    ] nsys-L6144.nsys-rep[1/1] [========================100%] nsys-L6144.nsys-rep[1/1] [========================100%] nsys-L6144.nsys-rep
+Generated:
+	/home/avifenesh/projects/wt-spill-b/research/spill-b-20260919/rtx5090-day50/stage0/nsys-L6144.nsys-rep
+exit=0
