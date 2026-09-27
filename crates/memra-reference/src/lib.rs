@@ -10,6 +10,7 @@ pub mod mimo_audio_codec_frontend;
 pub mod mimo_audio_codec_layer;
 pub mod mimo_audio_codec_rvq;
 pub mod mimo_audio_pcm_mel;
+pub mod mimo_audio_pcm_mel_mkl;
 pub mod mimo_modal_overlay;
 pub mod mimo_text_chunk;
 pub mod mimo_vision;
