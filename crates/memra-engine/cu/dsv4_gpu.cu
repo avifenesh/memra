@@ -4261,16 +4261,16 @@ __device__ __forceinline__ void dsv4_tile_tree(float (&part)[TT][TN], float* red
 #define DSV4_TILE_TT 8
 #endif
 #ifndef DSV4_TILE_TN
-#define DSV4_TILE_TN 8
+#define DSV4_TILE_TN 4
 #endif
 #ifndef DSV4_TILE_SUB
 #define DSV4_TILE_SUB 8
 #endif
 #ifndef DSV4_TILE_DEC
-#define DSV4_TILE_DEC 0
+#define DSV4_TILE_DEC 1
 #endif
 #ifndef DSV4_TILE_MINB
-#define DSV4_TILE_MINB 1
+#define DSV4_TILE_MINB 4
 #endif
 
 __device__ __forceinline__ uint32_t dsv4_e4m3fn_clear_nan4(uint32_t w) {
@@ -4401,8 +4401,17 @@ static void dsv4_gemm_fp8_tile_launch(const void* w_codes, const float* sc_f32, 
 // The f32-island dots (`dsv4_dots_f32acc_mrow_kernel`) over the same tile: thread v owns the
 // dots kernel's chunks `v*8 + j*1024`, adds `x * w` for the 8 elements ascending with the weight
 // widened from bf16 or read as f32, then every output takes the same halving tree.
-template <int TT, int TN>
-__global__ void __launch_bounds__(128) dsv4_dots_f32acc_tile_kernel(
+#ifndef DSV4_DOTS_TILE_TT
+#define DSV4_DOTS_TILE_TT 8
+#endif
+#ifndef DSV4_DOTS_TILE_TN
+#define DSV4_DOTS_TILE_TN 8
+#endif
+#ifndef DSV4_DOTS_TILE_MINB
+#define DSV4_DOTS_TILE_MINB 1
+#endif
+template <int TT, int TN, int MINB>
+__global__ void __launch_bounds__(128, MINB) dsv4_dots_f32acc_tile_kernel(
         const float* __restrict__ x, const void* __restrict__ w, int w_is_bf16,
         float* __restrict__ y, int m, int k, int n) {
     MEMRA_PDL_CHAIN_ENTRY();
@@ -4458,10 +4467,10 @@ __global__ void __launch_bounds__(128) dsv4_dots_f32acc_tile_kernel(
 
 static int dsv4_dots_f32acc_tile(const float* x, const void* w, int w_is_bf16, float* y, int m,
                                  int k, int n, cudaStream_t stream) {
-    constexpr int TT = 8, TN = 8;
+    constexpr int TT = DSV4_DOTS_TILE_TT, TN = DSV4_DOTS_TILE_TN, MINB = DSV4_DOTS_TILE_MINB;
     const size_t smem = (size_t)TT * TN * 64 * sizeof(float);
     dim3 grid((unsigned)((n + TN - 1) / TN), (unsigned)((m + TT - 1) / TT));
-    memra_chain_launch(dsv4_dots_f32acc_tile_kernel<TT, TN>,grid, 128, smem, stream)(x, w, w_is_bf16, y, m, k, n);
+    memra_chain_launch(dsv4_dots_f32acc_tile_kernel<TT, TN, MINB>,grid, 128, smem, stream)(x, w, w_is_bf16, y, m, k, n);
     g_dsv4_gemm_fp8_tile_launches.fetch_add(1, std::memory_order_relaxed);
     return 0;
 }
