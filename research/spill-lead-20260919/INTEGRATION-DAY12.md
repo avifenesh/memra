@@ -4611,13 +4611,20 @@ fixed all four on `lane/spill-b-integ71-fixes` at `f0b824ff5`, merged at `451ccd
   `differ_vs_cold=[]` on both exact boots, E3 20 of 20, E4-FAULT and E5 PASS; the admit-mem burst gate with
   `MEMRA_RESUME_EXACT=1` `ALL GREEN` (item 4's gate on the memory-door shape). B's new RW history-rewrite cell reads
   `DAY44 R1 ... boot=rw-plain-O1-exact rw_later_turns=20 affinity_rewinds=10 affinity_declined=0 -> FAIL` and the same
-  on `rw-spec-O1-exact`, with R2 `differ_vs_cold=[]` PASS on both and both keep boots R1 PASS 20 of 20: with the door on,
-  half the rewritten later turns still do not resume through affinity (none declines and every stream matches cold, so
-  it costs a re-prime, not a wrong token). Revuto's finding 1 is therefore half fixed.
+  on `rw-spec-O1-exact`, with R2 `differ_vs_cold=[]` PASS on both and both keep boots R1 PASS 20 of 20. Lane B placed it from the boot logs:
+  every rewritten later turn resumed (`cached_tokens` > 0 on every row) and none primed cold. The 10 G=256 turns resume
+  through affinity (`plain-affinity rewound to 6112 of 6240`, and `6208 of 6336`), and the 10 G=32 turns through the
+  exact path (`exact: plain resume from 6144 of 6144 committed rows (priming 96 rows, settled)`): there 6,176 committed
+  rows settle to 6,144, the prompt end, which is exactly where the rewrite diverges, so the rewritten prompt extends the
+  settled rows. The same holds on the spec route. So the case revuto named (a cold re-prime) does not occur in this
+  cell, and R1 fails because its registered wording counts affinity rewinds only.
 
 **Ruling 66, addendum:** integ71 merges with the doors-off program green on every battery and with revuto's round 2
-approving; the RW cell's R1 FAIL is a second registered blocker, beside DAY44's E2, on flipping `MEMRA_RESUME_EXACT`.
-It is lane B's next item: placed from the boot logs, fixed, and the RW cell rerun in integ72.
+approving. The RW cell's R1 stays FAIL as registered. Lane B's DAY44 addendum D (lane tip `f7901d987`) revises R1 to
+"every later turn resumes through affinity or the exact path, and none primes cold", which the same receipts read PASS
+(`affinity_rewinds=10 exact_resumes=10 cold_later_turns=0` on both exact boots). That revision was written after the
+result, so under the rule that a gate is never relaxed after a result it goes to the owner, as T-H' did; until the owner
+rules, R1 as registered stands beside DAY44's E2 as a blocker on flipping `MEMRA_RESUME_EXACT`.
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.

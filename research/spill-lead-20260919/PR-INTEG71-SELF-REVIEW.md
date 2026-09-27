@@ -43,6 +43,8 @@ the old one; the allowlisted unset is a restore after both arms are pinned; the 
 entry leaves its pool and waits one grace, not a spin.
 
 The GPU fix run is green except B's new RW cell: R1 reads 10 of 20 rewritten turns resumed through affinity on both
-exact boots (R2 matches cold on every turn). So revuto's first finding is half fixed. The door stays default-off, and
-R1 joins DAY44's E2 as a registered blocker on flipping it; lane B places and fixes it for integ72. CPU battery 16 of 16
+exact boots (R2 matches cold on every turn). B placed the other 10: they resume through the exact path from the settled
+rows, and none primes cold, so revuto's case does not occur there. R1's registered wording counts affinity only; B's
+revision (affinity or exact, never cold) came after the result, so it goes to the owner, and R1 stays FAIL as
+registered, beside E2, as a blocker on flipping the default-off door. CPU battery 16 of 16
 with CI's gates job; revuto round 2 approved; CI green.
