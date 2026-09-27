@@ -388,6 +388,14 @@ def run_publisher(source, encoder, mel, frames, codec, torch, device, capture_st
                 frames, codec["d_model"]
             ).clone()
 
+        def after_conv2(_module, _args, output):
+            out_frames = (frames + 1) // 2
+            if list(output.shape) != [1, codec["d_model"], out_frames] or output.dtype != torch.bfloat16:
+                raise ValueError("publisher conv2 pre-GELU output shape or dtype changed")
+            stage_snapshots["conv2_pre_gelu"] = output.detach().transpose(1, 2).reshape(
+                out_frames, codec["d_model"]
+            ).clone()
+
         def before_frontend_layer(_module, args):
             stage_snapshots["frontend"] = args[0].detach().clone()
 
@@ -397,6 +405,7 @@ def run_publisher(source, encoder, mel, frames, codec, torch, device, capture_st
         handles = [
             encoder.conv1.register_forward_hook(after_conv1),
             encoder.conv2.register_forward_pre_hook(before_conv2),
+            encoder.conv2.register_forward_hook(after_conv2),
             encoder.layers[0].register_forward_pre_hook(before_frontend_layer),
             encoder.layer_norm.register_forward_hook(after_stack_norm),
         ]
@@ -464,6 +473,7 @@ def run_publisher(source, encoder, mel, frames, codec, torch, device, capture_st
         expected = {
             "conv1_pre_gelu": [frames, codec["d_model"]],
             "conv1": [frames, codec["d_model"]],
+            "conv2_pre_gelu": [(frames + 1) // 2, codec["d_model"]],
             "frontend": [(frames + 1) // 2, codec["d_model"]],
             "stack": [(frames + 1) // 2, codec["d_model"]],
             "pre_rvq": [tokens, codec["d_model"]],
