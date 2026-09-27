@@ -1,0 +1,33 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling darklanes-metering v0.1.0 (/home/avifenesh/projects/wt-darklanes-b-money-20260927/serving/darklanes-metering)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.19s
+     Running unittests src/lib.rs (target/debug/deps/darklanes_metering-2429b1610810bb7a)
+
+running 1 test
+test ledger::tests::a_reload_whose_second_topup_append_fails_journals_each_total_once ... FAILED
+
+failures:
+
+---- ledger::tests::a_reload_whose_second_topup_append_fails_journals_each_total_once stdout ----
+[budget] loaded 2 tenant(s) from /tmp/memra-topup-partial-reload-943973-1790530206836/budgets.toml; journaled 2 source total(s); recovered 0 debit(s)
+[budget] source reload FAILED (1/3: tenant budget journal /tmp/memra-topup-partial-reload-943973-1790530206836/requests.jsonl.tenant-budget-journal.jsonl reached its 826-byte total safety cap across its sealed segments; archive and prune them before retrying); keeping the previous balances
+[budget] loaded 2 tenant(s) from /tmp/memra-topup-partial-reload-943973-1790530206836/budgets.toml; journaled 1 source total(s); recovered 0 debit(s)
+[budget] loaded 2 tenant(s) from /tmp/memra-topup-partial-reload-943973-1790530206838/budgets.toml; journaled 2 source total(s); recovered 0 debit(s)
+[budget] source reload FAILED (1/3: tenant budget journal /tmp/memra-topup-partial-reload-943973-1790530206838/requests.jsonl.tenant-budget-journal.jsonl reached its 826-byte total safety cap across its sealed segments; archive and prune them before retrying); keeping the previous balances
+[budget] source reloaded: 2 tenant(s) from /tmp/memra-topup-partial-reload-943973-1790530206838/budgets.toml
+[budget] loaded 2 tenant(s) from /tmp/memra-topup-partial-reload-943973-1790530206838/budgets.toml; journaled 0 source total(s); recovered 0 debit(s)
+
+thread 'ledger::tests::a_reload_whose_second_topup_append_fails_journals_each_total_once' (943974) panicked at darklanes-metering/src/ledger.rs:7913:13:
+assertion `left == right` failed: retry-in-process: one row per tenant per total
+  left: ["source-topup:tenant-a:1000", "source-topup:tenant-b:2000", "source-topup:tenant-a:1500", "source-topup:tenant-a:1500", "source-topup:tenant-b:2600"]
+ right: ["source-topup:tenant-a:1000", "source-topup:tenant-b:2000", "source-topup:tenant-a:1500", "source-topup:tenant-b:2600"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    ledger::tests::a_reload_whose_second_topup_append_fails_journals_each_total_once
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 105 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p darklanes-metering --lib`
