@@ -119,7 +119,12 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   the fuller charge"). Dropped from STATE at day 33 with no closing record; restored here.
 - Acceptance to pre-register: `MEMRA_ADMIT_PREDICT_ENFORCE=1` against a budget arm on both cards, the day-24 sequence
   and a burst, before and after the day-24 charge, every refusal a typed 429 with its `Retry-After`, no OOM.
-- Status: `pre-registered` (DAY46.md; addendum A from DAY45's target-card facts: P2 on the enforcing arms, a second
+- Status: `running`. Target card (DAY46 2.1, the fifteenth sitting): P1 to P5 PASS on all four enforcing boots
+  (burst 17 of 64 admitted, 47 + 32 typed 429s, no OOM, within the 65.9 GB budget, W released 27 of 28); shadow OOMs as
+  the before reading. The value reading (the second wave on `enforce-wrel` against `enforce`) was not measured: the
+  client released the second wave at the burst's first 429. Addendum C fixes the trigger (the first 200); the whole cell
+  reruns as the seventeenth sitting (`pro-single-b-sitting17.sh`) and locally (`rtx5090-day46c/run.sh`). Earlier text:
+  (DAY46.md; addendum A from DAY45's target-card facts: P2 on the enforcing arms, a second
   wave after the burst's first completion; text only until the ninth sitting reads):
   arms `shadow`, `enforce`, `enforce-wrel` (with DAY45's W release) at the boot-derived budget, both orders, both cards,
   DAY24's sequence then a burst; P1 typed refusals, P2 no OOM, P3 within the budget, P4 identity, P5 the release reaches
@@ -221,7 +226,11 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   Target card read (DAY44 2.1): E1 0 flips on all 8 `exact` boots (24 of 60 on every `keep` boot), E3 to E6 PASS; E2
   FAIL at 8 of 24 cells, TTFT only: the zero-gap re-prime (plain RX) and an arrival waiting for its entry's settle
   (spec RX G=256, plain RXg 122,880 G=256); spec RXg `exact` halves TTFT. Exact but slower there: the overlap revision
-  is owed, DAY50 (stage 0 then arm S or O by a stated rule), pre-registered, text only. The door stays default off. The measurement arms' readings stay banked (DAY41 2.1 and 2.2); `MEMRA_RESUME_GRID_REWIND` stays a
+  is owed, DAY50 (stage 0 then arm S or O by a stated rule). Stage 0 on the target card (DAY50 2.1): the short prime
+  call is GPU-bound (94.9 to 98.3% busy; host outside the span 0.2 ms), so the rule selects arm O (settles on a second
+  stream with its own scratch set). The NVFP4 GEMM's 128-row tile (56 ms for 32 or 64 rows) and the prefill attention at
+  long context (127 ms at 122,880) make up the call; a small-M prime kernel that keeps the cold prime's numbers is a
+  recorded candidate. Arm O's design addendum and code are next. The door stays default off. The measurement arms' readings stay banked (DAY41 2.1 and 2.2); `MEMRA_RESUME_GRID_REWIND` stays a
   measurement arm until DAY44 reads.
 
 ### O12. The admission reclaim flush off the tick (lead's ruling at integ62)

@@ -1,3 +1,9 @@
+# WP-B checkpoint 2026-09-27 03:0xZ: the integ71 merge `c2c32539e` (main caf5b7d28 into the lane, one conflict, both kept;
+all suites green) pushing; DAY46 2.1 read (P1 to P5 PASS; the value reading owed, addendum C, the seventeenth sitting);
+DAY50 stage 0 read (GPU-bound: arm O); the chains' manifests exclude themselves; the lead-overwritten manifests noted.
+Working tree for commits: `wt-b-integ71` (branch merge/spill-b-integ71, pushed to lane/spill-b-20260919). The live
+checkout `wt-spill-b` stays at 1df7e7852 while its runners (queue-m, chain-r5, DAY49D, DAY50 stage 0) read it; ff it
+and remove wt-b-integ71 when they finish. The DAY46C local rerun runs from wt-b-integ71.
 # WP-B checkpoint 2026-09-27 01:3xZ: the fifteenth sitting (DAY46) queued on BOX43 behind integ70's battery; DAY50 stage 0
 built (`5d94e26ae`, the sixteenth sitting ready, the 5090 half running); DAY47 2.4 and DAY49 2.5 read (the 5090 halves);
 the lane goes into integ71: merge main in a separate worktree once integ70's sha lands (keep both behaviors), then fmt,
