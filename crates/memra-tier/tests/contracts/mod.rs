@@ -36,3 +36,5 @@ mod h2d_deferred_checksum_bindings;
 // Day 38 (WP-A, `DAY38.md` design G): the device receipt of a D2H batch.
 mod d2h_device_receipt_bindings;
 mod span_receipt_bindings;
+// Day 89 (WP-C, `research/spill-c-20260919/DAY89.md` I23): the governor and issuer trace fixture.
+mod day89;
