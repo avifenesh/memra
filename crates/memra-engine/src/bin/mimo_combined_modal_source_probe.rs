@@ -84,7 +84,7 @@ fn run() -> Result<(), Fail> {
 
     let text = MiMoTextWeights::load(engines, source.clone())?;
     let vision = MiMoVisionWeights::load(&cards[0], source.as_ref(), &binding, &config)?;
-    let audio_patch = MiMoAudioPatchWeights::load(&cards[1], source.as_ref(), &binding, &config)?;
+    let audio_patch = MiMoAudioPatchWeights::load(&cards[0], source.as_ref(), &binding, &config)?;
     let mtp = Mtp3Weights::load(&cards[0], source)?;
     let codec = MiMoAudioCodecEncoderWeights::load(&cards[0], Path::new(&dir))?;
     if vision.blocks.len() != 28
@@ -142,8 +142,8 @@ fn run() -> Result<(), Fail> {
         return Err("MiMo combined source grouped audio codes are incomplete".into());
     }
     let audio_output =
-        audio_patch.forward_grouped_codes(&cards[1], &grouped.codes, grouped.groups)?;
-    let audio_row = cards[1].dtoh(&audio_output)?;
+        audio_patch.forward_grouped_codes(&cards[0], &grouped.codes, grouped.groups)?;
+    let audio_row = cards[0].dtoh(&audio_output)?;
     if audio_row.len() != HIDDEN {
         return Err("MiMo combined source audio row is incomplete".into());
     }
