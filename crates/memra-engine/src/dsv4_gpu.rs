@@ -14512,6 +14512,11 @@ pub struct VerifyWs {
     /// This layer's shared-expert output rides the expert join: the owner rank wrote it after
     /// the routed rows of `contrib` (rows `t * topk ..`), the other rank left them cleared.
     shared_in_plane: bool,
+    /// A TP/EP rank's per-row x mirror for the fused gate/up launch (memra #710): `words` holds
+    /// `rows` rows of `hidden / 2` swizzled halves and `rs` their row scales, written by the
+    /// router launch (`memra_dsv4_route_mirror_m`) when `ready`.
+    xmirror: Option<(CudaSlice<u32>, CudaSlice<f32>, usize)>,
+    xmirror_ready: bool,
     c4_gather: Option<C4Gather>,
     pub tmax: usize,
     /// Phase identity, not inferred from row count. Spec verification never sets it.
@@ -15701,6 +15706,23 @@ impl Dsv4Gpu {
                     None
                 },
                 shared_in_plane: false,
+                xmirror: if self.matrix_moe
+                    && self.topology.is_tp_ep()
+                    && hidden.is_multiple_of(128)
+                    && hidden / 128 <= 64
+                {
+                    let rows = tmax.clamp(1, crate::dsv4_grouped::MROW_STREAM_MAX_ROWS);
+                    acc.set(acc.get() + (rows * hidden * 2 + rows * 4) as u64);
+                    Some((
+                        s.alloc_zeros::<u32>(rows * hidden / 2)
+                            .map_err(e("vws u32"))?,
+                        f(rows)?,
+                        rows,
+                    ))
+                } else {
+                    None
+                },
+                xmirror_ready: false,
                 ep: if self.ep_enabled {
                     Some(EpScratch::new(
                         &st.gpu,
@@ -18898,6 +18920,14 @@ impl Dsv4Gpu {
         let shared_run = vws.shared_run.as_mut().map_or(std::ptr::null_mut(), |w| {
             w.device_ptr_mut(&stream).0 as *mut i32
         });
+        // The router launch mirrored x when it could (memra #710); else the gate/up CTAs do.
+        let (xm, xrs) = match (&vws.xmirror, vws.xmirror_ready) {
+            (Some((w, r, rows)), true) if t <= *rows => (
+                w.device_ptr(&stream).0 as *const u32,
+                r.device_ptr(&stream).0 as *const f32,
+            ),
+            _ => (std::ptr::null(), std::ptr::null()),
+        };
         unsafe {
             ck(
                 "TP/EP fused MoE gate/up",
@@ -18910,6 +18940,8 @@ impl Dsv4Gpu {
                     dpf!(vws.selw, &stream),
                     dpf!(layer.experts_s2_dev, &stream),
                     dpf!(vws.xf, &stream),
+                    xm,
+                    xrs,
                     dpm!(vws.hbuf, &stream),
                     shared_run,
                     topk as i32,
@@ -19307,6 +19339,8 @@ impl Dsv4Gpu {
         let stream = st.gpu.stream();
         // Set again only by a TP/EP fused step whose shared expert rides the join.
         vws.shared_in_plane = false;
+        // Set again only by the router launch that mirrors x for the fused pair.
+        vws.xmirror_ready = false;
         let kind = match layer.expert_kind {
             ExpertKind::Nvfp4 => 0i32,
             ExpertKind::Mxfp4 => 1i32,
@@ -19360,33 +19394,83 @@ impl Dsv4Gpu {
                 .memcpy_htod(&order, &mut dst)
                 .map_err(e("htod order b"))?;
         } else {
+            // A TP/EP step the fused pair will take gets its x mirror from the router launch,
+            // once per row, rather than from every gate/up CTA (memra #710).
+            let mirror_x = layer.ep.as_ref().is_some_and(|ep| {
+                ep.local_only
+                    && self.matrix_moe
+                    && self.topology.is_tp_ep()
+                    && defer_tp_ep_tail
+                    && self.moe_tp_ep_fused_engages(vws, t, allow_gu_fuse)
+            }) && vws.xmirror.as_ref().is_some_and(|(_, _, rows)| t <= *rows)
+                && vws
+                    .moe_fault
+                    .as_ref()
+                    .is_some_and(|w| (layer.il as usize) < w.len());
+            let bias = layer
+                .gate_bias_dev
+                .as_ref()
+                .map(|b| b.device_ptr(&stream).0 as *const f32)
+                .unwrap_or(std::ptr::null());
+            let tid2eid = layer
+                .tid2eid_dev
+                .as_ref()
+                .map(|x| x.device_ptr(&stream).0 as *const i32)
+                .unwrap_or(std::ptr::null());
             unsafe {
-                ck(
-                    "route_m",
-                    k::memra_dsv4_route_m(
-                        dpf!(vws.raw, &stream),
-                        layer
-                            .gate_bias_dev
-                            .as_ref()
-                            .map(|b| b.device_ptr(&stream).0 as *const f32)
-                            .unwrap_or(std::ptr::null()),
-                        layer
-                            .tid2eid_dev
-                            .as_ref()
-                            .map(|x| x.device_ptr(&stream).0 as *const i32)
-                            .unwrap_or(std::ptr::null()),
-                        vws.tok.device_ptr(&stream).0 as *const i32,
-                        t as i32,
-                        ne as i32,
-                        topk as i32,
-                        d.routed_scaling_factor,
-                        vws.sel.device_ptr_mut(&stream).0 as *mut i32,
-                        vws.selw.device_ptr_mut(&stream).0 as *mut f32,
-                        vws.order.device_ptr_mut(&stream).0 as *mut i32,
-                        sp(&stream),
-                    ),
-                )?;
+                if mirror_x {
+                    let fault = (vws
+                        .moe_fault
+                        .as_ref()
+                        .expect("checked")
+                        .device_ptr(&stream)
+                        .0
+                        + (layer.il as usize * std::mem::size_of::<i32>()) as u64)
+                        as *mut i32;
+                    let (xm, xrs, _) = vws.xmirror.as_mut().expect("checked");
+                    ck(
+                        "route_mirror_m",
+                        k::memra_dsv4_route_mirror_m(
+                            dpf!(vws.raw, &stream),
+                            bias,
+                            tid2eid,
+                            vws.tok.device_ptr(&stream).0 as *const i32,
+                            t as i32,
+                            ne as i32,
+                            topk as i32,
+                            d.routed_scaling_factor,
+                            vws.sel.device_ptr_mut(&stream).0 as *mut i32,
+                            vws.selw.device_ptr_mut(&stream).0 as *mut f32,
+                            vws.order.device_ptr_mut(&stream).0 as *mut i32,
+                            dpf!(vws.xf, &stream),
+                            hidden as i32,
+                            xm.device_ptr_mut(&stream).0 as *mut u32,
+                            dpm!(xrs, &stream),
+                            fault,
+                            sp(&stream),
+                        ),
+                    )?;
+                } else {
+                    ck(
+                        "route_m",
+                        k::memra_dsv4_route_m(
+                            dpf!(vws.raw, &stream),
+                            bias,
+                            tid2eid,
+                            vws.tok.device_ptr(&stream).0 as *const i32,
+                            t as i32,
+                            ne as i32,
+                            topk as i32,
+                            d.routed_scaling_factor,
+                            vws.sel.device_ptr_mut(&stream).0 as *mut i32,
+                            vws.selw.device_ptr_mut(&stream).0 as *mut f32,
+                            vws.order.device_ptr_mut(&stream).0 as *mut i32,
+                            sp(&stream),
+                        ),
+                    )?;
+                }
             }
+            vws.xmirror_ready = mirror_x;
         }
 
         let mut routed_combined = false;
