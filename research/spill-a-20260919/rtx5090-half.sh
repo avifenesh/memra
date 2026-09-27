@@ -18,6 +18,7 @@ S=/home/avifenesh/spill-a-cells/$HALF
 case $HALF in
   r1) TIP=15d7ed351; BASE=40821db01 ;;
   l2) TIP=21984b527; BASE=217ace3fd ;;
+  th2) TIP=67af1b71e; BASE=80f734c77 ;;  # DAY68 section 11
   *) echo "half $HALF"; exit 2 ;;
 esac
 MODEL=/home/avifenesh/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
@@ -70,6 +71,13 @@ card)
   if [ "$HALF" = r1 ]; then
     cellrun gates-cell 10800 "$S/scripts/gates.sh" 9
     cellrun ab-r1-cell 21600 "$S/scripts/ab.sh" 9 seam retire-seam-nosource retire-seam prime 448
+  elif [ "$HALF" = th2 ]; then
+    # DAY68 section 11: T-H''s sitting's cells in its driver's order.
+    cellrun gates-cell 10800 "$S/scripts/gates.sh" 9
+    cellrun ab-demote-cell 10800 "$S/scripts/ab.sh" 9 demote
+    cellrun ab-chain-cell 10800 "$S/scripts/ab.sh" 9 chain
+    cellrun ab-promote-cell 10800 "$S/scripts/ab.sh" 9 promote
+    cellrun hump-cell 3600 "$S/scripts/hump.sh" 9
   else
     cellrun unit-cell 3600 "$S/scripts/unit-cells.sh" 9
     cellrun gates-cell 10800 "$S/scripts/gates.sh" 9

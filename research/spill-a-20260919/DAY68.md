@@ -224,3 +224,30 @@ GPU. Both registrations said "the 5090 half follows"; this file fixes how, befor
   3. P2's half;
   4. T-H''s half;
   5. then section 9's item 16 with the warm-up doubled, S4 and V.
+
+## 12. The scratch directory was removed whole mid-chain (19:23:49Z on 2026-09-27); everything rebuilt and requeued
+
+- **What happened.**
+  - At 19:23:49Z `/home/avifenesh/spill-a-cells/` was deleted with everything under it: the halves' trees (git
+    worktrees, their registrations pruned too), the built executables, the first run's local receipts, and the frozen
+    scripts.
+  - It was recreated at 19:23:50Z only by the running chain's own writes: the chain log, and R1's repeat's receipt
+    directory.
+  - This lane ran no command on that path then. Its commands at that time touched other worktrees only, and none of
+    its scripts removes that root. The cause is unplaced here, and it goes to the lead.
+- **What it cost.**
+  - R1's repeat, which had held the card since 17:20:12Z, lost its binaries under it. Its o2 boots from 19:23:49Z read
+    `boot NOT READY within 480 s` 14 times at once, and every step after it failed at once (`reading rc=1`, `item 16 2x
+    rc=1`, `s4 card rc=1`, `v card rc=1`).
+  - The repeat's receipts from before the removal are gone, so the repeat is void and reads nothing. Its surviving log
+    and the chain log are banked as `rtx5090-r1/incident-20260927/`.
+  - Everything the first chain read was committed before the removal (section 8's receipts), so nothing read is lost.
+- **Rebuilt and requeued:** `rtx5090-chain-day68c.sh` (frozen copy `spill-a-cells/chain-day68c.sh`, argument the lane
+  commit that holds it).
+  - It builds every half first, outside every hold, from a detached snapshot of the lane at that commit: R1, P2 with
+    its unit tree, T-H', item 16, S4 and V.
+  - Then it runs the cards in the lead's order:
+    - R1's card whole (the gates again, then the timed cell the lead's ruling repeats);
+    - P2's half, then T-H''s half (section 11);
+    - item 16 with the warm-up doubled, S4 and V (section 9).
+  - An `IN-USE.txt` at the root names the owner and the chain, so a sweep can see the directory is live.
