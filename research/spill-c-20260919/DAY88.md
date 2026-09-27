@@ -144,3 +144,51 @@ runs `slow86` first, `DAY86.md` section 2); the local RTX 5090 runs the same thr
 Phase 2, the serving installer (item 6) with its serving-shape bit-identity gate. Phase 3, the owner under a PP stage
 split (item 1). Phase 4, installer generality (item 3: a second qualified artifact with its census and receipts, and
 scale admission for the Hy3 and Step ladders), mixed-layout budgets (item 2) and the refused arms (item 5).
+
+## 3a. Phase 1 on the CPU, before any card
+
+Phase 1 landed as `9c20f327d` and `0155bc69f` (the second makes the door's plan print the prefetch's effective state
+beside its default, log only), on the lane with `main` `80f734c77` merged in (`6328a15ea`). As registered, with four
+details the source gave:
+- The qualification is a free function over the opened file (`qualify_file`) behind `Engine::qualify_expert_door`, so
+  its decision table is a CPU test; the gate binaries call `Engine::plan_expert_door` before load and
+  `Engine::install_expert_door` after, one path for `run-gen` and `run-spec`.
+- The qualified entry carries the whole bank's bytes per catalog (`run-gen`'s trunk: 15,219,032,064 bytes over 30,720
+  records; `run-spec` with the MTP head: 15,600,713,728 over 31,488, as the installer's `host_bank_plan` lines read
+  them on BOX39 and in DAY52's spec cell); the installer refuses if its catalog's bank differs from the entry.
+- The door's plan sets the prefetch default from the artifact's identity even when the door is off (the rollback, or
+  a bank over the ceiling), so the legacy then runs with its prefetch (REF, the qualified program).
+- `--experts-via-tier` with a door that does not apply keeps the installer's old refusals: an artifact that is not
+  qualified reads `experts-via-tier artifact SHA256 mismatch` (exit 1), a bank over the ceiling is the typed `REFUSED`
+  (exit 2), resident experts the installer's resident refusal.
+
+**CPU gates** (`day88-cpu/gates.log`, under `nice 19` in a 600% scope with `MemoryMax=12G`): the tier suites (the bank
+suite 96 passed, `day10`'s CLI tests rewritten for the default door: the budgets without `--experts-via-tier`, the
+whole-bank default, the pool rollback flag, the retired flags as unknown, the rollback seam's two usage errors), the
+engine library (599 passed, with four `day88_qualify` cells: identity then fit, each process refusal with its reason and
+no read, the entry is the approved artifact, the prefetch's decision table; the day-44 and day-50 censuses moved to the
+door's plan and to the prefetch's one condition), clippy (`-D warnings`, all targets) and fmt clean, the flags census
+(the new `MEMRA_EXPERTS_VIA_TIER=0` row, the `MEMRA_MOE_PREFETCH=0` row), `git diff --check`, `rc-scan.py --live` 0.
+
+**The local RTX 5090 check** is queued (queue v20, `rtx5090-queue-v20-20260927.sh`, `day88-cpu/gpu-check.sh` and its
+reader), behind other lanes' work on the card: `run-gen-p88` (`0155bc69f`) by default against `run-gen-i22` as
+qualified, both orders, then the rollback.
+
+## 5a. The sitting, prepared before any cell
+
+`day88-cell.sh` (the three cells), `day88-read.py` (all three and the phase's verdict), `day88-box-build.sh` (run-gen
+per label, run-spec for `p88`) and `day88-box.sh` were written after section 5. Dry checks (`day88-cpu/`): the reader on
+a synthetic root from DAY85's BOX41 receipts relabelled with the promoted binary's lines (`make-synthetic.py`;
+meaningless) prints every line and `phase1_lands` (`dry-check-reader.log`); its red arm, the same root with one naked
+run's pool kind and one nopf run's prefetch line removed, reads `integrity=FAIL` and `void` (`dry-check-reader-red.log`);
+the cells under stubs run 60, 20 and 2 invocations in the registered order with the registered flags and environment per
+arm (`dry-check-cell.log`); the driver under stubs names the builds, the three cells with their validations and the
+reader, and a rerun skips the cells (`dry-check-driver.log`).
+
+Beside the dry check, deciding nothing: on those BOX41 receipts the door's process start to its prefill `MATCH` line
+read 9.79 s against REF's 4.37 (the SHA-256 lock over 18.2 GB and the host fill before the first token); the cell
+`promo` reads the same wall for the promoted binary, beside its registered readings.
+
+Run as `D88_BUILDS="i22=4b378a064 p88=0155bc69f" bash /root/wt-c/research/spill-c-20260919/day88-box.sh` on a Core Ultra
+9 285K host with one RTX PRO 6000 Blackwell Workstation Edition, then the same on a fresh 9950X (at least 48 GB
+MemAvailable and 17 GB for the door's pinned bank beside it; about 45 minutes: two builds, 82 runs).

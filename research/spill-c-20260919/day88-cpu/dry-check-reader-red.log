@@ -1,0 +1,4 @@
+# DAY88 reader red arm: the synthetic root with o1-naked-r3's pool kind and o2-nopf-r2's prefetch line removed (integrity must fail)
+DAY88 PROMO CHECKS rig=synthetic-red runs=60 integrity=FAIL failed=o1-naked-r3 lines: missing ['registered'], unexpected ['allocated']; o2-nopf-r2 lines: missing ['pf_effective_off', 'pf_on'], unexpected []
+DAY88 PROMO-RES CHECKS rig=synthetic-red runs=20 integrity=ok
+DAY88 VERDICT rig=synthetic-red -> void (promo integrity FAIL)
