@@ -210,6 +210,11 @@ impl<H: Hotness<ExpertDomain>, R: ExactReader> SlruExpertDispatch<H, R> {
             .ok_or(Error::Incomplete)?
             .resident_at(position))
     }
+    /// Day 93 (`research/spill-c-20260919/DAY93.md` section 3): the bank's fault-injection door, forwarded.
+    #[doc(hidden)]
+    pub fn inject_finish_failure(&mut self) {
+        self.bank.inject_finish_failure();
+    }
     pub fn bank(&self) -> &BankService<ExpertDomain, H, R> {
         &self.bank
     }

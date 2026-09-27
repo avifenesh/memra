@@ -11,8 +11,8 @@ use super::*;
 use sha2::{Digest as _, Sha256};
 use std::fmt::Write as _;
 
-const TRANSCRIPT_SHA256: &str = "c9a09b37b595b054d5f5683e9f48ba4b66b623b09c5bc44d78f5dc8dcd9d10bc";
-const TRANSCRIPT_LINES: usize = 6249;
+const TRANSCRIPT_SHA256: &str = "61a0e9cb103cefbe6ccdef9a1cbf574033cec40e8e3c2961d282d6e8d4d2a4d0";
+const TRANSCRIPT_LINES: usize = 6293;
 
 struct Rng(u64);
 impl Rng {
@@ -143,8 +143,73 @@ fn transcript(priority: Priority, seed: u64, steps: usize) -> String {
         };
         writeln!(out, "drain {r:?} | {}", state(d.bank(), &ids)).unwrap();
     }
+    scripted(priority, &mut out);
     writeln!(out, "end used {:?}", g.borrow().used).unwrap();
     out
+}
+
+/// Day 93 section 3 (the lead's condition 1), on a fresh bank of the seed's priority (its SLRU state its own): a group
+/// of three host hits held open while other records' misses and hits evict its records (its leases stay owned,
+/// `collect_evicted` skipping them), a finish injected to fail (nothing changes), the retry (it succeeds once and the
+/// evicted leases are released), and a second finish (`UnknownTicket`).
+fn scripted(priority: Priority, out: &mut String) {
+    let (_, ids) = spread();
+    let (positioned, req, _) = bank_governed(5, priority);
+    let map = ids
+        .iter()
+        .map(|b| (dispatch_id(&b.record).unwrap(), b.clone()))
+        .collect();
+    let mut d = SlruExpertDispatch::new(positioned, map, req, epochs()).unwrap();
+    let group: Vec<(ExpertDispatchId, usize)> = ids[0..3]
+        .iter()
+        .map(|id| (dispatch_id(&id.record).unwrap(), 16))
+        .collect();
+    let resident = |d: &SlruExpertDispatch<Heat, Reader>| -> Vec<Option<usize>> {
+        let policy = d.bank().slru_policy().unwrap();
+        ids[0..3].iter().map(|id| policy.resident(id)).collect()
+    };
+    let line = |d: &SlruExpertDispatch<Heat, Reader>, out: &mut String, what: &str| {
+        writeln!(out, "scripted {what} | {}", state(d.bank(), &ids)).unwrap();
+    };
+    // The group made host resident, then a demand of it (every record a host hit) held open.
+    let first = d.demand_many(&group).unwrap();
+    d.finish_many(&first).unwrap();
+    drop(first);
+    line(&d, out, &format!("resident {:?}", resident(&d)));
+    let held = d.demand_many(&group).unwrap();
+    line(&d, out, "held");
+    // Other records, each demanded three times (a miss, then hits), until the held group's records are evicted.
+    let mut k = 3;
+    while resident(&d).iter().any(Option::is_some) && k < 3 + 3 * 24 {
+        let local = dispatch_id(&ids[k % ids.len()].record).unwrap();
+        for _ in 0..3 {
+            let demand = d.demand(local, 16).unwrap();
+            d.finish(&demand).unwrap();
+        }
+        line(
+            &d,
+            out,
+            &format!(
+                "evict with {} held_resident {:?}",
+                k % ids.len(),
+                resident(&d)
+            ),
+        );
+        k += 1;
+    }
+    assert!(
+        resident(&d).iter().all(Option::is_none),
+        "the held group was not evicted"
+    );
+    d.inject_finish_failure();
+    let failed = d.finish_many(&held);
+    line(&d, out, &format!("finish injected {failed:?}"));
+    let retried = d.finish_many(&held);
+    line(&d, out, &format!("finish retried {retried:?}"));
+    let again = d.finish_many(&held);
+    line(&d, out, &format!("finish again {again:?}"));
+    drop(held);
+    line(&d, out, "dropped");
 }
 
 fn transcripts() -> String {

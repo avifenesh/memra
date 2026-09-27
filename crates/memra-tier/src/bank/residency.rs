@@ -331,6 +331,9 @@ pub struct BankService<D: BankDomain, H: Hotness<D>, R: ExactReader> {
     issuer: u64,
     sequence: u64,
     clock: Option<BankStageTimes>,
+    /// Day 93 (`research/spill-c-20260919/DAY93.md` section 3): a fault-injection door of the check. The next
+    /// `finish_ticket` refuses `NotReady` after its lookup, before anything changes.
+    fail_finish: bool,
     /// Day 47: where record buffers come from; `None` is a heap `Vec` per record.
     buffers: Option<Box<dyn HostBufferSource>>,
     _domain: PhantomData<D>,
@@ -365,6 +368,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             issuer,
             sequence: 0,
             clock: None,
+            fail_finish: false,
             buffers: None,
             _domain: PhantomData,
         })
@@ -686,6 +690,12 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             }
         }
     }
+    /// Day 93 (`research/spill-c-20260919/DAY93.md` section 3): a fault-injection door of the check, never set outside
+    /// a test: the next `finish_ticket` refuses `NotReady` after its lookup and changes nothing, so a retry finishes it.
+    #[doc(hidden)]
+    pub fn inject_finish_failure(&mut self) {
+        self.fail_finish = true;
+    }
     /// Day 93 (`research/spill-c-20260919/DAY93.md`): the hotness this bank records (read-only; the I26 fixture reads it,
     /// since under the SLRU nothing else does).
     pub fn heat(&self) -> &H {
@@ -737,6 +747,8 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         let p = self.pending.get_mut(ticket).ok_or(Error::UnknownTicket);
         let p = match p {
             Ok(p) if !p.published && !p.cancelled && p.error.is_none() => Err(Error::Busy),
+            // Day 93 (DAY93 section 3): the injected failure, at the last fallible point before any change.
+            Ok(_) if std::mem::take(&mut self.fail_finish) => Err(Error::NotReady),
             other => other,
         };
         let p = match p {
