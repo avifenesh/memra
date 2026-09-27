@@ -39,6 +39,23 @@ impl MiMoGpuEmbeddingChunk {
     pub fn requires_payload_identity(&self) -> bool {
         self.counts.has_payload()
     }
+
+    pub(crate) fn owned_row(&self, stage0: &Engine, index: usize) -> Result<CudaSlice<f32>, Fail> {
+        let device = stage0.stream().context().ordinal();
+        if index >= self.tokens
+            || self.embeddings.len() != self.tokens * HIDDEN
+            || self.embeddings.ordinal() != device
+        {
+            return Err("MiMo modal embedding row index, extent, or stage changed".into());
+        }
+        stage0.gpu.ctx.bind_to_thread()?;
+        let mut row = stage0.uninit(HIDDEN)?;
+        stage0.dtod_copy_view(
+            &self.embeddings.slice(index * HIDDEN..(index + 1) * HIDDEN),
+            &mut row,
+        )?;
+        Ok(row)
+    }
 }
 
 fn validate_stage_layout(

@@ -1,12 +1,15 @@
 //! One-token MiMo text forward with model-owned compressed KV.
-//! This diagnostic executor has no modality, batching, or serving dispatch.
+//! Prepared modal chunks may enter a fresh sequence; there is no raw-modal
+//! decoder, batched prefill, payload-keyed KV reuse, or serving dispatch.
 
 use std::error::Error;
 
+use cudarc::driver::CudaSlice;
 use memra_gguf::model_plan::{AttentionPlan, MlpPlan};
 
 use crate::Engine;
 use crate::mimo_compressed_kv::{MAX_COMPRESSED_CONTEXT_TOKENS, MiMoCompressedKv};
+use crate::mimo_modal_overlay::MiMoGpuEmbeddingChunk;
 use crate::mimo_text_forward::{MiMoTextStep, dense_token, normalized, read_text_output};
 use crate::mimo_text_weights::{MiMoTextWeights, stage_for_layer};
 
@@ -33,7 +36,29 @@ fn check_step(
     Ok(())
 }
 
-/// One continuing source-text sequence. `position` counts completed logits
+fn check_chunk_admission(
+    position: usize,
+    kv_position: usize,
+    max_tokens: usize,
+    failed: bool,
+    tokens: usize,
+    elements: usize,
+    stages: [usize; 2],
+) -> Result<(), &'static str> {
+    check_step(position, kv_position, max_tokens, failed)?;
+    if position != 0
+        || tokens == 0
+        || tokens > max_tokens
+        || elements != tokens * HIDDEN
+        || stages[0] != stages[1]
+    {
+        return Err("MiMo embedding chunk must fit a fresh stage-0 text sequence");
+    }
+    Ok(())
+}
+
+/// One continuing source-text sequence with optional prepared modal rows.
+/// `position` counts completed logits
 /// steps, while the KV cursor may advance before a later layer or head fails.
 pub struct MiMoCompressedTextForward<'a> {
     weights: &'a MiMoTextWeights,
@@ -42,10 +67,11 @@ pub struct MiMoCompressedTextForward<'a> {
     max_tokens: usize,
     position: usize,
     failed: bool,
+    has_modal_payload: bool,
 }
 
 impl MiMoTextWeights {
-    /// Admit a text-only compressed-KV sequence on the resident two-card model.
+    /// Admit a compressed-KV sequence on the resident two-card model.
     /// Input and generated tokens share `max_tokens`. The KV constructor
     /// enforces its capacity and caller-supplied per-card free headroom.
     pub fn compressed_text_forward<'a>(
@@ -73,12 +99,19 @@ impl<'a> MiMoCompressedTextForward<'a> {
             max_tokens,
             position: 0,
             failed: false,
+            has_modal_payload: false,
         })
     }
 
     /// Number of complete 48-layer token and logits steps.
     pub fn position(&self) -> usize {
         self.position
+    }
+
+    /// Whether this sequence consumed prepared modal embeddings. Any future
+    /// external KV key must include the payload, not only placeholder IDs.
+    pub fn has_modal_payload(&self) -> bool {
+        self.has_modal_payload
     }
 
     /// Process one source text token and return all 152,576 f32 logits.
@@ -100,6 +133,56 @@ impl<'a> MiMoCompressedTextForward<'a> {
         })
     }
 
+    /// Consume one source-ordered, stage-0 prepared embedding chunk on a
+    /// fresh sequence. Each row executes the pinned 48-layer token path and
+    /// commits its model-owned KV. Return final logits and the hidden row
+    /// needed by the separate MTP3 drafter. This is serial diagnostic prefill.
+    pub fn consume_embedding_chunk(
+        &mut self,
+        chunk: &MiMoGpuEmbeddingChunk,
+    ) -> Result<MiMoTextStep, Fail> {
+        check_chunk_admission(
+            self.position,
+            self.kv.position(),
+            self.max_tokens,
+            self.failed,
+            chunk.token_count(),
+            chunk.embeddings().len(),
+            [
+                chunk.embeddings().ordinal(),
+                self.engines[0].stream().context().ordinal(),
+            ],
+        )?;
+        let tokens = chunk.token_count();
+        for index in 0..tokens - 1 {
+            self.chunk_row::<false>(chunk, index)?;
+        }
+        let position = self.position;
+        let (logits, hidden) = self.chunk_row::<true>(chunk, tokens - 1)?;
+        self.has_modal_payload = chunk.requires_payload_identity();
+        Ok(MiMoTextStep {
+            position,
+            logits,
+            hidden_before_norm: hidden.ok_or("MiMo modal final hidden capture was omitted")?,
+        })
+    }
+
+    fn chunk_row<const CAPTURE_HIDDEN: bool>(
+        &mut self,
+        chunk: &MiMoGpuEmbeddingChunk,
+        index: usize,
+    ) -> Result<(Vec<f32>, Option<Vec<f32>>), Fail> {
+        check_step(
+            self.position,
+            self.kv.position(),
+            self.max_tokens,
+            self.failed,
+        )?;
+        self.failed = true;
+        let initial = chunk.owned_row(self.engines[0], index)?;
+        self.finish_gpu_row::<CAPTURE_HIDDEN>(initial)
+    }
+
     fn token_step<const CAPTURE_HIDDEN: bool>(
         &mut self,
         token: u32,
@@ -113,7 +196,16 @@ impl<'a> MiMoCompressedTextForward<'a> {
         // Validate the source row before any GPU or KV mutation.
         let initial = self.weights.embedding_row(token)?;
         self.failed = true;
-        let output = self.token_inner::<CAPTURE_HIDDEN>(&initial)?;
+        self.engines[0].gpu.ctx.bind_to_thread()?;
+        let initial = self.engines[0].htod(&initial)?;
+        self.finish_gpu_row::<CAPTURE_HIDDEN>(initial)
+    }
+
+    fn finish_gpu_row<const CAPTURE_HIDDEN: bool>(
+        &mut self,
+        initial: CudaSlice<f32>,
+    ) -> Result<(Vec<f32>, Option<Vec<f32>>), Fail> {
+        let output = self.token_inner_gpu::<CAPTURE_HIDDEN>(initial)?;
         if self.kv.position() != self.position + 1 {
             return Err("MiMo compressed text did not commit all 48 KV rows".into());
         }
@@ -125,12 +217,12 @@ impl<'a> MiMoCompressedTextForward<'a> {
         Ok(output)
     }
 
-    fn token_inner<const CAPTURE_HIDDEN: bool>(
+    fn token_inner_gpu<const CAPTURE_HIDDEN: bool>(
         &mut self,
-        initial: &[f32],
+        initial: CudaSlice<f32>,
     ) -> Result<(Vec<f32>, Option<Vec<f32>>), Fail> {
         self.engines[0].gpu.ctx.bind_to_thread()?;
-        let mut hidden = self.engines[0].htod(initial)?;
+        let mut hidden = initial;
         for index in 0..LAYERS {
             if index == STAGE_CUT {
                 let values = self.engines[0].dtoh(&hidden)?;
@@ -257,6 +349,82 @@ mod tests {
     use memra_gguf::config::{HfConfig, ModelConfig};
     use memra_gguf::model_packs::mimo_v2::SOURCE_PROFILE;
     use memra_gguf::model_plan::AttentionPlan;
+
+    #[test]
+    fn modal_chunk_refuses_nonfresh_or_cross_stage_kv_admission() {
+        assert!(check_chunk_admission(0, 0, 4, false, 4, 4 * HIDDEN, [0, 0]).is_ok());
+        assert!(check_chunk_admission(1, 1, 4, false, 3, 3 * HIDDEN, [0, 0]).is_err());
+        assert!(check_chunk_admission(0, 1, 4, false, 4, 4 * HIDDEN, [0, 0]).is_err());
+        assert!(check_chunk_admission(0, 0, 4, true, 4, 4 * HIDDEN, [0, 0]).is_err());
+        assert!(check_chunk_admission(0, 0, 4, false, 5, 5 * HIDDEN, [0, 0]).is_err());
+        assert!(check_chunk_admission(0, 0, 4, false, 0, 0, [0, 0]).is_err());
+        assert!(check_chunk_admission(0, 0, 4, false, 4, 4 * HIDDEN - 1, [0, 0]).is_err());
+        assert!(check_chunk_admission(0, 0, 4, false, 4, 4 * HIDDEN, [1, 0]).is_err());
+    }
+
+    #[test]
+    #[ignore = "requires pinned MiMo source and a dedicated two-card GPU lane"]
+    fn source_modal_chunk_runs_text_kv_and_preserves_text_token_bits() -> Result<(), Fail> {
+        use std::path::Path;
+        use std::sync::Arc;
+
+        use memra_gguf::source::SafetensorsSource;
+        use memra_reference::mimo_modal_overlay::{AUDIO_TOKEN_ID, IMAGE_TOKEN_ID, VIDEO_TOKEN_ID};
+
+        const FOUR_GIB: usize = 4 * 1024 * 1024 * 1024;
+        let root = std::env::var("MIMO_PINNED_SOURCE_ROOT")?;
+        let source = Arc::new(SafetensorsSource::open(Path::new(&root))?);
+        let cards = [Engine::new(0)?, Engine::new(1)?];
+        let engines = [&cards[0], &cards[1]];
+        let text = MiMoTextWeights::load(engines, source)?;
+
+        let baseline_logits = {
+            let mut sequence = text.compressed_text_forward(engines, 1, [FOUR_GIB; 2])?;
+            sequence.token(42)?
+        };
+        let prepared_text = text.modal_embedding_gpu_chunk(&cards[0], &[42], &[], &[], &[])?;
+        let text_step = {
+            let mut sequence = text.compressed_text_forward(engines, 1, [FOUR_GIB; 2])?;
+            let step = sequence.consume_embedding_chunk(&prepared_text)?;
+            assert_eq!(sequence.position(), 1);
+            assert!(!sequence.has_modal_payload());
+            step
+        };
+        assert_eq!(text_step.position, 0);
+        assert_eq!(text_step.logits.len(), 152_576);
+        assert!(
+            text_step
+                .logits
+                .iter()
+                .zip(baseline_logits)
+                .all(|(got, want)| got.to_bits() == want.to_bits())
+        );
+
+        let tokens = [42, IMAGE_TOKEN_ID, VIDEO_TOKEN_ID, AUDIO_TOKEN_ID];
+        let image = vec![vec![0.125; HIDDEN]];
+        let video = vec![vec![-0.25; HIDDEN]];
+        let audio = vec![vec![0.5; HIDDEN]];
+        let prepared =
+            text.modal_embedding_gpu_chunk(&cards[0], &tokens, &image, &video, &audio)?;
+        let mut sequence = text.compressed_text_forward(engines, 5, [FOUR_GIB; 2])?;
+        let step = sequence.consume_embedding_chunk(&prepared)?;
+        assert_eq!(step.position, 3);
+        assert_eq!(sequence.position(), 4);
+        assert!(sequence.has_modal_payload());
+        assert_eq!(step.logits.len(), 152_576);
+        assert_eq!(step.hidden_before_norm.len(), HIDDEN);
+        assert!(step.logits.iter().all(|value| value.is_finite()));
+        assert!(
+            step.hidden_before_norm
+                .iter()
+                .all(|value| value.is_finite())
+        );
+        let continuation = sequence.token(220)?;
+        assert_eq!(sequence.position(), 5);
+        assert_eq!(continuation.len(), 152_576);
+        assert!(continuation.iter().all(|value| value.is_finite()));
+        Ok(())
+    }
 
     #[test]
     fn compressed_forward_plan_keeps_source_value_scale_and_stage_census() {
