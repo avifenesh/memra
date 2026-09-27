@@ -104,6 +104,57 @@ The ninth sitting (DAY44 2.1) has read, so the day leaves text only. No clause, 
 - **Cells:** the 5090 (`rtx5090-day46/run.sh`, B = 32, L = 6,144, the 9B at 65,536) and the target card (the fifteenth
   sitting, `pro-single-b-sitting15.sh`, B = 64, L = 30,720, the 27B at the checkpoint's context), six boots each.
 
+### 1.8 Addendum C (2026-09-27, after 2.1, before the client fix)
+
+2.1 places a client defect: `day46-client.py` releases the second wave when the burst's first request ENDS, and a
+typed 429 ends about 1 s after the burst, so the second wave arrived before any admitted prime completed. The value
+reading of addendum A (the second wave on `enforce-wrel` against `enforce`) was therefore not measured. The fix: the
+second wave is released when the burst's first request completes `200` (its prime completed, so on `enforce-wrel` its
+`W` has been released). `wave2.txt` records the release time and the tag of the completion that triggered it. The
+whole cell runs again under a new receipt name (`b-day46c` on the target card, `rtx5090-day46c` on the 5090), six
+boots each. No clause, bound or reading changes; 2.1's P1 to P5 lines stand as they read.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
+
+### 2.1 The target card (the fifteenth sitting, one RTX PRO 6000 Blackwell Workstation Edition at 600 W, 2026-09-27 01:57 to 02:41Z)
+
+Chain tree `1df7e7852`; the binary built on the box from `8926ccfb3`, sha256 `263bdc37...b494211443` (the lead mirrored
+it by hash). The 27B at the checkpoint's context. The boot-derived budget is `budget_bytes=65877946064` on every boot.
+Receipts at `pro-single-day46/box/` (160 files, box manifest OK). Note (2026-09-27, from the lead): the `MANIFEST.sha256` in this mirror is the lead's mirror-time manifest, not the sitting's own. The lead's earlier mirror script wrote its manifest over the sitting's, and the originals are gone (the box copies were destroyed or overwritten). Every mirrored file is verified against the lead's manifest, which hashed the box files at mirror time, so no receipt content is affected. Every boot `rc=0` in `run.log`. The clause lines,
+verbatim, with the enforcing boots' lines alike in both orders (O1 shown; O2 reads the same numbers):
+
+```
+DAY46 P2 card=pro6000 boot=O1-enforce oom_lines=0 parked_oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY46 P1 card=pro6000 boot=O1-enforce r429=79 without_reject_line=[] retry_after_out_of_1_60=[] other_non200=[] -> PASS
+DAY46 P3 card=pro6000 boot=O1-enforce admit_lines=28 over_budget=[] -> PASS
+DAY46 P5-PROBE card=pro6000 boot=O1-enforce probe_booked=0 probe_booked_real=0 -> PASS
+DAY46 P2 card=pro6000 boot=O1-enforce-wrel oom_lines=0 parked_oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY46 P1 card=pro6000 boot=O1-enforce-wrel r429=79 without_reject_line=[] retry_after_out_of_1_60=[] other_non200=[] -> PASS
+DAY46 P3 card=pro6000 boot=O1-enforce-wrel admit_lines=28 over_budget=[] -> PASS
+DAY46 P5 card=pro6000 boot=O1-enforce-wrel w_booked=28 w_release=27 w_retire_unreleased=1 twice=[] bytes_mismatch=[] neither=[] -> PASS
+DAY46 P2-READING card=pro6000 boot=O1-shadow oom_lines=55 parked_oom_lines=0 crash_lines=0 r503=0 -> READING (the before)
+DAY46 P5-PROBE card=pro6000 boot=O1-shadow probe_booked=0 probe_booked_real=0 -> PASS
+DAY46 P4 card=pro6000 order=O1 arm=enforce rows_200_both=18 status_mismatch=79 differ=[] -> PASS
+DAY46 P4 card=pro6000 order=O1 arm=enforce-wrel rows_200_both=18 status_mismatch=79 differ=[] -> PASS
+DAY46 P4 card=pro6000 order=O2 arm=enforce rows_200_both=18 status_mismatch=79 differ=[] -> PASS
+DAY46 P4 card=pro6000 order=O2 arm=enforce-wrel rows_200_both=18 status_mismatch=79 differ=[] -> PASS
+```
+
+- **P1 to P5 PASS on all four enforcing boots, both orders.** Every refused request is a typed 429 with Retry-After in
+  1 to 60 and its own `reject-kv ... enforce=1` line: 79 per boot, 47 of the burst and all 32 of the second wave. No
+  OOM, no parked OOM, no 503, no crash. Every admitted line is within the budget (peak `booked_bytes` 64.46 GB
+  against 65.88 GB). The probe reads both books 0. On `enforce-wrel` 27 of 28 booked workspaces release at prime
+  completion and the probe's retires at once (`same-tick`). The 18 requests that are `200` on both boots of an order
+  have equal digests.
+- **The before (`shadow`, no door):** 55 OOM lines on both boots. The burst admits all 64, and 11 end `200`. The
+  booked book peaks at 231.1 GB against the 65.9 GB budget, which is the door's subject.
+- **Readings (N and the 250 ms regime per the boot's samples):** the DAY24 sequence is admitted in full on every
+  boot (9 of 9). Enforcing arms: burst 17 of 64 admitted, TTFT p50 151.8 s (N=17; the 17 primes of 30,720 run as one
+  batched prime), time to a 429 p50 1.06 s. Shadow: burst TTFT p50 524 to 529 s (N=11), second wave 32 of 32 `200` at
+  TTFT p50 312 to 316 s (N=32).
+- **The value reading was not measured.** The second wave went out 1 s after the burst, at its first 429, while the
+  17 admitted primes were still running. Their `w-release` lines land about 150 s later, at the second wave's
+  1790475568278 against 1790475417526. So both enforcing arms read the same book at the second wave (64.46 GB) and
+  refuse all 32. That is the client defect addendum C fixes; the P lines above stand.
