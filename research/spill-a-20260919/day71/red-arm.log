@@ -1,0 +1,32 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-spill-a-f2/crates/memra-engine)
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-spill-a-f2/crates/memra-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 15.63s
+     Running unittests src/lib.rs (/home/avifenesh/projects/wt-spill-a/target/debug/deps/memra_server-0db0c9a17a8abc03)
+
+running 2 tests
+test worker::tests::day71_a_landed_span_stays_resident_and_the_promote_reads_it_in_place ... FAILED
+test worker::tests::day65_the_helper_splits_its_three_maps_and_keeps_the_program ... FAILED
+
+failures:
+
+---- worker::tests::day71_a_landed_span_stays_resident_and_the_promote_reads_it_in_place stdout ----
+
+thread 'worker::tests::day71_a_landed_span_stays_resident_and_the_promote_reads_it_in_place' (4023065) panicked at crates/memra-server/src/worker.rs:58454:9:
+assertion failed: helper.contains("Some(staged) => host_hash_payload_digest(staged.as_f32_slice()),")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- worker::tests::day65_the_helper_splits_its_three_maps_and_keeps_the_program stdout ----
+
+thread 'worker::tests::day65_the_helper_splits_its_three_maps_and_keeps_the_program' (4023064) panicked at crates/memra-server/src/worker.rs:53558:9:
+assertion failed: !spawn.contains("src.to_vec()")
+
+
+failures:
+    worker::tests::day65_the_helper_splits_its_three_maps_and_keeps_the_program
+    worker::tests::day71_a_landed_span_stays_resident_and_the_promote_reads_it_in_place
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 1015 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-server --lib`
