@@ -432,6 +432,39 @@ def descriptor(root, path):
 
 
 UNPROVEN_STORAGE = "overlay/unproven — not NVMe, not spill speed"
+M1_PROVEN_STORAGE = "M1 proof: physical local NVMe (nvme-local-direct); not measured spill speed"
+M1_PROOF_TOOL = Path(__file__).resolve().parent.parent / "research/spill-f-20260919/m1-nvme-proof.py"
+M1_PROOF_SCHEMA = "m1-nvme-proof-v1"
+
+
+def m1_proof_binding(proof_path, root, out):
+    """Admit NVMe only through a passing M1 proof whose identity is this filesystem's.
+
+    The receipt is `m1-nvme-proof.py`'s public or private JSON. It must be a PASS of class
+    nvme-local-direct with no reasons, produced by the exact proof tool in this checkout, and its
+    identity triple (device, mount id, filesystem id or its hash) must equal the live identity of
+    the storage root. The receipt is copied into the capture so validation can hash it.
+    """
+    raw = Path(proof_path).read_bytes()
+    proof = json.loads(raw)
+    require(proof.get("schema") == M1_PROOF_SCHEMA, "storage proof is not an M1 proof receipt")
+    require(proof.get("verdict") == "PASS" and proof.get("class") == "nvme-local-direct"
+            and proof.get("reasons") == [], "storage proof did not PASS")
+    tool = hashlib.sha256(M1_PROOF_TOOL.read_bytes()).hexdigest()
+    require(proof.get("tool_sha256") == tool, "storage proof was produced by a different proof tool")
+    want = proof.get("A8_identity") or {}
+    live = filesystem_identity(root)
+    require(type(want.get("device")) is int and want.get("device") == live["device"]
+            and want.get("mount_id") == live.get("mount_id"), "storage proof identity is not this mount")
+    if "filesystem_id" in want:
+        require(want["filesystem_id"] == live["filesystem_id"], "storage proof filesystem id differs")
+    else:
+        live_hash = hashlib.sha256(str(live["filesystem_id"]).encode()).hexdigest()[:16]
+        require(want.get("filesystem_id_sha256_16") == live_hash, "storage proof filesystem id differs")
+    copy = out / "STORAGE-PROOF.json"
+    copy.write_bytes(raw)
+    return {"receipt": descriptor(out, copy), "tool_sha256": tool, "identity": live,
+            "proof_utc": proof.get("utc")}
 
 
 def storage_command(command):
@@ -504,8 +537,13 @@ def verify_storage_binding(storage):
     require(actual == binding, "storage object filesystem changed during execution")
 
 
-def capture_storage(path, root, allow_unproven=False, object_path=None):
-    """Read-only ancestry, retaining failed commands verbatim; no hidden fallback."""
+def capture_storage(path, root, allow_unproven=False, object_path=None, proof_path=None):
+    """Read-only ancestry, retaining failed commands verbatim; no hidden fallback.
+
+    NVMe is admitted only through `proof_path` (an M1 proof receipt bound to this mount). An
+    `nvmeXnY` name in lsblk is recorded as a hint, never as proof: an emulated or fabric NVMe has
+    the same name, and a bind mount's findmnt source carries a `[subdir]` suffix lsblk refuses.
+    """
     require(path.is_dir(), "storage root must exist")
     path = path.resolve()
     binding = storage_binding(path, object_path) if object_path is not None else None
@@ -523,19 +561,33 @@ def capture_storage(path, root, allow_unproven=False, object_path=None):
         return raw.read_text(errors="replace") if code == 0 and not expired else ""
     for name, command in commands:
         text = capture(name, command)
-    device = text.strip()
+    device = re.sub(r"\[.*\]$", "", text.strip())
     ancestry = capture("storage-ancestry", ["lsblk", "-s", "-r", "-n", "-o", "KNAME", device])
-    proven = device.startswith("/dev/") and any(re.fullmatch(
+    name_hint = device.startswith("/dev/") and any(re.fullmatch(
         r"nvme[0-9]+n[0-9]+(?:p[0-9]+)?", line.strip()) for line in ancestry.splitlines())
-    record = {"class": "nvme-ancestry" if proven else "overlay-unproven", "nvme_proven": proven,
-              "label": "NVMe ancestry only; not measured spill speed" if proven else UNPROVEN_STORAGE,
+    m1, refusal = None, None
+    if proof_path is not None:
+        try:
+            m1 = m1_proof_binding(proof_path, path, root)
+        except (OSError, ValueError) as error:  # JSONDecodeError is a ValueError
+            refusal = str(error)
+    proven = m1 is not None
+    record = {"class": "nvme-local-direct" if proven else "m1-proof-refused" if refusal
+              else "nvme-name-only-unproven" if name_hint else "overlay-unproven",
+              "nvme_proven": proven, "nvme_name_hint": name_hint,
+              "label": M1_PROVEN_STORAGE if proven else UNPROVEN_STORAGE,
               "allow_unproven_storage": allow_unproven, "root": str(path),
               "commands": captures, "qualification": False}
+    if m1 is not None:
+        record["m1_proof"] = m1
+    if refusal is not None:
+        record["m1_proof_refusal"] = refusal
     if binding is not None:
         record["object_binding"] = binding
         record["object_argument"] = str(object_path)
     (root / "STORAGE.json").write_text(json.dumps(record, indent=2) + "\n")
-    require(proven or allow_unproven, "NVMe ancestry unproven; retained STORAGE.json; --allow-unproven-storage is development only")
+    require(refusal is None, f"storage proof refused ({refusal}); retained STORAGE.json; a failing proof never downgrades to unproven")
+    require(proven or allow_unproven, "NVMe ancestry unproven (no M1 proof); retained STORAGE.json; --allow-unproven-storage is development only")
     return record
 
 
@@ -593,26 +645,39 @@ def validate_capture(record, root):
         evidence(root, snapshot["raw_log"], allow_empty=True)
     storage = record.get("storage")
     if storage is not None:
-        require(storage["qualification"] is False, "storage ancestry is not qualification")
-        if not storage["nvme_proven"]:
-            require(storage["allow_unproven_storage"] is True and storage["label"] == UNPROVEN_STORAGE,
-                    "unproven storage lacks explicit opt-in/label")
-        if "object_binding" in storage:
-            binding = storage["object_binding"]
-            command = storage_command(record["command"])
-            require(command is not None and command[2] == storage["object_argument"],
-                    "storage binding command mismatch")
-            obj, parent = Path(binding["object"]), Path(storage["root"])
-            require(obj.is_absolute() and parent.is_absolute()
-                    and obj.is_relative_to(parent) and binding["root"] == storage["root"],
-                    "storage binding path mismatch")
-            require(binding["root_filesystem"] == binding["object_filesystem"]
-                    and {"device", "filesystem_id"} <= binding["root_filesystem"].keys()
-                    and all(type(v) is int for v in binding["root_filesystem"].values()),
-                    "storage binding filesystem mismatch")
-        for capture in storage["commands"]:
-            evidence(root, capture["raw_log"], allow_empty=True)
+        validate_storage_record(storage, root, record["command"])
     return record
+
+
+def validate_storage_record(storage, root, command):
+    """Offline integrity of a capture's storage section; NVMe only with its M1 proof binding."""
+    require(storage["qualification"] is False, "storage ancestry is not qualification")
+    if not storage["nvme_proven"]:
+        require(storage["allow_unproven_storage"] is True and storage["label"] == UNPROVEN_STORAGE,
+                "unproven storage lacks explicit opt-in/label")
+    else:
+        m1 = storage.get("m1_proof")
+        require(storage["class"] == "nvme-local-direct" and storage["label"] == M1_PROVEN_STORAGE
+                and isinstance(m1, dict), "NVMe label without an M1 proof binding")
+        evidence(root, m1["receipt"])
+        proof = json.loads((root / m1["receipt"]["path"]).read_text())
+        require(proof.get("verdict") == "PASS" and proof.get("tool_sha256") == m1["tool_sha256"],
+                "archived M1 proof does not match its binding")
+    if "object_binding" in storage:
+        binding = storage["object_binding"]
+        command = storage_command(command)
+        require(command is not None and command[2] == storage["object_argument"],
+                "storage binding command mismatch")
+        obj, parent = Path(binding["object"]), Path(storage["root"])
+        require(obj.is_absolute() and parent.is_absolute()
+                and obj.is_relative_to(parent) and binding["root"] == storage["root"],
+                "storage binding path mismatch")
+        require(binding["root_filesystem"] == binding["object_filesystem"]
+                and {"device", "filesystem_id"} <= binding["root_filesystem"].keys()
+                and all(type(v) is int for v in binding["root_filesystem"].values()),
+                "storage binding filesystem mismatch")
+    for capture in storage["commands"]:
+        evidence(root, capture["raw_log"], allow_empty=True)
 
 
 def validate_cell(path):
@@ -932,6 +997,7 @@ def main():
     parser.add_argument("--schema", choices=["auto", "runs", "telemetry", "storage-cell"], default="auto")
     parser.add_argument("--storage-root", type=Path, help="actual filesystem path for this storage cell; ancestry captured before execution")
     parser.add_argument("--allow-unproven-storage", action="store_true", help="explicit overlay/unproven development mode; never NVMe/spill-speed evidence")
+    parser.add_argument("--storage-proof", type=Path, help="M1 proof receipt (m1-nvme-proof.py PASS) bound to --storage-root; the only way a root is labelled NVMe")
     parser.add_argument("--storage-samples", type=Path, help="run-id wrapped canonical StorageSample JSONL")
     parser.add_argument("--resume", action="store_true", help="read last CELL receipt; rerun in a new attempt")
     parser.add_argument("--run-id", help="stable cell identity (defaults to output directory name)")
@@ -966,12 +1032,15 @@ def main():
             args.out = args.out / "attempts" / datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
         require(not args.allow_unproven_storage or args.storage_root is not None,
                 "--allow-unproven-storage requires --storage-root")
+        require(args.storage_proof is None or args.storage_root is not None,
+                "--storage-proof requires --storage-root")
         storage_argv = storage_command(args.execute)
         require(storage_argv is None or args.storage_root is not None,
                 "storage-bench requires --storage-root; overlay needs --allow-unproven-storage")
         args.out.mkdir(parents=True, exist_ok=False)
         storage = capture_storage(args.storage_root, args.out, args.allow_unproven_storage,
-                                  Path(storage_argv[2]) if storage_argv else None) if args.storage_root else None
+                                  Path(storage_argv[2]) if storage_argv else None,
+                                  args.storage_proof) if args.storage_root else None
         token = "@COLLECTOR_LOCK_FD@"
         require(not args.external_lock or args.execute.count(token) == 1,
                 "--external-lock requires exactly one @COLLECTOR_LOCK_FD@ argument")

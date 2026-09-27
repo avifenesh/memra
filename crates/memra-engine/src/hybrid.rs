@@ -4408,7 +4408,7 @@ impl HybridModel {
                 load_prev = now;
             }
         };
-        // Include source-backed preflight reads in the same consumption audit.
+        // Include source-backed preflight reads, including checkpoint RoPE factors, in the same consumption audit.
         let recording = memra_gguf::checkpoint_binding::RecordingSource::new(src);
         let src: &dyn TensorSource = &recording;
         let (cfg, plan) = memra_gguf::model_packs::compile_for_source(src)?;

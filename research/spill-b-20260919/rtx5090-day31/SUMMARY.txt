@@ -1,0 +1,57 @@
+== card rtx5090 served_ctx=65536 model_ctx=262144
+DAY31 V-BOOT boot=O1-off arm=off door_line=present -> PASS
+DAY31 V-BOOT boot=O1-on2048 arm=on2048 door_line=present -> PASS
+DAY31 V-BOOT boot=O1-on8192 arm=on8192 door_line=present -> PASS
+DAY31 V-BOOT boot=O1-on32768 arm=on32768 door_line=present -> PASS
+DAY31 V-BOOT boot=O2-on32768 arm=on32768 door_line=present -> PASS
+DAY31 V-BOOT boot=O2-on8192 arm=on8192 door_line=present -> PASS
+DAY31 V-BOOT boot=O2-on2048 arm=on2048 door_line=present -> PASS
+DAY31 V-BOOT boot=O2-off arm=off door_line=present -> PASS
+== V-ALLOC
+DAY31 V-ALLOC card=rtx5090 boot=O1-off arm=off judged=44 match=44 mismatch=0 -> PASS
+DAY31 V-ALLOC card=rtx5090 boot=O1-on2048 arm=on2048 judged=3 match=3 mismatch=0 -> PASS
+DAY31 V-ALLOC card=rtx5090 boot=O1-on8192 arm=on8192 judged=46 match=46 mismatch=0 -> PASS
+DAY31 V-ALLOC card=rtx5090 boot=O1-on32768 arm=on32768 judged=44 match=44 mismatch=0 -> PASS
+DAY31 V-ALLOC card=rtx5090 boot=O2-on32768 arm=on32768 judged=44 match=44 mismatch=0 -> PASS
+DAY31 V-ALLOC card=rtx5090 boot=O2-on8192 arm=on8192 judged=44 match=44 mismatch=0 -> PASS
+DAY31 V-ALLOC card=rtx5090 boot=O2-on2048 arm=on2048 judged=7 match=7 mismatch=0 -> PASS
+DAY31 V-ALLOC card=rtx5090 boot=O2-off arm=off judged=44 match=44 mismatch=0 -> PASS
+== V-ID / V-TRUNC
+DAY31 V-ID card=rtx5090 order=O1 arm=on2048 vs=off eligible=1 equal=1 differ=0 slack_equal=0 slack_differ=0 -> PASS
+DAY31 V-TRUNC card=rtx5090 order=O1 arm=on2048 truncated_with_twin=2 length_without_twin=0 length_both=0 deadline_cut=0 truncated_G_outside_[v,v+8]=0
+DAY31 V-ID card=rtx5090 order=O1 arm=on8192 vs=off eligible=48 equal=48 differ=0 slack_equal=0 slack_differ=0 -> PASS
+DAY31 V-TRUNC card=rtx5090 order=O1 arm=on8192 truncated_with_twin=0 length_without_twin=0 length_both=2 deadline_cut=0 truncated_G_outside_[v,v+8]=0
+DAY31 V-ID card=rtx5090 order=O1 arm=on32768 vs=off eligible=48 equal=48 differ=0 slack_equal=0 slack_differ=0 -> PASS
+DAY31 V-TRUNC card=rtx5090 order=O1 arm=on32768 truncated_with_twin=0 length_without_twin=0 length_both=0 deadline_cut=0 truncated_G_outside_[v,v+8]=0
+DAY31 V-ID card=rtx5090 order=O2 arm=on32768 vs=off eligible=48 equal=48 differ=0 slack_equal=0 slack_differ=0 -> PASS
+DAY31 V-TRUNC card=rtx5090 order=O2 arm=on32768 truncated_with_twin=0 length_without_twin=0 length_both=0 deadline_cut=0 truncated_G_outside_[v,v+8]=0
+DAY31 V-ID card=rtx5090 order=O2 arm=on8192 vs=off eligible=45 equal=45 differ=0 slack_equal=0 slack_differ=0 -> PASS
+DAY31 V-TRUNC card=rtx5090 order=O2 arm=on8192 truncated_with_twin=0 length_without_twin=0 length_both=2 deadline_cut=0 truncated_G_outside_[v,v+8]=0
+DAY31 V-ID card=rtx5090 order=O2 arm=on2048 vs=off eligible=6 equal=6 differ=0 slack_equal=0 slack_differ=0 -> PASS
+DAY31 V-TRUNC card=rtx5090 order=O2 arm=on2048 truncated_with_twin=2 length_without_twin=0 length_both=0 deadline_cut=0 truncated_G_outside_[v,v+8]=0
+== G-NATURAL (door OFF, open classes, both orders)
+DAY31 G-NATURAL card=rtx5090 class=i n=30 min=2413 p50=3921 p90=4817 p99=5048 max=5048 over2048=30 over8192=0 over32768=0
+DAY31 G-NATURAL card=rtx5090 class=iii n=30 min=2173 p50=3724 p90=4715 p99=59715 max=59715 over2048=30 over8192=2 over32768=2
+DAY31 G-NATURAL card=rtx5090 class=iv-a n=6 min=5413 p50=5848 p90=6405 p99=6405 max=6405 over2048=6 over8192=0 over32768=0
+DAY31 G-NATURAL card=rtx5090 class=iv-b n=4 min=65458 p50=65458 p90=65458 p99=65458 max=65458 over2048=4 over8192=4 over32768=4
+DAY31 G-NATURAL card=rtx5090 class=all-open n=70 min=2173 p50=4123 p90=6405 p99=65458 max=65458 over2048=70 over8192=6 over32768=6 finish={'stop': 64, 'length': 6}
+== V-CONC / V-RETRY
+DAY31 V-CONC card=rtx5090 order=O1 arm=off window_ms=1669989 B=32 status={200: 32} finish={'stop': 27, 'length': 5} retry_after={} active_sessions_max=6.0 admission_booked_bytes_max=10075702352.0 samples=6680 shadow_budget_bytes=12831671424 burst_cost_lines=444759 burst_cost_total_mb_median=1678 arith_sessions=7
+DAY31 V-RETRY card=rtx5090 order=O1 arm=off r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY31 V-CONC card=rtx5090 order=O1 arm=on2048 window_ms=16 B=32 status={None: 32} finish={} retry_after={None: 32} active_sessions_max=None admission_booked_bytes_max=None samples=0 shadow_budget_bytes=12831671424 burst_cost_lines=0 burst_cost_total_mb_median=None arith_sessions=None
+DAY31 V-RETRY card=rtx5090 order=O1 arm=on2048 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=32 -> PASS
+DAY31 V-CONC card=rtx5090 order=O1 arm=on8192 window_ms=16 B=32 status={None: 32} finish={} retry_after={None: 32} active_sessions_max=None admission_booked_bytes_max=None samples=0 shadow_budget_bytes=12831671424 burst_cost_lines=0 burst_cost_total_mb_median=None arith_sessions=None
+DAY31 V-RETRY card=rtx5090 order=O1 arm=on8192 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=32 -> PASS
+DAY31 V-CONC card=rtx5090 order=O1 arm=on32768 window_ms=524356 B=32 status={503: 2, 429: 11, 200: 19} finish={'stop': 17, 'length': 2} retry_after={'5': 2, '60': 11} active_sessions_max=19.0 admission_booked_bytes_max=22075472424.0 samples=2098 shadow_budget_bytes=12831671424 burst_cost_lines=254 burst_cost_total_mb_median=1162.0 arith_sessions=11
+DAY31 V-RETRY card=rtx5090 order=O1 arm=on32768 r429=11 refuse_lines=11 retry_after_in_1_60=True other_non200=2 -> PASS
+DAY31 V-CONC card=rtx5090 order=O2 arm=on32768 window_ms=641206 B=32 status={503: 2, 429: 11, 200: 19} finish={'stop': 15, 'length': 4} retry_after={'5': 2, '60': 11} active_sessions_max=19.0 admission_booked_bytes_max=22183181304.0 samples=2565 shadow_budget_bytes=12831671424 burst_cost_lines=301 burst_cost_total_mb_median=1162 arith_sessions=11
+DAY31 V-RETRY card=rtx5090 order=O2 arm=on32768 r429=11 refuse_lines=11 retry_after_in_1_60=True other_non200=2 -> PASS
+DAY31 V-CONC card=rtx5090 order=O2 arm=on8192 window_ms=14 B=32 status={None: 32} finish={} retry_after={None: 32} active_sessions_max=None admission_booked_bytes_max=None samples=0 shadow_budget_bytes=12831671424 burst_cost_lines=0 burst_cost_total_mb_median=None arith_sessions=None
+DAY31 V-RETRY card=rtx5090 order=O2 arm=on8192 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=32 -> PASS
+DAY31 V-CONC card=rtx5090 order=O2 arm=on2048 window_ms=17 B=32 status={None: 32} finish={} retry_after={None: 32} active_sessions_max=None admission_booked_bytes_max=None samples=0 shadow_budget_bytes=12831671424 burst_cost_lines=0 burst_cost_total_mb_median=None arith_sessions=None
+DAY31 V-RETRY card=rtx5090 order=O2 arm=on2048 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=32 -> PASS
+DAY31 V-CONC card=rtx5090 order=O2 arm=off window_ms=1913825 B=32 status={200: 32} finish={'stop': 27, 'length': 5} retry_after={} active_sessions_max=6.0 admission_booked_bytes_max=10074621008.0 samples=7656 shadow_budget_bytes=12831671424 burst_cost_lines=322633 burst_cost_total_mb_median=1679 arith_sessions=7
+DAY31 V-RETRY card=rtx5090 order=O2 arm=off r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+== SELECT (stated, not chosen)
+DAY31 SELECT card=rtx5090 R1_smallest_zero_truncation=8192 R2_smallest_v_ge_max_natural_G=8192 (max_natural_G=6405) R3_registry=32768 R4_survey=context
+DAY31 V-DOOR card=rtx5090 boots=8 excluded=0 v_id_all=True v_alloc_all=True v_trunc_g_all=True v_retry_all=True -> PASS

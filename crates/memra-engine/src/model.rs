@@ -1548,6 +1548,15 @@ impl HostBuf {
             }),
         }
     }
+
+    /// The storage class of the authorized expert bytes for the MoE slot cache census.
+    pub fn storage_kind(&self) -> &'static str {
+        match self {
+            HostBuf::Paged(_) => "paged",
+            HostBuf::Pinned { .. } | HostBuf::PinnedAlias { .. } => "pinned",
+            HostBuf::Bounded(_) | HostBuf::Mmap { .. } => "mmap",
+        }
+    }
     #[inline]
     pub fn as_bytes(&self) -> &[u8] {
         match self {
@@ -1726,6 +1735,29 @@ fn staged_expert_row_bytes(ty: GgmlType, in_f: usize) -> Option<usize> {
     Some((in_f as u64 / block * type_size) as usize)
 }
 
+/// The MoE slot cache door's view of a GGUF stacked expert tensor inside the artifact's own
+/// mapping (`research/spill-c-20260919/DAY44.md`): the shard's shared map, its retained inode and
+/// the tensor's absolute range, so `HostBuf::Mmap` slices exactly `tensor_data`'s bytes. Only a
+/// GGUF source can answer; anything else is refused while the option is set.
+fn door_mapped_extent(
+    src: &dyn TensorSource,
+    name: &str,
+) -> Result<DiskExtent, Box<dyn std::error::Error>> {
+    let g = src.gguf().ok_or_else(|| {
+        format!("{name}: the door's mapped expert banks need a GGUF source (option set)")
+    })?;
+    let info = g
+        .find(name)
+        .ok_or_else(|| format!("missing exps tensor {name}"))?;
+    let (start, end) = g.tensor_file_range(info);
+    Ok(DiskExtent {
+        map: g.shard_mmap(info.shard).clone(),
+        file: g.shard_file(info.shard).clone(),
+        offset: start as u64,
+        len: end - start,
+    })
+}
+
 fn find_expert_disk_strict(
     src: &dyn TensorSource,
     name: &str,
@@ -1831,6 +1863,12 @@ impl HostExps {
             let s0 = ex * full_stride + row0 * row_bytes;
             buf[ex * expert_stride..(ex + 1) * expert_stride]
                 .copy_from_slice(&raw[s0..s0 + expert_stride]);
+        }
+        if e.expert_host_mapped() {
+            return Err(format!(
+                "{name}: the door's mapped expert banks do not cover a split stacked tensor (DAY44)"
+            )
+            .into());
         }
         let pinned = std::env::var("MEMRA_MOE_PINNED").is_ok()
             || std::env::var("MEMRA_MOE_CACHE").as_deref() != Ok("0");
@@ -2113,7 +2151,16 @@ impl HostExps {
         // exactly like the proven M3 `.memra-repack` path (model.rs NVFP4 disk arm). Bit-identity:
         // `expert_bytes(e)` slices the same on-disk bytes the copy would have staged. The SLRU VRAM
         // cache stacks on top unchanged. The configured whole-map advice is applied at source open.
-        if let Some(extent) = find_expert_disk_strict(src, name)? {
+        // The mapped-bank option uses the artifact mapping only when no authorized expert
+        // extent was supplied by the compiler-bound source.
+        let extent = match find_expert_disk_strict(src, name)? {
+            Some(extent) => Some(extent),
+            None if e.expert_host_mapped() => {
+                Some(ExpertDiskView::Unbound(door_mapped_extent(src, name)?))
+            }
+            None => None,
+        };
+        if let Some(extent) = extent {
             let len = extent.len();
             let qtype = match t.ggml_type {
                 GgmlType::Q8_0 => QT_Q8_0,

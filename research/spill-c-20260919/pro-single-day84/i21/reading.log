@@ -1,0 +1,21 @@
+DAY84 host demand sequence i15 sha256 4bdc2610c3534e42 lines=[22077]
+DAY84 host demand sequence i20 sha256 4bdc2610c3534e42 lines=[22077]
+DAY84 host demand sequence i21 sha256 4bdc2610c3534e42 lines=[22077]
+DAY84 host demand sequence i21c sha256 4bdc2610c3534e42 lines=[22077]
+DAY84 I21 CHECKS rig=pro-single runs=50 integrity=ok
+DAY84 ADMISSIBILITY rig=pro-single ceiling=0.005 max_iqr_gen=0.0022 max_iqr_window=0.0013 failing=[] -> admissible
+DAY84 gen-only decode medians (N=10 each): ref=0.312 i15=0.316 i20=0.315 i21=0.314 i21c=0.315
+DAY84 STEP i21_vs_i20 gen-only decode: pooled=-0.0010 o1=-0.0010 o2=-0.0020 noise=0.0022 -> flat
+DAY84 steady window medians (N=10 each): ref=0.286 i15=0.287 i20=0.286 i21=0.286 i21c=0.286
+DAY84 STEP i21_vs_i20 steady window: pooled=-0.0005 o1=+0.0000 o2=-0.0010 noise=0.0010 -> flat
+DAY84 BESIDE i21_vs_i15 gen-only decode: pooled=-0.0020 o1=-0.0020 o2=-0.0020 noise=0.0015 -> improves (deciding nothing)
+DAY84 BESIDE i21_vs_i15 steady window: pooled=-0.0010 o1=-0.0010 o2=-0.0010 noise=0.0013 -> flat (deciding nothing)
+DAY84 DOOR i21_vs_ref gen-only decode: pooled=+0.0020 o1=+0.0020 o2=+0.0020 noise=0.0010 -> loses
+DAY84 DOOR i21_vs_ref steady window: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0002 -> matches
+DAY84 I21C brackets per window token (ms, medians): dispatch_ns=0.0781 prefetch_ns=0.4415 pf_demand_ns=0.1313 pf_resident_ns=0.0028 pf_retire_ns=0.0251 pf_stage_ns=0.2261
+DAY84 B p-ref-r1: window_ms=297.0 gpu_busy=5.3311 gpu_idle=3.9501 h2d_exposed=0.6834 (ms per window token)
+DAY84 B p-on-r1: window_ms=300.0 gpu_busy=5.3251 gpu_idle=4.0499 h2d_exposed=0.7318 (ms per window token)
+DAY84 B p-on-r2: window_ms=301.0 gpu_busy=5.3334 gpu_idle=4.0729 h2d_exposed=0.7366 (ms per window token)
+DAY84 B p-ref-r2: window_ms=297.0 gpu_busy=5.3193 gpu_idle=3.9619 h2d_exposed=0.6812 (ms per window token)
+DAY84 B i21_minus_ref per window token (ms, medians of two; deciding nothing): gpu_busy=+0.0040 gpu_idle=+0.1054 h2d_exposed=+0.0519 kernel_sum=+0.0042
+DAY84 VERDICT rig=pro-single integrity=ok i21=flat door=i21 vs_ref=loses (window: i21=flat vs_ref=matches)

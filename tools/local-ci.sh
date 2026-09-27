@@ -591,6 +591,28 @@ elif [ -n "${MEMRA_CI_DBG_Q8:-}" ]; then
 else
     echo "decode-batch-gate Q8_0: SKIP (no model at $DBG_Q8)"
 fi
+# PRIME EXACTNESS ON THE 9B (memra#641, research/decode-exact-641-20260923/): one numeric
+# program per request across the prime shapes. prime-batch-exact-gate runs prime-batch-gate
+# --exact (prime_cache_batch vs prime_cache bitwise per sequence, b3-p24, b4-p1100, carried
+# b3-p600) plus its canary; prime-tick-exact-gate replays the scheduler's #641 trace (fresh then
+# carried [A, B, C] 1024-row batches, solo ticks, a [B, C] wave) plus its canary. The exact gate
+# existed but no battery ran it on the 9B, and it was red there on 9c07b398b for as long as the
+# fresh varlen FA arm lived. Bins are built EXPLICITLY (the graph-lane precedent below). About
+# 1 min on the 9B NVFP4. MEMRA_CI_PRIME_EXACT=0 skips.
+PEX_MODEL="${MEMRA_CI_CONT_MODEL:-$MODELS/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf}"
+if [ "${MEMRA_CI_PRIME_EXACT:-1}" = "1" ] && [ -f "$PEX_MODEL" ]; then
+    echo "== local-ci: prime exactness on the 9B (memra#641) =="
+    cargo build --release -p memra-engine --bin prime-batch-gate --bin concat-prime-probe \
+        || { echo "prime-exact bins BUILD FAIL: refusing to gate on stale binaries"; exit 1; }
+    tools/prime-batch-exact-gate.sh "$PEX_MODEL" || { echo "prime-batch-exact-gate FAIL"; exit 1; }
+    tools/prime-batch-exact-gate.sh "$PEX_MODEL" --canary \
+        || { echo "prime-batch-exact-gate CANARY FAIL"; exit 1; }
+    tools/prime-tick-exact-gate.sh "$PEX_MODEL" || { echo "prime-tick-exact-gate FAIL"; exit 1; }
+    tools/prime-tick-exact-gate.sh "$PEX_MODEL" --canary \
+        || { echo "prime-tick-exact-gate CANARY FAIL"; exit 1; }
+else
+    echo "prime exactness: SKIP (no 9B NVFP4 model at $PEX_MODEL or MEMRA_CI_PRIME_EXACT=0)"
+fi
 # GRAPH-WARMUP STRESS (lane/graph-warmups, 2026-08-05): the pool-growth adversarial gate
 # behind the MEMRA_GRAPH_WARMUPS=1 default. Large<->small session cycles + overlap arm force
 # captures over freed async-pool blocks; every stream must be bit-identical to eager (the #68
@@ -685,6 +707,48 @@ if [ "${MEMRA_CI_FAULTGATE:-1}" = "1" ] && [ -f "$FAULT_MODEL" ]; then
     fi
 else
     echo "request-fault gate: SKIP (no 9B NVFP4 model at $FAULT_MODEL or MEMRA_CI_FAULTGATE=0)"
+fi
+
+# SPECULATIVE CONTEXT EDGE (memra#659): open requests driven to their cap back to back under the
+# default spec route, door ON (open output 64: four open requests and a bounded control) and door
+# OFF (MEMRA_CTX=384: three runaways), plus a plain boot whose message must equal the spec one.
+# Before the fix the last speculative round of a request whose budget spans its cap wrote past the
+# session cache: every such request took the #87 NaN trap and a later admission panicked the
+# worker (`mtp_kv_fill: scratch overflow`). Wired after two consecutive green runs on the local
+# RTX 5090 (research/spec-ctx-edge-20260923/). About 20 s on the 9B NVFP4.
+# MEMRA_CI_SPEC_CTX_EDGE=0 skips.
+EDGE_MODEL=${MEMRA_CI_CONT_MODEL:-$MODELS/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf}
+if [ "${MEMRA_CI_SPEC_CTX_EDGE:-1}" = "1" ] && [ -f "$EDGE_MODEL" ]; then
+    echo "== local-ci: speculative context-edge gate (memra#659) =="
+    EDGE_OUT=$(mktemp -d -u "${TMPDIR:-/tmp}/local-ci-spec-ctx-edge.XXXXXX")
+    if tools/spec-ctx-edge-gate.sh "$EDGE_MODEL" target/release/memra-server "$EDGE_OUT"; then
+        rm -rf "$EDGE_OUT"
+    else
+        echo "spec-ctx-edge gate FAIL (receipt kept at $EDGE_OUT)"; exit 1
+    fi
+else
+    echo "spec-ctx-edge gate: SKIP (no 9B NVFP4 model at $EDGE_MODEL or MEMRA_CI_SPEC_CTX_EDGE=0)"
+fi
+
+# MEMORY-ADMISSION BURST (memra#680): the door armed (MEMRA_ADMIT_BY_MEMORY=1, open output 8192), 64
+# open requests released on one barrier. Before the fix the VRAM gate compared each arrival with
+# one live reading, which cannot see the prefill workspace the sessions admitted earlier in the
+# burst still owe, and 34 of 64 died in prefill with CUDA OOM as 503s. Now every request is served
+# or refused with a typed 429, every admission fits the booked reading, and the boot survives.
+# Wired after a red run on the unfixed tree and two consecutive green runs on the local RTX 5090
+# (research/spill-b-20260919/DAY33.md). About 7 minutes on the 9B NVFP4.
+# MEMRA_CI_ADMIT_MEM_BURST=0 skips.
+AMB_MODEL=${MEMRA_CI_CONT_MODEL:-$MODELS/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf}
+if [ "${MEMRA_CI_ADMIT_MEM_BURST:-1}" = "1" ] && [ -f "$AMB_MODEL" ]; then
+    echo "== local-ci: memory-admission burst gate (memra#680) =="
+    AMB_OUT=$(mktemp -d -u "${TMPDIR:-/tmp}/local-ci-admit-mem-burst.XXXXXX")
+    if tools/admit-mem-burst-gate.sh "$AMB_MODEL" target/release/memra-server "$AMB_OUT"; then
+        rm -rf "$AMB_OUT"
+    else
+        echo "admit-mem-burst gate FAIL (receipt kept at $AMB_OUT)"; exit 1
+    fi
+else
+    echo "admit-mem-burst gate: SKIP (no 9B NVFP4 model at $AMB_MODEL or MEMRA_CI_ADMIT_MEM_BURST=0)"
 fi
 
 # PRIME FAIRNESS (memra#521): one 131k cold prime beside three peers, both MEMRA_PRIME_YIELD

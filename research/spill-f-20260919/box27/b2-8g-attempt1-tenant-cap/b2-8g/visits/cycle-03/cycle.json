@@ -1,0 +1,76 @@
+{
+ "cycle": 3,
+ "size_bytes": 8589934592,
+ "problems": [
+  "prompts exhausted before the host tier reached the size",
+  "a probe missed the restored prefix (cached_tokens 0)",
+  "a probe missed the restored prefix (cached_tokens 0)",
+  "a probe missed the restored prefix (cached_tokens 0)",
+  "a probe missed the restored prefix (cached_tokens 0)"
+ ],
+ "prompts_sent": 128,
+ "host_bytes_before_export": 8520110208,
+ "export_window": {
+  "telemetry_ok": true,
+  "problems": [],
+  "device": {
+   "read_bytes": 0,
+   "write_bytes": 8531660800
+  }
+ },
+ "export": {
+  "entries": 67,
+  "mb": 8520.4,
+  "ms": 5173,
+  "write_ms": 3761.7,
+  "fsync_ms": 1243.1,
+  "drain_demoted": 8,
+  "skipped_over_cap": 0
+ },
+ "export_boot_exit": 0,
+ "file_bytes": 8520483458,
+ "file_sha256": "7b26ce47f0524096a7493cad0b9e9ef055b1437be9179b27185dc8874b139cc4",
+ "cold_ok": true,
+ "import_window_opened_after_done": false,
+ "import_window": {
+  "telemetry_ok": true,
+  "problems": [],
+  "device": {
+   "read_bytes": 8062631936,
+   "write_bytes": 503808
+  }
+ },
+ "import": {
+  "armed": [
+   67,
+   8520.4
+  ],
+  "done": {
+   "entries": 67,
+   "mb": 8520.4,
+   "skipped": 0,
+   "seconds": 6.1
+  },
+  "aborted": false
+ },
+ "probes": [
+  {
+   "cached_tokens": 0,
+   "identical": true
+  },
+  {
+   "cached_tokens": 0,
+   "identical": true
+  },
+  {
+   "cached_tokens": 0,
+   "identical": true
+  },
+  {
+   "cached_tokens": 0,
+   "identical": true
+  }
+ ],
+ "import_boot_exit": 0,
+ "passed": false
+}

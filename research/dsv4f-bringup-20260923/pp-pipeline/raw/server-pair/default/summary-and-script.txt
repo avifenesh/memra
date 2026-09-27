@@ -1,0 +1,32 @@
+tree pipe2 beae5264a34ba423ff9fa7ca760ab339070a096c
+build pipe2 SERVER_EXIT=0 ENGINE_EXIT=0  server 749d726628fc94c3
+V3E_DONE (written by hand: q-v3e died after its first row; q-v3e2 runs the rest after q-v3f)
+plain-unset rc=done-in-q-v3e lanes=[[dsv4-serve] dsv4f: 2 serving lane(s) (default on the plain PP matrix program; MEMRA_DSV4_SESSIONS=1 is the serial route)] CELL greedy-c1 c=1 ok=8/8 agg=44.53 tok/s decode_p50=46.26 tok/s ttft_p50=236 ms tpot_p50=21.62 ms errs=[] CELL greedy-c2 c=2 ok=8/8 agg=65.82 tok/s decode_p50=34.52 tok/s ttft_p50=379 ms tpot_p50=28.97 ms errs=[] CELL greedy-c4 c=4 ok=8/8 agg=66.35 tok/s decode_p50=34.75 tok/s ttft_p50=8017 ms tpot_p50=28.78 ms errs=[] CELL sampled-c2 c=2 ok=8/8 agg=60.51 tok/s decode_p50=31.55 tok/s ttft_p50=374 ms tpot_p50=31.69 ms errs=[] CELL sampled-c4 c=4 ok=8/8 agg=60.56 tok/s decode_p50=31.65 tok/s ttft_p50=8744 ms tpot_p50=31.59 ms errs=[] CELL greedy-c2-2k c=2 ok=8/8 agg=13.33 tok/s decode_p50=30.96 tok/s ttft_p50=15039 ms tpot_p50=32.30 ms errs=[]
+plain-one rc=0 lanes=[[dsv4-serve] dsv4f: 1 serving lane(s) (MEMRA_DSV4_SESSIONS)] CELL greedy-c1 c=1 ok=8/8 agg=44.50 tok/s decode_p50=46.22 tok/s ttft_p50=235 ms tpot_p50=21.64 ms errs=[] CELL greedy-c2 c=2 ok=8/8 agg=44.51 tok/s decode_p50=46.21 tok/s ttft_p50=5984 ms tpot_p50=21.64 ms errs=[] CELL greedy-c4 c=4 ok=8/8 agg=44.46 tok/s decode_p50=46.21 tok/s ttft_p50=17478 ms tpot_p50=21.64 ms errs=[] CELL sampled-c2 c=2 ok=8/8 agg=41.85 tok/s decode_p50=43.39 tok/s ttft_p50=6346 ms tpot_p50=23.05 ms errs=[] CELL sampled-c4 c=4 ok=8/8 agg=41.84 tok/s decode_p50=43.39 tok/s ttft_p50=18541 ms tpot_p50=23.05 ms errs=[] CELL greedy-c2-2k c=2 ok=8/8 agg=12.07 tok/s decode_p50=43.85 tok/s ttft_p50=18301 ms tpot_p50=22.81 ms errs=[]
+plain-unset-b rc=0 lanes=[[dsv4-serve] dsv4f: 2 serving lane(s) (default on the plain PP matrix program; MEMRA_DSV4_SESSIONS=1 is the serial route)] CELL greedy-c1 c=1 ok=8/8 agg=44.59 tok/s decode_p50=46.32 tok/s ttft_p50=235 ms tpot_p50=21.59 ms errs=[] CELL greedy-c2 c=2 ok=8/8 agg=66.75 tok/s decode_p50=34.94 tok/s ttft_p50=373 ms tpot_p50=28.62 ms errs=[] CELL greedy-c4 c=4 ok=8/8 agg=66.99 tok/s decode_p50=35.14 tok/s ttft_p50=7924 ms tpot_p50=28.45 ms errs=[] CELL sampled-c2 c=2 ok=8/8 agg=60.72 tok/s decode_p50=31.63 tok/s ttft_p50=375 ms tpot_p50=31.62 ms errs=[] CELL sampled-c4 c=4 ok=8/8 agg=61.05 tok/s decode_p50=31.82 tok/s ttft_p50=8690 ms tpot_p50=31.42 ms errs=[] CELL greedy-c2-2k c=2 ok=8/8 agg=13.35 tok/s decode_p50=30.98 tok/s ttft_p50=15015 ms tpot_p50=32.28 ms errs=[]
+plain-one-b rc=0 lanes=[[dsv4-serve] dsv4f: 1 serving lane(s) (MEMRA_DSV4_SESSIONS)] CELL greedy-c1 c=1 ok=8/8 agg=44.49 tok/s decode_p50=46.20 tok/s ttft_p50=235 ms tpot_p50=21.64 ms errs=[] CELL greedy-c2 c=2 ok=8/8 agg=44.50 tok/s decode_p50=46.20 tok/s ttft_p50=5988 ms tpot_p50=21.65 ms errs=[] CELL greedy-c4 c=4 ok=8/8 agg=44.46 tok/s decode_p50=46.20 tok/s ttft_p50=17483 ms tpot_p50=21.65 ms errs=[] CELL sampled-c2 c=2 ok=8/8 agg=41.89 tok/s decode_p50=43.41 tok/s ttft_p50=6343 ms tpot_p50=23.04 ms errs=[] CELL sampled-c4 c=4 ok=8/8 agg=41.85 tok/s decode_p50=43.40 tok/s ttft_p50=18535 ms tpot_p50=23.04 ms errs=[] CELL greedy-c2-2k c=2 ok=8/8 agg=12.06 tok/s decode_p50=43.76 tok/s ttft_p50=18307 ms tpot_p50=22.85 ms errs=[]
+dspark-unset rc=0 lanes=[[dsv4-serve] dsv4f: 1 serving lane(s) (default)] CELL greedy-c1 c=1 ok=8/8 agg=55.42 tok/s decode_p50=58.92 tok/s ttft_p50=294 ms tpot_p50=16.97 ms errs=[] CELL greedy-c2 c=2 ok=8/8 agg=55.59 tok/s decode_p50=59.10 tok/s ttft_p50=4837 ms tpot_p50=16.92 ms errs=[] CELL greedy-c4 c=4 ok=8/8 agg=55.63 tok/s decode_p50=59.16 tok/s ttft_p50=13647 ms tpot_p50=16.90 ms errs=[] CELL sampled-c2 c=2 ok=8/8 agg=49.01 tok/s decode_p50=50.75 tok/s ttft_p50=5343 ms tpot_p50=19.70 ms errs=[] CELL sampled-c4 c=4 ok=8/8 agg=49.00 tok/s decode_p50=50.76 tok/s ttft_p50=14701 ms tpot_p50=19.70 ms errs=[]
+V3E_DONE
+---
+#!/usr/bin/env bash
+# q-v3e2.sh: the rest of q-v3e.sh (its row() read $1 after shift and died under set -u after
+# the first row, plain-unset, which completed). Same binary (beae5264a build), after q-v3f.sh.
+while ! grep -q V3F_DONE /root/rcpt/q-v3f.summary 2>/dev/null; do sleep 30; done
+set -u
+S=/root/rcpt/q-v3e.summary; R=/root/rcpt/pipe/default
+B=/root/lane/target-pipe2/release/memra-server
+wait_lock() { while ! flock -n /tmp/memra-gpu.lock true; do sleep 10; done; }
+d=$R/plain-unset
+echo "plain-unset rc=done-in-q-v3e lanes=[$(grep -h 'serving lane' $d/serve.log | cut -c1-160)] $(grep -hE 'CELL ' $d/controller.log 2>/dev/null | grep -v warmup | cut -c1-150 | tr '\n' ' ')" >> $S
+row() {  # row <name> <cells> [env...]
+  local name=$1 cells=$2; shift 2; local d=$R/$name; wait_lock
+  /root/box/cell.sh $d $B $cells "$@" > $d.out 2>&1
+  local rc=$?
+  echo "$name rc=$rc lanes=[$(grep -h 'serving lane' $d/serve.log | cut -c1-160)] $(grep -hE 'CELL ' $d/controller.log 2>/dev/null | grep -v warmup | cut -c1-150 | tr '\n' ' ')" >> $S
+}
+row plain-one /root/box/cells-pipe2.txt MEMRA_DSV4_SESSIONS=1
+row plain-unset-b /root/box/cells-pipe2.txt
+row plain-one-b /root/box/cells-pipe2.txt MEMRA_DSV4_SESSIONS=1
+row dspark-unset /root/box/cells-pipe.txt MEMRA_DSV4_DRAFTER=dspark
+echo V3E_DONE >> $S
+echo V3E2_DONE >> /root/rcpt/q-v3e2.summary

@@ -1,0 +1,136 @@
+regtime cell rc=0 exits:      30 0 
+regpool cell rc=0
+== pins and counters
+home_l3=0-23
+one=0,1,2,3,4,5,6,7,8,9,10,11
+sampler_cpu=23
+counters=--cpu-probe-counters
+== counters check
+[cpu-probe] counters-check cpu=1 rdpru=ok cpu_after=1 wall_ns=1528888 tsc=6571234 mperf=6571000 aperf=8745000
+rc=0
+== calls (first 3 and count)
+D/art.gguf 55 88 13
+D/art.gguf 55 88 13 --experts-via-tier --expert-bank-host-bytes=17179869184
+D/art.gguf 55 88 13 --experts-via-tier --expert-bank-host-bytes=17179869184 --expert-bank-pool-registered
+57
+== run exits
+     26 0
+== sampler row kinds
+    642 B    5136 C    4784 D      96 DH       4 EH     214 H    4299 I     126 IH     214 N    1241 S      10 SH    2256 T     213 V 
+== census runs: 2, census attempts: 0 (the stub is a script, named bash, so the census finds no run-gen-p80 and writes nothing)
+== inducer
+memfree_gib=6 F_gib=1 induce=1
+== rewarm rows: 26
+13:34:43.863605705	o1-refi-r1	5 ms
+13:34:46.13889092	o1-di-r1	6 ms
+== compactor rows (labels, ready, loop, stopped)
+o1-refi-r1
+ready	fragmented_gib=1.0	setup_s=0.4	cpu_s=0.4
+loop	trigger=none
+stopped	maps=37	triggers=0	cpu_s=1.8
+o1-di-r1
+ready	fragmented_gib=1.0	setup_s=0.4	cpu_s=0.4
+loop	trigger=none
+stopped	maps=44	triggers=0	cpu_s=1.8
+o1-dri-r1
+ready	fragmented_gib=1.0	setup_s=0.4	cpu_s=0.4
+loop	trigger=none
+stopped	maps=43	triggers=0	cpu_s=1.7
+o1-refi-r2
+ready	fragmented_gib=1.0	setup_s=0.4	cpu_s=0.4
+loop	trigger=none
+stopped	maps=43	triggers=0	cpu_s=1.7
+o1-di-r2
+ready	fragmented_gib=1.0	setup_s=0.4	cpu_s=0.4
+loop	trigger=none
+stopped	maps=43	triggers=0	cpu_s=1.7
+o1-dri-r2
+ready	fragmented_gib=1.0	setup_s=0.4	cpu_s=0.4
+loop	trigger=none
+stopped	maps=43	triggers=0	cpu_s=1.7
+o1-refi-r3
+ready	fragmented_gib=1.0	setup_s=0.4	cpu_s=0.4
+loop	trigger=none
+stopped	maps=42	triggers=0	cpu_s=1.7
+o1-di-r3
+ready	fragmented_gib=1.0	setup_s=0.4	cpu_s=0.4
+loop	trigger=none
+stopped	maps=43	triggers=0	cpu_s=1.7
+o1-dri-r3
+ready	fragmented_gib=1.0	setup_s=0.4	cpu_s=0.4
+loop	trigger=none
+stopped	maps=43	triggers=0	cpu_s=1.7
+o1-refi-r4
+ready	fragmented_gib=1.0	setup_s=0.4	cpu_s=0.4
+loop	trigger=none
+stopped	maps=44	triggers=0	cpu_s=1.8
+o1-di-r4
+ready	fragmented_gib=1.0	setup_s=0.4	cpu_s=0.4
+loop	trigger=none
+stopped	maps=44	triggers=0	cpu_s=1.8
+o1-dri-r4
+ready	fragmented_gib=1.0	setup_s=0.4	cpu_s=0.4
+loop	trigger=none
+stopped	maps=44	triggers=0	cpu_s=1.8
+o2-dri-r1
+ready	fragmented_gib=1.0	setup_s=0.4	cpu_s=0.4
+loop	trigger=none
+stopped	maps=44	triggers=0	cpu_s=1.8
+o2-di-r1
+ready	fragmented_gib=1.0	setup_s=0.4	cpu_s=0.4
+loop	trigger=none
+stopped	maps=44	triggers=0	cpu_s=1.7
+o2-refi-r1
+ready	fragmented_gib=1.0	setup_s=0.4	cpu_s=0.4
+loop	trigger=none
+stopped	maps=44	triggers=0	cpu_s=1.8
+o2-dri-r2
+ready	fragmented_gib=1.0	setup_s=0.4	cpu_s=0.4
+loop	trigger=none
+stopped	maps=44	triggers=0	cpu_s=1.7
+o2-di-r2
+ready	fragmented_gib=1.0	setup_s=0.4	cpu_s=0.4
+loop	trigger=none
+stopped	maps=44	triggers=0	cpu_s=1.8
+o2-refi-r2
+ready	fragmented_gib=1.0	setup_s=0.5	cpu_s=0.4
+loop	trigger=none
+stopped	maps=45	triggers=0	cpu_s=1.8
+o2-dri-r3
+ready	fragmented_gib=1.0	setup_s=0.5	cpu_s=0.4
+loop	trigger=none
+stopped	maps=44	triggers=0	cpu_s=1.8
+o2-di-r3
+ready	fragmented_gib=1.0	setup_s=0.5	cpu_s=0.4
+loop	trigger=none
+stopped	maps=45	triggers=0	cpu_s=1.8
+o2-refi-r3
+ready	fragmented_gib=1.0	setup_s=0.4	cpu_s=0.4
+loop	trigger=none
+stopped	maps=43	triggers=0	cpu_s=1.7
+o2-dri-r4
+ready	fragmented_gib=1.0	setup_s=0.4	cpu_s=0.4
+loop	trigger=none
+stopped	maps=43	triggers=0	cpu_s=1.7
+o2-di-r4
+ready	fragmented_gib=1.0	setup_s=0.4	cpu_s=0.4
+loop	trigger=none
+stopped	maps=43	triggers=0	cpu_s=1.7
+o2-refi-r4
+ready	fragmented_gib=1.0	setup_s=0.4	cpu_s=0.4
+loop	trigger=none
+stopped	maps=43	triggers=0	cpu_s=1.7
+ready	fragmented_gib=1.0	setup_s=0.4	cpu_s=0.4
+loop	trigger=none
+stopped	maps=43	triggers=0	cpu_s=1.7
+ready	fragmented_gib=1.0	setup_s=0.4	cpu_s=0.4
+loop	trigger=none
+stopped	maps=43	triggers=0	cpu_s=1.7
+== host state files
+host-after.txt 176 lines, kernel 7.0.0-34-generic
+host-before.txt 176 lines, kernel 7.0.0-34-generic
+== cell tail
+memfree_gib=6 F_gib=1 induce=1
+regpool cell done:      26 0 
+== leftover processes (none expected)
+none

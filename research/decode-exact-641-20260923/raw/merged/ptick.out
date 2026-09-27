@@ -1,0 +1,15 @@
+    tickshape: T_a=2048 T_b=2048 T_c=4096 tick=1024 steps=32 join=4 ctx=4192 arms=["ref", "ref2", "tick", "bp", "bps", "wave"] canary=false
+    arm ref prime: logits bitdiff=0 maxabs=0.000000e0 argmax ref=82 arm=82 | h_seed bitdiff=0 | hidden bitdiff=0 maxabs=0.000000e0 first_row=None | cache digests differ 0/66 first=[]
+    arm ref verdict: EXACT
+    arm ref2 prime: logits bitdiff=0 maxabs=0.000000e0 argmax ref=82 arm=82 | h_seed bitdiff=0 | hidden bitdiff=0 maxabs=0.000000e0 first_row=None | cache digests differ 0/66 first=[]
+    arm ref2 verdict: EXACT
+    arm tick prime: logits bitdiff=0 maxabs=0.000000e0 argmax ref=82 arm=82 | h_seed bitdiff=0 | hidden bitdiff=0 maxabs=0.000000e0 first_row=None | cache digests differ 0/66 first=[]
+    arm tick verdict: EXACT
+    arm bp prime: logits bitdiff=0 maxabs=0.000000e0 argmax ref=82 arm=82 | h_seed bitdiff=0 | hidden bitdiff=0 maxabs=0.000000e0 first_row=None | cache digests differ 0/66 first=[]
+    arm bp verdict: EXACT
+    arm bps prime: logits bitdiff=0 maxabs=0.000000e0 argmax ref=82 arm=82 | h_seed bitdiff=0 | hidden bitdiff=0 maxabs=0.000000e0 first_row=None | cache digests differ 0/66 first=[]
+    arm bps verdict: EXACT
+    arm wave prime: logits bitdiff=0 maxabs=0.000000e0 argmax ref=82 arm=82 | h_seed bitdiff=0 | hidden bitdiff=0 maxabs=0.000000e0 first_row=None | cache digests differ 0/66 first=[]
+    arm wave verdict: EXACT
+    tickshape verdict: ALL ARMS EXACT
+prime-tick-exact-gate: PASS (every prime shape is bit-identical to the solo prime; log /home/avifenesh/projects/wt-decode-exact-641/research/decode-exact-641-20260923/raw/merged/ptick-naked.probe.log)

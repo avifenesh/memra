@@ -1,0 +1,41 @@
+2026-09-23T02:38:51Z lock held by the collector (external)
+i-L2-r3 | 200 | stop | 5805 | 443 | 0 | spec | 31552 | 38645 | 1217307712 | 197136896 | own | d89b9f6fbe576fd1
+i-L2-r4 | 200 | stop | 5803 | 354 | 0 | spec | 31552 | 38643 | 1217244608 | 194265664 | own | 3919c4481fbdf3c6
+ii-L2-r0 | 200 | length | 5706 | 96 | 0 | spec | 31552 | 5866 | 183064704 | 183064704 | own | 8e49ce42eb02d040
+ii-L2-r1 | 200 | length | 5702 | 96 | 0 | spec | 31552 | 5862 | 182938496 | 182938496 | own | e4b5da359af29ee7
+ii-L2-r2 | 200 | length | 5695 | 96 | 0 | spec | 31552 | 5855 | 182717632 | 182717632 | own | c2290618f88eddef
+ii-L2-r3 | 200 | length | 5692 | 96 | 0 | spec | 31552 | 5852 | 182622976 | 182622976 | own | fbc8f08e6584297e
+ii-L2-r4 | 200 | length | 5689 | 96 | 0 | spec | 31552 | 5849 | 182528320 | 182528320 | own | e37d6f3c78f9506b
+iii-L0-r0 | 200 | stop | 1572 | 384 | 1440 | spec | 31552 | 34412 | 1083748096 | 61715712 | own | e6cae58d25ec5212
+iii-L0-r1 | 200 | stop | 1565 | 239 | 1440 | spec | 31552 | 34405 | 1083527232 | 56919808 | own | 0f597aa12cc2f470
+iii-L0-r2 | 200 | stop | 1595 | 227 | 1440 | spec | 31552 | 34435 | 1084473792 | 57487744 | own | 4f0cd8b7196f698e
+iii-L0-r3 | 200 | stop | 1563 | 484 | 1440 | spec | 31552 | 34403 | 1083464128 | 64586944 | own | 3762af9db4e1a58e
+iii-L0-r4 | 200 | stop | 1580 | 561 | 1440 | spec | 31552 | 34420 | 1084000512 | 67552832 | own | b0f54b1abf597164
+iii-L1-r0 | 200 | stop | 3236 | 564 | 3104 | spec | 31552 | 36076 | 1136250624 | 119897600 | own | 8e6d6de047f93756
+iii-L1-r1 | 200 | stop | 3220 | 621 | 3104 | spec | 31552 | 36060 | 1135745792 | 121191232 | own | 71887d3de0e24c50
+iii-L1-r2 | 200 | stop | 3228 | 407 | 3104 | spec | 31552 | 36068 | 1135998208 | 114691520 | own | 9330813b3077925a
+iii-L1-r3 | 200 | stop | 3234 | 319 | 3104 | spec | 31552 | 36074 | 1136187520 | 112104256 | own | a23f01e9c9e1b21f
+iii-L1-r4 | 200 | stop | 3223 | 211 | 3104 | spec | 31552 | 36063 | 1135840448 | 108349568 | own | b830e8d33bd74660
+iii-L2-r0 | 200 | stop | 5887 | 345 | 5760 | spec | 31552 | 38727 | 1219894976 | 196632064 | own | 4e0d63bf17fb63be
+iii-L2-r1 | 200 | stop | 5884 | 487 | 5760 | spec | 31552 | 38724 | 1219800320 | 201017792 | own | 03589d2a7c362004
+iii-L2-r2 | 200 | stop | 5884 | 576 | 5760 | spec | 31552 | 38724 | 1219800320 | 203825920 | inherited | 955b094b98f6cb95
+iii-L2-r3 | 200 | stop | 5868 | 354 | 5760 | spec | 31552 | 38708 | 1219295488 | 196316544 | own | 87dbcb35db8ba851
+iii-L2-r4 | 200 | stop | 5885 | 539 | 5760 | spec | 31552 | 38725 | 1219831872 | 202690048 | own | 00ce778e1f229fb0
+iv-a-r0 | 200 | length | 1661 | 32776 | 0 | spec | 31552 | 34501 | 1086556224 | 1086556224 | own | bee32c78c77c868a
+iv-a-r1 | 500 | None | None | None | None | spec | 31552 | 34501 | None | None | own | -
+iv-a-r2 | 500 | None | None | None | None | spec | 31552 | 34502 | None | None | own | -
+iv-b-r0 | 200 | stop | 120 | 18443 | 0 | spec | 31552 | 32960 | 1037934592 | 585699776 | own | 60441a147a9a2c34
+iv-b-r1 | 500 | None | None | None | None | spec | 31552 | 32960 | None | None | inherited | -
+iv-b-r2 | 200 | length | 120 | 32773 | 0 | spec | 31552 | 32960 | 1037934592 | 1037839936 | inherited | a9e825f3253ad43d
+== burst
+window_ms=96283 B=64 status={429: 17, 200: 47} finish={'stop': 47} retry_after={'60': 17}
+active_sessions_max=47.0 admission_booked_bytes_max=96260417960.0 samples=385 shadow_budget_bytes=65881157328 burst_cost_lines=74 burst_cost_total_mb_median=2046.0 arith_sessions=32
+admit_mem_id_lines=35 by_verdict={'defer': 18, 'refuse': 17} reclaim_lines=0
+[admit-mem] id=chatcmpl-0aa016e76ba46ed2e880595c272873d6 model="q38" verdict=defer prompt=1373 output_bound=- charged_ctx=34213 est_bytes=20084024520 est_context=1015989248 est_fixed=19068035272 device_free=19867194936 host_free=0 demotable=0 short_by=216829584 inflight=46 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-4974d53fcf7f7d3ac190c8a4721c9c3f model="q38" verdict=defer prompt=1375 output_bound=- charged_ctx=34215 est_bytes=20085042376 est_context=1016048640 est_fixed=19068993736 device_free=19867194936 host_free=0 demotable=0 short_by=217847440 inflight=46 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-d20bf81dd50cb6da2b6198c7b6105735 model="q38" verdict=defer prompt=1374 output_bound=- charged_ctx=34214 est_bytes=20084533448 est_context=1016018944 est_fixed=19068514504 device_free=19867194936 host_free=0 demotable=0 short_by=217338512 inflight=46 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-d8c2864c08f8b9bdbdd7aca3fdb85b40 model="q38" verdict=defer prompt=1371 output_bound=- charged_ctx=34211 est_bytes=20083006664 est_context=1015929856 est_fixed=19067076808 device_free=19867194936 host_free=0 demotable=0 short_by=215811728 inflight=46 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-7541b10b7cf388b186b9549337e3319b model="q38" verdict=defer prompt=1371 output_bound=- charged_ctx=34211 est_bytes=20083006664 est_context=1015929856 est_fixed=19067076808 device_free=19867194936 host_free=0 demotable=0 short_by=215811728 inflight=46 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-87fc97fec8e1a767cea600b22467f0cb model="q38" verdict=defer prompt=1372 output_bound=- charged_ctx=34212 est_bytes=20083515592 est_context=1015959552 est_fixed=19067556040 device_free=19867194936 host_free=0 demotable=0 short_by=216320656 inflight=46 cap=64 waited_ms=0 retry_after_s=-
+... 29 more [admit-mem] id= lines in server.log
+== open-class G (this boot): n=33 min=211 p50=497 max=32776 stop=31 length=2 other=0

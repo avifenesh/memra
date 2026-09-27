@@ -121,6 +121,15 @@ fn forced_decode_tokens() -> Result<Option<Vec<u32>>, Box<dyn std::error::Error>
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // DAY71 (`research/spill-c-20260919/DAY71.md`): --cpu-probe-counters-check (log only) prints one counted chain
+    // and exits before any engine work, so a cell learns in a separate process that `RDPRU` runs on this host.
+    if std::env::args().any(|a| a == "--cpu-probe-counters-check") {
+        eprintln!(
+            "[cpu-probe] {}",
+            memra_engine::cpu_probe::counters_check_line()
+        );
+        return Ok(());
+    }
     let path = std::env::args().nth(1).expect(
         "usage: run-gen <model.gguf|hf_dir|hf:owner/repo[:file]> [tok ids...] | --prompt \"text\"",
     );
@@ -129,6 +138,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // door and its typed budgets, parsed once here and handed to the installer (no env read).
     let expert_bank = memra_engine::banked_residency::expert_bank_cli(std::env::args())?;
     let e = Engine::new(0)?;
+    // DAY44: under the door the expert banks load as views of the artifact's mapping; the door
+    // never stages from them, so no pinned copy is made.
+    e.set_expert_host_mapped(expert_bank.is_some());
+    // DAY68 (`research/spill-c-20260919/DAY68.md`): --cpu-probe-phases (log only): a short compute chain at the
+    // start and at each stage-line point, all outside the timed spans.
+    let cpu_probe_phases = std::env::args().any(|a| a == "--cpu-probe-phases");
+    // DAY71: --cpu-probe-counters (log only, with --cpu-probe-phases): each phase probe also reads the core's TSC,
+    // MPERF and APERF around its chain.
+    let cpu_probe_counters = std::env::args().any(|a| a == "--cpu-probe-counters");
+    if cpu_probe_phases {
+        eprintln!(
+            "[cpu-probe] {}",
+            memra_engine::cpu_probe::phase_line("start", cpu_probe_counters)
+        );
+    }
+    // DAY60: --moe-dispatch-clock (log only, both the legacy slot cache and the door): the cache
+    // brackets its dispatch and prefetch entry points, printed at the stage-line phase points.
+    let dispatch_clock = std::env::args().any(|a| a == "--moe-dispatch-clock");
+    e.set_moe_dispatch_clock(dispatch_clock);
     // DIRECTORY path = safetensors HF checkpoint (MiniMax-M3 first-load path) OR a memra repack
     // dir (Hy3 Q4_K transcode: manifest.json + tensors/ + experts/). GGUF stays the dense norm.
     if std::path::Path::new(&path).is_dir() {
@@ -584,6 +612,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // this timed decode window reports its own hit rate, H2D bytes, and worker-I/O deltas.
             e.moe_cache_reset_counters();
             let pread_before = e.moe_pread_stats();
+            let stages_before = e.moe_pread_stage_stats();
             let cpu_before = e.cpu_expert_stats();
             let cpu_wait_before = e.cpu_expert_exposed_wait_ns();
             let cpu_residency_before = e.cpu_expert_gpu_residency_stats();
@@ -783,6 +812,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     after.4.saturating_sub(before.4),
                 );
             }
+            if let (Some(before), Some(after)) = (stages_before, e.moe_pread_stage_stats()) {
+                println!(
+                    "spill stages DECODE-WINDOW: {}",
+                    after.since(&before).fields()
+                );
+            }
             if let (Some(before), Some(after), Some(wait_before), Some(wait_after)) = (
                 cpu_before,
                 e.cpu_expert_stats(),
@@ -879,6 +914,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                         e.moe_cache_reset_counters();
                         let warm_pread_before = e.moe_pread_stats();
+                        let warm_stages_before = e.moe_pread_stage_stats();
                         let warm_cpu_before = e.cpu_expert_stats();
                         let warm_cpu_wait_before = e.cpu_expert_exposed_wait_ns();
                         let warm_residency_before = e.cpu_expert_gpu_residency_stats();
@@ -948,6 +984,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 after.5.saturating_sub(before.5),
                                 after.6.saturating_sub(before.6),
                                 after.4.saturating_sub(before.4),
+                            );
+                        }
+                        if let (Some(before), Some(after)) =
+                            (warm_stages_before, e.moe_pread_stage_stats())
+                        {
+                            println!(
+                                "spill stages STEADY-STATE rep {rep}: {}",
+                                after.since(&before).fields()
                             );
                         }
                         if let (Some(before), Some(after), Some(wait_before), Some(wait_after)) = (
@@ -1022,7 +1066,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let g = GgufFile::open(&path)?;
     let model = HybridModel::load_without_mtp(&e, &g)?;
-    let _expert_bank_owner = match expert_bank {
+    let expert_bank_owner = match expert_bank {
         Some(budget) => Some(match e.install_expert_bank_gate(&model, &g, budget) {
             Ok(gate) => gate,
             Err(err) => {
@@ -1452,6 +1496,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             cudaProfilerStart();
         }
     }
+    // --expert-bank-stages (DAY40): the door's cumulative stage line at each phase boundary.
+    let stage_line = |phase: &str| {
+        if let Some(gate) = &expert_bank_owner {
+            gate.print_stage_line(phase);
+        }
+        if dispatch_clock && let Some(line) = e.moe_dispatch_clock_line() {
+            eprintln!("[moe-cache] dispatch-clock phase={phase} {line}");
+        }
+        if cpu_probe_phases {
+            eprintln!(
+                "[cpu-probe] {}",
+                memra_engine::cpu_probe::phase_line(phase, cpu_probe_counters)
+            );
+        }
+    };
+    stage_line("gate");
     let t0 = std::time::Instant::now();
     let gen_out = model.generate_with(&e, &prompt, &params, &mut sampler, |id| {
         emitted_ids.push(id);
@@ -1492,6 +1552,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         gen_out.stop_reason
     );
     println!("tokens: {out:?}");
+    stage_line("generate");
 
     // --- EDGE-1 §D.4: MoE residency-cache PCIe report. The Stage-1 (no-cache) baseline re-stages
     //     every routed block every layer every token = `stage1_h2d_per_token()` (~907 MB/decode-token
@@ -1529,10 +1590,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ll = model.decode_step(&e, t, &mut warm_cache)?;
             }
             e.moe_cache_reset_counters(); // measure ONLY the steady-state window below
+            stage_line("warm");
+            // Host wall of the measured window (DAY40): every decode_step returns host logits, so
+            // the window is complete when the loop ends; no sync is added.
+            let window_started = std::time::Instant::now();
             for _ in 0..n_measure {
                 let next = argmax(&ll) as u32;
                 ll = model.decode_step(&e, next, &mut warm_cache)?;
             }
+            println!(
+                "MoE cache STEADY-STATE window: {n_measure} decode steps in {:.3}s",
+                window_started.elapsed().as_secs_f64()
+            );
+            stage_line("window");
             if let Some((h2, m2, s2, _)) = e.moe_cache_stats() {
                 let mb_tok = (s2 as f64 / (1024.0 * 1024.0)) / n_measure as f64;
                 let tot2 = h2 + m2;
@@ -1554,6 +1624,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 );
             }
         }
+    }
+
+    // DAY67 (`research/spill-c-20260919/DAY67.md`): --cpu-probe (log only), on this thread after every timed phase.
+    if std::env::args().any(|a| a == "--cpu-probe") {
+        let probe = memra_engine::cpu_probe::run(memra_engine::cpu_probe::DAY67_SIZES);
+        eprintln!("[cpu-probe] {}", probe.line());
     }
 
     // --- detokenize the output ids back to TEXT (text path only) ---

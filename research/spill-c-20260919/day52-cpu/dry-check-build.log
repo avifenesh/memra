@@ -1,0 +1,10 @@
+# day52-box-build.sh logic dry check with a fake cargo (writes 'fake <bin> <HEAD>' files), labels base, i6, final; no real build
+binary=run-gen tree=08210a29102045239bd2c0b9a69941ecc3d6bc5f sha256=6cc731f593e075df227c88c515231c97c93ac36a5619fa4b24963efc0b46738f
+binary=run-gen-i6 tree=51467de1266276761ba63585b5dee4187a790ea3 sha256=857207efb9648d2ef0e27ecead895ddb4351a1d158d8fb433031b2113147290b
+binary=run-gen-final tree=6745fd062d8e1145c917ede32e4cc3caf0c3d31d sha256=32401a57094166fd711cfda7d9b8f760390ad6e1df490995b8cdbe7a8a4a1f2f
+binary=run-spec-final tree=6745fd062d8e1145c917ede32e4cc3caf0c3d31d sha256=3d3a6ce728536dccb25a4bd64c0ffdc800516d14d35337a01329eb00415c6f83
+BUILDS-DONE 2026-09-24T19:41:11Z
+run-gen: fake run-gen 08210a29102045239bd2c0b9a69941ecc3d6bc5f
+run-gen-final: fake run-gen 6745fd062d8e1145c917ede32e4cc3caf0c3d31d
+run-gen-i6: fake run-gen 51467de1266276761ba63585b5dee4187a790ea3
+run-spec-final: fake run-spec 6745fd062d8e1145c917ede32e4cc3caf0c3d31d

@@ -1,0 +1,22 @@
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers); batch=4
+[fa-pool] grow #0 dev=0 o_len 0 -> 73728 ml_len 0 -> 288 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 73728 -> 147456 ml_len 288 -> 576 (retired kept, zero=false)
+seq 0 (T=1100): prefill argmax batched=248046 individual=248046 MATCH
+seq 0: exact logits diff 248318/248320 h_seed diff 4096/4096 hidden diff 4505595/4505600
+seq 1 (T=1117): prefill argmax batched=220 individual=220 MATCH
+seq 1: exact logits diff 248320/248320 h_seed diff 4096/4096 hidden diff 4575223/4575232
+seq 2 (T=1134): prefill argmax batched=248046 individual=248046 MATCH
+seq 2: exact logits diff 248320/248320 h_seed diff 4096/4096 hidden diff 4644860/4644864
+seq 3 (T=1151): prefill argmax batched=220 individual=220 MATCH
+seq 3: exact logits diff 248320/248320 h_seed diff 4096/4096 hidden diff 4714490/4714496
+seq 0: decode-16 stream MATCH
+seq 0: teacher-forced decode logit diff 3973118
+seq 1: decode-16 stream MATCH
+seq 1: teacher-forced decode logit diff 3973112
+seq 2: decode-16 stream MATCH
+seq 2: teacher-forced decode logit diff 3973113
+seq 3: decode-16 stream MATCH
+seq 3: teacher-forced decode logit diff 3973115
+Error: "prime-batch-gate: 8 FAIL(s)"

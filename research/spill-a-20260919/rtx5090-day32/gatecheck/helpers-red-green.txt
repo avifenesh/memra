@@ -1,0 +1,24 @@
+promote_spans_refusal_matches_receipt green: promote refusal handed back 96 span(s); the next H2D receipt landed 96
+ rc=0
+promote_spans_refusal_matches_receipt red1: promote refusal handed back 96 span(s); the next H2D receipt landed 95
+ rc=1
+promote_spans_refusal_matches_receipt red2: promote refusal handed back 96 span(s); the next H2D receipt landed 96
+ rc=0
+promote_spans_refusal_matches_receipt red3: promote refusal handed back 96 span(s); the next H2D receipt landed 96
+ rc=0
+one_staging_fill_promote green: staging fill line(s) [96], promote refusal N 96
+ rc=0
+one_staging_fill_promote red1: staging fill line(s) [96], promote refusal N 96
+ rc=0
+one_staging_fill_promote red2: staging fill line(s) [2, 96], promote refusal N 96
+ rc=1
+one_staging_fill_promote red3: staging fill line(s) [96], promote refusal N 96
+ rc=0
+fill_before_refusal green: fill lines 2, refusal at 2, span submissions 1
+ rc=0
+fill_before_refusal red1: fill lines 2, refusal at 2, span submissions 1
+ rc=0
+fill_before_refusal red2: fill lines 2, refusal at 3, span submissions 1
+ rc=0
+fill_before_refusal red3: fill lines 1, refusal at 2, span submissions 1
+ rc=1

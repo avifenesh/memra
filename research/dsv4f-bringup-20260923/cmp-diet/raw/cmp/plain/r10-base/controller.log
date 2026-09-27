@@ -1,0 +1,8 @@
+START utc=2026-09-24T03:36:09Z bin=/root/lane/target-main5/release/memra-server env=
+READY after=125s port=38503
+CELL warmup c=1 ok=1/1 agg=36.12 tok/s decode_p50=51.43 tok/s ttft_p50=283 ms tpot_p50=19.44 ms errs=[]
+CELL greedy-c1 c=1 ok=8/8 agg=49.08 tok/s decode_p50=50.93 tok/s ttft_p50=213 ms tpot_p50=19.64 ms errs=[]
+CELL sampled-c1 c=1 ok=8/8 agg=44.42 tok/s decode_p50=45.98 tok/s ttft_p50=215 ms tpot_p50=21.75 ms errs=[]
+CELL greedy-c1-ignore-eos c=1 ok=4/4 agg=48.95 tok/s decode_p50=50.87 tok/s ttft_p50=212 ms tpot_p50=19.66 ms errs=[]
+CELLS_DONE utc=2026-09-24T03:40:04Z
+TERMINAL rc=0 utc=2026-09-24T03:40:11Z

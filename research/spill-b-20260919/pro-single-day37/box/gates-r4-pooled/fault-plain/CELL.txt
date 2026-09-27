@@ -1,0 +1,8 @@
+cell=fault-plain arm=pooled cmd=bash tools/kv-host-contract-fault-gate.sh --external-lock 3 /root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /root/spill-receipts/b-day37/bins/lane/memra-server /root/spill-receipts/b-day37/gates-r4-pooled/fault-plain/ev
+env= MEMRA_HOSTGATE_CACHE_MB=256 MEMRA_SERVE_SPEC=0
+lock=/tmp/memra-gpu.lock owner=collector-fd3
+tree=826ff8d7879fc8d126af661e202436510efc8c8c
+binary_sha256=3dc05d17ac5e958d1c44ef3d3cde64b94ae40c00d74c6c45508d6984f50de4cd
+model=Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+door_on_lines=0 door_off_lines=0
+status=executed-not-qualified

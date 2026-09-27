@@ -1,0 +1,90 @@
+2026-09-24T20:32:39Z diag x1 rc=0 STALL rule cell=diag8-x1 arm=demote n_per_order=8 pooled=16 idle_runs=16 idle_p50=12.5 idle_p95=13.7
+2026-09-24T20:34:07Z diag x27 rc=0 STALL rule cell=diag8-x27 arm=demote n_per_order=8 pooled=16 idle_runs=16 idle_p50=12.1 idle_p95=13.
+2026-09-24T20:35:35Z diag x2 rc=0 STALL rule cell=diag8-x2 arm=demote n_per_order=8 pooled=16 idle_runs=16 idle_p50=12.1 idle_p95=13.4
+2026-09-24T20:37:03Z diag x2 rc=0 STALL rule cell=diag8-x2 arm=demote n_per_order=8 pooled=16 idle_runs=16 idle_p50=12.1 idle_p95=13.4
+2026-09-24T20:38:31Z diag x27 rc=0 STALL rule cell=diag8-x27 arm=demote n_per_order=8 pooled=16 idle_runs=16 idle_p50=12.1 idle_p95=13.
+2026-09-24T20:40:00Z diag x1 rc=0 STALL rule cell=diag8-x1 arm=demote n_per_order=8 pooled=16 idle_runs=16 idle_p50=12.5 idle_p95=13.7
+2026-09-24T20:40:01Z diag done; reading rc=0
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "research/spill-a-20260919/pro-single-day38/diag8.sh",
+    "3"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 622933849787189,
+  "ended_monotonic_ns": 623464096864811,
+  "started_utc": "2026-09-24T20:31:11.180168+00:00",
+  "ended_utc": "2026-09-24T20:40:01.427247+00:00",
+  "elapsed_seconds": 530.247077622,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 857,
+    "sha256": "8427387d692daaf896005f97513fe553dbbd756b1bf025a2dac68cd7744aca1a"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 231435,
+      "sha256": "b3411e06e042dcc54b458e31a1ce6978e7efbcbc07925b2cb2ecc47124d2d777"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 182,
+    "sha256": "4f38c797d9682e96b14e151fc54f26a1e81ac41ffc9de73db19263b704bc8888"
+  }
+}

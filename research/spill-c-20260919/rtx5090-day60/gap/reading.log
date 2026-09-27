@@ -1,0 +1,9 @@
+DAY60 GAP CHECKS rig=rtx5090 runs=40 integrity=ok
+DAY60 R1 gen_gap_ms_per_token on_minus_ref pooled=+0.234 o1=+0.500 o2=+0.219 | medians ref=0.363 refc=0.364 on=0.371 onc=0.371 (N=10 each)
+DAY60 R1 window_gap_ms_per_token on_minus_ref pooled=+0.172 o1=+0.188 o2=+0.188 | medians ref=0.399 refc=0.399 on=0.404 onc=0.405 (N=10 each)
+DAY60 R2 instrument_ms_per_token refc_minus_ref=+0.000 onc_minus_on=+0.016 bound=0.017 -> within_bound
+DAY60 R3 window per token: dispatch_ns=+0.087 prefetch_ns=+0.707 pf_reserve_ns=+0.001 pf_stage_ns=+0.012 pf_retire_ns=+0.014 pf_resident_ns=+0.075 pf_demand_ns=+0.542 | refc dispatch_calls=471.0 dispatch_hits=378.7 dispatch_pending=88.6 dispatch_sync=3.8 prefetch_calls=412.1 prefetch_issued=88.6 | onc dispatch_calls=471.0 dispatch_hits=378.7 dispatch_pending=88.6 dispatch_sync=3.8 prefetch_calls=412.1 prefetch_issued=88.6
+DAY60 R4 window wall_gap=+0.172 cpu_gap=+0.794 residual=-0.622 top=prefetch_ns (+0.707) -> cpu_side
+DAY60 R3 gen per token: dispatch_ns=+0.199 prefetch_ns=+1.430 pf_reserve_ns=+0.005 pf_stage_ns=+0.048 pf_retire_ns=+0.062 pf_resident_ns=+0.124 pf_demand_ns=+1.047 | refc dispatch_calls=631.5 dispatch_hits=430.0 dispatch_pending=187.8 dispatch_sync=13.7 prefetch_calls=552.6 prefetch_issued=187.8 | onc dispatch_calls=631.5 dispatch_hits=430.0 dispatch_pending=187.8 dispatch_sync=13.7 prefetch_calls=552.6 prefetch_issued=187.8
+DAY60 R4 gen wall_gap=+0.234 cpu_gap=+1.629 residual=-1.395 top=prefetch_ns (+1.430) -> cpu_side
+DAY60 GAP rig=rtx5090 integrity=ok window: wall_gap=+0.172 cpu_gap=+0.794 top=prefetch_ns cpu_side; gen: wall_gap=+0.234 cpu_gap=+1.629 top=prefetch_ns cpu_side

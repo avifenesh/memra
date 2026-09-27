@@ -1,0 +1,641 @@
+1790194415073 [server] build: memra-0.138.0-c2d3b2e010f7 (id: source-tree, git: c3eb41d1218a)
+1790194415073 [server] starting; models config = [("q38", "/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+1790194415074 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+1790194415080 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+1790194415274 [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+1790194415383 [worker] Engine ready (device=0, MEMRA_FAST=true)
+1790194415383 [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+1790194415383 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+1790194415383 [worker] loading model "q38" <- /root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+1790194415459 [tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+1790194423926 [worker]   loaded "q38": 65 layers, eos=248046, stop=[248046]
+1790194423926 [worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+1790194423926 [route-contract] model="q38" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+1790194423926 [worker] q38: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+1790194423926 [prefix-cache] on: budget 15883MB (15883042816 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from checkpoint; MEMRA_CTX unset), requested 15883042816 B; boot driver free 86519382016 B, post-reserve clamp 84908769280 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+1790194423926 [admission] "q38": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+1790194423927 [prime-walk] model="q38" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+1790194425145 [fa-pool] grow #0 dev=0 o_len 0 -> 399360 ml_len 0 -> 1560 (retired kept, zero=false)
+1790194425158 [func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+1790194425159 [func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+1790194425159 [fa-pool] grow #1 dev=0 o_len 399360 -> 798720 ml_len 1560 -> 3120 (retired kept, zero=false)
+1790194425159 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+1790194425159 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+1790194425159 [func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+1790194425159 [func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+1790194425162 [spec] draft-session state high-water: 44MB (max of parked delta 44MB and capture-time pool peak 12MB; charged per spec admission and gating future captures)
+1790194425194 [fa-pool] grow #2 dev=0 o_len 798720 -> 1597440 ml_len 3120 -> 6240 (retired kept, zero=false)
+1790194425611 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":2483027968,"still_owned_bytes":17283255616,"pool_reserved_bytes":17414750208,"pool_cached_bytes":131494592,"driver_free_bytes":83935690752,"synchronization_errors":[]}
+1790194425611 [admit-cal] post-probe pool trim: released 2368MB cached back to the driver
+1790194425611 [admit-cal] boot calibration done: model="q38" route=mtp transient floor 2196MB (static was 1536MB; measured 2196MB; probe kv charge 127MB, draft-state 44MB, drafted 63 accepted 42; [dev0 peak-mapped 18976MB rest-mapped 16608MB charged 171MB -> 2196MB]; 1.7s)
+1790194425611 [admit-predict] shadow armed: budget_bytes=65880829648 budget_src=derived(effective_free_bytes=84067185344 - prefix_cache_budget_bytes=15883042816 - admission_reserve_bytes=2303312880) exempt_tenants=0 enforce=false (logging only, nothing is rejected; enforcement is a separate flip)
+1790194425611 [admit-mem] door=ON open_output_tokens=32768 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+1790194425612 [server] worker ready; serving models: ["q38"]
+1790194425612 [server] listening on http://127.0.0.1:18526
+1790194426904 [meter] admit id=chatcmpl-f723be6ea719f89441ea8b175a2c06b3 tenant=default lane=interactive model="q38"
+1790194426905 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1790194426905 [admission] request cost: model="q38" ctx=228 path=spec = 31552 B/token x ctx + 63MB prefill-workspace + 0MB fixed = 70MB
+1790194426905 [admit-predict] id=chatcmpl-f723be6ea719f89441ea8b175a2c06b3 tenant="" model="q38" verdict=admit reason=maxtok-fallback prompt=132 predicted_completion=32 kv_hat=115125008 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194426906 [spec-k] model="q38" tenant="" K=3 source=cold-short prompt=132 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790194426906 [admission] fixed residual high-water: model="q38" 308MB (observed 314MB at ctx 172 path=spec)
+1790194427224 [spec-acc] ctx=132 burst=25/27 cum=25/27=0.926
+1790194429227 [meter] admit id=chatcmpl-dc4810cd2460da1337d71e63d73e0adc tenant=default lane=interactive model="q38"
+1790194429231 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1790194429231 [admission] request cost: model="q38" ctx=34313 path=spec = 31552 B/token x ctx + 710MB prefill-workspace + 308MB fixed = 2101MB
+1790194429231 [admit-predict] id=chatcmpl-dc4810cd2460da1337d71e63d73e0adc tenant="" model="q38" verdict=admit reason=global-p95 prompt=1481 predicted_completion=32 kv_hat=1112380328 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194429231 [worker] spec-affinity: declined (history diverged at 47 of checkpoint 96; 1 parked, 1481 prompt tokens; model q38)
+1790194429233 [spec-k] model="q38" tenant="" K=3 source=cold-long prompt=1481 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790194429233 [admission] fixed residual high-water: model="q38" 371MB (observed 1452MB at ctx 34257 path=spec)
+1790194429739 [fa-pool] grow #3 dev=0 o_len 1597440 -> 3194880 ml_len 6240 -> 12480 (retired kept, zero=false)
+1790194429939 [spec-acc] ctx=1481 burst=23/33 cum=23/33=0.697
+1790194429939 [prefix-cache] insert (spec-boundary): 1440 tokens, 202.3MB (resident 202.3MB / 15883MB, model q38)
+1790194430111 [spec-acc] ctx=1516 burst=22/30 cum=45/63=0.714
+1790194430352 [spec-acc] ctx=1548 burst=19/42 cum=64/105=0.610
+1790194430610 [spec-acc] ctx=1581 burst=18/45 cum=82/150=0.547
+1790194430835 [spec-acc] ctx=1614 burst=19/39 cum=101/189=0.534
+1790194431076 [spec-acc] ctx=1646 burst=20/42 cum=121/231=0.524
+1790194431353 [spec-acc] ctx=1680 burst=17/48 cum=138/279=0.495
+1790194431595 [spec-acc] ctx=1713 burst=18/42 cum=156/321=0.486
+1790194431872 [spec-acc] ctx=1745 burst=16/48 cum=172/369=0.466
+1790194432080 [spec-acc] ctx=1777 burst=21/36 cum=193/405=0.477
+1790194432340 [spec-acc] ctx=1810 burst=18/45 cum=211/450=0.469
+1790194432548 [spec-acc] ctx=1843 burst=20/36 cum=231/486=0.475
+1790194432774 [spec-acc] ctx=1875 burst=20/39 cum=251/525=0.478
+1790194432965 [spec-acc] ctx=1908 burst=21/33 cum=272/558=0.487
+1790194433138 [spec-acc] ctx=1940 burst=23/30 cum=295/588=0.502
+1790194433329 [spec-acc] ctx=1973 burst=21/33 cum=316/621=0.509
+1790194433468 [spec-acc] ctx=2005 burst=24/24 cum=340/645=0.527
+1790194433622 [spec-acc] ctx=2037 burst=26/27 cum=366/672=0.545
+1790194433625 [meter] admit id=chatcmpl-9a25abfcf95863262291894f36689f2d tenant=default lane=interactive model="q38"
+1790194433639 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1790194433639 [admission] request cost: model="q38" ctx=34313 path=spec = 31552 B/token x ctx + 710MB prefill-workspace + 371MB fixed = 2164MB
+1790194433639 [admit-predict] id=chatcmpl-9a25abfcf95863262291894f36689f2d tenant="" model="q38" verdict=admit reason=global-p95 prompt=1481 predicted_completion=591 kv_hat=1193279656 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194433639 [worker] spec-affinity: declined (history diverged at 47 of checkpoint 96; 2 parked, 1481 prompt tokens; model q38)
+1790194433641 [spec-k] model="q38" tenant="" K=3 source=cold-long prompt=1481 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790194434401 [spec-acc] ctx=1481 burst=19/42 cum=19/42=0.452
+1790194434401 [prefix-cache] insert (spec-boundary): 1440 tokens, 202.3MB (resident 404.7MB / 15883MB, model q38)
+1790194434590 [spec-acc] ctx=1515 burst=24/33 cum=43/75=0.573
+1790194434763 [spec-acc] ctx=1550 burst=22/30 cum=65/105=0.619
+1790194435021 [spec-acc] ctx=1582 burst=19/45 cum=84/150=0.560
+1790194435246 [spec-acc] ctx=1616 burst=22/39 cum=106/189=0.561
+1790194435470 [spec-acc] ctx=1651 burst=19/39 cum=125/228=0.548
+1790194435694 [spec-acc] ctx=1683 burst=22/39 cum=147/267=0.551
+1790194435884 [spec-acc] ctx=1718 burst=24/33 cum=171/300=0.570
+1790194436127 [spec-acc] ctx=1753 burst=19/42 cum=190/342=0.556
+1790194436300 [spec-acc] ctx=1786 burst=25/30 cum=215/372=0.578
+1790194436438 [spec-acc] ctx=1821 burst=24/24 cum=239/396=0.604
+1790194436441 [meter] admit id=chatcmpl-fe8cfe95c4e5503eb3fc189178c59425 tenant=default lane=interactive model="q38"
+1790194436456 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1790194436456 [admission] request cost: model="q38" ctx=34316 path=spec = 31552 B/token x ctx + 711MB prefill-workspace + 371MB fixed = 2165MB
+1790194436456 [admit-predict] id=chatcmpl-fe8cfe95c4e5503eb3fc189178c59425 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1484 predicted_completion=591 kv_hat=1194812008 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194436456 [worker] spec-affinity: declined (history diverged at 48 of checkpoint 1440; 2 parked, 1484 prompt tokens; model q38)
+1790194436457 [spec-k] model="q38" tenant="" K=3 source=cold-long prompt=1484 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790194436457 [admission] fixed residual high-water: model="q38" 371MB (observed 1452MB at ctx 34260 path=spec)
+1790194437146 [spec-acc] ctx=1484 burst=22/30 cum=22/30=0.733
+1790194437146 [prefix-cache] insert (spec-boundary): 1440 tokens, 202.3MB (resident 607.0MB / 15883MB, model q38)
+1790194437388 [spec-acc] ctx=1517 burst=18/42 cum=40/72=0.556
+1790194437594 [spec-acc] ctx=1549 burst=22/36 cum=62/108=0.574
+1790194437801 [spec-acc] ctx=1583 burst=21/36 cum=83/144=0.576
+1790194438025 [spec-acc] ctx=1616 burst=21/39 cum=104/183=0.568
+1790194438233 [spec-acc] ctx=1650 burst=20/36 cum=124/219=0.566
+1790194438527 [spec-acc] ctx=1682 burst=15/51 cum=139/270=0.515
+1790194438735 [spec-acc] ctx=1714 burst=20/36 cum=159/306=0.520
+1790194438926 [spec-acc] ctx=1746 burst=21/33 cum=180/339=0.531
+1790194439117 [spec-acc] ctx=1778 burst=21/33 cum=201/372=0.540
+1790194439308 [spec-acc] ctx=1810 burst=21/33 cum=222/405=0.548
+1790194439499 [spec-acc] ctx=1842 burst=21/33 cum=243/438=0.555
+1790194439690 [spec-acc] ctx=1874 burst=22/33 cum=265/471=0.563
+1790194439829 [spec-acc] ctx=1907 burst=24/24 cum=289/495=0.584
+1790194440002 [spec-acc] ctx=1939 burst=24/30 cum=313/525=0.596
+1790194440176 [spec-acc] ctx=1973 burst=24/30 cum=337/555=0.607
+1790194440315 [spec-acc] ctx=2007 burst=24/24 cum=361/579=0.623
+1790194440454 [spec-acc] ctx=2039 burst=24/24 cum=385/603=0.638
+1790194440694 [spec-acc] ctx=2071 burst=20/42 cum=405/645=0.628
+1790194440696 [meter] admit id=chatcmpl-8a9cb7493bbf362e436d9224a411e855 tenant=default lane=interactive model="q38"
+1790194440711 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1790194440711 [admission] request cost: model="q38" ctx=34316 path=spec = 31552 B/token x ctx + 711MB prefill-workspace + 371MB fixed = 2165MB
+1790194440711 [admit-predict] id=chatcmpl-8a9cb7493bbf362e436d9224a411e855 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1484 predicted_completion=591 kv_hat=1194817576 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194440711 [worker] spec-affinity: declined (history diverged at 48 of checkpoint 1440; 2 parked, 1484 prompt tokens; model q38)
+1790194440712 [spec-k] model="q38" tenant="" K=3 source=cold-long prompt=1484 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790194441470 [spec-acc] ctx=1484 burst=19/42 cum=19/42=0.452
+1790194441470 [prefix-cache] insert (spec-boundary): 1440 tokens, 202.3MB (resident 809.4MB / 15883MB, model q38)
+1790194441660 [spec-acc] ctx=1518 burst=21/33 cum=40/75=0.533
+1790194441867 [spec-acc] ctx=1550 burst=21/36 cum=61/111=0.550
+1790194442126 [spec-acc] ctx=1583 burst=17/45 cum=78/156=0.500
+1790194442437 [spec-acc] ctx=1615 burst=14/54 cum=92/210=0.438
+1790194442679 [spec-acc] ctx=1647 burst=18/42 cum=110/252=0.437
+1790194442922 [spec-acc] ctx=1679 burst=20/42 cum=130/294=0.442
+1790194443147 [spec-acc] ctx=1713 burst=19/39 cum=149/333=0.447
+1790194443390 [spec-acc] ctx=1745 burst=18/42 cum=167/375=0.445
+1790194443616 [spec-acc] ctx=1777 burst=20/39 cum=187/414=0.452
+1790194443772 [spec-acc] ctx=1810 burst=23/27 cum=210/441=0.476
+1790194443998 [spec-acc] ctx=1842 burst=19/39 cum=229/480=0.477
+1790194444154 [spec-acc] ctx=1874 burst=23/27 cum=252/507=0.497
+1790194444310 [spec-acc] ctx=1906 burst=24/27 cum=276/534=0.517
+1790194444537 [spec-acc] ctx=1939 burst=20/39 cum=296/573=0.517
+1790194444540 [meter] admit id=chatcmpl-f50b12712edd370e8653c8f0fe7e8d74 tenant=default lane=interactive model="q38"
+1790194444555 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1790194444555 [admission] request cost: model="q38" ctx=34315 path=spec = 31552 B/token x ctx + 711MB prefill-workspace + 371MB fixed = 2165MB
+1790194444555 [admit-predict] id=chatcmpl-f50b12712edd370e8653c8f0fe7e8d74 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1483 predicted_completion=591 kv_hat=1194306792 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194444555 [worker] spec-affinity: declined (history diverged at 48 of checkpoint 1440; 2 parked, 1483 prompt tokens; model q38)
+1790194444555 [spec-k] model="q38" tenant="" K=3 source=cold-long prompt=1483 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790194445263 [spec-acc] ctx=1483 burst=21/33 cum=21/33=0.636
+1790194445263 [prefix-cache] insert (spec-boundary): 1440 tokens, 202.3MB (resident 1011.7MB / 15883MB, model q38)
+1790194445487 [spec-acc] ctx=1516 burst=19/39 cum=40/72=0.556
+1790194445677 [spec-acc] ctx=1548 burst=22/33 cum=62/105=0.590
+1790194445971 [spec-acc] ctx=1581 burst=15/51 cum=77/156=0.494
+1790194446230 [spec-acc] ctx=1613 burst=17/45 cum=94/201=0.468
+1790194446454 [spec-acc] ctx=1645 burst=20/39 cum=114/240=0.475
+1790194446696 [spec-acc] ctx=1678 burst=20/42 cum=134/282=0.475
+1790194446904 [spec-acc] ctx=1712 burst=22/36 cum=156/318=0.491
+1790194447112 [spec-acc] ctx=1746 burst=22/36 cum=178/354=0.503
+1790194447355 [spec-acc] ctx=1780 burst=21/42 cum=199/396=0.503
+1790194447528 [spec-acc] ctx=1815 burst=22/30 cum=221/426=0.519
+1790194447772 [spec-acc] ctx=1847 burst=19/42 cum=240/468=0.513
+1790194447945 [spec-acc] ctx=1880 burst=23/30 cum=263/498=0.528
+1790194448136 [spec-acc] ctx=1913 burst=21/33 cum=284/531=0.535
+1790194448292 [spec-acc] ctx=1945 burst=25/27 cum=309/558=0.554
+1790194448431 [spec-acc] ctx=1979 burst=24/24 cum=333/582=0.572
+1790194448605 [spec-acc] ctx=2011 burst=22/30 cum=355/612=0.580
+1790194448612 [meter] admit id=chatcmpl-3a77d92cbb2f9c989b860ea4d136dc0e tenant=default lane=interactive model="q38"
+1790194448623 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1790194448623 [admission] request cost: model="q38" ctx=1875 path=spec = 31552 B/token x ctx + 822MB prefill-workspace + 371MB fixed = 1253MB
+1790194448623 [admit-predict] id=chatcmpl-3a77d92cbb2f9c989b860ea4d136dc0e tenant="" model="q38" verdict=admit reason=global-p95 prompt=1715 predicted_completion=96 kv_hat=1297190440 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194448623 [worker] spec-affinity: declined (history diverged at 46 of checkpoint 1440; 2 parked, 1715 prompt tokens; model q38)
+1790194448623 [spec-k] model="q38" tenant="" K=3 source=cold-long prompt=1715 cached=0 lcp=46 active=1 wave=1 placement=single-or-non-pp2
+1790194449387 [spec-acc] ctx=1715 burst=20/33 cum=20/33=0.606
+1790194449387 [prefix-cache] insert (spec-boundary): 1696 tokens, 210.4MB (resident 1222.2MB / 15883MB, model q38)
+1790194449594 [spec-acc] ctx=1747 burst=20/36 cum=40/69=0.580
+1790194449853 [spec-acc] ctx=1779 burst=17/45 cum=57/114=0.500
+1790194449861 [meter] admit id=chatcmpl-e046a8584a9dd2c20bdc82875626f5a7 tenant=default lane=interactive model="q38"
+1790194449871 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1790194449871 [admission] request cost: model="q38" ctx=1874 path=spec = 31552 B/token x ctx + 821MB prefill-workspace + 371MB fixed = 1252MB
+1790194449871 [admit-predict] id=chatcmpl-e046a8584a9dd2c20bdc82875626f5a7 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1714 predicted_completion=96 kv_hat=1296679656 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194449871 [worker] spec-affinity: declined (history diverged at 46 of checkpoint 1440; 2 parked, 1714 prompt tokens; model q38)
+1790194449871 [spec-k] model="q38" tenant="" K=3 source=cold-long prompt=1714 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790194450651 [spec-acc] ctx=1714 burst=20/36 cum=20/36=0.556
+1790194450651 [prefix-cache] insert (spec-boundary): 1696 tokens, 210.4MB (resident 1432.6MB / 15883MB, model q38)
+1790194450911 [spec-acc] ctx=1747 burst=17/45 cum=37/81=0.457
+1790194451153 [spec-acc] ctx=1779 burst=17/42 cum=54/123=0.439
+1790194451160 [meter] admit id=chatcmpl-f82bbbd2df4eba42d70a3f72727647fe tenant=default lane=interactive model="q38"
+1790194451171 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1790194451171 [admission] request cost: model="q38" ctx=1873 path=spec = 31552 B/token x ctx + 821MB prefill-workspace + 371MB fixed = 1251MB
+1790194451171 [admit-predict] id=chatcmpl-f82bbbd2df4eba42d70a3f72727647fe tenant="" model="q38" verdict=admit reason=global-p95 prompt=1713 predicted_completion=96 kv_hat=1296168872 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194451171 [worker] spec-affinity: declined (history diverged at 48 of checkpoint 1696; 2 parked, 1713 prompt tokens; model q38)
+1790194451172 [spec-k] model="q38" tenant="" K=3 source=cold-long prompt=1713 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790194451951 [spec-acc] ctx=1713 burst=20/36 cum=20/36=0.556
+1790194451952 [prefix-cache] insert (spec-boundary): 1696 tokens, 210.4MB (resident 1643.0MB / 15883MB, model q38)
+1790194452176 [spec-acc] ctx=1746 burst=19/39 cum=39/75=0.520
+1790194452384 [spec-acc] ctx=1778 burst=19/36 cum=58/111=0.523
+1790194452391 [meter] admit id=chatcmpl-8778ce044e43de9105ef285a6e9f01bf tenant=default lane=interactive model="q38"
+1790194452401 [admit-predict] id=chatcmpl-8778ce044e43de9105ef285a6e9f01bf tenant="" model="q38" verdict=admit reason=global-p95 prompt=1713 predicted_completion=96 kv_hat=1296168872 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194452401 [worker] spec-affinity: declined (history diverged at 48 of checkpoint 1696; 2 parked, 1713 prompt tokens; model q38)
+1790194452402 [spec-k] model="q38" tenant="" K=3 source=cold-long prompt=1713 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790194453182 [spec-acc] ctx=1713 burst=20/36 cum=20/36=0.556
+1790194453183 [prefix-cache] insert (spec-boundary): 1696 tokens, 210.4MB (resident 1853.4MB / 15883MB, model q38)
+1790194453373 [spec-acc] ctx=1746 burst=21/33 cum=41/69=0.594
+1790194453615 [spec-acc] ctx=1778 burst=18/42 cum=59/111=0.532
+1790194453623 [meter] admit id=chatcmpl-5dd37870bd5e4510bd5b14d83e8bce74 tenant=default lane=interactive model="q38"
+1790194453632 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1790194453633 [admission] request cost: model="q38" ctx=1870 path=spec = 31552 B/token x ctx + 819MB prefill-workspace + 371MB fixed = 1250MB
+1790194453633 [admit-predict] id=chatcmpl-5dd37870bd5e4510bd5b14d83e8bce74 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1710 predicted_completion=96 kv_hat=1294636520 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194453633 [worker] spec-affinity: declined (history diverged at 48 of checkpoint 1696; 2 parked, 1710 prompt tokens; model q38)
+1790194453633 [spec-k] model="q38" tenant="" K=3 source=cold-long prompt=1710 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790194454394 [spec-acc] ctx=1710 burst=19/36 cum=19/36=0.528
+1790194454394 [prefix-cache] insert (spec-boundary): 1664 tokens, 209.4MB (resident 2062.9MB / 15883MB, model q38)
+1790194454636 [spec-acc] ctx=1742 burst=18/42 cum=37/78=0.474
+1790194454878 [spec-acc] ctx=1774 burst=20/42 cum=57/120=0.475
+1790194455882 [meter] admit id=chatcmpl-c27e9d92405505702313373dda7c9836 tenant=default lane=interactive model="q38"
+1790194455885 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1790194455885 [admission] request cost: model="q38" ctx=34404 path=spec = 31552 B/token x ctx + 753MB prefill-workspace + 371MB fixed = 2210MB
+1790194455885 [admit-predict] id=chatcmpl-c27e9d92405505702313373dda7c9836 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1572 predicted_completion=591 kv_hat=1239766568 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194455887 [prefix-cache] hit: 1440 of 1572 prompt tokens from cache (model q38)
+1790194455887 [prefix-cache] spec restore: 1440 of 1572 prompt tokens + draft plane from cache [suffix queued] (model q38)
+1790194455887 [spec-k] model="q38" tenant="" K=2 source=cached-long prompt=1572 cached=1440 lcp=1440 active=1 wave=1 placement=single-or-non-pp2
+1790194455887 [admission] fixed residual high-water: model="q38" 372MB (observed 1455MB at ctx 34348 path=spec)
+1790194456276 [spec-acc] ctx=132 burst=18/28 cum=18/28=0.643
+1790194456276 [prefix-cache] insert (spec-boundary): 1536 tokens, 205.4MB (resident 2268.2MB / 15883MB, model q38)
+1790194456492 [spec-acc] ctx=165 burst=18/28 cum=36/56=0.643
+1790194456709 [spec-acc] ctx=197 burst=20/28 cum=56/84=0.667
+1790194456925 [spec-acc] ctx=231 burst=20/28 cum=76/112=0.679
+1790194457095 [spec-acc] ctx=265 burst=22/22 cum=98/134=0.731
+1790194457281 [spec-acc] ctx=298 burst=21/24 cum=119/158=0.753
+1790194457497 [spec-acc] ctx=331 burst=20/28 cum=139/186=0.747
+1790194457746 [spec-acc] ctx=365 burst=17/32 cum=156/218=0.716
+1790194457964 [spec-acc] ctx=398 burst=19/28 cum=175/246=0.711
+1790194458134 [spec-acc] ctx=431 burst=22/22 cum=197/268=0.735
+1790194458305 [spec-acc] ctx=464 burst=22/22 cum=219/290=0.755
+1790194458506 [spec-acc] ctx=497 burst=21/26 cum=240/316=0.759
+1790194458509 [meter] admit id=chatcmpl-70c79d0a98070b6b68dff88efd5b2015 tenant=default lane=interactive model="q38"
+1790194458524 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1790194458524 [admission] request cost: model="q38" ctx=34397 path=spec = 31552 B/token x ctx + 750MB prefill-workspace + 372MB fixed = 2207MB
+1790194458524 [admit-predict] id=chatcmpl-70c79d0a98070b6b68dff88efd5b2015 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1565 predicted_completion=591 kv_hat=1236374888 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194458525 [prefix-cache] hit: 1440 of 1565 prompt tokens from cache (model q38)
+1790194458525 [prefix-cache] spec restore: 1440 of 1565 prompt tokens + draft plane from cache [suffix queued] (model q38)
+1790194458525 [spec-k] model="q38" tenant="" K=2 source=cached-long prompt=1565 cached=1440 lcp=1440 active=1 wave=1 placement=single-or-non-pp2
+1790194458898 [spec-acc] ctx=125 burst=19/26 cum=19/26=0.731
+1790194458899 [prefix-cache] insert (spec-boundary): 1536 tokens, 205.4MB (resident 2473.6MB / 15883MB, model q38)
+1790194459100 [spec-acc] ctx=158 burst=20/26 cum=39/52=0.750
+1790194459316 [spec-acc] ctx=191 burst=18/28 cum=57/80=0.713
+1790194459564 [spec-acc] ctx=223 burst=16/32 cum=73/112=0.652
+1790194459781 [spec-acc] ctx=255 burst=20/28 cum=93/140=0.664
+1790194459966 [spec-acc] ctx=289 burst=21/24 cum=114/164=0.695
+1790194460136 [spec-acc] ctx=322 burst=22/22 cum=136/186=0.731
+1790194460400 [spec-acc] ctx=355 burst=16/34 cum=152/220=0.691
+1790194460403 [meter] admit id=chatcmpl-4a22ce8ce26d3acf329ca01e950ec726 tenant=default lane=interactive model="q38"
+1790194460418 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1790194460418 [admission] request cost: model="q38" ctx=34427 path=spec = 31552 B/token x ctx + 764MB prefill-workspace + 372MB fixed = 2222MB
+1790194460418 [admit-predict] id=chatcmpl-4a22ce8ce26d3acf329ca01e950ec726 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1595 predicted_completion=591 kv_hat=1251698408 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194460421 [prefix-cache] hit: 1440 of 1595 prompt tokens from cache (model q38)
+1790194460421 [prefix-cache] spec restore: 1440 of 1595 prompt tokens + draft plane from cache [suffix queued] (model q38)
+1790194460421 [spec-k] model="q38" tenant="" K=2 source=cached-long prompt=1595 cached=1440 lcp=1440 active=1 wave=1 placement=single-or-non-pp2
+1790194460421 [admission] fixed residual high-water: model="q38" 372MB (observed 1456MB at ctx 34371 path=spec)
+1790194460813 [spec-acc] ctx=155 burst=17/28 cum=17/28=0.607
+1790194460813 [prefix-cache] insert (spec-boundary): 1568 tokens, 206.4MB (resident 2680.0MB / 15883MB, model q38)
+1790194461029 [spec-acc] ctx=187 burst=19/28 cum=36/56=0.643
+1790194461278 [spec-acc] ctx=220 burst=17/32 cum=53/88=0.602
+1790194461526 [spec-acc] ctx=253 burst=16/32 cum=69/120=0.575
+1790194461727 [spec-acc] ctx=285 burst=20/26 cum=89/146=0.610
+1790194461928 [spec-acc] ctx=318 burst=21/26 cum=110/172=0.640
+1790194462098 [spec-acc] ctx=352 burst=22/22 cum=132/194=0.680
+1790194462101 [meter] admit id=chatcmpl-b1f85bdfe9a44d22be33a9803460c86e tenant=default lane=interactive model="q38"
+1790194462116 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1790194462116 [admission] request cost: model="q38" ctx=34395 path=spec = 31552 B/token x ctx + 749MB prefill-workspace + 372MB fixed = 2206MB
+1790194462116 [admit-predict] id=chatcmpl-b1f85bdfe9a44d22be33a9803460c86e tenant="" model="q38" verdict=admit reason=global-p95 prompt=1563 predicted_completion=591 kv_hat=1235396008 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194462117 [prefix-cache] hit: 1440 of 1563 prompt tokens from cache (model q38)
+1790194462117 [prefix-cache] spec restore: 1440 of 1563 prompt tokens + draft plane from cache [suffix queued] (model q38)
+1790194462117 [spec-k] model="q38" tenant="" K=2 source=cached-long prompt=1563 cached=1440 lcp=1440 active=1 wave=1 placement=single-or-non-pp2
+1790194462490 [spec-acc] ctx=123 burst=18/26 cum=18/26=0.692
+1790194462490 [prefix-cache] insert (spec-boundary): 1536 tokens, 205.4MB (resident 2885.4MB / 15883MB, model q38)
+1790194462738 [spec-acc] ctx=155 burst=17/32 cum=35/58=0.603
+1790194462986 [spec-acc] ctx=188 burst=16/32 cum=51/90=0.567
+1790194463187 [spec-acc] ctx=220 burst=19/26 cum=70/116=0.603
+1790194463372 [spec-acc] ctx=252 burst=22/24 cum=92/140=0.657
+1790194463574 [spec-acc] ctx=286 burst=19/26 cum=111/166=0.669
+1790194463775 [spec-acc] ctx=318 burst=20/26 cum=131/192=0.682
+1790194464040 [spec-acc] ctx=351 burst=15/34 cum=146/226=0.646
+1790194464210 [spec-acc] ctx=383 burst=22/22 cum=168/248=0.677
+1790194464380 [spec-acc] ctx=416 burst=22/22 cum=190/270=0.704
+1790194464581 [spec-acc] ctx=449 burst=21/26 cum=211/296=0.713
+1790194464799 [spec-acc] ctx=483 burst=19/28 cum=230/324=0.710
+1790194464970 [spec-acc] ctx=516 burst=22/22 cum=252/346=0.728
+1790194465140 [spec-acc] ctx=549 burst=22/22 cum=274/368=0.745
+1790194465341 [spec-acc] ctx=582 burst=19/26 cum=293/394=0.744
+1790194465344 [meter] admit id=chatcmpl-e38a0c57ace2592a18635d897a74abc3 tenant=default lane=interactive model="q38"
+1790194465359 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1790194465359 [admission] request cost: model="q38" ctx=34412 path=spec = 31552 B/token x ctx + 757MB prefill-workspace + 372MB fixed = 2215MB
+1790194465359 [admit-predict] id=chatcmpl-e38a0c57ace2592a18635d897a74abc3 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1580 predicted_completion=591 kv_hat=1244079336 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194465360 [prefix-cache] hit: 1440 of 1580 prompt tokens from cache (model q38)
+1790194465360 [prefix-cache] spec restore: 1440 of 1580 prompt tokens + draft plane from cache [suffix queued] (model q38)
+1790194465360 [spec-k] model="q38" tenant="" K=2 source=cached-long prompt=1580 cached=1440 lcp=1440 active=1 wave=1 placement=single-or-non-pp2
+1790194465750 [spec-acc] ctx=140 burst=17/28 cum=17/28=0.607
+1790194465750 [prefix-cache] insert (spec-boundary): 1536 tokens, 205.4MB (resident 3090.8MB / 15883MB, model q38)
+1790194465982 [spec-acc] ctx=172 burst=18/30 cum=35/58=0.603
+1790194466246 [spec-acc] ctx=205 burst=17/34 cum=52/92=0.565
+1790194466525 [spec-acc] ctx=239 burst=14/36 cum=66/128=0.516
+1790194466742 [spec-acc] ctx=271 burst=20/28 cum=86/156=0.551
+1790194466959 [spec-acc] ctx=305 burst=20/28 cum=106/184=0.576
+1790194467129 [spec-acc] ctx=339 burst=22/22 cum=128/206=0.621
+1790194467361 [spec-acc] ctx=372 burst=18/30 cum=146/236=0.619
+1790194467579 [spec-acc] ctx=405 burst=19/28 cum=165/264=0.625
+1790194467796 [spec-acc] ctx=438 burst=20/28 cum=185/292=0.634
+1790194467967 [spec-acc] ctx=472 burst=22/22 cum=207/314=0.659
+1790194468137 [spec-acc] ctx=505 burst=22/22 cum=229/336=0.682
+1790194468308 [spec-acc] ctx=538 burst=21/22 cum=250/358=0.698
+1790194468494 [spec-acc] ctx=570 burst=20/24 cum=270/382=0.707
+1790194468664 [spec-acc] ctx=602 burst=22/22 cum=292/404=0.723
+1790194468832 [spec-acc] ctx=635 burst=22/22 cum=314/426=0.737
+1790194469001 [spec-acc] ctx=668 burst=22/22 cum=336/448=0.750
+1790194472024 [meter] admit id=chatcmpl-7c50b61930b37cea5fe6828a736f9c7b tenant=default lane=interactive model="q38"
+1790194472026 [meter] admit id=chatcmpl-f9acbad79c9ef397fd139d3aee99e419 tenant=default lane=interactive model="q38"
+1790194472026 [meter] admit id=chatcmpl-0923fb80ebbc7635b618d99a3f217b2d tenant=default lane=interactive model="q38"
+1790194472026 [meter] admit id=chatcmpl-e5e3e2328555dbb8178af0160de26553 tenant=default lane=interactive model="q38"
+1790194472026 [meter] admit id=chatcmpl-4525093a13f195b9acec6c7999023acf tenant=default lane=interactive model="q38"
+1790194472026 [meter] admit id=chatcmpl-66d429062b0caaa20c7cf71eac272b18 tenant=default lane=interactive model="q38"
+1790194472026 [meter] admit id=chatcmpl-17b3a9b015e46c87a8551aea685d7c9a tenant=default lane=interactive model="q38"
+1790194472026 [meter] admit id=chatcmpl-bb5ad20220678d6144ce993c2e23a6ca tenant=default lane=interactive model="q38"
+1790194472027 [meter] admit id=chatcmpl-499c3b67b5e19be6653b20fd4b578fc5 tenant=default lane=interactive model="q38"
+1790194472027 [meter] admit id=chatcmpl-67e579c3ecc3af35d26af0fe894953a6 tenant=default lane=interactive model="q38"
+1790194472027 [meter] admit id=chatcmpl-cc309bd61f0f9061e823c82198bf8d0b tenant=default lane=interactive model="q38"
+1790194472027 [meter] admit id=chatcmpl-18085ce4e15978bfe3c2a7951924dd1a tenant=default lane=interactive model="q38"
+1790194472027 [meter] admit id=chatcmpl-b14aaacc0878d48e575d27e1f8d79910 tenant=default lane=interactive model="q38"
+1790194472027 [admission] request cost: model="q38" ctx=34205 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 372MB fixed = 2045MB
+1790194472027 [admit-predict] id=chatcmpl-7c50b61930b37cea5fe6828a736f9c7b tenant="" model="q38" verdict=admit reason=global-p95 prompt=1373 predicted_completion=591 kv_hat=1088247576 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472027 [meter] admit id=chatcmpl-d05bac360dec9dd8326a7c3a6f8f8132 tenant=default lane=interactive model="q38"
+1790194472028 [meter] admit id=chatcmpl-7f55d126c33670d29f670f9d9d1128ac tenant=default lane=interactive model="q38"
+1790194472028 [meter] admit id=chatcmpl-d381c75e7a294345e000229fa2292c13 tenant=default lane=interactive model="q38"
+1790194472028 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1373 cached=0 lcp=46 active=1 wave=16 placement=single-or-non-pp2
+1790194472029 [meter] admit id=chatcmpl-f9b60b3d198cf6248423f90c5811ed3f tenant=default lane=interactive model="q38"
+1790194472029 [meter] admit id=chatcmpl-b192b74e7ea956d5f1c6baf0b3b4ee9c tenant=default lane=interactive model="q38"
+1790194472034 [meter] admit id=chatcmpl-6103bec9756960d8b7cc8c82590f6607 tenant=default lane=interactive model="q38"
+1790194472034 [meter] admit id=chatcmpl-0b505558cf266b12a0604598e7b33097 tenant=default lane=interactive model="q38"
+1790194472034 [meter] admit id=chatcmpl-73917880c682925fa114b762c3f0ee8d tenant=default lane=interactive model="q38"
+1790194472034 [meter] admit id=chatcmpl-66bd066970065bdb9b62b70a7158128d tenant=default lane=interactive model="q38"
+1790194472034 [meter] admit id=chatcmpl-430db5a798ea2e6e1cd40ea89a8a2fb8 tenant=default lane=interactive model="q38"
+1790194472034 [meter] admit id=chatcmpl-10fb662ba88bcd52469026e38498f885 tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-05f7937149b9390fba72a8a361587349 tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-5ee3e570f17bd632133fbce5a1c2437c tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-93fcd398abc6aa0af722e8ade344dfef tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-614fa7ea3efefe7760a6536a1c2fa991 tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-e476d4b5651fadf10c3db9ecc1e72d8c tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-47e11702fc8a6a040e1b18a716296fc6 tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-b55cb8af794bf427df119525aa0f72b7 tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-e82a825d95bf470c39171c39c57c1395 tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-4adb3e3b77467c85c8a60c5e12e27cd1 tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-c9025bd8002d48c6d48c82bd17daa153 tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-316732dd53fb40f41b1e2482dc979b5f tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-36f5ad9c4ecce89e1228458104bc86e0 tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-0c11c45d921e7ecc42806895a1c8dd8a tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-53fb8b31a18e4df2db3cf6e50006ca37 tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-c2c1e33fccbb0c580ff69a702f09ada9 tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-b62bfc46df152f18d00cbbe363867973 tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-079dc058eb99590f74b2a0dd6fa5115b tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-18109999ff7a29ce9c1508429111c2c4 tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-d30cda0e595a773709968a72df1ed104 tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-9dd440ee66e7e7639206d65a80a6f1d1 tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-1710341f14dd6b93dc371dc3ba7a3488 tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-b265d82aec26e373b8916d0ac1d70938 tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-19b0e3c4eeedb45f22edb7ccb3e7f499 tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-e7c9dc5e9a27916a127c573a0d26d4df tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-0e3a1de95c93257efe96def765914099 tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-68a984937902d4083e36a695712067a6 tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-c1de6fd6d0b4f41ef9098728517bf12b tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-7c6f3fee033bf9d17a8654cba5036a7c tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-7678ec5d447c7dd6b82e2394a1fea90c tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-7ddedc37c7d020550bdfc3ebb6eb18e7 tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-4e7ce1ade07a14bc1beaa406456849ec tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-7c891b57d07f280977d17433aba5e74a tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-84bd6a2c724dec8a6d9ec2c5d9b07cc4 tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-32585c9eeccebe6ba0c1133bf2b75caf tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-b764f7f323f87497a1bb79e631014154 tenant=default lane=interactive model="q38"
+1790194472035 [meter] admit id=chatcmpl-b14f51e037e688d075349d4ccc1e9794 tenant=default lane=interactive model="q38"
+1790194472036 [meter] admit id=chatcmpl-5a13cf8eb8f2510cea0a0ae3dd376af7 tenant=default lane=interactive model="q38"
+1790194472036 [meter] admit id=chatcmpl-f2af2a795fad5aba097465578dd20732 tenant=default lane=interactive model="q38"
+1790194472036 [meter] admit id=chatcmpl-552ce0c3fa171a11287e3d37fce14f2d tenant=default lane=interactive model="q38"
+1790194472036 [meter] admit id=chatcmpl-5202d319d6df87e0a605423ccd775bdc tenant=default lane=interactive model="q38"
+1790194472407 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 3287.6MB / 15883MB, model q38)
+1790194472410 [admission] request cost: model="q38" ctx=34204 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 372MB fixed = 2045MB
+1790194472410 [admit-predict] id=chatcmpl-f9acbad79c9ef397fd139d3aee99e419 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1372 predicted_completion=591 kv_hat=1087738648 booked_bytes=1088247576 booked_real=2045438744 inflight=1 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472413 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1372 cached=0 lcp=47 active=2 wave=64 placement=single-or-non-pp2
+1790194472415 [admission] request cost: model="q38" ctx=34202 path=plain = 29696 B/token x ctx + 657MB prefill-workspace + 372MB fixed = 2044MB
+1790194472415 [admit-predict] id=chatcmpl-0923fb80ebbc7635b618d99a3f217b2d tenant="" model="q38" verdict=admit reason=global-p95 prompt=1370 predicted_completion=591 kv_hat=1086720792 booked_bytes=2175986224 booked_real=4090368560 inflight=2 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472418 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1370 cached=0 lcp=47 active=3 wave=64 placement=single-or-non-pp2
+1790194472420 [admission] request cost: model="q38" ctx=34203 path=plain = 29696 B/token x ctx + 657MB prefill-workspace + 372MB fixed = 2044MB
+1790194472420 [admit-predict] id=chatcmpl-e5e3e2328555dbb8178af0160de26553 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1371 predicted_completion=591 kv_hat=1087229720 booked_bytes=3262707016 booked_real=6134280520 inflight=3 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472423 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1371 cached=0 lcp=47 active=4 wave=64 placement=single-or-non-pp2
+1790194472425 [admission] request cost: model="q38" ctx=34205 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 372MB fixed = 2045MB
+1790194472425 [admit-predict] id=chatcmpl-4525093a13f195b9acec6c7999023acf tenant="" model="q38" verdict=admit reason=global-p95 prompt=1373 predicted_completion=591 kv_hat=1088247576 booked_bytes=4349936736 booked_real=8178701408 inflight=4 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472429 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1373 cached=0 lcp=47 active=5 wave=64 placement=single-or-non-pp2
+1790194472431 [admit-predict] id=chatcmpl-66d429062b0caaa20c7cf71eac272b18 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1373 predicted_completion=591 kv_hat=1088247576 booked_bytes=5438184312 booked_real=10224140152 inflight=5 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472435 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1373 cached=0 lcp=48 active=6 wave=64 placement=single-or-non-pp2
+1790194472437 [admission] request cost: model="q38" ctx=34206 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 372MB fixed = 2046MB
+1790194472437 [admit-predict] id=chatcmpl-17b3a9b015e46c87a8551aea685d7c9a tenant="" model="q38" verdict=admit reason=global-p95 prompt=1374 predicted_completion=591 kv_hat=1088756504 booked_bytes=6526431888 booked_real=12269578896 inflight=6 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472440 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1374 cached=0 lcp=48 active=7 wave=64 placement=single-or-non-pp2
+1790194472442 [admission] request cost: model="q38" ctx=34199 path=plain = 29696 B/token x ctx + 655MB prefill-workspace + 372MB fixed = 2042MB
+1790194472442 [admit-predict] id=chatcmpl-bb5ad20220678d6144ce993c2e23a6ca tenant="" model="q38" verdict=admit reason=global-p95 prompt=1367 predicted_completion=591 kv_hat=1085194008 booked_bytes=7615188392 booked_real=14315526568 inflight=7 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472446 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1367 cached=0 lcp=47 active=8 wave=64 placement=single-or-non-pp2
+1790194472448 [admission] request cost: model="q38" ctx=34211 path=plain = 29696 B/token x ctx + 661MB prefill-workspace + 372MB fixed = 2048MB
+1790194472448 [admit-predict] id=chatcmpl-499c3b67b5e19be6653b20fd4b578fc5 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1379 predicted_completion=591 kv_hat=1091301144 booked_bytes=8700382400 booked_real=16357911744 inflight=8 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472451 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1379 cached=0 lcp=47 active=9 wave=64 placement=single-or-non-pp2
+1790194472454 [admission] request cost: model="q38" ctx=34206 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 372MB fixed = 2046MB
+1790194472454 [admit-predict] id=chatcmpl-67e579c3ecc3af35d26af0fe894953a6 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1374 predicted_completion=591 kv_hat=1088756504 booked_bytes=9791683544 booked_real=18406404056 inflight=9 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472457 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1374 cached=0 lcp=47 active=10 wave=64 placement=single-or-non-pp2
+1790194472459 [admission] request cost: model="q38" ctx=34209 path=plain = 29696 B/token x ctx + 660MB prefill-workspace + 372MB fixed = 2047MB
+1790194472459 [admit-predict] id=chatcmpl-cc309bd61f0f9061e823c82198bf8d0b tenant="" model="q38" verdict=admit reason=global-p95 prompt=1377 predicted_completion=591 kv_hat=1090283288 booked_bytes=10880440048 booked_real=20452351728 inflight=10 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472462 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1377 cached=0 lcp=48 active=11 wave=64 placement=single-or-non-pp2
+1790194472465 [admission] request cost: model="q38" ctx=34204 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 372MB fixed = 2045MB
+1790194472465 [admit-predict] id=chatcmpl-18085ce4e15978bfe3c2a7951924dd1a tenant="" model="q38" verdict=admit reason=global-p95 prompt=1372 predicted_completion=591 kv_hat=1087738648 booked_bytes=11970723336 booked_real=22499826184 inflight=11 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472468 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1372 cached=0 lcp=47 active=12 wave=64 placement=single-or-non-pp2
+1790194472470 [admit-predict] id=chatcmpl-b14aaacc0878d48e575d27e1f8d79910 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1372 predicted_completion=591 kv_hat=1087738648 booked_bytes=13058461984 booked_real=24544756000 inflight=12 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472474 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1372 cached=0 lcp=48 active=13 wave=64 placement=single-or-non-pp2
+1790194472476 [admit-predict] id=chatcmpl-d05bac360dec9dd8326a7c3a6f8f8132 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1372 predicted_completion=591 kv_hat=1087738648 booked_bytes=14146200632 booked_real=26589685816 inflight=13 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472479 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1372 cached=0 lcp=47 active=14 wave=64 placement=single-or-non-pp2
+1790194472481 [admission] request cost: model="q38" ctx=34209 path=plain = 29696 B/token x ctx + 660MB prefill-workspace + 372MB fixed = 2047MB
+1790194472481 [admit-predict] id=chatcmpl-7f55d126c33670d29f670f9d9d1128ac tenant="" model="q38" verdict=admit reason=global-p95 prompt=1377 predicted_completion=591 kv_hat=1090283288 booked_bytes=15233939280 booked_real=28634615632 inflight=14 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472485 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1377 cached=0 lcp=47 active=15 wave=64 placement=single-or-non-pp2
+1790194472487 [admission] request cost: model="q38" ctx=34215 path=plain = 29696 B/token x ctx + 663MB prefill-workspace + 372MB fixed = 2051MB
+1790194472487 [admit-predict] id=chatcmpl-d381c75e7a294345e000229fa2292c13 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1383 predicted_completion=591 kv_hat=1093336856 booked_bytes=16324222568 booked_real=30682090088 inflight=15 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472490 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1383 cached=0 lcp=47 active=16 wave=64 placement=single-or-non-pp2
+1790194472493 [admission] request cost: model="q38" ctx=34203 path=plain = 29696 B/token x ctx + 657MB prefill-workspace + 372MB fixed = 2044MB
+1790194472493 [admit-predict] id=chatcmpl-f9b60b3d198cf6248423f90c5811ed3f tenant="" model="q38" verdict=admit reason=global-p95 prompt=1371 predicted_completion=591 kv_hat=1087229720 booked_bytes=17417559424 booked_real=32732618112 inflight=16 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472496 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1371 cached=0 lcp=47 active=17 wave=64 placement=single-or-non-pp2
+1790194472498 [admission] request cost: model="q38" ctx=34212 path=plain = 29696 B/token x ctx + 661MB prefill-workspace + 372MB fixed = 2049MB
+1790194472498 [admit-predict] id=chatcmpl-b192b74e7ea956d5f1c6baf0b3b4ee9c tenant="" model="q38" verdict=admit reason=global-p95 prompt=1380 predicted_completion=591 kv_hat=1091810072 booked_bytes=18504789144 booked_real=34777039000 inflight=17 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472501 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1380 cached=0 lcp=47 active=18 wave=64 placement=single-or-non-pp2
+1790194472504 [admission] request cost: model="q38" ctx=34213 path=plain = 29696 B/token x ctx + 662MB prefill-workspace + 372MB fixed = 2050MB
+1790194472504 [admit-predict] id=chatcmpl-6103bec9756960d8b7cc8c82590f6607 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1381 predicted_completion=591 kv_hat=1092319000 booked_bytes=19596599216 booked_real=36826040240 inflight=18 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472507 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1381 cached=0 lcp=47 active=19 wave=64 placement=single-or-non-pp2
+1790194472509 [admit-predict] id=chatcmpl-0b505558cf266b12a0604598e7b33097 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1381 predicted_completion=591 kv_hat=1092319000 booked_bytes=20688918216 booked_real=38875550408 inflight=19 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472513 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1381 cached=0 lcp=47 active=20 wave=64 placement=single-or-non-pp2
+1790194472515 [admission] request cost: model="q38" ctx=34209 path=plain = 29696 B/token x ctx + 660MB prefill-workspace + 372MB fixed = 2047MB
+1790194472515 [admit-predict] id=chatcmpl-73917880c682925fa114b762c3f0ee8d tenant="" model="q38" verdict=admit reason=global-p95 prompt=1377 predicted_completion=591 kv_hat=1090283288 booked_bytes=21781237216 booked_real=40925060576 inflight=20 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472518 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1377 cached=0 lcp=47 active=21 wave=64 placement=single-or-non-pp2
+1790194472520 [admission] request cost: model="q38" ctx=34205 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 372MB fixed = 2045MB
+1790194472520 [admit-predict] id=chatcmpl-66bd066970065bdb9b62b70a7158128d tenant="" model="q38" verdict=admit reason=global-p95 prompt=1373 predicted_completion=591 kv_hat=1088247576 booked_bytes=22871520504 booked_real=42972535032 inflight=21 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472524 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1373 cached=0 lcp=47 active=22 wave=64 placement=single-or-non-pp2
+1790194472526 [admit-predict] id=chatcmpl-430db5a798ea2e6e1cd40ea89a8a2fb8 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1373 predicted_completion=591 kv_hat=1088247576 booked_bytes=23959768080 booked_real=45017973776 inflight=22 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472530 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1373 cached=0 lcp=47 active=23 wave=64 placement=single-or-non-pp2
+1790194472532 [admit-predict] id=chatcmpl-10fb662ba88bcd52469026e38498f885 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1373 predicted_completion=591 kv_hat=1088247576 booked_bytes=25048015656 booked_real=47063412520 inflight=23 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472535 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1373 cached=0 lcp=47 active=24 wave=64 placement=single-or-non-pp2
+1790194472537 [admit-predict] id=chatcmpl-05f7937149b9390fba72a8a361587349 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1373 predicted_completion=591 kv_hat=1088247576 booked_bytes=26136263232 booked_real=49108851264 inflight=24 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472541 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1373 cached=0 lcp=47 active=25 wave=64 placement=single-or-non-pp2
+1790194472543 [admission] request cost: model="q38" ctx=34202 path=plain = 29696 B/token x ctx + 657MB prefill-workspace + 372MB fixed = 2044MB
+1790194472543 [admit-predict] id=chatcmpl-5ee3e570f17bd632133fbce5a1c2437c tenant="" model="q38" verdict=admit reason=global-p95 prompt=1370 predicted_completion=591 kv_hat=1086720792 booked_bytes=27224510808 booked_real=51154290008 inflight=25 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472547 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1370 cached=0 lcp=47 active=26 wave=64 placement=single-or-non-pp2
+1790194472549 [admission] request cost: model="q38" ctx=34207 path=plain = 29696 B/token x ctx + 659MB prefill-workspace + 372MB fixed = 2046MB
+1790194472549 [admit-predict] id=chatcmpl-93fcd398abc6aa0af722e8ade344dfef tenant="" model="q38" verdict=admit reason=global-p95 prompt=1375 predicted_completion=591 kv_hat=1089265432 booked_bytes=28311231600 booked_real=53198201968 inflight=26 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472552 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1375 cached=0 lcp=48 active=27 wave=64 placement=single-or-non-pp2
+1790194472555 [admission] request cost: model="q38" ctx=34206 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 372MB fixed = 2046MB
+1790194472555 [admit-predict] id=chatcmpl-614fa7ea3efefe7760a6536a1c2fa991 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1374 predicted_completion=591 kv_hat=1088756504 booked_bytes=29400497032 booked_real=55244658568 inflight=27 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472558 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1374 cached=0 lcp=48 active=28 wave=64 placement=single-or-non-pp2
+1790194472560 [admission] request cost: model="q38" ctx=34201 path=plain = 29696 B/token x ctx + 656MB prefill-workspace + 372MB fixed = 2043MB
+1790194472560 [admit-predict] id=chatcmpl-e476d4b5651fadf10c3db9ecc1e72d8c tenant="" model="q38" verdict=admit reason=global-p95 prompt=1369 predicted_completion=591 kv_hat=1086211864 booked_bytes=30489253536 booked_real=57290606240 inflight=28 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472564 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1369 cached=0 lcp=47 active=29 wave=64 placement=single-or-non-pp2
+1790194472566 [admission] request cost: model="q38" ctx=34202 path=plain = 29696 B/token x ctx + 657MB prefill-workspace + 372MB fixed = 2044MB
+1790194472566 [admit-predict] id=chatcmpl-47e11702fc8a6a040e1b18a716296fc6 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1370 predicted_completion=591 kv_hat=1086720792 booked_bytes=31575465400 booked_real=59334009272 inflight=29 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472570 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1370 cached=0 lcp=47 active=30 wave=64 placement=single-or-non-pp2
+1790194472572 [admission] request cost: model="q38" ctx=34207 path=plain = 29696 B/token x ctx + 659MB prefill-workspace + 372MB fixed = 2046MB
+1790194472572 [admit-predict] id=chatcmpl-b55cb8af794bf427df119525aa0f72b7 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1375 predicted_completion=591 kv_hat=1089265432 booked_bytes=32662186192 booked_real=61377921232 inflight=30 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472575 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1375 cached=0 lcp=47 active=31 wave=64 placement=single-or-non-pp2
+1790194472578 [admission] request cost: model="q38" ctx=34200 path=plain = 29696 B/token x ctx + 656MB prefill-workspace + 372MB fixed = 2043MB
+1790194472578 [admit-predict] id=chatcmpl-e82a825d95bf470c39171c39c57c1395 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1368 predicted_completion=591 kv_hat=1085702936 booked_bytes=33751451624 booked_real=63424377832 inflight=31 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472581 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1368 cached=0 lcp=47 active=32 wave=64 placement=single-or-non-pp2
+1790194472583 [admission] request cost: model="q38" ctx=34206 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 372MB fixed = 2046MB
+1790194472583 [admit-predict] id=chatcmpl-4adb3e3b77467c85c8a60c5e12e27cd1 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1374 predicted_completion=591 kv_hat=1088756504 booked_bytes=34837154560 booked_real=65467271936 inflight=32 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472587 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1374 cached=0 lcp=47 active=33 wave=64 placement=single-or-non-pp2
+1790194472589 [admit-predict] id=chatcmpl-c9025bd8002d48c6d48c82bd17daa153 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1374 predicted_completion=591 kv_hat=1088756504 booked_bytes=35925911064 booked_real=67513219608 inflight=33 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472593 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1374 cached=0 lcp=47 active=34 wave=64 placement=single-or-non-pp2
+1790194472595 [admission] request cost: model="q38" ctx=34203 path=plain = 29696 B/token x ctx + 657MB prefill-workspace + 372MB fixed = 2044MB
+1790194472595 [admit-predict] id=chatcmpl-316732dd53fb40f41b1e2482dc979b5f tenant="" model="q38" verdict=admit reason=global-p95 prompt=1371 predicted_completion=591 kv_hat=1087229720 booked_bytes=37014667568 booked_real=69559167280 inflight=34 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472598 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1371 cached=0 lcp=47 active=35 wave=64 placement=single-or-non-pp2
+1790194472600 [admission] request cost: model="q38" ctx=34202 path=plain = 29696 B/token x ctx + 657MB prefill-workspace + 372MB fixed = 2044MB
+1790194472600 [admit-predict] id=chatcmpl-36f5ad9c4ecce89e1228458104bc86e0 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1370 predicted_completion=591 kv_hat=1086720792 booked_bytes=38101897288 booked_real=71603588168 inflight=35 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472604 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1370 cached=0 lcp=47 active=36 wave=64 placement=single-or-non-pp2
+1790194472606 [admission] request cost: model="q38" ctx=34210 path=plain = 29696 B/token x ctx + 660MB prefill-workspace + 372MB fixed = 2048MB
+1790194472606 [admit-predict] id=chatcmpl-0c11c45d921e7ecc42806895a1c8dd8a tenant="" model="q38" verdict=admit reason=global-p95 prompt=1378 predicted_completion=591 kv_hat=1090792216 booked_bytes=39188618080 booked_real=73647500128 inflight=36 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472610 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1378 cached=0 lcp=47 active=37 wave=64 placement=single-or-non-pp2
+1790194472612 [admission] request cost: model="q38" ctx=34204 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 372MB fixed = 2045MB
+1790194472612 [admit-predict] id=chatcmpl-53fb8b31a18e4df2db3cf6e50006ca37 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1372 predicted_completion=591 kv_hat=1087738648 booked_bytes=40279410296 booked_real=75695483512 inflight=37 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472616 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1372 cached=0 lcp=47 active=38 wave=64 placement=single-or-non-pp2
+1790194472618 [admission] request cost: model="q38" ctx=34203 path=plain = 29696 B/token x ctx + 657MB prefill-workspace + 372MB fixed = 2044MB
+1790194472618 [admit-predict] id=chatcmpl-c2c1e33fccbb0c580ff69a702f09ada9 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1371 predicted_completion=591 kv_hat=1087229720 booked_bytes=41367148944 booked_real=77740413328 inflight=38 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472621 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1371 cached=0 lcp=47 active=39 wave=64 placement=single-or-non-pp2
+1790194472624 [admission] request cost: model="q38" ctx=34207 path=plain = 29696 B/token x ctx + 659MB prefill-workspace + 372MB fixed = 2046MB
+1790194472624 [admit-predict] id=chatcmpl-b62bfc46df152f18d00cbbe363867973 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1375 predicted_completion=591 kv_hat=1089265432 booked_bytes=42454378664 booked_real=79784834216 inflight=39 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472627 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1375 cached=0 lcp=47 active=40 wave=64 placement=single-or-non-pp2
+1790194472630 [admit-predict] id=chatcmpl-079dc058eb99590f74b2a0dd6fa5115b tenant="" model="q38" verdict=admit reason=global-p95 prompt=1375 predicted_completion=591 kv_hat=1089265432 booked_bytes=43543644096 booked_real=81831290816 inflight=40 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472633 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1375 cached=0 lcp=47 active=41 wave=64 placement=single-or-non-pp2
+1790194472635 [admission] request cost: model="q38" ctx=34208 path=plain = 29696 B/token x ctx + 659MB prefill-workspace + 372MB fixed = 2047MB
+1790194472635 [admit-predict] id=chatcmpl-18109999ff7a29ce9c1508429111c2c4 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1376 predicted_completion=591 kv_hat=1089774360 booked_bytes=44632909528 booked_real=83877747416 inflight=41 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472639 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1376 cached=0 lcp=47 active=42 wave=64 placement=single-or-non-pp2
+1790194472641 [admit-predict] id=chatcmpl-d30cda0e595a773709968a72df1ed104 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1376 predicted_completion=591 kv_hat=1089774360 booked_bytes=45722683888 booked_real=85924712944 inflight=42 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472645 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1376 cached=0 lcp=48 active=43 wave=64 placement=single-or-non-pp2
+1790194472647 [admission] request cost: model="q38" ctx=34206 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 372MB fixed = 2046MB
+1790194472647 [admit-predict] id=chatcmpl-9dd440ee66e7e7639206d65a80a6f1d1 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1374 predicted_completion=591 kv_hat=1088756504 booked_bytes=46812458248 booked_real=87971678472 inflight=43 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472651 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1374 cached=0 lcp=47 active=44 wave=64 placement=single-or-non-pp2
+1790194472653 [admission] request cost: model="q38" ctx=34204 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 372MB fixed = 2045MB
+1790194472653 [admit-predict] id=chatcmpl-1710341f14dd6b93dc371dc3ba7a3488 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1372 predicted_completion=591 kv_hat=1087738648 booked_bytes=47901214752 booked_real=90017626144 inflight=44 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472657 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1372 cached=0 lcp=47 active=45 wave=64 placement=single-or-non-pp2
+1790194472659 [admission] request cost: model="q38" ctx=34210 path=plain = 29696 B/token x ctx + 660MB prefill-workspace + 372MB fixed = 2048MB
+1790194472659 [admit-predict] id=chatcmpl-b265d82aec26e373b8916d0ac1d70938 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1378 predicted_completion=591 kv_hat=1090792216 booked_bytes=48988953400 booked_real=92062555960 inflight=45 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472663 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1378 cached=0 lcp=47 active=46 wave=64 placement=single-or-non-pp2
+1790194472665 [admission] request cost: model="q38" ctx=34206 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 372MB fixed = 2046MB
+1790194472665 [admit-predict] id=chatcmpl-19b0e3c4eeedb45f22edb7ccb3e7f499 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1374 predicted_completion=591 kv_hat=1088756504 booked_bytes=50079745616 booked_real=94110539344 inflight=46 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472670 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1374 cached=0 lcp=47 active=47 wave=64 placement=single-or-non-pp2
+1790194472672 [admission] request cost: model="q38" ctx=34208 path=plain = 29696 B/token x ctx + 659MB prefill-workspace + 372MB fixed = 2047MB
+1790194472672 [admit-predict] id=chatcmpl-e7c9dc5e9a27916a127c573a0d26d4df tenant="" model="q38" verdict=admit reason=global-p95 prompt=1376 predicted_completion=591 kv_hat=1089774360 booked_bytes=51168502120 booked_real=96156487016 inflight=47 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472677 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1376 cached=0 lcp=47 active=48 wave=64 placement=single-or-non-pp2
+1790194472679 [admission] request cost: model="q38" ctx=34211 path=plain = 29696 B/token x ctx + 661MB prefill-workspace + 372MB fixed = 2048MB
+1790194472679 [admit-predict] id=chatcmpl-0e3a1de95c93257efe96def765914099 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1379 predicted_completion=591 kv_hat=1091301144 booked_bytes=52258276480 booked_real=98203452544 inflight=48 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472683 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1379 cached=0 lcp=47 active=49 wave=64 placement=single-or-non-pp2
+1790194472685 [admission] request cost: model="q38" ctx=34202 path=plain = 29696 B/token x ctx + 657MB prefill-workspace + 372MB fixed = 2044MB
+1790194472685 [admit-predict] id=chatcmpl-68a984937902d4083e36a695712067a6 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1370 predicted_completion=591 kv_hat=1086720792 booked_bytes=53349577624 booked_real=100251944856 inflight=49 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472689 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1370 cached=0 lcp=47 active=50 wave=64 placement=single-or-non-pp2
+1790194472691 [admission] request cost: model="q38" ctx=34206 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 372MB fixed = 2046MB
+1790194472691 [admit-predict] id=chatcmpl-c1de6fd6d0b4f41ef9098728517bf12b tenant="" model="q38" verdict=admit reason=global-p95 prompt=1374 predicted_completion=591 kv_hat=1088756504 booked_bytes=54436298416 booked_real=102295856816 inflight=50 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472695 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1374 cached=0 lcp=47 active=51 wave=64 placement=single-or-non-pp2
+1790194472697 [admission] request cost: model="q38" ctx=34205 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 372MB fixed = 2045MB
+1790194472697 [admit-predict] id=chatcmpl-7c6f3fee033bf9d17a8654cba5036a7c tenant="" model="q38" verdict=admit reason=global-p95 prompt=1373 predicted_completion=591 kv_hat=1088247576 booked_bytes=55525054920 booked_real=104341804488 inflight=51 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472701 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1373 cached=0 lcp=47 active=52 wave=64 placement=single-or-non-pp2
+1790194472703 [admission] request cost: model="q38" ctx=34202 path=plain = 29696 B/token x ctx + 657MB prefill-workspace + 372MB fixed = 2044MB
+1790194472703 [admit-predict] id=chatcmpl-7678ec5d447c7dd6b82e2394a1fea90c tenant="" model="q38" verdict=admit reason=global-p95 prompt=1370 predicted_completion=591 kv_hat=1086720792 booked_bytes=56613302496 booked_real=106387243232 inflight=52 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472707 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1370 cached=0 lcp=47 active=53 wave=64 placement=single-or-non-pp2
+1790194472709 [admission] request cost: model="q38" ctx=34203 path=plain = 29696 B/token x ctx + 657MB prefill-workspace + 372MB fixed = 2044MB
+1790194472709 [admit-predict] id=chatcmpl-7ddedc37c7d020550bdfc3ebb6eb18e7 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1371 predicted_completion=591 kv_hat=1087229720 booked_bytes=57700023288 booked_real=108431155192 inflight=53 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472717 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=3287564288 pool_cached_gain_bytes=3287257088 trim_released_bytes=1744830464 driver_free_bytes 3908370432 -> 5653200896 pool_reserved_bytes 97442070528 -> 95697240064 pool_used_bytes 97397243308 -> 94109986220 pool_retained_bytes=1542426624 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1790194472717 [admit-oom] reclaim-on-defer: evicted 16 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3953MB -> 7240MB
+1790194472719 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1371 cached=0 lcp=0 active=54 wave=64 placement=single-or-non-pp2
+1790194472721 [admission] request cost: model="q38" ctx=34211 path=plain = 29696 B/token x ctx + 661MB prefill-workspace + 372MB fixed = 2048MB
+1790194472721 [admit-predict] id=chatcmpl-4e7ce1ade07a14bc1beaa406456849ec tenant="" model="q38" verdict=admit reason=global-p95 prompt=1379 predicted_completion=591 kv_hat=1091301144 booked_bytes=58787253008 booked_real=110475576080 inflight=54 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472723 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1379 cached=0 lcp=0 active=55 wave=64 placement=single-or-non-pp2
+1790194472725 [admission] request cost: model="q38" ctx=34207 path=plain = 29696 B/token x ctx + 659MB prefill-workspace + 372MB fixed = 2046MB
+1790194472725 [admit-predict] id=chatcmpl-7c891b57d07f280977d17433aba5e74a tenant="" model="q38" verdict=admit reason=global-p95 prompt=1375 predicted_completion=591 kv_hat=1089265432 booked_bytes=59878554152 booked_real=112524068392 inflight=55 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472729 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1375 cached=0 lcp=0 active=56 wave=64 placement=single-or-non-pp2
+1790194472731 [admission] request cost: model="q38" ctx=34205 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 372MB fixed = 2045MB
+1790194472731 [admit-predict] id=chatcmpl-84bd6a2c724dec8a6d9ec2c5d9b07cc4 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1373 predicted_completion=591 kv_hat=1088247576 booked_bytes=60967819584 booked_real=114570524992 inflight=56 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472731 [admit-oom] reclaim-on-defer: evicted 0 prefix entries + 0 plain + 1 spec + 0 dspark parked sessions (global LRU); effective free 3084MB -> 4700MB
+1790194472732 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1373 cached=0 lcp=0 active=57 wave=64 placement=single-or-non-pp2
+1790194472734 [admission] request cost: model="q38" ctx=34206 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 372MB fixed = 2046MB
+1790194472734 [admit-predict] id=chatcmpl-32585c9eeccebe6ba0c1133bf2b75caf tenant="" model="q38" verdict=admit reason=global-p95 prompt=1374 predicted_completion=591 kv_hat=1088756504 booked_bytes=62056067160 booked_real=116615963736 inflight=57 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472734 [admit-oom] reclaim-on-defer: evicted 0 prefix entries + 0 plain + 1 spec + 0 dspark parked sessions (global LRU); effective free 3314MB -> 4930MB
+1790194472735 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1374 cached=0 lcp=0 active=58 wave=64 placement=single-or-non-pp2
+1790194472737 [admission] request cost: model="q38" ctx=34202 path=plain = 29696 B/token x ctx + 657MB prefill-workspace + 372MB fixed = 2044MB
+1790194472737 [admit-predict] id=chatcmpl-b764f7f323f87497a1bb79e631014154 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1370 predicted_completion=591 kv_hat=1086720792 booked_bytes=63144823664 booked_real=118661911408 inflight=58 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472737 [admit-oom] VRAM defer: 58 active, effective free 3545MB (driver + 610MB pool-cached) < cost 2044MB + reserve 2303MB — queueing (FIFO) [pool res 98415MB used 97805MB; parked spec sessions 0; plain reuse 0; queue 5]
+1790194472737 [admit-mem] id=chatcmpl-b764f7f323f87497a1bb79e631014154 model="q38" verdict=defer prompt=1370 output_bound=- charged_ctx=34202 est_bytes=4347224840 est_context=1015662592 est_fixed=3331562248 device_free=3545024568 host_free=0 demotable=0 short_by=802200272 inflight=58 cap=64 waited_ms=0 retry_after_s=-
+1790194472739 [admission] request cost: model="q38" ctx=34208 path=plain = 29696 B/token x ctx + 659MB prefill-workspace + 372MB fixed = 2047MB
+1790194472739 [admit-predict] id=chatcmpl-b14f51e037e688d075349d4ccc1e9794 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1376 predicted_completion=591 kv_hat=1089774360 booked_bytes=63144823664 booked_real=118661911408 inflight=58 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472739 [admit-mem] id=chatcmpl-b14f51e037e688d075349d4ccc1e9794 model="q38" verdict=defer prompt=1376 output_bound=- charged_ctx=34208 est_bytes=4350278408 est_context=1015840768 est_fixed=3334437640 device_free=3545024568 host_free=0 demotable=0 short_by=805253840 inflight=58 cap=64 waited_ms=0 retry_after_s=-
+1790194472741 [admission] request cost: model="q38" ctx=34204 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 372MB fixed = 2045MB
+1790194472741 [admit-predict] id=chatcmpl-5a13cf8eb8f2510cea0a0ae3dd376af7 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1372 predicted_completion=591 kv_hat=1087738648 booked_bytes=63144823664 booked_real=118661911408 inflight=58 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472741 [admit-mem] id=chatcmpl-5a13cf8eb8f2510cea0a0ae3dd376af7 model="q38" verdict=defer prompt=1372 output_bound=- charged_ctx=34204 est_bytes=4348242696 est_context=1015721984 est_fixed=3332520712 device_free=3545024568 host_free=0 demotable=0 short_by=803218128 inflight=58 cap=64 waited_ms=0 retry_after_s=-
+1790194472743 [admission] request cost: model="q38" ctx=34208 path=plain = 29696 B/token x ctx + 659MB prefill-workspace + 372MB fixed = 2047MB
+1790194472743 [admit-predict] id=chatcmpl-f2af2a795fad5aba097465578dd20732 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1376 predicted_completion=591 kv_hat=1089774360 booked_bytes=63144823664 booked_real=118661911408 inflight=58 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472743 [admit-mem] id=chatcmpl-f2af2a795fad5aba097465578dd20732 model="q38" verdict=defer prompt=1376 output_bound=- charged_ctx=34208 est_bytes=4350278408 est_context=1015840768 est_fixed=3334437640 device_free=3545024568 host_free=0 demotable=0 short_by=805253840 inflight=58 cap=64 waited_ms=0 retry_after_s=-
+1790194472745 [admission] request cost: model="q38" ctx=34203 path=plain = 29696 B/token x ctx + 657MB prefill-workspace + 372MB fixed = 2044MB
+1790194472745 [admit-predict] id=chatcmpl-552ce0c3fa171a11287e3d37fce14f2d tenant="" model="q38" verdict=admit reason=global-p95 prompt=1371 predicted_completion=591 kv_hat=1087229720 booked_bytes=63144823664 booked_real=118661911408 inflight=58 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472745 [admit-mem] id=chatcmpl-552ce0c3fa171a11287e3d37fce14f2d model="q38" verdict=defer prompt=1371 output_bound=- charged_ctx=34203 est_bytes=4347733768 est_context=1015692288 est_fixed=3332041480 device_free=3545024568 host_free=0 demotable=0 short_by=802709200 inflight=58 cap=64 waited_ms=0 retry_after_s=-
+1790194472747 [admission] request cost: model="q38" ctx=34202 path=plain = 29696 B/token x ctx + 657MB prefill-workspace + 372MB fixed = 2044MB
+1790194472747 [admit-predict] id=chatcmpl-5202d319d6df87e0a605423ccd775bdc tenant="" model="q38" verdict=admit reason=global-p95 prompt=1370 predicted_completion=591 kv_hat=1086720792 booked_bytes=63144823664 booked_real=118661911408 inflight=58 cap=64 budget_bytes=65880829648 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790194472747 [admit-mem] id=chatcmpl-5202d319d6df87e0a605423ccd775bdc model="q38" verdict=defer prompt=1370 output_bound=- charged_ctx=34202 est_bytes=4347224840 est_context=1015662592 est_fixed=3331562248 device_free=3545024568 host_free=0 demotable=0 short_by=802200272 inflight=58 cap=64 waited_ms=0 retry_after_s=-
+1790194488793 [admit-oom] VRAM defer: 58 active, effective free 3544MB (driver + 743MB pool-cached) < cost 2044MB + reserve 2303MB — queueing (FIFO) [pool res 98549MB used 97806MB; parked spec sessions 0; plain reuse 0; queue 5]
+1790194488793 [admit-mem] id=chatcmpl-b764f7f323f87497a1bb79e631014154 model="q38" verdict=refuse prompt=1370 output_bound=- charged_ctx=34202 est_bytes=4347224840 est_context=1015662592 est_fixed=3331562248 device_free=3544031288 host_free=0 demotable=0 short_by=803193552 inflight=58 cap=64 waited_ms=16055 retry_after_s=4
+1790194488793 [admission] request cost: model="q38" ctx=34208 path=plain = 29696 B/token x ctx + 659MB prefill-workspace + 372MB fixed = 2047MB
+1790194488793 [admit-oom] VRAM defer: 58 active, effective free 3544MB (driver + 743MB pool-cached) < cost 2047MB + reserve 2303MB — queueing (FIFO) [pool res 98549MB used 97806MB; parked spec sessions 0; plain reuse 0; queue 4]
+1790194488793 [admit-mem] id=chatcmpl-b14f51e037e688d075349d4ccc1e9794 model="q38" verdict=refuse prompt=1376 output_bound=- charged_ctx=34208 est_bytes=4350278408 est_context=1015840768 est_fixed=3334437640 device_free=3544031288 host_free=0 demotable=0 short_by=806247120 inflight=58 cap=64 waited_ms=16053 retry_after_s=4
+1790194488793 [admission] request cost: model="q38" ctx=34204 path=plain = 29696 B/token x ctx + 658MB prefill-workspace + 372MB fixed = 2045MB
+1790194488793 [admit-oom] VRAM defer: 58 active, effective free 3544MB (driver + 743MB pool-cached) < cost 2045MB + reserve 2303MB — queueing (FIFO) [pool res 98549MB used 97806MB; parked spec sessions 0; plain reuse 0; queue 3]
+1790194488793 [admit-mem] id=chatcmpl-5a13cf8eb8f2510cea0a0ae3dd376af7 model="q38" verdict=refuse prompt=1372 output_bound=- charged_ctx=34204 est_bytes=4348242696 est_context=1015721984 est_fixed=3332520712 device_free=3544031288 host_free=0 demotable=0 short_by=804211408 inflight=58 cap=64 waited_ms=16051 retry_after_s=4
+1790194488793 [admission] request cost: model="q38" ctx=34208 path=plain = 29696 B/token x ctx + 659MB prefill-workspace + 372MB fixed = 2047MB
+1790194488793 [admit-oom] VRAM defer: 58 active, effective free 3544MB (driver + 743MB pool-cached) < cost 2047MB + reserve 2303MB — queueing (FIFO) [pool res 98549MB used 97806MB; parked spec sessions 0; plain reuse 0; queue 2]
+1790194488793 [admit-mem] id=chatcmpl-f2af2a795fad5aba097465578dd20732 model="q38" verdict=refuse prompt=1376 output_bound=- charged_ctx=34208 est_bytes=4350278408 est_context=1015840768 est_fixed=3334437640 device_free=3544031288 host_free=0 demotable=0 short_by=806247120 inflight=58 cap=64 waited_ms=16049 retry_after_s=4
+1790194488793 [admission] request cost: model="q38" ctx=34203 path=plain = 29696 B/token x ctx + 657MB prefill-workspace + 372MB fixed = 2044MB
+1790194488793 [admit-oom] VRAM defer: 58 active, effective free 3544MB (driver + 743MB pool-cached) < cost 2044MB + reserve 2303MB — queueing (FIFO) [pool res 98549MB used 97806MB; parked spec sessions 0; plain reuse 0; queue 1]
+1790194488793 [admit-mem] id=chatcmpl-552ce0c3fa171a11287e3d37fce14f2d model="q38" verdict=refuse prompt=1371 output_bound=- charged_ctx=34203 est_bytes=4347733768 est_context=1015692288 est_fixed=3332041480 device_free=3544031288 host_free=0 demotable=0 short_by=803702480 inflight=58 cap=64 waited_ms=16047 retry_after_s=4
+1790194488793 [admission] request cost: model="q38" ctx=34202 path=plain = 29696 B/token x ctx + 657MB prefill-workspace + 372MB fixed = 2044MB
+1790194488794 [admit-oom] VRAM defer: 58 active, effective free 3544MB (driver + 743MB pool-cached) < cost 2044MB + reserve 2303MB — queueing (FIFO) [pool res 98549MB used 97806MB; parked spec sessions 0; plain reuse 0; queue 0]
+1790194488794 [admit-mem] id=chatcmpl-5202d319d6df87e0a605423ccd775bdc model="q38" verdict=refuse prompt=1370 output_bound=- charged_ctx=34202 est_bytes=4347224840 est_context=1015662592 est_fixed=3331562248 device_free=3544031288 host_free=0 demotable=0 short_by=803193552 inflight=58 cap=64 waited_ms=16046 retry_after_s=4
+1790194488921 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 196.8MB / 15883MB, model q38)
+1790194489050 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 393.6MB / 15883MB, model q38)
+1790194489179 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 590.4MB / 15883MB, model q38)
+1790194489309 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 787.2MB / 15883MB, model q38)
+1790194489438 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 984.0MB / 15883MB, model q38)
+1790194489567 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 1180.8MB / 15883MB, model q38)
+1790194489697 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 1377.6MB / 15883MB, model q38)
+1790194489826 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 1574.4MB / 15883MB, model q38)
+1790194489956 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 1771.2MB / 15883MB, model q38)
+1790194490085 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 1968.0MB / 15883MB, model q38)
+1790194490213 [prefix-cache] snapshot failed (DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")); prefix not cached
+1790194490214 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490214 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490214 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490214 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490214 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490215 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490215 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490215 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490215 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490215 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490215 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490215 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490215 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490215 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490215 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490216 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490216 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490216 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490216 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490216 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490216 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490216 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490216 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490216 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490216 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490217 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490217 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490217 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490217 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490217 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490217 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490217 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490217 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490217 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490217 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490218 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490218 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490218 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490218 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490218 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490218 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490218 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490218 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490218 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490218 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490219 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+1790194490422 [prime-batch] B=6 tokens=169 carried=6 partial=0 in 170.4ms
+1790194490578 [prime-batch] B=5 tokens=149 carried=5 partial=0 in 156.0ms
+1790194490581 [fa-pool] grow #4 dev=0 o_len 3194880 -> 6414336 ml_len 12480 -> 25056 (retired kept, zero=false)
+1790194490978 [fa-pool] grow #5 dev=0 o_len 6414336 -> 12828672 ml_len 25056 -> 50112 (retired kept, zero=false)
+1790194526194 [server] SIGTERM: draining (0 in flight, deadline 30s)
+1790194526194 [server] drain complete in 0.0s; exiting
+1790194526317 [server] GPU worker shutdown complete

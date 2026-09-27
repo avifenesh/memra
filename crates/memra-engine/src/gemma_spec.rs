@@ -1869,6 +1869,14 @@ impl HybridModel {
         let mut ended = false;
         while burst_out.len() < target && !ended {
             let mut kr = if adapt { kc } else { k_cap };
+            // CONTEXT-EDGE GUARD (memra#659): the round's verify writes the pending token plus
+            // kr drafts at rows cache.pos..; a round that cannot land inside the cache ends the
+            // burst before anything of it runs, and the worker's `committed + k + 2 >=
+            // cache_max_ctx` check finishes the request ContextFull. Without it a request whose
+            // budget spans its whole cap wrote its last round past the cache.
+            if sess.cache.pos + kr + 1 > sess.cache.max_ctx {
+                break;
+            }
             let dc_bucket: Option<usize> = {
                 static DC: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
                 if *DC.get_or_init(|| std::env::var("MEMRA_GEMMA_DRAFT_DC").as_deref() != Ok("0")) {
@@ -2109,6 +2117,14 @@ impl HybridModel {
         let mut ended = false;
         while burst_out.len() < target && !ended {
             let kr = if adapt { kc } else { k_cap };
+            // CONTEXT-EDGE GUARD (memra#659): the round's verify writes the pending token plus
+            // kr drafts at rows cache.pos..; a round that cannot land inside the cache ends the
+            // burst before anything of it runs, and the worker's `committed + k + 2 >=
+            // cache_max_ctx` check finishes the request ContextFull. Without it a request whose
+            // budget spans its whole cap wrote its last round past the cache.
+            if sess.cache.pos + kr + 1 > sess.cache.max_ctx {
+                break;
+            }
             e.u32_set_k(&mut batch_d, sess.pending, 0)?;
             e.copy_into(&mut g_seed, 0, &sess.h, n_embd)?;
             for (j, slot) in pos_slots.iter_mut().take(kr).enumerate() {

@@ -1,0 +1,99 @@
+== lane E part 2 on the target card 2026-09-23T07:39:40Z
+tree 9e3b7250eacc0549a4f74ea18d9536d45b182431 dirty=[]
+card NVIDIA RTX PRO 6000 Blackwell Server Edition, 580.178.04, 600.00 W
+bins:
+  487d87ff03a56541bca0d6ffecee31475d6bacff45eed6e42ac33d71cd0b6ca8  /root/e641/bins/base/prime-batch-gate
+  ab655e7e4e76e25cfefe286ade0c43970d3d4715d1c7bcb2c4576fea0a3da238  /root/e641/bins/base/source.txt
+  9ec68ead0327c04ca4a88e716905b44fb19e6c63cea1f8dd4cade656c0b59247  /root/e641/bins/fix/concat-prime-probe
+  92576099a7e749bcbaa4aac2a5ab0c6c611fd7a3e6e73c4543daf69791efb31b  /root/e641/bins/fix/memra-server
+  2d5950768bf3b4c78993a292ab6ae552a5bdb5b3b7623a2f7b39afed03cd0365  /root/e641/bins/fix/prime-batch-gate
+  a341b60cbc8ab969f880047983bb3b43868d3d0a1cd592e17835b60b2e334ba8  /root/e641/bins/fix/source.txt
+model /root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf 15705922304 bytes sha256 1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a
+card at start: apps=[] state=[33, 180 MHz, 31.47 W, 0 MiB]
+-- pbg-fix start 2026-09-23T07:39:49Z apps=[] state=[33, 180 MHz, 31.47 W, 0 MiB]
+   pbg-fix rc=0
+    exact-b3-p24 rc=0 ALL GREEN: prime-batch gate (batch=3, uneven lengths)
+    exact-b4-p1100 rc=0 ALL GREEN: prime-batch gate (batch=4, uneven lengths)
+    carried-b3-exact rc=0 ALL GREEN: prime-batch gate (batch=3, uneven lengths)
+prime-batch-exact-gate: PASS (every batched prime is bit-identical to its individual prime)
+-- pbg-fix-canary start 2026-09-23T07:40:13Z apps=[] state=[41, 2400 MHz, 255.36 W, 0 MiB]
+   pbg-fix-canary rc=0
+    canary-b3-p24 rc=1 Error: "prime-batch-gate: 2 FAIL(s)"
+prime-batch-exact-gate: CANARY OK (seq 0 DIFFERS: exact logits diff 248320/248320 h_seed diff 5120/5120 hidden diff 122880/122880; seqs 1 and 2 bit-identical)
+-- pbg-base-exact-b3-p24 start 2026-09-23T07:40:19Z apps=[] state=[41, 2385 MHz, 262.90 W, 0 MiB]
+   pbg-base-exact-b3-p24 rc=1
+    seq 0: exact logits diff 248320/248320 h_seed diff 5120/5120 hidden diff 122879/122880
+    seq 1: exact logits diff 248317/248320 h_seed diff 5120/5120 hidden diff 209919/209920
+    seq 2: exact logits diff 248320/248320 h_seed diff 5120/5120 hidden diff 296960/296960
+    Error: "prime-batch-gate: 6 FAIL(s)"
+-- pbg-base-exact-b4-p1100 start 2026-09-23T07:40:25Z apps=[] state=[41, 2347 MHz, 253.94 W, 0 MiB]
+   pbg-base-exact-b4-p1100 rc=1
+    seq 0: exact logits diff 248317/248320 h_seed diff 5120/5120 hidden diff 5631989/5632000
+    seq 1: exact logits diff 248319/248320 h_seed diff 5120/5120 hidden diff 5719027/5719040
+    seq 2: exact logits diff 248320/248320 h_seed diff 5120/5120 hidden diff 5806071/5806080
+    seq 3: exact logits diff 248319/248320 h_seed diff 5120/5120 hidden diff 5893110/5893120
+    Error: "prime-batch-gate: 8 FAIL(s)"
+-- pbg-base-carried-b3-exact start 2026-09-23T07:40:33Z apps=[] state=[43, 2400 MHz, 257.59 W, 0 MiB]
+   pbg-base-carried-b3-exact rc=1
+    seq 0: exact logits diff 248320/248320 h_seed diff 5120/5120 hidden diff 3071996/3072000
+    seq 1: exact logits diff 248320/248320 h_seed diff 5120/5120 hidden diff 3159037/3159040
+    seq 2: exact logits diff 248320/248320 h_seed diff 5120/5120 hidden diff 3246074/3246080
+    Error: "prime-batch-gate: 8 FAIL(s)"
+-- ptick start 2026-09-23T07:40:43Z apps=[] state=[43, 2422 MHz, 247.77 W, 0 MiB]
+   ptick rc=0
+    tickshape: T_a=2048 T_b=2048 T_c=4096 tick=1024 steps=32 join=4 ctx=4192 arms=["ref", "ref2", "tick", "bp", "bps", "wave"] canary=false
+    arm ref prime: logits bitdiff=0 maxabs=0.000000e0 argmax ref=82 arm=82 | h_seed bitdiff=0 | hidden bitdiff=0 maxabs=0.000000e0 first_row=None | cache digests differ 0/130 first=[]
+    arm ref verdict: EXACT
+    arm ref2 prime: logits bitdiff=0 maxabs=0.000000e0 argmax ref=82 arm=82 | h_seed bitdiff=0 | hidden bitdiff=0 maxabs=0.000000e0 first_row=None | cache digests differ 0/130 first=[]
+    arm ref2 verdict: EXACT
+    arm tick prime: logits bitdiff=0 maxabs=0.000000e0 argmax ref=82 arm=82 | h_seed bitdiff=0 | hidden bitdiff=0 maxabs=0.000000e0 first_row=None | cache digests differ 0/130 first=[]
+    arm tick verdict: EXACT
+    arm bp prime: logits bitdiff=0 maxabs=0.000000e0 argmax ref=82 arm=82 | h_seed bitdiff=0 | hidden bitdiff=0 maxabs=0.000000e0 first_row=None | cache digests differ 0/130 first=[]
+    arm bp verdict: EXACT
+    arm bps prime: logits bitdiff=0 maxabs=0.000000e0 argmax ref=82 arm=82 | h_seed bitdiff=0 | hidden bitdiff=0 maxabs=0.000000e0 first_row=None | cache digests differ 0/130 first=[]
+    arm bps verdict: EXACT
+    arm wave prime: logits bitdiff=0 maxabs=0.000000e0 argmax ref=82 arm=82 | h_seed bitdiff=0 | hidden bitdiff=0 maxabs=0.000000e0 first_row=None | cache digests differ 0/130 first=[]
+    arm wave verdict: EXACT
+    tickshape verdict: ALL ARMS EXACT
+prime-tick-exact-gate: PASS (every prime shape is bit-identical to the solo prime; log /root/e641/out/ptick-naked.probe.log)
+-- ptick-canary start 2026-09-23T07:40:58Z apps=[] state=[46, 2422 MHz, 335.07 W, 0 MiB]
+   ptick-canary rc=0
+prime-tick-exact-gate: CANARY OK (bp and bps DIFFER with B's batch prompt changed; log /root/e641/out/ptick-canary.probe.log)
+-- spec-ctx-edge start 2026-09-23T07:41:14Z apps=[] state=[48, 2422 MHz, 379.48 W, 0 MiB]
+   spec-ctx-edge rc=0
+SCE (on) r1 open request: http=200 finish_reason=length prompt_tokens=73 completion_tokens=64 expected=64 -> PASS
+SCE (on) r2 open request: http=200 finish_reason=length prompt_tokens=73 completion_tokens=64 expected=64 -> PASS
+SCE (on) r3 open request: http=200 finish_reason=length prompt_tokens=73 completion_tokens=64 expected=64 -> PASS
+SCE (on) r4 open request: http=200 finish_reason=length prompt_tokens=73 completion_tokens=64 expected=64 -> PASS
+SCE (off) r1 open request to the cap: http=200 finish_reason=length prompt_tokens=73 completion_tokens=309 room=311 -> PASS
+SCE (off) r2 open request to the cap: http=200 finish_reason=length prompt_tokens=73 completion_tokens=311 room=311 -> PASS
+SCE (off) r3 open request to the cap: http=200 finish_reason=length prompt_tokens=73 completion_tokens=309 room=311 -> PASS
+SPEC-CTX-EDGE GATE: ALL GREEN
+-- pair 1 arm base start 2026-09-23T07:41:45Z state=[45, 2415 MHz, 305.77 W, 0 MiB]
+   rc=0 bench B=3 T=1024 N=5 alternating: serial_wall_ms=818.993 batch_wall_ms=792.467 sequential=3750.9 tok/s batched=3876.5 tok/s (+3.3%)
+-- pair 1 arm fix start 2026-09-23T07:41:59Z state=[49, 2422 MHz, 414.31 W, 0 MiB]
+   rc=0 bench B=3 T=1024 N=5 alternating: serial_wall_ms=818.856 batch_wall_ms=790.756 sequential=3751.6 tok/s batched=3884.9 tok/s (+3.6%)
+-- pair 2 arm fix start 2026-09-23T07:42:13Z state=[49, 2422 MHz, 398.17 W, 0 MiB]
+   rc=0 bench B=3 T=1024 N=5 alternating: serial_wall_ms=818.929 batch_wall_ms=790.761 sequential=3751.2 tok/s batched=3884.9 tok/s (+3.6%)
+-- pair 2 arm base start 2026-09-23T07:42:27Z state=[49, 2422 MHz, 401.64 W, 0 MiB]
+   rc=0 bench B=3 T=1024 N=5 alternating: serial_wall_ms=818.964 batch_wall_ms=792.496 sequential=3751.1 tok/s batched=3876.4 tok/s (+3.3%)
+-- pair 3 arm base start 2026-09-23T07:42:42Z state=[50, 2422 MHz, 420.27 W, 0 MiB]
+   rc=0 bench B=3 T=1024 N=5 alternating: serial_wall_ms=818.964 batch_wall_ms=792.487 sequential=3751.1 tok/s batched=3876.4 tok/s (+3.3%)
+-- pair 3 arm fix start 2026-09-23T07:42:56Z state=[50, 2422 MHz, 407.26 W, 0 MiB]
+   rc=0 bench B=3 T=1024 N=5 alternating: serial_wall_ms=818.923 batch_wall_ms=790.811 sequential=3751.3 tok/s batched=3884.6 tok/s (+3.6%)
+-- pair 4 arm fix start 2026-09-23T07:43:10Z state=[50, 2422 MHz, 425.95 W, 0 MiB]
+   rc=0 bench B=3 T=1024 N=5 alternating: serial_wall_ms=818.919 batch_wall_ms=790.775 sequential=3751.3 tok/s batched=3884.8 tok/s (+3.6%)
+-- pair 4 arm base start 2026-09-23T07:43:24Z state=[50, 2422 MHz, 415.48 W, 0 MiB]
+   rc=0 bench B=3 T=1024 N=5 alternating: serial_wall_ms=818.875 batch_wall_ms=792.453 sequential=3751.5 tok/s batched=3876.6 tok/s (+3.3%)
+-- pair 5 arm base start 2026-09-23T07:43:38Z state=[50, 2422 MHz, 409.06 W, 0 MiB]
+   rc=0 bench B=3 T=1024 N=5 alternating: serial_wall_ms=818.904 batch_wall_ms=792.534 sequential=3751.4 tok/s batched=3876.2 tok/s (+3.3%)
+-- pair 5 arm fix start 2026-09-23T07:43:53Z state=[50, 2422 MHz, 423.82 W, 0 MiB]
+   rc=0 bench B=3 T=1024 N=5 alternating: serial_wall_ms=818.999 batch_wall_ms=790.779 sequential=3750.9 tok/s batched=3884.8 tok/s (+3.6%)
+-- pair 6 arm fix start 2026-09-23T07:44:07Z state=[50, 2422 MHz, 417.21 W, 0 MiB]
+   rc=0 bench B=3 T=1024 N=5 alternating: serial_wall_ms=818.949 batch_wall_ms=790.769 sequential=3751.2 tok/s batched=3884.8 tok/s (+3.6%)
+-- pair 6 arm base start 2026-09-23T07:44:21Z state=[51, 2422 MHz, 422.32 W, 0 MiB]
+   rc=0 bench B=3 T=1024 N=5 alternating: serial_wall_ms=818.927 batch_wall_ms=792.487 sequential=3751.3 tok/s batched=3876.4 tok/s (+3.3%)
+card at end: apps=[] state=[50, 2422 MHz, 398.41 W, 0 MiB]
+== done 2026-09-23T07:44:35Z
+2026-09-23T07:45:38Z box scratch removed (/root/e641 and the lane clone); card idle, /tmp/memra-gpu.lock free
+LANE-E-PRO-DONE

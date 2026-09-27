@@ -1605,8 +1605,12 @@ paused (`docs/models/deepseek-v4-flash.md`).
 - **Admission and telemetry (#501, `route_telemetry.rs`).** A model a dedicated route serves is
   admitted against the route's own book, not the hybrid lane's 64 sessions. The queue bound is
   `max_queue_depth(route capacity)` per lane over the route's reserved-not-dequeued count; the
-  wait estimate is the route's service p50 (the `MEMRA_RL_RESET_S` fallback until it has one)
-  times the waves ahead; `X-RateLimit-Limit` reads the route's capacity (1 for DSv4). The
+  wait estimate is one request's decode on the route (mean rounds per completed request times
+  the round p50; the service p50 before any round, the `MEMRA_RL_RESET_S` fallback before any
+  completion) times the waves ahead. Prime time is left out: one 24k-token prime once priced
+  every short request behind it at 68 s and shed eight that finished in under 9 s
+  (`research/dsv4-route-receipt-20260926/`). `X-RateLimit-Limit` reads the route's capacity,
+  its lane count (4 on the TP/EP default). The
   reservation is a ticket that rides the request and releases at the route's dequeue. `/metrics`
   folds route-served requests into the process totals and adds a `routes` array (`capacity`,
   `waiting`, `inflight`, `running`, `admitted`, `completed`, `failed`, `cancelled`, `refused`,
@@ -1644,7 +1648,7 @@ correct and misbehaves only during a failure:
 | directive | value | the coupling |
 |---|---|---|
 | `WatchdogSec` | 180 | MUST exceed `MEMRA_HEALTH_STALL_S` (default 120). The heartbeat that feeds `/health` also feeds systemd, so a watchdog under the legitimate-stall bound restarts a *healthy* server mid-prefill. Raise both together if you raise `MEMRA_MAX_SESSIONS` or the context |
-| `TimeoutStopSec` | 60 | MUST exceed `MEMRA_DRAIN_S` (default 30), or systemd SIGKILLs a drain that is finishing streams correctly. The server also sends `EXTEND_TIMEOUT_USEC`; the static floor covers a build that does not |
+| `TimeoutStopSec` | 60 | MUST exceed `MEMRA_DRAIN_S` (default 30), or systemd SIGKILLs a drain that is finishing streams correctly. The server also sends `EXTEND_TIMEOUT_USEC` under `Type=notify`, sized to two `MEMRA_DRAIN_S` deadlines plus 5 s (the HTTP drain, then the DSv4 serving lanes' wait, memra #739); the static floor covers a build that does not send it, and such a build has no lane wait. A unit without `Type=notify` needs this above twice `MEMRA_DRAIN_S` |
 | `TimeoutStartSec` | 600 | MUST exceed the slowest cold load (~120 s measured for a 27B NVFP4 from page cache; cold NVMe on a large bank is slower). Startup silence is a load, not a hang |
 | `StartLimitIntervalSec` / `StartLimitBurst` | 3600 / 4 | systemd's defaults (10 s / 5) are sized for millisecond daemons and **cannot trip at all** here — 5 starts do not fit in 10 s when each start takes ~120 s, so a crash loop restarts forever instead of failing the unit for a human. 4 starts per hour ≈ "if it cannot survive four full loads, page someone" |
 | `RestartSec` / `RestartSteps` / `RestartMaxDelaySec` | 10 / 4 / 160 | a card that just threw an Xid needs the driver to settle; a tight loop makes recovery less likely. The ramp needs systemd ≥ 254 — on older systemd delete the last two lines and keep the flat 10 s |

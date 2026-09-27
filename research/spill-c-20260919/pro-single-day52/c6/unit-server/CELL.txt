@@ -1,0 +1,8 @@
+cell=unit-server gate=cargo test -p memra-server --lib -- --ignored --test-threads=1 verify_digest_v3_
+env=
+lock=/tmp/memra-gpu.lock owner=driver-flock
+tree=4417bbd1b3a82c3d1fa961f8bd25eb24fbaa3745
+binary_sha256=172123b7a1462fb3e061189035929becdfe79c8f32918da3673ce4430504c7e6
+model=none (unit cell: the test binary opens its own device context)
+gpu=NVIDIA RTX PRO 6000 Blackwell Workstation Edition, 600.00 W
+status=executed-not-qualified

@@ -1,0 +1,25 @@
+diff --git a/crates/memra-engine/cu/kernels.cu b/crates/memra-engine/cu/kernels.cu
+index fa02b6777..b8e98b79b 100644
+--- a/crates/memra-engine/cu/kernels.cu
++++ b/crates/memra-engine/cu/kernels.cu
+@@ -3140,7 +3140,7 @@ extern "C" __global__ void copy_batch_items_u8(
+     }
+     const unsigned char* __restrict__ src = (const unsigned char*)(size_t)table[r];
+     unsigned char* __restrict__ dst = (unsigned char*)(size_t)table[n + r];
+-    const size_t bytes = (size_t)table[2 * n + r];
++    const size_t bytes = (size_t)table[2 * n + r] - 1;  // B1 RED ARM: skips each item's last byte
+     size_t head = 0;
+     if (((((size_t)src) | ((size_t)dst)) & 15) == 0) {
+         const size_t vec = bytes >> 4;
+diff --git a/crates/memra-engine/src/lib.rs b/crates/memra-engine/src/lib.rs
+index 45a87121f..38db3409a 100644
+--- a/crates/memra-engine/src/lib.rs
++++ b/crates/memra-engine/src/lib.rs
+@@ -7464,6 +7464,7 @@ impl Engine {
+         let max_bytes = items.iter().map(|it| it.2).max().unwrap_or(0) as usize;
+         // Enough blocks to stream a multi-MB plane, capped so (chunks x n) stays a sane grid.
+         let chunks = (max_bytes / 16).max(1).div_ceil(256).min(64) as u32;
++        eprintln!("[b1 red arm] the kernel skips each item's last byte");
+         let f = self.func("copy_batch_items_u8");
+         let cfg = LaunchConfig {
+             grid_dim: (chunks, n as u32 + 1, 1),

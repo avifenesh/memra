@@ -28,6 +28,46 @@ unsafe extern "C" {
         eps: f32,
         hadamard_scale: f32,
         stream: *mut c_void,
+        split_recent: *mut f32,
+        split_tags: *mut i32,
+        split_recent_rows: i32,
+        split_rank: i32,
+    ) -> i32;
+    /// TP/EP position-split C4 store (memra #710): gather each query's selected rows from the
+    /// local store, the local recent ring, or the peer's store.
+    pub fn memra_dsv4_c4_split_gather(
+        local: *const f32,
+        peer: *const f32,
+        recent: *const f32,
+        tags: *const i32,
+        recent_rows: i32,
+        rank: i32,
+        indices: *const i32,
+        out: *mut f32,
+        out_indices: *mut i32,
+        nq: i32,
+        slots: i32,
+        stride: i32,
+        cap_blocks: i32,
+        logical_transient: i32,
+        transient_rows: i32,
+        local_transient: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// The emitted block's split store: the owner's row, or the other rank's recent slot.
+    pub fn memra_dsv4_c4_split_store(
+        row: *const f32,
+        store: *mut f32,
+        recent: *mut f32,
+        tags: *mut i32,
+        recent_rows: i32,
+        rank: i32,
+        pos: *const i32,
+        ratio: i32,
+        block: i32,
+        d: i32,
+        row0: i32,
+        stream: *mut c_void,
     ) -> i32;
     pub fn memra_dsv4_sample_device_replay(
         logits: *const f32,
@@ -52,6 +92,15 @@ unsafe extern "C" {
         slot: *mut i32,
         window: i32,
         counter: *mut u64,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_replay_rows_input(
+        input: *const u64,
+        token: *mut i32,
+        pos: *mut i32,
+        slot: *mut i32,
+        rows: i32,
+        window: i32,
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_dsv4_replay_tick(counter: *mut u64, stream: *mut c_void) -> i32;
@@ -149,15 +198,18 @@ unsafe extern "C" {
         present: f32,
         stream: *mut c_void,
     ) -> i32;
-    pub fn memra_dsv4_sink_scores_tiled_init() -> i32;
-    pub fn memra_dsv4_sink_attn_dec_mq_f32acc_tiled(
+    /// Nonzero when the two-launch sink attention program takes (heads, hd).
+    pub fn memra_dsv4_sink_attn_st_admits(heads: i32, hd: i32) -> i32;
+    /// Two-launch sink attention (memra #683), bit-identical to the three-kernel f32acc
+    /// program. `q` is [nq][heads][hd]. `replay_pos` null: `slots` live slots per query;
+    /// set: graph replay (nq 1), `slots` is slots_max and the live count comes from the
+    /// device position exactly as `memra_dsv4_replay_attention` derives it.
+    pub fn memra_dsv4_sink_attn_st_f32acc(
         q: *const f32,
         kv: *const f32,
         idxs: *const i32,
         sink: *const f32,
         scores: *mut f32,
-        evals: *mut f32,
-        den: *mut f32,
         o: *mut f32,
         nq: i32,
         heads: i32,
@@ -165,6 +217,10 @@ unsafe extern "C" {
         slots: i32,
         idx_stride: i32,
         scale: f32,
+        replay_pos: *const i32,
+        replay_win: i32,
+        replay_ratio: i32,
+        replay_topk: i32,
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_dsv4_grouped_routes_partition(
@@ -188,6 +244,32 @@ unsafe extern "C" {
         topk: i32,
         stream: *mut c_void,
     ) -> i32;
+    /// `memra_dsv4_grouped_routes_partition` that also ORs `fault_bit` into `*fault` when an
+    /// id is outside the global table (memra #679).
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_grouped_routes_partition_fault(
+        selected: *const i32,
+        weights: *const f32,
+        scale2: *const f32,
+        counts: *mut i32,
+        offsets: *mut i32,
+        expert_ids: *mut i32,
+        pairs: *mut i32,
+        tokens: *mut i32,
+        route_weights: *mut f32,
+        macro1: *mut f32,
+        macro2: *mut f32,
+        macro3: *mut f32,
+        status: *mut i32,
+        slots: i32,
+        global_experts: i32,
+        first: i32,
+        expert_count: i32,
+        topk: i32,
+        fault: *mut i32,
+        fault_bit: i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_grouped_routes(
         selected: *const i32,
         weights: *const f32,
@@ -205,6 +287,28 @@ unsafe extern "C" {
         slots: i32,
         experts: i32,
         topk: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// `memra_dsv4_grouped_routes` that also ORs `fault_bit` into `*fault` when a slot is lost.
+    pub fn memra_dsv4_grouped_routes_fault(
+        selected: *const i32,
+        weights: *const f32,
+        scale2: *const f32,
+        counts: *mut i32,
+        offsets: *mut i32,
+        expert_ids: *mut i32,
+        pairs: *mut i32,
+        tokens: *mut i32,
+        route_weights: *mut f32,
+        macro1: *mut f32,
+        macro2: *mut f32,
+        macro3: *mut f32,
+        status: *mut i32,
+        slots: i32,
+        experts: i32,
+        topk: i32,
+        fault: *mut i32,
+        fault_bit: i32,
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_dsv4_fp4_gemm_sel_ep(
@@ -301,6 +405,50 @@ unsafe extern "C" {
         stream: *mut c_void,
     ) -> i32;
     // iteration-5 F-itemisation instrument (see dsv4_gpu.rs Dsv4Phase).
+    /// The DSv4 chain's programmatic dependent launch switch (`cu/memra_pdl_chain.cuh`).
+    pub fn memra_pdl_chain_set(on: i32);
+    /// A verify round's compressor rows `i0..i1` into their pending slots, both rings.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_cmp_rows_to_slots(
+        pend_kv: *mut f32,
+        pend_sc: *mut f32,
+        rows_kv: *const f32,
+        rows_sc: *const f32,
+        i0: i32,
+        i1: i32,
+        pos0: i32,
+        ratio: i32,
+        latent: i32,
+        slot_off: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// A compressor's verify-round rollback (snapshot restore, committed-row writes and the
+    /// overlap half shifts) in one launch.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_cmp_rollback(
+        pend_kv: *mut f32,
+        pend_sc: *mut f32,
+        kv_snap: *const f32,
+        sc_snap: *const f32,
+        rows_kv: *const f32,
+        rows_sc: *const f32,
+        n_commit: i32,
+        pos0: i32,
+        ratio: i32,
+        latent: i32,
+        overlap: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// Two same-length f32 copies in one PDL-chained launch (`n` a multiple of 4, 16-byte
+    /// aligned pointers).
+    pub fn memra_dsv4_copy2_f32(
+        a: *const f32,
+        a_out: *mut f32,
+        b: *const f32,
+        b_out: *mut f32,
+        n: i64,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_nvtx_push(name: *const std::os::raw::c_char) -> i32;
     pub fn memra_dsv4_nvtx_pop() -> i32;
     pub fn memra_dsv4_nvfp4_deq_bf16(
@@ -358,6 +506,172 @@ unsafe extern "C" {
         cols: i32,
         stream: *mut c_void,
     ) -> i32;
+    /// `memra_dsv4_fp8_gather_half` that also ORs `fault_bit` into `*fault` on a lossy row.
+    /// A non-null `live` (the route's device live-row count) makes rows at or past it inert.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_fp8_gather_half_fault(
+        codes: *const c_void,
+        scales: *const f32,
+        row_ids: *const i32,
+        out: *mut c_void,
+        row_scale: *mut f32,
+        row_status: *mut i32,
+        rows: i32,
+        cols: i32,
+        fault: *mut i32,
+        fault_bit: i32,
+        live: *const i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// Fused one-token MoE, first half: the x FP8-QAT mirror, gate and up of every selected
+    /// slot, macro1/macro3 and the weighted SwiGLU into `h[topk][out_f]`. Bit-identical to the
+    /// grouped chain it replaces; fault bits 0x1 (dead slot) and 0x2 (lossy x mirror).
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_moe_fused_gu(
+        table: *const u64,
+        n_expert: i32,
+        sel: *const i32,
+        selw: *const f32,
+        scale2: *const f32,
+        xf: *const f32,
+        h: *mut f32,
+        topk: i32,
+        in_f: i32,
+        out_f: i32,
+        limit: f32,
+        fault: *mut i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// Fused one-token MoE, second half: the h mirror, down and macro2 into
+    /// `contrib[topk][out_f]`, then the slot sum in `order` into `y[out_f]`. `tile_cnt` holds
+    /// `out_f / 32` counters zeroed once; the kernel leaves them zero. Fault bit 0x4.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_moe_fused_down(
+        table: *const u64,
+        n_expert: i32,
+        sel: *const i32,
+        scale2: *const f32,
+        h: *const f32,
+        contrib: *mut f32,
+        order: *const i32,
+        y: *mut f32,
+        tile_cnt: *mut i32,
+        topk: i32,
+        in_f: i32,
+        out_f: i32,
+        fault: *mut i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// `memra_dsv4_moe_fused_gu` over a partition (memra #710, a TP/EP rank): `table` holds
+    /// experts `[first, first + n_expert)` of `global_experts`, `sel` and `scale2` carry global
+    /// ids, and another rank's slot is skipped. `rows` token rows of `topk` slots each (x is
+    /// `[rows][in_f]`). Fault bit 0x1 is an id outside the bank. A non-null `shared_run` takes
+    /// this rank's shared-expert owner word: 1 when the rank holds fewer of the launch's routed
+    /// slots than the other rank (rank 0, `first == 0`, on a tie), else 0.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_moe_fused_gu_part(
+        table: *const u64,
+        n_expert: i32,
+        global_experts: i32,
+        first: i32,
+        sel: *const i32,
+        selw: *const f32,
+        scale2: *const f32,
+        xf: *const f32,
+        xm: *const u32,
+        xrs: *const f32,
+        h: *mut f32,
+        shared_run: *mut i32,
+        topk: i32,
+        rows: i32,
+        in_f: i32,
+        out_f: i32,
+        limit: f32,
+        fault: *mut i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// `memra_dsv4_moe_fused_down` over a partition: `order`, `y` and `tile_cnt` null, so only
+    /// this rank's slots' contribution rows are written and the slot sum is the caller's, after
+    /// the rank-order join. A partition with the sum refuses 40004.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_moe_fused_down_part(
+        table: *const u64,
+        n_expert: i32,
+        global_experts: i32,
+        first: i32,
+        sel: *const i32,
+        scale2: *const f32,
+        h: *const f32,
+        contrib: *mut f32,
+        order: *const i32,
+        y: *mut f32,
+        tile_cnt: *mut i32,
+        topk: i32,
+        rows: i32,
+        in_f: i32,
+        out_f: i32,
+        fault: *mut i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// `memra_dsv4_gemv_fp8_m`'s dense-fast launch, run only where `*run` is nonzero (the
+    /// shared expert on its TP/EP owner rank, memra #710). Rows 1 to 8; 40004 wherever the
+    /// ungated launch would not take the dense-fast transport.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_gemv_fp8_m_gated(
+        w_codes: *const c_void,
+        sc_f32: *const f32,
+        sc_cols: i32,
+        x_bf16: *const c_void,
+        y: *mut f32,
+        m: i32,
+        n: i32,
+        k: i32,
+        ystride: i32,
+        run: *const i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// `memra_dsv4_gemv_fp8_m_pair`'s dense-fast launch over contiguous rows, run only where
+    /// `*run` is nonzero.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_gemv_fp8_m_pair_gated(
+        wa: *const c_void,
+        sca: *const f32,
+        sc_cols_a: i32,
+        ya: *mut f32,
+        na: i32,
+        wb: *const c_void,
+        scb: *const f32,
+        sc_cols_b: i32,
+        yb: *mut f32,
+        nb: i32,
+        x_bf16: *const c_void,
+        m: i32,
+        k: i32,
+        run: *const i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// `memra_dsv4_cvt_bf16`, run only where `*run` is nonzero.
+    pub fn memra_dsv4_cvt_bf16_gated(
+        x: *const f32,
+        o: *mut c_void,
+        n: i64,
+        run: *const i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// `memra_dsv4_swiglu` (no routing weight) then `memra_dsv4_cvt_bf16` in one launch, run
+    /// only where `*run` is nonzero.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_swiglu_bf16_gated(
+        gate: *const f32,
+        up: *const f32,
+        dst: *mut c_void,
+        rows: i32,
+        inter: i32,
+        limit: f32,
+        run: *const i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_moe_fused_dispatches() -> u64;
     pub fn memra_dsv4_scale_rows(
         y: *mut f32,
         scale: *const f32,
@@ -389,18 +703,6 @@ unsafe extern "C" {
         s: i32,
         hc: i32,
         d: i32,
-        stream: *mut c_void,
-    ) -> i32;
-    /// iteration-5: row-blocked twin of `memra_dsv4_dots_f32`. Same arithmetic, same
-    /// reduction tree, same order -- only the block geometry differs, so it is bit-identical.
-    pub fn memra_dsv4_dots_f32_rowblk(
-        x: *const f32,
-        w: *const c_void,
-        w_is_bf16: i32,
-        y: *mut f32,
-        s: i32,
-        k: i32,
-        n: i32,
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_dsv4_dots_f32(
@@ -442,6 +744,37 @@ unsafe extern "C" {
         rows: i32,
         ncols: i32,
         eps: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// `memra_dsv4_headrms_f32acc` then `memra_dsv4_rope` (no inverse) in one launch over
+    /// `n_pos * n_vec` rows of `d`, rows up to 512 (memra #710). The bits are the pair's.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_headrms_rope_f32acc(
+        x: *mut f32,
+        n_pos: i32,
+        n_vec: i32,
+        d: i32,
+        eps: f32,
+        rd: i32,
+        cs: *const f32,
+        positions: *const i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// `memra_dsv4_rmsnorm_f32acc` in place, `memra_dsv4_rope` of the last `rd` dims and
+    /// `memra_dsv4_act_quant` of the prefix in groups of `block` (64) in one launch, rows up to
+    /// 1024 (memra #710). The bits are the three launches'.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_kv_norm_rope_quant_f32acc(
+        x: *mut f32,
+        w: *const f32,
+        rows: i32,
+        d: i32,
+        eps: f32,
+        rd: i32,
+        cs: *const f32,
+        positions: *const i32,
+        block: i32,
+        clamp_only: i32,
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_dsv4_rope(
@@ -759,16 +1092,6 @@ unsafe extern "C" {
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_dsv4_argmax(v: *const f32, n: i64, out: *mut i32, stream: *mut c_void) -> i32;
-    /// iteration-5: `dst[0..cols) = src[idx[slot] * cols ..]`, the index read on the
-    /// DEVICE so the DSpark markov chain needs no host round trip between steps.
-    pub fn memra_dsv4_gather_row_by_idx(
-        src: *const f32,
-        idx: *const i32,
-        slot: i32,
-        dst: *mut f32,
-        cols: i32,
-        stream: *mut c_void,
-    ) -> i32;
     pub fn memra_dsv4_gemv_bf16(
         w_bf16: *const c_void,
         x_bf16: *const c_void,
@@ -834,6 +1157,41 @@ unsafe extern "C" {
         hc: i32,
         d: i32,
         iters: i32,
+        eps: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// Partial half of the HC24 split dots: `m * 24 * slices` floats into `partial`.
+    pub fn memra_dsv4_hc_dot_split_partial(
+        x: *const f32,
+        w: *const f32,
+        partial: *mut f32,
+        partial_len: i32,
+        m: i32,
+        n: i32,
+        k: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// Split-dot slice sum + small HC + entry rmsnorm (+ bf16 pack), one CTA per position.
+    /// `y` and `out_b` may be null.
+    pub fn memra_dsv4_hc_finish_f32_fixed_order(
+        partial: *const f32,
+        slices: i32,
+        x: *const f32,
+        mixes: *mut f32,
+        scale: *const f32,
+        base: *const f32,
+        pre: *mut f32,
+        post: *mut f32,
+        comb: *mut f32,
+        y: *mut f32,
+        norm_w: *const f32,
+        out: *mut f32,
+        out_b: *mut c_void,
+        s: i32,
+        hc: i32,
+        d: i32,
+        iters: i32,
+        hc_eps: f32,
         eps: f32,
         stream: *mut c_void,
     ) -> i32;
@@ -1022,6 +1380,49 @@ unsafe extern "C" {
         ystride: i32,
         stream: *mut c_void,
     ) -> i32;
+    /// Two FP8 dense matrices over the same x rows in one launch when both take the dense-fast
+    /// transport, else the two ordinary `memra_dsv4_gemv_fp8_m` calls (memra #710).
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_gemv_fp8_m_pair(
+        wa: *const c_void,
+        sca: *const f32,
+        sc_cols_a: i32,
+        ya: *mut f32,
+        na: i32,
+        ystride_a: i32,
+        wb: *const c_void,
+        scb: *const f32,
+        sc_cols_b: i32,
+        yb: *mut f32,
+        nb: i32,
+        ystride_b: i32,
+        x_bf16: *const c_void,
+        m: i32,
+        k: i32,
+        xstride: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// Two dots of one storage class over the same x rows in one launch when both take the
+    /// dense-fast transport, else the two ordinary `memra_dsv4_dots_f32acc_mrow` calls.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_dots_f32acc_mrow_pair(
+        x: *const f32,
+        wa: *const c_void,
+        ya: *mut f32,
+        na: i32,
+        wb: *const c_void,
+        yb: *mut f32,
+        nb: i32,
+        w_is_bf16: i32,
+        s: i32,
+        k: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// Gate seam for the prefill dense tile (memra #472): `0` forces the per-32-row GEMV loop at
+    /// m > 32 so one process can compare the two; returns the previous setting.
+    pub fn memra_dsv4_gemm_fp8_tile_set_for_gate(on: i32) -> i32;
+    /// Launches of the prefill dense tile since process start (engagement receipt).
+    pub fn memra_dsv4_gemm_fp8_tile_launches() -> u64;
     /// FP8 dense t=1 grouped output projection. The weight rows are grouped
     /// contiguously; each group reads its own activation/output slice while
     /// retaining the ordinary m=1 accumulation and reduction body.
@@ -1246,6 +1647,28 @@ unsafe extern "C" {
         order: *mut i32,
         stream: *mut c_void,
     ) -> i32;
+    /// `memra_dsv4_route_m` plus the fused gate/up launch's x mirror of each row (memra #710):
+    /// `xm[s][in_f / 2]` swizzled halves and `xrs[s]` row scales, a lossy row as fault bit 0x2.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_route_mirror_m(
+        raw: *const f32,
+        bias: *const f32,
+        tid2eid: *const i32,
+        tok: *const i32,
+        s: i32,
+        ne: i32,
+        topk: i32,
+        route_scale: f32,
+        sel: *mut i32,
+        selw: *mut f32,
+        order: *mut i32,
+        xf: *const f32,
+        in_f: i32,
+        xm: *mut u32,
+        xrs: *mut f32,
+        fault: *mut i32,
+        stream: *mut c_void,
+    ) -> i32;
     #[allow(clippy::too_many_arguments)]
     pub fn memra_dsv4_fp4_gemm_sel_g(
         a_codes: *const c_void,
@@ -1285,6 +1708,24 @@ unsafe extern "C" {
         sstride: i64,
         a_group: i32,
         reduce_arm: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// The TP/EP joined MoE tail in one launch (memra #710): `combine_rows_m` over the routed rows,
+    /// the joined shared rows added, then `hc_post` into `out`; y and out keep those kernels' bits.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_moe_tail_hc_post(
+        contrib: *const f32,
+        order: *const i32,
+        topk: i32,
+        shared: *const f32,
+        y: *mut f32,
+        residual: *const f32,
+        post: *const f32,
+        comb: *const f32,
+        out: *mut f32,
+        s: i32,
+        hc: i32,
+        d: i64,
         stream: *mut c_void,
     ) -> i32;
     #[allow(clippy::too_many_arguments)]

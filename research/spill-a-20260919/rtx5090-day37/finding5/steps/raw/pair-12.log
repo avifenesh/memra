@@ -1,0 +1,20 @@
+
+running 2 tests
+HOLD READING cell=d2h_span_batch first_item_seen_ms=8.67 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=false
+HOLD STEPS cell=d2h_span_batch htod-pageable@-35.79+0.26 pinned-alloc@-35.53+1.06 htod-pageable@-34.46+0.55 pinned-alloc@-33.91+1.75 htod-pageable@-32.16+0.94 pinned-alloc@-31.22+1.30 delay@0.00+0.03 htod-pageable@0.03+0.24 pinned-alloc@0.28+0.91 htod-pageable@1.19+0.43 pinned-alloc@1.62+1.41 htod-pageable@3.03+0.30 pinned-alloc@3.33+1.07 submit@4.41+0.04 htod-pageable@4.45+0.22 pinned-alloc@4.67+0.85 htod-pageable@5.52+0.38 pinned-alloc@5.90+1.39 htod-pageable@7.29+0.28 pinned-alloc@7.57+1.08 submit-busy@8.65+0.00
+test tier_transfer::tests::d2h_span_batch_lands_with_its_ticket_on_the_copy_stream ... ok
+HOLD READING cell=h2d_span_batch first_item_seen_ms=308.87 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=true
+HOLD STEPS cell=h2d_span_batch pinned-alloc@-339.11+1.09 pinned-write@-338.02+0.21 device-alloc@-337.81+0.02 pinned-alloc@-337.78+1.68 pinned-write@-336.10+0.36 device-alloc@-335.74+0.01 pinned-alloc@-335.72+1.09 pinned-write@-334.63+0.32 device-alloc@-334.32+0.02 pinned-alloc@-6.94+0.92 pinned-write@-6.01+0.26 device-alloc@-5.75+0.03 pinned-alloc@-5.72+1.58 device-alloc@-4.14+0.01 pinned-alloc@-4.13+1.30 pinned-write@-2.83+0.40 device-alloc@-2.42+1.48 delay@0.00+0.01 pinned-alloc@0.02+1.20 pinned-write@1.21+0.26 device-alloc@1.48+0.07 pinned-alloc@1.55+2.33 pinned-write@3.87+0.53 device-alloc@4.40+1.75 pinned-alloc@6.16+2.30 pinned-write@8.45+0.43 device-alloc@8.89+293.21 submit@302.11+1.23 pinned-alloc@303.34+1.52 pinned-write@304.86+0.28 device-alloc@305.15+0.02 pinned-alloc@305.16+1.59 pinned-write@306.75+0.51 device-alloc@307.27+0.01 pinned-alloc@307.28+1.19 pinned-write@308.47+0.38 device-alloc@308.84+0.01 submit-busy@308.85+0.01
+
+thread 'tier_transfer::tests::h2d_span_batch_lands_with_its_ticket_on_the_copy_stream' (441920) panicked at crates/memra-engine/src/tier_transfer.rs:4404:9:
+a batch with a running span has not landed (HOLD READING cell=h2d_span_batch first_item_seen_ms=308.87 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=true) (HOLD STEPS cell=h2d_span_batch pinned-alloc@-339.11+1.09 pinned-write@-338.02+0.21 device-alloc@-337.81+0.02 pinned-alloc@-337.78+1.68 pinned-write@-336.10+0.36 device-alloc@-335.74+0.01 pinned-alloc@-335.72+1.09 pinned-write@-334.63+0.32 device-alloc@-334.32+0.02 pinned-alloc@-6.94+0.92 pinned-write@-6.01+0.26 device-alloc@-5.75+0.03 pinned-alloc@-5.72+1.58 device-alloc@-4.14+0.01 pinned-alloc@-4.13+1.30 pinned-write@-2.83+0.40 device-alloc@-2.42+1.48 delay@0.00+0.01 pinned-alloc@0.02+1.20 pinned-write@1.21+0.26 device-alloc@1.48+0.07 pinned-alloc@1.55+2.33 pinned-write@3.87+0.53 device-alloc@4.40+1.75 pinned-alloc@6.16+2.30 pinned-write@8.45+0.43 device-alloc@8.89+293.21 submit@302.11+1.23 pinned-alloc@303.34+1.52 pinned-write@304.86+0.28 device-alloc@305.15+0.02 pinned-alloc@305.16+1.59 pinned-write@306.75+0.51 device-alloc@307.27+0.01 pinned-alloc@307.28+1.19 pinned-write@308.47+0.38 device-alloc@308.84+0.01 submit-busy@308.85+0.01)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test tier_transfer::tests::h2d_span_batch_lands_with_its_ticket_on_the_copy_stream ... FAILED
+
+failures:
+
+failures:
+    tier_transfer::tests::h2d_span_batch_lands_with_its_ticket_on_the_copy_stream
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.86s
+

@@ -1,0 +1,741 @@
+1790274973792 [server] build: memra-0.138.0-5912ba6b909c (id: source-tree, git: c6f9282c26e7)
+1790274973792 [server] starting; models config = [("q38", "/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+1790274973792 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+1790274973793 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+1790274973893 [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+1790274974014 [worker] Engine ready (device=0, MEMRA_FAST=true)
+1790274974014 [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+1790274974014 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+1790274974014 [worker] loading model "q38" <- /root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+1790274974050 [tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+1790274977900 [worker]   loaded "q38": 65 layers, eos=248046, stop=[248046]
+1790274977900 [worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+1790274977900 [route-contract] model="q38" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+1790274977900 [worker] q38: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+1790274977900 [prefix-cache] on: budget 15883MB (15883042816 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from checkpoint; MEMRA_CTX unset), requested 15883042816 B; boot driver free 86518333440 B, post-reserve clamp 84907720704 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+1790274977900 [admission] "q38": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+1790274977900 [prime-walk] model="q38" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+1790274978947 [fa-pool] grow #0 dev=0 o_len 0 -> 399360 ml_len 0 -> 1560 (retired kept, zero=false)
+1790274978959 [func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+1790274978960 [func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+1790274978960 [fa-pool] grow #1 dev=0 o_len 399360 -> 798720 ml_len 1560 -> 3120 (retired kept, zero=false)
+1790274978960 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+1790274978960 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+1790274978960 [func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+1790274978960 [func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+1790274978962 [spec] draft-session state high-water: 44MB (max of parked delta 44MB and capture-time pool peak 12MB; charged per spec admission and gating future captures)
+1790274978988 [fa-pool] grow #2 dev=0 o_len 798720 -> 1597440 ml_len 3120 -> 6240 (retired kept, zero=false)
+1790274979376 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":2483027968,"still_owned_bytes":17283255616,"pool_reserved_bytes":17414750208,"pool_cached_bytes":131494592,"driver_free_bytes":83934642176,"synchronization_errors":[]}
+1790274979376 [admit-cal] post-probe pool trim: released 2368MB cached back to the driver
+1790274979376 [admit-cal] boot calibration done: model="q38" route=mtp transient floor 2196MB (static was 1536MB; measured 2196MB; probe kv charge 127MB, draft-state 44MB, drafted 63 accepted 42; [dev0 peak-mapped 18976MB rest-mapped 16608MB charged 171MB -> 2196MB]; 1.5s)
+1790274979376 [admit-predict] shadow armed: budget_bytes=65879781072 budget_src=derived(effective_free_bytes=84066136768 - prefix_cache_budget_bytes=15883042816 - admission_reserve_bytes=2303312880) exempt_tenants=0 enforce=false (logging only, nothing is rejected; enforcement is a separate flip)
+1790274979376 [admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+1790274979376 [kv-vmm] door=ON routes=spec,plain granularity=2097152 grow=inline (MEMRA_KV_VMM_GROW) reap=owner-tick slack_rows=64 faults=none
+1790274979377 [server] worker ready; serving models: ["q38"]
+1790274979377 [server] listening on http://127.0.0.1:18526
+1790274979882 [meter] admit id=chatcmpl-2625fb855409f8c651852f931b484c5a tenant=default lane=interactive model="q38"
+1790274979882 [meter] admit id=chatcmpl-6ad480c1d3f087d299767aa90ca49d07 tenant=default lane=interactive model="q38"
+1790274979882 [meter] admit id=chatcmpl-0295fa997df569faa18160f5f95d7a96 tenant=default lane=interactive model="q38"
+1790274979882 [meter] admit id=chatcmpl-ff6971ae575d39bc096a3f7d9d4cc675 tenant=default lane=interactive model="q38"
+1790274979883 [meter] admit id=chatcmpl-61ad080c8b04cf596c09a6f593671069 tenant=default lane=interactive model="q38"
+1790274979883 [meter] admit id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a tenant=default lane=interactive model="q38"
+1790274979883 [meter] admit id=chatcmpl-4ec851642ac1ce34a972f162d9bd306a tenant=default lane=interactive model="q38"
+1790274979883 [meter] admit id=chatcmpl-7a79fd6d624aef02c725636af50422cc tenant=default lane=interactive model="q38"
+1790274979883 [meter] admit id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 tenant=default lane=interactive model="q38"
+1790274979883 [meter] admit id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 tenant=default lane=interactive model="q38"
+1790274979884 [meter] admit id=chatcmpl-65c459c000f0845b9382a6d50b4409f3 tenant=default lane=interactive model="q38"
+1790274979884 [meter] admit id=chatcmpl-49301d91e494410f45d5aea4c7b893b2 tenant=default lane=interactive model="q38"
+1790274979884 [meter] admit id=chatcmpl-8c633e546770e44cdf422aad2f404e8a tenant=default lane=interactive model="q38"
+1790274979884 [meter] admit id=chatcmpl-63cb7af60bcfce9a41aa1421160e0024 tenant=default lane=interactive model="q38"
+1790274979884 [meter] admit id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 tenant=default lane=interactive model="q38"
+1790274979884 [meter] admit id=chatcmpl-0e597ae64d04e9d20e57b6928aab0597 tenant=default lane=interactive model="q38"
+1790274979885 [admission] request cost: model="q38" ctx=4118 path=plain = 29696 B/token x ctx + 697MB prefill-workspace + 0MB fixed = 819MB
+1790274979885 [admit-predict] id=chatcmpl-2625fb855409f8c651852f931b484c5a tenant="" model="q38" verdict=admit reason=maxtok-fallback prompt=1454 predicted_completion=2600 kv_hat=817428480 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274979886 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1454 cached=0 lcp=0 active=1 wave=16 placement=single-or-non-pp2
+1790274979886 [admission] fixed residual high-water: model="q38" 276MB (observed 397MB at ctx 4062 path=plain)
+1790274979886 [kv-vmm] admit id=chatcmpl-2625fb855409f8c651852f931b484c5a owed_before=0 session_mapped=35651584 session_reserved=106954752 active=0
+1790274979887 [admission] request cost: model="q38" ctx=4329 path=plain = 29696 B/token x ctx + 798MB prefill-workspace + 276MB fixed = 1202MB
+1790274979887 [admit-predict] id=chatcmpl-6ad480c1d3f087d299767aa90ca49d07 tenant="" model="q38" verdict=admit reason=maxtok-fallback prompt=1665 predicted_completion=2600 kv_hat=1200760524 booked_bytes=817428480 booked_real=819091456 inflight=1 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274979888 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1665 cached=0 lcp=0 active=2 wave=16 placement=single-or-non-pp2
+1790274979888 [kv-vmm] admit id=chatcmpl-6ad480c1d3f087d299767aa90ca49d07 owed_before=71303168 session_mapped=35651584 session_reserved=106954752 active=1
+1790274980383 [admission] request cost: model="q38" ctx=1685 path=plain = 29696 B/token x ctx + 654MB prefill-workspace + 276MB fixed = 980MB
+1790274980383 [admit-predict] id=chatcmpl-0295fa997df569faa18160f5f95d7a96 tenant="" model="q38" verdict=admit reason=maxtok-fallback prompt=1365 predicted_completion=256 kv_hat=978474700 booked_bytes=2018189004 booked_real=2021514956 inflight=2 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274980384 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1365 cached=0 lcp=0 active=3 wave=16 placement=single-or-non-pp2
+1790274980385 [admission] fixed residual high-water: model="q38" 311MB (observed 359MB at ctx 1629 path=plain)
+1790274980385 [kv-vmm] admit id=chatcmpl-0295fa997df569faa18160f5f95d7a96 owed_before=142606336 session_mapped=0 session_reserved=0 active=2
+1790274980386 [admission] request cost: model="q38" ctx=1887 path=plain = 29696 B/token x ctx + 751MB prefill-workspace + 311MB fixed = 1118MB
+1790274980386 [admit-predict] id=chatcmpl-ff6971ae575d39bc096a3f7d9d4cc675 tenant="" model="q38" verdict=admit reason=maxtok-fallback prompt=1567 predicted_completion=256 kv_hat=1116241812 booked_bytes=2996663704 booked_real=3001652632 inflight=3 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274980387 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1567 cached=0 lcp=0 active=4 wave=16 placement=single-or-non-pp2
+1790274980387 [admission] fixed residual high-water: model="q38" 311MB (observed 366MB at ctx 1831 path=plain)
+1790274980387 [kv-vmm] admit id=chatcmpl-ff6971ae575d39bc096a3f7d9d4cc675 owed_before=142606336 session_mapped=0 session_reserved=0 active=3
+1790274980388 [admission] request cost: model="q38" ctx=2006 path=plain = 29696 B/token x ctx + 808MB prefill-workspace + 311MB fixed = 1179MB
+1790274980388 [admit-predict] id=chatcmpl-61ad080c8b04cf596c09a6f593671069 tenant="" model="q38" verdict=admit reason=maxtok-fallback prompt=1686 predicted_completion=256 kv_hat=1177179156 booked_bytes=4112905516 booked_real=4119557420 inflight=4 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274980389 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1686 cached=0 lcp=0 active=5 wave=16 placement=single-or-non-pp2
+1790274980389 [admission] fixed residual high-water: model="q38" 312MB (observed 369MB at ctx 1950 path=plain)
+1790274980389 [kv-vmm] admit id=chatcmpl-61ad080c8b04cf596c09a6f593671069 owed_before=142606336 session_mapped=0 session_reserved=0 active=4
+1790274980390 [admission] request cost: model="q38" ctx=4397 path=plain = 29696 B/token x ctx + 831MB prefill-workspace + 312MB fixed = 1273MB
+1790274980390 [admit-predict] id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a tenant="" model="q38" verdict=admit reason=maxtok-fallback prompt=1733 predicted_completion=2600 kv_hat=1270927060 booked_bytes=5290084672 booked_real=5298399552 inflight=5 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274980391 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1733 cached=0 lcp=0 active=6 wave=16 placement=single-or-non-pp2
+1790274980391 [kv-vmm] admit id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a owed_before=142606336 session_mapped=35651584 session_reserved=106954752 active=5
+1790274980393 [admission] request cost: model="q38" ctx=2034 path=plain = 29696 B/token x ctx + 821MB prefill-workspace + 312MB fixed = 1193MB
+1790274980393 [admit-predict] id=chatcmpl-4ec851642ac1ce34a972f162d9bd306a tenant="" model="q38" verdict=admit reason=maxtok-fallback prompt=1714 predicted_completion=256 kv_hat=1191650004 booked_bytes=6561011732 booked_real=6570989588 inflight=6 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274980393 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1714 cached=0 lcp=0 active=7 wave=16 placement=single-or-non-pp2
+1790274980393 [admission] fixed residual high-water: model="q38" 312MB (observed 370MB at ctx 1978 path=plain)
+1790274980393 [kv-vmm] admit id=chatcmpl-4ec851642ac1ce34a972f162d9bd306a owed_before=213909504 session_mapped=0 session_reserved=0 active=6
+1790274980395 [admission] request cost: model="q38" ctx=1852 path=plain = 29696 B/token x ctx + 734MB prefill-workspace + 312MB fixed = 1101MB
+1790274980395 [admit-predict] id=chatcmpl-7a79fd6d624aef02c725636af50422cc tenant="" model="q38" verdict=admit reason=maxtok-fallback prompt=1532 predicted_completion=256 kv_hat=1099077076 booked_bytes=7752661736 booked_real=7764302568 inflight=7 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274980395 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1532 cached=0 lcp=0 active=8 wave=16 placement=single-or-non-pp2
+1790274980395 [kv-vmm] admit id=chatcmpl-7a79fd6d624aef02c725636af50422cc owed_before=213909504 session_mapped=0 session_reserved=0 active=7
+1790274980396 [admission] request cost: model="q38" ctx=4297 path=plain = 29696 B/token x ctx + 783MB prefill-workspace + 312MB fixed = 1222MB
+1790274980396 [admit-predict] id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 tenant="" model="q38" verdict=admit reason=maxtok-fallback prompt=1633 predicted_completion=2600 kv_hat=1220086228 booked_bytes=8851738812 booked_real=8865042620 inflight=8 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274980397 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1633 cached=0 lcp=0 active=9 wave=16 placement=single-or-non-pp2
+1790274980397 [kv-vmm] admit id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 owed_before=213909504 session_mapped=35651584 session_reserved=106954752 active=8
+1790274980399 [admission] request cost: model="q38" ctx=4200 path=plain = 29696 B/token x ctx + 736MB prefill-workspace + 312MB fixed = 1172MB
+1790274980399 [admit-predict] id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 tenant="" model="q38" verdict=admit reason=maxtok-fallback prompt=1536 predicted_completion=2600 kv_hat=1170720212 booked_bytes=10071825040 booked_real=10086791824 inflight=9 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274980400 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1536 cached=0 lcp=0 active=10 wave=16 placement=single-or-non-pp2
+1790274980400 [kv-vmm] admit id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 owed_before=285212672 session_mapped=35651584 session_reserved=106954752 active=9
+1790274980401 [admission] request cost: model="q38" ctx=1785 path=plain = 29696 B/token x ctx + 702MB prefill-workspace + 312MB fixed = 1067MB
+1790274980401 [admit-predict] id=chatcmpl-65c459c000f0845b9382a6d50b4409f3 tenant="" model="q38" verdict=admit reason=maxtok-fallback prompt=1465 predicted_completion=256 kv_hat=1064978900 booked_bytes=11242545252 booked_real=11259175012 inflight=10 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274980402 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1465 cached=0 lcp=0 active=11 wave=16 placement=single-or-non-pp2
+1790274980402 [kv-vmm] admit id=chatcmpl-65c459c000f0845b9382a6d50b4409f3 owed_before=356515840 session_mapped=0 session_reserved=0 active=10
+1790274980403 [admission] request cost: model="q38" ctx=4071 path=plain = 29696 B/token x ctx + 674MB prefill-workspace + 312MB fixed = 1107MB
+1790274980403 [admit-predict] id=chatcmpl-49301d91e494410f45d5aea4c7b893b2 tenant="" model="q38" verdict=admit reason=maxtok-fallback prompt=1407 predicted_completion=2600 kv_hat=1105068500 booked_bytes=12307524152 booked_real=12325816888 inflight=11 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274980404 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1407 cached=0 lcp=0 active=12 wave=16 placement=single-or-non-pp2
+1790274980404 [kv-vmm] admit id=chatcmpl-49301d91e494410f45d5aea4c7b893b2 owed_before=356515840 session_mapped=35651584 session_reserved=106954752 active=11
+1790274980406 [admission] request cost: model="q38" ctx=4043 path=plain = 29696 B/token x ctx + 661MB prefill-workspace + 312MB fixed = 1092MB
+1790274980406 [admit-predict] id=chatcmpl-8c633e546770e44cdf422aad2f404e8a tenant="" model="q38" verdict=admit reason=maxtok-fallback prompt=1379 predicted_completion=2600 kv_hat=1090818516 booked_bytes=13412592652 booked_real=13432548364 inflight=12 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274980407 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1379 cached=0 lcp=0 active=13 wave=16 placement=single-or-non-pp2
+1790274980407 [kv-vmm] admit id=chatcmpl-8c633e546770e44cdf422aad2f404e8a owed_before=427819008 session_mapped=35651584 session_reserved=106954752 active=12
+1790274980408 [admission] request cost: model="q38" ctx=1697 path=plain = 29696 B/token x ctx + 660MB prefill-workspace + 312MB fixed = 1022MB
+1790274980408 [admit-predict] id=chatcmpl-63cb7af60bcfce9a41aa1421160e0024 tenant="" model="q38" verdict=admit reason=maxtok-fallback prompt=1377 predicted_completion=256 kv_hat=1020193236 booked_bytes=14503411168 booked_real=14525029856 inflight=13 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274980408 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1377 cached=0 lcp=0 active=14 wave=16 placement=single-or-non-pp2
+1790274980408 [kv-vmm] admit id=chatcmpl-63cb7af60bcfce9a41aa1421160e0024 owed_before=499122176 session_mapped=0 session_reserved=0 active=13
+1790274980410 [admission] request cost: model="q38" ctx=4040 path=plain = 29696 B/token x ctx + 659MB prefill-workspace + 312MB fixed = 1091MB
+1790274980410 [admit-predict] id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 tenant="" model="q38" verdict=admit reason=maxtok-fallback prompt=1376 predicted_completion=2600 kv_hat=1089291732 booked_bytes=15523604404 booked_real=15546886068 inflight=14 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274980411 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1376 cached=0 lcp=0 active=15 wave=16 placement=single-or-non-pp2
+1790274980411 [kv-vmm] admit id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 owed_before=499122176 session_mapped=35651584 session_reserved=106954752 active=14
+1790274980412 [admission] request cost: model="q38" ctx=1623 path=plain = 29696 B/token x ctx + 624MB prefill-workspace + 312MB fixed = 984MB
+1790274980412 [admit-predict] id=chatcmpl-0e597ae64d04e9d20e57b6928aab0597 tenant="" model="q38" verdict=admit reason=maxtok-fallback prompt=1303 predicted_completion=256 kv_hat=982532564 booked_bytes=16612896136 booked_real=16637840776 inflight=15 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274980413 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1303 cached=0 lcp=0 active=16 wave=16 placement=single-or-non-pp2
+1790274980413 [kv-vmm] admit id=chatcmpl-0e597ae64d04e9d20e57b6928aab0597 owed_before=570425344 session_mapped=0 session_reserved=0 active=15
+1790274980525 [prefix-cache] insert (seed): 1408 tokens, 198.7MB (resident 198.7MB / 15883MB, model q38)
+1790274980706 [prefix-cache] insert (seed): 1632 tokens, 205.4MB (resident 404.1MB / 15883MB, model q38)
+1790274984247 [prime-batch] B=2 tokens=79 carried=2 partial=0 in 78.6ms
+1790274984356 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 600.9MB / 15883MB, model q38)
+1790274984483 [prefix-cache] insert (seed): 1536 tokens, 202.5MB (resident 803.4MB / 15883MB, model q38)
+1790274984668 [prefix-cache] insert (seed): 1664 tokens, 206.3MB (resident 1009.7MB / 15883MB, model q38)
+1790274984869 [prefix-cache] insert (seed): 1696 tokens, 207.3MB (resident 1216.9MB / 15883MB, model q38)
+1790274985070 [prefix-cache] insert (seed): 1696 tokens, 207.3MB (resident 1424.2MB / 15883MB, model q38)
+1790274985195 [prefix-cache] insert (seed): 1504 tokens, 201.6MB (resident 1625.8MB / 15883MB, model q38)
+1790274985376 [prefix-cache] insert (seed): 1600 tokens, 204.4MB (resident 1830.2MB / 15883MB, model q38)
+1790274985620 [prefix-cache] insert (seed): 1440 tokens, 199.7MB (resident 2029.8MB / 15883MB, model q38)
+1790274985731 [prefix-cache] insert (seed): 1376 tokens, 197.8MB (resident 2227.6MB / 15883MB, model q38)
+1790274985841 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 2424.4MB / 15883MB, model q38)
+1790274985950 [prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 2621.2MB / 15883MB, model q38)
+1790274986148 [prefix-cache] insert (seed): 1280 tokens, 194.9MB (resident 2816.1MB / 15883MB, model q38)
+1790274986307 [prime-batch] B=6 tokens=157 carried=6 partial=0 in 146.4ms
+1790274986453 [prime-batch] B=6 tokens=189 carried=6 partial=0 in 146.1ms
+1790274986454 [prefix-cache] insert (seed): 1536 tokens, 202.5MB (resident 3018.6MB / 15883MB, model q38)
+1790274986531 [prime-batch] B=2 tokens=55 carried=2 partial=0 in 76.7ms
+1790274986532 [prefix-cache] insert (seed): 1376 tokens, 197.8MB (resident 3216.3MB / 15883MB, model q38)
+1790274986534 [fa-pool] grow #3 dev=0 o_len 1597440 -> 10715136 ml_len 6240 -> 41856 (retired kept, zero=false)
+1790274986908 [fa-pool] grow #4 dev=0 o_len 10715136 -> 21430272 ml_len 41856 -> 83712 (retired kept, zero=false)
+1790274990958 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=114 waited=0
+1790274990958 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=30 waited=0
+1790274990958 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790274990958 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=29 waited=0
+1790274990958 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790274990958 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790274990958 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=22 waited=0
+1790274990958 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=26 waited=0
+1790274990958 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=21 waited=0
+1790274990958 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=26 waited=0
+1790274990958 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790274990958 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790274990958 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=22 waited=0
+1790274990958 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790274990958 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790274990958 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790274990958 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790274993248 [kv-vmm] grow id=chatcmpl-6ad480c1d3f087d299767aa90ca49d07 plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=201 waited=0
+1790274993248 [kv-vmm] grow id=chatcmpl-6ad480c1d3f087d299767aa90ca49d07 plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=31 waited=0
+1790274993248 [kv-vmm] grow id=chatcmpl-6ad480c1d3f087d299767aa90ca49d07 plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=29 waited=0
+1790274993248 [kv-vmm] grow id=chatcmpl-6ad480c1d3f087d299767aa90ca49d07 plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=32 waited=0
+1790274993248 [kv-vmm] grow id=chatcmpl-6ad480c1d3f087d299767aa90ca49d07 plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=26 waited=0
+1790274993248 [kv-vmm] grow id=chatcmpl-6ad480c1d3f087d299767aa90ca49d07 plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790274993248 [kv-vmm] grow id=chatcmpl-6ad480c1d3f087d299767aa90ca49d07 plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=28 waited=0
+1790274993248 [kv-vmm] grow id=chatcmpl-6ad480c1d3f087d299767aa90ca49d07 plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790274993248 [kv-vmm] grow id=chatcmpl-6ad480c1d3f087d299767aa90ca49d07 plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=27 waited=0
+1790274993248 [kv-vmm] grow id=chatcmpl-6ad480c1d3f087d299767aa90ca49d07 plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790274993248 [kv-vmm] grow id=chatcmpl-6ad480c1d3f087d299767aa90ca49d07 plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=26 waited=0
+1790274993248 [kv-vmm] grow id=chatcmpl-6ad480c1d3f087d299767aa90ca49d07 plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790274993248 [kv-vmm] grow id=chatcmpl-6ad480c1d3f087d299767aa90ca49d07 plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=27 waited=0
+1790274993248 [kv-vmm] grow id=chatcmpl-6ad480c1d3f087d299767aa90ca49d07 plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790274993248 [kv-vmm] grow id=chatcmpl-6ad480c1d3f087d299767aa90ca49d07 plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790274993248 [kv-vmm] grow id=chatcmpl-6ad480c1d3f087d299767aa90ca49d07 plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790274993248 [kv-vmm] grow id=chatcmpl-6ad480c1d3f087d299767aa90ca49d07 plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=27 waited=0
+1790274994380 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=148 waited=0
+1790274994380 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=36 waited=0
+1790274994380 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=26 waited=0
+1790274994380 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790274994380 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790274994380 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790274994380 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790274994380 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790274994380 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790274994380 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790274994380 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790274994380 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790274994380 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790274994380 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790274994380 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790274994380 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790274994380 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=28 waited=0
+1790274995134 [kv-vmm] ensure-walls n=256 us=1,5,18,18,9,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,8,5,5,5,5,5,7,5,5,5,5,5,5,5,5,5,5,6,8,5,6,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,532,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,24,17,24,24,23,20,19,18,21,680,14,17,21,19,22,13,18,12,18,20,21,20,11,15,18,6,19,7,6,5,5,5,5,5,5,5,5,5,5,5,5,5,586,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5
+1790274995273 [meter] admit id=chatcmpl-2505175120f5f93f6ceb07b5e1a776c5 tenant=default lane=interactive model="q38"
+1790274995273 [meter] admit id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 tenant=default lane=interactive model="q38"
+1790274995273 [meter] admit id=chatcmpl-a62e30b1f1477fccb84ef01acccca229 tenant=default lane=interactive model="q38"
+1790274995273 [meter] admit id=chatcmpl-425cc260bc4ace8b7d651df855bb18eb tenant=default lane=interactive model="q38"
+1790274995273 [meter] admit id=chatcmpl-6af49ee77aa3eaf63a743be93546616d tenant=default lane=interactive model="q38"
+1790274995273 [meter] admit id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac tenant=default lane=interactive model="q38"
+1790274995273 [meter] admit id=chatcmpl-12e191561086321679ee3c67ab68dcba tenant=default lane=interactive model="q38"
+1790274995273 [meter] admit id=chatcmpl-2b39791f2329f87889e23bcce3f87467 tenant=default lane=interactive model="q38"
+1790274995292 [admission] request cost: model="q38" ctx=1821 path=plain = 29696 B/token x ctx + 719MB prefill-workspace + 312MB fixed = 1085MB
+1790274995292 [admit-predict] id=chatcmpl-2505175120f5f93f6ceb07b5e1a776c5 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1501 predicted_completion=256 kv_hat=1083300308 booked_bytes=8965101252 booked_real=8978405060 inflight=8 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274995292 [worker] plain-affinity: declined (history diverged at 50 of checkpoint 1536; 2 parked, 1501 prompt tokens; model q38)
+1790274995292 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1501 cached=0 lcp=51 active=9 wave=16 placement=single-or-non-pp2
+1790274995292 [kv-vmm] admit id=chatcmpl-2505175120f5f93f6ceb07b5e1a776c5 owed_before=463470592 session_mapped=0 session_reserved=0 active=8
+1790274995293 [admission] request cost: model="q38" ctx=4194 path=plain = 29696 B/token x ctx + 733MB prefill-workspace + 312MB fixed = 1169MB
+1790274995293 [admit-predict] id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1530 predicted_completion=256 kv_hat=1098059220 booked_bytes=10048401560 booked_real=10063368344 inflight=9 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274995293 [worker] plain-affinity: declined (history diverged at 50 of checkpoint 1536; 2 parked, 1530 prompt tokens; model q38)
+1790274995294 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1530 cached=0 lcp=51 active=10 wave=16 placement=single-or-non-pp2
+1790274995294 [kv-vmm] admit id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 owed_before=463470592 session_mapped=35651584 session_reserved=106954752 active=9
+1790274995296 [admission] request cost: model="q38" ctx=1758 path=plain = 29696 B/token x ctx + 689MB prefill-workspace + 312MB fixed = 1053MB
+1790274995296 [admit-predict] id=chatcmpl-a62e30b1f1477fccb84ef01acccca229 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1438 predicted_completion=256 kv_hat=1051237844 booked_bytes=11146460780 booked_real=11232697964 inflight=10 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274995296 [worker] plain-affinity: declined (history diverged at 50 of checkpoint 1536; 2 parked, 1438 prompt tokens; model q38)
+1790274995296 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1438 cached=0 lcp=51 active=11 wave=16 placement=single-or-non-pp2
+1790274995296 [kv-vmm] admit id=chatcmpl-a62e30b1f1477fccb84ef01acccca229 owed_before=534773760 session_mapped=0 session_reserved=0 active=10
+1790274995298 [admission] request cost: model="q38" ctx=4121 path=plain = 29696 B/token x ctx + 698MB prefill-workspace + 312MB fixed = 1132MB
+1790274995298 [admit-predict] id=chatcmpl-425cc260bc4ace8b7d651df855bb18eb tenant="" model="q38" verdict=admit reason=global-p95 prompt=1457 predicted_completion=256 kv_hat=1060907476 booked_bytes=12197698624 booked_real=12285598784 inflight=11 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274995298 [worker] plain-affinity: declined (history diverged at 50 of checkpoint 1536; 2 parked, 1457 prompt tokens; model q38)
+1790274995298 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1457 cached=0 lcp=51 active=12 wave=16 placement=single-or-non-pp2
+1790274995298 [kv-vmm] admit id=chatcmpl-425cc260bc4ace8b7d651df855bb18eb owed_before=534773760 session_mapped=35651584 session_reserved=106954752 active=11
+1790274995300 [admission] request cost: model="q38" ctx=1744 path=plain = 29696 B/token x ctx + 682MB prefill-workspace + 312MB fixed = 1046MB
+1790274995300 [admit-predict] id=chatcmpl-6af49ee77aa3eaf63a743be93546616d tenant="" model="q38" verdict=admit reason=global-p95 prompt=1424 predicted_completion=256 kv_hat=1044112852 booked_bytes=13258606100 booked_real=13417776660 inflight=12 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274995300 [worker] plain-affinity: declined (history diverged at 50 of checkpoint 1536; 2 parked, 1424 prompt tokens; model q38)
+1790274995300 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1424 cached=0 lcp=50 active=13 wave=16 placement=single-or-non-pp2
+1790274995300 [kv-vmm] admit id=chatcmpl-6af49ee77aa3eaf63a743be93546616d owed_before=606076928 session_mapped=0 session_reserved=0 active=12
+1790274995302 [admission] request cost: model="q38" ctx=4119 path=plain = 29696 B/token x ctx + 697MB prefill-workspace + 312MB fixed = 1131MB
+1790274995302 [admit-predict] id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac tenant="" model="q38" verdict=admit reason=global-p95 prompt=1455 predicted_completion=256 kv_hat=1059889620 booked_bytes=14302718952 booked_real=14463552488 inflight=13 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274995302 [worker] plain-affinity: declined (history diverged at 50 of checkpoint 1536; 2 parked, 1455 prompt tokens; model q38)
+1790274995303 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1455 cached=0 lcp=50 active=14 wave=16 placement=single-or-non-pp2
+1790274995303 [kv-vmm] admit id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac owed_before=606076928 session_mapped=35651584 session_reserved=106954752 active=13
+1790274995304 [admission] request cost: model="q38" ctx=4088 path=plain = 29696 B/token x ctx + 682MB prefill-workspace + 312MB fixed = 1115MB
+1790274995304 [admit-predict] id=chatcmpl-12e191561086321679ee3c67ab68dcba tenant="" model="q38" verdict=admit reason=global-p95 prompt=1424 predicted_completion=256 kv_hat=1044112852 booked_bytes=15362608572 booked_real=15594712508 inflight=14 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274995304 [worker] plain-affinity: declined (history diverged at 50 of checkpoint 1536; 2 parked, 1424 prompt tokens; model q38)
+1790274995305 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1424 cached=0 lcp=50 active=15 wave=16 placement=single-or-non-pp2
+1790274995305 [kv-vmm] admit id=chatcmpl-12e191561086321679ee3c67ab68dcba owed_before=677380096 session_mapped=35651584 session_reserved=106954752 active=14
+1790274995306 [admission] request cost: model="q38" ctx=1815 path=plain = 29696 B/token x ctx + 716MB prefill-workspace + 312MB fixed = 1082MB
+1790274995306 [admit-predict] id=chatcmpl-2b39791f2329f87889e23bcce3f87467 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1495 predicted_completion=256 kv_hat=1080246740 booked_bytes=16406721424 booked_real=16710095760 inflight=15 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790274995306 [worker] plain-affinity: declined (history diverged at 50 of checkpoint 1536; 2 parked, 1495 prompt tokens; model q38)
+1790274995306 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1495 cached=0 lcp=50 active=16 wave=16 placement=single-or-non-pp2
+1790274995306 [kv-vmm] admit id=chatcmpl-2b39791f2329f87889e23bcce3f87467 owed_before=748683264 session_mapped=0 session_reserved=0 active=15
+1790274997431 [prefix-cache] insert (seed): 1472 tokens, 200.6MB (resident 3416.9MB / 15883MB, model q38)
+1790274997556 [prefix-cache] insert (seed): 1504 tokens, 201.6MB (resident 3618.5MB / 15883MB, model q38)
+1790274997669 [prefix-cache] insert (seed): 1408 tokens, 198.7MB (resident 3817.2MB / 15883MB, model q38)
+1790274997790 [prefix-cache] insert (seed): 1440 tokens, 199.7MB (resident 4016.9MB / 15883MB, model q38)
+1790274997905 [prefix-cache] insert (seed): 1408 tokens, 198.7MB (resident 4215.6MB / 15883MB, model q38)
+1790274998019 [prefix-cache] insert (seed): 1408 tokens, 198.7MB (resident 4414.3MB / 15883MB, model q38)
+1790274998132 [prefix-cache] insert (seed): 1408 tokens, 198.7MB (resident 4613.0MB / 15883MB, model q38)
+1790274998257 [prefix-cache] insert (seed): 1472 tokens, 200.6MB (resident 4813.6MB / 15883MB, model q38)
+1790274998420 [prime-batch] B=6 tokens=165 carried=6 partial=0 in 145.4ms
+1790274998497 [prime-batch] B=2 tokens=39 carried=2 partial=0 in 76.1ms
+1790275000862 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=144 waited=0
+1790275000862 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=28 waited=0
+1790275000862 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=26 waited=0
+1790275000862 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275000862 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=26 waited=0
+1790275000862 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275000862 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275000862 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275000862 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=29 waited=0
+1790275000862 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=30 waited=0
+1790275000862 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275000862 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=22 waited=0
+1790275000862 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275000862 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275000862 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275000862 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275000862 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275003889 [kv-vmm] grow id=chatcmpl-2625fb855409f8c651852f931b484c5a plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=129 waited=0
+1790275003889 [kv-vmm] grow id=chatcmpl-2625fb855409f8c651852f931b484c5a plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=33 waited=0
+1790275003889 [kv-vmm] grow id=chatcmpl-2625fb855409f8c651852f931b484c5a plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=31 waited=0
+1790275003889 [kv-vmm] grow id=chatcmpl-2625fb855409f8c651852f931b484c5a plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=35 waited=0
+1790275003889 [kv-vmm] grow id=chatcmpl-2625fb855409f8c651852f931b484c5a plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=22 waited=0
+1790275003889 [kv-vmm] grow id=chatcmpl-2625fb855409f8c651852f931b484c5a plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=26 waited=0
+1790275003889 [kv-vmm] grow id=chatcmpl-2625fb855409f8c651852f931b484c5a plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=22 waited=0
+1790275003889 [kv-vmm] grow id=chatcmpl-2625fb855409f8c651852f931b484c5a plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275003889 [kv-vmm] grow id=chatcmpl-2625fb855409f8c651852f931b484c5a plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275003889 [kv-vmm] grow id=chatcmpl-2625fb855409f8c651852f931b484c5a plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275003889 [kv-vmm] grow id=chatcmpl-2625fb855409f8c651852f931b484c5a plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275003889 [kv-vmm] grow id=chatcmpl-2625fb855409f8c651852f931b484c5a plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275003889 [kv-vmm] grow id=chatcmpl-2625fb855409f8c651852f931b484c5a plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=22 waited=0
+1790275003889 [kv-vmm] grow id=chatcmpl-2625fb855409f8c651852f931b484c5a plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275003889 [kv-vmm] grow id=chatcmpl-2625fb855409f8c651852f931b484c5a plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=22 waited=0
+1790275003889 [kv-vmm] grow id=chatcmpl-2625fb855409f8c651852f931b484c5a plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275003889 [kv-vmm] grow id=chatcmpl-2625fb855409f8c651852f931b484c5a plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=22 waited=0
+1790275005689 [kv-vmm] grow id=chatcmpl-49301d91e494410f45d5aea4c7b893b2 plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=127 waited=0
+1790275005689 [kv-vmm] grow id=chatcmpl-49301d91e494410f45d5aea4c7b893b2 plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=28 waited=0
+1790275005689 [kv-vmm] grow id=chatcmpl-49301d91e494410f45d5aea4c7b893b2 plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=28 waited=0
+1790275005689 [kv-vmm] grow id=chatcmpl-49301d91e494410f45d5aea4c7b893b2 plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275005689 [kv-vmm] grow id=chatcmpl-49301d91e494410f45d5aea4c7b893b2 plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=31 waited=0
+1790275005689 [kv-vmm] grow id=chatcmpl-49301d91e494410f45d5aea4c7b893b2 plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275005689 [kv-vmm] grow id=chatcmpl-49301d91e494410f45d5aea4c7b893b2 plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275005689 [kv-vmm] grow id=chatcmpl-49301d91e494410f45d5aea4c7b893b2 plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275005689 [kv-vmm] grow id=chatcmpl-49301d91e494410f45d5aea4c7b893b2 plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275005689 [kv-vmm] grow id=chatcmpl-49301d91e494410f45d5aea4c7b893b2 plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275005689 [kv-vmm] grow id=chatcmpl-49301d91e494410f45d5aea4c7b893b2 plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275005689 [kv-vmm] grow id=chatcmpl-49301d91e494410f45d5aea4c7b893b2 plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=22 waited=0
+1790275005689 [kv-vmm] grow id=chatcmpl-49301d91e494410f45d5aea4c7b893b2 plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=26 waited=0
+1790275005689 [kv-vmm] grow id=chatcmpl-49301d91e494410f45d5aea4c7b893b2 plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275005689 [kv-vmm] grow id=chatcmpl-49301d91e494410f45d5aea4c7b893b2 plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275005689 [kv-vmm] grow id=chatcmpl-49301d91e494410f45d5aea4c7b893b2 plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275005689 [kv-vmm] grow id=chatcmpl-49301d91e494410f45d5aea4c7b893b2 plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=26 waited=0
+1790275006741 [kv-vmm] grow id=chatcmpl-8c633e546770e44cdf422aad2f404e8a plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=93 waited=0
+1790275006741 [kv-vmm] grow id=chatcmpl-8c633e546770e44cdf422aad2f404e8a plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=30 waited=0
+1790275006741 [kv-vmm] grow id=chatcmpl-8c633e546770e44cdf422aad2f404e8a plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275006741 [kv-vmm] grow id=chatcmpl-8c633e546770e44cdf422aad2f404e8a plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=27 waited=0
+1790275006741 [kv-vmm] grow id=chatcmpl-8c633e546770e44cdf422aad2f404e8a plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275006741 [kv-vmm] grow id=chatcmpl-8c633e546770e44cdf422aad2f404e8a plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275006741 [kv-vmm] grow id=chatcmpl-8c633e546770e44cdf422aad2f404e8a plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275006741 [kv-vmm] grow id=chatcmpl-8c633e546770e44cdf422aad2f404e8a plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275006741 [kv-vmm] grow id=chatcmpl-8c633e546770e44cdf422aad2f404e8a plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275006741 [kv-vmm] grow id=chatcmpl-8c633e546770e44cdf422aad2f404e8a plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275006741 [kv-vmm] grow id=chatcmpl-8c633e546770e44cdf422aad2f404e8a plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275006741 [kv-vmm] grow id=chatcmpl-8c633e546770e44cdf422aad2f404e8a plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=27 waited=0
+1790275006741 [kv-vmm] grow id=chatcmpl-8c633e546770e44cdf422aad2f404e8a plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=22 waited=0
+1790275006741 [kv-vmm] grow id=chatcmpl-8c633e546770e44cdf422aad2f404e8a plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275006741 [kv-vmm] grow id=chatcmpl-8c633e546770e44cdf422aad2f404e8a plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275006741 [kv-vmm] grow id=chatcmpl-8c633e546770e44cdf422aad2f404e8a plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275006741 [kv-vmm] grow id=chatcmpl-8c633e546770e44cdf422aad2f404e8a plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275006854 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=70 waited=0
+1790275006855 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275006855 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275006855 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275006855 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275006855 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=22 waited=0
+1790275006855 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275006855 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275006855 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275006855 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=22 waited=0
+1790275006855 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=26 waited=0
+1790275006855 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=22 waited=0
+1790275006855 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275006855 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=22 waited=0
+1790275006855 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=26 waited=0
+1790275006855 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=22 waited=0
+1790275006855 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275007644 [kv-vmm] ensure-walls n=256 us=5,5,5,5,7,8,11,8,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,8,7,7,22,7,7,580,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,8,7,7,7,7,7,7,7,7,7,7,7,7,7,7,8,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,8,7,7,7,565,7,7,7,7,7,7,7,7,7,7,7,7,8,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,8,7,7,7,7,7,7,7,556,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,516,7,7,480,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7
+1790275007908 [meter] admit id=chatcmpl-740dead19e621f6df7fad61d0f5557d0 tenant=default lane=interactive model="q38"
+1790275007908 [meter] admit id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 tenant=default lane=interactive model="q38"
+1790275007909 [meter] admit id=chatcmpl-0e892e6e57c135715b7bab7e8b44fbc2 tenant=default lane=interactive model="q38"
+1790275007909 [meter] admit id=chatcmpl-57f30740975a78c87a1242fc2f342796 tenant=default lane=interactive model="q38"
+1790275007940 [admission] request cost: model="q38" ctx=1859 path=plain = 29696 B/token x ctx + 738MB prefill-workspace + 312MB fixed = 1104MB
+1790275007940 [admit-predict] id=chatcmpl-740dead19e621f6df7fad61d0f5557d0 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1539 predicted_completion=256 kv_hat=1102639572 booked_bytes=13228070420 booked_real=13526455828 inflight=12 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790275007940 [worker] plain-affinity: declined (history diverged at 50 of checkpoint 1408; 2 parked, 1539 prompt tokens; model q38)
+1790275007940 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1539 cached=0 lcp=51 active=13 wave=16 placement=single-or-non-pp2
+1790275007940 [kv-vmm] admit id=chatcmpl-740dead19e621f6df7fad61d0f5557d0 owed_before=570425344 session_mapped=0 session_reserved=0 active=12
+1790275007941 [admission] request cost: model="q38" ctx=4188 path=plain = 29696 B/token x ctx + 730MB prefill-workspace + 312MB fixed = 1166MB
+1790275007941 [admit-predict] id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1524 predicted_completion=256 kv_hat=1095005652 booked_bytes=14330709992 booked_real=14630758376 inflight=13 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790275007941 [worker] plain-affinity: declined (history diverged at 50 of checkpoint 1408; 2 parked, 1524 prompt tokens; model q38)
+1790275007942 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1524 cached=0 lcp=51 active=14 wave=16 placement=single-or-non-pp2
+1790275007942 [kv-vmm] admit id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 owed_before=570425344 session_mapped=35651584 session_reserved=106954752 active=13
+1790275007944 [admission] request cost: model="q38" ctx=1811 path=plain = 29696 B/token x ctx + 715MB prefill-workspace + 312MB fixed = 1080MB
+1790275007944 [admit-predict] id=chatcmpl-0e892e6e57c135715b7bab7e8b44fbc2 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1491 predicted_completion=256 kv_hat=1078211028 booked_bytes=15425715644 booked_real=15797034428 inflight=14 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790275007944 [worker] plain-affinity: declined (history diverged at 50 of checkpoint 1408; 2 parked, 1491 prompt tokens; model q38)
+1790275007944 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1491 cached=0 lcp=51 active=15 wave=16 placement=single-or-non-pp2
+1790275007944 [kv-vmm] admit id=chatcmpl-0e892e6e57c135715b7bab7e8b44fbc2 owed_before=641728512 session_mapped=0 session_reserved=0 active=14
+1790275007945 [admission] request cost: model="q38" ctx=4226 path=plain = 29696 B/token x ctx + 749MB prefill-workspace + 312MB fixed = 1186MB
+1790275007945 [admit-predict] id=chatcmpl-57f30740975a78c87a1242fc2f342796 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1562 predicted_completion=256 kv_hat=1114344916 booked_bytes=16503926672 booked_real=16876908432 inflight=15 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790275007946 [worker] plain-affinity: declined (history diverged at 50 of checkpoint 1408; 2 parked, 1562 prompt tokens; model q38)
+1790275007946 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1562 cached=0 lcp=51 active=16 wave=16 placement=single-or-non-pp2
+1790275007946 [kv-vmm] admit id=chatcmpl-57f30740975a78c87a1242fc2f342796 owed_before=641728512 session_mapped=35651584 session_reserved=106954752 active=15
+1790275009094 [prefix-cache] insert (seed): 1504 tokens, 201.6MB (resident 5015.1MB / 15883MB, model q38)
+1790275009219 [prefix-cache] insert (seed): 1504 tokens, 201.6MB (resident 5216.7MB / 15883MB, model q38)
+1790275009342 [prefix-cache] insert (seed): 1472 tokens, 200.6MB (resident 5417.3MB / 15883MB, model q38)
+1790275009469 [prefix-cache] insert (seed): 1536 tokens, 202.5MB (resident 5619.8MB / 15883MB, model q38)
+1790275009601 [prime-batch] B=4 tokens=100 carried=4 partial=0 in 102.1ms
+1790275012380 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=147 waited=0
+1790275012380 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=34 waited=0
+1790275012380 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=31 waited=0
+1790275012380 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=26 waited=0
+1790275012380 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275012380 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275012380 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=28 waited=0
+1790275012380 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=28 waited=0
+1790275012380 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275012380 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275012380 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=26 waited=0
+1790275012380 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275012380 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275012380 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275012380 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275012380 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275012380 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275015126 [kv-vmm] grow id=chatcmpl-425cc260bc4ace8b7d651df855bb18eb plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=156 waited=0
+1790275015127 [kv-vmm] grow id=chatcmpl-425cc260bc4ace8b7d651df855bb18eb plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=31 waited=0
+1790275015127 [kv-vmm] grow id=chatcmpl-425cc260bc4ace8b7d651df855bb18eb plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=26 waited=0
+1790275015127 [kv-vmm] grow id=chatcmpl-425cc260bc4ace8b7d651df855bb18eb plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=26 waited=0
+1790275015127 [kv-vmm] grow id=chatcmpl-425cc260bc4ace8b7d651df855bb18eb plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=28 waited=0
+1790275015127 [kv-vmm] grow id=chatcmpl-425cc260bc4ace8b7d651df855bb18eb plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=26 waited=0
+1790275015127 [kv-vmm] grow id=chatcmpl-425cc260bc4ace8b7d651df855bb18eb plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275015127 [kv-vmm] grow id=chatcmpl-425cc260bc4ace8b7d651df855bb18eb plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275015127 [kv-vmm] grow id=chatcmpl-425cc260bc4ace8b7d651df855bb18eb plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275015127 [kv-vmm] grow id=chatcmpl-425cc260bc4ace8b7d651df855bb18eb plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275015127 [kv-vmm] grow id=chatcmpl-425cc260bc4ace8b7d651df855bb18eb plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275015127 [kv-vmm] grow id=chatcmpl-425cc260bc4ace8b7d651df855bb18eb plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275015127 [kv-vmm] grow id=chatcmpl-425cc260bc4ace8b7d651df855bb18eb plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275015127 [kv-vmm] grow id=chatcmpl-425cc260bc4ace8b7d651df855bb18eb plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275015127 [kv-vmm] grow id=chatcmpl-425cc260bc4ace8b7d651df855bb18eb plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275015127 [kv-vmm] grow id=chatcmpl-425cc260bc4ace8b7d651df855bb18eb plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=29 waited=0
+1790275015127 [kv-vmm] grow id=chatcmpl-425cc260bc4ace8b7d651df855bb18eb plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275015202 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=78 waited=0
+1790275015202 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=27 waited=0
+1790275015202 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=26 waited=0
+1790275015202 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275015202 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275015202 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275015202 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275015202 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275015202 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275015202 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275015202 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275015202 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275015202 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275015202 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275015202 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275015202 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275015202 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275016371 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=101 waited=0
+1790275016371 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=31 waited=0
+1790275016371 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=26 waited=0
+1790275016371 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275016371 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275016371 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275016371 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275016371 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275016371 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275016371 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275016371 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275016371 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=29 waited=0
+1790275016371 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275016371 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275016371 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275016371 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275016371 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275018862 [kv-vmm] ensure-walls n=256 us=7,7,7,7,7,7,7,8,9,10,10,8,9,8,8,8,8,8,8,8,10,8,8,9,9,9,8,8,8,8,9,8,8,8,8,8,8,8,9,8,8,8,8,8,8,9,8,8,8,9,8,8,8,8,8,8,8,8,8,8,8,8,9,8,8,8,9,8,8,8,8,8,9,8,8,8,8,8,8,8,9,9,8,587,8,9,8,8,8,8,8,8,8,9,10,8,8,8,8,8,8,8,8,8,8,8,8,8,8,9,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,9,9,8,8,8,8,8,8,8,8,9,8,8,8,8,12,9,9,9,8,8,8,8,8,8,8,8,596,9,496,9,8,9,8,8,8,8,9,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,9,8,8,8,8,8,8,527,9,8,8,9,8,9,9,8,8,8,8,8,8,8,9,8,8,8,8,9,8,8,8,8,8,9,8,8,8,8,9,8,8,9,8,8,8,8,8,9,8,8,8,8,8,8,9,8,8,8,8,8,8,9,8,8,8,8,8,8,8,8,8,8,8,11
+1790275019241 [meter] admit id=chatcmpl-3e78ae82c979efea9ead64f598f2dba7 tenant=default lane=interactive model="q38"
+1790275019241 [meter] admit id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 tenant=default lane=interactive model="q38"
+1790275019276 [admission] request cost: model="q38" ctx=1810 path=plain = 29696 B/token x ctx + 714MB prefill-workspace + 312MB fixed = 1079MB
+1790275019276 [admit-predict] id=chatcmpl-3e78ae82c979efea9ead64f598f2dba7 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1490 predicted_completion=256 kv_hat=1077702100 booked_bytes=15437420988 booked_real=15878347196 inflight=14 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790275019276 [worker] plain-affinity: declined (history diverged at 51 of checkpoint 1472; 2 parked, 1490 prompt tokens; model q38)
+1790275019277 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1490 cached=0 lcp=51 active=15 wave=16 placement=single-or-non-pp2
+1790275019277 [kv-vmm] admit id=chatcmpl-3e78ae82c979efea9ead64f598f2dba7 owed_before=570425344 session_mapped=0 session_reserved=0 active=14
+1790275019278 [admission] request cost: model="q38" ctx=4158 path=plain = 29696 B/token x ctx + 716MB prefill-workspace + 312MB fixed = 1151MB
+1790275019278 [admit-predict] id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1494 predicted_completion=256 kv_hat=1079737812 booked_bytes=16515123088 booked_real=16957712272 inflight=15 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790275019278 [worker] plain-affinity: declined (history diverged at 51 of checkpoint 1472; 2 parked, 1494 prompt tokens; model q38)
+1790275019279 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1494 cached=0 lcp=51 active=16 wave=16 placement=single-or-non-pp2
+1790275019279 [kv-vmm] admit id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 owed_before=570425344 session_mapped=35651584 session_reserved=106954752 active=15
+1790275019932 [prefix-cache] insert (seed): 1472 tokens, 200.6MB (resident 5820.4MB / 15883MB, model q38)
+1790275020054 [prefix-cache] insert (seed): 1472 tokens, 200.6MB (resident 6021.0MB / 15883MB, model q38)
+1790275020164 [prime-batch] B=2 tokens=40 carried=2 partial=0 in 75.8ms
+1790275021750 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=71 waited=0
+1790275021750 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=34 waited=0
+1790275021750 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275021750 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=26 waited=0
+1790275021750 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275021750 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275021750 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275021750 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275021750 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275021750 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275021750 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275021750 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275021750 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275021750 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275021750 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275021750 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275021750 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=22 waited=0
+1790275023187 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=88 waited=0
+1790275023187 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=28 waited=0
+1790275023187 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=26 waited=0
+1790275023187 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=27 waited=0
+1790275023187 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=27 waited=0
+1790275023187 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275023187 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275023187 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275023187 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275023187 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275023187 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275023187 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275023187 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275023187 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275023187 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=28 waited=0
+1790275023187 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275023187 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275029366 [kv-vmm] ensure-walls n=256 us=8,8,8,8,8,8,8,8,8,8,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,8,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,497,9,9,9,9,9,9,9,9,9,8,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,512,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,11,9,9,9,9,9,9,9,9,8,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9
+1790275029861 [meter] admit id=chatcmpl-c60d83f4266f7575e61ff731424df196 tenant=default lane=interactive model="q38"
+1790275029898 [admission] request cost: model="q38" ctx=1856 path=plain = 29696 B/token x ctx + 736MB prefill-workspace + 312MB fixed = 1103MB
+1790275029898 [admit-predict] id=chatcmpl-c60d83f4266f7575e61ff731424df196 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1536 predicted_completion=256 kv_hat=1101112788 booked_bytes=16517158800 booked_real=17029355408 inflight=15 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790275029898 [worker] plain-affinity: declined (history diverged at 50 of checkpoint 1504; 2 parked, 1536 prompt tokens; model q38)
+1790275029899 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1536 cached=0 lcp=50 active=16 wave=16 placement=single-or-non-pp2
+1790275029899 [kv-vmm] admit id=chatcmpl-c60d83f4266f7575e61ff731424df196 owed_before=570425344 session_mapped=0 session_reserved=0 active=15
+1790275030407 [prefix-cache] insert (seed): 1536 tokens, 202.5MB (resident 6223.5MB / 15883MB, model q38)
+1790275032267 [meter] admit id=chatcmpl-c881281398828a95994cd6b0c457a40a tenant=default lane=interactive model="q38"
+1790275032302 [kv-vmm] retire id=chatcmpl-6ad480c1d3f087d299767aa90ca49d07 planes=17 mapped=71303168 reserved=106954752 used=47889408 slack_bytes=1183744 booked=1202423500
+1790275032304 [admission] request cost: model="q38" ctx=4222 path=plain = 29696 B/token x ctx + 747MB prefill-workspace + 312MB fixed = 1184MB
+1790275032304 [admit-predict] id=chatcmpl-c881281398828a95994cd6b0c457a40a tenant="" model="q38" verdict=admit reason=global-p95 prompt=1558 predicted_completion=1087 kv_hat=1136986580 booked_bytes=16417511064 booked_real=16929707672 inflight=15 cap=64 budget_bytes=65879781072 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790275032304 [worker] plain-affinity: declined (history diverged at 50 of checkpoint 1472; 2 parked, 1558 prompt tokens; model q38)
+1790275032305 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=1558 cached=0 lcp=51 active=16 wave=16 placement=single-or-non-pp2
+1790275032305 [kv-vmm] admit id=chatcmpl-c881281398828a95994cd6b0c457a40a owed_before=534773760 session_mapped=35651584 session_reserved=106954752 active=15
+1790275032716 [prefix-cache] insert (seed): 1536 tokens, 202.5MB (resident 6426.0MB / 15883MB, model q38)
+1790275033571 [kv-vmm] retire id=chatcmpl-49301d91e494410f45d5aea4c7b893b2 planes=17 mapped=71303168 reserved=106954752 used=43763712 slack_bytes=1183744 booked=1106731476
+1790275034935 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=97 waited=0
+1790275034935 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=34 waited=0
+1790275034935 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275034935 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=26 waited=0
+1790275034935 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=27 waited=0
+1790275034935 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275034935 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275034935 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275034935 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275034935 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275034935 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275034935 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275034935 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275034935 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275034935 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275034935 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275034935 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275039383 [kv-vmm] retire id=chatcmpl-2625fb855409f8c651852f931b484c5a planes=17 mapped=71303168 reserved=106954752 used=47419392 slack_bytes=1183744 booked=819091456
+1790275039385 [kv-vmm] reap released=71303168 pending=0
+1790275039588 [kv-vmm] ensure-walls n=256 us=9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,8,9,9,9,9,9,9,9,9,9,9,8,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,8,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,10,9,9,9,9,9,9,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,524,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,9,8,8,8,8,8,8,11,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,9,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,10,8,8,8,8,8
+1790275040164 [kv-vmm] reap released=71303168 pending=0
+1790275043339 [kv-vmm] grow id=chatcmpl-c881281398828a95994cd6b0c457a40a plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=146 waited=0
+1790275043339 [kv-vmm] grow id=chatcmpl-c881281398828a95994cd6b0c457a40a plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=29 waited=0
+1790275043339 [kv-vmm] grow id=chatcmpl-c881281398828a95994cd6b0c457a40a plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=26 waited=0
+1790275043339 [kv-vmm] grow id=chatcmpl-c881281398828a95994cd6b0c457a40a plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275043339 [kv-vmm] grow id=chatcmpl-c881281398828a95994cd6b0c457a40a plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275043339 [kv-vmm] grow id=chatcmpl-c881281398828a95994cd6b0c457a40a plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275043339 [kv-vmm] grow id=chatcmpl-c881281398828a95994cd6b0c457a40a plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275043339 [kv-vmm] grow id=chatcmpl-c881281398828a95994cd6b0c457a40a plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275043339 [kv-vmm] grow id=chatcmpl-c881281398828a95994cd6b0c457a40a plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275043339 [kv-vmm] grow id=chatcmpl-c881281398828a95994cd6b0c457a40a plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275043339 [kv-vmm] grow id=chatcmpl-c881281398828a95994cd6b0c457a40a plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275043339 [kv-vmm] grow id=chatcmpl-c881281398828a95994cd6b0c457a40a plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=22 waited=0
+1790275043339 [kv-vmm] grow id=chatcmpl-c881281398828a95994cd6b0c457a40a plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=28 waited=0
+1790275043339 [kv-vmm] grow id=chatcmpl-c881281398828a95994cd6b0c457a40a plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275043339 [kv-vmm] grow id=chatcmpl-c881281398828a95994cd6b0c457a40a plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=23 waited=0
+1790275043339 [kv-vmm] grow id=chatcmpl-c881281398828a95994cd6b0c457a40a plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=24 waited=0
+1790275043339 [kv-vmm] grow id=chatcmpl-c881281398828a95994cd6b0c457a40a plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=6291456 owner_us=25 waited=0
+1790275047761 [kv-vmm] ensure-walls n=256 us=8,8,8,8,8,11,8,8,8,8,8,7,8,7,7,8,9,7,8,7,7,7,8,8,8,8,7,7,8,8,8,7,7,7,8,8,7,8,8,8,7,8,7,8,8,8,7,8,7,8,7,7,7,8,8,7,8,8,7,7,8,7,8,8,7,8,8,8,8,7,8,7,7,7,7,8,9,8,8,8,8,8,7,7,7,8,7,8,8,8,7,7,8,8,7,8,7,8,8,8,8,7,7,7,8,7,8,8,7,8,7,8,7,8,8,8,572,8,8,8,8,8,8,8,7,8,8,8,7,8,8,7,8,8,8,7,8,8,7,8,8,7,7,8,7,8,8,8,8,8,8,7,8,8,8,8,7,7,8,8,7,8,8,8,7,8,7,8,8,8,8,8,8,8,8,8,8,8,8,7,11,8,8,8,7,8,8,8,8,8,8,8,8,8,8,8,8,8,8,7,8,8,8,8,7,8,8,8,8,7,8,8,7,8,9,8,8,8,8,7,8,8,8,8,7,8,8,8,8,8,8,8,8,8,8,8,8,8,8,7,8,8,8,8,8,8,8,8,7,8,8,8,8,8,8,7
+1790275055348 [kv-vmm] ensure-walls n=256 us=7,8,8,8,7,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,7,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,7,7,8,8,7,7,8,8,7,8,7,8,8,8,7,8,8,8,8,7,8,7,7,7,8,7,8,13,8,7,8,7,7,7,7,7,8,8,7,7,7,8,8,7,8,7,7,7,7,7,7,7,7,8,8,7,7,8,7,7,7,8,8,8,8,8,8,8,8,8,7,7,7,7,7,7,7,7,7,7,7,8,7,8,8,8,8,7,8,8,7,7,7,7,8,8,7,7,7,8,8,8,7,8,8,8,8,8,7,7,7,8,7,8,8,8,7,8,7,8,8,8,8,7,8,7,7,7,7,7,7,7,7,8,8,8,7,8,8,8,8,8,7,7,8,7,8,8,7,7,7,8,7,7,8,8,8,8,8,7,7,8,8,7,8,7,7,8,8,7,7,8,8,9,7,8,8,8,7,8,8,8,8,8,7,7,8,8,8,8,8,7,8,7,8,8,7,8,8,7,7,8,7,8,7,7
+1790275062077 [kv-vmm] retire id=chatcmpl-425cc260bc4ace8b7d651df855bb18eb planes=17 mapped=71303168 reserved=106954752 used=55966720 slack_bytes=1183744 booked=1132177876
+1790275062078 [kv-vmm] reap released=71303168 pending=0
+1790275062791 [kv-vmm] ensure-walls n=256 us=7,8,7,7,7,8,8,7,7,8,7,7,7,7,7,7,7,8,8,8,7,8,8,7,7,7,8,7,7,7,7,8,7,8,7,8,7,8,7,7,7,7,7,7,7,7,7,7,7,8,8,8,14,8,8,8,8,8,7,8,8,8,8,8,7,8,8,8,8,7,8,7,8,8,8,8,8,8,8,8,8,7,8,7,8,8,8,8,8,8,8,8,7,8,7,8,7,8,8,8,8,8,7,8,8,8,8,8,7,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,7,8,8,8,8,7,8,9,8,8,9,8,8,8,7,7,7,8,8,8,7,7,7,8,8,7,8,7,8,8,7,7,7,8,8,8,8,8,8,8,8,8,7,8,8,8,8,8,8,8,8,7,7,7,7,7,7,8,7,8,8,8,8,8,7,8,8,8,8,8,8,8,8,7,7,8,8,7,7,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7
+1790275063176 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k3 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=98 waited=0
+1790275063176 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k7 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=28 waited=0
+1790275063176 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k11 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=23 waited=0
+1790275063176 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k15 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=28 waited=0
+1790275063176 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k19 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=22 waited=0
+1790275063176 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k23 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=21 waited=0
+1790275063176 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k27 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=22 waited=0
+1790275063176 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k31 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275063176 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k35 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275063176 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k39 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275063176 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k43 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=23 waited=0
+1790275063176 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k47 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=23 waited=0
+1790275063176 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k51 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=23 waited=0
+1790275063176 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k55 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275063176 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k59 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=21 waited=0
+1790275063176 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k63 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=23 waited=0
+1790275063176 [kv-vmm] grow id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a plane=k64 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275065922 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k3 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=113 waited=0
+1790275065922 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k7 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=32 waited=0
+1790275065922 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k11 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=27 waited=0
+1790275065922 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k15 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275065922 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k19 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275065922 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k23 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=26 waited=0
+1790275065922 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k27 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=30 waited=0
+1790275065922 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k31 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=27 waited=0
+1790275065922 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k35 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=26 waited=0
+1790275065922 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k39 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275065922 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k43 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275065922 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k47 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=26 waited=0
+1790275065922 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k51 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=23 waited=0
+1790275065922 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k55 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275065922 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k59 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=23 waited=0
+1790275065922 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k63 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275065922 [kv-vmm] grow id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 plane=k64 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=25 waited=0
+1790275068589 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k3 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=125 waited=0
+1790275068589 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k7 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=31 waited=0
+1790275068589 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k11 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=25 waited=0
+1790275068589 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k15 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=26 waited=0
+1790275068589 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k19 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=29 waited=0
+1790275068589 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k23 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=26 waited=0
+1790275068589 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k27 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=25 waited=0
+1790275068589 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k31 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275068589 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k35 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275068589 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k39 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=27 waited=0
+1790275068589 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k43 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=25 waited=0
+1790275068589 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k47 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275068589 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k51 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=23 waited=0
+1790275068589 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k55 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=25 waited=0
+1790275068589 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k59 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=27 waited=0
+1790275068589 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k63 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=25 waited=0
+1790275068589 [kv-vmm] grow id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 plane=k64 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=27 waited=0
+1790275069827 [kv-vmm] ensure-walls n=256 us=7,7,7,7,7,7,7,7,7,7,7,7,7,506,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,9,7,7,7,7,7,7,7,7,7,553,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,9,7,7,7,7,14,7,7,7,7,7,7,7,7,7,573,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,8,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7
+1790275070514 [kv-vmm] retire id=chatcmpl-8c633e546770e44cdf422aad2f404e8a planes=17 mapped=71303168 reserved=106954752 used=64461824 slack_bytes=1183744 booked=1092481492
+1790275072816 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k3 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=142 waited=0
+1790275072816 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k7 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=30 waited=0
+1790275072816 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k11 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=30 waited=0
+1790275072816 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k15 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=29 waited=0
+1790275072816 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k19 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=28 waited=0
+1790275072816 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k23 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275072816 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k27 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=25 waited=0
+1790275072816 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k31 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275072816 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k35 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=26 waited=0
+1790275072816 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k39 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=25 waited=0
+1790275072816 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k43 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=25 waited=0
+1790275072816 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k47 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275072816 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k51 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=33 waited=0
+1790275072816 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k55 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=32 waited=0
+1790275072816 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k59 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=29 waited=0
+1790275072816 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k63 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=29 waited=0
+1790275072816 [kv-vmm] grow id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 plane=k64 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=30 waited=0
+1790275075505 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k3 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=131 waited=0
+1790275075505 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k7 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=43 waited=0
+1790275075505 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k11 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275075505 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k15 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=36 waited=0
+1790275075505 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k19 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=30 waited=0
+1790275075505 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k23 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=32 waited=0
+1790275075505 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k27 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=33 waited=0
+1790275075505 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k31 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=32 waited=0
+1790275075505 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k35 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=29 waited=0
+1790275075505 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k39 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=27 waited=0
+1790275075505 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k43 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275075505 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k47 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=27 waited=0
+1790275075505 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k51 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=23 waited=0
+1790275075505 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k55 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=28 waited=0
+1790275075505 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k59 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=23 waited=0
+1790275075505 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k63 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=25 waited=0
+1790275075505 [kv-vmm] grow id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 plane=k64 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275076427 [kv-vmm] ensure-walls n=256 us=7,7,7,7,7,7,7,7,7,7,7,7,7,8,7,7,7,7,7,7,7,7,7,7,7,6,6,6,6,8,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,7,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,7,6,6,6,6,6,6,6,6,6,6,6,6,6,7,6,6,6,6,6,6,6,6,6,7,6,7,6,6,615,7,6,6,6,6,6,6,6,6,6,6,6,6,6,7,6,6,6,6,6,6,6,8,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,7,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,7,6,6,6,6,6,6,6,6,7,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,622,6,6,6,6,7,6,6,6,6,6,6,6,6,6,6,6,6,10,7,6,6,6,6,6,6,6,6,6,6,6,6,7,7,6,7,6
+1790275077427 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k3 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=149 waited=0
+1790275077427 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k7 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=29 waited=0
+1790275077427 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k11 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=33 waited=0
+1790275077427 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k15 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275077427 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k19 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=25 waited=0
+1790275077427 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k23 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275077427 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k27 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=25 waited=0
+1790275077427 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k31 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=29 waited=0
+1790275077427 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k35 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275077427 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k39 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=25 waited=0
+1790275077427 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k43 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=28 waited=0
+1790275077427 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k47 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=25 waited=0
+1790275077427 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k51 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=27 waited=0
+1790275077427 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k55 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=23 waited=0
+1790275077427 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k59 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275077427 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k63 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=25 waited=0
+1790275077427 [kv-vmm] grow id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac plane=k64 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=25 waited=0
+1790275077572 [kv-vmm] retire id=chatcmpl-3d85e012e59ec95c14d3072cf00411e0 planes=17 mapped=106954752 reserved=106954752 used=69214208 slack_bytes=1183744 booked=1090954708
+1790275077572 [kv-vmm] retire id=chatcmpl-36a45904978b5d92a22aa0b04d194ea2 planes=17 mapped=106954752 reserved=106954752 used=71999488 slack_bytes=1183744 booked=1172383188
+1790275077572 [kv-vmm] retire id=chatcmpl-b3f5564882c07df8c80d6f05b0b20fa2 planes=17 mapped=106954752 reserved=106954752 used=73688064 slack_bytes=1183744 booked=1221749204
+1790275077573 [kv-vmm] retire id=chatcmpl-71a6c33085e894574f4ef5c6cf64755a planes=17 mapped=106954752 reserved=106954752 used=75428864 slack_bytes=1183744 booked=1272590036
+1790275077577 [kv-vmm] reap released=356515840 pending=0
+1790275077990 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k3 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=104 waited=0
+1790275077990 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k7 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=27 waited=0
+1790275077990 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k11 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=25 waited=0
+1790275077990 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k15 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=25 waited=0
+1790275077990 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k19 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=25 waited=0
+1790275077990 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k23 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275077990 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k27 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=23 waited=0
+1790275077990 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k31 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=26 waited=0
+1790275077990 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k35 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275077990 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k39 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=23 waited=0
+1790275077990 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k43 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=25 waited=0
+1790275077990 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k47 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=23 waited=0
+1790275077990 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k51 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275077990 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k55 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=22 waited=0
+1790275077990 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k59 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275077990 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k63 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=22 waited=0
+1790275077990 [kv-vmm] grow id=chatcmpl-12e191561086321679ee3c67ab68dcba plane=k64 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=25 waited=0
+1790275079986 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k3 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=127 waited=0
+1790275079986 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k7 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=31 waited=0
+1790275079986 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k11 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=26 waited=0
+1790275079986 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k15 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=26 waited=0
+1790275079986 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k19 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275079986 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k23 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=26 waited=0
+1790275079986 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k27 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=25 waited=0
+1790275079986 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k31 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=25 waited=0
+1790275079986 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k35 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=29 waited=0
+1790275079986 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k39 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275079986 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k43 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=23 waited=0
+1790275079986 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k47 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=25 waited=0
+1790275079986 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k51 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275079986 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k55 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=23 waited=0
+1790275079986 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k59 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275079986 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k63 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=25 waited=0
+1790275079986 [kv-vmm] grow id=chatcmpl-57f30740975a78c87a1242fc2f342796 plane=k64 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275080614 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k3 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=81 waited=0
+1790275080614 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k7 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=27 waited=0
+1790275080614 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k11 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=25 waited=0
+1790275080614 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k15 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=26 waited=0
+1790275080614 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k19 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275080614 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k23 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275080614 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k27 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275080614 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k31 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275080614 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k35 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=25 waited=0
+1790275080614 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k39 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275080614 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k43 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=23 waited=0
+1790275080614 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k47 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=23 waited=0
+1790275080614 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k51 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=22 waited=0
+1790275080614 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k55 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275080614 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k59 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=25 waited=0
+1790275080614 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k63 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=22 waited=0
+1790275080614 [kv-vmm] grow id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 plane=k64 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=23 waited=0
+1790275081060 [kv-vmm] ensure-walls n=256 us=6,6,6,6,6,6,6,6,7,6,6,6,6,6,6,6,6,7,6,7,6,6,6,6,6,6,6,15,7,7,6,6,6,7,6,6,6,6,597,7,6,6,6,6,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,519,4,4,4,4,4,4,4,4,4,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,560,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,492,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,6,4,4,4,4,4,4,4,4
+1790275081850 [kv-vmm] retire id=chatcmpl-12e191561086321679ee3c67ab68dcba planes=17 mapped=106954752 reserved=106954752 used=70049792 slack_bytes=1183744 booked=1115383252
+1790275081850 [kv-vmm] retire id=chatcmpl-c223ef6e5a0866a08f5ee632684f06ac planes=17 mapped=106954752 reserved=106954752 used=70589440 slack_bytes=1183744 booked=1131160020
+1790275081850 [kv-vmm] retire id=chatcmpl-dad4c109bfc9cfc742eef8857d01ae14 planes=17 mapped=106954752 reserved=106954752 used=71895040 slack_bytes=1183744 booked=1169329620
+1790275081855 [kv-vmm] reap released=320864256 pending=0
+1790275084242 [kv-vmm] retire id=chatcmpl-c881281398828a95994cd6b0c457a40a planes=17 mapped=71303168 reserved=106954752 used=61049856 slack_bytes=1183744 booked=1183579604
+1790275084243 [kv-vmm] reap released=106954752 pending=0
+1790275084627 [kv-vmm] ensure-walls n=256 us=4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,3,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1
+1790275084705 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k3 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=81 waited=0
+1790275084705 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k7 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=26 waited=0
+1790275084705 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k11 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=23 waited=0
+1790275084705 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k15 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275084705 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k19 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=24 waited=0
+1790275084705 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k23 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=22 waited=0
+1790275084705 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k27 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=22 waited=0
+1790275084705 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k31 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=23 waited=0
+1790275084705 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k35 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=23 waited=0
+1790275084705 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k39 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=22 waited=0
+1790275084705 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k43 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=23 waited=0
+1790275084705 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k47 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=22 waited=0
+1790275084705 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k51 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=21 waited=0
+1790275084705 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k55 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=22 waited=0
+1790275084705 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k59 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=22 waited=0
+1790275084705 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k63 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=23 waited=0
+1790275084705 [kv-vmm] grow id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 plane=k64 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=6291456 owner_us=21 waited=0
+1790275085281 [kv-vmm] retire id=chatcmpl-57f30740975a78c87a1242fc2f342796 planes=17 mapped=106954752 reserved=106954752 used=72452096 slack_bytes=1183744 booked=1185615316
+1790275085281 [kv-vmm] retire id=chatcmpl-c3d717de521eea24ff5d4e7276b2f973 planes=17 mapped=106954752 reserved=106954752 used=71790592 slack_bytes=1183744 booked=1166276052
+1790275085284 [kv-vmm] reap released=178257920 pending=0
+1790275087728 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,469,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+1790275088360 [kv-vmm] retire id=chatcmpl-2feb407762d50067f440df2fb83dd1e0 planes=17 mapped=106954752 reserved=106954752 used=71268352 slack_bytes=1183744 booked=1151008212
+1790275088360 [kv-vmm] ensure-walls n=53 us=0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+1790275088364 [kv-vmm] reap released=106954752 pending=0
+1790275089400 [server] SIGTERM: draining (0 in flight, deadline 30s)
+1790275089400 [server] drain complete in 0.0s; exiting
+1790275089458 [server] GPU worker shutdown complete

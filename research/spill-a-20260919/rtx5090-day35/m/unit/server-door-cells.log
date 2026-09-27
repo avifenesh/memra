@@ -1,0 +1,42 @@
+
+running 18 tests
+test worker::tests::option_b_off_tick_demote_hashes_ride_the_helper_and_a_changed_lease_is_refused ... FAILED
+test worker::tests::option_b_postpublish_refusal_retires_the_ticket_and_keeps_the_tier_on ... ok
+test worker::tests::option_b_presubmit_refusal_returns_every_plane_and_keeps_the_tier_on ... ok
+test worker::tests::option_b_span_attach_fault_hands_every_span_back ... ok
+test worker::tests::option_b_span_postpublish_refusal_returns_the_staging_to_the_set ... ok
+test worker::tests::option_b_span_refusal_returns_every_plane_and_keeps_the_tier_on ... ok
+test worker::tests::option_b_span_staging_charge_refusal_refuses_the_attach_and_keeps_the_tier_on ... ok
+test worker::tests::option_b_spans_ride_the_ticket_and_land_bitwise ... ok
+test worker::tests::option_c_first_ready_view_failure_unwinds_through_the_published_arm ... ok
+test worker::tests::option_c_off_tick_checksums_ride_the_hash_helper_and_a_corrupt_lease_is_refused ... ok
+test worker::tests::option_c_partial_acceptance_unwinds_refused_with_every_destination_released ... ok
+test worker::tests::option_c_postpublish_refusal_retires_the_ticket_and_keeps_the_host_twin ... ok
+test worker::tests::option_c_presubmit_refusal_releases_every_destination_and_keeps_the_host_twin ... ok
+test worker::tests::option_c_promote_routes_every_contract_plane_and_keeps_the_host_twin ... ok
+test worker::tests::option_c_receipt_mismatch_cancels_before_publication_and_recovers_the_source ... ok
+test worker::tests::option_c_span_attach_fault_hands_every_span_back ... ok
+test worker::tests::option_c_span_postpublish_refusal_returns_the_staging_to_the_set ... ok
+test worker::tests::option_c_spans_ride_the_promote_ticket_and_land_bitwise ... ok
+
+failures:
+
+---- worker::tests::option_b_off_tick_demote_hashes_ride_the_helper_and_a_changed_lease_is_refused stdout ----
+[prefix-host] tier span staging: 4 fresh pinned buffer(s), 163952 bytes charged to the governor's pinned ledger; the set holds 163952 bytes charged
+[prefix-host] demote submitted off the tick: 8 tokens, 0.2MB, ticket seq=1, 6 items on the contracts door's copy stream (model m)
+[prefix-host] demote failed (a Demoting entry has no source shell for its submitted ticket; nothing published; ticket seq=1 did not settle (Busy)); the tier latches off
+[prefix-host] TIER DISABLED: a Demoting entry has no source shell for its submitted ticket; nothing published; ticket seq=1 did not settle (Busy). No pageable fallback by design: pinned RAM on this host is exhausted or misbudgeted; lower MEMRA_KV_HOST_MB (or fix the co-tenant split) and restart to re-arm
+[prefix-host] hash helper joined (the tier latched off)
+
+thread 'worker::tests::option_b_off_tick_demote_hashes_ride_the_helper_and_a_changed_lease_is_refused' (3272428) panicked at crates/memra-server/src/worker.rs:50076:9:
+assertion `left == right` failed: the clean arm publishes
+  left: Some(SourceQuarantined)
+ right: Some(Demoted)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::option_b_off_tick_demote_hashes_ride_the_helper_and_a_changed_lease_is_refused
+
+test result: FAILED. 17 passed; 1 failed; 0 ignored; 0 measured; 892 filtered out; finished in 0.35s
+

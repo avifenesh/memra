@@ -1,0 +1,25 @@
+
+running 11 tests
+owner-thread work while the copy stream's host function sleeps: 1.98 ms; the copy behind the host function still pending: true
+HOLD READING cell=h2d_span_filled_batch first_item_seen_ms=9.04 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=false
+HOLD STEPS cell=h2d_span_filled_batch pinned-alloc@-48.82+8.46 device-alloc@-40.35+0.03 pinned-alloc@-40.31+2.78 device-alloc@-37.53+0.02 pinned-alloc@-37.51+1.41 device-alloc@-36.10+0.40 delay@0.00+0.04 pinned-alloc@0.04+2.62 device-alloc@2.67+0.04 pinned-alloc@2.72+2.04 device-alloc@4.76+0.03 pinned-alloc@4.79+3.89 device-alloc@8.68+0.16 submit@8.85+0.18
+test tier_transfer::tests::h2d_deferred_checksum_lands_with_the_supplied_digests ... ok
+test tier_transfer::tests::pinned_kind_arm_is_honoured_by_the_driver ... ok
+HOLD READING cell=d2h_span_batch first_item_seen_ms=32.14 polls=1 longest_poll_ms=0.03 longest_gap_ms=0.00 batch_landed_at_first_sight=false
+HOLD STEPS cell=d2h_span_batch htod-pageable@-52.38+0.27 pinned-alloc@-52.10+1.79 htod-pageable@-50.31+0.52 pinned-alloc@-49.79+5.05 htod-pageable@-44.74+0.45 pinned-alloc@-44.29+6.56 delay@0.00+0.04 htod-pageable@0.05+0.32 pinned-alloc@0.37+4.29 htod-pageable@4.66+0.54 pinned-alloc@5.20+4.61 htod-pageable@9.81+0.39 pinned-alloc@10.20+5.03 submit@15.24+0.07 htod-pageable@15.32+0.27 pinned-alloc@15.59+4.57 htod-pageable@20.16+0.49 pinned-alloc@21.87+3.26 htod-pageable@25.13+0.37 pinned-alloc@25.50+6.59 submit-busy@32.10+0.01
+HOLD READING cell=h2d_span_batch first_item_seen_ms=13.36 polls=1 longest_poll_ms=0.02 longest_gap_ms=0.00 batch_landed_at_first_sight=false
+HOLD STEPS cell=h2d_span_batch pinned-alloc@-80.32+4.94 pinned-write@-75.37+0.34 device-alloc@-75.03+0.06 pinned-alloc@-74.96+6.91 pinned-write@-68.05+0.55 device-alloc@-67.50+2.18 pinned-alloc@-65.31+6.31 pinned-write@-59.00+0.40 device-alloc@-58.60+0.03 pinned-alloc@-16.81+4.04 pinned-write@-12.76+0.32 device-alloc@-12.44+0.36 pinned-alloc@-12.08+2.11 device-alloc@-9.96+0.03 pinned-alloc@-9.93+1.45 pinned-write@-8.48+0.38 device-alloc@-8.10+0.04 delay@0.00+0.04 pinned-alloc@0.05+1.95 pinned-write@2.00+0.33 device-alloc@2.32+0.04 pinned-alloc@2.37+2.18 pinned-write@4.55+0.57 device-alloc@5.12+0.05 pinned-alloc@5.18+1.50 pinned-write@6.68+0.42 device-alloc@7.10+0.05 submit@7.15+0.06 pinned-alloc@7.21+1.24 pinned-write@8.45+0.30 device-alloc@8.75+0.04 pinned-alloc@8.80+1.98 pinned-write@10.78+0.52 device-alloc@11.30+0.05 pinned-alloc@11.35+1.50 pinned-write@12.86+0.42 device-alloc@13.28+0.04 submit-busy@13.33+0.01
+test tier_transfer::tests::d2d_capture_lands_on_the_copy_stream_and_publishes_only_after_its_event ... ok
+test tier_transfer::tests::d2d_restore_lands_on_the_copy_stream_and_is_ready_only_after_the_installed_wait ... ok
+test tier_transfer::tests::h2d_fill_host_function_does_not_hold_the_owner_thread ... ok
+test tier_transfer::tests::d2d_early_reader_fault_is_refused_by_the_receipt ... ok
+test tier_transfer::tests::d2h_span_batch_lands_with_its_ticket_on_the_copy_stream ... ok
+test tier_transfer::tests::h2d_span_filled_batch_fills_on_the_copy_stream_before_its_copies ... ok
+test tier_transfer::tests::h2d_span_batch_lands_with_its_ticket_on_the_copy_stream ... ok
+test tier_transfer::tests::d2d_receipt_digest_matches_the_cpu_oracle ... ok
+D2D-RECEIPT PRICE order=copy-first bytes=165675008 n_per_arm=5 copy_ms=[0.389376, 0.398656, 0.397216, 0.39616, 0.395808] copy_median=0.396 digest_ms=[0.219008, 0.220576, 0.220256, 0.220192, 0.22272] digest_median=0.220 pair_median=0.441 pair_over_copy=1.11
+D2D-RECEIPT PRICE order=digest-first bytes=165675008 n_per_arm=5 copy_ms=[0.36576, 0.395072, 0.39808, 0.395168, 0.39648] copy_median=0.395 digest_ms=[0.22576, 0.219488, 0.218752, 0.21808, 0.219488] digest_median=0.219 pair_median=0.439 pair_over_copy=1.11
+test tier_transfer::tests::d2d_receipt_digest_price_against_the_copy ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 576 filtered out; finished in 2.43s
+

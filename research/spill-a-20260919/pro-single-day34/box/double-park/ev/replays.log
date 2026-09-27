@@ -1,0 +1,60 @@
+== b01-on/promote arm=on
+STALL rule cell=stall-promote-on arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=12.1 idle_p95=13.4 idle_p99=13.5 idle_max=13.6 arm_runs=10 arm_p50=12.1 arm_p95=13.5 arm_p99=16.5 arm_max=90.9 stall_median=76.8 stall_min=76.4 stall_max=78.8 server_demote_ms=[261.5, 273.5, 208.6, 208.1, 208.7, 208.3, 208.8, 208.4, 221.7, 208.3] server_promote_ms=[28.8, 28.8, 27.4, 27.4, 27.4, 27.5, 27.4, 27.4, 27.4, 27.4] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+STALL REPLAY: PASS (replay agrees with the harness's rule line)
+== b02-off/promote arm=off
+STALL rule cell=stall-promote-off arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=12.1 idle_p95=13.4 idle_p99=13.5 idle_max=13.6 arm_runs=10 arm_p50=12.1 arm_p95=13.5 arm_p99=15.0 arm_max=179.4 stall_median=93.1 stall_min=92.6 stall_max=167.4 server_demote_ms=[81.7, 81.9, 10.8, 9.5, 9.6, 9.5, 9.7, 9.6, 9.5, 9.4] server_promote_ms=[90.0, 89.4, 18.2, 16.9, 17.0, 17.0, 17.1, 17.0, 17.0, 17.0] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+STALL REPLAY: PASS (replay agrees with the harness's rule line)
+== b03-on/promote arm=on
+STALL rule cell=stall-promote-on arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=12.1 idle_p95=13.4 idle_p99=13.5 idle_max=13.6 arm_runs=10 arm_p50=12.1 arm_p95=13.5 arm_p99=16.5 arm_max=90.9 stall_median=76.8 stall_min=76.1 stall_max=78.8 server_demote_ms=[261.5, 261.3, 208.6, 208.1, 208.6, 208.0, 208.8, 208.1, 208.7, 208.2] server_promote_ms=[28.7, 28.6, 27.3, 27.4, 27.4, 27.4, 27.4, 27.4, 27.4, 27.5] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+STALL REPLAY: PASS (replay agrees with the harness's rule line)
+== b04-off/promote arm=off
+STALL rule cell=stall-promote-off arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=12.1 idle_p95=13.4 idle_p99=13.5 idle_max=13.6 arm_runs=10 arm_p50=12.1 arm_p95=13.5 arm_p99=15.0 arm_max=180.1 stall_median=93.0 stall_min=92.4 stall_max=168.0 server_demote_ms=[82.3, 83.3, 11.1, 9.4, 9.6, 9.5, 9.4, 9.6, 9.6, 9.4] server_promote_ms=[90.6, 90.6, 18.6, 16.8, 16.9, 17.0, 16.8, 17.0, 17.0, 16.8] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+STALL REPLAY: PASS (replay agrees with the harness's rule line)
+== b05-on/promote arm=on
+STALL rule cell=stall-promote-on arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=12.1 idle_p95=13.4 idle_p99=13.5 idle_max=16.8 arm_runs=10 arm_p50=12.1 arm_p95=13.5 arm_p99=16.5 arm_max=91.0 stall_median=76.8 stall_min=76.3 stall_max=79.0 server_demote_ms=[274.6, 260.6, 208.6, 208.1, 208.7, 208.1, 208.6, 208.2, 208.8, 208.3] server_promote_ms=[28.9, 28.7, 27.3, 27.4, 27.4, 27.4, 27.4, 27.4, 27.4, 27.4] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+STALL REPLAY: PASS (replay agrees with the harness's rule line)
+== b06-off/promote arm=off
+STALL rule cell=stall-promote-off arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=12.1 idle_p95=13.4 idle_p99=13.5 idle_max=13.6 arm_runs=10 arm_p50=12.1 arm_p95=13.5 arm_p99=15.0 arm_max=179.5 stall_median=93.1 stall_min=92.5 stall_max=167.5 server_demote_ms=[81.7, 82.7, 10.9, 9.5, 9.6, 9.6, 9.5, 9.6, 9.5, 9.4] server_promote_ms=[90.0, 90.1, 18.3, 16.9, 17.0, 17.0, 17.0, 17.0, 17.0, 16.9] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+STALL REPLAY: PASS (replay agrees with the harness's rule line)
+== b07-on/promote arm=on
+STALL rule cell=stall-promote-on arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=12.1 idle_p95=13.4 idle_p99=13.5 idle_max=14.1 arm_runs=10 arm_p50=12.1 arm_p95=13.5 arm_p99=16.5 arm_max=91.1 stall_median=76.8 stall_min=76.3 stall_max=79.0 server_demote_ms=[274.6, 273.6, 208.5, 208.1, 208.6, 208.1, 208.9, 208.4, 208.9, 208.4] server_promote_ms=[29.0, 28.8, 27.4, 27.4, 27.5, 27.4, 27.4, 27.4, 27.4, 27.4] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+STALL REPLAY: PASS (replay agrees with the harness's rule line)
+== b08-off/promote arm=off
+STALL rule cell=stall-promote-off arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=12.1 idle_p95=13.4 idle_p99=13.5 idle_max=13.6 arm_runs=10 arm_p50=12.1 arm_p95=13.4 arm_p99=15.0 arm_max=179.6 stall_median=93.1 stall_min=92.6 stall_max=167.5 server_demote_ms=[81.7, 81.9, 11.2, 9.5, 9.5, 9.5, 9.5, 9.6, 9.6, 9.5] server_promote_ms=[90.1, 89.3, 18.7, 16.9, 17.0, 17.0, 17.0, 17.0, 17.1, 17.0] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+STALL REPLAY: PASS (replay agrees with the harness's rule line)
+== b09-on/promote arm=on
+STALL rule cell=stall-promote-on arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=12.1 idle_p95=13.4 idle_p99=13.5 idle_max=13.6 arm_runs=10 arm_p50=12.1 arm_p95=13.5 arm_p99=16.6 arm_max=90.8 stall_median=76.8 stall_min=76.3 stall_max=78.8 server_demote_ms=[261.6, 273.4, 208.5, 208.1, 208.6, 208.1, 208.8, 208.2, 208.8, 208.5] server_promote_ms=[28.7, 28.6, 27.4, 27.4, 27.4, 27.5, 27.4, 27.4, 27.4, 27.4] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+STALL REPLAY: PASS (replay agrees with the harness's rule line)
+== b10-off/promote arm=off
+STALL rule cell=stall-promote-off arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=12.1 idle_p95=13.4 idle_p99=13.5 idle_max=13.7 arm_runs=10 arm_p50=12.1 arm_p95=13.5 arm_p99=14.9 arm_max=179.1 stall_median=93.0 stall_min=92.5 stall_max=167.1 server_demote_ms=[81.8, 82.0, 10.8, 9.5, 9.6, 9.4, 9.5, 9.6, 9.4, 9.4] server_promote_ms=[89.7, 89.4, 18.2, 16.9, 17.0, 17.0, 17.0, 17.1, 16.9, 16.9] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+STALL REPLAY: PASS (replay agrees with the harness's rule line)
+== b11-off/promote arm=off
+STALL rule cell=stall-promote-off arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=12.1 idle_p95=13.4 idle_p99=13.5 idle_max=13.7 arm_runs=10 arm_p50=12.1 arm_p95=13.5 arm_p99=15.0 arm_max=178.3 stall_median=92.9 stall_min=92.4 stall_max=166.3 server_demote_ms=[81.1, 81.7, 9.3, 10.8, 9.5, 9.4, 9.4, 9.4, 9.4, 9.4] server_promote_ms=[88.9, 89.0, 16.7, 18.2, 16.8, 16.8, 16.8, 16.8, 16.8, 16.9] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+STALL REPLAY: PASS (replay agrees with the harness's rule line)
+== b12-on/promote arm=on
+STALL rule cell=stall-promote-on arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=12.1 idle_p95=13.4 idle_p99=13.5 idle_max=13.7 arm_runs=10 arm_p50=12.1 arm_p95=13.5 arm_p99=16.6 arm_max=90.9 stall_median=76.7 stall_min=76.3 stall_max=78.9 server_demote_ms=[274.4, 273.5, 208.4, 220.9, 208.5, 208.1, 208.8, 208.1, 208.9, 208.3] server_promote_ms=[28.7, 28.8, 27.3, 27.4, 27.4, 27.4, 27.4, 27.4, 27.4, 27.4] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+STALL REPLAY: PASS (replay agrees with the harness's rule line)
+== b13-off/promote arm=off
+STALL rule cell=stall-promote-off arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=12.1 idle_p95=13.4 idle_p99=13.5 idle_max=13.6 arm_runs=10 arm_p50=12.1 arm_p95=13.4 arm_p99=14.9 arm_max=180.5 stall_median=93.0 stall_min=92.6 stall_max=168.4 server_demote_ms=[82.7, 81.9, 10.9, 9.5, 9.6, 9.5, 9.6, 9.6, 9.5, 9.6] server_promote_ms=[91.0, 89.3, 18.3, 17.0, 16.9, 17.0, 17.1, 17.1, 17.0, 17.0] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+STALL REPLAY: PASS (replay agrees with the harness's rule line)
+== b14-on/promote arm=on
+STALL rule cell=stall-promote-on arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=12.1 idle_p95=13.4 idle_p99=13.5 idle_max=13.6 arm_runs=10 arm_p50=12.1 arm_p95=13.5 arm_p99=16.5 arm_max=91.2 stall_median=76.8 stall_min=76.3 stall_max=79.1 server_demote_ms=[274.6, 260.9, 208.5, 208.1, 208.8, 208.2, 208.7, 208.2, 208.9, 208.2] server_promote_ms=[29.0, 28.9, 27.4, 27.7, 27.4, 27.4, 27.5, 27.4, 27.5, 27.5] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+STALL REPLAY: PASS (replay agrees with the harness's rule line)
+== b15-off/promote arm=off
+STALL rule cell=stall-promote-off arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=12.1 idle_p95=13.4 idle_p99=13.5 idle_max=13.6 arm_runs=10 arm_p50=12.1 arm_p95=13.5 arm_p99=15.0 arm_max=179.8 stall_median=93.0 stall_min=92.5 stall_max=167.7 server_demote_ms=[82.0, 82.2, 10.8, 9.5, 9.5, 9.5, 9.5, 9.6, 9.4, 9.4] server_promote_ms=[90.3, 89.6, 18.2, 16.9, 16.9, 16.9, 16.9, 17.0, 16.9, 16.9] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+STALL REPLAY: PASS (replay agrees with the harness's rule line)
+== b16-on/promote arm=on
+STALL rule cell=stall-promote-on arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=12.1 idle_p95=13.4 idle_p99=13.5 idle_max=13.7 arm_runs=10 arm_p50=12.1 arm_p95=13.5 arm_p99=16.6 arm_max=90.9 stall_median=76.8 stall_min=76.3 stall_max=78.9 server_demote_ms=[261.7, 273.7, 208.5, 208.1, 208.6, 208.2, 208.7, 208.3, 209.0, 208.2] server_promote_ms=[28.8, 28.8, 27.3, 27.4, 27.4, 27.4, 27.4, 27.4, 27.4, 27.4] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+STALL REPLAY: PASS (replay agrees with the harness's rule line)
+== b17-off/promote arm=off
+STALL rule cell=stall-promote-off arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=12.1 idle_p95=13.4 idle_p99=13.5 idle_max=16.1 arm_runs=10 arm_p50=12.1 arm_p95=13.5 arm_p99=15.0 arm_max=179.6 stall_median=92.9 stall_min=92.5 stall_max=167.6 server_demote_ms=[81.8, 81.1, 11.0, 9.4, 9.3, 9.5, 9.4, 9.5, 9.4, 9.4] server_promote_ms=[90.1, 88.5, 18.5, 16.9, 16.7, 17.0, 16.9, 16.9, 16.9, 16.9] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+STALL REPLAY: PASS (replay agrees with the harness's rule line)
+== b18-on/promote arm=on
+STALL rule cell=stall-promote-on arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=12.1 idle_p95=13.4 idle_p99=13.5 idle_max=13.6 arm_runs=10 arm_p50=12.1 arm_p95=13.5 arm_p99=16.5 arm_max=91.1 stall_median=76.9 stall_min=76.2 stall_max=79.1 server_demote_ms=[274.7, 273.7, 208.7, 208.2, 208.6, 208.1, 208.8, 208.2, 209.0, 208.4] server_promote_ms=[29.0, 28.9, 27.4, 27.4, 27.4, 27.4, 27.4, 27.4, 27.4, 27.5] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+STALL REPLAY: PASS (replay agrees with the harness's rule line)
+== b19-off/promote arm=off
+STALL rule cell=stall-promote-off arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=12.1 idle_p95=13.4 idle_p99=13.5 idle_max=13.6 arm_runs=10 arm_p50=12.1 arm_p95=13.5 arm_p99=15.0 arm_max=180.6 stall_median=93.1 stall_min=92.6 stall_max=168.5 server_demote_ms=[83.3, 82.5, 10.9, 9.6, 9.5, 9.6, 9.6, 9.6, 9.5, 9.6] server_promote_ms=[91.1, 89.9, 18.3, 17.0, 16.9, 17.0, 17.1, 17.0, 17.0, 17.1] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+STALL REPLAY: PASS (replay agrees with the harness's rule line)
+== b20-on/promote arm=on
+STALL rule cell=stall-promote-on arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=12.1 idle_p95=13.4 idle_p99=13.5 idle_max=13.7 arm_runs=10 arm_p50=12.1 arm_p95=13.5 arm_p99=16.5 arm_max=90.9 stall_median=76.8 stall_min=76.3 stall_max=78.9 server_demote_ms=[261.7, 273.7, 208.5, 208.0, 208.5, 208.0, 208.6, 208.2, 208.8, 208.4] server_promote_ms=[28.7, 28.8, 27.4, 27.3, 27.4, 27.4, 27.3, 27.4, 27.5, 27.4] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+STALL REPLAY: PASS (replay agrees with the harness's rule line)

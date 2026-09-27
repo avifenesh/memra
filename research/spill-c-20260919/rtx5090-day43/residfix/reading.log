@@ -1,0 +1,5 @@
+DAY43 RESIDFIX CHECKS rig=rtx5090 runs=30 integrity=ok
+DAY43 FIX ARM base window_door_ms_per_token pooled=19.64 o1=19.97 o2=19.41 gen_door_ms_per_token=42.03 window_s median=0.960 iqr=0.027 | per token: demand=16.956 verify=9.376 step=5.637 pread=4.043 stage=1.291 alloc=0.756 drain=2.073 enqueue=1.139 validate=0.652 finish=0.266 collect=0.135 publish=0.235 miss_total=21.055 gpu_misses=92.3 host_hits=0.0 host_misses=92.3 reads=92.3
+DAY43 FIX ARM i10d window_door_ms_per_token pooled=15.50 o1=15.94 o2=15.16 gen_door_ms_per_token=33.47 window_s median=0.827 iqr=0.029 | per token: demand=16.207 verify=9.356 step=5.698 pread=5.686 stage=0.539 alloc=0.008 drain=0.000 enqueue=0.191 validate=0.079 finish=0.003 collect=0.159 publish=0.273 miss_total=16.704 gpu_misses=92.3 host_hits=0.0 host_misses=92.3 reads=92.3
+DAY43 CLAUSE no_regression i10d_minus_base pooled=-0.133 o1=-0.129 o2=-0.136 noise=0.029 rule <=noise pooled and both orders -> PASS
+DAY43 RESIDFIX rig=rtx5090 integrity=ok no_regression=PASS

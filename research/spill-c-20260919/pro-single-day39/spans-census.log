@@ -1,0 +1,9 @@
+# command: for each B2 and B1 ON boot, count 'demote copy complete off the tick' lines and the items= terms on them (box/run/stall/ev/<prog>/<pass>/on/server.log)
+p2-b1 pass1 copy_complete_lines=21 items_terms=[] receipt_span_tails=0
+p2-b1 pass2 copy_complete_lines=21 items_terms=[] receipt_span_tails=0
+p3-b2 pass1 copy_complete_lines=21 items_terms=[21 items=128 (32 KV, 96 f32 spans);] receipt_span_tails=21
+p3-b2 pass2 copy_complete_lines=21 items_terms=[21 items=128 (32 KV, 96 f32 spans);] receipt_span_tails=21
+p4-b2 pass1 copy_complete_lines=21 items_terms=[21 items=128 (32 KV, 96 f32 spans);] receipt_span_tails=21
+p4-b2 pass2 copy_complete_lines=21 items_terms=[21 items=128 (32 KV, 96 f32 spans);] receipt_span_tails=21
+p5-b1 pass1 copy_complete_lines=21 items_terms=[] receipt_span_tails=0
+p5-b1 pass2 copy_complete_lines=21 items_terms=[] receipt_span_tails=0

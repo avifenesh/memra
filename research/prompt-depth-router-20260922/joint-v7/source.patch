@@ -1,0 +1,21 @@
+diff --git a/crates/memra-engine/src/spec.rs b/crates/memra-engine/src/spec.rs
+--- a/crates/memra-engine/src/spec.rs
++++ b/crates/memra-engine/src/spec.rs
+@@ -13130,7 +13130,16 @@
+                         if d != idx {
+                             e.set_u32_one(&mut dctx.g_tok, d)?;
+                         }
+-                        if draft_p.is_some_and(|p| cutoff_for_slot(j) > 0.0 && p < cutoff_for_slot(j)) {
++                        let learned_stop = if learned_confidence && j + 1 < k_this {
++                            let (policy, _) = depth_study.as_mut().ok_or("missing confidence policy")?;
++                            let MtpDepthExperiment::Learned(learner) = &mut **policy else {
++                                return Err("confidence study has another policy".into());
++                            };
++                            learner.confidence_stop(j, draft_p.ok_or("missing offered probability")?)?
++                        } else {
++                            false
++                        };
++                        if learned_stop || draft_p.is_some_and(|p| cutoff_for_slot(j) > 0.0 && p < cutoff_for_slot(j)) {
+                             break;
+                         }
+                     }

@@ -1,0 +1,109 @@
+{
+  "schema": "m1-b3-arms-lock-v1",
+  "registered_utc": "2026-09-25",
+  "registration": "research/spill-f-20260919/M1-PREREG.md section B3",
+  "artifact": {
+    "file": "Qwen3.6-35B-A3B-UD-IQ4_XS.gguf",
+    "bytes": 18209036576,
+    "sha256": "df27a780435b7b45c2597536112ea3cb091f8544c3d0c3318d9f4258b31f7adf",
+    "header_sha256": "61329137be859d01fc50091dfa86ff6de153c4c80360b512ddfe4fd791f890ab",
+    "expert_bank_bytes": 15600713728,
+    "expert_slices": 31488,
+    "direct_admissible_slices_without_overread": 0,
+    "overread_bytes_per_read": 4096
+  },
+  "prompt": {
+    "file": "research/spill-f-20260919/m1-prereg/b3-prompt.txt",
+    "bytes": 314,
+    "sha256": "535012084be15404e0d5aee928b62fca38e33d5544c180dcefcd0b9d10c096f3",
+    "env": {
+      "MEMRA_PROMPT_FILE": "research/spill-f-20260919/m1-prereg/b3-prompt.txt",
+      "MEMRA_CHAT": "1"
+    }
+  },
+  "common_env": {
+    "MEMRA_SPILL_DISK": "1",
+    "MEMRA_SPILL_PINNED_FRAC": "0.000000001",
+    "MEMRA_MOE_CACHE": "1",
+    "MEMRA_MOE_RESIDENT": "0",
+    "MEMRA_MOE_SLOTS": "8",
+    "MEMRA_SPILL_STATS": "1",
+    "MEMRA_NGEN": "128"
+  },
+  "unset_env": [
+    "MEMRA_SPILL_IO",
+    "MEMRA_SPILL_PREAD_DEPTH",
+    "MEMRA_MOE_MMAP_ADVICE",
+    "MEMRA_SPILL_WORKER_EXPERT_WINDOW"
+  ],
+  "baseline": "worker16",
+  "byte_oracle": "mmap-random",
+  "arms": [
+    {
+      "name": "worker16",
+      "env": {
+        "MEMRA_SPILL_IO": "worker",
+        "MEMRA_SPILL_PREAD_DEPTH": "16"
+      }
+    },
+    {
+      "name": "mmap-random",
+      "env": {}
+    },
+    {
+      "name": "mmap-normal",
+      "env": {
+        "MEMRA_MOE_MMAP_ADVICE": "normal"
+      }
+    },
+    {
+      "name": "pread16",
+      "env": {
+        "MEMRA_SPILL_IO": "pread",
+        "MEMRA_SPILL_PREAD_DEPTH": "16"
+      }
+    },
+    {
+      "name": "worker2",
+      "env": {
+        "MEMRA_SPILL_IO": "worker"
+      }
+    },
+    {
+      "name": "direct16",
+      "env": {
+        "MEMRA_SPILL_IO": "direct",
+        "MEMRA_SPILL_PREAD_DEPTH": "16"
+      },
+      "admission": "refused until OWED 7's GPU gates pass (owed7/RESULTS.md): the ignored pinned-pool test, then B3 step 1 with fallbacks=0 and overread_bytes == 4096 x reads; the CPU half landed 2026-09-25"
+    }
+  ],
+  "order": {
+    "rounds": 10,
+    "odd_rounds": "arms list order",
+    "even_rounds": "arms list reversed"
+  },
+  "regimes": [
+    "cold",
+    "warm",
+    "bounded-page-cache"
+  ],
+  "spec_self_consistency_arms": [
+    "worker16",
+    "direct16"
+  ],
+  "verdict": {
+    "winner_median_ratio_min": 1.05,
+    "loser_median_ratio_max": 0.95,
+    "sign_agreement_min_per_order": 4,
+    "rounds_per_order": 5,
+    "metric": "gen-only decode tok/s, X over worker16 within each round"
+  },
+  "amendments": [
+    "2026-09-25 B3 amendment 2: MEMRA_SPILL_PINNED_FRAC 0 -> 0.000000001 (0 is rejected by the engine's range check)"
+  ],
+  "expected_placement": {
+    "pinned": 0,
+    "mmapd": 30720
+  }
+}

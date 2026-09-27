@@ -1,0 +1,44 @@
+INPUT count=8192 source_sha256=11e4bd80352f4a24504ffdee519b33bbc527b3b9bcfeb531815e5731b190cb8c chunk=512 active_C4=true sampler=radix capture_steps=32..64 arm=current
+[load] plain sampler: Host
+[load] sampled candidate order: Radix
+[load] placement: split_at=23 trunk_layers=43 dspark_tail_reserve=10.83 GiB
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+[load] topology: PpEp | layers=43 per-rank-resident=PP-owned
+[load] indexer score: Scalar
+[load] prefill head: All
+[load] prefill DSpark prime: All
+[load] sampled DSpark proposal: Greedy
+[load] prefill MoE: reference
+[load] dspark exit-head dots arm: f32x (rung-4c fork; drafts only, never the emitted stream)
+[load] dspark selected-expert dispatch: per-expert reference
+[load] dense arm: fp8 (iteration-5; fp8 = FP8-blk linears as-stored on the device decode/verify paths, bit-identical twins)
+[load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 515.8ms
+[load] lane-8 peer transport enabled (1 boundaries)
+[load] layer 3 -> 1 rank copies done t=12s
+[load] layer 7 -> 1 rank copies done t=24s
+[load] layer 11 -> 1 rank copies done t=37s
+[load] layer 15 -> 1 rank copies done t=49s
+[load] layer 19 -> 1 rank copies done t=62s
+[load] layer 23 -> 1 rank copies done t=74s
+[load] layer 27 -> 1 rank copies done t=86s
+[load] layer 31 -> 1 rank copies done t=99s
+[load] layer 35 -> 1 rank copies done t=111s
+[load] layer 39 -> 1 rank copies done t=123s
+[load] layer 42 -> 1 rank copies done t=132s
+[load] drafter: DSpark (3 blocks, block_size 5, targets [40, 41, 42]) resident on stage 1
+[load] sink score: Scalar
+[load] expert program: matrix (grouped ModelOpt split-plane executor via dsv4_grouped; tensor-core MMA class, the loaded default since 2026-09-11), EP off
+[dsv4-doors] program=loaded door="replay cadence" env=MEMRA_DSV4_REPLAY_CADENCE merged=#374 declared_default=On resolved=NoServingCaller("full-token replay is armed per request by a gate binary only; no serving or eager request arms it, so the cadence choice has no caller") disposition=ReclassifyAsGateInput
+[dsv4-doors] program=loaded door="dense exact-tail transport" env=MEMRA_DSV4_DENSE_EXACT_TAIL merged=#374 declared_default=On resolved=On(DecodeOnlyM1) disposition=Engaged
+[dsv4-doors] program=loaded door="dense-fast" env=MEMRA_DSV4_DENSE_FAST merged=#404 declared_default=On resolved=On(DecodeOnlyM1) disposition=Engaged
+[dsv4-doors] program=loaded door="HC dot split S16" env=MEMRA_DSV4_HC_DOT_SPLIT merged=#418 declared_default=On resolved=On(AllRoutedShapes) disposition=Engaged
+[moe-sk-form] dev=0 qt=108 sms=188 occ128=1 occ32=7 occt=3 cross=2147483647 xcross=2147483647 bdb=0 in_f=4096 out_f=2048 n_active=256 max_m=6
+[dsv4-prefill-f16g] ENGAGED: t=1 pairs=6 expert_groups=256 max_rows_bound=6 device_routes=true FP8-QAT-mirrored half, split-plane ModelOpt NVFP4
+PROFILE_COMPLETE steps=32..64 absolute_positions=8224..8256 seconds=2.377706 both_stages_drained=true ep_calls=0 gu_m1=0 gu_half2=0 down_half2=0 wo_a=0 index_topk=0
+PROFILE_RECEIPT arm=current ep_calls=0 trunk_layers=43 gu_m1=0 gu_half2=0 down_half2=0 wo_a=0 index_topk=0
+
+thread 'main' (17284) panicked at crates/memra-engine/src/bin/dsv4_decode_profile.rs:339:5:
+assertion `left == right` failed: frozen sampled stream
+  left: "11e6d95a9486413c51a673b80cee8e023ea9aa8c312cbca15a7dd748e9a0d038"
+ right: "ef41ad6a5caeebf4b5fb54b93d7054b628ace34892b59309b954e20d0d2fb81d"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

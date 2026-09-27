@@ -1,0 +1,57 @@
+kernel 7.0.0-31-generic
+clocksource tsc
+amd_pstate active
+thp always [madvise] never
+cpuidle_driver acpi_idle
+/proc/sys/vm/compaction_proactiveness 20
+/proc/sys/vm/compact_unevictable_allowed 1
+/proc/sys/vm/extfrag_threshold 500
+/proc/sys/vm/watermark_scale_factor 10
+/proc/sys/vm/watermark_boost_factor 15000
+/proc/sys/vm/min_free_kbytes 67584
+/proc/sys/vm/numa_stat 1
+/proc/sys/vm/zone_reclaim_mode 0
+/sys/kernel/mm/transparent_hugepage/defrag always defer defer+madvise [madvise] never
+/sys/kernel/mm/transparent_hugepage/khugepaged/defrag 1
+/sys/kernel/mm/transparent_hugepage/khugepaged/pages_to_scan 4096
+/proc/sys/kernel/numa_balancing 0
+MemTotal:       129428384 kB
+MemFree:        59402128 kB
+MemAvailable:   123121880 kB
+Unevictable:       25592 kB
+Mlocked:           25592 kB
+AnonHugePages:         0 kB
+CmaTotal:              0 kB
+HugePages_Total:       0
+cpu0 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu1 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu10 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu11 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu12 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu13 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu14 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu15 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu16 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu17 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu18 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu19 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu2 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu20 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu21 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu22 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu23 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu24 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu25 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu26 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu27 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu28 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu29 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu3 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu30 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu31 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu4 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu5 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu6 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu7 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu8 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452
+cpu9 driver=amd-pstate-epp governor=powersave epp=balance_performance min=624194 max=5756452

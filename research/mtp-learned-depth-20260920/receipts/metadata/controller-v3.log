@@ -1,0 +1,39 @@
+START qwen-mtp-sampled-v3
+start seed=20261200 arm=fixed
+completed seed=20261200 arm=fixed tokens=8192
+start seed=20261200 arm=native
+completed seed=20261200 arm=native tokens=8192
+start seed=20261200 arm=learned
+completed seed=20261200 arm=learned tokens=8192
+start seed=20261200 arm=measured
+completed seed=20261200 arm=measured tokens=8192
+start seed=20261201 arm=native
+completed seed=20261201 arm=native tokens=8192
+start seed=20261201 arm=measured
+completed seed=20261201 arm=measured tokens=8192
+start seed=20261201 arm=fixed
+completed seed=20261201 arm=fixed tokens=8192
+start seed=20261201 arm=learned
+completed seed=20261201 arm=learned tokens=8192
+start seed=20261202 arm=measured
+completed seed=20261202 arm=measured tokens=8192
+start seed=20261202 arm=learned
+completed seed=20261202 arm=learned tokens=8192
+start seed=20261202 arm=native
+completed seed=20261202 arm=native tokens=8192
+start seed=20261202 arm=fixed
+completed seed=20261202 arm=fixed tokens=8192
+start seed=20261203 arm=learned
+completed seed=20261203 arm=learned tokens=8192
+start seed=20261203 arm=fixed
+completed seed=20261203 arm=fixed tokens=8192
+start seed=20261203 arm=measured
+concurrent GPU processes detected; stopped this run, no score accepted
+Traceback (most recent call last):
+  File "/root/run-mtp-campaign-v3.py", line 117, in <module>
+    run('qwen', 'sampled')
+  File "/root/run-mtp-campaign-v3.py", line 83, in run
+    subprocess.run(cmd, check=True)
+  File "/usr/lib/python3.12/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['python3', '/root/memra-mtp-depth/research/mtp-learned-depth-20260920/run_study.py', '--family', 'qwen', '--binary', '/root/target-learned-d/release/mtp-depth-study', '--target', '/data/models/qwen-depth-20260920/target.gguf', '--artifact-manifest', '/data/models/qwen-depth-20260920/mtp-depth-artifacts.json', '--source-commit', 'a37e30a6dd9637ece727c040f12a115dd6d96517', '--out', '/root/mtp-depth-records/qwen-mtp-sampled-v3', '--wait-lock', '--lock', '/tmp/memra-5090.lock', '--seed', '20261200', '--workload', '/root/memra-mtp-depth/research/mtp-learned-depth-20260920/workload-code.txt', '--max-new', '1024', '--ctx', '49152']' returned non-zero exit status 1.

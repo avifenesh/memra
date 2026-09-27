@@ -14,6 +14,29 @@ fn plan_hash(text: &str) -> String {
         .clone()
 }
 #[test]
+fn tied_head_hint_keeps_upstream_optional_literal_semantics() {
+    for (value, expected) in [
+        ("true", Some(true)),
+        ("false", Some(false)),
+        ("null", None),
+        ("\"true\"", None),
+        ("1", None),
+        ("[]", None),
+        ("{}", None),
+    ] {
+        let cfg = HfConfig::try_parse(&with(&format!("\"tie_word_embeddings\":{value},"))).unwrap();
+        assert_eq!(cfg.tie_word_embeddings, expected, "{value}");
+        assert_eq!(ModelConfig::from_hf(&cfg).tie_word_embeddings, expected);
+    }
+    for (value, expected) in [("false", false), ("null", true), ("\"false\"", true)] {
+        let cfg = HfConfig::try_parse(&with(&format!(
+            "\"tie_word_embeddings\":true,\"text_config\":{{\"tie_word_embeddings\":{value}}},"
+        )))
+        .unwrap();
+        assert_eq!(cfg.tie_word_embeddings, Some(expected), "{value}");
+    }
+}
+#[test]
 fn decoded_activation_declarations_cannot_disappear_before_pack_admission() {
     for fields in [
         r#""hidden_act":"relu","#,

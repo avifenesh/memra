@@ -1,0 +1,6 @@
+arm=keep
+route=spec
+shape=RW6
+bin_sha256=911e6186512dc196dbadad8da1d930d42c835400fb6c33518443ff3414af8caf
+env=MEMRA_TTFT_TRACE=1 MEMRA_SPEC_BUDGET_CLAMP=1 MEMRA_PREFIX_CACHE_MB=0
+client_args=--shapes RW --lengths 6144 --turn-gap-ms 1000

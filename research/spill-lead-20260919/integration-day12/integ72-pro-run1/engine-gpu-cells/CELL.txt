@@ -1,0 +1,8 @@
+cell=engine-gpu-cells cmd=cargo test -p memra-engine --lib --offline -- --ignored --test-threads=1 d2d_ d2h_span h2d_ day63_ day69_ day70_ tier_transfer::tests:: spill_pread::tests::
+env=
+lock=/tmp/memra-gpu.lock owner=collector-fd9
+tree=50bad99d2bafa22418fbe8824b2aba449264146d
+binary_sha256=96fd08c62763a267c3634ad35a102c8c140c5eb6d11bcce3d1c2323d8ee35a2b
+model=Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+gpu=NVIDIA RTX PRO 6000 Blackwell Workstation Edition, 600.00 W
+status=executed-not-qualified

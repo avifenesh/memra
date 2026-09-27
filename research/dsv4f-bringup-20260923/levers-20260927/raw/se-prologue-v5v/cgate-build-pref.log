@@ -1,0 +1,1439 @@
+tools/../crates/memra-engine/cu/dsv4_gpu.cu(4607): warning #1556-D: name linkage conflicts with previous declaration of variable "shd" (declared at line 402)
+      extern __attribute__((shared)) double shd[];
+                                            ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+tools/../crates/memra-engine/cu/dsv4_gpu.cu(4607): warning #1556-D: name linkage conflicts with previous declaration of variable "shd" (declared at line 402)
+      extern __attribute__((shared)) double shd[];
+                                            ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+tools/../crates/memra-engine/cu/dsv4_gpu.cu(4607): warning #1556-D: name linkage conflicts with previous declaration of variable "shd" (declared at line 402)
+      extern __attribute__((shared)) double shd[];
+                                            ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+ptxas info    : 488 bytes gmem
+ptxas info    : Compiling entry function '_Z31dsv4_hc_dot_split_reduce_kernelILi32EEvPKfPf' for 'sm_120a'
+ptxas info    : Function properties for _Z31dsv4_hc_dot_split_reduce_kernelILi32EEvPKfPf
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 38 registers, used 0 barriers
+ptxas info    : Compile time = 3.176 ms
+ptxas info    : Compiling entry function '_Z31dsv4_hc_dot_split_reduce_kernelILi16EEvPKfPf' for 'sm_120a'
+ptxas info    : Function properties for _Z31dsv4_hc_dot_split_reduce_kernelILi16EEvPKfPf
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 35 registers, used 0 barriers
+ptxas info    : Compile time = 1.621 ms
+ptxas info    : Compiling entry function '_Z31dsv4_hc_dot_split_reduce_kernelILi8EEvPKfPf' for 'sm_120a'
+ptxas info    : Function properties for _Z31dsv4_hc_dot_split_reduce_kernelILi8EEvPKfPf
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 26 registers, used 0 barriers
+ptxas info    : Compile time = 1.181 ms
+ptxas info    : Compiling entry function '_Z25dsv4_gemm_fp8_tile_kernelILi8ELi8EEvPKhPKfiPKtPfiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_gemm_fp8_tile_kernelILi8ELi8EEvPKhPKfiPKtPfiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 214 registers, used 1 barriers, 1024 bytes smem
+ptxas info    : Compile time = 61.502 ms
+ptxas info    : Compiling entry function '_Z21dense_tail_tree_probePKfPf' for 'sm_120a'
+ptxas info    : Function properties for _Z21dense_tail_tree_probePKfPf
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 12 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 1.509 ms
+ptxas info    : Compiling entry function '_Z26dsv4_moe_fused_down_kernelILi4ELi256ELi2EEvPKyiPKiPKfS5_PfS3_S6_PiiiilS7_' for 'sm_120a'
+ptxas info    : Function properties for _Z26dsv4_moe_fused_down_kernelILi4ELi256ELi2EEvPKyiPKiPKfS5_PfS3_S6_PiiiilS7_
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 1 barriers, 272 bytes smem
+ptxas info    : Compile time = 48.058 ms
+ptxas info    : Compiling entry function '_Z24dsv4_moe_fused_gu_kernelILi4ELi256ELi2EEvPKyiPKiPKfS5_S5_PfiiflPi' for 'sm_120a'
+ptxas info    : Function properties for _Z24dsv4_moe_fused_gu_kernelILi4ELi256ELi2EEvPKyiPKiPKfS5_S5_PfiiflPi
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 47 registers, used 1 barriers, 400 bytes smem
+ptxas info    : Compile time = 43.235 ms
+ptxas info    : Compiling entry function '_Z26dsv4_replay_copy_if_kernelPKfPfiPKii' for 'sm_120a'
+ptxas info    : Function properties for _Z26dsv4_replay_copy_if_kernelPKfPfiPKii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 13 registers, used 0 barriers
+ptxas info    : Compile time = 1.882 ms
+ptxas info    : Compiling entry function '_Z27dsv4_replay_copy_row_kernelPKfPfPKiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z27dsv4_replay_copy_row_kernelPKfPfPKiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 14 registers, used 0 barriers
+ptxas info    : Compile time = 3.344 ms
+ptxas info    : Compiling entry function '_Z21dsv4_copy2_f32_kernelPK6float4PS_S1_S2_l' for 'sm_120a'
+ptxas info    : Function properties for _Z21dsv4_copy2_f32_kernelPK6float4PS_S1_S2_l
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 7.269 ms
+ptxas info    : Compiling entry function '_Z23dsv4_replay_tick_kernelPy' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_replay_tick_kernelPy
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 8 registers, used 0 barriers
+ptxas info    : Compile time = 0.830 ms
+ptxas info    : Compiling entry function '_Z29dsv4_replay_rows_input_kernelPKmPiS1_S1_ii' for 'sm_120a'
+ptxas info    : Function properties for _Z29dsv4_replay_rows_input_kernelPKmPiS1_S1_ii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 16 registers, used 0 barriers
+ptxas info    : Compile time = 1.771 ms
+ptxas info    : Compiling entry function '_Z24dsv4_replay_input_kernelPKmPiS1_S1_iPy' for 'sm_120a'
+ptxas info    : Function properties for _Z24dsv4_replay_input_kernelPKmPiS1_S1_iPy
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 16 registers, used 0 barriers
+ptxas info    : Compile time = 1.762 ms
+ptxas info    : Compiling entry function '_Z23memra_bw_read_v4_kernelILi8EEvPK6float4lPf' for 'sm_120a'
+ptxas info    : Function properties for _Z23memra_bw_read_v4_kernelILi8EEvPK6float4lPf
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 4.113 ms
+ptxas info    : Compiling entry function '_Z23memra_bw_read_v4_kernelILi4EEvPK6float4lPf' for 'sm_120a'
+ptxas info    : Function properties for _Z23memra_bw_read_v4_kernelILi4EEvPK6float4lPf
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 8.677 ms
+ptxas info    : Compiling entry function '_Z23memra_bw_read_v4_kernelILi2EEvPK6float4lPf' for 'sm_120a'
+ptxas info    : Function properties for _Z23memra_bw_read_v4_kernelILi2EEvPK6float4lPf
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 9.009 ms
+ptxas info    : Compiling entry function '_Z23memra_bw_read_v4_kernelILi1EEvPK6float4lPf' for 'sm_120a'
+ptxas info    : Function properties for _Z23memra_bw_read_v4_kernelILi1EEvPK6float4lPf
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 30 registers, used 0 barriers
+ptxas info    : Compile time = 5.654 ms
+ptxas info    : Compiling entry function '_Z27memra_bw_read_scalar_kernelILi8EEvPKflPf' for 'sm_120a'
+ptxas info    : Function properties for _Z27memra_bw_read_scalar_kernelILi8EEvPKflPf
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 9.553 ms
+ptxas info    : Compiling entry function '_Z27memra_bw_read_scalar_kernelILi4EEvPKflPf' for 'sm_120a'
+ptxas info    : Function properties for _Z27memra_bw_read_scalar_kernelILi4EEvPKflPf
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 10.542 ms
+ptxas info    : Compiling entry function '_Z27memra_bw_read_scalar_kernelILi2EEvPKflPf' for 'sm_120a'
+ptxas info    : Function properties for _Z27memra_bw_read_scalar_kernelILi2EEvPKflPf
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 34 registers, used 0 barriers
+ptxas info    : Compile time = 7.719 ms
+ptxas info    : Compiling entry function '_Z27memra_bw_read_scalar_kernelILi1EEvPKflPf' for 'sm_120a'
+ptxas info    : Function properties for _Z27memra_bw_read_scalar_kernelILi1EEvPKflPf
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 22 registers, used 0 barriers
+ptxas info    : Compile time = 5.417 ms
+ptxas info    : Compiling entry function '_Z26memra_bw_read_slabs_kernelPK6float4PKllPf' for 'sm_120a'
+ptxas info    : Function properties for _Z26memra_bw_read_slabs_kernelPK6float4PKllPf
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 32 registers, used 0 barriers
+ptxas info    : Compile time = 5.823 ms
+ptxas info    : Compiling entry function '_Z27dsv4_dots_f32_rowblk_kernelILi8EEvPKfPKviPfiii' for 'sm_120a'
+ptxas info    : Function properties for _Z27dsv4_dots_f32_rowblk_kernelILi8EEvPKfPKviPfiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 26 registers, used 1 barriers
+ptxas info    : Compile time = 3.998 ms
+ptxas info    : Compiling entry function 'dsv4_gather_row_by_idx_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_gather_row_by_idx_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 6.481 ms
+ptxas info    : Compiling entry function 'dsv4_scatter_rows_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_scatter_rows_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 18 registers, used 0 barriers
+ptxas info    : Compile time = 6.574 ms
+ptxas info    : Compiling entry function '_Z34dsv4_sink_softout_st_f32acc_kernelPKfPKiS0_S0_PfiiiiS2_iii' for 'sm_120a'
+ptxas info    : Function properties for _Z34dsv4_sink_softout_st_f32acc_kernelPKfPKiS0_S0_PfiiiiS2_iii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 45 registers, used 1 barriers, 16960 bytes smem
+ptxas info    : Compile time = 22.905 ms
+ptxas info    : Compiling entry function '_Z33dsv4_sink_scores_st_f32acc_kernelPKfS0_PKiPfiiiifS2_iii' for 'sm_120a'
+ptxas info    : Function properties for _Z33dsv4_sink_scores_st_f32acc_kernelPKfS0_PKiPfiiiifS2_iii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 42 registers, used 1 barriers
+ptxas info    : Compile time = 19.849 ms
+ptxas info    : Compiling entry function 'dsv4_sink_out_mq_f32acc_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_sink_out_mq_f32acc_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 31 registers, used 1 barriers, 1024 bytes smem
+ptxas info    : Compile time = 13.075 ms
+ptxas info    : Compiling entry function 'dsv4_sink_soft_mq_f32acc_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_sink_soft_mq_f32acc_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 38 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 7.157 ms
+ptxas info    : Compiling entry function 'dsv4_q_transpose_m_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_q_transpose_m_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 26 registers, used 0 barriers
+ptxas info    : Compile time = 7.579 ms
+ptxas info    : Compiling entry function 'dsv4_sink_scores_mq_f32acc_ref_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_sink_scores_mq_f32acc_ref_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers
+ptxas info    : Compile time = 8.125 ms
+ptxas info    : Compiling entry function 'dsv4_sink_scores_mq_f32acc_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_sink_scores_mq_f32acc_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers
+ptxas info    : Compile time = 8.392 ms
+ptxas info    : Compiling entry function '_Z28dsv4_c4_gather_recent_kernelPKfS0_PKiPfPiiiiiiS0_S2_i' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_c4_gather_recent_kernelPKfS0_PKiPfPiiiiiiS0_S2_i
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 38 registers, used 0 barriers
+ptxas info    : Compile time = 5.998 ms
+ptxas info    : Compiling entry function '_Z27dsv4_c4_recent_write_kernelPKfPfPiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z27dsv4_c4_recent_write_kernelPKfPfPiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 34 registers, used 0 barriers
+ptxas info    : Compile time = 3.834 ms
+ptxas info    : Compiling entry function '_Z26dsv4_c4_split_store_kernelPKfPfS1_PiiiPKiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z26dsv4_c4_split_store_kernelPKfPfS1_PiiiPKiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 13 registers, used 0 barriers
+ptxas info    : Compile time = 3.434 ms
+ptxas info    : Compiling entry function '_Z27dsv4_c4_split_gather_kernelPKfS0_S0_PKiiiS2_PfPiiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z27dsv4_c4_split_gather_kernelPKfS0_S0_PKiiiS2_PfPiiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 28 registers, used 0 barriers
+ptxas info    : Compile time = 7.755 ms
+ptxas info    : Compiling entry function '_Z21dsv4_c4_gather_kernelPKfS0_PKiPfPiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z21dsv4_c4_gather_kernelPKfS0_PKiPfPiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 38 registers, used 0 barriers
+ptxas info    : Compile time = 5.162 ms
+ptxas info    : Compiling entry function 'dsv4_sink_out_mq_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_sink_out_mq_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 33 registers, used 1 barriers, 1024 bytes smem
+ptxas info    : Compile time = 12.812 ms
+ptxas info    : Compiling entry function 'dsv4_sink_soft_mq_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_sink_soft_mq_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 35 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 6.904 ms
+ptxas info    : Compiling entry function 'dsv4_sink_scores_mq_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_sink_scores_mq_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers
+ptxas info    : Compile time = 7.535 ms
+ptxas info    : Compiling entry function 'dsv4_combine_rows_m_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_combine_rows_m_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 32 registers, used 0 barriers
+ptxas info    : Compile time = 6.123 ms
+ptxas info    : Compiling entry function 'dsv4_route_m_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_route_m_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 30 registers, used 1 barriers, 2432 bytes smem
+ptxas info    : Compile time = 30.416 ms
+ptxas info    : Compiling entry function 'dsv4_hc_pre_v4_e16_stamped_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_hc_pre_v4_e16_stamped_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 45 registers, used 1 barriers, 8544 bytes smem
+ptxas info    : Compile time = 32.636 ms
+ptxas info    : Compiling entry function 'dsv4_hc_pre_v4_e16_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_hc_pre_v4_e16_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 46 registers, used 1 barriers, 8544 bytes smem
+ptxas info    : Compile time = 33.723 ms
+ptxas info    : Compiling entry function 'dsv4_hc_pre_v4_e16_norm_zq8_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_hc_pre_v4_e16_norm_zq8_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 47 registers, used 1 barriers, 8672 bytes smem
+ptxas info    : Compile time = 42.318 ms
+ptxas info    : Compiling entry function 'dsv4_hc_pre_fused_v3_stamped_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_hc_pre_fused_v3_stamped_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 9072 bytes smem
+ptxas info    : Compile time = 96.440 ms
+ptxas info    : Compiling entry function 'dsv4_hc_pre_fused_v3_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_hc_pre_fused_v3_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 9072 bytes smem
+ptxas info    : Compile time = 93.248 ms
+ptxas info    : Compiling entry function 'dsv4_hc_pre_fused_v2_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_hc_pre_fused_v2_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 1904 bytes smem
+ptxas info    : Compile time = 73.315 ms
+ptxas info    : Compiling entry function 'dsv4_hc_pre_fused_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_hc_pre_fused_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 1904 bytes smem
+ptxas info    : Compile time = 82.423 ms
+ptxas info    : Compiling entry function 'dsv4_hc_head_pre_m_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_hc_head_pre_m_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 16 registers, used 0 barriers
+ptxas info    : Compile time = 3.327 ms
+ptxas info    : Compiling entry function '_Z37dsv4_hc_finish_f32_fixed_order_kernelILi32EEvPKfS1_PfS1_S1_S2_S2_S2_S2_S1_S2_P13__nv_bfloat16iff' for 'sm_120a'
+ptxas info    : Function properties for _Z37dsv4_hc_finish_f32_fixed_order_kernelILi32EEvPKfS1_PfS1_S1_S2_S2_S2_S2_S1_S2_P13__nv_bfloat16iff
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 164 registers, used 1 barriers, 1136 bytes smem
+ptxas info    : Compile time = 77.016 ms
+ptxas info    : Compiling entry function '_Z37dsv4_hc_finish_f32_fixed_order_kernelILi16EEvPKfS1_PfS1_S1_S2_S2_S2_S2_S1_S2_P13__nv_bfloat16iff' for 'sm_120a'
+ptxas info    : Function properties for _Z37dsv4_hc_finish_f32_fixed_order_kernelILi16EEvPKfS1_PfS1_S1_S2_S2_S2_S2_S1_S2_P13__nv_bfloat16iff
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 168 registers, used 1 barriers, 1136 bytes smem
+ptxas info    : Compile time = 76.107 ms
+ptxas info    : Compiling entry function '_Z37dsv4_hc_finish_f32_fixed_order_kernelILi8EEvPKfS1_PfS1_S1_S2_S2_S2_S2_S1_S2_P13__nv_bfloat16iff' for 'sm_120a'
+ptxas info    : Function properties for _Z37dsv4_hc_finish_f32_fixed_order_kernelILi8EEvPKfS1_PfS1_S1_S2_S2_S2_S2_S1_S2_P13__nv_bfloat16iff
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 154 registers, used 1 barriers, 1136 bytes smem
+ptxas info    : Compile time = 75.060 ms
+ptxas info    : Compiling entry function 'dsv4_small_hc_f32_fixed_order_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_small_hc_f32_fixed_order_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 624 bytes smem
+ptxas info    : Compile time = 34.670 ms
+ptxas info    : Compiling entry function 'dsv4_hc_sinkhorn_m_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_hc_sinkhorn_m_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers
+ptxas info    : Compile time = 70.460 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi32EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi32EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 78 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 61.409 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi31EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi31EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 72 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 56.946 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi30EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi30EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 72 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 55.820 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi29EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi29EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 72 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 52.460 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi28EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi28EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 72 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 51.261 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi27EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi27EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 72 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 49.174 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi26EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi26EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 72 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 47.377 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi25EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi25EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 72 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 45.173 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi24EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi24EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 42.009 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi23EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi23EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 40.022 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi22EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi22EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 38.255 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi21EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi21EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 35.178 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi20EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi20EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 33.891 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi19EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi19EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 32.309 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi18EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi18EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 63 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 30.502 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi17EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi17EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 28.806 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi16EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi16EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 26.682 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi15EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi15EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 25.399 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi14EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi14EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 54 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 23.891 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi13EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi13EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 21.617 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi12EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi12EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 20.264 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi11EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi11EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 18.706 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi10EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi10EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 17.043 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi9EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi9EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 15.563 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi8EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi8EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 14.180 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi7EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi7EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 13.046 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi6EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi6EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 11.679 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi5EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi5EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 10.290 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi4EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi4EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 46 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 8.918 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi3EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi3EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 42 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 7.514 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi2EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi2EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 6.185 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_mrow_kernelILi1EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_mrow_kernelILi1EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 36 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 4.274 ms
+ptxas info    : Compiling entry function '_Z27dsv4_dense_fast_dots_kernelILi8EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z27dsv4_dense_fast_dots_kernelILi8EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 60.928 ms
+ptxas info    : Compiling entry function '_Z27dsv4_dense_fast_dots_kernelILi7EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z27dsv4_dense_fast_dots_kernelILi7EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 62 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 52.367 ms
+ptxas info    : Compiling entry function '_Z27dsv4_dense_fast_dots_kernelILi6EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z27dsv4_dense_fast_dots_kernelILi6EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 45.049 ms
+ptxas info    : Compiling entry function '_Z27dsv4_dense_fast_dots_kernelILi5EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z27dsv4_dense_fast_dots_kernelILi5EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 37.127 ms
+ptxas info    : Compiling entry function '_Z27dsv4_dense_fast_dots_kernelILi4EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z27dsv4_dense_fast_dots_kernelILi4EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 50 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 31.611 ms
+ptxas info    : Compiling entry function '_Z27dsv4_dense_fast_dots_kernelILi3EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z27dsv4_dense_fast_dots_kernelILi3EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 24.951 ms
+ptxas info    : Compiling entry function '_Z27dsv4_dense_fast_dots_kernelILi2EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z27dsv4_dense_fast_dots_kernelILi2EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 19.121 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi32EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi32EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 96 registers, used 1 barriers
+ptxas info    : Compile time = 36.275 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi31EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi31EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 80 registers, used 1 barriers
+ptxas info    : Compile time = 34.660 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi30EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi30EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 80 registers, used 1 barriers
+ptxas info    : Compile time = 33.676 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi29EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi29EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 80 registers, used 1 barriers
+ptxas info    : Compile time = 32.317 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi28EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi28EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 80 registers, used 1 barriers
+ptxas info    : Compile time = 31.395 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi27EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi27EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 72 registers, used 1 barriers
+ptxas info    : Compile time = 30.368 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi26EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi26EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 72 registers, used 1 barriers
+ptxas info    : Compile time = 28.731 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi25EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi25EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 72 registers, used 1 barriers
+ptxas info    : Compile time = 28.165 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi24EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi24EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 72 registers, used 1 barriers
+ptxas info    : Compile time = 26.291 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi23EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi23EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 1 barriers
+ptxas info    : Compile time = 25.233 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi22EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi22EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 1 barriers
+ptxas info    : Compile time = 24.029 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi21EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi21EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 1 barriers
+ptxas info    : Compile time = 22.772 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi20EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi20EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 1 barriers
+ptxas info    : Compile time = 22.215 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi19EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi19EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers
+ptxas info    : Compile time = 21.002 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi18EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi18EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers
+ptxas info    : Compile time = 19.841 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi17EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi17EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers
+ptxas info    : Compile time = 19.013 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi16EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi16EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers
+ptxas info    : Compile time = 17.512 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi15EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi15EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 1 barriers
+ptxas info    : Compile time = 16.402 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi14EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi14EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 1 barriers
+ptxas info    : Compile time = 15.567 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi13EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi13EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 1 barriers
+ptxas info    : Compile time = 14.820 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi12EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi12EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 1 barriers
+ptxas info    : Compile time = 13.813 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi11EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi11EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers
+ptxas info    : Compile time = 12.621 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi10EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi10EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers
+ptxas info    : Compile time = 11.842 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi9EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi9EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers
+ptxas info    : Compile time = 10.957 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi8EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi8EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers
+ptxas info    : Compile time = 10.085 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi7EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi7EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers
+ptxas info    : Compile time = 9.457 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi6EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi6EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers
+ptxas info    : Compile time = 8.806 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi5EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi5EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers
+ptxas info    : Compile time = 7.640 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi4EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi4EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 38 registers, used 1 barriers
+ptxas info    : Compile time = 6.761 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi3EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi3EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 38 registers, used 1 barriers
+ptxas info    : Compile time = 5.836 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi2EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi2EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 32 registers, used 1 barriers
+ptxas info    : Compile time = 4.894 ms
+ptxas info    : Compiling entry function '_Z25dsv4_dots_f32_mrow_kernelILi1EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_dots_f32_mrow_kernelILi1EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 23 registers, used 1 barriers
+ptxas info    : Compile time = 3.580 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi1ELb1EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi1ELb1EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 34 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 16.628 ms
+ptxas info    : Compiling entry function '_Z26dsv4_dense_fast_fp8_kernelILi2ELb1ELi1EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z26dsv4_dense_fast_fp8_kernelILi2ELb1ELi1EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 1 barriers, 2048 bytes smem
+ptxas info    : Compile time = 23.477 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi32ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi32ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 78 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 95.813 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi31ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi31ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 80 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 92.640 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi30ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi30ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 84 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 90.171 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi29ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi29ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 82 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 87.020 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi28ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi28ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 80 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 81.395 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi27ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi27ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 70 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 76.859 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi26ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi26ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 78 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 74.129 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi25ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi25ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 71 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 71.461 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi24ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi24ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 72 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 68.887 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi23ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi23ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 75 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 65.768 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi22ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi22ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 73 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 63.361 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi21ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi21ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 72 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 60.305 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi20ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi20ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 72 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 56.912 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi19ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi19ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 53.188 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi18ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi18ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 66 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 50.242 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi17ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi17ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 48.030 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi16ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi16ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 66 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 45.388 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi15ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi15ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 43.515 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi14ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi14ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 40.875 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi13ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi13ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 61 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 38.319 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi12ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi12ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 62 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 36.615 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi11ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi11ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 54 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 33.720 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi10ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi10ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 58 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 31.386 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi9ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi9ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 29.302 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi8ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi8ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 54 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 27.166 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi7ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi7ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 54 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 24.843 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi6ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi6ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 52 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 23.222 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi5ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi5ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 21.110 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi4ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi4ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 44 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 18.568 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi3ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi3ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 16.168 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi2ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi2ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 14.271 ms
+ptxas info    : Compiling entry function '_Z22dsv4_gemv_fp8_m_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z22dsv4_gemv_fp8_m_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 14.910 ms
+ptxas info    : Compiling entry function '_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi8EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi8EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 80 registers, used 1 barriers, 2048 bytes smem
+ptxas info    : Compile time = 57.797 ms
+ptxas info    : Compiling entry function '_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi7EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi7EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 75 registers, used 1 barriers, 2048 bytes smem
+ptxas info    : Compile time = 53.286 ms
+ptxas info    : Compiling entry function '_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi6EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi6EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 70 registers, used 1 barriers, 2048 bytes smem
+ptxas info    : Compile time = 46.150 ms
+ptxas info    : Compiling entry function '_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi5EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi5EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 66 registers, used 1 barriers, 2048 bytes smem
+ptxas info    : Compile time = 40.874 ms
+ptxas info    : Compiling entry function '_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi4EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi4EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 1 barriers, 2048 bytes smem
+ptxas info    : Compile time = 35.503 ms
+ptxas info    : Compiling entry function '_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi3EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi3EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 60 registers, used 1 barriers, 2048 bytes smem
+ptxas info    : Compile time = 29.434 ms
+ptxas info    : Compiling entry function '_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi2EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi2EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers, 2048 bytes smem
+ptxas info    : Compile time = 24.391 ms
+ptxas info    : Compiling entry function '_Z32dsv4_hc_dot_split_partial_kernelILi32EEvPKfS1_Pf' for 'sm_120a'
+ptxas info    : Function properties for _Z32dsv4_hc_dot_split_partial_kernelILi32EEvPKfS1_Pf
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 24 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 2.546 ms
+ptxas info    : Compiling entry function '_Z32dsv4_hc_dot_split_partial_kernelILi16EEvPKfS1_Pf' for 'sm_120a'
+ptxas info    : Function properties for _Z32dsv4_hc_dot_split_partial_kernelILi16EEvPKfS1_Pf
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 24 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 2.516 ms
+ptxas info    : Compiling entry function '_Z32dsv4_hc_dot_split_partial_kernelILi8EEvPKfS1_Pf' for 'sm_120a'
+ptxas info    : Function properties for _Z32dsv4_hc_dot_split_partial_kernelILi8EEvPKfS1_Pf
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 36 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 3.342 ms
+ptxas info    : Compiling entry function '_Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z33dsv4_dense_exact_tail_dots_kernelILi1EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 36 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 4.100 ms
+ptxas info    : Compiling entry function '_Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii' for 'sm_120a'
+ptxas info    : Function properties for _Z27dsv4_dense_fast_dots_kernelILi1EEvPKfPKviPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 12.340 ms
+ptxas info    : Compiling entry function '_Z32dsv4_dense_exact_tail_fp8_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z32dsv4_dense_exact_tail_fp8_kernelILi1ELb0EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 14.867 ms
+ptxas info    : Compiling entry function '_Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi1EEvPKhPKfiPKtPfiiiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z26dsv4_dense_fast_fp8_kernelILi2ELb0ELi1EEvPKhPKfiPKtPfiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 1 barriers, 2048 bytes smem
+ptxas info    : Compile time = 21.887 ms
+ptxas info    : Compiling entry function '_Z28dsv4_dots_f32acc_tile_kernelILi8ELi8EEvPKfPKviPfiii' for 'sm_120a'
+ptxas info    : Function properties for _Z28dsv4_dots_f32acc_tile_kernelILi8ELi8EEvPKfPKviPfiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 224 registers, used 1 barriers
+ptxas info    : Compile time = 60.745 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi32EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi32EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 66 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 44.585 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi31EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi31EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 66 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 42.427 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi30EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi30EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 61 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 40.927 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi29EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi29EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 60 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 39.040 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi28EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi28EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 62 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 36.753 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi27EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi27EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 60 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 35.697 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi26EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi26EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 60 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 34.356 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi25EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi25EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 60 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 32.753 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi24EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi24EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 60 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 31.042 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi23EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi23EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 52 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 29.392 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi22EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi22EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 52 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 27.997 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi21EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi21EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 52 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 26.730 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi20EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi20EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 54 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 25.552 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi19EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi19EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 52 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 24.252 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi18EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi18EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 22.700 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi17EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi17EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 51 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 21.826 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi16EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi16EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 52 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 20.553 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi15EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi15EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 50 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 19.260 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi14EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi14EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 45 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 18.144 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi13EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi13EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 50 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 16.982 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi12EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi12EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 52 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 15.864 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi11EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi11EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 44 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 14.692 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi10EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi10EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 46 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 13.416 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi9EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi9EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 44 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 12.366 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi8EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi8EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 46 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 11.325 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi7EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi7EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 44 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 10.258 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi6EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi6EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 44 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 9.149 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi5EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi5EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 42 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 8.089 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi4EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi4EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 7.014 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi3EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi3EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 5.887 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi2EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi2EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 36 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 4.764 ms
+ptxas info    : Compiling entry function '_Z23dsv4_gemv_bf16_m_kernelILi1EEvPKtS1_Pfiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z23dsv4_gemv_bf16_m_kernelILi1EEvPKtS1_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 26 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 3.381 ms
+ptxas info    : Compiling entry function 'dsv4_build_idx_redirect_m_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_build_idx_redirect_m_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 22 registers, used 0 barriers
+ptxas info    : Compile time = 8.353 ms
+ptxas info    : Compiling entry function 'dsv4_build_idx_redirect_fine_pos_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_build_idx_redirect_fine_pos_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 14 registers, used 0 barriers
+ptxas info    : Compile time = 3.182 ms
+ptxas info    : Compiling entry function 'dsv4_build_idx_redirect_window_pos_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_build_idx_redirect_window_pos_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 14 registers, used 0 barriers
+ptxas info    : Compile time = 2.953 ms
+ptxas info    : Compiling entry function 'dsv4_build_idx_redirect_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_build_idx_redirect_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 14 registers, used 0 barriers
+ptxas info    : Compile time = 3.104 ms
+ptxas info    : Compiling entry function 'dsv4_hc_expand_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_hc_expand_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 18 registers, used 0 barriers
+ptxas info    : Compile time = 6.296 ms
+ptxas info    : Compiling entry function 'dsv4_hc_mean_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_hc_mean_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 11.675 ms
+ptxas info    : Compiling entry function 'dsv4_sink_out_f32acc_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_sink_out_f32acc_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 25 registers, used 1 barriers, 1024 bytes smem
+ptxas info    : Compile time = 11.390 ms
+ptxas info    : Compiling entry function 'dsv4_sink_soft_f32acc_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_sink_soft_f32acc_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 38 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 6.004 ms
+ptxas info    : Compiling entry function 'dsv4_sink_scores_f32acc_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_sink_scores_f32acc_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 42 registers, used 1 barriers
+ptxas info    : Compile time = 7.570 ms
+ptxas info    : Compiling entry function 'dsv4_indexer_score_tiled_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_indexer_score_tiled_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 120 registers, used 1 barriers, 12352 bytes smem
+ptxas info    : Compile time = 36.325 ms
+ptxas info    : Compiling entry function 'dsv4_indexer_score_f32acc_pos_m_ref_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_indexer_score_f32acc_pos_m_ref_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers
+ptxas info    : Compile time = 8.588 ms
+ptxas info    : Compiling entry function 'dsv4_indexer_score_f32acc_pos_m_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_indexer_score_f32acc_pos_m_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 47 registers, used 1 barriers
+ptxas info    : Compile time = 9.280 ms
+ptxas info    : Compiling entry function 'dsv4_indexer_score_f32acc_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_indexer_score_f32acc_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers
+ptxas info    : Compile time = 9.264 ms
+ptxas info    : Compiling entry function 'dsv4_rowsq_scale_f32acc_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_rowsq_scale_f32acc_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers
+ptxas info    : Compile time = 15.674 ms
+ptxas info    : Compiling entry function 'dsv4_headrms_f32acc_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_headrms_f32acc_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 18 registers, used 1 barriers
+ptxas info    : Compile time = 8.431 ms
+ptxas info    : Compiling entry function 'dsv4_small_norm_pack_f32_fixed_order_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_small_norm_pack_f32_fixed_order_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 39 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 26.093 ms
+ptxas info    : Compiling entry function 'dsv4_rmsnorm_f32acc_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_rmsnorm_f32acc_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 86 registers, used 1 barriers
+ptxas info    : Compile time = 44.519 ms
+ptxas info    : Compiling entry function 'dsv4_argmax_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_argmax_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 3072 bytes smem
+ptxas info    : Compile time = 12.472 ms
+ptxas info    : Compiling entry function 'dsv4_gemv_fp8_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_gemv_fp8_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 39 registers, used 1 barriers, 1536 bytes smem
+ptxas info    : Compile time = 14.641 ms
+ptxas info    : Compiling entry function 'dsv4_gemv_bf16_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_gemv_bf16_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 26 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 3.363 ms
+ptxas info    : Compiling entry function 'dsv4_sink_out_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_sink_out_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 31 registers, used 1 barriers, 1024 bytes smem
+ptxas info    : Compile time = 12.322 ms
+ptxas info    : Compiling entry function 'dsv4_sink_soft_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_sink_soft_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 35 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 6.731 ms
+ptxas info    : Compiling entry function 'dsv4_sink_scores_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_sink_scores_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 39 registers, used 1 barriers
+ptxas info    : Compile time = 6.746 ms
+ptxas info    : Compiling entry function 'dsv4_topk_stream_final_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_topk_stream_final_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 16 registers, used 1 barriers
+ptxas info    : Compile time = 4.039 ms
+ptxas info    : Compiling entry function 'dsv4_topk_stream_keys_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_topk_stream_keys_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 36 registers, used 1 barriers
+ptxas info    : Compile time = 49.640 ms
+ptxas info    : Compiling entry function 'dsv4_topk_stream_scores_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_topk_stream_scores_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 31 registers, used 1 barriers
+ptxas info    : Compile time = 50.352 ms
+ptxas info    : Compiling entry function 'dsv4_topk_idx_m_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_topk_idx_m_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 22 registers, used 1 barriers
+ptxas info    : Compile time = 5.030 ms
+ptxas info    : Compiling entry function 'dsv4_topk_idx_radix_m1_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_topk_idx_radix_m1_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 20 registers, used 1 barriers, 1072 bytes smem
+ptxas info    : Compile time = 25.717 ms
+ptxas info    : Compiling entry function 'dsv4_topk_idx_numeric_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_topk_idx_numeric_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 15 registers, used 1 barriers
+ptxas info    : Compile time = 4.575 ms
+ptxas info    : Compiling entry function 'dsv4_topk_idx_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_topk_idx_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 16 registers, used 1 barriers
+ptxas info    : Compile time = 3.458 ms
+ptxas info    : Compiling entry function 'dsv4_build_idx_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_build_idx_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 12 registers, used 0 barriers
+ptxas info    : Compile time = 2.119 ms
+ptxas info    : Compiling entry function 'dsv4_combine_rows_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_combine_rows_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 8.184 ms
+ptxas info    : Compiling entry function '_Z26dsv4_ep_merge_slots_kernelPfPKfPKiiii' for 'sm_120a'
+ptxas info    : Function properties for _Z26dsv4_ep_merge_slots_kernelPfPKfPKiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 14 registers, used 0 barriers
+ptxas info    : Compile time = 2.188 ms
+ptxas info    : Compiling entry function '_Z24dsv4_fp4_gemm_sel_kernelILb0ELb1EEvPKhPKfS1_S1_S3_PKiiiiPfiilliii' for 'sm_120a'
+ptxas info    : Function properties for _Z24dsv4_fp4_gemm_sel_kernelILb0ELb1EEvPKhPKfS1_S1_S3_PKiiiiPfiilliii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers
+ptxas info    : Compile time = 41.345 ms
+ptxas info    : Compiling entry function '_Z24dsv4_fp4_gemm_sel_kernelILb1ELb1EEvPKhPKfS1_S1_S3_PKiiiiPfiilliii' for 'sm_120a'
+ptxas info    : Function properties for _Z24dsv4_fp4_gemm_sel_kernelILb1ELb1EEvPKhPKfS1_S1_S3_PKiiiiPfiilliii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers
+ptxas info    : Compile time = 41.237 ms
+ptxas info    : Compiling entry function '_Z24dsv4_fp4_gemm_sel_kernelILb0ELb0EEvPKhPKfS1_S1_S3_PKiiiiPfiilliii' for 'sm_120a'
+ptxas info    : Function properties for _Z24dsv4_fp4_gemm_sel_kernelILb0ELb0EEvPKhPKfS1_S1_S3_PKiiiiPfiilliii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 1 barriers
+ptxas info    : Compile time = 40.259 ms
+ptxas info    : Compiling entry function '_Z24dsv4_fp4_gemm_sel_kernelILb1ELb0EEvPKhPKfS1_S1_S3_PKiiiiPfiilliii' for 'sm_120a'
+ptxas info    : Function properties for _Z24dsv4_fp4_gemm_sel_kernelILb1ELb0EEvPKhPKfS1_S1_S3_PKiiiiPfiilliii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 1 barriers
+ptxas info    : Compile time = 39.869 ms
+ptxas info    : Compiling entry function 'dsv4_route_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_route_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 3104 bytes smem
+ptxas info    : Compile time = 34.818 ms
+ptxas info    : Compiling entry function 'dsv4_hc_head_pre_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_hc_head_pre_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 16 registers, used 0 barriers
+ptxas info    : Compile time = 3.170 ms
+ptxas info    : Compiling entry function 'dsv4_hc_sinkhorn_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_hc_sinkhorn_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers
+ptxas info    : Compile time = 68.814 ms
+ptxas info    : Compiling entry function 'dsv4_rope_at_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_rope_at_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 18 registers, used 0 barriers
+ptxas info    : Compile time = 6.426 ms
+ptxas info    : Compiling entry function 'dsv4_swiglu_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_swiglu_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 20 registers, used 0 barriers
+ptxas info    : Compile time = 6.453 ms
+ptxas info    : Compiling entry function 'dsv4_gather_rows_u8_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_gather_rows_u8_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 16 registers, used 0 barriers
+ptxas info    : Compile time = 4.699 ms
+ptxas info    : Compiling entry function 'dsv4_fp4_gemm_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_fp4_gemm_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers
+ptxas info    : Compile time = 15.699 ms
+ptxas info    : Compiling entry function '_Z27dsv4_grouped_scatter_kernelILb1EEvPKiPKfS3_S1_PiS4_PfS5_S5_S5_iii' for 'sm_120a'
+ptxas info    : Function properties for _Z27dsv4_grouped_scatter_kernelILb1EEvPKiPKfS3_S1_PiS4_PfS5_S5_S5_iii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 8.595 ms
+ptxas info    : Compiling entry function '_Z25dsv4_grouped_count_kernelILb1EEvPKiPiiS2_S2_PfS3_S3_S3_i' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_grouped_count_kernelILb1EEvPKiPiiS2_S2_PfS3_S3_S3_i
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 32 registers, used 0 barriers
+ptxas info    : Compile time = 9.933 ms
+ptxas info    : Compiling entry function '_Z36dsv4_grouped_partition_prefix_kernelPKiS0_PiS1_S1_iiiS1_i' for 'sm_120a'
+ptxas info    : Function properties for _Z36dsv4_grouped_partition_prefix_kernelPKiS0_PiS1_S1_iiiS1_i
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers
+ptxas info    : Compile time = 11.633 ms
+ptxas info    : Compiling entry function '_Z27dsv4_grouped_scatter_kernelILb0EEvPKiPKfS3_S1_PiS4_PfS5_S5_S5_iii' for 'sm_120a'
+ptxas info    : Function properties for _Z27dsv4_grouped_scatter_kernelILb0EEvPKiPKfS3_S1_PiS4_PfS5_S5_S5_iii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 8.510 ms
+ptxas info    : Compiling entry function '_Z25dsv4_grouped_count_kernelILb0EEvPKiPiiS2_S2_PfS3_S3_S3_i' for 'sm_120a'
+ptxas info    : Function properties for _Z25dsv4_grouped_count_kernelILb0EEvPKiPiiS2_S2_PfS3_S3_S3_i
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 32 registers, used 0 barriers
+ptxas info    : Compile time = 9.882 ms
+ptxas info    : Compiling entry function '_Z26dsv4_grouped_prefix_kernelPKiPiS1_S1_iiS1_i' for 'sm_120a'
+ptxas info    : Function properties for _Z26dsv4_grouped_prefix_kernelPKiPiS1_S1_iiS1_i
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers
+ptxas info    : Compile time = 7.691 ms
+ptxas info    : Compiling entry function 'dsv4_scale_rows_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_scale_rows_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 16 registers, used 0 barriers
+ptxas info    : Compile time = 4.086 ms
+ptxas info    : Compiling entry function 'dsv4_fp8_gather_half_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_fp8_gather_half_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 28 registers, used 1 barriers, 1040 bytes smem
+ptxas info    : Compile time = 12.747 ms
+ptxas info    : Compiling entry function 'dsv4_act_quant_fp8_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_act_quant_fp8_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 32 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 12.286 ms
+ptxas info    : Compiling entry function 'dsv4_hc_post_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_hc_post_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 6.812 ms
+ptxas info    : Compiling entry function 'dsv4_hc_collapse_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_hc_collapse_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 5.016 ms
+ptxas info    : Compiling entry function 'dsv4_rowsq_scale_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_rowsq_scale_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers
+ptxas info    : Compile time = 14.252 ms
+ptxas info    : Compiling entry function 'dsv4_sink_attn_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_sink_attn_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 528 bytes smem
+ptxas info    : Compile time = 28.079 ms
+ptxas info    : Compiling entry function 'dsv4_indexer_score_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_indexer_score_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers
+ptxas info    : Compile time = 9.313 ms
+ptxas info    : Compiling entry function 'dsv4_compressor_pool_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_compressor_pool_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers
+ptxas info    : Compile time = 31.466 ms
+ptxas info    : Compiling entry function 'dsv4_hadamard_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_hadamard_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 38 registers, used 1 barriers
+ptxas info    : Compile time = 8.991 ms
+ptxas info    : Compiling entry function 'dsv4_fp4_act_quant_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_fp4_act_quant_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 24 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 54.725 ms
+ptxas info    : Compiling entry function 'dsv4_act_quant_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_act_quant_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 20 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 8.416 ms
+ptxas info    : Compiling entry function 'dsv4_headrms_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_headrms_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 27 registers, used 1 barriers
+ptxas info    : Compile time = 8.796 ms
+ptxas info    : Compiling entry function 'dsv4_rope_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_rope_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 24 registers, used 0 barriers
+ptxas info    : Compile time = 6.354 ms
+ptxas info    : Compiling entry function 'dsv4_rmsnorm_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_rmsnorm_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers
+ptxas info    : Compile time = 14.851 ms
+ptxas info    : Compiling entry function 'dsv4_dots_f32acc_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_dots_f32acc_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 34 registers, used 1 barriers, 512 bytes smem
+ptxas info    : Compile time = 4.624 ms
+ptxas info    : Compiling entry function 'dsv4_dots_f32_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_dots_f32_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 24 registers, used 1 barriers
+ptxas info    : Compile time = 3.953 ms
+ptxas info    : Compiling entry function 'dsv4_repeat_hc_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_repeat_hc_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 18 registers, used 0 barriers
+ptxas info    : Compile time = 6.562 ms
+ptxas info    : Compiling entry function 'dsv4_place_cols_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_place_cols_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 16 registers, used 0 barriers
+ptxas info    : Compile time = 4.546 ms
+ptxas info    : Compiling entry function 'dsv4_take_cols_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_take_cols_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 16 registers, used 0 barriers
+ptxas info    : Compile time = 4.538 ms
+ptxas info    : Compiling entry function 'dsv4_add_inplace_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_add_inplace_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.120 ms
+ptxas info    : Compiling entry function 'dsv4_scatter_add_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_scatter_add_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 20 registers, used 0 barriers
+ptxas info    : Compile time = 4.658 ms
+ptxas info    : Compiling entry function 'dsv4_gather_bf16_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_gather_bf16_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 20 registers, used 0 barriers
+ptxas info    : Compile time = 4.610 ms
+ptxas info    : Compiling entry function 'dsv4_embed_rows_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_embed_rows_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 20 registers, used 0 barriers
+ptxas info    : Compile time = 4.645 ms
+ptxas info    : Compiling entry function 'dsv4_cvt_bf16_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_cvt_bf16_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.171 ms
+ptxas info    : Compiling entry function 'dsv4_mxfp4_deq_bf16_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_mxfp4_deq_bf16_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 17 registers, used 0 barriers
+ptxas info    : Compile time = 5.998 ms
+ptxas info    : Compiling entry function 'dsv4_nvfp4_deq_bf16_kernel' for 'sm_120a'
+ptxas info    : Function properties for dsv4_nvfp4_deq_bf16_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 16 registers, used 0 barriers
+ptxas info    : Compile time = 6.770 ms

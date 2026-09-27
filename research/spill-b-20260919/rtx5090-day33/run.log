@@ -1,0 +1,29 @@
+2026-09-23T14:09:07Z boot red-G1 start role=red shape=G1 bin=7497071ead123e99
+2026-09-23T14:23:04Z driver stopped by its owner after red-G1: the cell's stop step matches pgrep -x memra-server and the binary was named memra-server-red, so the server was not stopped after the client finished; the server (this driver's own) was sent SIGTERM at 14:23:04Z; binary moved to target/day33/red/memra-server (same sha256)
+2026-09-23T14:23:04Z boot red-G2 start role=red shape=G2 bin=7497071ead123e99
+2026-09-23T14:30:26Z boot red-G2 rc=0 DAY31 V-BOOT boot=red-G2 arm=on8192 door_line=present -> PASS
+2026-09-23T14:30:31Z boot red-R32: waiting for an idle rig
+2026-09-23T14:33:01Z boot red-R32 start role=red shape=R32 bin=7497071ead123e99
+2026-09-23T14:45:25Z boot red-R32 rc=0 DAY31 V-BOOT boot=red-R32 arm=on32768 door_line=present -> PASS
+2026-09-23T14:45:30Z boot red-off start role=red shape=off bin=7497071ead123e99
+2026-09-23T14:49:18Z boot red-off rc=0 DAY31 V-BOOT boot=red-off arm=off door_line=present -> PASS
+2026-09-23T14:49:23Z run done: red-G2:red:G2 red-R32:red:R32 red-off:red:off
+2026-09-23T14:49:25Z gate red start role=red bin=7497071ead123e99
+2026-09-23T14:53:41Z gate red rc=1 ADMIT-MEM BURST GATE: RED
+2026-09-23T14:53:41Z boot green-G2-r1 start role=green shape=G2 bin=07a15cff81513314
+2026-09-23T15:03:20Z boot green-G2-r1 rc=0 DAY31 V-BOOT boot=green-G2-r1 arm=on8192 door_line=present -> PASS
+2026-09-23T15:03:25Z boot green-R32: waiting for an idle rig
+2026-09-23T15:03:56Z boot green-R32 start role=green shape=R32 bin=07a15cff81513314
+2026-09-23T15:15:53Z boot green-R32 rc=0 DAY31 V-BOOT boot=green-R32 arm=on32768 door_line=present -> PASS
+2026-09-23T15:15:58Z boot green-off: waiting for an idle rig
+2026-09-23T15:16:28Z boot green-off start role=green shape=off bin=07a15cff81513314
+2026-09-23T15:20:24Z boot green-off rc=0 DAY31 V-BOOT boot=green-off arm=off door_line=present -> PASS
+2026-09-23T15:20:29Z boot green-G2-r2: waiting for an idle rig
+2026-09-23T15:25:59Z boot green-G2-r2 start role=green shape=G2 bin=07a15cff81513314
+2026-09-23T15:35:55Z boot green-G2-r2 rc=0 DAY31 V-BOOT boot=green-G2-r2 arm=on8192 door_line=present -> PASS
+2026-09-23T15:36:00Z run done: green-G2-r1:green:G2 green-R32:green:R32 green-off:green:off green-G2-r2:green:G2
+2026-09-23T15:36:00Z gate green-1 start role=green bin=07a15cff81513314
+2026-09-23T15:42:55Z gate green-1 rc=0 ADMIT-MEM BURST GATE: ALL GREEN
+2026-09-23T15:42:55Z gate green-2 start role=green bin=07a15cff81513314
+2026-09-23T15:49:23Z gate green-2 rc=0 ADMIT-MEM BURST GATE: ALL GREEN
+2026-09-23T15:49:23Z local chain done

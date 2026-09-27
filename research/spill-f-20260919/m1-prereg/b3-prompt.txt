@@ -1,0 +1,1 @@
+Explain, step by step, how a solid-state drive services a random 4 KiB read: the host command, the flash translation layer lookup, the NAND page read, error correction, and the transfer back to host memory. Then compare that path with a sequential 1 MiB read, and state which stages dominate latency in each case.

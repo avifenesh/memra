@@ -3332,9 +3332,6 @@ impl HfConfig {
         o: &crate::config_json::ConfigObject<'_>,
         glm_dsa: bool,
     ) -> Result<(), String> {
-        if let Some(value) = o.boolean("tie_word_embeddings")? {
-            self.tie_word_embeddings = Some(value);
-        }
         if let Some(s) = o.string("model_type")? {
             self.model_type = s;
         }
@@ -3401,6 +3398,11 @@ impl HfConfig {
         }
         if let Some(v) = o.u32("sliding_window")? {
             self.sliding_window = Some(v);
+        }
+        // Only the two JSON literals speak; null, a missing key or another value retain
+        // the absent/outer declaration, matching the checkpoint binding's optional hint.
+        if let Ok(Some(value)) = o.boolean("tie_word_embeddings") {
+            self.tie_word_embeddings = Some(value);
         }
         if let Some(v) = o.f32("final_logit_softcapping")? {
             self.final_logit_softcapping = Some(v);

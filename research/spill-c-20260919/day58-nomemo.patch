@@ -1,0 +1,22 @@
+diff --git a/crates/memra-engine/src/moe_cache.rs b/crates/memra-engine/src/moe_cache.rs
+index 4643c3761..c8559bc6c 100644
+--- a/crates/memra-engine/src/moe_cache.rs
++++ b/crates/memra-engine/src/moe_cache.rs
+@@ -1111,7 +1111,7 @@ impl MoeSlotCache {
+         let local = (id.layer, id.proj, id.ex);
+         let clocked = self.bank_clock.is_some();
+         let entered = clocked.then(std::time::Instant::now);
+-        if !self.banked_validated.holds(id, bytes) {
++        if true {
+             bank.validate(local, bytes)?;
+             self.banked_validated.insert(id, bytes);
+         }
+@@ -1303,7 +1303,7 @@ impl MoeSlotCache {
+             return Ok(false);
+         }
+         let local = (id.layer, id.proj, id.ex);
+-        if !self.banked_validated.holds(id, bytes) {
++        if true {
+             bank.validate(local, bytes)?;
+             self.banked_validated.insert(id, bytes);
+         }

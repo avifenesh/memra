@@ -1,0 +1,94 @@
+2026-09-24T17:33:27Z boot mix-spec-O1-pooled: waiting for an idle rig
+2026-09-24T17:50:57Z boot mix-spec-O1-pooled start arm=pooled kind=mixspec bin=580fe677737305bf env=[ -u MEMRA_SERVE_SPEC -u MEMRA_TIMEOUT_MS_MAX]
+2026-09-24T18:03:17Z boot mix-spec-O1-pooled rc=0 door_on=0 door_off=1 
+2026-09-24T18:03:22Z boot mix-spec-O1-vmm start arm=vmm kind=mixspec bin=580fe677737305bf env=[MEMRA_KV_ALLOCATOR=vmm -u MEMRA_SERVE_SPEC -u MEMRA_TIMEOUT_MS_MAX]
+2026-09-24T18:15:42Z boot mix-spec-O1-vmm rc=0 door_on=1 door_off=0 
+2026-09-24T18:15:47Z boot mix-plain-O1-pooled: waiting for an idle rig
+2026-09-24T18:22:18Z boot mix-plain-O1-pooled start arm=pooled kind=mixplain bin=580fe677737305bf env=[ -u MEMRA_TIMEOUT_MS_MAX MEMRA_SERVE_SPEC=0]
+2026-09-24T18:39:09Z boot mix-plain-O1-pooled rc=0 door_on=0 door_off=1 
+2026-09-24T18:39:14Z boot mix-plain-O1-vmm start arm=vmm kind=mixplain bin=580fe677737305bf env=[MEMRA_KV_ALLOCATOR=vmm -u MEMRA_TIMEOUT_MS_MAX MEMRA_SERVE_SPEC=0]
+2026-09-24T18:56:19Z boot mix-plain-O1-vmm rc=0 door_on=1 door_off=0 
+2026-09-24T18:56:24Z boot mix-spec-O2-vmm: waiting for an idle rig
+2026-09-24T19:20:54Z boot mix-spec-O2-vmm start arm=vmm kind=mixspec bin=580fe677737305bf env=[MEMRA_KV_ALLOCATOR=vmm -u MEMRA_SERVE_SPEC -u MEMRA_TIMEOUT_MS_MAX]
+2026-09-24T19:32:53Z boot mix-spec-O2-vmm rc=0 door_on=1 door_off=0 
+2026-09-24T19:32:58Z boot mix-spec-O2-pooled start arm=pooled kind=mixspec bin=580fe677737305bf env=[ -u MEMRA_SERVE_SPEC -u MEMRA_TIMEOUT_MS_MAX]
+2026-09-24T19:45:10Z boot mix-spec-O2-pooled rc=0 door_on=0 door_off=1 
+2026-09-24T19:45:15Z boot mix-plain-O2-vmm start arm=vmm kind=mixplain bin=580fe677737305bf env=[MEMRA_KV_ALLOCATOR=vmm -u MEMRA_TIMEOUT_MS_MAX MEMRA_SERVE_SPEC=0]
+2026-09-24T20:02:35Z boot mix-plain-O2-vmm rc=0 door_on=1 door_off=0 
+2026-09-24T20:02:40Z boot mix-plain-O2-pooled start arm=pooled kind=mixplain bin=580fe677737305bf env=[ -u MEMRA_TIMEOUT_MS_MAX MEMRA_SERVE_SPEC=0]
+2026-09-24T20:20:08Z boot mix-plain-O2-pooled rc=0 door_on=0 door_off=1 
+2026-09-24T20:20:13Z boot fault-mapper start arm=vmm-mapperfault kind=mixspec bin=580fe677737305bf env=[MEMRA_KV_ALLOCATOR=vmm MEMRA_KV_VMM_FAULT=mapper:all -u MEMRA_SERVE_SPEC -u MEMRA_TIMEOUT_MS_MAX]
+2026-09-24T20:32:33Z boot fault-mapper rc=0 door_on=1 door_off=0 
+2026-09-24T20:32:38Z boot off-main start arm=main kind=mixspec bin=ac78c011da891f85 env=[ -u MEMRA_SERVE_SPEC -u MEMRA_TIMEOUT_MS_MAX]
+2026-09-24T20:45:06Z boot off-main rc=0 door_on=0 door_off=0 
+2026-09-24T20:45:11Z boot burst-g2-pooled start arm=pooled kind=g2 bin=580fe677737305bf env=[ CLIENT=day33-client.py PARSER=day31-parse.py MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=8192 CLIENT_ARGS=--chars 5000 --skip-long --burst 64]
+2026-09-24T20:57:25Z boot burst-g2-pooled rc=0 door_on=0 door_off=1 DAY31 V-BOOT boot=burst-g2-pooled arm=on8192 door_line=present -> PASS
+2026-09-24T20:57:31Z boot burst-g2-vmm start arm=vmm kind=g2 bin=580fe677737305bf env=[MEMRA_KV_ALLOCATOR=vmm CLIENT=day33-client.py PARSER=day31-parse.py MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=8192 CLIENT_ARGS=--chars 5000 --skip-long --burst 64]
+2026-09-24T21:10:10Z boot burst-g2-vmm rc=0 door_on=1 door_off=0 DAY31 V-BOOT boot=burst-g2-vmm arm=on8192 door_line=present -> PASS
+2026-09-24T21:10:15Z boot burst-l64-vmm: waiting for an idle rig
+2026-09-24T23:10:16Z boot burst-l64-vmm: rig not idle after 7200 s; not run
+2026-09-24T23:10:16Z boot stream-O1-1-pooled: waiting for an idle rig
+2026-09-24T23:49:49Z boot stream-O1-1-pooled start arm=pooled kind=stream bin=580fe677737305bf env=[ -u MEMRA_SERVE_SPEC CLIENT=day37-stream-client.py PARSER=day37-stream-parse.py CLIENT_ARGS=--arm pooled --requests 32 --concurrency 8]
+2026-09-24T23:57:54Z boot stream-O1-1-pooled rc=0 door_on=0 door_off=1 DAY37 STREAM arm=pooled N=32 of 32 ttft_p50=697.39 ttft_p95=2628.03 ttft_p99=2628.13 itl_p50=15.01 itl_p95=15.87 itl_p99=16.60 tpot_p50=16.05 tpot_p95=17.19 tpot_p99=17.57 e2e_p50=18846.75 e2e_p95=452
+2026-09-24T23:57:59Z boot stream-O1-1-vmm: waiting for an idle rig
+2026-09-25T01:14:30Z boot stream-O1-1-vmm start arm=vmm kind=stream bin=580fe677737305bf env=[MEMRA_KV_ALLOCATOR=vmm -u MEMRA_SERVE_SPEC CLIENT=day37-stream-client.py PARSER=day37-stream-parse.py CLIENT_ARGS=--arm vmm --requests 32 --concurrency 8]
+2026-09-25T01:16:29Z boot stream-O1-1-vmm rc=0 door_on=1 door_off=0 DAY37 STREAM arm=vmm N=32 of 32 ttft_p50=792.41 ttft_p95=2649.09 ttft_p99=2649.33 itl_p50=15.51 itl_p95=16.79 itl_p99=17.57 tpot_p50=16.31 tpot_p95=17.98 tpot_p99=18.55 e2e_p50=19353.79 e2e_p95=46531.
+2026-09-25T01:16:34Z boot stream-O1-2-pooled: waiting for an idle rig
+2026-09-25T01:25:04Z boot stream-O1-2-pooled start arm=pooled kind=stream bin=580fe677737305bf env=[ -u MEMRA_SERVE_SPEC CLIENT=day37-stream-client.py PARSER=day37-stream-parse.py CLIENT_ARGS=--arm pooled --requests 32 --concurrency 8]
+2026-09-25T01:25:38Z boot stream-O1-2-pooled rc=5 door_on=0 door_off=0 
+2026-09-25T01:25:43Z boot stream-O1-2-vmm: waiting for an idle rig
+2026-09-25T03:25:47Z boot stream-O1-2-vmm: rig not idle after 7200 s; not run
+2026-09-25T20:51:52Z boot stream-O1-2-pooled start arm=pooled kind=stream bin=580fe677737305bf env=[ -u MEMRA_SERVE_SPEC CLIENT=day37-stream-client.py PARSER=day37-stream-parse.py CLIENT_ARGS=--arm pooled --requests 32 --concurrency 8]
+2026-09-25T20:54:46Z boot stream-O1-2-pooled rc=0 door_on=0 door_off=1 DAY37 STREAM arm=pooled N=32 of 32 ttft_p50=955.60 ttft_p95=3743.92 ttft_p99=3744.23 itl_p50=23.22 itl_p95=24.81 itl_p99=27.18 tpot_p50=24.40 tpot_p95=25.86 tpot_p99=26.61 e2e_p50=29882.91 e2e_p95=688
+2026-09-25T20:54:51Z boot stream-O1-2-vmm start arm=vmm kind=stream bin=580fe677737305bf env=[MEMRA_KV_ALLOCATOR=vmm -u MEMRA_SERVE_SPEC CLIENT=day37-stream-client.py PARSER=day37-stream-parse.py CLIENT_ARGS=--arm vmm --requests 32 --concurrency 8]
+2026-09-25T20:57:41Z boot stream-O1-2-vmm rc=0 door_on=1 door_off=0 DAY37 STREAM arm=vmm N=32 of 32 ttft_p50=969.58 ttft_p95=3706.13 ttft_p99=3706.35 itl_p50=23.36 itl_p95=24.98 itl_p99=27.95 tpot_p50=24.06 tpot_p95=26.00 tpot_p99=26.74 e2e_p50=29826.07 e2e_p95=69182.
+2026-09-25T20:57:46Z boot stream-O1-3-pooled start arm=pooled kind=stream bin=580fe677737305bf env=[ -u MEMRA_SERVE_SPEC CLIENT=day37-stream-client.py PARSER=day37-stream-parse.py CLIENT_ARGS=--arm pooled --requests 32 --concurrency 8]
+2026-09-25T21:00:38Z boot stream-O1-3-pooled rc=0 door_on=0 door_off=1 DAY37 STREAM arm=pooled N=32 of 32 ttft_p50=956.74 ttft_p95=3761.07 ttft_p99=3761.12 itl_p50=23.57 itl_p95=25.14 itl_p99=28.32 tpot_p50=24.72 tpot_p95=26.24 tpot_p99=26.98 e2e_p50=30221.23 e2e_p95=698
+2026-09-25T21:00:44Z boot stream-O1-3-vmm start arm=vmm kind=stream bin=580fe677737305bf env=[MEMRA_KV_ALLOCATOR=vmm -u MEMRA_SERVE_SPEC CLIENT=day37-stream-client.py PARSER=day37-stream-parse.py CLIENT_ARGS=--arm vmm --requests 32 --concurrency 8]
+2026-09-25T21:03:40Z boot stream-O1-3-vmm rc=0 door_on=1 door_off=0 DAY37 STREAM arm=vmm N=32 of 32 ttft_p50=990.48 ttft_p95=3840.34 ttft_p99=3840.94 itl_p50=24.08 itl_p95=25.60 itl_p99=28.79 tpot_p50=25.08 tpot_p95=26.71 tpot_p99=27.45 e2e_p50=30601.68 e2e_p95=71143.
+2026-09-25T21:03:45Z boot stream-O1-4-pooled start arm=pooled kind=stream bin=580fe677737305bf env=[ -u MEMRA_SERVE_SPEC CLIENT=day37-stream-client.py PARSER=day37-stream-parse.py CLIENT_ARGS=--arm pooled --requests 32 --concurrency 8]
+2026-09-25T21:06:39Z boot stream-O1-4-pooled rc=0 door_on=0 door_off=1 DAY37 STREAM arm=pooled N=32 of 32 ttft_p50=972.38 ttft_p95=3761.47 ttft_p99=3761.86 itl_p50=23.99 itl_p95=25.94 itl_p99=29.21 tpot_p50=25.06 tpot_p95=26.70 tpot_p99=27.37 e2e_p50=30173.30 e2e_p95=714
+2026-09-25T21:06:44Z boot stream-O1-4-vmm start arm=vmm kind=stream bin=580fe677737305bf env=[MEMRA_KV_ALLOCATOR=vmm -u MEMRA_SERVE_SPEC CLIENT=day37-stream-client.py PARSER=day37-stream-parse.py CLIENT_ARGS=--arm vmm --requests 32 --concurrency 8]
+2026-09-25T21:09:35Z boot stream-O1-4-vmm rc=0 door_on=1 door_off=0 DAY37 STREAM arm=vmm N=32 of 32 ttft_p50=964.30 ttft_p95=3711.97 ttft_p99=3712.38 itl_p50=23.27 itl_p95=24.81 itl_p99=28.15 tpot_p50=23.99 tpot_p95=25.89 tpot_p99=26.59 e2e_p50=29763.00 e2e_p95=68929.
+2026-09-25T21:09:40Z boot stream-O1-5-pooled start arm=pooled kind=stream bin=580fe677737305bf env=[ -u MEMRA_SERVE_SPEC CLIENT=day37-stream-client.py PARSER=day37-stream-parse.py CLIENT_ARGS=--arm pooled --requests 32 --concurrency 8]
+2026-09-25T21:12:30Z boot stream-O1-5-pooled rc=0 door_on=0 door_off=1 DAY37 STREAM arm=pooled N=32 of 32 ttft_p50=949.11 ttft_p95=3747.76 ttft_p99=3747.84 itl_p50=23.21 itl_p95=24.66 itl_p99=27.62 tpot_p50=24.28 tpot_p95=25.77 tpot_p99=26.49 e2e_p50=29806.22 e2e_p95=687
+2026-09-25T21:12:35Z boot stream-O1-5-vmm start arm=vmm kind=stream bin=580fe677737305bf env=[MEMRA_KV_ALLOCATOR=vmm -u MEMRA_SERVE_SPEC CLIENT=day37-stream-client.py PARSER=day37-stream-parse.py CLIENT_ARGS=--arm vmm --requests 32 --concurrency 8]
+2026-09-25T21:15:28Z boot stream-O1-5-vmm rc=0 door_on=1 door_off=0 DAY37 STREAM arm=vmm N=32 of 32 ttft_p50=960.34 ttft_p95=3702.51 ttft_p99=3703.64 itl_p50=23.83 itl_p95=25.41 itl_p99=27.46 tpot_p50=24.96 tpot_p95=26.85 tpot_p99=27.36 e2e_p50=30334.97 e2e_p95=70505.
+2026-09-25T21:15:33Z boot stream-O2-1-vmm start arm=vmm kind=stream bin=580fe677737305bf env=[MEMRA_KV_ALLOCATOR=vmm -u MEMRA_SERVE_SPEC CLIENT=day37-stream-client.py PARSER=day37-stream-parse.py CLIENT_ARGS=--arm vmm --requests 32 --concurrency 8]
+2026-09-25T21:18:31Z boot stream-O2-1-vmm rc=0 door_on=1 door_off=0 DAY37 STREAM arm=vmm N=32 of 32 ttft_p50=968.64 ttft_p95=3729.14 ttft_p99=3729.57 itl_p50=24.37 itl_p95=25.90 itl_p99=27.27 tpot_p50=25.53 tpot_p95=27.33 tpot_p99=27.90 e2e_p50=31105.23 e2e_p95=72011.
+2026-09-25T21:18:36Z boot stream-O2-1-pooled start arm=pooled kind=stream bin=580fe677737305bf env=[ -u MEMRA_SERVE_SPEC CLIENT=day37-stream-client.py PARSER=day37-stream-parse.py CLIENT_ARGS=--arm pooled --requests 32 --concurrency 8]
+2026-09-25T21:21:35Z boot stream-O2-1-pooled rc=0 door_on=0 door_off=1 DAY37 STREAM arm=pooled N=32 of 32 ttft_p50=960.86 ttft_p95=3777.63 ttft_p99=3777.92 itl_p50=24.05 itl_p95=25.54 itl_p99=27.55 tpot_p50=25.19 tpot_p95=26.68 tpot_p99=27.42 e2e_p50=30703.81 e2e_p95=709
+2026-09-25T21:21:40Z boot stream-O2-2-vmm start arm=vmm kind=stream bin=580fe677737305bf env=[MEMRA_KV_ALLOCATOR=vmm -u MEMRA_SERVE_SPEC CLIENT=day37-stream-client.py PARSER=day37-stream-parse.py CLIENT_ARGS=--arm vmm --requests 32 --concurrency 8]
+2026-09-25T21:24:32Z boot stream-O2-2-vmm rc=0 door_on=1 door_off=0 DAY37 STREAM arm=vmm N=32 of 32 ttft_p50=982.37 ttft_p95=3787.22 ttft_p99=3787.66 itl_p50=23.62 itl_p95=25.17 itl_p99=28.00 tpot_p50=24.29 tpot_p95=26.24 tpot_p99=26.99 e2e_p50=29978.54 e2e_p95=69906.
+2026-09-25T21:24:37Z boot stream-O2-2-pooled start arm=pooled kind=stream bin=580fe677737305bf env=[ -u MEMRA_SERVE_SPEC CLIENT=day37-stream-client.py PARSER=day37-stream-parse.py CLIENT_ARGS=--arm pooled --requests 32 --concurrency 8]
+2026-09-25T21:27:31Z boot stream-O2-2-pooled rc=0 door_on=0 door_off=1 DAY37 STREAM arm=pooled N=32 of 32 ttft_p50=942.42 ttft_p95=3750.71 ttft_p99=3751.03 itl_p50=23.33 itl_p95=24.86 itl_p99=27.67 tpot_p50=24.43 tpot_p95=25.94 tpot_p99=26.64 e2e_p50=29869.66 e2e_p95=691
+2026-09-25T21:27:36Z boot stream-O2-3-vmm start arm=vmm kind=stream bin=580fe677737305bf env=[MEMRA_KV_ALLOCATOR=vmm -u MEMRA_SERVE_SPEC CLIENT=day37-stream-client.py PARSER=day37-stream-parse.py CLIENT_ARGS=--arm vmm --requests 32 --concurrency 8]
+2026-09-25T21:30:25Z boot stream-O2-3-vmm rc=0 door_on=1 door_off=0 DAY37 STREAM arm=vmm N=32 of 32 ttft_p50=963.38 ttft_p95=3739.59 ttft_p99=3739.86 itl_p50=23.18 itl_p95=24.64 itl_p99=27.45 tpot_p50=23.85 tpot_p95=25.78 tpot_p99=26.53 e2e_p50=29480.63 e2e_p95=68662.
+2026-09-25T21:30:30Z boot stream-O2-3-pooled start arm=pooled kind=stream bin=580fe677737305bf env=[ -u MEMRA_SERVE_SPEC CLIENT=day37-stream-client.py PARSER=day37-stream-parse.py CLIENT_ARGS=--arm pooled --requests 32 --concurrency 8]
+2026-09-25T21:33:21Z boot stream-O2-3-pooled rc=0 door_on=0 door_off=1 DAY37 STREAM arm=pooled N=32 of 32 ttft_p50=964.43 ttft_p95=3736.95 ttft_p99=3737.17 itl_p50=23.29 itl_p95=24.83 itl_p99=28.56 tpot_p50=24.00 tpot_p95=25.90 tpot_p99=26.59 e2e_p50=29856.75 e2e_p95=689
+2026-09-25T21:33:26Z boot stream-O2-4-vmm start arm=vmm kind=stream bin=580fe677737305bf env=[MEMRA_KV_ALLOCATOR=vmm -u MEMRA_SERVE_SPEC CLIENT=day37-stream-client.py PARSER=day37-stream-parse.py CLIENT_ARGS=--arm vmm --requests 32 --concurrency 8]
+2026-09-25T21:36:17Z boot stream-O2-4-vmm rc=0 door_on=1 door_off=0 DAY37 STREAM arm=vmm N=32 of 32 ttft_p50=967.50 ttft_p95=3744.79 ttft_p99=3744.99 itl_p50=23.37 itl_p95=25.02 itl_p99=29.94 tpot_p50=24.54 tpot_p95=26.02 tpot_p99=26.70 e2e_p50=29956.05 e2e_p95=69317.
+2026-09-25T21:36:22Z boot stream-O2-4-pooled start arm=pooled kind=stream bin=580fe677737305bf env=[ -u MEMRA_SERVE_SPEC CLIENT=day37-stream-client.py PARSER=day37-stream-parse.py CLIENT_ARGS=--arm pooled --requests 32 --concurrency 8]
+2026-09-25T21:39:13Z boot stream-O2-4-pooled rc=0 door_on=0 door_off=1 DAY37 STREAM arm=pooled N=32 of 32 ttft_p50=964.84 ttft_p95=3775.25 ttft_p99=3775.32 itl_p50=23.39 itl_p95=25.01 itl_p99=28.94 tpot_p50=24.50 tpot_p95=26.04 tpot_p99=26.76 e2e_p50=30017.51 e2e_p95=694
+2026-09-25T21:39:18Z boot stream-O2-5-vmm start arm=vmm kind=stream bin=580fe677737305bf env=[MEMRA_KV_ALLOCATOR=vmm -u MEMRA_SERVE_SPEC CLIENT=day37-stream-client.py PARSER=day37-stream-parse.py CLIENT_ARGS=--arm vmm --requests 32 --concurrency 8]
+2026-09-25T21:42:10Z boot stream-O2-5-vmm rc=0 door_on=1 door_off=0 DAY37 STREAM arm=vmm N=32 of 32 ttft_p50=945.25 ttft_p95=3733.40 ttft_p99=3733.49 itl_p50=23.48 itl_p95=25.06 itl_p99=29.30 tpot_p50=24.92 tpot_p95=26.39 tpot_p99=26.94 e2e_p50=30170.43 e2e_p95=69608.
+2026-09-25T21:42:15Z boot stream-O2-5-pooled start arm=pooled kind=stream bin=580fe677737305bf env=[ -u MEMRA_SERVE_SPEC CLIENT=day37-stream-client.py PARSER=day37-stream-parse.py CLIENT_ARGS=--arm pooled --requests 32 --concurrency 8]
+2026-09-25T21:45:06Z boot stream-O2-5-pooled rc=0 door_on=0 door_off=1 DAY37 STREAM arm=pooled N=32 of 32 ttft_p50=933.92 ttft_p95=3730.23 ttft_p99=3786.97 itl_p50=23.35 itl_p95=24.98 itl_p99=28.96 tpot_p50=24.79 tpot_p95=26.03 tpot_p99=26.70 e2e_p50=30117.05 e2e_p95=692
+2026-09-25T21:45:11Z boot burst-l64-vmm start arm=vmm kind=l64 bin=580fe677737305bf env=[MEMRA_KV_ALLOCATOR=vmm CLIENT=day33-client.py PARSER=day31-parse.py MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=32768 CLIENT_ARGS=--chars 5000 --skip-long --burst 64]
+2026-09-25T22:05:15Z boot burst-l64-vmm rc=0 door_on=1 door_off=0 DAY31 V-BOOT boot=burst-l64-vmm arm=on32768 door_line=present -> PASS
+2026-09-25T22:05:20Z boot burst-l64-pooled start arm=pooled kind=l64 bin=580fe677737305bf env=[ CLIENT=day33-client.py PARSER=day31-parse.py MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=32768 CLIENT_ARGS=--chars 5000 --skip-long --burst 64]
+2026-09-25T22:25:15Z boot burst-l64-pooled rc=0 door_on=0 door_off=1 DAY31 V-BOOT boot=burst-l64-pooled arm=on32768 door_line=present -> PASS
+2026-09-25T22:25:20Z boot burst-boff-pooled start arm=pooled kind=boff bin=580fe677737305bf env=[ -u MEMRA_ADMIT_BY_MEMORY -u MEMRA_ADMIT_OPEN_OUTPUT_TOKENS CLIENT=day33-client.py PARSER=day31-parse.py CLIENT_ARGS=--chars 5000 --skip-long --burst 64]
+2026-09-25T23:31:21Z boot burst-boff-pooled rc=0 door_on=0 door_off=1 DAY31 V-BOOT boot=burst-boff-pooled arm=off door_line=present -> PASS
+2026-09-25T23:31:26Z boot burst-boff-vmm: waiting for an idle rig
+2026-09-25T23:38:56Z boot burst-boff-vmm start arm=vmm kind=boff bin=580fe677737305bf env=[MEMRA_KV_ALLOCATOR=vmm -u MEMRA_ADMIT_BY_MEMORY -u MEMRA_ADMIT_OPEN_OUTPUT_TOKENS CLIENT=day33-client.py PARSER=day31-parse.py CLIENT_ARGS=--chars 5000 --skip-long --burst 64]
+2026-09-26T00:45:05Z boot burst-boff-vmm rc=0 door_on=1 door_off=0 DAY31 V-BOOT boot=burst-boff-vmm arm=off door_line=present -> PASS
+2026-09-26T00:45:10Z boot fault-ensure start arm=vmm-ensurefault kind=g2 bin=580fe677737305bf env=[MEMRA_KV_ALLOCATOR=vmm MEMRA_KV_VMM_FAULT=mapper:all,ensure:1,ensure:2 CLIENT=day33-client.py PARSER=day31-parse.py MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=8192 CLIENT_ARGS=--chars 5000 --skip-long --burst 64]
+2026-09-26T01:01:02Z boot fault-ensure rc=1 door_on=1 door_off=0 DAY31 V-BOOT boot=fault-ensure arm=on8192 door_line=present -> PASS
+2026-09-26T01:01:07Z boot fault-build1: waiting for an idle rig
+2026-09-26T01:43:38Z boot fault-build1 start arm=vmm-buildfault1 kind=g2 bin=580fe677737305bf env=[MEMRA_KV_ALLOCATOR=vmm MEMRA_KV_VMM_FAULT=build:1 CLIENT=day33-client.py PARSER=day31-parse.py MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=8192 CLIENT_ARGS=--chars 5000 --skip-long --burst 64]
+2026-09-26T01:59:46Z boot fault-build1 rc=0 door_on=1 door_off=0 DAY31 V-BOOT boot=fault-build1 arm=on8192 door_line=present -> PASS
+2026-09-26T01:59:51Z boot fault-build64: waiting for an idle rig
+2026-09-26T02:08:55Z boot fault-build64 start arm=vmm-buildfault64 kind=g2 bin=580fe677737305bf env=[MEMRA_KV_ALLOCATOR=vmm MEMRA_KV_VMM_FAULT=build:1,build:2,build:3,build:4,build:5,build:6,build:7,build:8,build:9,build:10,build:11,build:12,build:13,build:14,build:15,build:16,build:17,build:18,build:19,build:20,build:21,build:22,build:23,build:24,build:25,build:26,build:27,build:28,build:29,build:30,build:31,build:32,build:33,build:34,build:35,build:36,build:37,build:38,build:39,build:40,build:41,build:42,build:43,build:44,build:45,build:46,build:47,build:48,build:49,build:50,build:51,build:52,build:53,build:54,build:55,build:56,build:57,build:58,build:59,build:60,build:61,build:62,build:63,build:64 CLIENT=day33-client.py PARSER=day31-parse.py MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=8192 CLIENT_ARGS=--chars 5000 --skip-long --burst 64]
+2026-09-26T02:14:44Z boot fault-build64 rc=1 door_on=1 door_off=0 DAY31 V-BOOT boot=fault-build64 arm=on8192 door_line=present -> PASS
+2026-09-26T02:14:49Z boots done: stream-O1-2-pooled:pooled:stream stream-O1-2-vmm:vmm:stream stream-O1-3-pooled:pooled:stream stream-O1-3-vmm:vmm:stream stream-O1-4-pooled:pooled:stream stream-O1-4-vmm:vmm:stream stream-O1-5-pooled:pooled:stream stream-O1-5-vmm:vmm:stream stream-O2-1-vmm:vmm:stream stream-O2-1-pooled:pooled:stream stream-O2-2-vmm:vmm:stream stream-O2-2-pooled:pooled:stream stream-O2-3-vmm:vmm:stream stream-O2-3-pooled:pooled:stream stream-O2-4-vmm:vmm:stream stream-O2-4-pooled:pooled:stream stream-O2-5-vmm:vmm:stream stream-O2-5-pooled:pooled:stream burst-l64-vmm:vmm:l64 burst-l64-pooled:pooled:l64 burst-boff-pooled:pooled:boff burst-boff-vmm:vmm:boff fault-ensure:vmm-ensurefault:g2 fault-build1:vmm-buildfault1:g2 fault-build64:vmm-buildfault64:g2

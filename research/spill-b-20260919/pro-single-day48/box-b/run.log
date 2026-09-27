@@ -1,0 +1,25 @@
+2026-09-27T12:44:53Z boot O1-enforce: waiting for /tmp/memra-gpu.lock, then an idle rig under the hold (at most 7200 s)
+2026-09-27T12:45:05Z boot O1-enforce: /tmp/memra-gpu.lock held after 12 s
+2026-09-27T12:45:05Z boot O1-enforce: idle under the hold
+2026-09-27T12:45:05Z boot O1-enforce start arm=enforce bin=a6e893d2de54a654 env=[MEMRA_ADMIT_PREDICT_SHADOW=1 MEMRA_ADMIT_PREDICT_ENFORCE=1] args=[--burst 64 --length 30720 --max-tokens 64]
+2026-09-27T12:47:40Z boot O1-enforce: /tmp/memra-gpu.lock released
+2026-09-27T12:47:40Z boot O1-enforce rc=0 DAY48 BOOT rows=107 ok=47 r429=60 rejects=60 vg_debt_lines=0 pool_engaged=1 oom=0
+2026-09-27T12:47:45Z boot O1-enforce-vg: waiting for /tmp/memra-gpu.lock, then an idle rig under the hold (at most 7200 s)
+2026-09-27T12:47:54Z boot O1-enforce-vg: /tmp/memra-gpu.lock held after 9 s
+2026-09-27T12:47:54Z boot O1-enforce-vg: idle under the hold
+2026-09-27T12:47:54Z boot O1-enforce-vg start arm=enforce-vg bin=a6e893d2de54a654 env=[MEMRA_ADMIT_PREDICT_SHADOW=1 MEMRA_ADMIT_PREDICT_ENFORCE=1 MEMRA_ADMIT_PREDICT_VG_DEBT=1] args=[--burst 64 --length 30720 --max-tokens 64]
+2026-09-27T12:50:28Z boot O1-enforce-vg: /tmp/memra-gpu.lock released
+2026-09-27T12:50:28Z boot O1-enforce-vg rc=0 DAY48 BOOT rows=107 ok=47 r429=60 rejects=60 vg_debt_lines=105 pool_engaged=1 oom=0
+2026-09-27T12:50:33Z boot O2-enforce-vg: waiting for /tmp/memra-gpu.lock, then an idle rig under the hold (at most 7200 s)
+2026-09-27T12:50:42Z boot O2-enforce-vg: /tmp/memra-gpu.lock held after 9 s
+2026-09-27T12:50:42Z boot O2-enforce-vg: idle under the hold
+2026-09-27T12:50:42Z boot O2-enforce-vg start arm=enforce-vg bin=a6e893d2de54a654 env=[MEMRA_ADMIT_PREDICT_SHADOW=1 MEMRA_ADMIT_PREDICT_ENFORCE=1 MEMRA_ADMIT_PREDICT_VG_DEBT=1] args=[--burst 64 --length 30720 --max-tokens 64]
+2026-09-27T12:53:17Z boot O2-enforce-vg: /tmp/memra-gpu.lock released
+2026-09-27T12:53:17Z boot O2-enforce-vg rc=0 DAY48 BOOT rows=107 ok=47 r429=60 rejects=60 vg_debt_lines=105 pool_engaged=1 oom=0
+2026-09-27T12:53:22Z boot O2-enforce: waiting for /tmp/memra-gpu.lock, then an idle rig under the hold (at most 7200 s)
+2026-09-27T12:53:31Z boot O2-enforce: /tmp/memra-gpu.lock held after 9 s
+2026-09-27T12:53:31Z boot O2-enforce: idle under the hold
+2026-09-27T12:53:31Z boot O2-enforce start arm=enforce bin=a6e893d2de54a654 env=[MEMRA_ADMIT_PREDICT_SHADOW=1 MEMRA_ADMIT_PREDICT_ENFORCE=1] args=[--burst 64 --length 30720 --max-tokens 64]
+2026-09-27T12:56:05Z boot O2-enforce: /tmp/memra-gpu.lock released
+2026-09-27T12:56:05Z boot O2-enforce rc=0 DAY48 BOOT rows=107 ok=47 r429=60 rejects=60 vg_debt_lines=0 pool_engaged=1 oom=0
+2026-09-27T12:56:10Z boots done: O1-enforce:enforce O1-enforce-vg:enforce-vg O2-enforce-vg:enforce-vg O2-enforce:enforce

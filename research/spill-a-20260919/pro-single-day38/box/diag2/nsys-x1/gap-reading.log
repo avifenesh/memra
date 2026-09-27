@@ -1,0 +1,26 @@
+NSYSGAP owner=13 owner_tid=282027903451432 markers=15 owner_kernels=5939590 waits=2060 wait_names=['cuStreamWaitEvent']
+NSYSGAP interval=1 gap_ms=63.68 <2us:n=366591,ms=60.30 2-10us:n=641,ms=3.11 10-50us:n=18,ms=0.27 >=50us:n=0,ms=0.00 | waits=0 n=367250 ms=63.68 | waits>0 n=0 ms=0.00
+NSYSGAP interval=2 gap_ms=95.65 <2us:n=366548,ms=92.16 2-10us:n=686,ms=3.26 10-50us:n=16,ms=0.23 >=50us:n=0,ms=0.00 | waits=0 n=367250 ms=95.65 | waits>0 n=0 ms=0.00
+NSYSGAP interval=3 gap_ms=124.00 <2us:n=366542,ms=120.48 2-10us:n=693,ms=3.30 10-50us:n=15,ms=0.22 >=50us:n=0,ms=0.00 | waits=0 n=367250 ms=124.00 | waits>0 n=0 ms=0.00
+NSYSGAP interval=4 gap_ms=146.81 <2us:n=366596,ms=143.47 2-10us:n=636,ms=3.08 10-50us:n=18,ms=0.26 >=50us:n=0,ms=0.00 | waits=0 n=367250 ms=146.81 | waits>0 n=0 ms=0.00
+NSYSGAP interval=5 gap_ms=170.15 <2us:n=366564,ms=166.65 2-10us:n=664,ms=3.18 10-50us:n=22,ms=0.32 >=50us:n=0,ms=0.00 | waits=0 n=367250 ms=170.15 | waits>0 n=0 ms=0.00
+NSYSGAP interval=6 gap_ms=192.10 <2us:n=366598,ms=188.77 2-10us:n=634,ms=3.06 10-50us:n=18,ms=0.27 >=50us:n=0,ms=0.00 | waits=0 n=367250 ms=192.10 | waits>0 n=0 ms=0.00
+NSYSGAP interval=7 gap_ms=108.98 <2us:n=185274,ms=107.31 2-10us:n=317,ms=1.52 10-50us:n=11,ms=0.15 >=50us:n=0,ms=0.00 | waits=0 n=185602 ms=108.98 | waits>0 n=0 ms=0.00
+NSYSGAP interval=8 gap_ms=232.24 <2us:n=366615,ms=228.92 2-10us:n=612,ms=2.99 10-50us:n=23,ms=0.34 >=50us:n=0,ms=0.00 | waits=0 n=367250 ms=232.24 | waits>0 n=0 ms=0.00
+NSYSGAP interval=9 gap_ms=214.06 <2us:n=366619,ms=210.75 2-10us:n=605,ms=2.94 10-50us:n=26,ms=0.37 >=50us:n=0,ms=0.00 | waits=0 n=367250 ms=214.06 | waits>0 n=0 ms=0.00
+NSYSGAP interval=10 gap_ms=190.95 <2us:n=364649,ms=187.63 2-10us:n=615,ms=3.08 10-50us:n=18,ms=0.24 >=50us:n=0,ms=0.00 | waits=0 n=365282 ms=190.95 | waits>0 n=0 ms=0.00
+NSYSGAP interval=11 gap_ms=168.69 <2us:n=364602,ms=165.21 2-10us:n=658,ms=3.16 10-50us:n=22,ms=0.32 >=50us:n=0,ms=0.00 | waits=0 n=365282 ms=168.69 | waits>0 n=0 ms=0.00
+NSYSGAP interval=12 gap_ms=146.49 <2us:n=366590,ms=143.02 2-10us:n=641,ms=3.16 10-50us:n=19,ms=0.31 >=50us:n=0,ms=0.00 | waits=0 n=367250 ms=146.49 | waits>0 n=0 ms=0.00
+NSYSGAP interval=13 gap_ms=123.78 <2us:n=366562,ms=120.18 2-10us:n=655,ms=3.12 10-50us:n=33,ms=0.48 >=50us:n=0,ms=0.00 | waits=0 n=367250 ms=123.78 | waits>0 n=0 ms=0.00
+NSYSGAP interval=14 gap_ms=95.57 <2us:n=366542,ms=91.89 2-10us:n=687,ms=3.29 10-50us:n=20,ms=0.29 >=50us:n=1,ms=0.10 | waits=0 n=367250 ms=95.57 | waits>0 n=0 ms=0.00
+NSYSGAP base=[1, 2, 3] peak=8
+NSYSGAP growth kernel=qmatvec_nvfp4_mmvq_mr2_rp base_ms=10.29 peak_ms=41.16 delta_ms=+30.88
+NSYSGAP growth kernel=quantize_q8_1 base_ms=10.78 peak_ms=31.82 delta_ms=+21.05
+NSYSGAP growth kernel=rms_norm_f32_v2 base_ms=4.08 peak_ms=19.51 delta_ms=+15.42
+NSYSGAP growth kernel=add_f32 base_ms=8.14 peak_ms=20.73 delta_ms=+12.59
+NSYSGAP growth kernel=qmatvec_nvfp4_mmvq_fused4_rp base_ms=7.11 peak_ms=17.28 delta_ms=+10.16
+NSYSGAP growth kernel=ssm_conv1d_fused_decode_b_f32 base_ms=6.73 peak_ms=15.27 delta_ms=+8.54
+NSYSGAP growth kernel=gated_rmsnorm_q8_1 base_ms=5.98 peak_ms=11.68 delta_ms=+5.70
+NSYSGAP growth kernel=gdn_scan_s128_b base_ms=7.08 peak_ms=12.24 delta_ms=+5.17
+NSYSGAP growth kernel=silu_mul_f32 base_ms=8.39 peak_ms=12.51 delta_ms=+4.12
+NSYSGAP growth kernel=rope_neox_f32 base_ms=3.38 peak_ms=7.16 delta_ms=+3.77

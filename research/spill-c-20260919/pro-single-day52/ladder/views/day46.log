@@ -1,0 +1,7 @@
+DAY52 VIEW day=46 reader=day46-nodrain.py arms=off<-off,fill<-fill,i1<-i1 rc=0
+DAY46 NODRAIN CHECKS rig=pro-single runs=30 integrity=ok
+DAY46 ARM fill window_door_ms_per_token=4.72 gen_door_ms_per_token=12.59 window_s median=0.402 iqr=0.003 | per window token: gpu_misses=92.3 host_hits=92.3 demand=0.969 drain=1.335 sync2=0.018 wait=0.000 retire=0.059 finish=0.093 enqueue=2.789 miss_total=5.626
+DAY46 ARM i1 window_door_ms_per_token=3.52 gen_door_ms_per_token=11.09 window_s median=0.363 iqr=0.005 | per window token: gpu_misses=92.3 host_hits=92.3 demand=1.025 drain=0.000 sync2=0.000 wait=0.000 retire=0.060 finish=0.002 enqueue=2.780 miss_total=4.231
+DAY46 CLAUSE (i) i1_minus_fill window o1=-0.039 o2=-0.038 noise=0.005 rule < -noise both orders -> PASS
+DAY46 CLAUSE (ii) i1 drain+sync2=0.000 wait=0.000 ms per window token rule <0.05 and <1.0 -> PASS
+DAY46 NODRAIN rig=pro-single integrity=ok clause_i=PASS clause_ii=PASS

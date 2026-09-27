@@ -1,0 +1,29 @@
+{
+ "object": "text_completion",
+ "model": "gate",
+ "choices": [
+  {
+   "index": 0,
+   "text": "\n\n<think>\nThe user wants a commissioning checklist for a small hydroelectric turbine hall. They want 8 specific items in a specific order, each with: instrument used, acceptance threshold, sign-off role, and failure symptom that halts",
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 86,
+  "completion_tokens": 48,
+  "total_tokens": 134,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 0.414310732,
+  "spec": {
+   "rounds": 17,
+   "drafted": 51,
+   "accepted": 33,
+   "acceptance_rate": 0.6470588235294118
+  }
+ },
+ "id": "cmpl-c9abbb0ffa716d215b7eeb929c6f8b5a",
+ "created": 1790308278,
+ "system_fingerprint": "memra-0.138.0-5c8b1f012e19"
+}

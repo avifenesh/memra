@@ -1,0 +1,18 @@
+diff --git a/crates/memra-engine/src/dsv4_gpu.rs b/crates/memra-engine/src/dsv4_gpu.rs
+index 11ab21f31..880b610a5 100644
+--- a/crates/memra-engine/src/dsv4_gpu.rs
++++ b/crates/memra-engine/src/dsv4_gpu.rs
+@@ -14179,7 +14179,12 @@ impl Dsv4Gpu {
+                 } else {
+                     None
+                 },
+-                moe_fault: if !self.ep_enabled && (self.prefill_grouped || self.matrix_moe) {
++                // LANE-ONLY A/B read (never merged): MEMRA_DSV4_MOE_DEFER=0 allocates no word,
++                // so every route and mirror check reads back and synchronizes as before.
++                moe_fault: if std::env::var("MEMRA_DSV4_MOE_DEFER").as_deref() != Ok("0")
++                    && !self.ep_enabled
++                    && (self.prefill_grouped || self.matrix_moe)
++                {
+                     Some(i(n_trunk)?)
+                 } else {
+                     None

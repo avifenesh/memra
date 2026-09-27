@@ -1,0 +1,16 @@
+START utc=2026-09-23T11:31:12Z cmd=/root/rcpt/lat2/lat-base.bin --ignored --test-threads=1 --nocapture --skip latency_kernel_timing
+
+running 6 tests
+test grouped_routes_match_cpu_oracle ... grouped routes exact oracle: 1755 cases identical
+ok
+test grouped_routes_red_arm ... ok
+test rmsnorm_f32acc_matches_exact_oracle ... rmsnorm_f32acc exact oracle: 240 cases bit-identical
+ok
+test rmsnorm_f32acc_red_arm ... ok
+test route_m_matches_golden_and_structure ... route_m: 360 cases, golden 0xa883c1c05022dc87
+ok
+test route_m_red_arm ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.86s
+
+GATE_DONE rc=0 utc=2026-09-23T11:31:13Z

@@ -1,0 +1,8 @@
+lock: collector's inherited FD 9 on /tmp/memra-5090.lock (no flock of this gate's own)
+== qwen arm: spec-on boot (contracts door ON, MEMRA_KV_HOST_MB=8192) ==
+spec-on-cache-hit-gate: FAIL — port 18099 is already LISTENing before we start a server.
+    LISTEN 0      128                      127.0.0.1:18099      0.0.0.0:*    users:(("memra-server-d3",pid=1756308,fd=10)) 
+  Refusing to run rather than producing a confused result: a foreign responder on
+  our port can answer /health, /readyz or /v1/models and be measured as if it were
+  the model under test (accept-gate.sh:143 records exactly that incident).
+  Free the port, or set MEMRA_GATE_PORT=<free port>.

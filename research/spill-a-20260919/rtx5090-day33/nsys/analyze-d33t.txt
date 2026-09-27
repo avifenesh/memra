@@ -1,0 +1,41 @@
+d33t: owner thread tid=300412344285540; anchors=4
+-- anchor 0
+   owner api cuMemcpyDtoHAsync_v2         start   +2.602 ms dur   5.456 ms
+   owner api cuMemcpyDtoHAsync_v2         start  +22.215 ms dur  29.118 ms
+   gpu H2D    stream   13 n=  23      0.02 MB first   +0.366 ms last end  +21.675 ms
+   gpu kernel stream   13 n= 889     14.05 ms busy first   +0.388 ms last end  +25.058 ms
+   gpu H2D    stream   15 n=  48     52.69 MB first   +4.229 ms last end   +6.269 ms
+   gpu D2H    stream   13 n=   1      0.00 MB first   +8.055 ms last end   +8.057 ms
+   gpu D2D    stream   13 n=  84     72.25 MB first   +8.071 ms last end  +24.501 ms
+   gpu D2H    stream   15 n=  64     53.64 MB first  +16.761 ms last end  +19.635 ms
+-- anchor 1
+   owner api cuMemcpyDtoHAsync_v2         start   +2.551 ms dur   5.494 ms
+   owner api cuMemHostAlloc               start  +16.637 ms dur   1.545 ms
+   owner api cuMemcpyDtoHAsync_v2         start  +23.606 ms dur  29.462 ms
+   gpu H2D    stream   13 n=  23      0.02 MB first   +0.289 ms last end  +23.066 ms
+   gpu kernel stream   13 n= 833     12.78 ms busy first   +0.312 ms last end  +25.072 ms
+   gpu H2D    stream   15 n=  48     52.69 MB first   +4.782 ms last end   +6.809 ms
+   gpu D2H    stream   13 n=   1      0.00 MB first   +8.041 ms last end   +8.042 ms
+   gpu D2D    stream   13 n=  81     67.61 MB first   +8.065 ms last end  +24.888 ms
+   gpu D2H    stream   15 n=  64     53.64 MB first  +18.352 ms last end  +20.959 ms
+-- anchor 2
+   owner api cuMemcpyDtoHAsync_v2         start   +2.575 ms dur   5.432 ms
+   owner api cuMemGetInfo_v2              start  +17.024 ms dur   2.724 ms
+   owner api cuMemGetInfo_v2              start  +19.783 ms dur   0.709 ms
+   owner api cuMemGetInfo_v2              start  +20.496 ms dur   0.496 ms
+   gpu H2D    stream   13 n=  22      0.02 MB first   +0.285 ms last end  +21.677 ms
+   gpu kernel stream   13 n= 773     10.70 ms busy first   +0.305 ms last end  +25.001 ms
+   gpu H2D    stream   15 n=  48     52.69 MB first   +4.139 ms last end   +6.149 ms
+   gpu D2H    stream   13 n=   1      0.00 MB first   +8.004 ms last end   +8.005 ms
+   gpu D2D    stream   13 n=  75     63.65 MB first   +8.020 ms last end  +24.740 ms
+   gpu D2H    stream   15 n=  64     53.64 MB first  +16.640 ms last end  +19.437 ms
+-- anchor 3
+   owner api cuMemcpyDtoHAsync_v2         start   +2.565 ms dur   5.463 ms
+   owner api cuStreamSynchronize          start  +17.825 ms dur   0.496 ms
+   owner api cuMemcpyDtoHAsync_v2         start  +22.324 ms dur  29.257 ms
+   gpu H2D    stream   13 n=  23      0.02 MB first   +0.289 ms last end  +21.798 ms
+   gpu kernel stream   13 n= 889     14.03 ms busy first   +0.310 ms last end  +25.099 ms
+   gpu H2D    stream   15 n=  48     52.69 MB first   +3.939 ms last end   +5.964 ms
+   gpu D2H    stream   13 n=   1      0.00 MB first   +8.024 ms last end   +8.026 ms
+   gpu D2D    stream   13 n=  84     70.13 MB first   +8.040 ms last end  +24.556 ms
+   gpu D2H    stream   15 n=  64     53.64 MB first  +16.773 ms last end  +19.717 ms

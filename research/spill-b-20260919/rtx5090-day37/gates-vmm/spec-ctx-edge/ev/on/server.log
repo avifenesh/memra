@@ -1,0 +1,87 @@
+[server] build: memra-0.138.0-504c29223815 (id: source-tree, git: 7e4ac87e483d)
+[server] starting; models config = [("sce", "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "sce" <- /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+[worker]   loaded "sce": 33 layers, eos=248046, stop=[248046]
+[worker] sce: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="sce" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] sce: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 7890MB (7890010112 B, derived: 2 x 3945005056 B max entry for model "sce" at served ctx 262144 (from checkpoint; MEMRA_CTX unset), requested 7890010112 B; boot driver free 18244501504 B, post-reserve clamp 16633888768 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "sce": plain 14848 B/token, spec 16704 B/token; fixed residual learns from effective-free deltas
+[prime-walk] model="sce" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[fa-pool] grow #0 dev=0 o_len 0 -> 266240 ml_len 0 -> 1040 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q8_0_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[fa-pool] grow #1 dev=0 o_len 266240 -> 532480 ml_len 1040 -> 2080 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[spec] draft-session state high-water: 41MB (max of parked delta 41MB and capture-time pool peak 9MB; charged per spec admission and gating future captures)
+[fa-pool] grow #2 dev=0 o_len 532480 -> 1064960 ml_len 2080 -> 4160 (retired kept, zero=false)
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1442840576,"still_owned_bytes":8327347072,"pool_reserved_bytes":8455716864,"pool_cached_bytes":128369792,"driver_free_bytes":16365453312,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1376MB cached back to the driver
+[admit-cal] boot calibration done: model="sce" route=mtp transient floor 1536MB (static was 1536MB; measured 1266MB; probe kv charge 67MB, draft-state 41MB, drafted 48 accepted 47; [dev0 peak-mapped 9440MB rest-mapped 8064MB charged 109MB -> 1266MB]; 1.3s)
+[admit-mem] door=ON open_output_tokens=64 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=ON routes=spec,plain granularity=2097152 grow=helper (rtx5090-receipt) reap=owner-tick slack_rows=64 faults=none
+[server] worker ready; serving models: ["sce"]
+[server] listening on http://127.0.0.1:8193
+[meter] admit id=chatcmpl-5d306a6a1a7811f79df25e89422d4c76 tenant=default lane=interactive model="sce"
+[admission] per-session draft-state charge: model="sce" +44MB (measured capture high-water)
+[admission] request cost: model="sce" ctx=159 path=spec = 16704 B/token x ctx + 11MB prefill-workspace + 0MB fixed = 14MB
+[admit-mem] id=chatcmpl-5d306a6a1a7811f79df25e89422d4c76 model="sce" verdict=admit prompt=31 output_bound=- charged_ctx=159 est_bytes=1668347344 est_context=2655936 est_fixed=1665691408 device_free=16493823104 pending_prime=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+[spec-k] model="sce" tenant="" K=3 source=cold-short prompt=31 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="sce" 143MB (observed 145MB at ctx 103 path=spec)
+[kv-vmm] admit id=chatcmpl-5d306a6a1a7811f79df25e89422d4c76 owed_before=0 session_mapped=41943040 session_reserved=41943040 active=0
+[spec-acc] ctx=31 burst=24/24 cum=24/24=1.000
+[spec-acc] ctx=64 burst=22/30 cum=46/54=0.852
+[kv-vmm] retire id=chatcmpl-5d306a6a1a7811f79df25e89422d4c76 planes=20 mapped=41943040 reserved=41943040 used=1586880 slack_bytes=1187840 booked=57734608
+[meter] admit id=chatcmpl-c42a37729fc4828c2a04c99b3358fbed tenant=default lane=interactive model="sce"
+[admission] per-session draft-state charge: model="sce" +44MB (measured capture high-water)
+[admission] request cost: model="sce" ctx=159 path=spec = 16704 B/token x ctx + 11MB prefill-workspace + 143MB fixed = 157MB
+[admit-mem] id=chatcmpl-c42a37729fc4828c2a04c99b3358fbed model="sce" verdict=admit prompt=31 output_bound=- charged_ctx=159 est_bytes=1811592504 est_context=2655936 est_fixed=1808936568 device_free=16293040172 pending_prime=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+[worker] spec-affinity: declined (empty suffix; 1 parked, 31 prompt tokens; model sce)
+[spec-k] model="sce" tenant="" K=3 source=cold-short prompt=31 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[kv-vmm] admit id=chatcmpl-c42a37729fc4828c2a04c99b3358fbed owed_before=0 session_mapped=41943040 session_reserved=41943040 active=0
+[spec-acc] ctx=31 burst=24/24 cum=24/24=1.000
+[spec-acc] ctx=64 burst=22/30 cum=46/54=0.852
+[kv-vmm] retire id=chatcmpl-c42a37729fc4828c2a04c99b3358fbed planes=20 mapped=41943040 reserved=41943040 used=1586880 slack_bytes=1187840 booked=200979768
+[meter] admit id=chatcmpl-75874213a331d75c31de65fc4e87e241 tenant=default lane=interactive model="sce"
+[admit-mem] id=chatcmpl-75874213a331d75c31de65fc4e87e241 model="sce" verdict=admit prompt=31 output_bound=- charged_ctx=159 est_bytes=1811592504 est_context=2655936 est_fixed=1808936568 device_free=16092257240 pending_prime=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+[worker] spec-affinity: declined (empty suffix; 2 parked, 31 prompt tokens; model sce)
+[spec-k] model="sce" tenant="" K=3 source=cold-short prompt=31 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[kv-vmm] admit id=chatcmpl-75874213a331d75c31de65fc4e87e241 owed_before=0 session_mapped=41943040 session_reserved=41943040 active=0
+[spec-acc] ctx=31 burst=24/24 cum=24/24=1.000
+[spec-acc] ctx=64 burst=22/30 cum=46/54=0.852
+[kv-vmm] retire id=chatcmpl-75874213a331d75c31de65fc4e87e241 planes=20 mapped=41943040 reserved=41943040 used=1586880 slack_bytes=1187840 booked=200979768
+[meter] admit id=chatcmpl-d859070506189d41a71cb37b792d6c02 tenant=default lane=interactive model="sce"
+[admit-mem] id=chatcmpl-d859070506189d41a71cb37b792d6c02 model="sce" verdict=admit prompt=31 output_bound=- charged_ctx=159 est_bytes=1811592504 est_context=2655936 est_fixed=1808936568 device_free=16050314200 pending_prime=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+[worker] spec-affinity: declined (empty suffix; 2 parked, 31 prompt tokens; model sce)
+[spec-k] model="sce" tenant="" K=3 source=cold-short prompt=31 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[kv-vmm] admit id=chatcmpl-d859070506189d41a71cb37b792d6c02 owed_before=0 session_mapped=41943040 session_reserved=41943040 active=0
+[kv-vmm] reap released=41943040 pending=0
+[spec-acc] ctx=31 burst=24/24 cum=24/24=1.000
+[spec-acc] ctx=64 burst=22/30 cum=46/54=0.852
+[kv-vmm] retire id=chatcmpl-d859070506189d41a71cb37b792d6c02 planes=20 mapped=41943040 reserved=41943040 used=1586880 slack_bytes=1187840 booked=200979768
+[meter] admit id=chatcmpl-79a580924aecce7c97bcfe60333a838b tenant=default lane=interactive model="sce"
+[admission] per-session draft-state charge: model="sce" +44MB (measured capture high-water)
+[admission] request cost: model="sce" ctx=111 path=spec = 16704 B/token x ctx + 11MB prefill-workspace + 143MB fixed = 156MB
+[admit-mem] id=chatcmpl-79a580924aecce7c97bcfe60333a838b model="sce" verdict=admit prompt=31 output_bound=16 charged_ctx=111 est_bytes=1810790712 est_context=1854144 est_fixed=1808936568 device_free=16050314200 pending_prime=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+[worker] spec-affinity: declined (empty suffix; 2 parked, 31 prompt tokens; model sce)
+[spec-k] model="sce" tenant="" K=3 source=cold-short prompt=31 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="sce" 144MB (observed 145MB at ctx 55 path=spec)
+[kv-vmm] admit id=chatcmpl-79a580924aecce7c97bcfe60333a838b owed_before=0 session_mapped=41943040 session_reserved=41943040 active=0
+[kv-vmm] reap released=41943040 pending=0
+[spec-acc] ctx=31 burst=12/12 cum=12/12=1.000
+[kv-vmm] retire id=chatcmpl-79a580924aecce7c97bcfe60333a838b planes=20 mapped=41943040 reserved=41943040 used=785088 slack_bytes=1187840 booked=200177976
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

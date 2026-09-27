@@ -1,0 +1,8 @@
+cell=fault-default cmd=bash tools/kv-host-contract-fault-gate.sh --external-lock 9 /root/models/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf /root/wt-integ62/target/release/memra-server
+env=MEMRA_HOSTGATE_CACHE_MB=64
+lock=/tmp/memra-gpu.lock owner=collector-fd9
+tree=e34a6c598bd69b053b2cdbc963ce6b51f0dd4b10
+binary_sha256=868bbc8c92b542f5f0191346bb6f2635915d488d712a3bc14d2a5442912c80e0
+model=Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+gpu=NVIDIA RTX PRO 6000 Blackwell Workstation Edition, 600.00 W
+status=executed-not-qualified

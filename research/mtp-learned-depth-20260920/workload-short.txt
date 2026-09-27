@@ -1,0 +1,15 @@
+Explain the state invariants of MTP speculative decoding: draft, full-vocabulary verification, accepted prefix, rejected suffix, and bonus token. Distinguish draft depth from vocabulary size.
+---TURN---
+Trace one partially accepted draft round through the supplied code. Explain the committed prefix, rejected suffix, bonus token, and cache state that the next round requires.
+---TURN---
+Design an experiment comparing fixed depth with learned depth while keeping the full vocabulary head unchanged. Explain the controls, sources of timing overhead and useful diagnostic counters.
+---TURN---
+Explain how greedy correctness gates and sampled performance measurements should differ. Give concrete checks for missing output, early EOS, length limits and invalid cache reuse.
+---TURN---
+Analyze the cost of shallow and deep MTP drafting. Separate per-step draft work, verification work, synchronization and useful tokens; show which measurements decide the tradeoff.
+---TURN---
+Describe a policy that adapts to a workload change halfway through a conversation. Discuss exploration cost, stale observations, the time scale of updates and an appropriate fixed-depth control.
+---TURN---
+Propose tests for state isolation between independent conversations and for reasoning being replayed separately from answer content. Explain which failures each test should expose.
+---TURN---
+Write a research review of the proposed measurement design. Summarize its strongest controls, remaining confounders and concrete follow-up experiments without assuming any speedup.

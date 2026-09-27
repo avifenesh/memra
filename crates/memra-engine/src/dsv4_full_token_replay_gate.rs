@@ -39,11 +39,19 @@ fn eager_step(
 }
 fn epochs(gpu: &Dsv4Gpu, before: &[Vec<u32>; 2], steps: u32) {
     let after = gpu.full_token_ar_epochs_for_gate().expect("AR epochs");
-    let attention = memra_engine::tp_ar::ar_blocks_for(4096) as usize;
+    // The exact attention TP program (memra #679) has no attention all-reduce: each layer
+    // gathers its wo_a rows (4 local groups x 1024) and then its wo_b output rows (half of
+    // hidden 4096), and reduces its experts. Every collective ticks the epoch of each block it
+    // launches.
+    let wo_a_rows = memra_engine::tp_ar::ar_blocks_for(4 * 1024) as usize;
+    let wo_b_rows = memra_engine::tp_ar::ar_blocks_for(4096 / 2) as usize;
     let expert = memra_engine::tp_ar::ar_blocks_for(6 * 4096) as usize;
     for rank in 0..2 {
         for block in 0..72 {
-            let per_step = 43 * (u32::from(block < attention) + u32::from(block < expert));
+            let per_step = 43
+                * (u32::from(block < wo_a_rows)
+                    + u32::from(block < wo_b_rows)
+                    + u32::from(block < expert));
             assert_eq!(
                 after[rank][block].wrapping_sub(before[rank][block]),
                 per_step * steps,
@@ -59,7 +67,8 @@ fn forward_kernel_census() -> [(usize, u64); 3] {
     // terms (43 for the KV norm/RoPE fusion, a net 215 for the activation
     // packing) went with the three norm doors, which the served ABBA deleted, so
     // the unfused chains are the only chains and these are their counts.
-    [(0, 2741), (2, 3140), (3, 3240)]
+    // Exact attention TP (2026-09-23): two row gathers replace one attention reduction, +43.
+    [(0, 2784), (2, 3183), (3, 3283)]
 }
 
 /// With the split-K doors deleted (memra #461 flip, 2026-09-11) the forward
@@ -102,8 +111,8 @@ fn capture_once(gpu: &Dsv4Gpu, state: &DecodeState, cadence: bool) {
     let census = gpu.full_token_replay_census_for_gate(state).unwrap();
     for rank in census {
         assert_eq!(
-            rank[0][2], 86,
-            "all 43 layers' paired collectives must be captured"
+            rank[0][2], 129,
+            "all 43 layers' collectives must be captured: the expert reduction and two attention row gathers"
         );
         assert_eq!(rank[0][3], 1, "embedding capture");
         assert_eq!(rank[0][4], 86, "both HC posts in every layer");
@@ -123,7 +132,7 @@ fn capture_once(gpu: &Dsv4Gpu, state: &DecodeState, cadence: bool) {
                 );
                 assert_eq!(
                     [rank[slot][2], rank[slot][3], rank[slot][4], rank[slot][6]],
-                    [86, 1, 86, 0]
+                    [129, 1, 86, 0]
                 );
             }
         }
@@ -231,13 +240,13 @@ fn run_impl(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, reverse: bool,
         inputs.push(carry);
         let before = gpu.full_token_ar_epochs_for_gate().unwrap();
         let expected = if cadence {
-            gpu.decode_sample_full_token_for_gate(carry, &mut control)
+            gpu.decode_sample_full_token(carry, &mut control)
                 .expect("full replay oracle")
         } else {
             eager_step(gpu, &mut control, &mut control_sampler, &cfg, carry)
         };
         let actual = gpu
-            .decode_sample_full_token_for_gate(carry, &mut graph)
+            .decode_sample_full_token(carry, &mut graph)
             .expect("full replay");
         assert_eq!(actual, expected, "sample at position {}", PRIME + step + 1);
         assert_eq!(graph.pos, control.pos);
@@ -296,7 +305,7 @@ fn run_impl(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, reverse: bool,
                 .unwrap();
             arm(gpu, &mut failed, cfg, cadence);
             for &token in &inputs[..position - PRIME] {
-                gpu.decode_sample_full_token_for_gate(token, &mut failed)
+                gpu.decode_sample_full_token(token, &mut failed)
                     .expect("fault setup");
             }
             let before = gpu.tp_ep_cache_digest_for_gate(&failed).unwrap();
@@ -305,7 +314,7 @@ fn run_impl(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, reverse: bool,
             gpu.arm_attention_tp_join_refusal_for_gate(layer, rank, code)
                 .unwrap();
             let error = gpu
-                .decode_sample_full_token_for_gate(inputs[position - PRIME], &mut failed)
+                .decode_sample_full_token(inputs[position - PRIME], &mut failed)
                 .unwrap_err();
             assert!(error.contains("one-shot reduction refused"), "{error}");
             let mut words = [0, 0];
@@ -326,7 +335,7 @@ fn run_impl(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, reverse: bool,
                 );
             }
             assert!(
-                gpu.decode_sample_full_token_for_gate(inputs[position - PRIME], &mut failed)
+                gpu.decode_sample_full_token(inputs[position - PRIME], &mut failed)
                     .unwrap_err()
                     .contains("unfinished transaction")
             );
@@ -393,7 +402,7 @@ fn run_impl(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, reverse: bool,
             assert_ne!(carry, tokenizer.eos_id(), "early EOS row is not eligible");
             tokens.push(carry);
             carry = if graph_arm || cadence {
-                gpu.decode_sample_full_token_for_gate(carry, active)
+                gpu.decode_sample_full_token(carry, active)
                     .expect("scored replay")
             } else {
                 eager_step(gpu, active, &mut control_sampler, &cfg, carry)
@@ -558,11 +567,9 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
     gpu.restore_full_token_prefix_for_gate(&mut candidate, &prefix)
         .unwrap();
     // Safety: gpu/weights/config remain borrowed and unchanged until both states drop.
-    unsafe { gpu.arm_full_token_replay_for_gate(&mut candidate, cfg) }.unwrap();
+    unsafe { gpu.arm_full_token_replay(&mut candidate, cfg) }.unwrap();
     let expected = eager_step(gpu, &mut control, &mut sampler, &cfg, first);
-    let actual = gpu
-        .decode_sample_full_token_for_gate(first, &mut candidate)
-        .unwrap();
+    let actual = gpu.decode_sample_full_token(first, &mut candidate).unwrap();
     assert_eq!(actual, expected);
     assert_eq!(identity(gpu, &candidate), identity(gpu, &control));
     capture_once(gpu, &candidate, cadence);
@@ -641,8 +648,7 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
                 assert_ne!(carry, tokenizer.eos_id(), "profile early EOS");
                 tokens.push(carry);
                 carry = if graph_arm {
-                    gpu.decode_sample_full_token_for_gate(carry, active)
-                        .unwrap()
+                    gpu.decode_sample_full_token(carry, active).unwrap()
                 } else {
                     eager_step(gpu, active, &mut sampler, &cfg, carry)
                 };
@@ -707,10 +713,11 @@ mod profile_census_tests {
     /// 2741/3140/3240, graph split-K subtracted 86 until the matrix flip
     /// (2026-09-11), the KV norm/RoPE fusion subtracted 43 and the norm2
     /// activation pack a net 215 until the served ABBA deleted all three norm
-    /// doors the same day.
+    /// doors the same day. Exact attention TP (memra #679, 2026-09-23) adds 43: each
+    /// layer's one attention reduction became two row gathers.
     #[test]
     fn the_forward_census_is_the_unfused_base_with_no_door_terms_left() {
-        assert_eq!(forward_kernel_census(), [(0, 2741), (2, 3140), (3, 3240)]);
+        assert_eq!(forward_kernel_census(), [(0, 2784), (2, 3183), (3, 3283)]);
     }
 
     #[test]

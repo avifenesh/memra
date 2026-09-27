@@ -1,0 +1,25 @@
+== D4-host: panics=0 respawns=0 fatal=False engine_errors=4
+  server.log:6439 t=1790134060095 in=iv-b-r0 prev=iv-a-r2 P=1620 G=5848 finish=stop P+G=7468 booked-64=34396
+    [engine-error] class=Engine step error: verify argmax sentinel 0x7fffffff >= n_vocab 248320 at round 2 col 0/4 pos=32851: verify-logits col NaN 248320/248320 — the verify TRUNK produced a poisoned column (#87 trap). Run MEMRA_SPEC_NAN_SCAN=1 to name the layer that creates it (=2 to split that layer into attention and routed MoE). NOT the draft head, and NOT the PP stage split this message used to 
+  server.log:7464 t=1790134227501 in=iv-b-r1 prev=iv-a-r2 P=1620 G=5848 finish=stop P+G=7468 booked-64=34396
+    [engine-error] class=Engine step error: draft(graph) argmax sentinel 0x7fffffff >= d_vocab 248320 at round 5 j=2 pos=32852: head-out NaN 4096/4096, round-input-seed NaN 0/4096 — refusing to dereference the embed row (#87 trap)
+  server.log:8651 t=1790134404096 in=burst-b10 prev=iv-b-r2 P=78 G=32772 finish=length P+G=32850 booked-64=32854
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:8652 t=1790134404096 in=burst-b10 prev=iv-b-r2 P=78 G=32772 finish=length P+G=32850 booked-64=32854
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  non-200 rows=15 status_none=0 first_no_status=None
+    iv-b-r0 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+    iv-b-r1 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+    burst-b10 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b16 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b14 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b29 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b22 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b7 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b8 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b5 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b11 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b4 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b2 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b1 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b18 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li

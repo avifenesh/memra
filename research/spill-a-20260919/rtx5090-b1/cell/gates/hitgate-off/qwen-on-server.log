@@ -1,0 +1,299 @@
+[server] build: memra-0.138.0-2c4b9bfb17b7 (id: source-tree, git: 7edc329d94a6)
+[server] starting; models config = [("gate", "/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "gate" <- /data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "gate": 65 layers, eos=248046, stop=[248046]
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="gate" route=hybrid-worker capacity=4 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 2147MB (2147483648 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "gate": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+[prime-walk] model="gate" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[spec-boundary] site=cold-prime sampled=279 argmax=279 deviates=0 temp=0.7 sctr=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 399360 ml_len 0 -> 1560 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[fa-pool] grow #1 dev=0 o_len 399360 -> 798720 ml_len 1560 -> 3120 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[spec] draft-session state high-water: 44MB (max of parked delta 44MB and capture-time pool peak 12MB; charged per spec admission and gating future captures)
+[fa-pool] grow #2 dev=0 o_len 798720 -> 1597440 ml_len 3120 -> 6240 (retired kept, zero=false)
+[spec-boundary] site=burst-tail-commit sampled=3050 argmax=3050 deviates=0 temp=0.7 sctr=85
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":2483027968,"still_owned_bytes":17283255616,"pool_reserved_bytes":17414750208,"pool_cached_bytes":131494592,"driver_free_bytes":7335575552,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 2368MB cached back to the driver
+[admit-cal] boot calibration done: model="gate" route=mtp transient floor 2196MB (static was 1536MB; measured 2196MB; probe kv charge 127MB, draft-state 44MB, drafted 63 accepted 42; [dev0 peak-mapped 18976MB rest-mapped 16608MB charged 171MB -> 2196MB]; 3.6s)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[server] worker ready; serving models: ["gate"]
+[server] listening on http://127.0.0.1:18099
+[meter] admit id=cmpl-753b9657e4f03130b3a045e298c9e7a2 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +46MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=218 path=spec = 31552 B/token x ctx + 51MB prefill-workspace + 0MB fixed = 58MB
+[spec-k] model="gate" tenant="" K=3 source=cold-short prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 308MB (observed 313MB at ctx 162 path=spec)
+[spec-acc] ctx=106 burst=18/42 cum=18/42=0.429
+[prefix-cache] insert (spec-boundary): 64 tokens, 158.9MB (resident 158.9MB / 2147MB, model gate)
+[spec-acc] ctx=139 burst=11/15 cum=29/57=0.509
+[meter] admit id=cmpl-40f226e3dbe79f4545a580931f956a59 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +46MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=218 path=spec = 31552 B/token x ctx + 51MB prefill-workspace + 308MB fixed = 366MB
+[prefix-cache] hit: 64 of 106 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 64 of 106 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-short prompt=106 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 308MB (observed 313MB at ctx 162 path=spec)
+[spec-acc] ctx=42 burst=18/42 cum=18/42=0.429
+[spec-acc] ctx=75 burst=11/15 cum=29/57=0.509
+[meter] admit id=cmpl-82b2c89475f70f5d93708ba0df29b434 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +46MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=231 path=spec = 31552 B/token x ctx + 57MB prefill-workspace + 308MB fixed = 373MB
+[prefix-cache] hit: 64 of 119 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 64 of 119 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-short prompt=119 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 308MB (observed 314MB at ctx 175 path=spec)
+[spec-acc] ctx=55 burst=19/42 cum=19/42=0.452
+[prefix-cache] insert (spec-boundary): 96 tokens, 159.9MB (resident 318.9MB / 2147MB, model gate)
+[spec-acc] ctx=89 burst=10/18 cum=29/60=0.483
+[meter] admit id=cmpl-dedf077a65feec1f921dc08dff996064 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +46MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=218 path=spec = 31552 B/token x ctx + 51MB prefill-workspace + 308MB fixed = 366MB
+[spec-k] model="gate" tenant="samp-7" K=3 source=cold-short prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=271 argmax=271 deviates=0 temp=0.8 sctr=0
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_ctr_f32
+[spec-boundary] site=burst-tail-commit sampled=28905 argmax=28905 deviates=0 temp=0.8 sctr=61
+[spec-acc] ctx=106 burst=19/45 cum=19/45=0.422
+[prefix-cache] insert (spec-boundary): 64 tokens, 158.9MB (resident 477.8MB / 2147MB, model gate, ns "samp-7")
+[spec-boundary] site=burst-tail-commit sampled=198 argmax=198 deviates=0 temp=0.8 sctr=86
+[spec-acc] ctx=141 burst=7/18 cum=26/63=0.413
+[meter] admit id=cmpl-35e4c1a1339a2c8c1cb97690163dd7ff tenant=default lane=interactive model="gate"
+[prefix-cache] hit: 64 of 106 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 64 of 106 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="samp-7" K=3 source=cold-short prompt=106 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=271 argmax=271 deviates=0 temp=0.8 sctr=0
+[spec-boundary] site=burst-tail-commit sampled=28905 argmax=28905 deviates=0 temp=0.8 sctr=61
+[spec-acc] ctx=42 burst=19/45 cum=19/45=0.422
+[spec-boundary] site=burst-tail-commit sampled=198 argmax=198 deviates=0 temp=0.8 sctr=86
+[spec-acc] ctx=77 burst=7/18 cum=26/63=0.413
+[meter] admit id=cmpl-1921b8ba4c64918eed2e797cfb9dea2c tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="samp-1234" K=3 source=cold-short prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=271 argmax=271 deviates=0 temp=0.8 sctr=0
+[spec-boundary] site=burst-tail-commit sampled=58524 argmax=58524 deviates=0 temp=0.8 sctr=57
+[spec-acc] ctx=106 burst=19/42 cum=19/42=0.452
+[prefix-cache] insert (spec-boundary): 64 tokens, 158.9MB (resident 636.7MB / 2147MB, model gate, ns "samp-1234")
+[spec-boundary] site=burst-tail-commit sampled=220 argmax=15 deviates=1 temp=0.8 sctr=82
+[spec-acc] ctx=140 burst=8/18 cum=27/60=0.450
+[meter] admit id=cmpl-1973c415493fa41dddee4dcb8cc247c0 tenant=default lane=interactive model="gate"
+[prefix-cache] hit: 64 of 106 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 64 of 106 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="samp-1234" K=3 source=cold-short prompt=106 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=271 argmax=271 deviates=0 temp=0.8 sctr=0
+[spec-boundary] site=burst-tail-commit sampled=58524 argmax=58524 deviates=0 temp=0.8 sctr=57
+[spec-acc] ctx=42 burst=19/42 cum=19/42=0.452
+[spec-boundary] site=burst-tail-commit sampled=220 argmax=15 deviates=1 temp=0.8 sctr=82
+[spec-acc] ctx=76 burst=8/18 cum=27/60=0.450
+[meter] admit id=cmpl-dcaa99572f00c7da82b339576428f0d4 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="samp-99991" K=3 source=cold-short prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=271 argmax=271 deviates=0 temp=0.8 sctr=0
+[spec-boundary] site=burst-tail-commit sampled=12095 argmax=12095 deviates=0 temp=0.8 sctr=49
+[spec-acc] ctx=106 burst=19/36 cum=19/36=0.528
+[prefix-cache] insert (spec-boundary): 64 tokens, 158.9MB (resident 795.7MB / 2147MB, model gate, ns "samp-99991")
+[spec-boundary] site=burst-tail-commit sampled=64700 argmax=64700 deviates=0 temp=0.8 sctr=78
+[spec-acc] ctx=138 burst=10/21 cum=29/57=0.509
+[meter] admit id=cmpl-0a269b469d5f4a81c989761fc6486123 tenant=default lane=interactive model="gate"
+[prefix-cache] hit: 64 of 106 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 64 of 106 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="samp-99991" K=3 source=cold-short prompt=106 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=271 argmax=271 deviates=0 temp=0.8 sctr=0
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2724MB (driver 2547MB + pool-cached 176MB) < required 3160MB (2x appetite 44MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec-boundary] site=burst-tail-commit sampled=12095 argmax=12095 deviates=0 temp=0.8 sctr=49
+[spec-acc] ctx=42 burst=19/36 cum=19/36=0.528
+[spec-boundary] site=burst-tail-commit sampled=64700 argmax=64700 deviates=0 temp=0.8 sctr=78
+[spec-acc] ctx=74 burst=10/21 cum=29/57=0.509
+[meter] admit id=cmpl-b09ca226b40b95654a1f136ea552ed07 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="samp-x" K=3 source=cold-short prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=271 argmax=271 deviates=0 temp=0.8 sctr=0
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2123MB (driver 2099MB + pool-cached 23MB) < required 3160MB (2x appetite 44MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec-boundary] site=burst-tail-commit sampled=28905 argmax=28905 deviates=0 temp=0.8 sctr=61
+[spec-acc] ctx=106 burst=19/45 cum=19/45=0.422
+[prefix-cache] insert (spec-boundary): 64 tokens, 158.9MB (resident 954.6MB / 2147MB, model gate, ns "samp-x")
+[spec-boundary] site=burst-tail-commit sampled=198 argmax=198 deviates=0 temp=0.8 sctr=86
+[spec-acc] ctx=141 burst=7/18 cum=26/63=0.413
+[meter] admit id=cmpl-c86db715b2170895c76798ccfe31a69a tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +46MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=231 path=spec = 31552 B/token x ctx + 57MB prefill-workspace + 308MB fixed = 373MB
+[admit-oom] reclaim spared the prompt's prefix entry (64 tokens, model gate)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=795674624 pool_cached_gain_bytes=795572224 trim_released_bytes=771751936 driver_free_bytes 1564213248 -> 2335965184 pool_reserved_bytes 23186112512 -> 22414360576 pool_used_bytes 22523533356 -> 21727961132 pool_retained_bytes=23820288 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 5 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2227MB -> 3022MB
+[prefix-cache] hit: 64 of 119 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 64 of 119 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="samp-x" K=3 source=cold-short prompt=119 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=271 argmax=271 deviates=0 temp=0.8 sctr=0
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2280MB (driver 2163MB + pool-cached 117MB) < required 3160MB (2x appetite 44MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec-boundary] site=burst-tail-commit sampled=617 argmax=617 deviates=0 temp=0.8 sctr=69
+[spec-acc] ctx=55 burst=14/51 cum=14/51=0.275
+[prefix-cache] insert (spec-boundary): 96 tokens, 159.9MB (resident 318.9MB / 2147MB, model gate, ns "samp-x")
+[spec-boundary] site=burst-tail-commit sampled=16863 argmax=16863 deviates=0 temp=0.8 sctr=102
+[spec-acc] ctx=87 burst=7/24 cum=21/75=0.280
+[meter] admit id=cmpl-3f038be57de07df05fd3c78bfa4d617c tenant=default lane=interactive model="gate"
+[admit-oom] reclaim spared the prompt's prefix entry (96 tokens, model gate)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=158932992 pool_cached_gain_bytes=158912512 trim_released_bytes=134217728 driver_free_bytes 1731985408 -> 1866203136 pool_reserved_bytes 23018340352 -> 22884122624 pool_used_bytes 22360559400 -> 22201646888 pool_retained_bytes=24694784 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 1 spec + 0 dspark parked sessions (global LRU); effective free 2390MB -> 3022MB
+[admit-trim] dev0 driver_free_bytes=1866203136 floor_bytes=2147483648 reclaimed_bytes=268435456 still_owned_bytes=21727926436 pool_reserved_bytes=22615687168 driver_free_after=2134638592 before prime
+[prefix-cache] hit: 96 of 119 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 96 of 119 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="samp-x" K=3 source=cold-short prompt=119 cached=96 lcp=96 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=271 argmax=271 deviates=0 temp=0.8 sctr=0
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2431MB (driver 2035MB + pool-cached 395MB) < required 3160MB (2x appetite 44MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec-boundary] site=burst-tail-commit sampled=617 argmax=617 deviates=0 temp=0.8 sctr=69
+[spec-acc] ctx=23 burst=14/51 cum=14/51=0.275
+[spec-boundary] site=burst-tail-commit sampled=16863 argmax=16863 deviates=0 temp=0.8 sctr=102
+[spec-acc] ctx=55 burst=7/24 cum=21/75=0.280
+[meter] admit id=cmpl-1b49c87fe632853735a14725494750bc tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +46MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=218 path=spec = 31552 B/token x ctx + 51MB prefill-workspace + 308MB fixed = 366MB
+[admit-trim] dev0 driver_free_bytes=1866203136 floor_bytes=2147483648 reclaimed_bytes=268435456 still_owned_bytes=21728360740 pool_reserved_bytes=22615687168 driver_free_after=2134638592 before prime
+[spec-k] model="gate" tenant="samp-pen" K=3 source=cold-short prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=271 argmax=271 deviates=0 temp=0.8 sctr=0
+[spec-boundary] site=burst-tail-commit sampled=18211 argmax=67010 deviates=1 temp=0.8 sctr=57
+[spec-acc] ctx=106 burst=18/42 cum=18/42=0.429
+[prefix-cache] insert (spec-boundary): 64 tokens, 158.9MB (resident 318.9MB / 2147MB, model gate, ns "samp-pen")
+[spec-boundary] site=burst-tail-commit sampled=288 argmax=288 deviates=0 temp=0.8 sctr=86
+[spec-acc] ctx=139 burst=7/21 cum=25/63=0.397
+[meter] admit id=cmpl-658771a697a9150306d192eb26c1e01c tenant=default lane=interactive model="gate"
+[admit-oom] reclaim spared the prompt's prefix entry (64 tokens, model gate)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=159942656 pool_cached_gain_bytes=159922176 trim_released_bytes=134217728 driver_free_bytes 1731985408 -> 1866203136 pool_reserved_bytes 23018340352 -> 22884122624 pool_used_bytes 22359515040 -> 22199592864 pool_retained_bytes=25704448 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 1 spec + 0 dspark parked sessions (global LRU); effective free 2391MB -> 3025MB
+[admit-trim] dev0 driver_free_bytes=1866203136 floor_bytes=2147483648 reclaimed_bytes=268435456 still_owned_bytes=21725438108 pool_reserved_bytes=22615687168 driver_free_after=2134638592 before prime
+[prefix-cache] hit: 64 of 106 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 64 of 106 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="samp-pen" K=3 source=cold-short prompt=106 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=271 argmax=271 deviates=0 temp=0.8 sctr=0
+[spec-boundary] site=burst-tail-commit sampled=18211 argmax=67010 deviates=1 temp=0.8 sctr=57
+[spec-acc] ctx=42 burst=18/42 cum=18/42=0.429
+[spec-boundary] site=burst-tail-commit sampled=288 argmax=288 deviates=0 temp=0.8 sctr=86
+[spec-acc] ctx=75 burst=7/21 cum=25/63=0.397
+[meter] admit id=cmpl-e77360ca951f52be34bddcaa29ce4501 tenant=default lane=interactive model="gate"
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=158932992 pool_cached_gain_bytes=158912512 trim_released_bytes=134217728 driver_free_bytes 1866203136 -> 2000420864 pool_reserved_bytes 22884122624 -> 22749904896 pool_used_bytes 22197679896 -> 22038767384 pool_retained_bytes=24694784 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 1 spec + 0 dspark parked sessions (global LRU); effective free 2553MB -> 3190MB
+[admit-trim] dev0 driver_free_bytes=2000420864 floor_bytes=2147483648 reclaimed_bytes=134217728 still_owned_bytes=21560080540 pool_reserved_bytes=22615687168 driver_free_after=2134638592 before prime
+[spec-k] model="gate" tenant="samp-noplane" K=0 source=eligibility-fallback prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 64 tokens, 158.8MB (resident 158.8MB / 2147MB, model gate, ns "samp-noplane")
+[meter] admit id=cmpl-626a9e0964ea9315a1ea498c6a4198ac tenant=default lane=interactive model="gate"
+[admit-trim] dev0 driver_free_bytes=2134638592 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=22031874160 pool_reserved_bytes=22615687168 driver_free_after=2134638592 before prime
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 106 prompt tokens; model gate)
+[prefix-cache] hit: 64 of 106 prompt tokens from cache (model gate)
+[prefix-cache] spec-eligible request takes the hit on the PLAIN path (reason: entry carries no draft plane (plain-published)) (model gate)
+[spec-k] model="gate" tenant="samp-noplane" K=0 source=eligibility-fallback prompt=106 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 64 tokens, model gate)
+[meter] admit id=cmpl-69aa3fcf530a06e4e7b68ce454e663aa tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +46MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=240 path=spec = 31552 B/token x ctx + 61MB prefill-workspace + 308MB fixed = 377MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=158793728 pool_cached_gain_bytes=158793728 trim_released_bytes=134217728 driver_free_bytes 2134638592 -> 2268856320 pool_reserved_bytes 22615687168 -> 22481469440 pool_used_bytes 22345867332 -> 22187073604 pool_retained_bytes=24576000 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 1 spec + 0 dspark parked sessions (global LRU); effective free 2404MB -> 3042MB
+[spec-k] model="gate" tenant="samp-fullcover" K=3 source=cold-short prompt=128 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=5226 argmax=5226 deviates=0 temp=0.8 sctr=0
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2297MB (driver 2163MB + pool-cached 134MB) < required 3160MB (2x appetite 44MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec-boundary] site=burst-tail-commit sampled=318 argmax=310 deviates=1 temp=0.8 sctr=41
+[spec-acc] ctx=128 burst=21/30 cum=21/30=0.700
+[prefix-cache] insert (spec-boundary): 128 tokens, 161.0MB (resident 161.0MB / 2147MB, model gate, ns "samp-fullcover")
+[spec-boundary] site=burst-tail-commit sampled=18137 argmax=18137 deviates=0 temp=0.8 sctr=58
+[spec-acc] ctx=160 burst=11/12 cum=32/42=0.762
+[meter] admit id=cmpl-7a3bc6a45cb2f86b1a9d940147378e82 tenant=default lane=interactive model="gate"
+[admit-oom] reclaim spared the prompt's prefix entry (128 tokens, model gate)
+[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 0 plain + 1 spec + 0 dspark parked sessions (global LRU); effective free 2408MB -> 2887MB
+[admit-trim] dev0 driver_free_bytes=1731985408 floor_bytes=2147483648 reclaimed_bytes=402653184 still_owned_bytes=21863608520 pool_reserved_bytes=22615687168 driver_free_after=2134638592 before prime
+[prefix-cache] hit: 128 of 128 prompt tokens from cache (model gate)
+[spec-boundary] site=restore-full-cover sampled=5226 argmax=5226 deviates=0 temp=0.8 sctr=0
+[prefix-cache] spec restore: 128 of 128 prompt tokens + draft plane from cache [continuation] (model gate)
+[spec-k] model="gate" tenant="samp-fullcover" K=3 source=cold-short prompt=128 cached=128 lcp=128 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 308MB (observed 314MB at ctx 184 path=spec)
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2450MB (driver 2035MB + pool-cached 414MB) < required 3160MB (2x appetite 44MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec-boundary] site=burst-tail-commit sampled=318 argmax=310 deviates=1 temp=0.8 sctr=41
+[spec-acc] ctx=0 burst=21/30 cum=21/30=0.700
+[spec-boundary] site=burst-tail-commit sampled=18137 argmax=18137 deviates=0 temp=0.8 sctr=58
+[spec-acc] ctx=32 burst=11/12 cum=32/42=0.762
+[meter] admit id=cmpl-dc0a29641dd31523de6c702706ae336e tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +46MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=171 path=spec = 31552 B/token x ctx + 51MB prefill-workspace + 308MB fixed = 364MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=160952320 pool_cached_gain_bytes=160931840 trim_released_bytes=134217728 driver_free_bytes 1899757568 -> 2033975296 pool_reserved_bytes 22850568192 -> 22716350464 pool_used_bytes 22179671620 -> 22018739780 pool_retained_bytes=26714112 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2571MB -> 2732MB
+[admit-trim] dev0 driver_free_bytes=2033975296 floor_bytes=2147483648 reclaimed_bytes=100663296 still_owned_bytes=22018739780 pool_reserved_bytes=22615687168 driver_free_after=2134638592 before prime
+[spec-k] model="gate" tenant="bnd-g" K=3 source=cold-short prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec] WARN: draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2006MB (driver 1939MB + pool-cached 66MB) < required 3160MB (2x appetite 44MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[meter] admit id=cmpl-743fb07c3600ef584ca8fe2a1cedaf86 tenant=default lane=interactive model="gate"
+[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 0 plain + 2 spec + 0 dspark parked sessions (global LRU); effective free 2106MB -> 3063MB
+[admit-trim] dev0 driver_free_bytes=1933049856 floor_bytes=2147483648 reclaimed_bytes=201326592 still_owned_bytes=21686944336 pool_reserved_bytes=22615687168 driver_free_after=2134376448 before prime
+[spec-k] model="gate" tenant="bnd-7" K=3 source=cold-short prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=114874 argmax=271 deviates=1 temp=4 sctr=0
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2320MB (driver 2035MB + pool-cached 285MB) < required 3160MB (2x appetite 44MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec-boundary] site=burst-tail-nopending sampled=141702 argmax=271 deviates=1 temp=4 sctr=1
+[meter] admit id=cmpl-69035ed6d423be250c6f5f92eb6bc1a1 tenant=default lane=interactive model="gate"
+[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 0 plain + 1 spec + 0 dspark parked sessions (global LRU); effective free 2436MB -> 2908MB
+[admit-trim] dev0 driver_free_bytes=2134638592 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=21842267344 pool_reserved_bytes=22615687168 driver_free_after=2134638592 before prime
+[spec-k] model="gate" tenant="bnd-1234" K=3 source=cold-short prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=83115 argmax=271 deviates=1 temp=4 sctr=0
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2172MB (driver 2035MB + pool-cached 136MB) < required 3160MB (2x appetite 44MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec-boundary] site=burst-tail-nopending sampled=37521 argmax=271 deviates=1 temp=4 sctr=1
+[meter] admit id=cmpl-3bd2fb747c78dd372e3296264e8ddcec tenant=default lane=interactive model="gate"
+[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 0 plain + 1 spec + 0 dspark parked sessions (global LRU); effective free 2280MB -> 2753MB
+[admit-trim] dev0 driver_free_bytes=2067529728 floor_bytes=2147483648 reclaimed_bytes=67108864 still_owned_bytes=21997156048 pool_reserved_bytes=22615687168 driver_free_after=2134638592 before prime
+[spec-k] model="gate" tenant="bnd-99991" K=3 source=cold-short prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=124632 argmax=271 deviates=1 temp=4 sctr=0
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2025MB (driver 1971MB + pool-cached 53MB) < required 3160MB (2x appetite 44MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec-boundary] site=burst-tail-nopending sampled=174266 argmax=271 deviates=1 temp=4 sctr=1
+[meter] admit id=cmpl-6fb0af961f63fd422afe31a768e62dc6 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +46MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=218 path=spec = 31552 B/token x ctx + 51MB prefill-workspace + 308MB fixed = 366MB
+[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 0 plain + 2 spec + 0 dspark parked sessions (global LRU); effective free 2126MB -> 3071MB
+[admit-trim] dev0 driver_free_bytes=1933312000 floor_bytes=2147483648 reclaimed_bytes=201326592 still_owned_bytes=21679802964 pool_reserved_bytes=22615687168 driver_free_after=2134638592 before prime
+[spec-k] model="gate" tenant="grow" K=3 source=cold-short prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec] WARN: draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2328MB (driver 2035MB + pool-cached 292MB) < required 3160MB (2x appetite 44MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec-acc] ctx=106 burst=18/42 cum=18/42=0.429
+[prefix-cache] insert (spec-boundary): 64 tokens, 158.9MB (resident 158.9MB / 2147MB, model gate, ns "grow")
+[spec-acc] ctx=139 burst=11/15 cum=29/57=0.509
+[meter] admit id=cmpl-f696ed2ef9b7dc08c75483f068e673d6 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +46MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=231 path=spec = 31552 B/token x ctx + 57MB prefill-workspace + 308MB fixed = 373MB
+[admit-oom] reclaim spared the prompt's prefix entry (64 tokens, model gate)
+[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 0 plain + 1 spec + 0 dspark parked sessions (global LRU); effective free 2441MB -> 2914MB
+[admit-trim] dev0 driver_free_bytes=1765539840 floor_bytes=2147483648 reclaimed_bytes=369098752 still_owned_bytes=21836728924 pool_reserved_bytes=22615687168 driver_free_after=2134638592 before prime
+[prefix-cache] hit: 64 of 119 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 64 of 119 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="grow" K=3 source=cold-short prompt=119 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[spec] WARN: draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2178MB (driver 2035MB + pool-cached 143MB) < required 3160MB (2x appetite 44MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec-acc] ctx=55 burst=19/42 cum=19/42=0.452
+[prefix-cache] insert (spec-boundary): 96 tokens, 159.9MB (resident 318.9MB / 2147MB, model gate, ns "grow")
+[spec-acc] ctx=89 burst=10/18 cum=29/60=0.483
+[meter] admit id=cmpl-6130aebf4e161a46d1ffb3e1dc91f807 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +46MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=247 path=spec = 31552 B/token x ctx + 65MB prefill-workspace + 308MB fixed = 381MB
+[admit-oom] reclaim spared the prompt's prefix entry (96 tokens, model gate)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=158932992 pool_cached_gain_bytes=158912512 trim_released_bytes=134217728 driver_free_bytes 1631059968 -> 1765277696 pool_reserved_bytes 23119003648 -> 22984785920 pool_used_bytes 22467340640 -> 22308428128 pool_retained_bytes=24694784 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2283MB -> 2755MB
+[admit-trim] dev0 driver_free_bytes=1765277696 floor_bytes=2147483648 reclaimed_bytes=369098752 still_owned_bytes=21995428236 pool_reserved_bytes=22615687168 driver_free_after=2134376448 before prime
+[prefix-cache] hit: 96 of 135 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 96 of 135 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="grow" K=3 source=cold-short prompt=135 cached=96 lcp=96 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 308MB (observed 314MB at ctx 191 path=spec)
+[spec] WARN: draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2177MB (driver 2035MB + pool-cached 141MB) < required 3160MB (2x appetite 44MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec-acc] ctx=39 burst=14/54 cum=14/54=0.259
+[spec-acc] ctx=72 burst=9/18 cum=23/72=0.319
+[meter] admit id=cmpl-85ccf5b68d542760834aeebecfd55373 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +46MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=231 path=spec = 31552 B/token x ctx + 57MB prefill-workspace + 308MB fixed = 373MB
+[admit-trim] dev0 driver_free_bytes=1631322112 floor_bytes=2147483648 reclaimed_bytes=503316480 still_owned_bytes=21996397068 pool_reserved_bytes=22615687168 driver_free_after=2134638592 before prime
+[prefix-cache] hit: 96 of 119 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 96 of 119 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="grow" K=3 source=cold-short prompt=119 cached=96 lcp=96 active=1 wave=1 placement=single-or-non-pp2
+[spec] WARN: draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2176MB (driver 2035MB + pool-cached 141MB) < required 3160MB (2x appetite 44MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec-acc] ctx=23 burst=19/42 cum=19/42=0.452
+[spec-acc] ctx=57 burst=10/18 cum=29/60=0.483
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

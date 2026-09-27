@@ -1,0 +1,38 @@
+diff --git a/crates/memra-engine/src/dsv4_grouped.rs b/crates/memra-engine/src/dsv4_grouped.rs
+index 1dbcc1c2e..a7ead91c0 100644
+--- a/crates/memra-engine/src/dsv4_grouped.rs
++++ b/crates/memra-engine/src/dsv4_grouped.rs
+@@ -365,6 +365,11 @@ impl GroupedWork {
+         let slots = rows.checked_mul(topk).ok_or("matrix slot count overflow")?;
+         self.plain_single = rows == 1;
+         self.stream_rows = rows > 1 && rows <= MROW_STREAM_MAX_ROWS;
++        match crate::dsv4_moe_mrow_lane() {
++            0 => self.stream_rows = false,
++            2 if rows == 1 => (self.plain_single, self.stream_rows) = (false, true),
++            _ => {}
++        }
+         let hidden = self.input.cols;
+         let inter = self.intermediate.cols;
+         if rows == 0
+diff --git a/crates/memra-engine/src/lib.rs b/crates/memra-engine/src/lib.rs
+index 808182e40..f8dc82a3b 100644
+--- a/crates/memra-engine/src/lib.rs
++++ b/crates/memra-engine/src/lib.rs
+@@ -510,6 +510,17 @@ pub fn dsv4_moe_m1_stream_dispatches() -> u64 {
+     unsafe { mmq_ffi::memra_moe_kq_m1_stream_dispatches() }
+ }
+ 
++/// LANE-ONLY A/B read (never merged): 0 = verify rows on sktail, 1 = shipped dispatch,
++/// 2 = the multi-row visitor also takes the one-token step.
++pub fn dsv4_moe_mrow_lane() -> u8 {
++    static V: std::sync::OnceLock<u8> = std::sync::OnceLock::new();
++    *V.get_or_init(|| match std::env::var("MEMRA_DSV4_MOE_MROW_STREAM").as_deref() {
++        Ok("0") => 0,
++        Ok("2") => 2,
++        _ => 1,
++    })
++}
++
+ /// Snapshot of the CUDA-side successful enqueue receipt for the multi-row streaming visitor,
+ /// which small multi-row steps (verify rounds) take under the same switch.
+ pub fn dsv4_moe_mrow_stream_dispatches() -> u64 {

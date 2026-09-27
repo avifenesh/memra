@@ -1,0 +1,57 @@
+START utc=2026-09-23T15:31:27Z cmd=/root/lane/target-dmrow3/release/deps/dsv4_latency_kernels_gpu-b8ce071870d946ea --ignored --nocapture --test-threads=1
+
+running 7 tests
+test grouped_routes_match_cpu_oracle ... grouped routes exact oracle: 1755 cases identical
+ok
+test grouped_routes_red_arm ... ok
+test latency_kernel_timing ... TIMING tree=unlabeled kernel=rmsnorm_f32acc shape=1x4096 rep=0 us_per_launch=1.752
+TIMING tree=unlabeled kernel=rmsnorm_f32acc shape=1x4096 rep=1 us_per_launch=1.718
+TIMING tree=unlabeled kernel=rmsnorm_f32acc shape=1x4096 rep=2 us_per_launch=1.702
+TIMING tree=unlabeled kernel=rmsnorm_f32acc shape=1x4096 rep=3 us_per_launch=1.715
+TIMING tree=unlabeled kernel=rmsnorm_f32acc shape=1x4096 rep=4 us_per_launch=1.697
+TIMING tree=unlabeled kernel=rmsnorm_f32acc shape=1x1024 rep=0 us_per_launch=1.721
+TIMING tree=unlabeled kernel=rmsnorm_f32acc shape=1x1024 rep=1 us_per_launch=1.705
+TIMING tree=unlabeled kernel=rmsnorm_f32acc shape=1x1024 rep=2 us_per_launch=1.716
+TIMING tree=unlabeled kernel=rmsnorm_f32acc shape=1x1024 rep=3 us_per_launch=1.706
+TIMING tree=unlabeled kernel=rmsnorm_f32acc shape=1x1024 rep=4 us_per_launch=1.804
+TIMING tree=unlabeled kernel=rmsnorm_f32acc shape=1x512 rep=0 us_per_launch=1.724
+TIMING tree=unlabeled kernel=rmsnorm_f32acc shape=1x512 rep=1 us_per_launch=1.720
+TIMING tree=unlabeled kernel=rmsnorm_f32acc shape=1x512 rep=2 us_per_launch=1.721
+TIMING tree=unlabeled kernel=rmsnorm_f32acc shape=1x512 rep=3 us_per_launch=1.720
+TIMING tree=unlabeled kernel=rmsnorm_f32acc shape=1x512 rep=4 us_per_launch=1.708
+TIMING tree=unlabeled kernel=route_m shape=s1_ne256_top6 rep=0 us_per_launch=4.400
+TIMING tree=unlabeled kernel=route_m shape=s1_ne256_top6 rep=1 us_per_launch=4.400
+TIMING tree=unlabeled kernel=route_m shape=s1_ne256_top6 rep=2 us_per_launch=4.400
+TIMING tree=unlabeled kernel=route_m shape=s1_ne256_top6 rep=3 us_per_launch=4.400
+TIMING tree=unlabeled kernel=route_m shape=s1_ne256_top6 rep=4 us_per_launch=4.400
+TIMING tree=unlabeled kernel=grouped_routes shape=slots6_groups256 rep=0 us_per_call=5.181
+TIMING tree=unlabeled kernel=grouped_routes shape=slots6_groups256 rep=1 us_per_call=5.168
+TIMING tree=unlabeled kernel=grouped_routes shape=slots6_groups256 rep=2 us_per_call=5.172
+TIMING tree=unlabeled kernel=grouped_routes shape=slots6_groups256 rep=3 us_per_call=5.169
+TIMING tree=unlabeled kernel=grouped_routes shape=slots6_groups256 rep=4 us_per_call=5.156
+TIMING tree=unlabeled kernel=grouped_routes_partition shape=slots6_groups128 rep=0 us_per_call=5.138
+TIMING tree=unlabeled kernel=grouped_routes_partition shape=slots6_groups128 rep=1 us_per_call=5.139
+TIMING tree=unlabeled kernel=grouped_routes_partition shape=slots6_groups128 rep=2 us_per_call=5.143
+TIMING tree=unlabeled kernel=grouped_routes_partition shape=slots6_groups128 rep=3 us_per_call=5.140
+TIMING tree=unlabeled kernel=grouped_routes_partition shape=slots6_groups128 rep=4 us_per_call=5.140
+TIMING tree=unlabeled kernel=wo_a_slices8 shape=8x1024x4096 rep=0 us_per_call=24.925
+TIMING tree=unlabeled kernel=wo_a_grouped shape=8x1024x4096 rep=0 us_per_call=12.882
+TIMING tree=unlabeled kernel=wo_a_slices8 shape=8x1024x4096 rep=1 us_per_call=25.032
+TIMING tree=unlabeled kernel=wo_a_grouped shape=8x1024x4096 rep=1 us_per_call=12.917
+TIMING tree=unlabeled kernel=wo_a_slices8 shape=8x1024x4096 rep=2 us_per_call=24.970
+TIMING tree=unlabeled kernel=wo_a_grouped shape=8x1024x4096 rep=2 us_per_call=13.026
+TIMING tree=unlabeled kernel=wo_a_slices8 shape=8x1024x4096 rep=3 us_per_call=25.050
+TIMING tree=unlabeled kernel=wo_a_grouped shape=8x1024x4096 rep=3 us_per_call=13.147
+TIMING tree=unlabeled kernel=wo_a_slices8 shape=8x1024x4096 rep=4 us_per_call=25.016
+TIMING tree=unlabeled kernel=wo_a_grouped shape=8x1024x4096 rep=4 us_per_call=13.206
+ok
+test rmsnorm_f32acc_matches_exact_oracle ... rmsnorm_f32acc exact oracle: 240 cases bit-identical
+ok
+test rmsnorm_f32acc_red_arm ... ok
+test route_m_matches_golden_and_structure ... route_m: 360 cases, golden 0xa883c1c05022dc87
+ok
+test route_m_red_arm ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.35s
+
+GATE_DONE rc=0 utc=2026-09-23T15:31:29Z

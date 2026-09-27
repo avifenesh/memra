@@ -1,0 +1,1220 @@
+diff --git a/crates/memra-engine/src/learned_depth.rs b/crates/memra-engine/src/learned_depth.rs
+--- a/crates/memra-engine/src/learned_depth.rs
++++ b/crates/memra-engine/src/learned_depth.rs
+@@ -1,6 +1,280 @@
+ //! Explicit study policies: a fixed control or a persistent contextual controller.
+ use std::sync::Arc;
+ use std::time::Duration;
++use std::collections::HashMap;
++use std::time::Instant;
++
++const DEPTH_FEATURES: usize = 37;
++
++fn feature_vector(
++    variant: usize,
++    classes: &HashMap<u32, u8>,
++    output: &[u32],
++    prior: Option<(f64, f64)>,
++) -> [f64; DEPTH_FEATURES] {
++    let class = |token: u32| usize::from(*classes.get(&token).unwrap_or(&5));
++    let mut x = [0.0; DEPTH_FEATURES];
++    x[0] = 1.0;
++    if let Some(&last) = output.last() {
++        x[1 + class(last)] = 1.0;
++        x[7 + (last.wrapping_mul(0x9e37_79b1) % 16) as usize] = 1.0;
++    }
++    if variant >= 35 {
++        for (start, size) in [(23, 4), (29, 16)] {
++            let n = output.len().min(size);
++            if n > 0 {
++                for &token in output.iter().rev().take(size) {
++                    x[start + class(token)] += 1.0 / n as f64;
++                }
++            }
++        }
++    }
++    if variant == 37 {
++        if let Some((accepted, ms)) = prior {
++            x[35] = accepted;
++            x[36] = (ms / 80.0).min(1.0);
++        }
++    }
++    x
++}
++
++#[derive(Clone, Debug)]
++pub struct TinyDepthModel {
++    variant: usize,
++    lambda: f64,
++    accepted: [[f64; DEPTH_FEATURES]; 4],
++    elapsed_ms: [[f64; DEPTH_FEATURES]; 4],
++    classes: HashMap<u32, u8>,
++}
++
++impl TinyDepthModel {
++    pub fn parse(text: &str) -> Result<Self, &'static str> {
++        let mut lines = text.lines();
++        let header: Vec<_> = lines.next().ok_or("missing tiny depth header")?.split('\t').collect();
++        if header.len() != 6 || header[0] != "joint-v4-linear" || header[1] != "1"
++            || header[3] != "4"
++        {
++            return Err("invalid tiny depth header");
++        }
++        let variant = match header[2] {
++            "token" => 23,
++            "history" => 35,
++            "prior" => 37,
++            _ => return Err("unknown tiny depth feature version"),
++        };
++        let lambda: f64 = header[4].parse().map_err(|_| "invalid tiny depth target rate")?;
++        let alpha: f64 = header[5].parse().map_err(|_| "invalid tiny depth penalty")?;
++        if !lambda.is_finite() || lambda <= 0.0 || !alpha.is_finite() || alpha <= 0.0 {
++            return Err("nonpositive tiny depth rate or penalty");
++        }
++        let mut model = Self {
++            variant,
++            lambda,
++            accepted: [[0.0; DEPTH_FEATURES]; 4],
++            elapsed_ms: [[0.0; DEPTH_FEATURES]; 4],
++            classes: HashMap::new(),
++        };
++        let mut seen = [[false; 4]; 2];
++        for line in lines {
++            let fields: Vec<_> = line.split('\t').collect();
++            if fields.len() != 3 {
++                return Err("invalid tiny depth row");
++            }
++            match fields[0] {
++                "A" | "T" => {
++                    let d: usize = fields[1].parse().map_err(|_| "invalid tiny depth action")?;
++                    if !(1..=4).contains(&d) {
++                        return Err("tiny depth action outside 1..=4");
++                    }
++                    let kind = usize::from(fields[0] == "T");
++                    if seen[kind][d - 1] {
++                        return Err("duplicate tiny depth weight row");
++                    }
++                    let weights = fields[2]
++                        .split(',')
++                        .map(|value| value.parse::<f64>().map_err(|_| "invalid tiny depth weight"))
++                        .collect::<Result<Vec<_>, _>>()?;
++                    if weights.len() != variant || weights.iter().any(|w| !w.is_finite()) {
++                        return Err("tiny depth weights differ from the feature version");
++                    }
++                    let target = if kind == 0 {
++                        &mut model.accepted[d - 1]
++                    } else {
++                        &mut model.elapsed_ms[d - 1]
++                    };
++                    target[..variant].copy_from_slice(&weights);
++                    seen[kind][d - 1] = true;
++                }
++                "B" => {
++                    let token: u32 = fields[1].parse().map_err(|_| "invalid tiny depth token id")?;
++                    let class: u8 = fields[2].parse().map_err(|_| "invalid tiny depth token class")?;
++                    if class >= 6 || model.classes.insert(token, class).is_some() {
++                        return Err("duplicate or invalid tiny depth token class");
++                    }
++                }
++                _ => return Err("unknown tiny depth row kind"),
++            }
++        }
++        if seen.iter().flatten().any(|&value| !value) {
++            return Err("tiny depth lacks a learned action");
++        }
++        Ok(model)
++    }
++
++    fn features(&self, output: &[u32], prior: Option<(f64, f64)>) -> [f64; DEPTH_FEATURES] {
++        feature_vector(self.variant, &self.classes, output, prior)
++    }
++
++    fn score(&self, d: usize, x: &[f64; DEPTH_FEATURES]) -> f64 {
++        let dot = |weights: &[f64; DEPTH_FEATURES]| {
++            weights[..self.variant].iter().zip(x).map(|(w, v)| w * v).sum::<f64>()
++        };
++        let accepted = dot(&self.accepted[d - 1]).clamp(0.0, d as f64);
++        let ms = dot(&self.elapsed_ms[d - 1]).max(0.01);
++        1.0 + accepted - self.lambda * ms / 1000.0
++    }
++}
++
++#[derive(Clone, Debug)]
++struct TinyDepthPolicy {
++    model: Arc<TinyDepthModel>,
++    noop: bool,
++    current_depth: usize,
++    prior: Option<(f64, f64)>,
++    switches: u64,
++    inference_ns: u128,
++}
++
++#[derive(Clone, Debug)]
++pub struct TinyConfidenceModel {
++    variant: usize,
++    lambda: f64,
++    weights: [[f64; DEPTH_FEATURES + 1]; 3],
++    next_rate: [f64; 3],
++    marginal_ms: [f64; 3],
++    classes: HashMap<u32, u8>,
++}
++
++impl TinyConfidenceModel {
++    pub fn parse(text: &str) -> Result<Self, &'static str> {
++        let mut lines = text.lines();
++        let header: Vec<_> = lines
++            .next()
++            .ok_or("missing tiny confidence header")?
++            .split('\t')
++            .collect();
++        if header.len() != 4 || header[0] != "joint-v4-confidence" || header[1] != "1" {
++            return Err("invalid tiny confidence header");
++        }
++        let variant = match header[2] {
++            "token" => 23,
++            "history" => 35,
++            "prior" => 37,
++            _ => return Err("unknown tiny confidence feature version"),
++        };
++        let lambda: f64 = header[3].parse().map_err(|_| "invalid tiny confidence rate")?;
++        if !lambda.is_finite() || lambda <= 0.0 {
++            return Err("invalid tiny confidence target rate");
++        }
++        let mut model = Self {
++            variant,
++            lambda,
++            weights: [[0.0; DEPTH_FEATURES + 1]; 3],
++            next_rate: [0.0; 3],
++            marginal_ms: [0.0; 3],
++            classes: HashMap::new(),
++        };
++        let mut seen = [false; 3];
++        for line in lines {
++            let fields: Vec<_> = line.split('\t').collect();
++            match fields.first().copied() {
++                Some("C") if fields.len() == 5 => {
++                    let position: usize = fields[1]
++                        .parse()
++                        .map_err(|_| "invalid confidence decision position")?;
++                    if position >= 3 || seen[position] {
++                        return Err("duplicate or unknown confidence position");
++                    }
++                    let next: f64 = fields[2]
++                        .parse()
++                        .map_err(|_| "invalid next-slot acceptance rate")?;
++                    let ms: f64 = fields[3]
++                        .parse()
++                        .map_err(|_| "invalid confidence marginal cost")?;
++                    if !next.is_finite() || !(0.0..=1.0).contains(&next) || !ms.is_finite() {
++                        return Err("invalid confidence marginal evidence");
++                    }
++                    let weights = fields[4]
++                        .split(',')
++                        .map(|value| value.parse::<f64>().map_err(|_| "invalid confidence weight"))
++                        .collect::<Result<Vec<_>, _>>()?;
++                    if weights.len() != variant + 1 || weights.iter().any(|w| !w.is_finite()) {
++                        return Err("confidence weights differ from the feature version");
++                    }
++                    model.weights[position][..variant + 1].copy_from_slice(&weights);
++                    model.next_rate[position] = next;
++                    model.marginal_ms[position] = ms;
++                    seen[position] = true;
++                }
++                Some("B") if fields.len() == 3 => {
++                    let token: u32 = fields[1]
++                        .parse()
++                        .map_err(|_| "invalid confidence token id")?;
++                    let class: u8 = fields[2]
++                        .parse()
++                        .map_err(|_| "invalid confidence token class")?;
++                    if class >= 6 || model.classes.insert(token, class).is_some() {
++                        return Err("duplicate or invalid confidence token class");
++                    }
++                }
++                _ => return Err("invalid tiny confidence row"),
++            }
++        }
++        if seen.iter().any(|&value| !value) {
++            return Err("tiny confidence lacks a learned stop position");
++        }
++        Ok(model)
++    }
++
++    fn features(&self, output: &[u32], prior: Option<(f64, f64)>) -> [f64; DEPTH_FEATURES] {
++        feature_vector(self.variant, &self.classes, output, prior)
++    }
++
++    fn accepted_chance(
++        &self,
++        position: usize,
++        features: &[f64; DEPTH_FEATURES],
++        q: f32,
++    ) -> f64 {
++        let q = f64::from(q).clamp(1e-6, 1.0 - 1e-6);
++        let q_logit = (q / (1.0 - q)).ln().clamp(-12.0, 12.0) / 12.0;
++        let row = &self.weights[position];
++        let value: f64 = row[..self.variant]
++            .iter()
++            .zip(features)
++            .map(|(w, x)| w * x)
++            .sum::<f64>()
++            + row[self.variant] * q_logit;
++        if value >= 0.0 {
++            1.0 / (1.0 + (-value).exp())
++        } else {
++            let exponent = value.exp();
++            exponent / (1.0 + exponent)
++        }
++    }
++}
++
++#[derive(Clone, Debug)]
++struct TinyConfidencePolicy {
++    model: Arc<TinyConfidenceModel>,
++    noop: bool,
++    prior: Option<(f64, f64)>,
++    features: [f64; DEPTH_FEATURES],
++    chain: f64,
++    decisions: u64,
++    stops: u64,
++    inference_ns: u128,
++}
+ 
+ #[derive(Clone, Debug)]
+ pub struct DepthStats {
+@@ -16,8 +290,26 @@
+ #[derive(Clone, Debug)]
+ pub struct LearnedDepth {
+     context: Option<Box<crate::context_depth::ContextDepth>>,
++    exploration: Option<Box<DepthExploration>>,
++    tiny: Option<Box<TinyDepthPolicy>>,
++    confidence: Option<Box<TinyConfidencePolicy>>,
+     stats: Vec<DepthStats>,
+     fixed_depth: usize,
++}
++
++#[derive(Clone, Debug)]
++struct DepthExploration {
++    seed: u64,
++    rounds: u64,
++    max_k: usize,
++    current_depth: usize,
++    switches: u64,
++}
++
++fn mix(mut value: u64) -> u64 {
++    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
++    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
++    value ^ (value >> 31)
+ }
+ 
+ fn stat(depth: usize) -> DepthStats {
+@@ -38,8 +330,32 @@
+         }
+         Ok(Self {
+             context: None,
++            exploration: None,
++            tiny: None,
++            confidence: None,
+             stats: vec![stat(depth)],
+             fixed_depth: depth,
++        })
++    }
++
++    /// Seeded per-round training assignment, independent of acceptance feedback.
++    pub fn randomized(max_k: usize, seed: u64) -> Result<Self, &'static str> {
++        if !(1..=crate::context_depth::MAX_K).contains(&max_k) {
++            return Err("randomized draft ceiling is out of range");
++        }
++        Ok(Self {
++            context: None,
++            exploration: Some(Box::new(DepthExploration {
++                seed,
++                rounds: 0,
++                max_k,
++                current_depth: 2,
++                switches: 0,
++            })),
++            tiny: None,
++            confidence: None,
++            stats: (2..=max_k + 1).map(stat).collect(),
++            fixed_depth: 2,
+         })
+     }
+ 
+@@ -56,6 +372,9 @@
+         Ok(Self {
+             stats: (2..=priors.cap + 1).map(stat).collect(),
+             fixed_depth: priors.global_k + 1,
++            exploration: None,
++            tiny: None,
++            confidence: None,
+             context: Some(Box::new(crate::context_depth::ContextDepth::new(
+                 priors,
+                 token_bytes,
+@@ -64,7 +383,79 @@
+         })
+     }
+ 
++    pub fn trained(model: TinyDepthModel, noop: bool) -> Self {
++        Self {
++            context: None,
++            exploration: None,
++            tiny: Some(Box::new(TinyDepthPolicy {
++                model: Arc::new(model),
++                noop,
++                current_depth: 4,
++                prior: None,
++                switches: 0,
++                inference_ns: 0,
++            })),
++            confidence: None,
++            stats: (2..=5).map(stat).collect(),
++            fixed_depth: 4,
++        }
++    }
++
++    pub fn with_confidence(mut self, model: TinyConfidenceModel, noop: bool) -> Self {
++        self.confidence = Some(Box::new(TinyConfidencePolicy {
++            model: Arc::new(model),
++            noop,
++            prior: None,
++            features: [0.0; DEPTH_FEATURES],
++            chain: 1.0,
++            decisions: 0,
++            stops: 0,
++            inference_ns: 0,
++        }));
++        self
++    }
++
++    pub fn has_confidence_policy(&self) -> bool {
++        self.confidence.is_some()
++    }
++
++    pub fn confidence_counts(&self) -> (u64, u64) {
++        self.confidence.as_ref().map_or((0, 0), |c| (c.decisions, c.stops))
++    }
++
++    /// Called only after the sampled draft token has been offered.
++    pub fn confidence_stop(&mut self, position: usize, q: f32) -> Result<bool, &'static str> {
++        let Some(confidence) = &mut self.confidence else {
++            return Ok(false);
++        };
++        if position >= 3 || !q.is_finite() || !(0.0..=1.0).contains(&q) {
++            return Err("invalid offered confidence position or probability");
++        }
++        let started = Instant::now();
++        let chance = confidence.model.accepted_chance(
++            position, &confidence.features, q,
++        );
++        confidence.chain *= chance;
++        let expected_gain = confidence.chain * confidence.model.next_rate[position];
++        let expected_cost = confidence.model.lambda
++            * confidence.model.marginal_ms[position] / 1000.0;
++        let stop = expected_gain < expected_cost;
++        std::hint::black_box(stop);
++        confidence.decisions += 1;
++        if stop && !confidence.noop {
++            confidence.stops += 1;
++        }
++        confidence.inference_ns += started.elapsed().as_nanos();
++        Ok(stop && !confidence.noop)
++    }
++
+     pub fn depth(&self) -> usize {
++        if let Some(exploration) = &self.exploration {
++            return exploration.current_depth;
++        }
++        if let Some(tiny) = &self.tiny {
++            return tiny.current_depth;
++        }
+         self.context
+             .as_ref()
+             .map_or(self.fixed_depth, |c| c.depth())
+@@ -73,7 +464,17 @@
+         &self.stats
+     }
+     pub fn switches(&self) -> u64 {
++        if let Some(exploration) = &self.exploration {
++            return exploration.switches;
++        }
++        if let Some(tiny) = &self.tiny {
++            return tiny.switches;
++        }
+         self.context.as_ref().map_or(0, |c| c.switches())
++    }
++    pub fn inference_ns(&self) -> u128 {
++        self.tiny.as_ref().map_or(0, |tiny| tiny.inference_ns)
++            + self.confidence.as_ref().map_or(0, |c| c.inference_ns)
+     }
+     pub fn context(&self) -> Option<&crate::context_depth::ContextDepth> {
+         self.context.as_deref()
+@@ -84,6 +485,43 @@
+         }
+     }
+     pub fn prepare_output(&mut self, output: &[u32]) -> Result<(), &'static str> {
++        if let Some(exploration) = &mut self.exploration {
++            let draw = mix(exploration.seed.wrapping_add(
++                exploration.rounds.wrapping_mul(0x9e37_79b9_7f4a_7c15),
++            ));
++            let next = draw as usize % exploration.max_k + 2;
++            if exploration.rounds > 0 && next != exploration.current_depth {
++                exploration.switches += 1;
++            }
++            exploration.current_depth = next;
++            exploration.rounds += 1;
++        }
++        if let Some(tiny) = &mut self.tiny {
++            let start = Instant::now();
++            let x = tiny.model.features(output, tiny.prior);
++            let mut best = 3;
++            let mut best_score = tiny.model.score(best, &x);
++            for d in [1, 2, 4] {
++                let score = tiny.model.score(d, &x);
++                if score > best_score + 1e-12 {
++                    best = d;
++                    best_score = score;
++                }
++            }
++            std::hint::black_box(best_score);
++            let next = if tiny.noop { 4 } else { best + 1 };
++            if next != tiny.current_depth {
++                tiny.switches += 1;
++            }
++            tiny.current_depth = next;
++            tiny.inference_ns += start.elapsed().as_nanos();
++        }
++        if let Some(confidence) = &mut self.confidence {
++            let started = Instant::now();
++            confidence.features = confidence.model.features(output, confidence.prior);
++            confidence.chain = 1.0;
++            confidence.inference_ns += started.elapsed().as_nanos();
++        }
+         if let Some(c) = &mut self.context {
+             c.prepare_output(output)?;
+         }
+@@ -97,11 +535,29 @@
+         elapsed: Duration,
+         eligible: bool,
+     ) -> Result<(), &'static str> {
+-        if depth != self.depth() || output_start > output.len() || elapsed.is_zero() {
++        self.observe_output_with_offered(
++            depth, depth.saturating_sub(1), output_start, output, elapsed, eligible,
++        )
++    }
++    pub fn observe_output_with_offered(
++        &mut self,
++        depth: usize,
++        offered: usize,
++        output_start: usize,
++        output: &[u32],
++        elapsed: Duration,
++        eligible: bool,
++    ) -> Result<(), &'static str> {
++        if depth != self.depth()
++            || offered > depth.saturating_sub(1)
++            || (eligible && offered == 0)
++            || output_start > output.len()
++            || elapsed.is_zero()
++        {
+             return Err("invalid depth observation");
+         }
+         let emitted = output.len() - output_start;
+-        if eligible && (emitted == 0 || emitted > depth) {
++        if eligible && (emitted == 0 || emitted > offered + 1) {
+             return Err("invalid committed-token count");
+         }
+         if let Some(context) = &mut self.context {
+@@ -118,6 +574,18 @@
+             s.elapsed += elapsed;
+             s.blocks = s.rounds / 8;
+             s.tokens_per_second = Some(s.tokens as f64 / s.elapsed.as_secs_f64());
++            if let Some(tiny) = &mut self.tiny {
++                tiny.prior = Some((
++                    (emitted - 1) as f64 / offered as f64,
++                    elapsed.as_secs_f64() * 1000.0,
++                ));
++            }
++            if let Some(confidence) = &mut self.confidence {
++                confidence.prior = Some((
++                    (emitted - 1) as f64 / offered as f64,
++                    elapsed.as_secs_f64() * 1000.0,
++                ));
++            }
+         }
+         Ok(())
+     }
+@@ -151,4 +619,87 @@
+         assert_eq!(p.stats()[0].tokens, 1);
+         assert_eq!(p.depth(), 3);
+     }
+-}
++    #[test]
++    fn randomized_training_depths_keep_exposure_and_survive_a_new_request() {
++        let mut p = LearnedDepth::randomized(4, 20774000).unwrap();
++        let mut chosen = Vec::new();
++        for round in 0..128 {
++            if round == 64 {
++                p.begin_request("another turn");
++            }
++            p.prepare_output(&[11, 12]).unwrap();
++            let depth = p.depth();
++            chosen.push(depth - 1);
++            p.observe_output(depth, 0, &[11], Duration::from_millis(1), true)
++                .unwrap();
++        }
++        assert!(chosen.iter().all(|depth| (1..=4).contains(depth)));
++        for depth in 1..=4 {
++            assert!(chosen.iter().filter(|&&action| action == depth).count() >= 16);
++        }
++        assert_eq!(p.stats().iter().map(|s| s.rounds).sum::<u64>(), 128);
++        assert!(p.switches() > 0);
++    }
++    #[test]
++    fn tiny_depth_uses_only_available_token_and_noop_pays_inference() {
++        let mut text = "joint-v4-linear\t1\ttoken\t4\t100\t100\n".to_string();
++        for d in 1..=4 {
++            let mut accepted = [0.0_f64; 23];
++            if d == 3 {
++                accepted[0] = 2.0;
++            }
++            if d == 4 {
++                accepted[1] = 4.0;
++            }
++            let mut ms = [0.0_f64; 23];
++            ms[0] = 10.0;
++            for (kind, weights) in [("A", accepted), ("T", ms)] {
++                text.push_str(&format!(
++                    "{kind}\t{d}\t{}\n",
++                    weights.iter().map(ToString::to_string).collect::<Vec<_>>().join(",")
++                ));
++            }
++        }
++        text.push_str("B\t42\t0\n");
++        let model = TinyDepthModel::parse(&text).unwrap();
++        let mut learned = LearnedDepth::trained(model.clone(), false);
++        learned.prepare_output(&[42]).unwrap();
++        assert_eq!(learned.depth(), 5);
++        learned.observe_output(5, 0, &[42], Duration::from_millis(10), true).unwrap();
++        learned.begin_request("next user turn");
++        learned.prepare_output(&[17]).unwrap();
++        assert_eq!(learned.depth(), 4);
++        let mut noop = LearnedDepth::trained(model, true);
++        noop.prepare_output(&[42]).unwrap();
++        assert_eq!(noop.depth(), 4);
++        assert!(noop.inference_ns() > 0);
++    }
++    #[test]
++    fn after_offer_confidence_can_stop_and_noop_pays_the_same_model() {
++        let mut text = "joint-v4-confidence\t1\ttoken\t100\n".to_string();
++        for position in 0..3 {
++            let mut weights = [0.0_f64; 24];
++            weights[23] = 10.0;
++            text.push_str(&format!(
++                "C\t{position}\t0.8\t4\t{}\n",
++                weights.iter().map(ToString::to_string).collect::<Vec<_>>().join(",")
++            ));
++        }
++        let model = TinyConfidenceModel::parse(&text).unwrap();
++        let mut live = LearnedDepth::fixed(4).unwrap().with_confidence(model.clone(), false);
++        live.prepare_output(&[42]).unwrap();
++        assert!(live.confidence_stop(0, 0.1).unwrap());
++        live.observe_output_with_offered(
++            4, 1, 0, &[42], Duration::from_millis(10), true,
++        )
++        .unwrap();
++        live.prepare_output(&[42]).unwrap();
++        assert!(!live.confidence_stop(0, 0.99).unwrap());
++        assert_eq!(live.confidence_counts(), (2, 1));
++        let mut noop = LearnedDepth::fixed(4).unwrap().with_confidence(model, true);
++        noop.prepare_output(&[42]).unwrap();
++        assert!(!noop.confidence_stop(0, 0.1).unwrap());
++        assert_eq!(noop.confidence_counts(), (1, 0));
++        assert!(noop.inference_ns() > 0);
++    }
++}
+diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engine/src/bin/mtp_depth_study.rs
+--- a/crates/memra-engine/src/bin/mtp_depth_study.rs
++++ b/crates/memra-engine/src/bin/mtp_depth_study.rs
+@@ -1,11 +1,13 @@
+ //! Full-vocabulary embedded-MTP depth research, Qwen native-session driver.
+ use memra_engine::Engine;
+ use memra_engine::hybrid::HybridModel;
++use memra_engine::learned_depth::{LearnedDepth, TinyConfidenceModel, TinyDepthModel};
+ use memra_engine::spec::SpecSampling;
+ use memra_engine::spec::{MtpDepthExperiment, SpecSession};
+ use memra_gguf::GgufFile;
+ use memra_tokenizer::Tokenizer;
+ use memra_tokenizer::chat::{ThinkMode, Turn};
++use std::collections::HashMap;
+ use std::io::Write;
+ use std::path::Path;
+ use std::process::Command;
+@@ -13,17 +15,151 @@
+ 
+ mod depth_study_io;
+ 
++struct KRouter {
++    features: usize,
++    window_size: usize,
++    weights: Vec<(i32, [f64; 11])>,
++}
++
++impl KRouter {
++    fn parse(text: &str) -> Result<Self, &'static str> {
++        let mut lines = text.lines();
++        let header: Vec<_> = lines
++            .next()
++            .ok_or("missing sampler K model header")?
++            .split('\t')
++            .collect();
++        if header.len() != 5 || header[0] != "joint-v5-topk" || header[1] != "1" {
++            return Err("invalid sampler K model header");
++        }
++        let (features, window_size) = match header[2] {
++            "first16" => (10, 16),
++            "first32" => (10, 32),
++            "prior" => (11, 32),
++            _ => return Err("unknown sampler K feature version"),
++        };
++        let lambda: f64 = header[3].parse().map_err(|_| "invalid K target rate")?;
++        let alpha: f64 = header[4].parse().map_err(|_| "invalid K fit penalty")?;
++        if !lambda.is_finite() || lambda <= 0.0 || !alpha.is_finite() || alpha <= 0.0 {
++            return Err("invalid K rate or fit penalty");
++        }
++        let mut weights = Vec::new();
++        for line in lines {
++            let fields: Vec<_> = line.split('\t').collect();
++            if fields.len() != 3 || fields[0] != "K" {
++                return Err("invalid sampler K action row");
++            }
++            let k: i32 = fields[1].parse().map_err(|_| "invalid sampled K action")?;
++            if !matches!(k, 3 | 10 | 20) || weights.iter().any(|(old, _)| *old == k) {
++                return Err("duplicate or unsupported sampler K action");
++            }
++            let coefficients = fields[2]
++                .split(',')
++                .map(|value| value.parse::<f64>().map_err(|_| "invalid K weight"))
++                .collect::<Result<Vec<_>, _>>()?;
++            if coefficients.len() != features || coefficients.iter().any(|w| !w.is_finite()) {
++                return Err("sampler K weights differ from feature version");
++            }
++            let mut row = [0.0; 11];
++            row[..features].copy_from_slice(&coefficients);
++            weights.push((k, row));
++        }
++        if !weights.iter().any(|(k, _)| *k == 20) {
++            return Err("sampler K model lacks recommended default action");
++        }
++        Ok(Self { features, window_size, weights })
++    }
++
++    fn select(&self, prefix: &[u32], previous_accept: Option<f64>) -> i32 {
++        let mut x = [0.0; 11];
++        x[0] = 1.0;
++        let count = self.window_size;
++        let window = &prefix[..prefix.len().min(count)];
++        if !window.is_empty() {
++            for &token in window {
++                let bucket = token.wrapping_mul(0x9e37_79b1) % 8;
++                x[1 + bucket as usize] += 1.0 / window.len() as f64;
++            }
++        }
++        x[9] = window.len() as f64 / count as f64;
++        if self.features == 11 {
++            x[10] = previous_accept.unwrap_or(0.0);
++        }
++        let value = |row: &[f64; 11]| {
++            row[..self.features]
++                .iter()
++                .zip(x)
++                .map(|(weight, feature)| weight * feature)
++                .sum::<f64>()
++        };
++        let mut best = 20;
++        let mut best_score = value(
++            &self.weights.iter().find(|(k, _)| *k == 20).expect("checked K20").1,
++        );
++        for (k, row) in &self.weights {
++            let score = value(row);
++            if score > best_score + 1e-9 {
++                best = *k;
++                best_score = score;
++            }
++        }
++        std::hint::black_box(best_score);
++        best
++    }
++}
++
+ fn experiment(
+     arm: &str,
+     cap: usize,
++    explore_seed: Option<u64>,
+     tok: &Tokenizer,
+     vocabulary: usize,
+     priors: Option<&str>,
++    depth_model: Option<&str>,
++    confidence_model: Option<&str>,
+ ) -> Result<Option<MtpDepthExperiment>, Box<dyn std::error::Error>> {
++    if matches!(arm, "learn-c" | "noop-c" | "joint-cd" | "noop-cd") {
++        let base = if matches!(arm, "joint-cd" | "noop-cd") {
++            let text = std::fs::read_to_string(depth_model.ok_or("joint arm needs D model")?)?;
++            memra_engine::learned_depth::LearnedDepth::trained(
++                memra_engine::learned_depth::TinyDepthModel::parse(&text)?,
++                arm == "noop-cd",
++            )
++        } else {
++            memra_engine::learned_depth::LearnedDepth::fixed(4)?
++        };
++        let text = std::fs::read_to_string(
++            confidence_model.ok_or("learned confidence needs C model")?,
++        )?;
++        return Ok(Some(MtpDepthExperiment::Learned(
++            base.with_confidence(
++                memra_engine::learned_depth::TinyConfidenceModel::parse(&text)?,
++                matches!(arm, "noop-c" | "noop-cd"),
++            ),
++        )));
++    }
++    if matches!(arm, "trained-d" | "noop-d") {
++        let text = std::fs::read_to_string(depth_model.ok_or("trained depth needs model file")?)?;
++        return Ok(Some(MtpDepthExperiment::Learned(
++            memra_engine::learned_depth::LearnedDepth::trained(
++                memra_engine::learned_depth::TinyDepthModel::parse(&text)?,
++                arm == "noop-d",
++            ),
++        )));
++    }
++    if arm == "explore-d" {
++        return Ok(Some(MtpDepthExperiment::Learned(
++            memra_engine::learned_depth::LearnedDepth::randomized(
++                cap,
++                explore_seed.ok_or("randomized depth requires its own seed")?,
++            )?,
++        )));
++    }
+     let arm = match arm {
+         "trace-c1" => "fixed:1",
+         "trace-c2" => "fixed:2",
+-        "trace-c3" | "learn-c3" | "monitor-c3" | "fixed-c3" => "fixed:3",
++        "trace-c3" | "learn-c3" | "monitor-c3" | "fixed-c3"
++        | "learn-topk" | "noop-topk" | "joint-ckd" | "noop-ckd" => "fixed:3",
+         other => other,
+     };
+     Ok(match arm {
+@@ -103,8 +239,8 @@
+         println!("{}", prompt.len());
+         return Ok(());
+     }
+-    if !(10..=16).contains(&args.len()) {
+-        return Err("usage: mtp-depth-study <target.gguf> embedded <workload.txt> <new-output-dir> <arm> <seed> <max-new> <ctx> <temperature> [gate|gate-cold] [confidence-policy=PATH] [confidence-costs=PATH] [confidence-fixed=C0,C1]".into());
++    if !(10..=18).contains(&args.len()) {
++        return Err("usage: mtp-depth-study <target.gguf> embedded <workload.txt> <new-output-dir> <arm> <seed> <max-new> <ctx> <temperature> [gate|gate-cold] [cap=N] [sampler-top-k=3|10|20] [sampler-schedule=K1,...,K8] [topk-model=PATH] [joint-model-dir=PATH] [depth-variant=token|history|prior] [confidence-variant=token|history|prior] [explore-seed=UINT64] [depth-model=PATH] [confidence-model=PATH] [confidence-policy=PATH] [confidence-costs=PATH] [confidence-fixed=C0,C1]".into());
+     }
+     let arm = args[5].as_str();
+     let seed: u64 = args[6].parse()?;
+@@ -115,8 +251,69 @@
+     let mut confidence_policy = None;
+     let mut confidence_costs = None;
+     let mut fixed_cutoffs = None;
++    let mut requested_cap = None;
++    let mut requested_top_k = None;
++    let mut sampler_schedule = None;
++    let mut topk_model_path = None;
++    let mut joint_model_dir = None;
++    let mut depth_variant = None;
++    let mut confidence_variant = None;
++    let mut explore_seed = None;
++    let mut depth_model = None;
++    let mut confidence_model = None;
+     for option in &args[10..] {
+-        if let Some(path) = option.strip_prefix("confidence-policy=") {
++        if let Some(value) = option.strip_prefix("cap=") {
++            if requested_cap.replace(value.parse::<usize>()?).is_some() {
++                return Err("duplicate draft ceiling".into());
++            }
++        } else if let Some(value) = option.strip_prefix("sampler-top-k=") {
++            if requested_top_k.replace(value.parse::<i32>()?).is_some() {
++                return Err("duplicate sampler top-k".into());
++            }
++        } else if let Some(value) = option.strip_prefix("sampler-schedule=") {
++            let values = value
++                .split(',')
++                .map(str::parse::<i32>)
++                .collect::<Result<Vec<_>, _>>()?;
++            let schedule: [i32; 8] = values
++                .try_into()
++                .map_err(|_| "sampler schedule requires eight top-k actions")?;
++            if sampler_schedule.replace(schedule).is_some() {
++                return Err("duplicate sampler schedule".into());
++            }
++        } else if let Some(path) = option.strip_prefix("topk-model=") {
++            if path.is_empty() || topk_model_path.replace(path).is_some() {
++                return Err("invalid sampler K model path".into());
++            }
++        } else if let Some(path) = option.strip_prefix("joint-model-dir=") {
++            if path.is_empty() || joint_model_dir.replace(path).is_some() {
++                return Err("invalid joint model directory".into());
++            }
++        } else if let Some(value) = option.strip_prefix("depth-variant=") {
++            if !matches!(value, "token" | "history" | "prior")
++                || depth_variant.replace(value).is_some()
++            {
++                return Err("invalid depth feature variant".into());
++            }
++        } else if let Some(value) = option.strip_prefix("confidence-variant=") {
++            if !matches!(value, "token" | "history" | "prior")
++                || confidence_variant.replace(value).is_some()
++            {
++                return Err("invalid confidence feature variant".into());
++            }
++        } else if let Some(value) = option.strip_prefix("explore-seed=") {
++            if explore_seed.replace(value.parse::<u64>()?).is_some() {
++                return Err("duplicate randomized depth seed".into());
++            }
++        } else if let Some(path) = option.strip_prefix("depth-model=") {
++            if path.is_empty() || depth_model.replace(path).is_some() {
++                return Err("invalid tiny depth model path".into());
++            }
++        } else if let Some(path) = option.strip_prefix("confidence-model=") {
++            if path.is_empty() || confidence_model.replace(path).is_some() {
++                return Err("invalid tiny confidence model path".into());
++            }
++        } else if let Some(path) = option.strip_prefix("confidence-policy=") {
+             if path.is_empty() || confidence_policy.replace(path).is_some() {
+                 return Err("invalid confidence policy path".into());
+             }
+@@ -143,9 +340,32 @@
+             standard_args.push(option.clone());
+         }
+     }
++    let cap = requested_cap.unwrap_or(7);
++    let sampler_top_k = requested_top_k.unwrap_or(20);
++    if !(1..=7).contains(&cap)
++        || !matches!(sampler_top_k, 3 | 10 | 20)
++        || sampler_schedule.is_some_and(|values: [i32; 8]| {
++            values.iter().any(|&k| !matches!(k, 3 | 10 | 20))
++        })
++        || (sampler_schedule.is_some() && topk_model_path.is_some())
++        || matches!(arm, "learn-topk" | "noop-topk" | "joint-ckd" | "noop-ckd") != topk_model_path.is_some()
++        || (matches!(arm, "learn-topk" | "noop-topk") && cap != 3)
++        || (matches!(arm, "joint-ckd" | "noop-ckd") && cap != 4)
++        || matches!(arm, "joint-ckd" | "noop-ckd") != joint_model_dir.is_some()
++        || matches!(arm, "joint-ckd" | "noop-ckd") != depth_variant.is_some()
++        || matches!(arm, "joint-ckd" | "noop-ckd") != confidence_variant.is_some()
++        || (arm == "explore-d" && requested_cap.is_none())
++        || (arm == "explore-d") != explore_seed.is_some()
++        || matches!(arm, "trained-d" | "noop-d" | "joint-cd" | "noop-cd") != depth_model.is_some()
++        || matches!(arm, "learn-c" | "noop-c" | "joint-cd" | "noop-cd") != confidence_model.is_some()
++        || (depth_model.is_some() && cap != 4)
++        || (matches!(arm, "learn-c" | "noop-c") && cap != 3)
++    {
++        return Err("invalid draft ceiling, sampler top-k, or learned-policy arguments".into());
++    }
+     let (gate, cold_reference, priors) = depth_study_io::extra_args(&standard_args)?;
+     let live_confidence = matches!(arm, "learn-c3" | "monitor-c3");
+-    let trace_confidence = live_confidence || matches!(arm, "trace-c1" | "trace-c2" | "trace-c3");
++    let trace_confidence = live_confidence || matches!(arm, "trace-c1" | "trace-c2" | "trace-c3" | "explore-d");
+     if confidence_policy.is_some() != live_confidence
+         || confidence_costs.is_some() != live_confidence
+         || (arm == "fixed-c3") != fixed_cutoffs.is_some()
+@@ -169,7 +389,7 @@
+     let mut rows = std::fs::File::create_new(output.join("turns.tsv"))?;
+     writeln!(
+         rows,
+-        "turn\tseed\tprompt_tokens\toutput_tokens\telapsed_s\tresumed\tdrafted\taccepted\tpolicy_rounds\tswitches\tfinish_reason\tcommitted_overshoot\tcached_tokens\tnew_input_tokens\tcheckpoint_tokens\tconfidence_before\tconfidence_after\tconfidence_policy_ns"
++        "turn\tseed\tsampler_top_k\tprompt_tokens\toutput_tokens\telapsed_s\tresumed\tdrafted\taccepted\tpolicy_rounds\tswitches\tfinish_reason\tcommitted_overshoot\tcached_tokens\tnew_input_tokens\tcheckpoint_tokens\tconfidence_before\tconfidence_after\tconfidence_policy_ns\tdepth_policy_ns\tconfidence_decisions\tconfidence_stops\tk_model_ns"
+     )?;
+     let mut trace = std::fs::File::create_new(output.join("rounds.tsv"))?;
+     writeln!(
+@@ -195,18 +415,44 @@
+     if mtp.d2t.is_some() || draft_vocab != model.output.out_features() {
+         return Err("MTP draft and target heads must both use the full vocabulary".into());
+     }
+-    let cap = 7;
+     let routing = depth_study_io::request_routing::RequestRouting::parse(arm, cap as u8)?;
+     let initial_arm = routing.map(|r| format!("fixed:{}", r.initial_k()))
+         .unwrap_or_else(|| arm.to_owned());
+-    let initial_experiment = experiment(&initial_arm, cap, &tok, model.output.out_features(), priors)?;
++    let initial_experiment = experiment(
++        &initial_arm, cap, explore_seed, &tok, model.output.out_features(), priors,
++        depth_model, confidence_model,
++    )?;
++    let k_router = if let Some(path) = topk_model_path {
++        Some(KRouter::parse(&std::fs::read_to_string(path)?)?)
++    } else {
++        None
++    };
++    let mut joint_policies: HashMap<i32, LearnedDepth> = HashMap::new();
++    if let Some(directory) = joint_model_dir {
++        let router = k_router.as_ref().ok_or("joint policy lacks sampler K router")?;
++        for (k, _) in &router.weights {
++            let base = Path::new(directory).join(format!("topk{k}"));
++            let depth = std::fs::read_to_string(base.join(format!(
++                "depth-{}.tsv",
++                depth_variant.ok_or("missing joint depth variant")?,
++            )))?;
++            let confidence = std::fs::read_to_string(base.join(format!(
++                "confidence-{}.tsv",
++                confidence_variant.ok_or("missing joint confidence variant")?,
++            )))?;
++            let noop = arm == "noop-ckd";
++            let policy = LearnedDepth::trained(TinyDepthModel::parse(&depth)?, noop)
++                .with_confidence(TinyConfidenceModel::parse(&confidence)?, noop);
++            joint_policies.insert(*k, policy);
++        }
++    }
+     let mut routing_log = std::fs::File::create_new(output.join("routing.tsv"))?;
+-    writeln!(routing_log, "turn\tsource\tkind\tk\trouting_ns")?;
++    writeln!(routing_log, "turn\tsource\tkind\tdraft_depth\trouting_ns")?;
+     let eos = tok.eog_ids();
+     let sampling = SpecSampling {
+         temp: temperature,
+         seed,
+-        top_k: 20,
++        top_k: sampler_top_k,
+         top_p: 0.95,
+         min_p: 0.0,
+         penalty_last_n: 0,
+@@ -215,7 +461,7 @@
+         penalty_present: 0.0,
+     };
+     eprintln!(
+-        "study arm={arm} seed={seed} full_vocab={} draft_vocab={} mtp=embedded draft_cap={cap} context_policy={} max_new={max_new} ctx={ctx} temperature={temperature} mode={}",
++        "study arm={arm} seed={seed} full_vocab={} draft_vocab={} mtp=embedded draft_cap={cap} sampler_top_k={sampler_top_k} context_policy={} max_new={max_new} ctx={ctx} temperature={temperature} mode={}",
+         model.output.out_features(),
+         draft_vocab,
+         arm == "learned" || arm == "context",
+@@ -252,9 +498,36 @@
+     let mut total_tokens = 0usize;
+     let mut total_seconds = 0f64;
+     let mut measured_rounds = 0usize;
++    let mut previous_accept = None;
+     for (index, user) in user_turns.iter().enumerate() {
+         let turn = index + 1;
+         let started = Instant::now();
++        let mut routed_prefix = None;
++        let mut routed_choice = None;
++        let mut k_model_ns = 0_u128;
++        let turn_top_k = if let Some(router) = &k_router {
++            let decision_start = Instant::now();
++            let ids = tok.encode(user, false);
++            let prefix = ids[..ids.len().min(32)].to_vec();
++            if prefix.is_empty() {
++                return Err("K selector needs at least one user tokenizer token".into());
++            }
++            let predicted = router.select(&prefix, previous_accept);
++            routed_prefix = Some(prefix);
++            routed_choice = Some(predicted);
++            k_model_ns = decision_start.elapsed().as_nanos();
++            if matches!(arm, "noop-topk" | "noop-ckd") {
++                sampler_top_k
++            } else {
++                predicted
++            }
++        } else {
++            sampler_schedule.map_or(sampler_top_k, |values| values[index])
++        };
++        let turn_sampling = SpecSampling {
++            top_k: turn_top_k,
++            ..sampling
++        };
+         history.push(Turn {
+             role: "user".into(),
+             content: (*user).into(),
+@@ -309,6 +582,11 @@
+         if let Some(selection) = request_selection {
+             sess.depth_experiment = Some(MtpDepthExperiment::Learned(memra_engine::learned_depth::LearnedDepth::fixed(usize::from(selection.decision.k) + 1)?));
+         }
++        if matches!(arm, "joint-ckd" | "noop-ckd") {
++            let choice = routed_choice.ok_or("joint policy lacks selected K")?;
++            let policy = joint_policies.get(&choice).ok_or("joint policy lacks K-specific C/D")?;
++            sess.depth_experiment = Some(MtpDepthExperiment::Learned(policy.clone()));
++        }
+         let applied_cutoffs = if live_confidence {
+             Some(learned_cutoffs)
+         } else if trace_confidence {
+@@ -324,6 +602,14 @@
+         let new_input_tokens = prompt.len() - cached_tokens;
+         let trace_start = sess.depth_rounds.len();
+         let confidence_start = sess.confidence_rounds.len();
++        let depth_policy_start = match &sess.depth_experiment {
++            Some(MtpDepthExperiment::Learned(policy)) => policy.inference_ns(),
++            _ => 0,
++        };
++        let confidence_counts_start = match &sess.depth_experiment {
++            Some(MtpDepthExperiment::Learned(policy)) => policy.confidence_counts(),
++            _ => (0, 0),
++        };
+         let mut on_commit = |chunk: &[u32]| !chunk.iter().any(|id| eos.contains(id));
+         let (mut ids, drafted, accepted) = model.generate_spec_session_sampled(
+             &e,
+@@ -331,16 +617,23 @@
+             &prompt[cached_tokens..],
+             max_new,
+             cap,
+-            Some(sampling),
++            Some(turn_sampling),
+             Some(&mut on_commit),
+         )?;
+-        model.spec_flush_pending(&e, &mut sess, Some(sampling))?;
++        model.spec_flush_pending(&e, &mut sess, Some(turn_sampling))?;
+         ids.truncate(max_new);
+         if let Some(end) = ids.iter().position(|id| eos.contains(id)) {
+             ids.truncate(end + 1);
+         }
+         e.stream().synchronize()?;
+         carried_policy = sess.depth_experiment.clone();
++        if matches!(arm, "joint-ckd" | "noop-ckd") {
++            let choice = routed_choice.ok_or("joint policy lacks selected K")?;
++            let Some(MtpDepthExperiment::Learned(policy)) = &sess.depth_experiment else {
++                return Err("joint C/D policy disappeared after sampled request".into());
++            };
++            joint_policies.insert(choice, policy.clone());
++        }
+         if ids.is_empty()
+             || ids
+                 .iter()
+@@ -472,6 +765,10 @@
+             Some(MtpDepthExperiment::Learned(p)) => Some(p),
+             _ => None,
+         };
++        let depth_policy_ns = policy_ref.map_or(0, |p| p.inference_ns() - depth_policy_start);
++        let confidence_counts = policy_ref.map_or((0, 0), |p| p.confidence_counts());
++        let confidence_decisions = confidence_counts.0 - confidence_counts_start.0;
++        let confidence_stops = confidence_counts.1 - confidence_counts_start.1;
+         context_receipts.write(
+             turn,
+             user,
+@@ -506,7 +803,7 @@
+         };
+         writeln!(
+             rows,
+-            "{turn}\t{seed}\t{}\t{}\t{seconds:.9}\t{resumed}\t{drafted}\t{accepted}\t{}\t{switches}\t{stop_reason}\t{overshoot}\t{cached_tokens}\t{new_input_tokens}\t{checkpoint_tokens}\t{}\t{}\t{confidence_policy_ns}",
++            "{turn}\t{seed}\t{turn_top_k}\t{}\t{}\t{seconds:.9}\t{resumed}\t{drafted}\t{accepted}\t{}\t{switches}\t{stop_reason}\t{overshoot}\t{cached_tokens}\t{new_input_tokens}\t{checkpoint_tokens}\t{}\t{}\t{confidence_policy_ns}\t{depth_policy_ns}\t{confidence_decisions}\t{confidence_stops}\t{k_model_ns}",
+             prompt.len(),
+             ids.len(),
+             new_trace.len(),
+@@ -523,6 +820,11 @@
+         )?;
+         rows.flush()?;
+         trace.flush()?;
++        let user_ids = routed_prefix.unwrap_or_else(|| tok.encode(user, false));
++        save_ids(
++            &output.join(format!("turn-{turn}.user-prefix.ids")),
++            &user_ids[..user_ids.len().min(32)],
++        )?;
+         save_ids(&output.join(format!("turn-{turn}.prompt.ids")), &prompt)?;
+         save_ids(&output.join(format!("turn-{turn}.output.ids")), &ids)?;
+         std::fs::write(output.join(format!("turn-{turn}.raw.txt")), &raw)?;
+@@ -536,10 +838,15 @@
+         )?;
+         history.push(answer);
+         parked = Some(sess);
++        previous_accept = if drafted > 0 {
++            Some(accepted as f64 / drafted as f64)
++        } else {
++            None
++        };
+         total_tokens += ids.len();
+         total_seconds += seconds;
+         eprintln!(
+-            "turn={turn} tokens={} seconds={seconds:.3} resumed={resumed} switches={switches}",
++            "turn={turn} sampler_top_k={turn_top_k} tokens={} seconds={seconds:.3} resumed={resumed} switches={switches}",
+             ids.len()
+         );
+     }
+@@ -578,6 +885,29 @@
+     );
+     println!("PERF_METRICS_END");
+     Ok(())
++}
++
++#[cfg(test)]
++mod k_model_tests {
++    use super::KRouter;
++
++    #[test]
++    fn k_router_uses_only_the_bounded_user_token_prefix() {
++        let mut k3 = [0.0_f64; 10];
++        k3[8] = 10.0; // token id 7 hashes to bucket 7
++        let zero = [0.0_f64; 10];
++        let text = format!(
++            "joint-v5-topk\t1\tfirst16\t100\t20\nK\t3\t{}\nK\t20\t{}\n",
++            k3.iter().map(ToString::to_string).collect::<Vec<_>>().join(","),
++            zero.iter().map(ToString::to_string).collect::<Vec<_>>().join(","),
++        );
++        let router = KRouter::parse(&text).unwrap();
++        assert_eq!(router.select(&[7], None), 3);
++        assert_eq!(router.select(&[1], None), 20);
++        let mut later = vec![1_u32; 16];
++        later.push(7);
++        assert_eq!(router.select(&later, None), 20);
++    }
+ }
+ 
+ #[cfg(test)]
+diff --git a/crates/memra-engine/src/spec.rs b/crates/memra-engine/src/spec.rs
+--- a/crates/memra-engine/src/spec.rs
++++ b/crates/memra-engine/src/spec.rs
+@@ -12043,7 +12043,10 @@
+         if collect_confidence && (depth_study.is_none() || !sampled) {
+             return Err("confidence observations require a sampled depth-study session".into());
+         }
+-        let confidence_on = p_min > 0.0 || collect_confidence;
++        let learned_confidence = depth_study.as_ref().is_some_and(|(policy, _)| {
++            matches!(&**policy, MtpDepthExperiment::Learned(learner) if learner.has_confidence_policy())
++        });
++        let confidence_on = p_min > 0.0 || collect_confidence || learned_confidence;
+         // A sampled zero-draft choice must be made before drawing a proposal.
+         // This research source retains low-confidence sampled picks, so it refuses
+         // positive PMIN0 until a separate pre-draw rule is qualified.
+@@ -12873,7 +12876,16 @@
+                         chain_tokens.push(d);
+                         chain_seed_bufs.push(e.clone_dtod(&dctx.g_seed)?);
+                         // Retaining this pick keeps the verifier's proposal law unchanged.
+-                        if draft_p.is_some_and(|p| cutoff_for_slot(j) > 0.0 && p < cutoff_for_slot(j)) {
++                        let learned_stop = if learned_confidence && j + 1 < k_this {
++                            let (policy, _) = depth_study.as_mut().ok_or("missing confidence policy")?;
++                            let MtpDepthExperiment::Learned(learner) = &mut **policy else {
++                                return Err("confidence study has another policy".into());
++                            };
++                            learner.confidence_stop(j, draft_p.ok_or("missing offered probability")?)?
++                        } else {
++                            false
++                        };
++                        if learned_stop || draft_p.is_some_and(|p| cutoff_for_slot(j) > 0.0 && p < cutoff_for_slot(j)) {
+                             break;
+                         }
+                     }
+@@ -13305,7 +13317,16 @@
+                         {
+                             break;
+                         }
+-                        if sampled && draft_p.is_some_and(|p| cutoff_for_slot(j) > 0.0 && p < cutoff_for_slot(j)) {
++                        let learned_stop = if learned_confidence && sampled && j + 1 < k_this {
++                            let (policy, _) = depth_study.as_mut().ok_or("missing confidence policy")?;
++                            let MtpDepthExperiment::Learned(learner) = &mut **policy else {
++                                return Err("confidence study has another policy".into());
++                            };
++                            learner.confidence_stop(j, draft_p.ok_or("missing offered probability")?)?
++                        } else {
++                            false
++                        };
++                        if learned_stop || sampled && draft_p.is_some_and(|p| cutoff_for_slot(j) > 0.0 && p < cutoff_for_slot(j)) {
+                             break;
+                         }
+                     }
+@@ -14177,8 +14198,9 @@
+                 }
+                 let (policy, traces) = depth_study.as_mut().expect("study timer has policy");
+                 if let MtpDepthExperiment::Learned(learner) = &mut **policy {
+-                    learner.observe_output(
++                    learner.observe_output_with_offered(
+                         k_this + 1,
++                        k_round,
+                         output_before,
+                         &out,
+                         elapsed,

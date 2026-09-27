@@ -1,0 +1,45 @@
+2026-09-24T15:41:21Z model sha256 (outside the hold): 52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+2026-09-24T15:43:21Z hold attempt 1: the lock stayed busy for 120 s
+2026-09-24T15:45:21Z hold attempt 2: the lock stayed busy for 120 s
+2026-09-24T15:47:21Z hold attempt 3: the lock stayed busy for 120 s
+2026-09-24T15:49:21Z hold attempt 4: the lock stayed busy for 120 s
+2026-09-24T15:51:21Z hold attempt 5: the lock stayed busy for 120 s
+2026-09-24T15:53:21Z hold attempt 6: the lock stayed busy for 120 s
+2026-09-24T15:55:21Z hold attempt 7: the lock stayed busy for 120 s
+2026-09-24T15:57:21Z hold attempt 8: the lock stayed busy for 120 s
+2026-09-24T15:59:21Z hold attempt 9: the lock stayed busy for 120 s
+2026-09-24T16:01:21Z hold attempt 10: the lock stayed busy for 120 s
+2026-09-24T16:03:21Z hold attempt 11: the lock stayed busy for 120 s
+2026-09-24T16:04:30Z hold taken (fd 9) tree=a266da656529ec409b50126c6ca6ef2ace1d8b2b
+2026-09-24T16:04:31Z unit server rc=0 test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 901 filtered out; finished in 0.47s
+2026-09-24T16:04:35Z unit engine rc=101 test result: FAILED. 11 passed; 2 failed; 0 ignored; 0 measured; 577 filtered out; finished in 2.86s
+2026-09-24T16:05:06Z ab o1 base rc=0 STALL rule cell=stall-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.9 idle_p99=8.1
+2026-09-24T16:05:38Z ab o1 g rc=0 STALL rule cell=stall-demote-g arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.5 idle_p95=8.2 idle_p99=8.3 id
+2026-09-24T16:06:09Z ab o1 base rc=0 STALL rule cell=stall-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_p95=7.9 idle_p99=8.1
+2026-09-24T16:06:40Z ab o1 g rc=0 STALL rule cell=stall-demote-g arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.6 idle_p95=8.1 idle_p99=8.3 id
+2026-09-24T16:07:11Z ab o1 base rc=0 STALL rule cell=stall-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_p95=8.0 idle_p99=8.1
+2026-09-24T16:07:42Z ab o1 g rc=0 STALL rule cell=stall-demote-g arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.5 idle_p95=8.1 idle_p99=8.3 id
+2026-09-24T16:08:13Z ab o1 base rc=0 STALL rule cell=stall-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_p95=7.9 idle_p99=8.1
+2026-09-24T16:08:44Z ab o1 g rc=0 STALL rule cell=stall-demote-g arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.6 idle_p95=8.1 idle_p99=8.3 id
+2026-09-24T16:09:15Z ab o1 base rc=0 STALL rule cell=stall-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_p95=7.9 idle_p99=8.2
+2026-09-24T16:09:47Z ab o1 g rc=0 STALL rule cell=stall-demote-g arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.5 idle_p95=8.1 idle_p99=8.3 id
+2026-09-24T16:10:18Z ab o2 g rc=0 STALL rule cell=stall-demote-g arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.6 idle_p95=8.2 idle_p99=8.4 id
+2026-09-24T16:10:49Z ab o2 base rc=0 STALL rule cell=stall-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_p95=8.0 idle_p99=8.2
+2026-09-24T16:11:20Z ab o2 g rc=0 STALL rule cell=stall-demote-g arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.6 idle_p95=8.2 idle_p99=8.4 id
+2026-09-24T16:11:51Z ab o2 base rc=0 STALL rule cell=stall-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.5 idle_p95=8.1 idle_p99=8.4
+2026-09-24T16:12:23Z ab o2 g rc=0 STALL rule cell=stall-demote-g arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.8 idle_p95=8.4 idle_p99=8.7 id
+2026-09-24T16:12:55Z ab o2 base rc=0 STALL rule cell=stall-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.6 idle_p95=8.3 idle_p99=8.5
+2026-09-24T16:13:27Z ab o2 g rc=0 STALL rule cell=stall-demote-g arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.7 idle_p95=8.3 idle_p99=8.5 id
+2026-09-24T16:13:58Z ab o2 base rc=0 STALL rule cell=stall-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.5 idle_p95=8.1 idle_p99=8.3
+2026-09-24T16:14:30Z ab o2 g rc=0 STALL rule cell=stall-demote-g arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.7 idle_p95=8.4 idle_p99=8.6 id
+2026-09-24T16:15:01Z ab o2 base rc=0 STALL rule cell=stall-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.6 idle_p95=8.1 idle_p99=8.3
+2026-09-24T16:15:16Z gate identity-default-off rc=0 KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+2026-09-24T16:15:31Z gate identity-default-on rc=0 KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+2026-09-24T16:15:41Z gate identity-plain-off rc=0 KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+2026-09-24T16:15:53Z gate identity-plain-on rc=0 KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+2026-09-24T16:16:18Z gate failure-on rc=0 KV-HOST-SPILL FAILURE GATE: ALL GREEN
+2026-09-24T16:18:52Z gate fault-default rc=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+2026-09-24T16:20:59Z gate fault-plain rc=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+2026-09-24T16:21:21Z gate hit-off rc=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+2026-09-24T16:21:47Z gate hit-on rc=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+2026-09-24T16:21:47Z hold released; DAY38-G-CARD-RUN-DONE

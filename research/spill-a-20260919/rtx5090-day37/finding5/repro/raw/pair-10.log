@@ -1,0 +1,20 @@
+
+running 2 tests
+test tier_transfer::tests::d2h_span_batch_lands_with_its_ticket_on_the_copy_stream ... ok
+test tier_transfer::tests::h2d_span_batch_lands_with_its_ticket_on_the_copy_stream ... FAILED
+
+failures:
+
+---- tier_transfer::tests::h2d_span_batch_lands_with_its_ticket_on_the_copy_stream stdout ----
+HOLD READING cell=h2d_span_batch first_item_seen_ms=306.90 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=true
+
+thread 'tier_transfer::tests::h2d_span_batch_lands_with_its_ticket_on_the_copy_stream' (418748) panicked at crates/memra-engine/src/tier_transfer.rs:4338:9:
+a batch with a running span has not landed (HOLD READING cell=h2d_span_batch first_item_seen_ms=306.90 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=true)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tier_transfer::tests::h2d_span_batch_lands_with_its_ticket_on_the_copy_stream
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.86s
+

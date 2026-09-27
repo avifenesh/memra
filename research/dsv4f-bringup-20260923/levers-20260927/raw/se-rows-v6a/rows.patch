@@ -1,0 +1,66 @@
+diff --git a/crates/memra-engine/cu/dsv4_dense_m1_exact_tail.cuh b/crates/memra-engine/cu/dsv4_dense_m1_exact_tail.cuh
+index df0343423..bc38de21f 100644
+--- a/crates/memra-engine/cu/dsv4_dense_m1_exact_tail.cuh
++++ b/crates/memra-engine/cu/dsv4_dense_m1_exact_tail.cuh
+@@ -289,6 +289,17 @@ __global__ void dsv4_dense_exact_tail_dots_kernel(const float* __restrict__ x,
+ // M > 1 (memra #710 B-row, verify rows): M token rows share each weight load, each with
+ // its own accumulator in the same leaf order, and each row reduces through the same
+ // tree, so row t's bits equal its M=1 launch (and dsv4_gemv_fp8_m_kernel<M>'s).
++// Output rows per 128-thread tile row of a dense-fast FP8 launch (memra #710): one row's 128
++// leaves and tree never change, so this sets only how many rows share a block, its E4M3 table
++// and, through L1, its activation reads. ONE row count for one-token and grouped launches, and
++// one for the M-row launches, whose register footprint grows with M.
++#ifndef DSV4_DENSE_FAST_ROWS
++#define DSV4_DENSE_FAST_ROWS 2
++#endif
++#ifndef DSV4_DENSE_FAST_ROWS_M
++#define DSV4_DENSE_FAST_ROWS_M 2
++#endif
++
+ template <int ROWS, bool GROUPED = false, int M = 1>
+ __global__ void dsv4_dense_fast_fp8_kernel(const uint8_t* __restrict__ w,
+                                        const float* __restrict__ sc, int sc_cols,
+@@ -486,7 +497,8 @@ extern "C" int memra_dsv4_dense_exact_tail_fp8(const void* w, const float* sc, i
+         if (rc) return rc;
+     }
+     if (dsv4_dense_fast_enabled) {
+-        memra_chain_launch(dsv4_dense_fast_fp8_kernel<2>,(n + 1LL) / 2, 256, 0, (cudaStream_t)raw_stream)(
++        constexpr int R = DSV4_DENSE_FAST_ROWS;
++        memra_chain_launch(dsv4_dense_fast_fp8_kernel<R>,(n + (R - 1LL)) / R, 128 * R, 0, (cudaStream_t)raw_stream)(
+             (const uint8_t*)w, sc, sc_cols, (const uint16_t*)x, y, n, k,
+             xstride > 0 ? xstride : k, ystride > 0 ? ystride : n, 0, 0);
+         auto rc = cudaGetLastError();
+diff --git a/crates/memra-engine/cu/dsv4_gpu.cu b/crates/memra-engine/cu/dsv4_gpu.cu
+index 9b2f81ef9..d28697c99 100644
+--- a/crates/memra-engine/cu/dsv4_gpu.cu
++++ b/crates/memra-engine/cu/dsv4_gpu.cu
+@@ -4408,8 +4408,9 @@ extern "C" int memra_dsv4_dense_cutlass_counts(uint64_t* splitk, uint64_t* decli
+ 
+ #define DSV4_DENSE_FAST_FP8_M_CASE(MM)                                                \
+     case MM:                                                                         \
+-        memra_chain_launch(dsv4_dense_fast_fp8_kernel<2, false, MM>,(unsigned)((n + 1LL) / 2), 256, 0,  \
+-                                                   stream)(                        \
++        memra_chain_launch(dsv4_dense_fast_fp8_kernel<DSV4_DENSE_FAST_ROWS_M, false, MM>,         \
++            (unsigned)((n + (DSV4_DENSE_FAST_ROWS_M - 1LL)) / DSV4_DENSE_FAST_ROWS_M),           \
++            128 * DSV4_DENSE_FAST_ROWS_M, 0, stream)(                                          \
+             (const uint8_t*)w_codes, sc_f32, sc_cols, (const uint16_t*)x_bf16, y, n, \
+             k, xstride, ystride, 0, 0);                                               \
+         break;
+@@ -4563,6 +4564,17 @@ extern "C" int memra_dsv4_gemv_fp8_grouped_m1(
+                 if (rc) return rc;
+             }
+         }
++        // A grouped flat row is group * n + row with no bound check, so the grid tiles `total`
++        // exactly; a row count that does not divide it keeps two rows per block.
++        constexpr int R = DSV4_DENSE_FAST_ROWS;
++        if (total % R == 0) {
++            memra_chain_launch(dsv4_dense_fast_fp8_kernel<R, true>,(unsigned)(total / R), 128 * R, 0, stream)(
++                (const uint8_t*)w_codes, sc_f32, sc_cols, (const uint16_t*)x_bf16, y,
++                rows_per_group, k, k, rows_per_group, x_group_stride, y_group_stride);
++            DSV4_ERR();
++            ++dsv4_dense_fast_enqueues[0];
++            return 0;
++        }
+         memra_chain_launch(dsv4_dense_fast_fp8_kernel<2, true>,(unsigned)(total / 2), 256, 0, stream)(
+             (const uint8_t*)w_codes, sc_f32, sc_cols, (const uint16_t*)x_bf16, y,
+             rows_per_group, k, k, rows_per_group, x_group_stride, y_group_stride);

@@ -1,0 +1,9 @@
+READY after=234s
+CELL warmup c=1 ok=1/1 agg=71.64 tok/s decode_p50=178.30 tok/s ttft_p50=272 ms tpot_p50=5.61 ms errs=[]
+CELL prof-greedy c=1 ok=2/2 agg=83.10 tok/s decode_p50=88.43 tok/s ttft_p50=196 ms tpot_p50=11.31 ms errs=[]
+Importer error status: An unknown error occurred.
+Unable to retrieve the importer version: skipping importation of the QDSTRM file.
+Generating '/tmp/nsys-report-9678.qdstrm'
+Generated:
+	/root/rcpt/dspark-anatomy/nsys/nsys.qdstrm
+PROF_DONE Traceback (most recent call last):   File "/root/box/nsys-ana.py", line 6, in <module>     names = dict(q("select id, value from StringIds")) 

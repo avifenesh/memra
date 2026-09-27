@@ -11,17 +11,25 @@ pub enum Dsv4Sampler {
     Host,
     Device,
 }
-pub fn dsv4_sampler() -> Res<Dsv4Sampler> {
-    static MODE: std::sync::OnceLock<Res<Dsv4Sampler>> = std::sync::OnceLock::new();
+/// `MEMRA_DSV4_SAMPLER` as set, `None` when unset: a load then takes its topology's default
+/// (`Dsv4Gpu::plain_sampler`).
+pub fn dsv4_sampler_env() -> Res<Option<Dsv4Sampler>> {
+    static MODE: std::sync::OnceLock<Res<Option<Dsv4Sampler>>> = std::sync::OnceLock::new();
     MODE.get_or_init(|| match std::env::var("MEMRA_DSV4_SAMPLER") {
-        Err(std::env::VarError::NotPresent) => Ok(Dsv4Sampler::Host),
-        Ok(v) if v == "host" => Ok(Dsv4Sampler::Host),
-        Ok(v) if v == "device" => Ok(Dsv4Sampler::Device),
+        Err(std::env::VarError::NotPresent) => Ok(None),
+        Ok(v) if v == "host" => Ok(Some(Dsv4Sampler::Host)),
+        Ok(v) if v == "device" => Ok(Some(Dsv4Sampler::Device)),
         v => Err(format!(
             "MEMRA_DSV4_SAMPLER expected host|device, got {v:?}"
         )),
     })
     .clone()
+}
+
+/// The sampler `MEMRA_DSV4_SAMPLER` names, host when unset. A loaded model's sampler is
+/// `Dsv4Gpu::plain_sampler`, which defaults by topology.
+pub fn dsv4_sampler() -> Res<Dsv4Sampler> {
+    Ok(dsv4_sampler_env()?.unwrap_or(Dsv4Sampler::Host))
 }
 
 /// Lazily allocated host counts and reused lists of touched IDs. A draw only

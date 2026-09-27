@@ -1,0 +1,693 @@
+1790271155840 [server] build: memra-0.138.0-5912ba6b909c (id: source-tree, git: c6f9282c26e7)
+1790271155840 [server] starting; models config = [("q38", "/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+1790271155841 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+1790271155841 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+1790271155941 [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+1790271156067 [worker] Engine ready (device=0, MEMRA_FAST=true)
+1790271156067 [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+1790271156067 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+1790271156067 [worker] loading model "q38" <- /root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+1790271156103 [tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+1790271159967 [worker]   loaded "q38": 65 layers, eos=248046, stop=[248046]
+1790271159967 [worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+1790271159967 [route-contract] model="q38" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+1790271159967 [worker] q38: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+1790271159967 [prefix-cache] on: budget 15883MB (15883042816 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from checkpoint; MEMRA_CTX unset), requested 15883042816 B; boot driver free 86518333440 B, post-reserve clamp 84907720704 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+1790271159967 [admission] "q38": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+1790271159967 [admit-cal] boot calibration skipped: spec serving disabled (static floor; the plain transient class is chunk-bounded)
+1790271159967 [admit-predict] shadow armed: budget_bytes=69034897408 budget_src=derived(effective_free_bytes=86528552960 - prefix_cache_budget_bytes=15883042816 - admission_reserve_bytes=1610612736) exempt_tenants=0 enforce=false (logging only, nothing is rejected; enforcement is a separate flip)
+1790271159967 [admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+1790271159967 [kv-vmm] door=ON routes=spec,plain granularity=2097152 grow=inline (MEMRA_KV_VMM_GROW) reap=owner-tick slack_rows=64 faults=none
+1790271159967 [server] worker ready; serving models: ["q38"]
+1790271159967 [server] listening on http://127.0.0.1:18526
+1790271161398 [meter] admit id=chatcmpl-163c2e098500faa266edf98f6037adfa tenant=default lane=interactive model="q38"
+1790271161399 [admission] request cost: model="q38" ctx=228 path=plain = 29696 B/token x ctx + 63MB prefill-workspace + 0MB fixed = 70MB
+1790271161399 [admit-predict] id=chatcmpl-163c2e098500faa266edf98f6037adfa tenant="" model="q38" verdict=admit reason=maxtok-fallback prompt=132 predicted_completion=32 kv_hat=68366336 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271161399 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=132 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790271161399 [admission] fixed residual high-water: model="q38" 308MB (observed 313MB at ctx 172 path=plain)
+1790271161399 [kv-vmm] admit id=chatcmpl-163c2e098500faa266edf98f6037adfa owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790271161511 [prefix-cache] insert (seed): 96 tokens, 159.7MB (resident 159.7MB / 15883MB, model q38)
+1790271161574 [fa-pool] grow #0 dev=0 o_len 0 -> 55296 ml_len 0 -> 216 (retired kept, zero=false)
+1790271161712 [fa-pool] grow #1 dev=0 o_len 55296 -> 110592 ml_len 216 -> 432 (retired kept, zero=false)
+1790271163946 [meter] admit id=chatcmpl-6123c8e8d2cb60c8d0346abc32b82862 tenant=default lane=interactive model="q38"
+1790271163949 [admission] request cost: model="q38" ctx=262208 path=plain = 29696 B/token x ctx + 710MB prefill-workspace + 308MB fixed = 8804MB
+1790271163949 [admit-predict] id=chatcmpl-6123c8e8d2cb60c8d0346abc32b82862 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1481 predicted_completion=32 kv_hat=1063117908 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271163949 [worker] plain-affinity: declined (history diverged at 47 of checkpoint 96; 1 parked, 1481 prompt tokens; model q38)
+1790271163951 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=1481 cached=0 lcp=47 active=1 wave=1 placement=single-or-non-pp2
+1790271163951 [kv-vmm] admit id=chatcmpl-6123c8e8d2cb60c8d0346abc32b82862 owed_before=0 session_mapped=71303168 session_reserved=8342470656 active=0
+1790271164316 [prefix-cache] insert (seed): 1440 tokens, 199.7MB (resident 359.4MB / 15883MB, model q38)
+1790271164381 [fa-pool] grow #2 dev=0 o_len 110592 -> 571392 ml_len 432 -> 2232 (retired kept, zero=false)
+1790271164463 [fa-pool] grow #3 dev=0 o_len 571392 -> 1142784 ml_len 2232 -> 4464 (retired kept, zero=false)
+1790271167383 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271168902 [kv-vmm] grow id=chatcmpl-6123c8e8d2cb60c8d0346abc32b82862 plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=814 waited=0
+1790271168902 [kv-vmm] grow id=chatcmpl-6123c8e8d2cb60c8d0346abc32b82862 plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=30 waited=0
+1790271168902 [kv-vmm] grow id=chatcmpl-6123c8e8d2cb60c8d0346abc32b82862 plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=25 waited=0
+1790271168902 [kv-vmm] grow id=chatcmpl-6123c8e8d2cb60c8d0346abc32b82862 plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=22 waited=0
+1790271168902 [kv-vmm] grow id=chatcmpl-6123c8e8d2cb60c8d0346abc32b82862 plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=24 waited=0
+1790271168902 [kv-vmm] grow id=chatcmpl-6123c8e8d2cb60c8d0346abc32b82862 plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=24 waited=0
+1790271168902 [kv-vmm] grow id=chatcmpl-6123c8e8d2cb60c8d0346abc32b82862 plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=25 waited=0
+1790271168902 [kv-vmm] grow id=chatcmpl-6123c8e8d2cb60c8d0346abc32b82862 plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=23 waited=0
+1790271168902 [kv-vmm] grow id=chatcmpl-6123c8e8d2cb60c8d0346abc32b82862 plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=24 waited=0
+1790271168902 [kv-vmm] grow id=chatcmpl-6123c8e8d2cb60c8d0346abc32b82862 plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=22 waited=0
+1790271168902 [kv-vmm] grow id=chatcmpl-6123c8e8d2cb60c8d0346abc32b82862 plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=24 waited=0
+1790271168902 [kv-vmm] grow id=chatcmpl-6123c8e8d2cb60c8d0346abc32b82862 plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=22 waited=0
+1790271168902 [kv-vmm] grow id=chatcmpl-6123c8e8d2cb60c8d0346abc32b82862 plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=24 waited=0
+1790271168902 [kv-vmm] grow id=chatcmpl-6123c8e8d2cb60c8d0346abc32b82862 plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=21 waited=0
+1790271168902 [kv-vmm] grow id=chatcmpl-6123c8e8d2cb60c8d0346abc32b82862 plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=23 waited=0
+1790271168902 [kv-vmm] grow id=chatcmpl-6123c8e8d2cb60c8d0346abc32b82862 plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=27 waited=0
+1790271168902 [kv-vmm] grow id=chatcmpl-6123c8e8d2cb60c8d0346abc32b82862 plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=24 waited=0
+1790271170422 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1222,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271171372 [kv-vmm] retire id=chatcmpl-6123c8e8d2cb60c8d0346abc32b82862 planes=34 mapped=106954752 reserved=8342470656 used=61500416 slack_bytes=2019328 booked=8804479060
+1790271171372 [kv-vmm] ensure-walls n=80 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271171373 [meter] admit id=chatcmpl-6d5d472d635f411bbbb23bc683c69fa7 tenant=default lane=interactive model="q38"
+1790271171376 [admit-predict] id=chatcmpl-6d5d472d635f411bbbb23bc683c69fa7 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1481 predicted_completion=591 kv_hat=1079717972 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271171376 [worker] plain-affinity: declined (history diverged at 47 of checkpoint 96; 2 parked, 1481 prompt tokens; model q38)
+1790271171378 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=1481 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790271171378 [kv-vmm] admit id=chatcmpl-6d5d472d635f411bbbb23bc683c69fa7 owed_before=0 session_mapped=71303168 session_reserved=8342470656 active=0
+1790271171744 [prefix-cache] insert (seed): 1440 tokens, 199.7MB (resident 559.1MB / 15883MB, model q38)
+1790271174810 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271176161 [kv-vmm] retire id=chatcmpl-6d5d472d635f411bbbb23bc683c69fa7 planes=34 mapped=71303168 reserved=8342470656 used=54907904 slack_bytes=2019328 booked=8804479060
+1790271176162 [kv-vmm] ensure-walls n=114 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271176163 [meter] admit id=chatcmpl-cf687990833193523759a576aea56d8e tenant=default lane=interactive model="q38"
+1790271176165 [admission] request cost: model="q38" ctx=262208 path=plain = 29696 B/token x ctx + 711MB prefill-workspace + 308MB fixed = 8806MB
+1790271176165 [admit-predict] id=chatcmpl-cf687990833193523759a576aea56d8e tenant="" model="q38" verdict=admit reason=global-p95 prompt=1484 predicted_completion=591 kv_hat=1081244756 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271176165 [worker] plain-affinity: declined (history diverged at 48 of checkpoint 1440; 2 parked, 1484 prompt tokens; model q38)
+1790271176167 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=1484 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790271176167 [kv-vmm] admit id=chatcmpl-cf687990833193523759a576aea56d8e owed_before=0 session_mapped=71303168 session_reserved=8342470656 active=0
+1790271176533 [prefix-cache] insert (seed): 1440 tokens, 199.7MB (resident 758.7MB / 15883MB, model q38)
+1790271179604 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,5,6,6,7,8,5,7,5,5,6,7,7,5,6,5,5,5,4,3,2,3,3,2,2,2,2,2,2,2,2,2,2,1,1,1,1,1,1,1,1,2,2,2,1,3,2,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271181087 [kv-vmm] grow id=chatcmpl-cf687990833193523759a576aea56d8e plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=148 waited=0
+1790271181087 [kv-vmm] grow id=chatcmpl-cf687990833193523759a576aea56d8e plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=33 waited=0
+1790271181087 [kv-vmm] grow id=chatcmpl-cf687990833193523759a576aea56d8e plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=26 waited=0
+1790271181087 [kv-vmm] grow id=chatcmpl-cf687990833193523759a576aea56d8e plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=25 waited=0
+1790271181087 [kv-vmm] grow id=chatcmpl-cf687990833193523759a576aea56d8e plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=24 waited=0
+1790271181087 [kv-vmm] grow id=chatcmpl-cf687990833193523759a576aea56d8e plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=25 waited=0
+1790271181087 [kv-vmm] grow id=chatcmpl-cf687990833193523759a576aea56d8e plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=24 waited=0
+1790271181087 [kv-vmm] grow id=chatcmpl-cf687990833193523759a576aea56d8e plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=24 waited=0
+1790271181087 [kv-vmm] grow id=chatcmpl-cf687990833193523759a576aea56d8e plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=22 waited=0
+1790271181087 [kv-vmm] grow id=chatcmpl-cf687990833193523759a576aea56d8e plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=25 waited=0
+1790271181087 [kv-vmm] grow id=chatcmpl-cf687990833193523759a576aea56d8e plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=25 waited=0
+1790271181087 [kv-vmm] grow id=chatcmpl-cf687990833193523759a576aea56d8e plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=23 waited=0
+1790271181087 [kv-vmm] grow id=chatcmpl-cf687990833193523759a576aea56d8e plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=23 waited=0
+1790271181087 [kv-vmm] grow id=chatcmpl-cf687990833193523759a576aea56d8e plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=23 waited=0
+1790271181087 [kv-vmm] grow id=chatcmpl-cf687990833193523759a576aea56d8e plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=24 waited=0
+1790271181087 [kv-vmm] grow id=chatcmpl-cf687990833193523759a576aea56d8e plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=26 waited=0
+1790271181087 [kv-vmm] grow id=chatcmpl-cf687990833193523759a576aea56d8e plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=26 waited=0
+1790271182642 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,570,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271183568 [kv-vmm] retire id=chatcmpl-cf687990833193523759a576aea56d8e planes=34 mapped=106954752 reserved=8342470656 used=61530112 slack_bytes=2019328 booked=8805916756
+1790271183569 [kv-vmm] ensure-walls n=78 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271183569 [meter] admit id=chatcmpl-59025df249642d6f2a2204b68ba4093d tenant=default lane=interactive model="q38"
+1790271183572 [admit-predict] id=chatcmpl-59025df249642d6f2a2204b68ba4093d tenant="" model="q38" verdict=admit reason=global-p95 prompt=1484 predicted_completion=591 kv_hat=1081244756 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271183572 [worker] plain-affinity: declined (history diverged at 48 of checkpoint 1440; 2 parked, 1484 prompt tokens; model q38)
+1790271183573 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=1484 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790271183573 [kv-vmm] admit id=chatcmpl-59025df249642d6f2a2204b68ba4093d owed_before=0 session_mapped=71303168 session_reserved=8342470656 active=0
+1790271183575 [kv-vmm] reap released=106954752 pending=0
+1790271183942 [prefix-cache] insert (seed): 1440 tokens, 199.7MB (resident 958.4MB / 15883MB, model q38)
+1790271187009 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271188491 [kv-vmm] grow id=chatcmpl-59025df249642d6f2a2204b68ba4093d plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=132 waited=0
+1790271188491 [kv-vmm] grow id=chatcmpl-59025df249642d6f2a2204b68ba4093d plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=31 waited=0
+1790271188491 [kv-vmm] grow id=chatcmpl-59025df249642d6f2a2204b68ba4093d plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=26 waited=0
+1790271188491 [kv-vmm] grow id=chatcmpl-59025df249642d6f2a2204b68ba4093d plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=25 waited=0
+1790271188491 [kv-vmm] grow id=chatcmpl-59025df249642d6f2a2204b68ba4093d plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=23 waited=0
+1790271188491 [kv-vmm] grow id=chatcmpl-59025df249642d6f2a2204b68ba4093d plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=23 waited=0
+1790271188491 [kv-vmm] grow id=chatcmpl-59025df249642d6f2a2204b68ba4093d plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=23 waited=0
+1790271188491 [kv-vmm] grow id=chatcmpl-59025df249642d6f2a2204b68ba4093d plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=30 waited=0
+1790271188491 [kv-vmm] grow id=chatcmpl-59025df249642d6f2a2204b68ba4093d plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=23 waited=0
+1790271188491 [kv-vmm] grow id=chatcmpl-59025df249642d6f2a2204b68ba4093d plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=23 waited=0
+1790271188491 [kv-vmm] grow id=chatcmpl-59025df249642d6f2a2204b68ba4093d plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=24 waited=0
+1790271188491 [kv-vmm] grow id=chatcmpl-59025df249642d6f2a2204b68ba4093d plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=23 waited=0
+1790271188491 [kv-vmm] grow id=chatcmpl-59025df249642d6f2a2204b68ba4093d plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=21 waited=0
+1790271188491 [kv-vmm] grow id=chatcmpl-59025df249642d6f2a2204b68ba4093d plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=22 waited=0
+1790271188491 [kv-vmm] grow id=chatcmpl-59025df249642d6f2a2204b68ba4093d plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=22 waited=0
+1790271188491 [kv-vmm] grow id=chatcmpl-59025df249642d6f2a2204b68ba4093d plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=26 waited=0
+1790271188491 [kv-vmm] grow id=chatcmpl-59025df249642d6f2a2204b68ba4093d plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=22 waited=0
+1790271189406 [kv-vmm] retire id=chatcmpl-59025df249642d6f2a2204b68ba4093d planes=34 mapped=106954752 reserved=8342470656 used=57610240 slack_bytes=2019328 booked=8805916756
+1790271189406 [kv-vmm] ensure-walls n=202 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,545,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271189407 [meter] admit id=chatcmpl-c61639a79cda0c4b3e89c56c80d15a62 tenant=default lane=interactive model="q38"
+1790271189410 [admission] request cost: model="q38" ctx=262208 path=plain = 29696 B/token x ctx + 711MB prefill-workspace + 308MB fixed = 8805MB
+1790271189410 [admit-predict] id=chatcmpl-c61639a79cda0c4b3e89c56c80d15a62 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1483 predicted_completion=591 kv_hat=1080735828 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271189410 [worker] plain-affinity: declined (history diverged at 48 of checkpoint 1440; 2 parked, 1483 prompt tokens; model q38)
+1790271189411 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=1483 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790271189411 [kv-vmm] admit id=chatcmpl-c61639a79cda0c4b3e89c56c80d15a62 owed_before=0 session_mapped=71303168 session_reserved=8342470656 active=0
+1790271189412 [kv-vmm] reap released=71303168 pending=0
+1790271189779 [prefix-cache] insert (seed): 1440 tokens, 199.7MB (resident 1158.0MB / 15883MB, model q38)
+1790271192846 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271194339 [kv-vmm] grow id=chatcmpl-c61639a79cda0c4b3e89c56c80d15a62 plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=138 waited=0
+1790271194339 [kv-vmm] grow id=chatcmpl-c61639a79cda0c4b3e89c56c80d15a62 plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=28 waited=0
+1790271194339 [kv-vmm] grow id=chatcmpl-c61639a79cda0c4b3e89c56c80d15a62 plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=25 waited=0
+1790271194339 [kv-vmm] grow id=chatcmpl-c61639a79cda0c4b3e89c56c80d15a62 plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=25 waited=0
+1790271194339 [kv-vmm] grow id=chatcmpl-c61639a79cda0c4b3e89c56c80d15a62 plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=23 waited=0
+1790271194339 [kv-vmm] grow id=chatcmpl-c61639a79cda0c4b3e89c56c80d15a62 plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=23 waited=0
+1790271194339 [kv-vmm] grow id=chatcmpl-c61639a79cda0c4b3e89c56c80d15a62 plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=22 waited=0
+1790271194339 [kv-vmm] grow id=chatcmpl-c61639a79cda0c4b3e89c56c80d15a62 plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=22 waited=0
+1790271194339 [kv-vmm] grow id=chatcmpl-c61639a79cda0c4b3e89c56c80d15a62 plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=23 waited=0
+1790271194339 [kv-vmm] grow id=chatcmpl-c61639a79cda0c4b3e89c56c80d15a62 plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=24 waited=0
+1790271194339 [kv-vmm] grow id=chatcmpl-c61639a79cda0c4b3e89c56c80d15a62 plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=23 waited=0
+1790271194339 [kv-vmm] grow id=chatcmpl-c61639a79cda0c4b3e89c56c80d15a62 plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=22 waited=0
+1790271194339 [kv-vmm] grow id=chatcmpl-c61639a79cda0c4b3e89c56c80d15a62 plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=23 waited=0
+1790271194339 [kv-vmm] grow id=chatcmpl-c61639a79cda0c4b3e89c56c80d15a62 plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=22 waited=0
+1790271194339 [kv-vmm] grow id=chatcmpl-c61639a79cda0c4b3e89c56c80d15a62 plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=24 waited=0
+1790271194339 [kv-vmm] grow id=chatcmpl-c61639a79cda0c4b3e89c56c80d15a62 plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=24 waited=0
+1790271194339 [kv-vmm] grow id=chatcmpl-c61639a79cda0c4b3e89c56c80d15a62 plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=24 waited=0
+1790271195884 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,541,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271196288 [kv-vmm] retire id=chatcmpl-c61639a79cda0c4b3e89c56c80d15a62 planes=34 mapped=106954752 reserved=8342470656 used=60193792 slack_bytes=2019328 booked=8805437524
+1790271196288 [kv-vmm] ensure-walls n=34 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271196291 [meter] admit id=chatcmpl-b72116d2ce600e5df80e1421af19b760 tenant=default lane=interactive model="q38"
+1790271196292 [kv-vmm] reap released=106954752 pending=0
+1790271196294 [admission] request cost: model="q38" ctx=1875 path=plain = 29696 B/token x ctx + 822MB prefill-workspace + 308MB fixed = 1186MB
+1790271196294 [admit-predict] id=chatcmpl-b72116d2ce600e5df80e1421af19b760 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1715 predicted_completion=96 kv_hat=1184107604 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271196294 [worker] plain-affinity: declined (history diverged at 46 of checkpoint 1440; 2 parked, 1715 prompt tokens; model q38)
+1790271196294 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=1715 cached=0 lcp=46 active=1 wave=1 placement=single-or-non-pp2
+1790271196294 [admission] fixed residual high-water: model="q38" 311MB (observed 365MB at ctx 1819 path=plain)
+1790271196294 [kv-vmm] admit id=chatcmpl-b72116d2ce600e5df80e1421af19b760 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790271196714 [prefix-cache] insert (seed): 1696 tokens, 207.3MB (resident 1365.3MB / 15883MB, model q38)
+1790271197919 [kv-vmm] reap released=106954752 pending=0
+1790271197919 [meter] admit id=chatcmpl-2a3de9ae4dc07b52ac487caaf5bcc04e tenant=default lane=interactive model="q38"
+1790271197921 [admission] request cost: model="q38" ctx=1874 path=plain = 29696 B/token x ctx + 821MB prefill-workspace + 311MB fixed = 1188MB
+1790271197921 [admit-predict] id=chatcmpl-2a3de9ae4dc07b52ac487caaf5bcc04e tenant="" model="q38" verdict=admit reason=global-p95 prompt=1714 predicted_completion=96 kv_hat=1186655508 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271197921 [worker] plain-affinity: declined (history diverged at 46 of checkpoint 1440; 2 parked, 1714 prompt tokens; model q38)
+1790271197921 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=1714 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790271197921 [kv-vmm] admit id=chatcmpl-2a3de9ae4dc07b52ac487caaf5bcc04e owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790271198342 [prefix-cache] insert (seed): 1696 tokens, 207.3MB (resident 1572.5MB / 15883MB, model q38)
+1790271199547 [kv-vmm] reap released=106954752 pending=0
+1790271199547 [meter] admit id=chatcmpl-6295df141e8c51d87f49c1561bba69f8 tenant=default lane=interactive model="q38"
+1790271199548 [admission] request cost: model="q38" ctx=1873 path=plain = 29696 B/token x ctx + 821MB prefill-workspace + 311MB fixed = 1188MB
+1790271199548 [admit-predict] id=chatcmpl-6295df141e8c51d87f49c1561bba69f8 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1713 predicted_completion=96 kv_hat=1186146580 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271199548 [worker] plain-affinity: declined (history diverged at 48 of checkpoint 1696; 2 parked, 1713 prompt tokens; model q38)
+1790271199548 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=1713 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790271199549 [kv-vmm] admit id=chatcmpl-6295df141e8c51d87f49c1561bba69f8 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790271199969 [prefix-cache] insert (seed): 1696 tokens, 207.3MB (resident 1779.8MB / 15883MB, model q38)
+1790271201173 [meter] admit id=chatcmpl-d98cb655b988d69afbdee3bc882566f8 tenant=default lane=interactive model="q38"
+1790271201175 [admit-predict] id=chatcmpl-d98cb655b988d69afbdee3bc882566f8 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1713 predicted_completion=96 kv_hat=1186146580 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271201175 [worker] plain-affinity: declined (history diverged at 48 of checkpoint 1696; 2 parked, 1713 prompt tokens; model q38)
+1790271201175 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=1713 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790271201175 [kv-vmm] admit id=chatcmpl-d98cb655b988d69afbdee3bc882566f8 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790271201595 [prefix-cache] insert (seed): 1696 tokens, 207.3MB (resident 1987.1MB / 15883MB, model q38)
+1790271202799 [meter] admit id=chatcmpl-3fa6f043f6fd286756c9629aca9bcb3d tenant=default lane=interactive model="q38"
+1790271202801 [admission] request cost: model="q38" ctx=1870 path=plain = 29696 B/token x ctx + 819MB prefill-workspace + 311MB fixed = 1186MB
+1790271202801 [admit-predict] id=chatcmpl-3fa6f043f6fd286756c9629aca9bcb3d tenant="" model="q38" verdict=admit reason=global-p95 prompt=1710 predicted_completion=96 kv_hat=1184619796 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271202801 [worker] plain-affinity: declined (history diverged at 48 of checkpoint 1696; 2 parked, 1710 prompt tokens; model q38)
+1790271202801 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=1710 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790271202801 [kv-vmm] admit id=chatcmpl-3fa6f043f6fd286756c9629aca9bcb3d owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790271203202 [prefix-cache] insert (seed): 1664 tokens, 206.3MB (resident 2193.4MB / 15883MB, model q38)
+1790271205406 [meter] admit id=chatcmpl-d01f34b6237d2708b9c7063954802b83 tenant=default lane=interactive model="q38"
+1790271205410 [admission] request cost: model="q38" ctx=262208 path=plain = 29696 B/token x ctx + 1504MB prefill-workspace + 311MB fixed = 9602MB
+1790271205410 [admit-predict] id=chatcmpl-d01f34b6237d2708b9c7063954802b83 tenant="" model="q38" verdict=admit reason=global-p95 prompt=3138 predicted_completion=591 kv_hat=1926068500 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271205410 [worker] plain-affinity: declined (history diverged at 46 of checkpoint 1696; 2 parked, 3138 prompt tokens; model q38)
+1790271205412 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3138 cached=0 lcp=47 active=1 wave=1 placement=single-or-non-pp2
+1790271205412 [kv-vmm] admit id=chatcmpl-d01f34b6237d2708b9c7063954802b83 owed_before=0 session_mapped=142606336 session_reserved=8342470656 active=0
+1790271206194 [prefix-cache] insert (seed): 3104 tokens, 249.1MB (resident 2442.4MB / 15883MB, model q38)
+1790271209284 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271211941 [kv-vmm] retire id=chatcmpl-d01f34b6237d2708b9c7063954802b83 planes=34 mapped=142606336 reserved=8342470656 used=107351040 slack_bytes=2019328 booked=9601623316
+1790271211941 [kv-vmm] ensure-walls n=223 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271211942 [meter] admit id=chatcmpl-7835f86feea9e74d94414d69329512f4 tenant=default lane=interactive model="q38"
+1790271211946 [admit-predict] id=chatcmpl-7835f86feea9e74d94414d69329512f4 tenant="" model="q38" verdict=admit reason=global-p95 prompt=3138 predicted_completion=591 kv_hat=1926068500 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271211946 [worker] plain-affinity: declined (history diverged at 46 of checkpoint 1664; 2 parked, 3138 prompt tokens; model q38)
+1790271211947 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3138 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790271211947 [kv-vmm] admit id=chatcmpl-7835f86feea9e74d94414d69329512f4 owed_before=0 session_mapped=142606336 session_reserved=8342470656 active=0
+1790271212731 [prefix-cache] insert (seed): 3104 tokens, 249.1MB (resident 2691.5MB / 15883MB, model q38)
+1790271215821 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271218871 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271220576 [kv-vmm] grow id=chatcmpl-7835f86feea9e74d94414d69329512f4 plane=k3 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=147 waited=0
+1790271220576 [kv-vmm] grow id=chatcmpl-7835f86feea9e74d94414d69329512f4 plane=k7 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=32 waited=0
+1790271220576 [kv-vmm] grow id=chatcmpl-7835f86feea9e74d94414d69329512f4 plane=k11 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=26 waited=0
+1790271220576 [kv-vmm] grow id=chatcmpl-7835f86feea9e74d94414d69329512f4 plane=k15 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=25 waited=0
+1790271220576 [kv-vmm] grow id=chatcmpl-7835f86feea9e74d94414d69329512f4 plane=k19 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=23 waited=0
+1790271220576 [kv-vmm] grow id=chatcmpl-7835f86feea9e74d94414d69329512f4 plane=k23 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=25 waited=0
+1790271220576 [kv-vmm] grow id=chatcmpl-7835f86feea9e74d94414d69329512f4 plane=k27 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=24 waited=0
+1790271220576 [kv-vmm] grow id=chatcmpl-7835f86feea9e74d94414d69329512f4 plane=k31 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=24 waited=0
+1790271220576 [kv-vmm] grow id=chatcmpl-7835f86feea9e74d94414d69329512f4 plane=k35 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=24 waited=0
+1790271220576 [kv-vmm] grow id=chatcmpl-7835f86feea9e74d94414d69329512f4 plane=k39 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=24 waited=0
+1790271220576 [kv-vmm] grow id=chatcmpl-7835f86feea9e74d94414d69329512f4 plane=k43 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=23 waited=0
+1790271220576 [kv-vmm] grow id=chatcmpl-7835f86feea9e74d94414d69329512f4 plane=k47 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=29 waited=0
+1790271220576 [kv-vmm] grow id=chatcmpl-7835f86feea9e74d94414d69329512f4 plane=k51 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=24 waited=0
+1790271220576 [kv-vmm] grow id=chatcmpl-7835f86feea9e74d94414d69329512f4 plane=k55 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=25 waited=0
+1790271220576 [kv-vmm] grow id=chatcmpl-7835f86feea9e74d94414d69329512f4 plane=k59 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=24 waited=0
+1790271220576 [kv-vmm] grow id=chatcmpl-7835f86feea9e74d94414d69329512f4 plane=k63 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=25 waited=0
+1790271220576 [kv-vmm] grow id=chatcmpl-7835f86feea9e74d94414d69329512f4 plane=k64 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=23 waited=0
+1790271221924 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,571,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271224155 [kv-vmm] retire id=chatcmpl-7835f86feea9e74d94414d69329512f4 planes=34 mapped=178257920 reserved=8342470656 used=121486336 slack_bytes=2019328 booked=9601623316
+1790271224155 [kv-vmm] ensure-walls n=187 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271224156 [meter] admit id=chatcmpl-4354b8c677e5dbb8e9f41d12c47f50aa tenant=default lane=interactive model="q38"
+1790271224160 [admission] request cost: model="q38" ctx=262208 path=plain = 29696 B/token x ctx + 1504MB prefill-workspace + 311MB fixed = 9602MB
+1790271224160 [admit-predict] id=chatcmpl-4354b8c677e5dbb8e9f41d12c47f50aa tenant="" model="q38" verdict=admit reason=global-p95 prompt=3139 predicted_completion=954 kv_hat=1937357076 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271224160 [worker] plain-affinity: declined (history diverged at 48 of checkpoint 3104; 2 parked, 3139 prompt tokens; model q38)
+1790271224162 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3139 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790271224162 [kv-vmm] admit id=chatcmpl-4354b8c677e5dbb8e9f41d12c47f50aa owed_before=0 session_mapped=142606336 session_reserved=8342470656 active=0
+1790271224946 [prefix-cache] insert (seed): 3104 tokens, 249.1MB (resident 2940.6MB / 15883MB, model q38)
+1790271228037 [kv-vmm] ensure-walls n=256 us=1,1,4,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271231087 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271232781 [kv-vmm] grow id=chatcmpl-4354b8c677e5dbb8e9f41d12c47f50aa plane=k3 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=141 waited=0
+1790271232781 [kv-vmm] grow id=chatcmpl-4354b8c677e5dbb8e9f41d12c47f50aa plane=k7 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=28 waited=0
+1790271232781 [kv-vmm] grow id=chatcmpl-4354b8c677e5dbb8e9f41d12c47f50aa plane=k11 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=26 waited=0
+1790271232781 [kv-vmm] grow id=chatcmpl-4354b8c677e5dbb8e9f41d12c47f50aa plane=k15 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=24 waited=0
+1790271232781 [kv-vmm] grow id=chatcmpl-4354b8c677e5dbb8e9f41d12c47f50aa plane=k19 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=24 waited=0
+1790271232781 [kv-vmm] grow id=chatcmpl-4354b8c677e5dbb8e9f41d12c47f50aa plane=k23 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=22 waited=0
+1790271232781 [kv-vmm] grow id=chatcmpl-4354b8c677e5dbb8e9f41d12c47f50aa plane=k27 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=23 waited=0
+1790271232781 [kv-vmm] grow id=chatcmpl-4354b8c677e5dbb8e9f41d12c47f50aa plane=k31 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=28 waited=0
+1790271232781 [kv-vmm] grow id=chatcmpl-4354b8c677e5dbb8e9f41d12c47f50aa plane=k35 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=25 waited=0
+1790271232781 [kv-vmm] grow id=chatcmpl-4354b8c677e5dbb8e9f41d12c47f50aa plane=k39 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=22 waited=0
+1790271232781 [kv-vmm] grow id=chatcmpl-4354b8c677e5dbb8e9f41d12c47f50aa plane=k43 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=24 waited=0
+1790271232781 [kv-vmm] grow id=chatcmpl-4354b8c677e5dbb8e9f41d12c47f50aa plane=k47 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=22 waited=0
+1790271232781 [kv-vmm] grow id=chatcmpl-4354b8c677e5dbb8e9f41d12c47f50aa plane=k51 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=24 waited=0
+1790271232781 [kv-vmm] grow id=chatcmpl-4354b8c677e5dbb8e9f41d12c47f50aa plane=k55 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=22 waited=0
+1790271232781 [kv-vmm] grow id=chatcmpl-4354b8c677e5dbb8e9f41d12c47f50aa plane=k59 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=24 waited=0
+1790271232781 [kv-vmm] grow id=chatcmpl-4354b8c677e5dbb8e9f41d12c47f50aa plane=k63 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=24 waited=0
+1790271232781 [kv-vmm] grow id=chatcmpl-4354b8c677e5dbb8e9f41d12c47f50aa plane=k64 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=24 waited=0
+1790271233019 [kv-vmm] retire id=chatcmpl-4354b8c677e5dbb8e9f41d12c47f50aa planes=34 mapped=178257920 reserved=8342470656 used=113171456 slack_bytes=2019328 booked=9602102548
+1790271233019 [kv-vmm] ensure-walls n=162 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,550,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271233020 [meter] admit id=chatcmpl-89e31d899dd24180be238bf379e425d0 tenant=default lane=interactive model="q38"
+1790271233024 [admission] request cost: model="q38" ctx=262208 path=plain = 29696 B/token x ctx + 1504MB prefill-workspace + 311MB fixed = 9602MB
+1790271233024 [admit-predict] id=chatcmpl-89e31d899dd24180be238bf379e425d0 tenant="" model="q38" verdict=admit reason=global-p95 prompt=3138 predicted_completion=954 kv_hat=1936848148 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271233024 [worker] plain-affinity: declined (history diverged at 48 of checkpoint 3104; 2 parked, 3138 prompt tokens; model q38)
+1790271233026 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3138 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790271233026 [kv-vmm] admit id=chatcmpl-89e31d899dd24180be238bf379e425d0 owed_before=0 session_mapped=142606336 session_reserved=8342470656 active=0
+1790271233027 [kv-vmm] reap released=142606336 pending=0
+1790271233812 [prefix-cache] insert (seed): 3104 tokens, 249.1MB (resident 3189.6MB / 15883MB, model q38)
+1790271236902 [kv-vmm] ensure-walls n=256 us=1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271239916 [kv-vmm] retire id=chatcmpl-89e31d899dd24180be238bf379e425d0 planes=34 mapped=142606336 reserved=8342470656 used=108241920 slack_bytes=2019328 booked=9601623316
+1790271239917 [kv-vmm] ensure-walls n=253 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271239918 [meter] admit id=chatcmpl-bd0a195da03fb8952b428a9d1959a2a7 tenant=default lane=interactive model="q38"
+1790271239921 [admission] request cost: model="q38" ctx=262208 path=plain = 29696 B/token x ctx + 1503MB prefill-workspace + 311MB fixed = 9601MB
+1790271239921 [admit-predict] id=chatcmpl-bd0a195da03fb8952b428a9d1959a2a7 tenant="" model="q38" verdict=admit reason=global-p95 prompt=3136 predicted_completion=954 kv_hat=1935830292 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271239921 [worker] plain-affinity: declined (history diverged at 48 of checkpoint 3104; 2 parked, 3136 prompt tokens; model q38)
+1790271239923 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3136 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790271239923 [kv-vmm] admit id=chatcmpl-bd0a195da03fb8952b428a9d1959a2a7 owed_before=0 session_mapped=142606336 session_reserved=8342470656 active=0
+1790271239925 [kv-vmm] reap released=178257920 pending=0
+1790271240775 [prefix-cache] insert (seed): 3136 tokens, 250.0MB (resident 3439.7MB / 15883MB, model q38)
+1790271243800 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271246648 [kv-vmm] retire id=chatcmpl-bd0a195da03fb8952b428a9d1959a2a7 planes=34 mapped=142606336 reserved=8342470656 used=107766784 slack_bytes=2019328 booked=9600664852
+1790271246648 [kv-vmm] ensure-walls n=239 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271246652 [kv-vmm] reap released=178257920 pending=0
+1790271246654 [meter] admit id=chatcmpl-e38ee921f6c0f29a968f64955e3a02b1 tenant=default lane=interactive model="q38"
+1790271246658 [admission] request cost: model="q38" ctx=3160 path=plain = 29696 B/token x ctx + 1438MB prefill-workspace + 311MB fixed = 1843MB
+1790271246658 [admit-predict] id=chatcmpl-e38ee921f6c0f29a968f64955e3a02b1 tenant="" model="q38" verdict=admit reason=global-p95 prompt=3000 predicted_completion=96 kv_hat=1841136916 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271246658 [worker] plain-affinity: declined (history diverged at 46 of checkpoint 3104; 2 parked, 3000 prompt tokens; model q38)
+1790271246658 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3000 cached=0 lcp=47 active=1 wave=1 placement=single-or-non-pp2
+1790271246658 [admission] fixed residual high-water: model="q38" 314MB (observed 406MB at ctx 3104 path=plain)
+1790271246658 [kv-vmm] admit id=chatcmpl-e38ee921f6c0f29a968f64955e3a02b1 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790271247419 [prefix-cache] insert (seed): 2976 tokens, 245.3MB (resident 3684.9MB / 15883MB, model q38)
+1790271248626 [kv-vmm] reap released=142606336 pending=0
+1790271248629 [meter] admit id=chatcmpl-177cf5631c6d15a936c603b2c68df952 tenant=default lane=interactive model="q38"
+1790271248632 [admission] request cost: model="q38" ctx=3163 path=plain = 29696 B/token x ctx + 1439MB prefill-workspace + 314MB fixed = 1847MB
+1790271248632 [admit-predict] id=chatcmpl-177cf5631c6d15a936c603b2c68df952 tenant="" model="q38" verdict=admit reason=global-p95 prompt=3003 predicted_completion=96 kv_hat=1845048660 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271248632 [worker] plain-affinity: declined (history diverged at 46 of checkpoint 3104; 2 parked, 3003 prompt tokens; model q38)
+1790271248632 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3003 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790271248632 [admission] fixed residual high-water: model="q38" 314MB (observed 406MB at ctx 3107 path=plain)
+1790271248632 [kv-vmm] admit id=chatcmpl-177cf5631c6d15a936c603b2c68df952 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790271249393 [prefix-cache] insert (seed): 2976 tokens, 245.3MB (resident 3930.2MB / 15883MB, model q38)
+1790271250602 [kv-vmm] reap released=142606336 pending=0
+1790271250604 [meter] admit id=chatcmpl-c155c0e23f67c03be0fb0305ae3ac559 tenant=default lane=interactive model="q38"
+1790271250607 [admission] request cost: model="q38" ctx=3159 path=plain = 29696 B/token x ctx + 1437MB prefill-workspace + 314MB fixed = 1845MB
+1790271250607 [admit-predict] id=chatcmpl-c155c0e23f67c03be0fb0305ae3ac559 tenant="" model="q38" verdict=admit reason=global-p95 prompt=2999 predicted_completion=96 kv_hat=1843018516 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271250607 [worker] plain-affinity: declined (history diverged at 48 of checkpoint 2976; 2 parked, 2999 prompt tokens; model q38)
+1790271250607 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=2999 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790271250607 [kv-vmm] admit id=chatcmpl-c155c0e23f67c03be0fb0305ae3ac559 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790271251369 [prefix-cache] insert (seed): 2976 tokens, 245.3MB (resident 4175.5MB / 15883MB, model q38)
+1790271252578 [meter] admit id=chatcmpl-35b0dda0e7c4341a3490c5ebfe311315 tenant=default lane=interactive model="q38"
+1790271252581 [admission] request cost: model="q38" ctx=3152 path=plain = 29696 B/token x ctx + 1434MB prefill-workspace + 314MB fixed = 1841MB
+1790271252581 [admit-predict] id=chatcmpl-35b0dda0e7c4341a3490c5ebfe311315 tenant="" model="q38" verdict=admit reason=global-p95 prompt=2992 predicted_completion=96 kv_hat=1839456020 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271252581 [worker] plain-affinity: declined (history diverged at 48 of checkpoint 2976; 2 parked, 2992 prompt tokens; model q38)
+1790271252581 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=2992 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790271252581 [kv-vmm] admit id=chatcmpl-35b0dda0e7c4341a3490c5ebfe311315 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790271253343 [prefix-cache] insert (seed): 2976 tokens, 245.3MB (resident 4420.7MB / 15883MB, model q38)
+1790271254551 [meter] admit id=chatcmpl-7e653f43aa7d7bab443454852697572f tenant=default lane=interactive model="q38"
+1790271254554 [admission] request cost: model="q38" ctx=3151 path=plain = 29696 B/token x ctx + 1433MB prefill-workspace + 314MB fixed = 1841MB
+1790271254554 [admit-predict] id=chatcmpl-7e653f43aa7d7bab443454852697572f tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=2991 predicted_completion=96 kv_hat=1838947092 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271254554 [worker] plain-affinity: declined (history diverged at 48 of checkpoint 2976; 2 parked, 2991 prompt tokens; model q38)
+1790271254554 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=2991 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790271254554 [kv-vmm] admit id=chatcmpl-7e653f43aa7d7bab443454852697572f owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790271255265 [prefix-cache] insert (seed): 2944 tokens, 244.3MB (resident 4665.0MB / 15883MB, model q38)
+1790271257472 [meter] admit id=chatcmpl-f08d4eeb7a1503fa13cb2a1afeeeee39 tenant=default lane=interactive model="q38"
+1790271257479 [admission] request cost: model="q38" ctx=262208 path=plain = 29696 B/token x ctx + 1998MB prefill-workspace + 314MB fixed = 10098MB
+1790271257479 [admit-predict] id=chatcmpl-f08d4eeb7a1503fa13cb2a1afeeeee39 tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=5797 predicted_completion=673 kv_hat=2503796500 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271257479 [worker] plain-affinity: declined (history diverged at 46 of checkpoint 2976; 2 parked, 5797 prompt tokens; model q38)
+1790271257480 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=5797 cached=0 lcp=47 active=1 wave=1 placement=single-or-non-pp2
+1790271257480 [kv-vmm] admit id=chatcmpl-f08d4eeb7a1503fa13cb2a1afeeeee39 owed_before=0 session_mapped=249561088 session_reserved=8342470656 active=0
+1790271258906 [prefix-cache] insert (seed): 5760 tokens, 327.9MB (resident 4993.0MB / 15883MB, model q38)
+1790271262032 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271265130 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271266560 [kv-vmm] retire id=chatcmpl-f08d4eeb7a1503fa13cb2a1afeeeee39 planes=34 mapped=249561088 reserved=8342470656 used=190796800 slack_bytes=2019328 booked=10097954580
+1790271266561 [kv-vmm] ensure-walls n=118 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271266561 [meter] admit id=chatcmpl-5c6b1ab335d1d40539ca5a74caf10f11 tenant=default lane=interactive model="q38"
+1790271266568 [admission] request cost: model="q38" ctx=262208 path=plain = 29696 B/token x ctx + 1998MB prefill-workspace + 314MB fixed = 10098MB
+1790271266568 [admit-predict] id=chatcmpl-5c6b1ab335d1d40539ca5a74caf10f11 tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=5803 predicted_completion=673 kv_hat=2504097556 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271266568 [worker] plain-affinity: declined (history diverged at 46 of checkpoint 2944; 2 parked, 5803 prompt tokens; model q38)
+1790271266569 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=5803 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790271266569 [kv-vmm] admit id=chatcmpl-5c6b1ab335d1d40539ca5a74caf10f11 owed_before=0 session_mapped=249561088 session_reserved=8342470656 active=0
+1790271267997 [prefix-cache] insert (seed): 5760 tokens, 327.9MB (resident 5320.9MB / 15883MB, model q38)
+1790271271123 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271274053 [kv-vmm] retire id=chatcmpl-5c6b1ab335d1d40539ca5a74caf10f11 planes=34 mapped=249561088 reserved=8342470656 used=187055104 slack_bytes=2019328 booked=10098077460
+1790271274053 [kv-vmm] ensure-walls n=242 us=1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271274054 [meter] admit id=chatcmpl-271057606e643ff7bfaf1bcb36d5b11f tenant=default lane=interactive model="q38"
+1790271274060 [admission] request cost: model="q38" ctx=262208 path=plain = 29696 B/token x ctx + 1998MB prefill-workspace + 314MB fixed = 10098MB
+1790271274060 [admit-predict] id=chatcmpl-271057606e643ff7bfaf1bcb36d5b11f tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=5802 predicted_completion=673 kv_hat=2504047380 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271274060 [worker] plain-affinity: declined (history diverged at 48 of checkpoint 5760; 2 parked, 5802 prompt tokens; model q38)
+1790271274062 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=5802 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790271274062 [kv-vmm] admit id=chatcmpl-271057606e643ff7bfaf1bcb36d5b11f owed_before=0 session_mapped=249561088 session_reserved=8342470656 active=0
+1790271275490 [prefix-cache] insert (seed): 5760 tokens, 327.9MB (resident 5648.9MB / 15883MB, model q38)
+1790271278616 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271281642 [kv-vmm] retire id=chatcmpl-271057606e643ff7bfaf1bcb36d5b11f planes=34 mapped=249561088 reserved=8342470656 used=187262976 slack_bytes=2019328 booked=10098056980
+1790271281642 [kv-vmm] ensure-walls n=250 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271281643 [meter] admit id=chatcmpl-d2c9b44f70645ab48c70dfc6cef755b0 tenant=default lane=interactive model="q38"
+1790271281649 [admission] request cost: model="q38" ctx=262208 path=plain = 29696 B/token x ctx + 1998MB prefill-workspace + 314MB fixed = 10098MB
+1790271281649 [admit-predict] id=chatcmpl-d2c9b44f70645ab48c70dfc6cef755b0 tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=5805 predicted_completion=673 kv_hat=2504197908 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271281649 [worker] plain-affinity: declined (history diverged at 48 of checkpoint 5760; 2 parked, 5805 prompt tokens; model q38)
+1790271281651 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=5805 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790271281651 [kv-vmm] admit id=chatcmpl-d2c9b44f70645ab48c70dfc6cef755b0 owed_before=0 session_mapped=249561088 session_reserved=8342470656 active=0
+1790271281652 [kv-vmm] reap released=249561088 pending=0
+1790271283082 [prefix-cache] insert (seed): 5760 tokens, 327.9MB (resident 5976.8MB / 15883MB, model q38)
+1790271286207 [kv-vmm] ensure-walls n=256 us=1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271288482 [kv-vmm] retire id=chatcmpl-d2c9b44f70645ab48c70dfc6cef755b0 planes=34 mapped=249561088 reserved=8342470656 used=185510912 slack_bytes=2019328 booked=10098118420
+1790271288482 [kv-vmm] ensure-walls n=188 us=1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271288483 [meter] admit id=chatcmpl-741be8e610158c604ad52ff1e915f60d tenant=default lane=interactive model="q38"
+1790271288490 [admission] request cost: model="q38" ctx=262208 path=plain = 29696 B/token x ctx + 1998MB prefill-workspace + 314MB fixed = 10098MB
+1790271288490 [admit-predict] id=chatcmpl-741be8e610158c604ad52ff1e915f60d tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=5803 predicted_completion=673 kv_hat=2504097556 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271288490 [worker] plain-affinity: declined (history diverged at 48 of checkpoint 5760; 2 parked, 5803 prompt tokens; model q38)
+1790271288491 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=5803 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790271288491 [kv-vmm] admit id=chatcmpl-741be8e610158c604ad52ff1e915f60d owed_before=0 session_mapped=249561088 session_reserved=8342470656 active=0
+1790271288493 [kv-vmm] reap released=249561088 pending=0
+1790271289923 [prefix-cache] insert (seed): 5760 tokens, 327.9MB (resident 6304.8MB / 15883MB, model q38)
+1790271293049 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271294245 [kv-vmm] retire id=chatcmpl-741be8e610158c604ad52ff1e915f60d planes=34 mapped=249561088 reserved=8342470656 used=182808576 slack_bytes=2019328 booked=10098077460
+1790271294246 [kv-vmm] ensure-walls n=99 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271294249 [kv-vmm] reap released=249561088 pending=0
+1790271294257 [meter] admit id=chatcmpl-7db18205d889cac9b32b08c4fdd189b6 tenant=default lane=interactive model="q38"
+1790271294262 [admission] request cost: model="q38" ctx=5866 path=plain = 29696 B/token x ctx + 1996MB prefill-workspace + 314MB fixed = 2484MB
+1790271294262 [admit-predict] id=chatcmpl-7db18205d889cac9b32b08c4fdd189b6 tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=5706 predicted_completion=96 kv_hat=2482095892 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271294262 [worker] plain-affinity: declined (history diverged at 46 of checkpoint 5760; 2 parked, 5706 prompt tokens; model q38)
+1790271294262 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=5706 cached=0 lcp=47 active=1 wave=1 placement=single-or-non-pp2
+1790271294262 [admission] fixed residual high-water: model="q38" 319MB (observed 491MB at ctx 5810 path=plain)
+1790271294262 [kv-vmm] admit id=chatcmpl-7db18205d889cac9b32b08c4fdd189b6 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790271295684 [prefix-cache] insert (seed): 5664 tokens, 325.1MB (resident 6629.9MB / 15883MB, model q38)
+1790271296911 [kv-vmm] reap released=249561088 pending=0
+1790271296918 [meter] admit id=chatcmpl-b060bd1ce7c6040827aeac912b2e974c tenant=default lane=interactive model="q38"
+1790271296923 [admission] request cost: model="q38" ctx=5862 path=plain = 29696 B/token x ctx + 1996MB prefill-workspace + 319MB fixed = 2489MB
+1790271296923 [admit-predict] id=chatcmpl-b060bd1ce7c6040827aeac912b2e974c tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=5702 predicted_completion=96 kv_hat=2486911956 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271296923 [worker] plain-affinity: declined (history diverged at 46 of checkpoint 5760; 2 parked, 5702 prompt tokens; model q38)
+1790271296924 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=5702 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790271296924 [kv-vmm] admit id=chatcmpl-b060bd1ce7c6040827aeac912b2e974c owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790271298347 [prefix-cache] insert (seed): 5664 tokens, 325.1MB (resident 6954.9MB / 15883MB, model q38)
+1790271299574 [kv-vmm] reap released=249561088 pending=0
+1790271299581 [meter] admit id=chatcmpl-c0c912f2baaf17b4f6764144ea0272d2 tenant=default lane=interactive model="q38"
+1790271299586 [admission] request cost: model="q38" ctx=5855 path=plain = 29696 B/token x ctx + 1996MB prefill-workspace + 319MB fixed = 2488MB
+1790271299586 [admit-predict] id=chatcmpl-c0c912f2baaf17b4f6764144ea0272d2 tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=5695 predicted_completion=96 kv_hat=2486560724 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271299586 [worker] plain-affinity: declined (history diverged at 48 of checkpoint 5664; 2 parked, 5695 prompt tokens; model q38)
+1790271299586 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=5695 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790271299586 [kv-vmm] admit id=chatcmpl-c0c912f2baaf17b4f6764144ea0272d2 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790271301012 [prefix-cache] insert (seed): 5664 tokens, 325.1MB (resident 7280.0MB / 15883MB, model q38)
+1790271302243 [meter] admit id=chatcmpl-2d031358c2ce9e55150df8ae06874b3c tenant=default lane=interactive model="q38"
+1790271302248 [admission] request cost: model="q38" ctx=5852 path=plain = 29696 B/token x ctx + 1996MB prefill-workspace + 319MB fixed = 2488MB
+1790271302248 [admit-predict] id=chatcmpl-2d031358c2ce9e55150df8ae06874b3c tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=5692 predicted_completion=96 kv_hat=2486410196 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271302248 [worker] plain-affinity: declined (history diverged at 48 of checkpoint 5664; 2 parked, 5692 prompt tokens; model q38)
+1790271302249 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=5692 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790271302249 [kv-vmm] admit id=chatcmpl-2d031358c2ce9e55150df8ae06874b3c owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790271303675 [prefix-cache] insert (seed): 5664 tokens, 325.1MB (resident 7605.1MB / 15883MB, model q38)
+1790271304908 [meter] admit id=chatcmpl-f1acb12bf0ddb1c85d8a51a0e4b31d7c tenant=default lane=interactive model="q38"
+1790271304913 [admission] request cost: model="q38" ctx=5849 path=plain = 29696 B/token x ctx + 1996MB prefill-workspace + 319MB fixed = 2488MB
+1790271304913 [admit-predict] id=chatcmpl-f1acb12bf0ddb1c85d8a51a0e4b31d7c tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=5689 predicted_completion=96 kv_hat=2486259668 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271304913 [worker] plain-affinity: declined (history diverged at 48 of checkpoint 5664; 2 parked, 5689 prompt tokens; model q38)
+1790271304913 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=5689 cached=0 lcp=48 active=1 wave=1 placement=single-or-non-pp2
+1790271304913 [kv-vmm] admit id=chatcmpl-f1acb12bf0ddb1c85d8a51a0e4b31d7c owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790271306341 [prefix-cache] insert (seed): 5664 tokens, 325.1MB (resident 7930.2MB / 15883MB, model q38)
+1790271308566 [meter] admit id=chatcmpl-13f316a83b02acbf071535ec74336777 tenant=default lane=interactive model="q38"
+1790271308568 [admission] request cost: model="q38" ctx=262208 path=plain = 29696 B/token x ctx + 753MB prefill-workspace + 319MB fixed = 8859MB
+1790271308568 [admit-predict] id=chatcmpl-13f316a83b02acbf071535ec74336777 tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=1572 predicted_completion=673 kv_hat=1138929620 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271308569 [worker] plain-affinity: declined (history diverged at 46 of checkpoint 5664; 2 parked, 1572 prompt tokens; model q38)
+1790271308570 [prefix-cache] hit: 1440 of 1572 prompt tokens from cache (model q38)
+1790271308570 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=1572 cached=1440 lcp=1440 active=1 wave=1 placement=single-or-non-pp2
+1790271308571 [prefix-cache] source lease released after restore fence (entry 1440 tokens, model q38)
+1790271308571 [kv-vmm] admit id=chatcmpl-13f316a83b02acbf071535ec74336777 owed_before=0 session_mapped=71303168 session_reserved=8342470656 active=0
+1790271308637 [prefix-cache] insert (seed): 1536 tokens, 202.5MB (resident 8132.7MB / 15883MB, model q38)
+1790271311708 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271312147 [kv-vmm] grow id=chatcmpl-13f316a83b02acbf071535ec74336777 plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=71 waited=0
+1790271312147 [kv-vmm] grow id=chatcmpl-13f316a83b02acbf071535ec74336777 plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=26 waited=0
+1790271312147 [kv-vmm] grow id=chatcmpl-13f316a83b02acbf071535ec74336777 plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=24 waited=0
+1790271312147 [kv-vmm] grow id=chatcmpl-13f316a83b02acbf071535ec74336777 plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=23 waited=0
+1790271312147 [kv-vmm] grow id=chatcmpl-13f316a83b02acbf071535ec74336777 plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=20 waited=0
+1790271312147 [kv-vmm] grow id=chatcmpl-13f316a83b02acbf071535ec74336777 plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=22 waited=0
+1790271312147 [kv-vmm] grow id=chatcmpl-13f316a83b02acbf071535ec74336777 plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=21 waited=0
+1790271312147 [kv-vmm] grow id=chatcmpl-13f316a83b02acbf071535ec74336777 plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=22 waited=0
+1790271312147 [kv-vmm] grow id=chatcmpl-13f316a83b02acbf071535ec74336777 plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=21 waited=0
+1790271312147 [kv-vmm] grow id=chatcmpl-13f316a83b02acbf071535ec74336777 plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=22 waited=0
+1790271312147 [kv-vmm] grow id=chatcmpl-13f316a83b02acbf071535ec74336777 plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=20 waited=0
+1790271312147 [kv-vmm] grow id=chatcmpl-13f316a83b02acbf071535ec74336777 plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=21 waited=0
+1790271312147 [kv-vmm] grow id=chatcmpl-13f316a83b02acbf071535ec74336777 plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=20 waited=0
+1790271312147 [kv-vmm] grow id=chatcmpl-13f316a83b02acbf071535ec74336777 plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=23 waited=0
+1790271312147 [kv-vmm] grow id=chatcmpl-13f316a83b02acbf071535ec74336777 plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=21 waited=0
+1790271312147 [kv-vmm] grow id=chatcmpl-13f316a83b02acbf071535ec74336777 plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=24 waited=0
+1790271312147 [kv-vmm] grow id=chatcmpl-13f316a83b02acbf071535ec74336777 plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=21 waited=0
+1790271313240 [kv-vmm] retire id=chatcmpl-13f316a83b02acbf071535ec74336777 planes=34 mapped=106954752 reserved=8342470656 used=58055680 slack_bytes=2019328 booked=8858553300
+1790271313240 [kv-vmm] ensure-walls n=129 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,445,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271313241 [meter] admit id=chatcmpl-09e5066dc3b9539523022a5113aa0690 tenant=default lane=interactive model="q38"
+1790271313243 [admission] request cost: model="q38" ctx=262208 path=plain = 29696 B/token x ctx + 750MB prefill-workspace + 319MB fixed = 8855MB
+1790271313243 [admit-predict] id=chatcmpl-09e5066dc3b9539523022a5113aa0690 tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=1565 predicted_completion=673 kv_hat=1135367124 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271313243 [worker] plain-affinity: declined (history diverged at 46 of checkpoint 5664; 2 parked, 1565 prompt tokens; model q38)
+1790271313245 [prefix-cache] hit: 1440 of 1565 prompt tokens from cache (model q38)
+1790271313245 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=1565 cached=1440 lcp=1440 active=1 wave=1 placement=single-or-non-pp2
+1790271313245 [prefix-cache] source lease released after restore fence (entry 1440 tokens, model q38)
+1790271313245 [kv-vmm] admit id=chatcmpl-09e5066dc3b9539523022a5113aa0690 owed_before=0 session_mapped=71303168 session_reserved=8342470656 active=0
+1790271313311 [prefix-cache] insert (seed): 1536 tokens, 202.5MB (resident 8335.2MB / 15883MB, model q38)
+1790271316192 [kv-vmm] retire id=chatcmpl-09e5066dc3b9539523022a5113aa0690 planes=34 mapped=71303168 reserved=8342470656 used=53541888 slack_bytes=2019328 booked=8855198676
+1790271316192 [kv-vmm] ensure-walls n=240 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271316193 [meter] admit id=chatcmpl-c55a8bf7646722d115fd3ec9919bf102 tenant=default lane=interactive model="q38"
+1790271316195 [admission] request cost: model="q38" ctx=262208 path=plain = 29696 B/token x ctx + 764MB prefill-workspace + 319MB fixed = 8870MB
+1790271316195 [admit-predict] id=chatcmpl-c55a8bf7646722d115fd3ec9919bf102 tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=1595 predicted_completion=673 kv_hat=1150634964 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271316196 [worker] plain-affinity: declined (history diverged at 48 of checkpoint 1536; 2 parked, 1595 prompt tokens; model q38)
+1790271316198 [prefix-cache] hit: 1440 of 1595 prompt tokens from cache (model q38)
+1790271316198 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=1595 cached=1440 lcp=1440 active=1 wave=1 placement=single-or-non-pp2
+1790271316198 [prefix-cache] source lease released after restore fence (entry 1440 tokens, model q38)
+1790271316198 [kv-vmm] admit id=chatcmpl-c55a8bf7646722d115fd3ec9919bf102 owed_before=0 session_mapped=71303168 session_reserved=8342470656 active=0
+1790271316265 [prefix-cache] insert (seed): 1568 tokens, 203.5MB (resident 8538.7MB / 15883MB, model q38)
+1790271319005 [kv-vmm] retire id=chatcmpl-c55a8bf7646722d115fd3ec9919bf102 planes=34 mapped=71303168 reserved=8342470656 used=54076416 slack_bytes=2019328 booked=8869575636
+1790271319005 [kv-vmm] ensure-walls n=228 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,1,1
+1790271319006 [meter] admit id=chatcmpl-b6677c51681c75fb16e2e4916b4e429f tenant=default lane=interactive model="q38"
+1790271319009 [admission] request cost: model="q38" ctx=262208 path=plain = 29696 B/token x ctx + 749MB prefill-workspace + 319MB fixed = 8854MB
+1790271319009 [admit-predict] id=chatcmpl-b6677c51681c75fb16e2e4916b4e429f tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=1563 predicted_completion=673 kv_hat=1134349268 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271319009 [worker] plain-affinity: declined (history diverged at 48 of checkpoint 1536; 2 parked, 1563 prompt tokens; model q38)
+1790271319011 [prefix-cache] hit: 1440 of 1563 prompt tokens from cache (model q38)
+1790271319011 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=1563 cached=1440 lcp=1440 active=1 wave=1 placement=single-or-non-pp2
+1790271319011 [prefix-cache] source lease released after restore fence (entry 1440 tokens, model q38)
+1790271319011 [kv-vmm] admit id=chatcmpl-b6677c51681c75fb16e2e4916b4e429f owed_before=0 session_mapped=71303168 session_reserved=8342470656 active=0
+1790271319012 [kv-vmm] reap released=106954752 pending=0
+1790271319078 [prefix-cache] insert (seed): 1536 tokens, 202.5MB (resident 8741.2MB / 15883MB, model q38)
+1790271322148 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271322694 [kv-vmm] grow id=chatcmpl-b6677c51681c75fb16e2e4916b4e429f plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=143 waited=0
+1790271322694 [kv-vmm] grow id=chatcmpl-b6677c51681c75fb16e2e4916b4e429f plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=28 waited=0
+1790271322694 [kv-vmm] grow id=chatcmpl-b6677c51681c75fb16e2e4916b4e429f plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=25 waited=0
+1790271322694 [kv-vmm] grow id=chatcmpl-b6677c51681c75fb16e2e4916b4e429f plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=24 waited=0
+1790271322694 [kv-vmm] grow id=chatcmpl-b6677c51681c75fb16e2e4916b4e429f plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=25 waited=0
+1790271322694 [kv-vmm] grow id=chatcmpl-b6677c51681c75fb16e2e4916b4e429f plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=24 waited=0
+1790271322694 [kv-vmm] grow id=chatcmpl-b6677c51681c75fb16e2e4916b4e429f plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=24 waited=0
+1790271322694 [kv-vmm] grow id=chatcmpl-b6677c51681c75fb16e2e4916b4e429f plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=25 waited=0
+1790271322694 [kv-vmm] grow id=chatcmpl-b6677c51681c75fb16e2e4916b4e429f plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=22 waited=0
+1790271322694 [kv-vmm] grow id=chatcmpl-b6677c51681c75fb16e2e4916b4e429f plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=24 waited=0
+1790271322694 [kv-vmm] grow id=chatcmpl-b6677c51681c75fb16e2e4916b4e429f plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=28 waited=0
+1790271322694 [kv-vmm] grow id=chatcmpl-b6677c51681c75fb16e2e4916b4e429f plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=22 waited=0
+1790271322694 [kv-vmm] grow id=chatcmpl-b6677c51681c75fb16e2e4916b4e429f plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=22 waited=0
+1790271322694 [kv-vmm] grow id=chatcmpl-b6677c51681c75fb16e2e4916b4e429f plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=27 waited=0
+1790271322694 [kv-vmm] grow id=chatcmpl-b6677c51681c75fb16e2e4916b4e429f plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=22 waited=0
+1790271322694 [kv-vmm] grow id=chatcmpl-b6677c51681c75fb16e2e4916b4e429f plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=24 waited=0
+1790271322694 [kv-vmm] grow id=chatcmpl-b6677c51681c75fb16e2e4916b4e429f plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=21 waited=0
+1790271324869 [kv-vmm] retire id=chatcmpl-b6677c51681c75fb16e2e4916b4e429f planes=34 mapped=106954752 reserved=8342470656 used=60758016 slack_bytes=2019328 booked=8854240212
+1790271324869 [kv-vmm] ensure-walls n=229 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,554,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271324870 [meter] admit id=chatcmpl-e311bd81660b7ff1d24fc02a601471e8 tenant=default lane=interactive model="q38"
+1790271324873 [admission] request cost: model="q38" ctx=262208 path=plain = 29696 B/token x ctx + 757MB prefill-workspace + 319MB fixed = 8862MB
+1790271324873 [admit-predict] id=chatcmpl-e311bd81660b7ff1d24fc02a601471e8 tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=1580 predicted_completion=673 kv_hat=1143001044 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271324873 [worker] plain-affinity: declined (history diverged at 48 of checkpoint 1568; 2 parked, 1580 prompt tokens; model q38)
+1790271324875 [prefix-cache] hit: 1440 of 1580 prompt tokens from cache (model q38)
+1790271324875 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=1580 cached=1440 lcp=1440 active=1 wave=1 placement=single-or-non-pp2
+1790271324875 [prefix-cache] source lease released after restore fence (entry 1440 tokens, model q38)
+1790271324875 [kv-vmm] admit id=chatcmpl-e311bd81660b7ff1d24fc02a601471e8 owed_before=0 session_mapped=71303168 session_reserved=8342470656 active=0
+1790271324876 [kv-vmm] reap released=71303168 pending=0
+1790271324942 [prefix-cache] insert (seed): 1536 tokens, 202.5MB (resident 8943.7MB / 15883MB, model q38)
+1790271328013 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271328358 [kv-vmm] grow id=chatcmpl-e311bd81660b7ff1d24fc02a601471e8 plane=k3 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=143 waited=0
+1790271328358 [kv-vmm] grow id=chatcmpl-e311bd81660b7ff1d24fc02a601471e8 plane=k7 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=29 waited=0
+1790271328358 [kv-vmm] grow id=chatcmpl-e311bd81660b7ff1d24fc02a601471e8 plane=k11 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=25 waited=0
+1790271328358 [kv-vmm] grow id=chatcmpl-e311bd81660b7ff1d24fc02a601471e8 plane=k15 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=23 waited=0
+1790271328358 [kv-vmm] grow id=chatcmpl-e311bd81660b7ff1d24fc02a601471e8 plane=k19 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=23 waited=0
+1790271328358 [kv-vmm] grow id=chatcmpl-e311bd81660b7ff1d24fc02a601471e8 plane=k23 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=23 waited=0
+1790271328358 [kv-vmm] grow id=chatcmpl-e311bd81660b7ff1d24fc02a601471e8 plane=k27 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=24 waited=0
+1790271328358 [kv-vmm] grow id=chatcmpl-e311bd81660b7ff1d24fc02a601471e8 plane=k31 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=24 waited=0
+1790271328358 [kv-vmm] grow id=chatcmpl-e311bd81660b7ff1d24fc02a601471e8 plane=k35 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=23 waited=0
+1790271328358 [kv-vmm] grow id=chatcmpl-e311bd81660b7ff1d24fc02a601471e8 plane=k39 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=23 waited=0
+1790271328358 [kv-vmm] grow id=chatcmpl-e311bd81660b7ff1d24fc02a601471e8 plane=k43 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=22 waited=0
+1790271328358 [kv-vmm] grow id=chatcmpl-e311bd81660b7ff1d24fc02a601471e8 plane=k47 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=22 waited=0
+1790271328358 [kv-vmm] grow id=chatcmpl-e311bd81660b7ff1d24fc02a601471e8 plane=k51 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=22 waited=0
+1790271328358 [kv-vmm] grow id=chatcmpl-e311bd81660b7ff1d24fc02a601471e8 plane=k55 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=22 waited=0
+1790271328358 [kv-vmm] grow id=chatcmpl-e311bd81660b7ff1d24fc02a601471e8 plane=k59 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=23 waited=0
+1790271328358 [kv-vmm] grow id=chatcmpl-e311bd81660b7ff1d24fc02a601471e8 plane=k63 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=23 waited=0
+1790271328358 [kv-vmm] grow id=chatcmpl-e311bd81660b7ff1d24fc02a601471e8 plane=k64 rows=1928 extent_bytes=2097152 mapped=4194304 reserved=287309824 owner_us=26 waited=0
+1790271331052 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,545,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271331643 [kv-vmm] retire id=chatcmpl-e311bd81660b7ff1d24fc02a601471e8 planes=34 mapped=106954752 reserved=8342470656 used=63549440 slack_bytes=2019328 booked=8862387156
+1790271331644 [kv-vmm] ensure-walls n=50 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271331645 [meter] admit id=chatcmpl-283b137e38f86b7f1281cf8a11e544e7 tenant=default lane=interactive model="q38"
+1790271331649 [admission] request cost: model="q38" ctx=262208 path=plain = 29696 B/token x ctx + 1551MB prefill-workspace + 319MB fixed = 9656MB
+1790271331649 [admit-predict] id=chatcmpl-283b137e38f86b7f1281cf8a11e544e7 tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=3236 predicted_completion=673 kv_hat=1985785812 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271331649 [worker] plain-affinity: declined (history diverged at 47 of checkpoint 1536; 2 parked, 3236 prompt tokens; model q38)
+1790271331651 [prefix-cache] hit: 3104 of 3236 prompt tokens from cache (model q38)
+1790271331651 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3236 cached=3104 lcp=3104 active=1 wave=1 placement=single-or-non-pp2
+1790271331651 [prefix-cache] source lease released after restore fence (entry 3104 tokens, model q38)
+1790271331651 [kv-vmm] admit id=chatcmpl-283b137e38f86b7f1281cf8a11e544e7 owed_before=0 session_mapped=142606336 session_reserved=8342470656 active=0
+1790271331652 [kv-vmm] reap released=71303168 pending=0
+1790271331720 [prefix-cache] insert (seed): 3200 tokens, 251.9MB (resident 9195.6MB / 15883MB, model q38)
+1790271334810 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271337861 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271338398 [kv-vmm] grow id=chatcmpl-283b137e38f86b7f1281cf8a11e544e7 plane=k3 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=95 waited=0
+1790271338398 [kv-vmm] grow id=chatcmpl-283b137e38f86b7f1281cf8a11e544e7 plane=k7 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=27 waited=0
+1790271338398 [kv-vmm] grow id=chatcmpl-283b137e38f86b7f1281cf8a11e544e7 plane=k11 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=23 waited=0
+1790271338398 [kv-vmm] grow id=chatcmpl-283b137e38f86b7f1281cf8a11e544e7 plane=k15 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=23 waited=0
+1790271338398 [kv-vmm] grow id=chatcmpl-283b137e38f86b7f1281cf8a11e544e7 plane=k19 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=24 waited=0
+1790271338398 [kv-vmm] grow id=chatcmpl-283b137e38f86b7f1281cf8a11e544e7 plane=k23 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=22 waited=0
+1790271338398 [kv-vmm] grow id=chatcmpl-283b137e38f86b7f1281cf8a11e544e7 plane=k27 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=22 waited=0
+1790271338398 [kv-vmm] grow id=chatcmpl-283b137e38f86b7f1281cf8a11e544e7 plane=k31 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=21 waited=0
+1790271338398 [kv-vmm] grow id=chatcmpl-283b137e38f86b7f1281cf8a11e544e7 plane=k35 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=21 waited=0
+1790271338398 [kv-vmm] grow id=chatcmpl-283b137e38f86b7f1281cf8a11e544e7 plane=k39 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=22 waited=0
+1790271338398 [kv-vmm] grow id=chatcmpl-283b137e38f86b7f1281cf8a11e544e7 plane=k43 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=22 waited=0
+1790271338398 [kv-vmm] grow id=chatcmpl-283b137e38f86b7f1281cf8a11e544e7 plane=k47 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=22 waited=0
+1790271338398 [kv-vmm] grow id=chatcmpl-283b137e38f86b7f1281cf8a11e544e7 plane=k51 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=22 waited=0
+1790271338398 [kv-vmm] grow id=chatcmpl-283b137e38f86b7f1281cf8a11e544e7 plane=k55 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=22 waited=0
+1790271338398 [kv-vmm] grow id=chatcmpl-283b137e38f86b7f1281cf8a11e544e7 plane=k59 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=22 waited=0
+1790271338398 [kv-vmm] grow id=chatcmpl-283b137e38f86b7f1281cf8a11e544e7 plane=k63 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=30 waited=0
+1790271338398 [kv-vmm] grow id=chatcmpl-283b137e38f86b7f1281cf8a11e544e7 plane=k64 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=22 waited=0
+1790271338493 [kv-vmm] retire id=chatcmpl-283b137e38f86b7f1281cf8a11e544e7 planes=34 mapped=178257920 reserved=8342470656 used=112815104 slack_bytes=2019328 booked=9655995348
+1790271338494 [kv-vmm] ensure-walls n=53 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,484,1,1,1,1,1,1,1,1
+1790271338495 [meter] admit id=chatcmpl-0f7f9011a871ffe7a6405942561c5262 tenant=default lane=interactive model="q38"
+1790271338498 [admission] request cost: model="q38" ctx=262208 path=plain = 29696 B/token x ctx + 1543MB prefill-workspace + 319MB fixed = 9648MB
+1790271338498 [admit-predict] id=chatcmpl-0f7f9011a871ffe7a6405942561c5262 tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=3220 predicted_completion=673 kv_hat=1977642964 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271338498 [worker] plain-affinity: declined (history diverged at 47 of checkpoint 1536; 2 parked, 3220 prompt tokens; model q38)
+1790271338500 [prefix-cache] hit: 3104 of 3220 prompt tokens from cache (model q38)
+1790271338500 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3220 cached=3104 lcp=3104 active=1 wave=1 placement=single-or-non-pp2
+1790271338500 [prefix-cache] source lease released after restore fence (entry 3104 tokens, model q38)
+1790271338500 [kv-vmm] admit id=chatcmpl-0f7f9011a871ffe7a6405942561c5262 owed_before=0 session_mapped=142606336 session_reserved=8342470656 active=0
+1790271338501 [kv-vmm] reap released=106954752 pending=0
+1790271338569 [prefix-cache] insert (seed): 3200 tokens, 251.9MB (resident 9447.5MB / 15883MB, model q38)
+1790271341659 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271344709 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271345437 [kv-vmm] grow id=chatcmpl-0f7f9011a871ffe7a6405942561c5262 plane=k3 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=108 waited=0
+1790271345437 [kv-vmm] grow id=chatcmpl-0f7f9011a871ffe7a6405942561c5262 plane=k7 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=28 waited=0
+1790271345437 [kv-vmm] grow id=chatcmpl-0f7f9011a871ffe7a6405942561c5262 plane=k11 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=25 waited=0
+1790271345437 [kv-vmm] grow id=chatcmpl-0f7f9011a871ffe7a6405942561c5262 plane=k15 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=22 waited=0
+1790271345437 [kv-vmm] grow id=chatcmpl-0f7f9011a871ffe7a6405942561c5262 plane=k19 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=24 waited=0
+1790271345437 [kv-vmm] grow id=chatcmpl-0f7f9011a871ffe7a6405942561c5262 plane=k23 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=23 waited=0
+1790271345437 [kv-vmm] grow id=chatcmpl-0f7f9011a871ffe7a6405942561c5262 plane=k27 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=22 waited=0
+1790271345437 [kv-vmm] grow id=chatcmpl-0f7f9011a871ffe7a6405942561c5262 plane=k31 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=22 waited=0
+1790271345437 [kv-vmm] grow id=chatcmpl-0f7f9011a871ffe7a6405942561c5262 plane=k35 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=22 waited=0
+1790271345437 [kv-vmm] grow id=chatcmpl-0f7f9011a871ffe7a6405942561c5262 plane=k39 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=22 waited=0
+1790271345437 [kv-vmm] grow id=chatcmpl-0f7f9011a871ffe7a6405942561c5262 plane=k43 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=25 waited=0
+1790271345437 [kv-vmm] grow id=chatcmpl-0f7f9011a871ffe7a6405942561c5262 plane=k47 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=22 waited=0
+1790271345437 [kv-vmm] grow id=chatcmpl-0f7f9011a871ffe7a6405942561c5262 plane=k51 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=22 waited=0
+1790271345437 [kv-vmm] grow id=chatcmpl-0f7f9011a871ffe7a6405942561c5262 plane=k55 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=23 waited=0
+1790271345437 [kv-vmm] grow id=chatcmpl-0f7f9011a871ffe7a6405942561c5262 plane=k59 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=23 waited=0
+1790271345437 [kv-vmm] grow id=chatcmpl-0f7f9011a871ffe7a6405942561c5262 plane=k63 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=23 waited=0
+1790271345437 [kv-vmm] grow id=chatcmpl-0f7f9011a871ffe7a6405942561c5262 plane=k64 rows=3856 extent_bytes=2097152 mapped=6291456 reserved=287309824 owner_us=21 waited=0
+1790271346021 [kv-vmm] retire id=chatcmpl-0f7f9011a871ffe7a6405942561c5262 planes=34 mapped=178257920 reserved=8342470656 used=114032640 slack_bytes=2019328 booked=9648327636
+1790271346021 [kv-vmm] ensure-walls n=110 us=1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,497,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271346022 [meter] admit id=chatcmpl-0a83104f67b0979f4cf0ffb55aaf7e39 tenant=default lane=interactive model="q38"
+1790271346026 [admission] request cost: model="q38" ctx=262208 path=plain = 29696 B/token x ctx + 1547MB prefill-workspace + 319MB fixed = 9652MB
+1790271346026 [admit-predict] id=chatcmpl-0a83104f67b0979f4cf0ffb55aaf7e39 tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=3228 predicted_completion=673 kv_hat=1981714388 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271346026 [worker] plain-affinity: declined (history diverged at 48 of checkpoint 3200; 2 parked, 3228 prompt tokens; model q38)
+1790271346028 [prefix-cache] hit: 3104 of 3228 prompt tokens from cache (model q38)
+1790271346028 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3228 cached=3104 lcp=3104 active=1 wave=1 placement=single-or-non-pp2
+1790271346028 [prefix-cache] source lease released after restore fence (entry 3104 tokens, model q38)
+1790271346028 [kv-vmm] admit id=chatcmpl-0a83104f67b0979f4cf0ffb55aaf7e39 owed_before=0 session_mapped=142606336 session_reserved=8342470656 active=0
+1790271346029 [kv-vmm] reap released=106954752 pending=0
+1790271346097 [prefix-cache] insert (seed): 3200 tokens, 251.9MB (resident 9699.5MB / 15883MB, model q38)
+1790271349188 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271350999 [kv-vmm] retire id=chatcmpl-0a83104f67b0979f4cf0ffb55aaf7e39 planes=34 mapped=142606336 reserved=8342470656 used=107915264 slack_bytes=2019328 booked=9652161492
+1790271351000 [kv-vmm] ensure-walls n=152 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271351000 [meter] admit id=chatcmpl-a1d408cc94f30b2bef32cd97d89042fc tenant=default lane=interactive model="q38"
+1790271351004 [admission] request cost: model="q38" ctx=262208 path=plain = 29696 B/token x ctx + 1550MB prefill-workspace + 319MB fixed = 9655MB
+1790271351004 [admit-predict] id=chatcmpl-a1d408cc94f30b2bef32cd97d89042fc tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=3234 predicted_completion=673 kv_hat=1984767956 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271351004 [worker] plain-affinity: declined (history diverged at 48 of checkpoint 3200; 2 parked, 3234 prompt tokens; model q38)
+1790271351009 [prefix-cache] hit: 3104 of 3234 prompt tokens from cache (model q38)
+1790271351009 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3234 cached=3104 lcp=3104 active=1 wave=1 placement=single-or-non-pp2
+1790271351009 [prefix-cache] source lease released after restore fence (entry 3104 tokens, model q38)
+1790271351009 [kv-vmm] admit id=chatcmpl-a1d408cc94f30b2bef32cd97d89042fc owed_before=0 session_mapped=142606336 session_reserved=8342470656 active=0
+1790271351011 [kv-vmm] reap released=178257920 pending=0
+1790271351078 [prefix-cache] insert (seed): 3200 tokens, 251.9MB (resident 9951.4MB / 15883MB, model q38)
+1790271354174 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,5,5,6,6,6,5,5,6,5,5,5,4,6,6,5,3,2,2,2,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,2,2,3,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1,1,2,2,1,2,2,2,1,1,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271354936 [kv-vmm] retire id=chatcmpl-a1d408cc94f30b2bef32cd97d89042fc planes=34 mapped=142606336 reserved=8342470656 used=105480192 slack_bytes=2019328 booked=9655036884
+1790271354937 [kv-vmm] ensure-walls n=64 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271354937 [meter] admit id=chatcmpl-1033c405d8982c944c33c5d238c0bf07 tenant=default lane=interactive model="q38"
+1790271354941 [admission] request cost: model="q38" ctx=262208 path=plain = 29696 B/token x ctx + 1545MB prefill-workspace + 319MB fixed = 9650MB
+1790271354941 [admit-predict] id=chatcmpl-1033c405d8982c944c33c5d238c0bf07 tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=3223 predicted_completion=629 kv_hat=1977863124 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271354941 [worker] plain-affinity: declined (history diverged at 48 of checkpoint 3200; 2 parked, 3223 prompt tokens; model q38)
+1790271354943 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3223 cached=0 lcp=3135 active=1 wave=1 placement=single-or-non-pp2
+1790271354943 [kv-vmm] admit id=chatcmpl-1033c405d8982c944c33c5d238c0bf07 owed_before=0 session_mapped=142606336 session_reserved=8342470656 active=0
+1790271354944 [kv-vmm] reap released=178257920 pending=0
+1790271355761 [prefix-cache] insert (lcp-split): 3104 tokens, 249.1MB (resident 10200.4MB / 15883MB, model q38)
+1790271355829 [prefix-cache] insert (seed): 3200 tokens, 251.9MB (resident 10452.4MB / 15883MB, model q38)
+1790271358395 [kv-vmm] retire id=chatcmpl-1033c405d8982c944c33c5d238c0bf07 planes=34 mapped=142606336 reserved=8342470656 used=101946368 slack_bytes=2019328 booked=9649765332
+1790271358396 [kv-vmm] ensure-walls n=216 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271358397 [meter] admit id=chatcmpl-07690bc808173dd6da45d6a85adf4996 tenant=default lane=interactive model="q38"
+1790271358403 [admission] request cost: model="q38" ctx=262208 path=plain = 29696 B/token x ctx + 2000MB prefill-workspace + 319MB fixed = 10105MB
+1790271358403 [admit-predict] id=chatcmpl-07690bc808173dd6da45d6a85adf4996 tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=5887 predicted_completion=629 kv_hat=2512022484 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271358404 [worker] plain-affinity: declined (history diverged at 47 of checkpoint 3200; 2 parked, 5887 prompt tokens; model q38)
+1790271358405 [prefix-cache] hit: 5760 of 5887 prompt tokens from cache (model q38)
+1790271358405 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=5887 cached=5760 lcp=5760 active=1 wave=1 placement=single-or-non-pp2
+1790271358406 [prefix-cache] source lease released after restore fence (entry 5760 tokens, model q38)
+1790271358406 [kv-vmm] admit id=chatcmpl-07690bc808173dd6da45d6a85adf4996 owed_before=0 session_mapped=249561088 session_reserved=8342470656 active=0
+1790271358407 [kv-vmm] reap released=142606336 pending=0
+1790271358477 [prefix-cache] insert (seed): 5856 tokens, 330.8MB (resident 10783.2MB / 15883MB, model q38)
+1790271361607 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271362697 [kv-vmm] retire id=chatcmpl-07690bc808173dd6da45d6a85adf4996 planes=34 mapped=249561088 reserved=8342470656 used=185035776 slack_bytes=2019328 booked=10104814548
+1790271362697 [kv-vmm] ensure-walls n=90 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271362698 [meter] admit id=chatcmpl-3678b1b6bc8f411a6748e34def26a7cb tenant=default lane=interactive model="q38"
+1790271362704 [admission] request cost: model="q38" ctx=262208 path=plain = 29696 B/token x ctx + 2000MB prefill-workspace + 319MB fixed = 10105MB
+1790271362704 [admit-predict] id=chatcmpl-3678b1b6bc8f411a6748e34def26a7cb tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=5884 predicted_completion=629 kv_hat=2511871956 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271362704 [worker] plain-affinity: declined (history diverged at 47 of checkpoint 3200; 2 parked, 5884 prompt tokens; model q38)
+1790271362706 [prefix-cache] hit: 5760 of 5884 prompt tokens from cache (model q38)
+1790271362706 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=5884 cached=5760 lcp=5760 active=1 wave=1 placement=single-or-non-pp2
+1790271362707 [prefix-cache] source lease released after restore fence (entry 5760 tokens, model q38)
+1790271362707 [kv-vmm] admit id=chatcmpl-3678b1b6bc8f411a6748e34def26a7cb owed_before=0 session_mapped=249561088 session_reserved=8342470656 active=0
+1790271362708 [kv-vmm] reap released=142606336 pending=0
+1790271362778 [prefix-cache] insert (seed): 5856 tokens, 330.8MB (resident 11114.0MB / 15883MB, model q38)
+1790271365908 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271368717 [kv-vmm] retire id=chatcmpl-3678b1b6bc8f411a6748e34def26a7cb planes=34 mapped=249561088 reserved=8342470656 used=189163520 slack_bytes=2019328 booked=10104753108
+1790271368718 [kv-vmm] ensure-walls n=232 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271368718 [meter] admit id=chatcmpl-2a0a9ad49036cc8b7be905bfa69c389d tenant=default lane=interactive model="q38"
+1790271368724 [admit-predict] id=chatcmpl-2a0a9ad49036cc8b7be905bfa69c389d tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=5884 predicted_completion=629 kv_hat=2511871956 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271368724 [worker] plain-affinity: declined (history diverged at 48 of checkpoint 5856; 2 parked, 5884 prompt tokens; model q38)
+1790271368726 [prefix-cache] hit: 5760 of 5884 prompt tokens from cache (model q38)
+1790271368726 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=5884 cached=5760 lcp=5760 active=1 wave=1 placement=single-or-non-pp2
+1790271368726 [prefix-cache] source lease released after restore fence (entry 5760 tokens, model q38)
+1790271368726 [kv-vmm] admit id=chatcmpl-2a0a9ad49036cc8b7be905bfa69c389d owed_before=0 session_mapped=249561088 session_reserved=8342470656 active=0
+1790271368728 [kv-vmm] reap released=142606336 pending=0
+1790271368798 [prefix-cache] insert (seed): 5856 tokens, 330.8MB (resident 11444.7MB / 15883MB, model q38)
+1790271371927 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271375027 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271375815 [kv-vmm] retire id=chatcmpl-2a0a9ad49036cc8b7be905bfa69c389d planes=34 mapped=249561088 reserved=8342470656 used=191806464 slack_bytes=2019328 booked=10104753108
+1790271375816 [kv-vmm] ensure-walls n=65 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271375817 [meter] admit id=chatcmpl-65575a8cc7ad36d592767d308a8719fd tenant=default lane=interactive model="q38"
+1790271375823 [admission] request cost: model="q38" ctx=262208 path=plain = 29696 B/token x ctx + 1999MB prefill-workspace + 319MB fixed = 10104MB
+1790271375823 [admit-predict] id=chatcmpl-65575a8cc7ad36d592767d308a8719fd tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=5868 predicted_completion=629 kv_hat=2511069140 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271375823 [worker] plain-affinity: declined (history diverged at 48 of checkpoint 5856; 2 parked, 5868 prompt tokens; model q38)
+1790271375825 [prefix-cache] hit: 5760 of 5868 prompt tokens from cache (model q38)
+1790271375825 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=5868 cached=5760 lcp=5760 active=1 wave=1 placement=single-or-non-pp2
+1790271375825 [prefix-cache] source lease released after restore fence (entry 5760 tokens, model q38)
+1790271375825 [kv-vmm] admit id=chatcmpl-65575a8cc7ad36d592767d308a8719fd owed_before=0 session_mapped=249561088 session_reserved=8342470656 active=0
+1790271375827 [kv-vmm] reap released=249561088 pending=0
+1790271375896 [prefix-cache] insert (seed): 5824 tokens, 329.8MB (resident 11774.6MB / 15883MB, model q38)
+1790271379025 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271380224 [kv-vmm] retire id=chatcmpl-65575a8cc7ad36d592767d308a8719fd planes=34 mapped=249561088 reserved=8342470656 used=184738816 slack_bytes=2019328 booked=10104425428
+1790271380224 [kv-vmm] ensure-walls n=99 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271380225 [meter] admit id=chatcmpl-25584467a33aca631b54041373c4842a tenant=default lane=interactive model="q38"
+1790271380231 [admission] request cost: model="q38" ctx=262208 path=plain = 29696 B/token x ctx + 2000MB prefill-workspace + 319MB fixed = 10105MB
+1790271380231 [admit-predict] id=chatcmpl-25584467a33aca631b54041373c4842a tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=5885 predicted_completion=629 kv_hat=2511922132 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034897408 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790271380231 [worker] plain-affinity: declined (history diverged at 48 of checkpoint 5856; 2 parked, 5885 prompt tokens; model q38)
+1790271380233 [prefix-cache] hit: 5760 of 5885 prompt tokens from cache (model q38)
+1790271380233 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=5885 cached=5760 lcp=5760 active=1 wave=1 placement=single-or-non-pp2
+1790271380233 [prefix-cache] source lease released after restore fence (entry 5760 tokens, model q38)
+1790271380233 [kv-vmm] admit id=chatcmpl-25584467a33aca631b54041373c4842a owed_before=0 session_mapped=249561088 session_reserved=8342470656 active=0
+1790271380235 [kv-vmm] reap released=249561088 pending=0
+1790271380305 [prefix-cache] insert (seed): 5856 tokens, 330.8MB (resident 12105.4MB / 15883MB, model q38)
+1790271383435 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271386534 [kv-vmm] ensure-walls n=256 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271386874 [kv-vmm] retire id=chatcmpl-25584467a33aca631b54041373c4842a planes=34 mapped=249561088 reserved=8342470656 used=190737408 slack_bytes=2019328 booked=10104773588
+1790271386874 [kv-vmm] ensure-walls n=28 us=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+1790271386878 [kv-vmm] reap released=249561088 pending=0
+1790271388915 [server] SIGTERM: draining (0 in flight, deadline 30s)
+1790271388915 [server] drain complete in 0.0s; exiting
+1790271388970 [server] GPU worker shutdown complete

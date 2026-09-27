@@ -1,0 +1,32 @@
+== shape
+order=AB n=5 model_key=q9 ctx=65536 lock=/tmp/memra-5090.lock warm=deferred park_compact=unset serve_spec=default client=day33-client.py args=--chars 5000 --skip-long --burst 64 admit_by_memory=1 open_output_tokens=2048 timeout_ms_max=3600000 max_sessions=unset kv_host_mb=unset
+== arm on2048
+== boot door line (verbatim)
+[admit-mem] door=ON open_output_tokens=2048 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+DAY31 V-BOOT boot=red-G1 arm=on2048 door_line=present -> PASS
+== shadow budget line (verbatim)
+[admit-predict] shadow armed: budget_bytes=12831671424 budget_src=derived(effective_free_bytes=16493823104 - prefix_cache_budget_bytes=2051538944 - admission_reserve_bytes=1610612736) exempt_tenants=0 enforce=false (logging only, nothing is rejected; enforcement is a separate flip)
+== fatal lines
+(none)
+== sequential requests: tag | status | finish | P | G | cached | path | bpt | booked_ctx | alloc_bytes | used_bytes | cost_src | message_sha256[:16]
+warmup | 200 | length | 90 | 32 | 0 | spec | 16704 | 186 | 2037888 | 2037888 | own | cbec9a51a14363b1
+i-L0-r0 | 200 | length | 1439 | 2048 | 0 | spec | 16704 | 3551 | 58246848 | 58246848 | own | 587714a934d5d386
+i-L0-r1 | 200 | length | 1439 | 2048 | 0 | spec | 16704 | 3551 | 58246848 | 58246848 | own | 1c86d866b5cfaa34
+i-L0-r2 | 200 | length | 1442 | 2048 | 0 | spec | 16704 | 3554 | 58296960 | 58296960 | own | 4d7174305fc37a8e
+i-L0-r3 | 200 | length | 1442 | 2048 | 0 | spec | 16704 | 3554 | 58296960 | 58296960 | own | 4693fedd316c7662
+i-L0-r4 | 200 | length | 1441 | 2048 | 0 | spec | 16704 | 3553 | 58280256 | 58280256 | own | cfe9a4fb0439893b
+ii-L0-r0 | 200 | length | 1673 | 96 | 0 | spec | 16704 | 1833 | 29549376 | 29549376 | own | 2e33a266a6139157
+ii-L0-r1 | 200 | length | 1672 | 96 | 0 | spec | 16704 | 1832 | 29532672 | 29532672 | own | 6d9fb7383d0b20e4
+ii-L0-r2 | 200 | length | 1671 | 96 | 0 | spec | 16704 | 1831 | 29515968 | 29515968 | own | 51db360e35d5efb1
+ii-L0-r3 | 200 | length | 1671 | 96 | 0 | spec | 16704 | 1831 | 29515968 | 29515968 | inherited | 483de37d0f96bac6
+ii-L0-r4 | 200 | length | 1668 | 96 | 0 | spec | 16704 | 1828 | 29465856 | 29465856 | own | 324b31f3ddaf48f5
+iii-L0-r0 | 200 | length | 1457 | 2048 | 1408 | spec | 16704 | 3569 | 58547520 | 58547520 | own | 140d43a7972b753a
+iii-L0-r1 | 200 | length | 1457 | 2048 | 1408 | spec | 16704 | 3569 | 58547520 | 58547520 | own | 32147ad78ebcb514
+iii-L0-r2 | 200 | length | 1460 | 2048 | 1408 | spec | 16704 | 3572 | 58597632 | 58597632 | own | afd05b5d0ad494bf
+iii-L0-r3 | 200 | length | 1460 | 2048 | 1408 | spec | 16704 | 3572 | 58597632 | 58597632 | own | c926420bbcd597dd
+iii-L0-r4 | 200 | length | 1459 | 2048 | 1408 | spec | 16704 | 3571 | 58580928 | 58580928 | own | 2adb1cdf2ab8b716
+== burst
+window_ms=268528 B=64 status={200: 64} finish={'length': 64} retry_after={}
+active_sessions_max=64.0 admission_booked_bytes_max=41057039056.0 samples=1074 shadow_budget_bytes=12831671424 burst_cost_lines=56 burst_cost_total_mb_median=640.0 arith_sessions=20
+admit_mem_id_lines=0 by_verdict={} reclaim_lines=0
+== open-class G (this boot): n=10 min=2048 p50=2048 max=2048 stop=0 length=10 other=0

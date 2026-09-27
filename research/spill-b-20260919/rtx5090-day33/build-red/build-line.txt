@@ -1,0 +1,1 @@
+cd /home/avifenesh/projects/wt-b33-main && CARGO_TARGET_DIR=/home/avifenesh/projects/wt-spill-b/target systemd-run --user --scope -p CPUQuota=1200% -p MemoryMax=14G cargo build --release -p memra-server

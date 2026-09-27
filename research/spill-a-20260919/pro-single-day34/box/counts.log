@@ -1,0 +1,97 @@
+## completion lines (A3): copy-complete batch totals, D2H receipt KV items, receipt span suffixes
+    112 items=128 (32 KV, 96 f32 spans)
+     25 items=130 (34 KV, 96 f32 spans)
+    112 items=32 (16 KV planes)
+     25 items=34 (16 KV planes, draft)
+    246 ; 96 f32 spans landed under the ticket and taken back before the retire
+## demote submissions (tokens, MB, items)
+    112 demote submitted off the tick: 64 tokens, 159.8MB, 32 items
+     26 demote submitted off the tick: 64 tokens, 159.9MB, 34 items
+## logs where submissions exceed copy completions
+pro-single-day34/box/gates/contract-fault/postpublish-server.log submitted=2 copy_complete=1
+## demote failures, verbatim
+      2 [prefix-host] demote failed (pinned host alloc of 69632 B failed: injected failure (MEMRA_KV_HOST_FAULT=alloc-fail)); nothing demoted
+      1 [prefix-host] demote failed (tier D2H producer fence refused: injected failure (MEMRA_KV_HOST_FAULT=contract-presubmit)); nothing demoted
+      1 [prefix-host] demote failed (tier D2H receipt refused: injected failure (MEMRA_KV_HOST_FAULT=contract-postpublish)); nothing demoted
+      1 [prefix-host] demote failed (tier D2H spans refused: injected failure (MEMRA_KV_HOST_FAULT=contract-spans) (96 f32 spans handed back)); nothing demoted
+      1 [prefix-host] demote failed (tier hash digests never landed: ticket seq=3 waited 10.0s past the hand-off, deadline 10s (98 payloads, 157.9MB, 2 poll(s), settled synchronously by a second demote)); nothing published; the tier latches off
+      1 [prefix-host] demote failed (tier hash helper gone: the reply channel closed before the digests of ticket seq=3 landed (98 payloads, 157.9MB, 1 poll(s), tick-top poll)); nothing published; the tier latches off
+## span refusals (the typed refusal line)
+1
+## demote ledger lines per top-level cell dir: pre-submit, helper, owner in-completion (A2 reads the double-park steady set only)
+pro-single-day34/box/double-park: N=110 pre-submit median=0.70 min=0.67 max=93.81; helper median=107.75 min=104.40 max=200.00; owner in-completion median=2.31 min=2.27 max=95.59
+pro-single-day34/box/gates: N=20 pre-submit median=91.05 min=2.04 max=227.31; helper median=178.00 min=159.10 max=192.70; owner in-completion median=93.59 min=4.62 max=228.80
+## hits parked on a Hashing entry, per server log
+pro-single-day34/box/gates/contract-fault/promote-postpublish-server.log:2
+pro-single-day34/box/gates/contract-fault/promote-presubmit-server.log:2
+pro-single-day34/box/gates/contract-fault/promote-readyview-server.log:2
+pro-single-day34/box/gates/contract-fault/promote-reject-server.log:2
+pro-single-day34/box/gates/contract-fault/promote-span-refusal-server.log:2
+pro-single-day34/box/gates/failure-on/digest-server.log:1
+pro-single-day34/box/gates/identity-default-on/host-on-server.log:1
+## verdict lines per gate log
+pro-single-day34/box/attempt1-no-ss/gates/twin-off.log: ok=0 | PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 s
+pro-single-day34/box/attempt1-no-ss/gates/twin-on.log: ok=0 | PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 s
+pro-single-day34/box/gates/contract-fault.log: ok=160 | KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+pro-single-day34/box/gates/failure-off.log: ok=15 | KV-HOST-SPILL FAILURE GATE: ALL GREEN
+pro-single-day34/box/gates/failure-on.log: ok=15 | KV-HOST-SPILL FAILURE GATE: ALL GREEN
+pro-single-day34/box/gates/hitgate-off.log: ok=61 | SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+pro-single-day34/box/gates/hitgate-on.log: ok=68 | SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+pro-single-day34/box/gates/identity-default-off.log: ok=12 | KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+pro-single-day34/box/gates/identity-default-on.log: ok=12 | KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+pro-single-day34/box/gates/identity-plain-off.log: ok=12 | KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+pro-single-day34/box/gates/identity-plain-on.log: ok=12 | KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+pro-single-day34/box/gates/twin-off.log: ok=0 | PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 s
+pro-single-day34/box/gates/twin-on.log: ok=0 | PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 s
+pro-single-day34/box/reading-day26.log: ok=0 | DAY26 GATE twin-on: PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 
+## GPU telemetry per collector cell (command.gpu.csv)
+pro-single-day34/box/doubleparks/command.gpu.csv: 14136 samples, 2026/09/23 20:54:42.466 to 2026/09/23 21:53:50.120, 45 to 76 C, 15.4 to 348.8 W, 0 to 17107 MiB
+pro-single-day34/box/gates/command.gpu.csv: 3044 samples, 2026/09/23 21:53:50.662 to 2026/09/23 22:06:33.796, 48 to 75 C, 78.4 to 462.4 W, 0 to 21939 MiB
+pro-single-day34/box/unit-cell/command.gpu.csv: 1215 samples, 2026/09/23 20:49:30.350 to 2026/09/23 20:54:35.194, 45 to 61 C, 15.4 to 88.0 W, 0 to 881 MiB
+## double-park replays and receipts
+replays.log STALL REPLAY: PASS lines: 20
+     20 errors=0
+compute apps before/after (data rows): 0/0
+## collector cells (CELL.jsonl status, qualification, exit_code of the closing row)
+pro-single-day34/box/doubleparks/CELL.jsonl executed-not-qualified False 0
+pro-single-day34/box/gates/CELL.jsonl executed-not-qualified False 0
+pro-single-day34/box/unit-cell/CELL.jsonl executed-not-qualified False 0
+## lock retries: 0 file(s)
+## double-park ON boots: helper, copy and wall by demote index of the boot (readings, not clauses)
+helper: demote 1 N=10 median=184.55; demote 2 N=10 median=166.10; demote 3 N=10 median=166.40; steady (4+) N=80 median=107.60
+copy: demote 1 N=10 median=92.75; demote 2 N=10 median=92.60; demote 3 N=10 median=91.30; steady (4+) N=80 median=91.70
+wall: demote 1 N=10 median=288.10; demote 2 N=10 median=268.10; demote 3 N=10 median=273.60; steady (4+) N=80 median=208.50
+## day 31: span staging fills (1b), span-refusal lines (1c), slot-class tallies (1d)
+     23 tier span staging: 96 fresh pinned buffer(s), 156893184 bytes charged
+      1 demote failed (tier D2H spans refused: injected failure (MEMRA_KV_HOST_FAULT=contract-spans) (96 f32 spans handed back)); nothing demoted
+    112 by slot class: conv 48 (5898240 B), ssm 48 (150994944 B), hidden 1 (0 B), logits 1 (993280 B)
+     25 by slot class: conv 48 (5898240 B), ssm 48 (150994944 B), hidden 1 (20480 B), logits 1 (993280 B)
+## day 32 and 33: the H2D half (the fill term, submissions with spans, H2D receipt span terms, promote span refusals)
+    111 f32 spans filled on the copy stream (156.9MB)
+    101 promote submitted off the tick: 64 tokens, 158.8MB, 32 items on the contracts door's copy stream, 96 f32 spans filled on the copy stream
+     10 promote submitted off the tick: 64 tokens, 158.9MB, 34 items on the contracts door's copy stream, 96 f32 spans filled on the copy stream
+submissions without spans: 0
+    101 items=32 (16 KV planes)
+      8 items=34 (16 KV planes, draft)
+    109 published retired acknowledged; 96 f32 spans landed under the ticket and taken back before the retire
+H2D receipts without a span term: 0
+      1 promote refused (contracts door): tier H2D spans refused: injected failure (MEMRA_KV_HOST_FAULT=contract-promote-spans) (96 f32 spans handed back); serving without the host entry
+verify ok lines: 4; VERIFY FAILED lines: 4
+## day 32: the promote lines per top-level cell dir (owner segment, promote in-ms), readings
+pro-single-day34/box/d32: owner segment N=100 median=0.75 min=0.67 max=0.82
+pro-single-day34/box/d33: owner segment N=100 median=0.76 min=0.70 max=0.90
+pro-single-day34/box/double-park: owner segment N=100 median=0.77 min=0.71 max=0.89
+pro-single-day34/box/gates: owner segment N=11 median=1.37 min=0.94 max=1.45
+## the d32 binary double-park run: replays, receipts, compute apps
+replays.log STALL REPLAY: PASS lines: 20
+     20 errors=0
+compute apps before/after (data rows): 0/0
+binary: 62766088afd996b6fa4e346f2fbf506174201002a7e8f249a044ad640a081837  /root/spill-receipts/a-day34/bins/memra-server-d32
+## the d33 binary double-park run: replays, receipts, compute apps
+replays.log STALL REPLAY: PASS lines: 20
+     20 errors=0
+compute apps before/after (data rows): 0/0
+binary: 81d3db48c97a8f0daeb7c0d64be0061723eda43c22def9bad220ea4519ffc97e  /root/spill-receipts/a-day34/bins/memra-server-d33
+## day 34: where the KV checksums of every H2D receipt ran (the day-34 run and gates)
+receipts on the hash helper: 109
+receipts not on it: 0

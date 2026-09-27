@@ -81,6 +81,8 @@ pub(crate) struct RouteLoad {
     prompt_tokens_in: AtomicU64,
     cached_tokens_in: AtomicU64,
     rounds: AtomicU64,
+    /// Rounds of completed requests only, the numerator of the per-request decode estimate.
+    served_rounds: AtomicU64,
     service_ms: Mutex<Window>,
     round_ms: Mutex<Window>,
 }
@@ -91,6 +93,8 @@ pub(crate) struct ServeStats {
     pub tokens_out: usize,
     pub n_prompt: usize,
     pub n_cached: usize,
+    /// Committed decode steps or speculative rounds the request took.
+    pub rounds: usize,
 }
 
 /// The published view of a [`RouteLoad`] (the /metrics `routes` block).
@@ -135,6 +139,7 @@ impl RouteLoad {
             prompt_tokens_in: AtomicU64::new(0),
             cached_tokens_in: AtomicU64::new(0),
             rounds: AtomicU64::new(0),
+            served_rounds: AtomicU64::new(0),
             service_ms: Mutex::new(Window::new(SERVICE_WINDOW)),
             round_ms: Mutex::new(Window::new(ROUND_WINDOW)),
         })
@@ -209,6 +214,7 @@ impl RouteLoad {
             t0: Instant::now(),
             admitted: false,
             done: false,
+            out: false,
         }
     }
 
@@ -220,10 +226,26 @@ impl RouteLoad {
         }
     }
 
-    /// Seconds one request occupies the route: the p50 of observed service wall time when there
-    /// is any, else `fallback_s` (the `MEMRA_RL_RESET_S` static, default 2). Same clamp as the
-    /// hybrid estimate, 1..=600.
+    /// Seconds one request occupies the route: the mean rounds a completed request took times
+    /// the round p50, the way the hybrid lane prices a request (mean tokens per request times
+    /// the step p50). Before any round is recorded it is the p50 of observed service wall time,
+    /// and before any request completes `fallback_s` (the `MEMRA_RL_RESET_S` static, default 2).
+    /// Same clamp as the hybrid estimate, 1..=600.
+    ///
+    /// Prime time is left out on purpose. The service p50 counted it, so one 24k-token prime
+    /// (68 s) set the estimate for the requests behind it, and a c16 burst of short requests
+    /// shed eight that would each have finished in under 9 s (research/dsv4-route-receipt-20260926/).
+    /// An estimate that misses a queued prompt's prefill admits a request that may answer late;
+    /// the other error refuses a request that would have been served, and a false refusal is
+    /// the worse one (the non-stream deadline gate's rule).
     pub(crate) fn service_estimate_s(&self, fallback_s: u64) -> u64 {
+        let completed = self.completed.load(Ordering::Acquire);
+        let served_rounds = self.served_rounds.load(Ordering::Acquire);
+        let round_p50 = self.round_ms.lock().ok().and_then(|w| w.percentile(50));
+        if let Some(round_ms) = round_p50.filter(|_| completed > 0 && served_rounds > 0) {
+            let ms = served_rounds.div_ceil(completed).saturating_mul(round_ms);
+            return ms.div_ceil(1000).clamp(1, 600);
+        }
         match self.service_ms.lock().ok().and_then(|w| w.percentile(50)) {
             Some(ms) => ms.div_ceil(1000).clamp(1, 600),
             None => fallback_s,
@@ -247,6 +269,12 @@ impl RouteLoad {
             .lock()
             .map(|w| (w.percentile(50), w.percentile(99)))
             .unwrap_or_default();
+        // WP-A day 58 (OWED item 25): the end counters before the gauges (`Acquire`, pairing with
+        // the ends' `Release`), so an end this snapshot reports is out of `running` in it too.
+        let completed = self.completed.load(Ordering::Acquire);
+        let failed = self.failed.load(Ordering::Acquire);
+        let cancelled = self.cancelled.load(Ordering::Acquire);
+        let refused = self.refused.load(Ordering::Acquire);
         RouteLoadSnapshot {
             name: self.name.clone(),
             capacity: self.capacity,
@@ -254,10 +282,10 @@ impl RouteLoad {
             inflight: self.inflight_total(),
             running: self.running(),
             admitted: self.admitted.load(Ordering::Relaxed),
-            completed: self.completed.load(Ordering::Relaxed),
-            failed: self.failed.load(Ordering::Relaxed),
-            cancelled: self.cancelled.load(Ordering::Relaxed),
-            refused: self.refused.load(Ordering::Relaxed),
+            completed,
+            failed,
+            cancelled,
+            refused,
             tokens_out: self.tokens_out.load(Ordering::Relaxed),
             prompt_tokens_in: self.prompt_tokens_in.load(Ordering::Relaxed),
             cached_tokens_in: self.cached_tokens_in.load(Ordering::Relaxed),
@@ -314,6 +342,11 @@ pub(crate) struct RouteRun {
     t0: Instant,
     admitted: bool,
     done: bool,
+    /// WP-A day 58 (`research/spill-a-20260919/DAY58.md`, OWED item 25): the run has left
+    /// `running`. Every end takes it out of `running` BEFORE it counts the end (`Release`), and
+    /// `snapshot` loads the end counters (`Acquire`) before `running`, so a snapshot that reports a
+    /// run ended also reports it out of `running`.
+    out: bool,
 }
 
 impl RouteRun {
@@ -325,16 +358,27 @@ impl RouteRun {
         }
     }
 
+    /// Take the run out of `running`, once, before any end is counted.
+    fn leave_running(&mut self) {
+        if !self.out {
+            self.out = true;
+            decrement(&self.load.running);
+        }
+    }
+
     pub(crate) fn finish(mut self, stats: ServeStats) {
         self.admit();
+        self.leave_running();
         let l = &self.load;
-        l.completed.fetch_add(1, Ordering::Relaxed);
+        l.completed.fetch_add(1, Ordering::Release);
         l.tokens_out
             .fetch_add(stats.tokens_out as u64, Ordering::Relaxed);
         l.prompt_tokens_in
             .fetch_add(stats.n_prompt as u64, Ordering::Relaxed);
         l.cached_tokens_in
             .fetch_add(stats.n_cached as u64, Ordering::Relaxed);
+        l.served_rounds
+            .fetch_add(stats.rounds as u64, Ordering::Release);
         if let Ok(mut w) = l.service_ms.lock() {
             w.push(self.t0.elapsed().as_millis() as u64);
         }
@@ -343,23 +387,25 @@ impl RouteRun {
 
     pub(crate) fn cancel(mut self) {
         self.admit();
-        self.load.cancelled.fetch_add(1, Ordering::Relaxed);
+        self.leave_running();
+        self.load.cancelled.fetch_add(1, Ordering::Release);
         self.done = true;
     }
 
     pub(crate) fn refuse(mut self) {
         self.admit();
-        self.load.refused.fetch_add(1, Ordering::Relaxed);
+        self.leave_running();
+        self.load.refused.fetch_add(1, Ordering::Release);
         self.done = true;
     }
 }
 
 impl Drop for RouteRun {
     fn drop(&mut self) {
+        self.leave_running();
         if self.admitted && !self.done {
-            self.load.failed.fetch_add(1, Ordering::Relaxed);
+            self.load.failed.fetch_add(1, Ordering::Release);
         }
-        decrement(&self.load.running);
     }
 }
 
@@ -403,6 +449,92 @@ pub(crate) fn all() -> Vec<Arc<RouteLoad>> {
 mod tests {
     use super::*;
 
+    /// WP-A day 58 (`DAY58.md`, OWED item 25; CPU census): every end of a run leaves `running`
+    /// before it counts the end, and `snapshot` loads the end counters before `running`.
+    #[test]
+    fn day58_the_book_orders_ends_after_running_and_reads_them_first() {
+        let src = include_str!("route_telemetry.rs");
+        let prod = &src[..src.find("\n#[cfg(test)]\nmod tests {").unwrap()];
+        let at = |b: &str, n: &str| b.find(n).unwrap_or_else(|| panic!("{n} missing"));
+        let body = |start: &str| {
+            let a = at(prod, start);
+            &prod[a..a + prod[a..].find("\n    }\n").unwrap()]
+        };
+        for (f, end) in [
+            (
+                "    pub(crate) fn finish(mut self, stats: ServeStats) {",
+                "l.completed.fetch_add(1, Ordering::Release);",
+            ),
+            (
+                "    pub(crate) fn cancel(mut self) {",
+                "self.load.cancelled.fetch_add(1, Ordering::Release);",
+            ),
+            (
+                "    pub(crate) fn refuse(mut self) {",
+                "self.load.refused.fetch_add(1, Ordering::Release);",
+            ),
+        ] {
+            let b = body(f);
+            assert!(
+                at(b, "self.leave_running();") < at(b, end),
+                "{f}: the end is counted before the run leaves running"
+            );
+        }
+        let d = &prod[at(prod, "impl Drop for RouteRun {")..];
+        let d = &d[..at(d, "\n}\n")];
+        assert!(
+            at(d, "self.leave_running();")
+                < at(d, "self.load.failed.fetch_add(1, Ordering::Release);")
+        );
+        assert!(
+            !d.contains("decrement(&self.load.running)"),
+            "only leave_running decrements, once"
+        );
+        let snap = body("    pub(crate) fn snapshot(&self) -> RouteLoadSnapshot {");
+        let running = at(snap, "running: self.running(),");
+        for end in [
+            "self.completed.load(Ordering::Acquire)",
+            "self.failed.load(Ordering::Acquire)",
+            "self.cancelled.load(Ordering::Acquire)",
+            "self.refused.load(Ordering::Acquire)",
+        ] {
+            assert!(at(snap, end) < running, "{end} is loaded before running");
+        }
+    }
+
+    /// WP-A day 58 (`research/spill-a-20260919/DAY58.md`, OWED item 25): a snapshot never counts a
+    /// run that it reports ended as still running. 100,000 fresh books: a writer runs one `begin`,
+    /// `admit` and `cancel`, while the reader loops until its snapshot sees `cancelled == 1` and
+    /// checks that the same snapshot reads the run out of `running`.
+    #[test]
+    fn day58_a_snapshot_never_counts_an_ended_run_as_running() {
+        let mut violations = 0u32;
+        for i in 0..100_000u32 {
+            let load = RouteLoad::new(format!("t-day58-{i}"), 1);
+            let w = load.clone();
+            let writer = std::thread::spawn(move || {
+                let mut run = w.begin();
+                run.admit();
+                run.cancel();
+            });
+            loop {
+                let s = load.snapshot();
+                if s.cancelled == 1 {
+                    if s.running != 0 {
+                        violations += 1;
+                    }
+                    break;
+                }
+                std::hint::spin_loop();
+            }
+            writer.join().unwrap();
+        }
+        assert_eq!(
+            violations, 0,
+            "{violations} snapshots counted an ended run as running"
+        );
+    }
+
     #[test]
     fn a_ticket_releases_its_waiting_slot_on_drop() {
         let r = RouteLoad::new("t-ticket", 1);
@@ -430,6 +562,7 @@ mod tests {
             tokens_out: 7,
             n_prompt: 30,
             n_cached: 10,
+            rounds: 7,
         });
         assert_eq!(r.running(), 0);
         let mut failed = r.begin();
@@ -488,6 +621,49 @@ mod tests {
             9,
             "one outlier does not move the median"
         );
+    }
+
+    /// The two-card receipt's shape (research/dsv4-route-receipt-20260926/): one completed
+    /// 24k-token prime took 68 s for 16 decode rounds at about 12 ms. The service p50 priced every
+    /// later request at 68 s; the round estimate prices one at its decode, 1 s after the floor.
+    #[test]
+    fn a_long_prime_does_not_price_the_requests_behind_it() {
+        let r = RouteLoad::new("t-prime", 4);
+        {
+            let mut w = r.service_ms.lock().unwrap();
+            w.push(68_000);
+        }
+        assert_eq!(
+            r.service_estimate_s(2),
+            68,
+            "before any round: the service p50"
+        );
+        let mut run = r.begin();
+        run.admit();
+        r.note_round(67_400); // the first round's gap spans the prime
+        for _ in 0..15 {
+            r.note_round(12);
+        }
+        run.finish(ServeStats {
+            tokens_out: 16,
+            n_prompt: 24_008,
+            n_cached: 0,
+            rounds: 16,
+        });
+        assert_eq!(r.service_estimate_s(2), 1);
+        // A long generation prices as one: 3000 rounds at 12 ms.
+        let mut long = r.begin();
+        long.admit();
+        for _ in 0..3000 {
+            r.note_round(12);
+        }
+        long.finish(ServeStats {
+            tokens_out: 3000,
+            n_prompt: 20,
+            n_cached: 0,
+            rounds: 3000,
+        });
+        assert_eq!(r.service_estimate_s(2), 19, "mean 1508 rounds x 12 ms");
     }
 
     #[test]

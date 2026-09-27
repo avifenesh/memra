@@ -1,0 +1,77 @@
+[server] build: memra-0.138.0-721e5a015951 (id: source-tree, git: da649107c7e8)
+[server] starting; models config = [("gate", "/root/artifacts/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "gate" <- /root/artifacts/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+[tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 191 tensors
+[worker]   loaded "gate": 41 layers, eos=248046, stop=[248046]
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="gate" route=hybrid-worker capacity=4 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] gate: decode wave cap 8; scheduler tick cap 8
+[prefix-cache] on: budget 284MB (283770880 B, derived: 2 x 141885440 B max entry for model "gate" at served ctx 8192 (from MEMRA_CTX; MEMRA_CTX set), requested 283770880 B; boot driver free 97461207040 B, post-reserve clamp 95850594304 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "gate": plain 9280 B/token, spec 10208 B/token; fixed residual learns from effective-free deltas
+[prime-walk] model="gate" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[spec] draft graph unavailable: non-resident MoE MTP head; eager draft chain engaged
+[glm5-vrows-t1-deny] dev=0 il=0 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[glm5-vrows-t1-deny] dev=0 il=1 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[glm5-vrows-t1-deny] dev=0 il=2 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[fa-pool] grow #0 dev=0 o_len 0 -> 266240 ml_len 0 -> 1040 (retired kept, zero=false)
+[glm5-vrows-t1-deny] dev=0 il=3 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[glm5-vrows-t1-deny] dev=0 il=4 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[glm5-vrows-t1-deny] dev=0 il=5 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[glm5-vrows-t1-deny] dev=0 il=6 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[glm5-vrows-t1-deny] dev=0 il=7 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+[fa-pool] grow #1 dev=0 o_len 266240 -> 532480 ml_len 1040 -> 2080 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 532480 -> 1064960 ml_len 2080 -> 4160 (retired kept, zero=false)
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1342177280,"still_owned_bytes":13375778448,"pool_reserved_bytes":13555990528,"pool_cached_bytes":180212080,"driver_free_bytes":87797530624,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1280MB cached back to the driver
+[admit-cal] boot calibration done: model="gate" route=mtp transient floor 1536MB (static was 1536MB; measured 1238MB; probe kv charge 41MB, draft-state 0MB, drafted 57 accepted 45; [dev0 peak-mapped 14208MB rest-mapped 12928MB charged 41MB -> 1238MB]; 4.6s)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[server] worker ready; serving models: ["gate"]
+[server] listening on http://127.0.0.1:18159
+[meter] admit id=cmpl-b8f06c58387b2b3765ccc9a181ec66f0 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=137 path=spec = 10208 B/token x ctx + 9MB prefill-workspace + 0MB fixed = 10MB
+[spec-k] model="gate" tenant="" K=3 source=cold-short prompt=25 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 129MB (observed 130MB at ctx 81 path=spec)
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+[spec-acc] ctx=25 burst=20/33 cum=20/33=0.606
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+[spec-acc] ctx=57 burst=11/15 cum=31/48=0.646
+[meter] admit id=cmpl-291c3db84b6ab2db235da4d93270d306 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=131 path=spec = 10208 B/token x ctx + 7MB prefill-workspace + 129MB fixed = 137MB
+[worker] spec-affinity: declined (history diverged at 0 of checkpoint 25; 1 parked, 19 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-short prompt=19 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+[spec-acc] ctx=19 burst=23/30 cum=23/30=0.767
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+[spec-acc] ctx=53 burst=10/12 cum=33/42=0.786
+[meter] admit id=cmpl-141cefdc23b3efe47974a01f4b33a120 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=133 path=spec = 10208 B/token x ctx + 7MB prefill-workspace + 129MB fixed = 137MB
+[worker] spec-affinity: declined (history diverged at 0 of checkpoint 25; 2 parked, 21 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-short prompt=21 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+[spec-acc] ctx=21 burst=19/36 cum=19/36=0.528
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+[spec-acc] ctx=53 burst=10/27 cum=29/63=0.460
+[meter] admit id=cmpl-5d2cd21c86c092d30d485ecfd5a9aa14 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-d9a13baa63fabae15ce96548a9fbfb52 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-76210a4f97a0cdb263c779a451a479e5 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-68088c97d211b7de969ee144ada78684 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=130 path=plain = 9280 B/token x ctx + 6MB prefill-workspace + 129MB fixed = 136MB
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=18 cached=0 lcp=0 active=1 wave=4 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=132 path=plain = 9280 B/token x ctx + 7MB prefill-workspace + 129MB fixed = 137MB
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=20 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=131 path=plain = 9280 B/token x ctx + 7MB prefill-workspace + 129MB fixed = 137MB
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=19 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=129 path=plain = 9280 B/token x ctx + 6MB prefill-workspace + 129MB fixed = 136MB
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=17 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=74 carried=0 partial=0 in 309.6ms
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

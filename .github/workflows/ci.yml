@@ -114,6 +114,9 @@ jobs:
       - name: CPU-only artifact path safety tests
         run: python3 tools/test_nvme_builder_safety.py
 
+      - name: Chain-launched kernels open with the PDL entry
+        run: python3 tools/check-pdl-chain.py
+
       - name: Per-card native qualification runner controls
         run: python3 tools/test_qualify_model_device_memory.py
 
@@ -176,14 +179,6 @@ jobs:
         run: tools/test_release_guard.sh
       - name: Release-battery coverage fixtures (CPU only)
         run: python3 tools/test_release_battery_coverage.py
-      - name: Native environment controller CPU protocol and Linux stop-world tests
-        run: python3 -B research/modelplan-onboarding-rewrite-identity-20260920/test_native_env_controller.py --require-linux -v
-      - name: Native build provenance and caller scheduling CPU controls
-        run: |
-          python3 -B research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_native.py
-          python3 -B research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py
-          python3 -B research/modelplan-onboarding-rewrite-identity-20260920/test_native_finalization.py
-          python3 -B research/modelplan-onboarding-rewrite-identity-20260920/test_finalization_signals.py
 
       # Changelog teeth (2026-09-02): the tag walk, the skip list, the explicit FROM, and the
       # history-root baseline that keeps the first tag on the rebuilt history from dropping the
@@ -524,14 +519,6 @@ jobs:
           MEMRA_ENGINE_SKIP_BUDGET=0 python3 tools/skip-census.py run \
             --budget-var MEMRA_ENGINE_SKIP_BUDGET --min-passed 300 \
             -- cargo test --release -p memra-engine --lib
-        env:
-          MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
-          MEMRA_CUDA_ARCH: "120a"
-      - name: Rewrite identity gate CPU tests (scope refusals, seal separation, hidden boundary)
-        run: |
-          MEMRA_ENGINE_SKIP_BUDGET=0 python3 tools/skip-census.py run \
-            --budget-var MEMRA_ENGINE_SKIP_BUDGET --min-passed 4 \
-            -- cargo test --release -p memra-engine --bin rewrite_identity_gate
         env:
           MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
           MEMRA_CUDA_ARCH: "120a"

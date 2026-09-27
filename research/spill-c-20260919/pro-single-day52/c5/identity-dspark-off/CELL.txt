@@ -1,0 +1,10 @@
+cell=identity-dspark-off gate=tools/kv-host-spill-identity-gate.sh
+env=MEMRA_HOSTGATE_CACHE_MB=256 MEMRA_DSPARK_SPEC=1 MEMRA_DSPARK_DRAFT=/root/artifacts/q38-dflash2 MEMRA_DSPARK_PREFIX_RESTORE=1
+lock=/tmp/memra-gpu.lock owner=gate-internal-canonical
+tree=62e848b1f1c604ebdad328e4538544ce46a0143e
+binary_sha256=e801759ff8d3137eb9d50bb4082b6dbe1d8eb33642d2510272c020be298dfa1e
+drafter_config_sha256=873e3556509b0da06e29654ba00d4944888d4b5e8a33afde25f7eb27d321e980
+drafter_model_sha256=67fc76d68dc5a9415511a4f394ef744d67510cd20e93b37cc2cc7d28e4bab65c
+model=Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+gpu=NVIDIA RTX PRO 6000 Blackwell Workstation Edition, 600.00 W
+status=executed-not-qualified

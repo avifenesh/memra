@@ -1,0 +1,8 @@
+build join 99f886a82 SERVER_EXIT=0 ENGINE_EXIT=0  server 9d44dd8f94a736cd
+shut shut-probe-Jn-1 exit rc=0 after 5s | [server] SIGTERM: draining (0 in flight, deadline 30s) [server] drain complete in 0.0s; exiting [server] GPU worker shutdown complete 
+shut shut-drop-Jn-1 exit rc=0 after 4s | [server] SIGTERM: draining (0 in flight, deadline 30s) [server] drain complete in 0.0s; exiting [server] GPU worker shutdown complete 
+shut shut-probe-Jn-2 exit rc=0 after 6s | [server] SIGTERM: draining (0 in flight, deadline 30s) [server] drain complete in 0.0s; exiting [server] GPU worker shutdown complete 
+shut shut-drop-Jn-2 exit rc=0 after 5s | [server] SIGTERM: draining (0 in flight, deadline 30s) [server] drain complete in 0.0s; exiting [server] GPU worker shutdown complete 
+shut shut-probe-Jn-3 exit rc=0 after 6s | [server] SIGTERM: draining (0 in flight, deadline 30s) [server] drain complete in 0.0s; exiting [server] GPU worker shutdown complete 
+shut shut-drop-Jn-3 exit rc=0 after 5s | [server] SIGTERM: draining (0 in flight, deadline 30s) [server] drain complete in 0.0s; exiting [server] GPU worker shutdown complete 
+V5G_DONE 99f886a82

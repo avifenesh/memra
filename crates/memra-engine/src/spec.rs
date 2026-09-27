@@ -507,6 +507,25 @@ pub fn dspark_vg_debt_projection(
             .min(reserved_bytes),
     }
 }
+/// The pool debt read that records its observation: the projection from the last recorded
+/// `(captures, reserved)`, then that observation moves to this one when captures have grown past it.
+/// `dspark_vg_debt_projection` with the same arguments is the non-recording read (the peek).
+pub(crate) fn vg_debt_observe(
+    obs: &mut Option<(usize, usize)>,
+    captures: usize,
+    cap: usize,
+    reserved_bytes: usize,
+) -> usize {
+    let debt = dspark_vg_debt_projection(captures, cap, reserved_bytes, *obs);
+    if captures > 0 {
+        match *obs {
+            Some((c0, _)) if captures <= c0 => {}
+            _ => *obs = Some((captures, reserved_bytes)),
+        }
+    }
+    debt
+}
+
 /// PRE-CAPTURE VRAM RESERVE CHECK door (lane/step37-vram-admission-20260830), DEFAULT ON.
 /// A draft-graph capture attempt on a tight card used to be try-and-fail: the 2 warmup
 /// forwards + instantiate grew the pool to the edge BEFORE the OOM surfaced, and the
@@ -1553,6 +1572,14 @@ impl RestoredDraftScratch {
     }
 }
 
+/// The budget clamp's truncation slot (WP-B day 43, DAY43.md 1.1): with `room` public tokens
+/// left in the request, a round emitting `n_acc + 1` tokens overshoots when `n_acc + 1 > room`;
+/// it is truncated at slot `room - 1` when that still commits a row (`base + room - 1 >= 1`).
+/// `None`: no truncation (the round fits, no room, or a first round with nothing to commit).
+pub fn budget_clamp_slot(room: usize, n_acc: usize, base: usize) -> Option<usize> {
+    (room >= 1 && n_acc + 1 > room && base + room > 1).then(|| room - 1)
+}
+
 pub struct SpecSession {
     // Never refreshed on resume: predictions, KV and captured draft graphs share this origin.
     rewrite_execution: crate::plan_backend::RewriteExecutionSnapshot,
@@ -1592,6 +1619,18 @@ pub struct SpecSession {
     /// commit pass). Non-empty-suffix or sampled turns must flush first (spec_flush_pending);
     /// generate_spec_session_sampled does this at entry, and serve parks only flushed sessions.
     pub pending_tok: Option<u32>,
+    /// BUDGET CLAMP (`MEMRA_SPEC_BUDGET_CLAMP`, WP-B day 43): the request's remaining public
+    /// budget, set by the serve worker before a burst when the door is on; consumed one-shot by
+    /// the burst. `None` (every other caller, and the door unset) is today's program: the final
+    /// round commits every accepted draft, overshoot included.
+    pub budget_room: Option<usize>,
+    /// The burst's clamp firing, `(truncated slot, accepted drafts, room left)`, for the
+    /// worker's receipt line; written only when the clamp truncated a round.
+    pub budget_clamp_fired: Option<(usize, usize, usize)>,
+    /// EXACT RESUME (`MEMRA_RESUME_EXACT`, WP-B day 44): the absolute grid point the next MTP prime
+    /// walk captures its turn checkpoint at INSIDE the call (`grid_capture`), with no prime stop.
+    /// One-shot, consumed by `mtp_prime_start`; `None` is today's program.
+    pub grid_capture_at: Option<usize>,
     /// SESSION-AFFINITY TURN CHECKPOINT (lane/session-affinity, 2026-08-05): the state at this
     /// turn's PROMPT-END boundary, retained so a later turn can REWIND here. See
     /// [`SpecCheckpoint`]. Refreshed by every non-empty prime; None until the first one, and on
@@ -1639,6 +1678,99 @@ impl SpecSession {
     /// Context capacity of the session's caches (the server's ContextFull guard).
     pub fn cache_max_ctx(&self) -> usize {
         self.cache.max_ctx
+    }
+
+    fn scratch_layers_mut(&mut self) -> impl Iterator<Item = &mut KvLayer> {
+        std::iter::once(&mut self.scratch.kv)
+            .chain(self.scratch.extra.iter_mut().map(|p| &mut p.kv))
+    }
+
+    fn scratch_layers(&self) -> impl Iterator<Item = &KvLayer> {
+        std::iter::once(&self.scratch.kv).chain(self.scratch.extra.iter().map(|p| &p.kv))
+    }
+
+    /// WP-B day 37 (`MEMRA_KV_ALLOCATOR=vmm`): the on-demand VMM planes this session holds,
+    /// trunk cache and draft scratch together. The server compares it with the count its
+    /// construction scope allocated, so a plane this visitor cannot reach refuses the session.
+    pub fn kv_on_demand_planes(&self) -> usize {
+        self.cache.on_demand_planes()
+            + self
+                .scratch_layers()
+                .map(KvLayer::on_demand_planes)
+                .sum::<usize>()
+    }
+
+    /// Back rows `[0, rows)` of every on-demand plane of the session (trunk and scratch,
+    /// capped at their capacities). One `(label, event)` per grow; scratch labels are `d<i>`.
+    pub fn ensure_kv_rows(
+        &mut self,
+        rows: usize,
+    ) -> Result<Vec<(String, memra_kv::GrowEvent)>, Box<dyn std::error::Error>> {
+        let mut out = self.cache.ensure_kv_rows(rows)?;
+        let cap = self.scratch.cap;
+        for (i, layer) in self.scratch_layers_mut().enumerate() {
+            if layer.on_demand_planes() == 0 {
+                continue;
+            }
+            for (tag, ev) in layer.ensure_rows(rows.min(cap))? {
+                out.push((format!("d{tag}{i}"), ev));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Schedule the release of every on-demand extent wholly past row `rows` (each plane records
+    /// its own fence under its lock).
+    pub fn release_kv_beyond_rows(&mut self, rows: usize) -> usize {
+        let trunk = self.cache.release_kv_beyond_rows(rows);
+        trunk
+            + self
+                .scratch_layers_mut()
+                .map(|l| l.release_beyond_rows(rows))
+                .sum::<usize>()
+    }
+
+    /// Unmap every released tail whose event completed. Returns the bytes released.
+    pub fn reap_kv(&mut self) -> usize {
+        let mut released = self.cache.reap_kv();
+        for layer in self.scratch_layers_mut() {
+            released += layer.reap();
+        }
+        released
+    }
+
+    /// Bytes of the session's on-demand planes scheduled for release and not yet reaped.
+    pub fn kv_pending_release_bytes(&self) -> usize {
+        self.cache.kv_pending_release_bytes()
+            + self
+                .scratch_layers()
+                .map(KvLayer::pending_release_bytes)
+                .sum::<usize>()
+    }
+
+    /// Backed and reserved bytes of the session's on-demand planes.
+    pub fn kv_on_demand_bytes(&self) -> (usize, usize) {
+        let (m, r) = self.cache.kv_on_demand_bytes();
+        self.scratch_layers().fold((m, r), |(m, r), l| {
+            (
+                m + l.on_demand_physical_bytes(),
+                r + l.on_demand_reserved_bytes(),
+            )
+        })
+    }
+
+    /// Used and slack bytes of the session's on-demand planes, trunk and scratch.
+    pub fn kv_on_demand_used_and_slack(&self, rows: usize) -> (usize, usize) {
+        let (u, s) = self.cache.kv_on_demand_used_and_slack(rows);
+        self.scratch_layers().fold((u, s), |(u, s), l| {
+            let (lu, ls) = l.on_demand_used_and_slack(rows);
+            (u + lu, s + ls)
+        })
+    }
+
+    /// The trunk cache's position (rows committed).
+    pub fn kv_position(&self) -> usize {
+        self.cache.pos
     }
     /// Read access to the live trunk cache (lane/spec-prefix-cache): the worker slices
     /// full-attn KV rows `[0..capture.pos)` out of it when publishing a boundary capture —
@@ -2422,10 +2554,33 @@ impl MtpScratch {
             Some(_) => Some(e.htod_i32(&[0])?),
             None => None,
         };
+        // WP-B day 37: inside the server's on-demand scope (`memra_kv::with_on_demand_kv`) a
+        // flat scratch plane is an on-demand VMM plane backing the scope's initial rows, the
+        // trunk cache's rule; ring planes keep their bounded pooled program.
+        let on_demand = ring
+            .is_none()
+            .then(memra_kv::on_demand_initial_rows)
+            .flatten();
+        let alloc = |tok_bytes: usize| -> Result<memra_kv::KvPlane, Box<dyn std::error::Error>> {
+            let capacity = alloc_rows * tok_bytes;
+            let initial = on_demand.map(|rows| (rows.min(alloc_rows) * tok_bytes).min(capacity));
+            // Addendum C: on demand only where a whole granule stays unbacked.
+            match initial.filter(|&initial| {
+                memra_kv::KvDev::kv_vmm_granularity(e)
+                    .is_some_and(|g| memra_kv::on_demand_pays(capacity, initial, g))
+            }) {
+                Some(initial) => {
+                    let plane = memra_kv::KvDev::alloc_vmm_on_demand_u8(e, capacity, initial)?;
+                    memra_kv::note_on_demand_plane();
+                    Ok(plane)
+                }
+                None => Ok(e.alloc_u8(capacity)?.into()),
+            }
+        };
         Ok(MtpScratchPlane {
             kv: KvLayer {
-                k: e.alloc_u8(alloc_rows * k_tok_bytes)?.into(),
-                v: e.alloc_u8(alloc_rows * v_tok_bytes)?.into(),
+                k: alloc(k_tok_bytes)?,
+                v: alloc(v_tok_bytes)?,
                 kv_dim_k,
                 kv_dim_v,
                 k_tok_bytes,
@@ -2732,15 +2887,24 @@ impl DsparkVerifyGraphs {
     /// Called under the pool mutex by `HybridModel::dspark_vg_admission_debt`.
     pub(crate) fn admission_debt(&mut self, reserved_bytes: usize) -> usize {
         let captures = self.captures();
-        let debt =
-            dspark_vg_debt_projection(captures, dspark_vg_cap(), reserved_bytes, self.debt_obs);
-        if captures > 0 {
-            match self.debt_obs {
-                Some((c0, _)) if captures <= c0 => {}
-                _ => self.debt_obs = Some((captures, reserved_bytes)),
-            }
-        }
-        debt
+        vg_debt_observe(
+            &mut self.debt_obs,
+            captures,
+            dspark_vg_cap(),
+            reserved_bytes,
+        )
+    }
+
+    /// What `admission_debt` returns now, without recording the observation (WP-B day 48
+    /// addendum B, revuto on integ72): the predictive seam reads this before the physical gate's
+    /// own call in the same admission, so both see one debt and the physical reserve is unchanged.
+    pub(crate) fn admission_debt_peek(&self, reserved_bytes: usize) -> usize {
+        dspark_vg_debt_projection(
+            self.captures(),
+            dspark_vg_cap(),
+            reserved_bytes,
+            self.debt_obs,
+        )
     }
 
     /// Build for this cache's shape. None when there are no linear layers, sizes are
@@ -5216,6 +5380,19 @@ impl HybridModel {
     ) -> Result<(CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
         let _rewrite_execution = self.protect_rewrite_execution()?;
         self.refuse_unqualified_gdn_verify()?;
+        // memra#659: a verify window never writes past the session cache. The round loops bound
+        // their rounds before they call here; this turns a missed bound into a typed refusal
+        // instead of an out-of-bounds KV row. Host-len appends land at cache.pos..; the
+        // round-stream arm's device counter is bounded where that arm is chosen.
+        if stream.is_none() && cache.pos + tokens.len() > cache.max_ctx {
+            return Err(format!(
+                "spec verify refused: rows {}..{} would land past the session cache ({} rows)",
+                cache.pos,
+                cache.pos + tokens.len(),
+                cache.max_ctx
+            )
+            .into());
+        }
         // PP DOOR (lane/pp2-spec 2026-08-06): the verify trunk now takes its OWN stage split,
         // exactly as the eager and batched steps do. This is the single funnel every verify
         // forward reaches (decode_step_t / _h / _h_emb / _h_emb_dev / _core all land here), so
@@ -9211,6 +9388,9 @@ impl HybridModel {
             uctr: 0,
             draft_ctx: None,
             pending_tok: None,
+            budget_room: None,
+            budget_clamp_fired: None,
+            grid_capture_at: None,
             turn_ckpt: None,
             telem: SpecTelemetryCounters::default(),
             capture_at: None,
@@ -9983,6 +10163,9 @@ impl HybridModel {
             uctr: 0,
             draft_ctx: None,
             pending_tok: None,
+            budget_room: None,
+            budget_clamp_fired: None,
+            grid_capture_at: None,
             // Stable-boundary capture from the split feed above (None on the legacy shape):
             // a restored session previously parked WITHOUT a checkpoint, so the next turn's
             // affinity probe declined ("no turn checkpoint retained") and the conversation
@@ -10063,6 +10246,64 @@ impl HybridModel {
         sess.next_pred = None;
         sess.pending_tok = None;
         Ok(Some(ckpt.pos))
+    }
+
+    /// EXACT RESUME SETTLE (WP-B day 44): prime `tokens` onto the session with the MTP walker's
+    /// trunk and draft fill only (no boundary token, no init feed, no draft preparation), and
+    /// commit them. Every committed row is then a prime-program row, so a later prime from the
+    /// session's end is cold-exact by the grid law when the session ends on the grid.
+    pub fn spec_prime_settle(
+        &self,
+        e: &Engine,
+        sess: &mut SpecSession,
+        tokens: &[u32],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if tokens.len() < crate::hybrid_forward::PRIME_MIN_T {
+            return Err("settle prime below PRIME_MIN_T".into());
+        }
+        if sess.pending_tok.is_some() {
+            return Err("settle on a session with a carried pending token".into());
+        }
+        let mut state = Some(self.mtp_prime_start(e, sess, tokens, 1, None, None)?);
+        if let Some(s) = state.as_mut() {
+            s.set_prime_only();
+        }
+        let mut walker = self.mtp_prime_walker(e, sess, &mut state, None);
+        crate::prime_walker::advance_prime(&mut walker, false, |_, _| {})?;
+        crate::prime_walker::finish_prime(walker)?;
+        Ok(())
+    }
+
+    /// `spec_rewind_to_checkpoint` that keeps the turn checkpoint on the session afterwards
+    /// (WP-B day 44, the exact resume): the restore only copies FROM the snapshot, so the same
+    /// checkpoint stays valid for a later rewind until the next prime walk captures a newer one.
+    pub fn spec_rewind_to_checkpoint_retaining(
+        &self,
+        e: &Engine,
+        sess: &mut SpecSession,
+    ) -> Result<Option<usize>, Box<dyn std::error::Error>> {
+        let Some(ckpt) = sess.turn_ckpt.as_ref() else {
+            return Ok(None);
+        };
+        if !sess.cache.can_rollback(&ckpt.snap, 0) || !sess.scratch.can_rewind_to(ckpt.pos) {
+            return Err(
+                "SWA ring rewind checkpoint has been lapped; full re-prime required".into(),
+            );
+        }
+        let pos = ckpt.pos;
+        assert!(
+            pos <= sess.committed.len(),
+            "checkpoint past committed ({pos} > {})",
+            sess.committed.len()
+        );
+        crate::pp::restore_cache_checkpoint(e, self, None, &mut sess.cache, &ckpt.snap)?;
+        debug_assert_eq!(sess.cache.pos, pos, "rollback landed off the checkpoint");
+        sess.scratch.set_len(e, pos)?;
+        sess.committed.truncate(pos);
+        sess.last_h = Some(e.clone_dtod(&ckpt.last_h)?);
+        sess.next_pred = None;
+        sess.pending_tok = None;
+        Ok(Some(pos))
     }
 
     /// Grow a parked speculative session to `target_cap` and rewind it to its retained turn
@@ -11563,6 +11804,10 @@ impl HybridModel {
         let mut ckpt_req: Option<usize> = None;
         // FAIL-SAFE bit threaded out of the session (see `SpecSession::capture_disabled`).
         let mut sess_capture_disabled = false;
+        // BUDGET CLAMP (WP-B day 43): the request's remaining budget, one-shot, and where the
+        // firing is reported.
+        let mut budget_room: Option<usize> = None;
+        let mut sess_clamp_slot: Option<&mut Option<(usize, usize, usize)>> = None;
         let (
             cache,
             scratch,
@@ -11605,7 +11850,13 @@ impl HybridModel {
                     ckpt_at,
                     capture_disabled,
                     prime_ready: _,
+                    budget_room: s_budget_room,
+                    budget_clamp_fired,
+                    grid_capture_at: _,
                 } = sr;
+                budget_room = s_budget_room.take();
+                *budget_clamp_fired = None;
+                sess_clamp_slot = Some(budget_clamp_fired);
                 sess_capture_disabled = *capture_disabled;
                 sess_capture = Some((capture_at.take(), boundary_captures));
                 ckpt_req = ckpt_at.take();
@@ -12717,6 +12968,18 @@ impl HybridModel {
             .unwrap_or(0);
         let mut graph_guard_noted = false;
         while keep_going && out.len() < max_new {
+            // CONTEXT-EDGE GUARD (memra#659): a round writes the verify window (the pending
+            // token plus up to k_this drafts) at rows cache.pos.., and a sampled tail commits
+            // its bonus one row past that. A round that cannot land inside the cache ends the
+            // burst here, at a round boundary, before anything of the round runs (the same exit
+            // as the admission yield); the worker's `committed + k + 3 >= cache_max_ctx` check
+            // then finishes the request ContextFull. Without it a request whose budget spans its
+            // whole cap (max_tokens omitted) wrote its last round past the cache: the
+            // out-of-bounds KV row poisoned later verifies and the deferred draft-KV fill
+            // asserted. The glm5 route's guard has the same form.
+            if cache.pos + (if adapt { kc } else { k }) + 2 > cache.max_ctx {
+                break;
+            }
             // GRAPH-LAUNCH HEADROOM GUARD (see GRAPH_LAUNCH_MIN_FREE): below the floor,
             // every captured-graph arm in this round yields to its byte-identical eager
             // twin instead of feeding cuGraphLaunch a card it segfaults on.
@@ -12740,7 +13003,14 @@ impl HybridModel {
             // ROUND-STREAM BURST: from round 1 (pending guaranteed by every non-replay arm),
             // issue M rounds with zero readbacks, then drain the ring + reconcile mirrors.
             if let (true, Some(sg), Some(ptrs)) = (
-                stream_active && round >= 1 && pending.is_some() && graph_round_ok,
+                stream_active
+                    && round >= 1
+                    && pending.is_some()
+                    && graph_round_ok
+                    // memra#659: M rounds of up to k+1 rows each, plus the tail's row, must
+                    // land inside the cache; otherwise this round takes the eager arm, whose
+                    // own guard above bounds one round.
+                    && cache.pos + m_rounds * t_v_s < cache.max_ctx,
                 &stream_graph,
                 &stream_ptrs,
             ) {
@@ -14008,6 +14278,29 @@ impl HybridModel {
                     (na, bo)
                 }
             };
+            // --- 3c. BUDGET CLAMP (MEMRA_SPEC_BUDGET_CLAMP, WP-B day 43, DAY43.md 1.1): a greedy,
+            // unconstrained session round that would commit accepted drafts past the request's
+            // budget is truncated at the budget exactly like the grammar truncation above: the
+            // bonus is the verify's own argmax at that column (the accepted draft there), and the
+            // round commits through the ordinary partial-accept path. The public stream is
+            // unchanged; the parked `committed` then equals it. `budget_room` None: today's.
+            let (n_acc, bonus) = match (
+                budget_room,
+                stream_active || sampled || constraint.is_some(),
+            ) {
+                (Some(room_total), false) => {
+                    match budget_clamp_slot(room_total.saturating_sub(out.len()), n_acc, base) {
+                        Some(na) => {
+                            if let Some(slot) = sess_clamp_slot.as_deref_mut() {
+                                *slot = Some((na, n_acc, room_total.saturating_sub(out.len())));
+                            }
+                            (na, draft[na])
+                        }
+                        None => (n_acc, bonus),
+                    }
+                }
+                _ => (n_acc, bonus),
+            };
             total_drafted += k_round;
             total_accepted += n_acc;
             if let Some(t) = sess_telem {
@@ -14959,6 +15252,49 @@ impl HybridModel {
 mod vg_debt_tests {
     use super::dspark_vg_debt_projection;
 
+    /// WP-B day 48 addendum B (revuto on integ72): the predictive seam's peek records nothing, so the
+    /// physical gate's recording read returns the same debt with the door on as with it off, and the
+    /// peek equals it, across admissions where the pool gains captures between them.
+    #[test]
+    fn the_peek_leaves_the_physical_debt_unchanged_across_a_growing_pool() {
+        let cap = 64usize;
+        // (captures, reserved bytes) at each admission: growth, a pause, growth again, growth by one.
+        let pool = [
+            (1usize, 100usize),
+            (1, 100),
+            (3, 104),
+            (3, 104),
+            (4, 104),
+            (7, 110),
+            (8, 400),
+        ];
+        let mut off = None; // the door off: the physical read alone
+        let mut on = None; // the door on: the peek, then the physical read
+        for &(captures, reserved) in &pool {
+            let physical_off = super::vg_debt_observe(&mut off, captures, cap, reserved);
+            let peek = dspark_vg_debt_projection(captures, cap, reserved, on);
+            let physical_on = super::vg_debt_observe(&mut on, captures, cap, reserved);
+            assert_eq!(
+                physical_on, physical_off,
+                "the physical reserve moved at {captures} captures"
+            );
+            assert_eq!(
+                peek, physical_on,
+                "the two logged debts differ at {captures} captures"
+            );
+            assert_eq!(on, off, "the observation diverged at {captures} captures");
+        }
+        // The recording read twice in one admission (the defect) gives the second read the bootstrap
+        // branch where the first had the marginal one.
+        let mut obs = Some((1usize, 100usize));
+        let first = super::vg_debt_observe(&mut obs, 3, cap, 104);
+        let second = super::vg_debt_observe(&mut obs, 3, cap, 104);
+        assert_ne!(
+            first, second,
+            "the double read is the defect the peek removes"
+        );
+    }
+
     /// TOOTH for the verify-graph admission accounting: the pool's projected remaining
     /// growth must be charged (pre-fix, admission charged 0 for a pool measured at
     /// 8,852 MiB), the projection must price the MARGINAL cost of one more key rather than
@@ -15681,5 +16017,145 @@ mod day23_restored_draft_census {
         ] {
             assert!(alloc_body.contains(msg), "missing OFF message: {msg}");
         }
+    }
+}
+
+/// memra#659 (the context edge): no speculative round writes past the session cache. The qwen
+/// round loop's first statement is the room guard, the round-stream arm is chosen only with room
+/// for its M rounds, the verify funnel refuses a window past the cache before any dispatch, and
+/// both gemma burst loops guard before their round runs. Source census, CPU.
+#[cfg(test)]
+mod ctx_edge_659_census {
+    fn after<'a>(body: &'a str, needle: &str) -> &'a str {
+        let at = body
+            .find(needle)
+            .unwrap_or_else(|| panic!("missing: {needle}"));
+        &body[at + needle.len()..]
+    }
+
+    fn first_code_line(tail: &str) -> &str {
+        tail.lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty() && !l.starts_with("//"))
+            .unwrap()
+    }
+
+    #[test]
+    fn the_qwen_round_loop_opens_with_the_room_guard() {
+        let src = include_str!("spec.rs");
+        let body = &src[..src.find("mod ctx_edge_659_census").unwrap()];
+        assert_eq!(
+            body.matches("while keep_going && out.len() < max_new {")
+                .count(),
+            1,
+            "one round loop"
+        );
+        let tail = after(body, "while keep_going && out.len() < max_new {");
+        assert_eq!(
+            first_code_line(tail),
+            "if cache.pos + (if adapt { kc } else { k }) + 2 > cache.max_ctx {"
+        );
+        let guard = &tail[tail.find("if cache.pos + (if adapt").unwrap()..];
+        assert_eq!(first_code_line(after(guard, "> cache.max_ctx {")), "break;");
+        // The stream arm's choice carries its M-round bound.
+        assert!(tail.contains("&& cache.pos + m_rounds * t_v_s < cache.max_ctx,"));
+        let stream = tail
+            .find("&& cache.pos + m_rounds * t_v_s < cache.max_ctx,")
+            .unwrap();
+        let engaged = tail.find("ROUND-STREAM burst engaged").unwrap();
+        assert!(stream < engaged, "the bound is part of the arm's condition");
+    }
+
+    #[test]
+    fn the_verify_funnel_refuses_a_window_past_the_cache_before_dispatch() {
+        let src = include_str!("spec.rs");
+        let body = &src[..src.find("mod ctx_edge_659_census").unwrap()];
+        let f = after(body, "    fn decode_step_t_core_stream(");
+        let f = &f[..f.find("\n    }\n").unwrap()];
+        let refuse = f
+            .find("if stream.is_none() && cache.pos + tokens.len() > cache.max_ctx {")
+            .expect("the refusal");
+        let pp = f.find("crate::pp::pp_cuts(").unwrap();
+        let walk = f.find("self.verify_layers(").unwrap();
+        assert!(
+            refuse < pp && pp < walk,
+            "refusal, then the PP dispatch, then the walk"
+        );
+        assert!(f.contains("spec verify refused: rows {}..{} would land past the session cache"));
+    }
+
+    #[test]
+    fn both_gemma_burst_loops_guard_before_their_round() {
+        let src = include_str!("gemma_spec.rs");
+        for (head, kr) in [
+            (
+                "pub fn gemma_spec_session_burst(",
+                "let mut kr = if adapt { kc } else { k_cap };",
+            ),
+            (
+                "pub fn gemma_spec_session_burst_sampled(",
+                "let kr = if adapt { kc } else { k_cap };",
+            ),
+        ] {
+            let f = after(src, head);
+            let f = &f[..f.find("\n    }\n").unwrap()];
+            let tail = after(f, "while burst_out.len() < target && !ended {");
+            assert_eq!(first_code_line(tail), kr, "{head}");
+            let guard = after(tail, kr);
+            assert_eq!(
+                first_code_line(guard),
+                "if sess.cache.pos + kr + 1 > sess.cache.max_ctx {",
+                "{head}"
+            );
+            assert_eq!(
+                first_code_line(after(guard, "> sess.cache.max_ctx {")),
+                "break;"
+            );
+        }
+    }
+}
+
+/// WP-B day 43 (DAY43 1.1 and 1.3): the budget clamp's truncation rule, and its one site.
+#[cfg(test)]
+mod budget_clamp_tests {
+    use super::budget_clamp_slot;
+
+    #[test]
+    fn budget_clamp_truncates_only_the_round_that_overshoots_the_request() {
+        // The round fits: no truncation.
+        assert_eq!(budget_clamp_slot(4, 3, 1), None);
+        assert_eq!(budget_clamp_slot(10, 3, 0), None);
+        // It overshoots: truncated so exactly `room` tokens are emitted (na drafts + the bonus).
+        assert_eq!(budget_clamp_slot(3, 3, 1), Some(2));
+        assert_eq!(
+            budget_clamp_slot(1, 3, 1),
+            Some(0),
+            "a pending token commits the row"
+        );
+        assert_eq!(budget_clamp_slot(2, 5, 0), Some(1));
+        // No room, or a first round (no pending) with one token of room: nothing to commit.
+        assert_eq!(budget_clamp_slot(0, 3, 1), None);
+        assert_eq!(budget_clamp_slot(1, 3, 0), None);
+    }
+
+    #[test]
+    fn budget_clamp_is_read_once_after_the_grammar_truncation() {
+        let src = include_str!("spec.rs");
+        let live = &src[..src.find("mod budget_clamp_tests").unwrap()];
+        assert_eq!(
+            live.matches("budget_clamp_slot(").count(),
+            2,
+            "the definition and one call"
+        );
+        let grammar = live.find("--- 3b. GRAMMAR TRUNCATION").unwrap();
+        let clamp = live.find("--- 3c. BUDGET CLAMP").unwrap();
+        let commit = live.find("--- 4. COMMIT:").unwrap();
+        assert!(grammar < clamp && clamp < commit);
+        // Sampled, constrained and round-stream rounds never clamp; None is today's program.
+        let squash = |t: &str| t.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(squash(live).contains(
+            "match ( budget_room, stream_active || sampled || constraint.is_some(), ) {"
+        ));
+        assert!(live.contains("budget_room = s_budget_room.take();"));
     }
 }

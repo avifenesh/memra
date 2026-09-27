@@ -1,0 +1,83 @@
+[server] build: memra-0.138.0-97cdff00ed9f (id: source-tree, git: 9e3b7250eacc)
+[server] starting; models config = [("sce", "/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: /dev/kmsg
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "sce" <- /root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "sce": 65 layers, eos=248046, stop=[248046]
+[worker] sce: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="sce" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] sce: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 337MB (336592896 B, derived: 2 x 168296448 B max entry for model "sce" at served ctx 384 (from MEMRA_CTX; MEMRA_CTX set), requested 336592896 B; boot driver free 86519709696 B, post-reserve clamp 84909096960 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "sce": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+[prime-walk] model="sce" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[fa-pool] grow #0 dev=0 o_len 0 -> 399360 ml_len 0 -> 1560 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[fa-pool] grow #1 dev=0 o_len 399360 -> 798720 ml_len 1560 -> 3120 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[spec] draft-session state high-water: 46MB (max of parked delta 46MB and capture-time pool peak 12MB; charged per spec admission and gating future captures)
+[fa-pool] grow #2 dev=0 o_len 798720 -> 1597440 ml_len 3120 -> 6240 (retired kept, zero=false)
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":2483027968,"still_owned_bytes":17283255616,"pool_reserved_bytes":17414750208,"pool_cached_bytes":131494592,"driver_free_bytes":83933921280,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 2368MB cached back to the driver
+[admit-cal] boot calibration done: model="sce" route=mtp transient floor 2194MB (static was 1536MB; measured 2194MB; probe kv charge 127MB, draft-state 46MB, drafted 63 accepted 42; [dev0 peak-mapped 18976MB rest-mapped 16608MB charged 173MB -> 2194MB]; 1.6s)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[server] worker ready; serving models: ["sce"]
+[server] listening on http://127.0.0.1:8193
+[meter] admit id=chatcmpl-eda0c10f9bc519c26a37317cd0ab2802 tenant=default lane=interactive model="sce"
+[admission] per-session draft-state charge: model="sce" +49MB (measured capture high-water)
+[admission] request cost: model="sce" ctx=448 path=spec = 31552 B/token x ctx + 35MB prefill-workspace + 0MB fixed = 49MB
+[prefix-cache] seed REFUSED (grid): spec prompt 73 tokens is off the 32-token prime grid and its aligned boundary 32 is under the 64 token entry floor; no entry published (model sce)
+[spec-k] model="sce" tenant="" K=3 source=cold-short prompt=73 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="sce" 309MB (observed 321MB at ctx 384 path=spec)
+[spec-acc] ctx=73 burst=22/27 cum=22/27=0.815
+[prefix-cache] insert (spec-boundary): 32 tokens, 157.9MB (resident 157.9MB / 337MB, model sce)
+[spec-acc] ctx=105 burst=23/33 cum=45/60=0.750
+[spec-acc] ctx=139 burst=19/39 cum=64/99=0.646
+[spec-acc] ctx=171 burst=18/45 cum=82/144=0.569
+[spec-acc] ctx=204 burst=16/48 cum=98/192=0.510
+[spec-acc] ctx=236 burst=20/39 cum=118/231=0.511
+[spec-acc] ctx=269 burst=17/45 cum=135/276=0.489
+[spec-acc] ctx=301 burst=19/39 cum=154/315=0.489
+[spec-acc] ctx=333 burst=21/42 cum=175/357=0.490
+[spec-acc] ctx=368 burst=8/18 cum=183/375=0.488
+[meter] admit id=chatcmpl-f734a44517e8ffc3f0c62d74d0c7c104 tenant=default lane=interactive model="sce"
+[admission] per-session draft-state charge: model="sce" +49MB (measured capture high-water)
+[admission] request cost: model="sce" ctx=448 path=spec = 31552 B/token x ctx + 35MB prefill-workspace + 309MB fixed = 358MB
+[worker] spec-affinity: grew parked session 384 -> 448 rows (request-owned need)
+[worker] spec-affinity: rewound to 32 of 73 prompt tokens (fingerprint; priming 41 suffix; model sce)
+[spec-k] model="sce" tenant="" K=3 source=cold-short prompt=73 cached=32 lcp=32 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=41 burst=22/27 cum=22/27=0.815
+[spec-acc] ctx=73 burst=23/33 cum=45/60=0.750
+[spec-acc] ctx=107 burst=19/39 cum=64/99=0.646
+[spec-acc] ctx=139 burst=18/45 cum=82/144=0.569
+[spec-acc] ctx=172 burst=16/48 cum=98/192=0.510
+[spec-acc] ctx=204 burst=20/39 cum=118/231=0.511
+[spec-acc] ctx=237 burst=17/45 cum=135/276=0.489
+[spec-acc] ctx=269 burst=19/39 cum=154/315=0.489
+[spec-acc] ctx=301 burst=21/42 cum=175/357=0.490
+[spec-acc] ctx=336 burst=11/21 cum=186/378=0.492
+[meter] admit id=chatcmpl-fe1496b12c2c82ffffb1dc1b2bae21dc tenant=default lane=interactive model="sce"
+[worker] spec-affinity: declined (empty suffix; 1 parked, 73 prompt tokens; model sce)
+[prefix-cache] seed REFUSED (grid): spec prompt 73 tokens is off the 32-token prime grid and its aligned boundary 32 is under the 64 token entry floor; no entry published (model sce)
+[spec-k] model="sce" tenant="" K=3 source=cold-short prompt=73 cached=0 lcp=32 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=73 burst=22/27 cum=22/27=0.815
+[spec-acc] ctx=105 burst=23/33 cum=45/60=0.750
+[spec-acc] ctx=139 burst=19/39 cum=64/99=0.646
+[spec-acc] ctx=171 burst=18/45 cum=82/144=0.569
+[spec-acc] ctx=204 burst=16/48 cum=98/192=0.510
+[spec-acc] ctx=236 burst=20/39 cum=118/231=0.511
+[spec-acc] ctx=269 burst=17/45 cum=135/276=0.489
+[spec-acc] ctx=301 burst=19/39 cum=154/315=0.489
+[spec-acc] ctx=333 burst=21/42 cum=175/357=0.490
+[spec-acc] ctx=368 burst=8/18 cum=183/375=0.488
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

@@ -1,0 +1,7 @@
+START utc=2026-09-23T08:17:06Z bin=/root/lane/target-defer/release/memra-server env=MEMRA_ENV_AUDIT=warn
+READY after=120s port=55441
+CELL warmup c=1 ok=1/1 agg=39.51 tok/s decode_p50=53.90 tok/s ttft_p50=234 ms tpot_p50=18.55 ms errs=[]
+CELL greedy-c1 c=1 ok=8/8 agg=51.53 tok/s decode_p50=53.48 tok/s ttft_p50=198 ms tpot_p50=18.70 ms errs=[]
+CELL sampled-c1 c=1 ok=8/8 agg=47.59 tok/s decode_p50=49.25 tok/s ttft_p50=198 ms tpot_p50=20.30 ms errs=[]
+CELLS_DONE utc=2026-09-23T08:20:30Z
+TERMINAL rc=0 utc=2026-09-23T08:20:32Z

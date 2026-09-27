@@ -31,9 +31,29 @@
 #   f  a graceful shutdown flips readiness first and drains: SIGTERM with a stream open ->
 #      `/readyz` 503 `draining` + Retry-After, `/health` 200 `draining`, a new request 503 with
 #      `code: draining`, the stream runs to `[DONE]` with a finish_reason, exit 0, `drain complete`.
+#   g  a step OOM (MEMRA_STEP_OOM_FAULT=1, the synthetic-OOM door) on one non-streamed request's own
+#      non-batching step parks the session back to the queue and it completes; no 5xx (WP-B DAY47
+#      1.1, addendum A). Red twin g-red: MEMRA_STEP_OOM_FAULT=4 (one past the default retry budget)
+#      walks it into the bounded-retry honest error, and the green assertion must fire there.
+#      g-batch (DOCUMENTED): three concurrent streams share the batched decode chunk the fault lands
+#      on; the chunk's error arm ends every one of them (DAY47 2.1, owed O14).
+#   j  (WP-B DAY49 addendum D) arm i with the fault AIMED: MEMRA_SERVE_SPEC=0 (the plain
+#      route) and MEMRA_STEP_OOM_FAULT=batch:1, which fires only at a batched decode chunk of
+#      at least two sessions. One fire naming >= 2 sessions, one retry naming the same count
+#      untouched, retried (ok), all three streams complete with the no-fault control's digests
+#      (j-ctrl). Red twin j-red: batch:2 faults the retry too; the chunk's sessions end with the
+#      error event and the green assertion must fire there.
+#   i  (WP-B DAY49, O14) with MEMRA_BATCH_OOM_RECOVER=1 the batched chunk's step OOM
+#      (MEMRA_STEP_OOM_FAULT=1, before any state write) takes one reclaim rung and the same
+#      batched step runs again: all three streams complete with the digests of a no-fault
+#      control boot (i-ctrl). Red twin i-red: MEMRA_STEP_OOM_FAULT=2 fails the retry too, and
+#      the chunk ends as today; the green assertion must fire there.
+#   h  a client that closes its stream mid-generation is retired within 1,000 ms (`[abort] client
+#      disconnected:`), its peer completes, and the box idles clean (DAY47 1.2). Red twin h-red: the
+#      same shape with no close, and the green assertion must fire there.
 #
 # Usage: tools/health-fault-gate.sh [model.gguf]
-#   HFG_PORT (8189; 8186 is serve-gemma4-batch-gate.sh's, revuto on #621; census of tools/ before choosing a default), HFG_ARMS (a,b,c,d,e,f; a and b share one boot), HFG_OUT (receipt dir).
+#   HFG_PORT (8189; 8186 is serve-gemma4-batch-gate.sh's, revuto on #621; census of tools/ before choosing a default), HFG_ARMS (a,b,c,d,e,f,g,h,j by default; i runs by name; a and b share one boot), HFG_OUT (receipt dir).
 #   Run under the rig lock (`flock /tmp/memra-5090.lock`, or the collector on a PRO box); the
 #   gate boots seven servers in sequence and never takes the lock itself, like serve-smoke.
 #   Exit 0 when no arm FAILED (DOCUMENTED arms do not fail the gate); 1 on any FAIL; 2 on setup.
@@ -45,7 +65,9 @@ MODEL="${1:-/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF
 PORT="${HFG_PORT:-8189}"
 ADDR=127.0.0.1:$PORT
 BASE=http://$ADDR
-ARMS="${HFG_ARMS:-a,b,c,d,e,f}"
+# Arm i is not in the default list (WP-B DAY49 2.1 and addendum E): its unaimed fault lands on whichever step comes
+# first, a solo spec step on the 27B, so its verdict depends on placement. Arm j aims the same check.
+ARMS="${HFG_ARMS:-a,b,c,d,e,f,g,h,j}"
 OUT="${HFG_OUT:-/tmp/health-fault-gate-$(date -u +%Y%m%dT%H%M%SZ)}"
 mkdir -p "$OUT"
 VERDICTS="$OUT/VERDICTS.txt"
@@ -340,6 +362,244 @@ print(fr)')
     verdict "HFG (f) sigterm-drains-and-flips-readiness-first: stream_frames_at_sigterm=$frames_at_term readyz_during_drain=$readyz_drain retry_after_s=${ra:-none} health_during_drain=$health_drain new_request_http=$newreq new_request_code=$new_code new_request_retry_after_s=${new_ra:-none} stream_curl_rc=$crc stream_frames=$frames stream_done=$done_seen stream_finish_reason=$fr stream_finished_after_sigterm_ms=$((t_stream_done-t_term)) exit_code=$rc exit_after_sigterm_ms=$((t_exit-t_term)) drain_complete_line=$drain_ln deadline_hit_line=$deadline_ln -> $v"
   else
     verdict "HFG (f) sigterm-drains-and-flips-readiness-first: boot failed -> FAIL"; stop f
+  fi
+fi
+
+# sstream <prefix> <prompt> <max_tokens>: one streamed chat request in the background; its pid in SPIDS
+sstream() {
+  : > "$1.body"
+  curl -s -N -m 170 -D "$1.hdr" -o "$1.body" -w '%{http_code}' "$BASE/v1/chat/completions" -H 'Content-Type: application/json' \
+    -d "{\"model\":\"hfg\",\"messages\":[{\"role\":\"user\",\"content\":\"$2\"}],\"max_tokens\":$3,\"temperature\":0,\"stream\":true}" \
+    > "$1.code" 2>/dev/null &
+  SPIDS="$SPIDS $!"
+}
+sframes() { local n; n=$(grep -c '^data: {' "$1.body" 2>/dev/null); echo "${n:-0}"; }
+sdone() { local n; n=$(grep -c '^data: \[DONE\]' "$1.body" 2>/dev/null); echo "${n:-0}"; }
+sfinish() {
+  grep '^data: {' "$1.body" 2>/dev/null | sed 's/^data: //' | python3 -c '
+import json,sys
+fr=""
+for l in sys.stdin:
+    try:
+        for c in json.loads(l).get("choices",[]):
+            if c.get("finish_reason"): fr=c["finish_reason"]
+    except Exception: pass
+print(fr)'
+}
+scode() { local c; c=$(cat "$1.code" 2>/dev/null); echo "${c:-000}"; }
+serror() { grep -o '"message":"[^"]*"' "$1.body" 2>/dev/null | head -1; }
+sok() { [ "$(scode "$1")" = 200 ] && [ "$(sdone "$1")" = 1 ] && [ -n "$(sfinish "$1")" ]; }
+P1="Write one sentence about a mutex."; P2="Name three uses of a semaphore."; P3="Describe a spinlock in two sentences."
+
+# ---------------------------------------------------------------- g: a step OOM parks and completes
+run_g() { # <label> <fault count> <red:true|false>: one non-streamed request (DAY47 addendum A)
+  local label=$1 n=$2 red=$3
+  if boot "$label" MEMRA_STEP_OOM_FAULT="$n"; then
+    code=$(chat 48 false "$D/solo" 170)
+    # either injection point of a solo step (the plain dispatch's or the non-batching step's; DAY47 addendum B)
+    fired=$(grep -cE 'MEMRA_STEP_OOM_FAULT fired: this (non-batching )?step reports' "$D/server.log")
+    parked=$(grep -c '\[admit-oom\] step OOM parked session back to queue' "$D/server.log")
+    panics=$(grep -cE 'panicked|\[worker\] PANIC' "$D/server.log")
+    sample /health "$D/health-g.csv"; health_after=$LAST_CODE
+    done_ok=false; completes "$D/solo" && done_ok=true
+    err=$(jget "$D/solo.body" error.message)
+    green=false
+    [ "$code" = 200 ] && [ "$done_ok" = true ] && [ "$parked" -ge 1 ] && [ "$panics" = 0 ] && [ "$health_after" = 200 ] && green=true
+    if [ "$red" = false ]; then
+      v=FAIL; [ "$green" = true ] && [ "$parked" = 1 ] && [ "$fired" = 1 ] && v=PASS
+      verdict "HFG (g) step-oom-parks-and-completes: fault=$n fired_lines=$fired parked_lines=$parked http=$code finish_reason=$(jget "$D/solo.body" choices.0.finish_reason) completion_tokens=$(jget "$D/solo.body" usage.completion_tokens) panic_lines=$panics health_after=$health_after -> $v"
+    else
+      v=FAIL; [ "$green" = false ] && [ "$panics" = 0 ] && [ "$parked" -ge 1 ] && v=PASS
+      verdict "HFG (g-red) step-oom-past-the-retry-budget: fault=$n fired_lines=$fired parked_lines=$parked http=$code error={${err:-none}} panic_lines=$panics green_assertion_fired=$([ "$green" = false ] && echo true || echo false) -> $v"
+    fi
+    stop "$label"
+  else
+    verdict "HFG ($label) step-oom: boot failed -> FAIL"; stop "$label"
+  fi
+}
+run_g_batch() { # the three-stream shape of DAY47 1.1: a DOCUMENTED reading of the batched chunk (O14)
+  if boot g-batch MEMRA_STEP_OOM_FAULT=1; then
+    SPIDS=""
+    sstream "$D/r0" "$P1" 48; sstream "$D/r1" "$P2" 48; sstream "$D/r2" "$P3" 48
+    # shellcheck disable=SC2086
+    wait $SPIDS
+    fired=$(grep -c 'MEMRA_STEP_OOM_FAULT fired: this batched decode chunk' "$D/server.log")
+    parked=$(grep -c '\[admit-oom\] step OOM parked session back to queue' "$D/server.log")
+    ok_n=0; err_n=0; c5=0
+    for r in r0 r1 r2; do
+      sok "$D/$r" && ok_n=$((ok_n+1))
+      [ -n "$(serror "$D/$r")" ] && err_n=$((err_n+1))
+      case "$(scode "$D/$r")" in 5*) c5=$((c5+1));; esac
+    done
+    verdict "HFG (g-batch) step-oom-on-a-batched-chunk: batched_fired_lines=$fired parked_lines=$parked completed=$ok_n/3 ended_with_error_event=$err_n/3 http_5xx=$c5 (the chunk's error arm ends every session of the chunk; owed O14) -> DOCUMENTED"
+    stop g-batch
+  else
+    verdict "HFG (g-batch) step-oom-on-a-batched-chunk: boot failed -> FAIL"; stop g-batch
+  fi
+}
+if in_arms g; then
+  echo "--- arm g: a step OOM parks, requeues and completes (and the red twin, and the batched reading) ---"
+  run_g g 1 false
+  run_g g-red 4 true
+  run_g_batch
+fi
+
+# ---------------------------------------------------------------- h: a client disconnect retires the session
+run_h() { # <label> <close:true|false>
+  local label=$1 close=$2
+  if boot "$label"; then
+    SPIDS=""
+    sstream "$D/closed" "Write a long story about a lighthouse keeper." 256; cpid=${SPIDS##* }
+    sstream "$D/peer" "Write a long story about a harbor pilot." 256
+    t_s=$(now_ms); t_close=0
+    while [ $(( $(now_ms) - t_s )) -lt 60000 ]; do
+      [ "$(sframes "$D/closed")" -ge 8 ] && break
+      sleep 0.02
+    done
+    frames_at_close=$(sframes "$D/closed")
+    if [ "$close" = true ]; then kill "$cpid" 2>/dev/null; t_close=$(now_ms); fi
+    t_line=0
+    while [ $(( $(now_ms) - t_s )) -lt 180000 ]; do
+      if grep -q '\[abort\] client disconnected:' "$D/server.log"; then t_line=$(now_ms); break; fi
+      [ "$close" = false ] && ! kill -0 "$cpid" 2>/dev/null && break
+      sleep 0.02
+    done
+    # shellcheck disable=SC2086
+    wait $SPIDS 2>/dev/null
+    abort_lines=$(grep -c '\[abort\] client disconnected:' "$D/server.log")
+    sleep 1
+    active=$(curl -s -m 2 "$BASE/metrics" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("active_sessions"))' 2>/dev/null)
+    sample /health "$D/health-h.csv"; health_after=$LAST_CODE
+    peer_ok=false; sok "$D/peer" && peer_ok=true
+    latency=none; [ "$t_close" -gt 0 ] && [ "$t_line" -gt 0 ] && latency=$(( t_line - t_close ))
+    green=false
+    [ "$abort_lines" -ge 1 ] && [ "$latency" != none ] && [ "$latency" -le 1000 ] && [ "$peer_ok" = true ] && [ "$active" = 0 ] && [ "$health_after" = 200 ] && green=true
+    if [ "$close" = true ]; then
+      v=FAIL; [ "$green" = true ] && v=PASS
+      verdict "HFG (h) client-disconnect-retires-within-1000ms: frames_at_close=$frames_at_close abort_lines=$abort_lines close_to_abort_line_ms=$latency peer_complete=$peer_ok peer_finish=$(sfinish "$D/peer") active_sessions_after=$active health_after=$health_after -> $v"
+    else
+      v=FAIL; [ "$green" = false ] && [ "$abort_lines" = 0 ] && [ "$peer_ok" = true ] && v=PASS
+      verdict "HFG (h-red) no-disconnect: frames_at_close=$frames_at_close abort_lines=$abort_lines closed_request_complete=$(sok "$D/closed" && echo true || echo false) peer_complete=$peer_ok green_assertion_fired=$([ "$green" = false ] && echo true || echo false) -> $v"
+    fi
+    stop "$label"
+  else
+    verdict "HFG ($label) client-disconnect: boot failed -> FAIL"; stop "$label"
+  fi
+}
+if in_arms h; then
+  echo "--- arm h: a client disconnect retires the session within one tick; the peer completes (and the red twin) ---"
+  run_h h true
+  run_h h-red false
+fi
+
+# ---------------------------------------------------------------- i: the batched chunk's OOM recovers (O14)
+sdigest() { grep '^data: {' "$1.body" 2>/dev/null | sed 's/^data: //' | python3 -c '
+import json,sys,hashlib
+t=""
+for l in sys.stdin:
+    try:
+        for c in json.loads(l).get("choices",[]):
+            d=c.get("delta") or {}
+            t+=(d.get("content") or "")+(d.get("reasoning") or "")
+    except Exception: pass
+print(hashlib.sha256(t.encode()).hexdigest()[:16])'; }
+run_i() { # <label> <fault count or 0>: three concurrent streams, the recovery door on
+  local label=$1 n=$2
+  local envs=(MEMRA_BATCH_OOM_RECOVER=1)
+  [ "$n" != 0 ] && envs+=(MEMRA_STEP_OOM_FAULT="$n")
+  if boot "$label" "${envs[@]}"; then
+    SPIDS=""
+    sstream "$D/r0" "$P1" 48; sstream "$D/r1" "$P2" 48; sstream "$D/r2" "$P3" 48
+    # shellcheck disable=SC2086
+    wait $SPIDS
+    I_OK=0; I_ERR=0; I_5XX=0; I_DIG=""
+    for r in r0 r1 r2; do
+      sok "$D/$r" && I_OK=$((I_OK+1))
+      [ -n "$(serror "$D/$r")" ] && I_ERR=$((I_ERR+1))
+      case "$(scode "$D/$r")" in 5*) I_5XX=$((I_5XX+1));; esac
+      I_DIG="$I_DIG$r:$(sdigest "$D/$r"),"
+    done
+    I_RETRY=$(grep -c 'batch OOM: .* retrying the same batched step once' "$D/server.log")
+    I_RETRY_OK=$(grep -c 'batch OOM: retried (ok)' "$D/server.log")
+    I_RETRY_FAIL=$(grep -c 'batch OOM: retry failed' "$D/server.log")
+    I_PANIC=$(grep -cE 'panicked|\[worker\] PANIC' "$D/server.log")
+    stop "$label"
+    return 0
+  fi
+  stop "$label"; return 1
+}
+if in_arms i; then
+  echo "--- arm i: the batched chunk's OOM recovers with MEMRA_BATCH_OOM_RECOVER=1 (control, green, red twin) ---"
+  if run_i i-ctrl 0; then ctrl_dig=$I_DIG; ctrl_ok=$I_OK; else ctrl_dig=none; ctrl_ok=0; fi
+  if run_i i 1; then
+    v=FAIL
+    [ "$ctrl_ok" = 3 ] && [ "$I_OK" = 3 ] && [ "$I_ERR" = 0 ] && [ "$I_5XX" = 0 ] && [ "$I_RETRY" = 1 ] && [ "$I_RETRY_OK" = 1 ] && [ "$I_PANIC" = 0 ] && [ "$I_DIG" = "$ctrl_dig" ] && v=PASS
+    verdict "HFG (i) batch-oom-recovers: retry_lines=$I_RETRY retried_ok=$I_RETRY_OK completed=$I_OK/3 error_events=$I_ERR http_5xx=$I_5XX panic_lines=$I_PANIC digests={${I_DIG%,}} control={${ctrl_dig%,}} control_completed=$ctrl_ok/3 -> $v"
+  else
+    verdict "HFG (i) batch-oom-recovers: boot failed -> FAIL"
+  fi
+  if run_i i-red 2; then
+    green=false
+    [ "$I_OK" = 3 ] && [ "$I_ERR" = 0 ] && [ "$I_RETRY_OK" = 1 ] && green=true
+    v=FAIL; [ "$green" = false ] && [ "$I_RETRY" = 1 ] && [ "$I_RETRY_FAIL" = 1 ] && [ "$I_5XX" = 0 ] && [ "$I_PANIC" = 0 ] && v=PASS
+    verdict "HFG (i-red) batch-oom-retry-also-fails: retry_lines=$I_RETRY retry_failed=$I_RETRY_FAIL completed=$I_OK/3 error_events=$I_ERR http_5xx=$I_5XX panic_lines=$I_PANIC green_assertion_fired=$([ "$green" = false ] && echo true || echo false) -> $v"
+  else
+    verdict "HFG (i-red) batch-oom-retry-also-fails: boot failed -> FAIL"
+  fi
+fi
+
+# ---------------------------------------------------------------- j: the aimed batched-chunk OOM recovers (O14, DAY49 D)
+run_j() { # <label> <fault value or 0>: three concurrent streams on the plain route, the recovery door on
+  local label=$1 f=$2
+  local envs=(MEMRA_BATCH_OOM_RECOVER=1 MEMRA_SERVE_SPEC=0)
+  [ "$f" != 0 ] && envs+=(MEMRA_STEP_OOM_FAULT="$f")
+  if boot "$label" "${envs[@]}"; then
+    SPIDS=""
+    sstream "$D/r0" "$P1" 48; sstream "$D/r1" "$P2" 48; sstream "$D/r2" "$P3" 48
+    # shellcheck disable=SC2086
+    wait $SPIDS
+    J_OK=0; J_ERR=0; J_5XX=0; J_DIG=""
+    for r in r0 r1 r2; do
+      sok "$D/$r" && J_OK=$((J_OK+1))
+      [ -n "$(serror "$D/$r")" ] && J_ERR=$((J_ERR+1))
+      case "$(scode "$D/$r")" in 5*) J_5XX=$((J_5XX+1));; esac
+      J_DIG="$J_DIG$r:$(sdigest "$D/$r"),"
+    done
+    J_FIRED=$(grep -c 'MEMRA_STEP_OOM_FAULT fired: this batched decode chunk' "$D/server.log")
+    J_OTHER=$(grep 'MEMRA_STEP_OOM_FAULT fired:' "$D/server.log" | grep -vc 'this batched decode chunk')
+    J_SESS=$(grep -o 'this batched decode chunk reports a synthetic CUDA OOM ([0-9]* session' "$D/server.log" | head -1 | grep -o '([0-9]*' | tr -d '(')
+    J_UNTOUCHED=$(grep -o 'batch OOM: [0-9]* sessions untouched' "$D/server.log" | head -1 | grep -o '[0-9][0-9]*')
+    J_RETRY=$(grep -c 'batch OOM: .* retrying the same batched step once' "$D/server.log")
+    J_RETRY_OK=$(grep -c 'batch OOM: retried (ok)' "$D/server.log")
+    J_RETRY_FAIL=$(grep -c 'batch OOM: retry failed' "$D/server.log")
+    J_PANIC=$(grep -cE 'panicked|\[worker\] PANIC' "$D/server.log")
+    J_SESS=${J_SESS:-0}; J_UNTOUCHED=${J_UNTOUCHED:-0}
+    stop "$label"
+    return 0
+  fi
+  stop "$label"; return 1
+}
+if in_arms j; then
+  echo "--- arm j: the aimed batched chunk's OOM recovers (MEMRA_SERVE_SPEC=0, batch:1; control, green, red twin) ---"
+  if run_j j-ctrl 0; then jctrl_dig=$J_DIG; jctrl_ok=$J_OK; else jctrl_dig=none; jctrl_ok=0; fi
+  if run_j j batch:1; then
+    v=FAIL
+    [ "$jctrl_ok" = 3 ] && [ "$J_OK" = 3 ] && [ "$J_ERR" = 0 ] && [ "$J_5XX" = 0 ] && [ "$J_FIRED" = 1 ] && [ "$J_OTHER" = 0 ] \
+      && [ "$J_SESS" -ge 2 ] && [ "$J_UNTOUCHED" = "$J_SESS" ] && [ "$J_RETRY" = 1 ] && [ "$J_RETRY_OK" = 1 ] \
+      && [ "$J_PANIC" = 0 ] && [ "$J_DIG" = "$jctrl_dig" ] && v=PASS
+    verdict "HFG (j) aimed-batch-oom-recovers: fired_lines=$J_FIRED other_fired=$J_OTHER chunk_sessions=$J_SESS untouched=$J_UNTOUCHED retry_lines=$J_RETRY retried_ok=$J_RETRY_OK completed=$J_OK/3 error_events=$J_ERR http_5xx=$J_5XX panic_lines=$J_PANIC digests={${J_DIG%,}} control={${jctrl_dig%,}} control_completed=$jctrl_ok/3 -> $v"
+  else
+    verdict "HFG (j) aimed-batch-oom-recovers: boot failed -> FAIL"
+  fi
+  if run_j j-red batch:2; then
+    green=false
+    [ "$J_OK" = 3 ] && [ "$J_ERR" = 0 ] && [ "$J_RETRY_OK" = 1 ] && green=true
+    v=FAIL
+    [ "$green" = false ] && [ "$J_FIRED" = 2 ] && [ "$J_OTHER" = 0 ] && [ "$J_SESS" -ge 2 ] && [ "$J_RETRY" = 1 ] \
+      && [ "$J_RETRY_FAIL" = 1 ] && [ "$J_ERR" = "$J_SESS" ] && [ "$J_5XX" = 0 ] && [ "$J_PANIC" = 0 ] && v=PASS
+    verdict "HFG (j-red) aimed-batch-oom-retry-also-fails: fired_lines=$J_FIRED other_fired=$J_OTHER chunk_sessions=$J_SESS retry_lines=$J_RETRY retry_failed=$J_RETRY_FAIL completed=$J_OK/3 error_events=$J_ERR http_5xx=$J_5XX panic_lines=$J_PANIC green_assertion_fired=$([ "$green" = false ] && echo true || echo false) -> $v"
+  else
+    verdict "HFG (j-red) aimed-batch-oom-retry-also-fails: boot failed -> FAIL"
   fi
 fi
 
