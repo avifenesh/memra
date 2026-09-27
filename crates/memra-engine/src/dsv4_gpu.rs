@@ -18850,8 +18850,12 @@ impl Dsv4Gpu {
         }
         let fault =
             (words.device_ptr(&stream).0 + (il * std::mem::size_of::<i32>()) as u64) as *mut i32;
+        // Only this step's rows: the routed slots, then the shared expert's rows. A wide
+        // workspace (16 B-row lanes, memra #667) would otherwise clear 16 rows' planes per layer.
+        let used =
+            (t * (topk + usize::from(self.topology.is_tp_ep())) * hidden).min(vws.contrib.len());
         stream
-            .memset_zeros(&mut vws.contrib)
+            .memset_zeros(&mut vws.contrib.slice_mut(0..used))
             .map_err(|e| format!("TP/EP fused contribution clear: {e}"))?;
         let shared_run = vws.shared_run.as_mut().map_or(std::ptr::null_mut(), |w| {
             w.device_ptr_mut(&stream).0 as *mut i32
