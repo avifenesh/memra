@@ -1944,11 +1944,13 @@ pub struct Engine {
     /// The MoE slot cache door's load option (`research/spill-c-20260919/DAY44.md`): when set
     /// before a model loads, stacked expert banks load as views of the artifact's own mapping
     /// (`HostBuf::Mmap`) instead of a pinned copy the door never reads. Only the gate binaries
-    /// set it, and only with `--experts-via-tier`; false is every loader path as before.
+    /// set it: day 88, for an artifact the door is qualified on, unless `MEMRA_EXPERTS_VIA_TIER=0`;
+    /// false is every loader path as before.
     expert_host_mapped: std::sync::atomic::AtomicBool,
-    /// DAY50: the MoE slot cache door is installed and prefetches the next routed expert through
-    /// its owner. Set only by the door's installer; false keeps the legacy prefetch condition.
-    expert_bank_prefetch: std::sync::atomic::AtomicBool,
+    /// Day 88 (`research/spill-c-20260919/DAY88.md` section 2.5): the slot cache's in-token expert
+    /// prefetch is on by default for this process's artifact (a qualified one, set by the gate
+    /// binaries before the model loads). `MEMRA_MOE_PREFETCH` set overrides it either way.
+    moe_prefetch_default: std::sync::atomic::AtomicBool,
     /// DAY60: `--moe-dispatch-clock` (a gate binary's log-only flag): every MoE slot cache built
     /// after it is set keeps a dispatch clock (both the legacy program and the door).
     moe_dispatch_clock: std::sync::atomic::AtomicBool,
@@ -3875,7 +3877,7 @@ impl Engine {
             sample,
             moe_cache: Mutex::new(None),
             expert_host_mapped: std::sync::atomic::AtomicBool::new(false),
-            expert_bank_prefetch: std::sync::atomic::AtomicBool::new(false),
+            moe_prefetch_default: std::sync::atomic::AtomicBool::new(false),
             moe_dispatch_clock: std::sync::atomic::AtomicBool::new(false),
             a4_clip_stats: Mutex::new(None),
             w8_mirrors: Mutex::new(std::collections::HashMap::new()),
@@ -6738,9 +6740,10 @@ impl Engine {
             .store(mapped, std::sync::atomic::Ordering::Relaxed);
     }
 
-    /// DAY50: set by the door's installer once the bank is installed.
-    pub(crate) fn set_expert_bank_prefetch(&self, on: bool) {
-        self.expert_bank_prefetch
+    /// Day 88: make the slot cache's in-token prefetch this process's default (a gate binary,
+    /// before the model loads, for an artifact the door is qualified on).
+    pub fn set_moe_prefetch_default(&self, on: bool) {
+        self.moe_prefetch_default
             .store(on, std::sync::atomic::Ordering::Relaxed);
     }
 
@@ -6765,9 +6768,9 @@ impl Engine {
             .and_then(|cache| cache.dispatch_clock_line())
     }
 
-    /// DAY50: whether the door prefetches through its owner (the forward's prefetch condition).
-    pub(crate) fn expert_bank_prefetch(&self) -> bool {
-        self.expert_bank_prefetch
+    /// Day 88: whether the in-token prefetch is this process's default (`MEMRA_MOE_PREFETCH` unset).
+    pub(crate) fn moe_prefetch_default(&self) -> bool {
+        self.moe_prefetch_default
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 

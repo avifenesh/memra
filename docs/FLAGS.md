@@ -860,7 +860,8 @@ These exist because correctness discipline needs a same-binary oracle. Each is a
 | `MEMRA_MMVQ=0` | dp4a matvec class (m=1 AND batched verify switch together — dispatch-parity law) | default-on 2026-07-08; parity fix 2026-07-07 |
 | `MEMRA_IQ_FAST=0` | non-expert IQ4_XS matmuls back to the Stage-A f32 oracle path | default-on 2026-08-02 (`research/kat-anomaly-20260802/`) — the old opt-in default WAS the KAT-Coder decode anomaly: its IQ4_XS trunk (attn_qkv/attn_gate/ssm_out/shexp, ~0.52GB/tick) rode the oracle kernel at m=1 AND prefill; dp4a admission moved decode 106.7 -> 193.4 (+81%, x5 interleaved) and pp512 228 -> 697. Dispatch-parity by construction (no mmvq/batched IQ4_XS kernels exist — every m rides the same dp4a program, verify == decode). Expert-bank IQ4_XS has its own dispatch; supported models are dispatch-unchanged, proven by the q35 ctrl bit-identity guard |
 | `MEMRA_MOE_CACHE=0` | stage-every-token expert dispatch (no SLRU) | default-on 2026-07-08 |
-| `MEMRA_MOE_PREFETCH=1` | pipeline the next routed expert's cache misses on the copy stream | experimental, default OFF; **decide-by: 2026-10-04** (deciding cell `research/spill-c-20260919/DAY59.md`: tape, speculative and serving gates plus the OFF/PF A/B at the pressure and naked shapes, both cards; on the target card REF read 0.255 s gen-only against the legacy's 0.311 and the MoE slot cache door's 0.277, `DAY51.md` section 4; target card 2026-09-25: G1, G2, G3 PASS, `pftime -> pf_wins`, `pfnaked -> pf_flat`, so it qualifies as that card's naked default, the owner's call, `DAY59.md` section 2; the RTX 5090's cells wait on its reset); target-rig gate required |
+| `MEMRA_MOE_PREFETCH=0` | turns the MoE slot cache's in-token expert prefetch off on both slot cache programs (the door's owner-routed grouped prefetch and the legacy's copy-stream prefetch); `=1` turns it on for any artifact; any other value leaves this prefetch off (the CPU experts' predictor depth keeps its meaning, `cpu_experts.rs`) | **default ON for an artifact the MoE slot cache door is qualified on, on both cards, OFF for every other artifact** (owner ruling C10, 2026-09-27; `research/spill-c-20260919/DAY88.md` section 2.5); **decide-by: 2026-10-11**. Deciding cell `DAY59.md`: G1, G2, G3 PASS, `pftime -> pf_wins` and `pfnaked -> pf_flat` on the target card and the RTX 5090. Scoped to the qualified artifact by the no-generic-support rule: another artifact gets the default with its own G1 to G3. Read once per process |
+| `MEMRA_EXPERTS_VIA_TIER=0` | the legacy SLRU slot cache from pinned copies instead of the MoE slot cache door, in `run-gen` and `run-spec` (the door's CLI budgets and `--experts-via-tier` then refuse as usage errors) | **the door is the default for an artifact it is qualified on** (the approved Qwen3.6-35B-A3B-UD-IQ4_XS, by SHA-256) whose experts go to the slot cache (owner ruling C1(c) PROMOTE, 2026-09-27; `research/spill-c-20260919/DAY88.md`); **decide-by: 2026-10-11**, deleted after two unused weeks. Deciding cells: `DAY51.md` (`door_wins` on the target card, `door_flat` on the RTX 5090), `DAY85.md` section 5 (the tuned door `matches` REF on the 285K and 9950X classes). `memra-server` has no installer yet (C2 item 6) and keeps the legacy |
 | `MEMRA_MOE_PAGE_PREFETCH=1` | issue rolling `MADV_WILLNEED` for mmap-backed GGUF/repack ranges | experimental; cold-cache rtx6000 + RTX 5090 A/B required |
 | `MEMRA_MOE_PAGE_PREFETCH_WINDOW` | future experts kept in the rolling page-prefetch window (default `1`; `0` disables) | only read when `MEMRA_MOE_PAGE_PREFETCH=1`; tune to storage latency/page-cache budget |
 | `MEMRA_MOE_MMAP_ADVICE` | whole-map expert advice: `random` (default) or `normal` | `normal` restores ordinary Linux readahead; invalid values warn and fall back to `random` |
@@ -1632,6 +1633,25 @@ boundary. A gate that arms the M1 tensor-core or half2 down tail keeps precedenc
 (the TP/EP bench pins that program). Rollback is `git revert`; the gate setter
 `set_dsv4_moe_m1_stream_for_gate(false)` runs the sktail reference arm in one loaded model for
 the component test and the DSpark gate's historical arm.
+
+## Removed doors, 2026-09-27 (the MoE slot cache door's pool diagnostics: the registered pool is the default)
+
+The door's host pool is private anonymous memory registered with `cuMemHostRegister` by default since
+the owner accepted `research/spill-c-20260919/DAY80.md` section 4a (2026-09-27): `DAY80 REGPOOL VERDICT
+rig=box37-285k integrity=ok -> registered_clears`, and `DAY80 REGTIME VERDICT ... dr=flat` on the 285K
+and the 9950X. The pool before it, `cuMemHostAlloc`, is the rollback, `--expert-bank-pool-allocated`
+(decide-by 2026-10-11, in `MOE-SLOT-CACHE-DOOR.md`). Deleted, CLI doors of `run-gen` and `run-spec`:
+
+| door | verdict | receipt |
+|---|---|---|
+| `--expert-bank-pool-registered` | its pool is the default now | `DAY80.md` sections 2 and 4 |
+| `--expert-bank-pool-pageable` | a diagnostic: the heap pool the pages census compared (`pool_draws`) | `DAY78.md` |
+| `--expert-bank-pool-chunk-bytes=N` | negative: `chunk_does_not` (smaller allocations do not clear the state) | `DAY76.md` |
+
+The engine's `expert_bank_prefetch` flag (the door's installer switched the forward's prefetch on) is gone
+too: the in-token prefetch flag now has one meaning on both slot cache programs (its row in section 3). The pool
+code keeps one allocation per install; the chunked layout, the heap pool and their unit cell went with the
+flags. Git history is the archive.
 
 ## Removed doors, 2026-09-26 (the two DSpark drafter chain doors: flat and negative on TP/EP)
 

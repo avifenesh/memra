@@ -1,0 +1,35 @@
+# DAY88 CPU gates at bacb0b87eb (+ the working tree), 2026-09-27T17:40:45Z
+== tier suites
+      1 test result: ok. 105 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+      1 test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.13s
+      1 test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+      1 test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+      1 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+      1 test result: ok. 53 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.91s
+      1 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+      1 test result: ok. 96 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.98s
+rc=0
+== engine library
+test result: ok. 599 passed; 0 failed; 59 ignored; 0 measured; 0 filtered out; finished in 15.29s
+rc=0
+== engine day88 cells
+test moe_cache::banked_native::day88_qualify::the_prefetch_decision_table ... ok
+test moe_cache::banked_native::day88_qualify::each_refusal_is_off_with_its_reason_before_any_read ... ok
+test moe_cache::banked_native::day88_qualify::the_qualified_entry_is_the_approved_artifact ... ok
+test moe_cache::banked_native::day88_qualify::the_qualification_reads_identity_then_fit ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 654 filtered out; finished in 0.01s
+rc=0
+== clippy
+rc=0
+== fmt
+rc=0
+== flags census
+check-flags: runtime literal reads=882
+check-flags: no uncovered runtime names
+check-flags: every runtime MEMRA_* name resolves against 'docs/FLAGS.md' (no grandfather list)
+rc=0
+== diff check
+rc=0
+== rc-scan --live
+rc-scan: 0 status read(s) after a command substitution in spill-c-20260919 (live scripts)
+rc=0

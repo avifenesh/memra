@@ -116,14 +116,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .nth(1)
         .expect("usage: run-spec <model.gguf|hf_dir|hf:owner/repo[:file]> [tok ids...]");
     let path = memra_gguf::hf::resolve_arg(&path)?;
-    // --experts-via-tier [--expert-bank-host-bytes=N] [--expert-bank-gpu-bytes=N]: the gate
-    // door and its typed budgets, parsed once here and handed to the installer (no env read).
+    // Day 88 (research/spill-c-20260919/DAY88.md): the MoE slot cache door is the default for a
+    // qualified artifact; its budgets, `--experts-via-tier` (install or refuse) and the rollback
+    // `MEMRA_EXPERTS_VIA_TIER=0` are read once here and handed to the door's plan.
     let expert_bank = memra_engine::banked_residency::expert_bank_cli(std::env::args())?;
+    let expert_bank_rollback = memra_engine::banked_residency::expert_bank_rollback(
+        &expert_bank,
+        std::env::var("MEMRA_EXPERTS_VIA_TIER").ok().as_deref(),
+    )?;
     let primary = primary_device(std::env::var("MEMRA_PP_DEVICES").ok().as_deref())?;
     let e = Engine::new(primary)?;
-    // DAY44: under the door the expert banks load as views of the artifact's mapping; the door
-    // never stages from them, so no pinned copy is made.
-    e.set_expert_host_mapped(expert_bank.is_some());
     // DIRECTORY path = safetensors HF checkpoint or manifest-backed memra repack/overlay; file = GGUF.
     let is_dir = std::path::Path::new(&path).is_dir();
     let g: Option<GgufFile> = if is_dir {
@@ -147,31 +149,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             source = Some(Box::new(memra_gguf::source::SafetensorsSource::open(dir)?));
         }
     }
+    // Refusal token contract: only the typed budget or catalog refusal is REFUSED / exit 2; any
+    // other door error stays a failure (`Error:` / exit 1).
+    let refused = |err: Box<dyn std::error::Error>| -> Box<dyn std::error::Error> {
+        if let Some(reason) = memra_engine::banked_residency::refusal_reason(err.as_ref()) {
+            eprintln!("REFUSED: {reason}");
+            std::process::exit(2);
+        }
+        err
+    };
+    // DAY44 and day 88: the door's plan before load (the qualification, the mapped-bank load
+    // option, the prefetch default), its install after load. A directory artifact has no door.
+    let qualified = match &g {
+        Some(g) => e
+            .plan_expert_door(g, &expert_bank, expert_bank_rollback, true)
+            .map_err(refused)?,
+        None => {
+            if expert_bank.mode == memra_engine::banked_residency::ExpertBankMode::Required
+                || expert_bank.door_flags
+            {
+                return Err("experts-via-tier requires approved GGUF".into());
+            }
+            None
+        }
+    };
     let model = match (&g, &source) {
         (Some(g), _) => HybridModel::load(&e, g)?,
         (None, Some(source)) => HybridModel::load_from_source(&e, source.as_ref())?,
         _ => unreachable!(),
     };
-    let _expert_bank_owner = match expert_bank {
-        Some(budget) => {
-            let g = g
-                .as_ref()
-                .ok_or("experts-via-tier requires approved GGUF")?;
-            Some(match e.install_expert_bank_gate(&model, g, budget) {
-                Ok(gate) => gate,
-                Err(err) => {
-                    // Refusal token contract: only the typed budget or catalog refusal is REFUSED / exit 2;
-                    // any other installer error stays a failure (`Error:` / exit 1).
-                    if let Some(reason) =
-                        memra_engine::banked_residency::refusal_reason(err.as_ref())
-                    {
-                        eprintln!("REFUSED: {reason}");
-                        std::process::exit(2);
-                    }
-                    return Err(err);
-                }
-            })
-        }
+    let _expert_bank_owner = match &g {
+        Some(g) => e
+            .install_expert_door(&model, g, &expert_bank, qualified.as_ref())
+            .map_err(refused)?,
         None => None,
     };
     println!(

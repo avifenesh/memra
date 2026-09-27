@@ -20,6 +20,7 @@ half — "we tried X and it lost by Y% on Z" cannot be reconstructed from the co
 | [PREFIX-CACHE-POLICY.md](PREFIX-CACHE-POLICY.md) | plain LRU as the only prefix-cache eviction policy; the segmented (SLRU) arm and its two doors deleted after losing every pair of the incident-shape A/B |
 | [PINNED-DESTINATIONS.md](PINNED-DESTINATIONS.md) | the contract path's pinned host destinations cached on the RTX PRO 6000 Blackwell class and write-combined on the RTX 5090 class and elsewhere, a per-device default from two pre-registered A/B cells; an env door and a global flip rejected |
 | [DSV4-TPEP-DEFAULT.md](DSV4-TPEP-DEFAULT.md) | DSv4-Flash on two cards loads TP/EP (expert-ID EP plus exact attention TP2, plain steps on full-token replay) by default, PP-2 the rollback; its plain-concurrency and context costs and the lanes that close them |
+| [MOE-SPILL-DOOR-DEFAULT.md](MOE-SPILL-DOOR-DEFAULT.md) | the MoE slot cache door, its registered host pool and the in-token prefetch as the default expert-spill program of the gate binaries on both cards, for an artifact the door is qualified on; the legacy slot cache, the `cuMemHostAlloc` pool and prefetch off the rollbacks |
 
 Adding one: a decision that changes a default, a format, a target or an arm belongs here, with
 the measurement that settled it. Superseded records get a banner naming what replaced them —
