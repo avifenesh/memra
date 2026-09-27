@@ -517,6 +517,8 @@ fn main() {
             "cu/mimo_qkv_gather.cu",
             // Bounded f32 MiMo attention reference component with learned sink.
             "cu/mimo_sink_attn.cu",
+            // Fresh MiMo text causal chunk attention for global and local layers.
+            "cu/mimo_text_chunk_attn.cu",
             // Bounded preprojected MiMo ViT attention over independent patch sequences.
             "cu/mimo_vision_attn.cu",
             // Source axial height/width RoPE for BF16 Q/K vision projections.
