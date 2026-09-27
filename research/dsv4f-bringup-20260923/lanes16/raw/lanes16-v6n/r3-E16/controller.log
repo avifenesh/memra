@@ -1,0 +1,9 @@
+START utc=2026-09-27T09:38:05Z bin=/root/lane/bin-L/memra-server env=MEMRA_ENV_AUDIT=on MEMRA_DSV4_SESSIONS=16 MEMRA_DSV4_ROWS=16
+READY after=272s port=37849
+CELL warmup c=1 ok=1/1 agg=48.08 tok/s decode_p50=82.11 tok/s ttft_p50=287 ms tpot_p50=12.18 ms errs=[]
+CELL greedy-c4 c=4 ok=0/8 agg=0.00 tok/s decode_p50=None tok/s ttft_p50=None ms tpot_p50=None ms errs=['stream error: {"message": "the engine could not complete this request; retry, an', 'stream error: {"message": "the engine could not complete this request; retry, an', 'stream error: {"message": "the engine could not complete this request; retry, an']
+CELL greedy-c8 c=8 ok=0/16 agg=0.00 tok/s decode_p50=None tok/s ttft_p50=None ms tpot_p50=None ms errs=['stream error: {"message": "the engine could not complete this request; retry, an', 'stream error: {"message": "the engine could not complete this request; retry, an', 'stream error: {"message": "the engine could not complete this request; retry, an']
+CELL greedy-c16 c=16 ok=1/16 agg=41.68 tok/s decode_p50=45.30 tok/s ttft_p50=511 ms tpot_p50=22.07 ms errs=['stream error: {"message": "the engine could not complete this request; retry, an', 'stream error: {"message": "the engine could not complete this request; retry, an', 'stream error: {"message": "the engine could not complete this request; retry, an']
+CELL sampled-c8 c=8 ok=1/16 agg=43.28 tok/s decode_p50=93.10 tok/s ttft_p50=170 ms tpot_p50=10.74 ms errs=['stream error: {"message": "the engine could not complete this request; retry, an', 'stream error: {"message": "the engine could not complete this request; retry, an', 'stream error: {"message": "the engine could not complete this request; retry, an']
+CELLS_DONE utc=2026-09-27T09:42:55Z
+TERMINAL rc=0 utc=2026-09-27T09:43:00Z

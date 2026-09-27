@@ -15775,8 +15775,10 @@ impl Dsv4Gpu {
                 sh_out: f(tmax * hidden)?,
                 cmp_emit: f(2 * max_d)?,
                 cmp_shift: f(max_shift.max(1))?,
+                // The hoisted projections run for groups of up to 8 rows, in a workspace of any
+                // width (memra #667: a 16-row workspace still takes 2- to 8-row batches).
                 cmp_hoist: {
-                    let n = if tmax <= 8 { tmax * max_latent } else { 1 };
+                    let n = tmax.min(8) * max_latent;
                     [f(n)?, f(n)?, f(n)?, f(n)?]
                 },
                 sink_scores: f(tmax * heads * idx_stride)?,
@@ -18848,8 +18850,12 @@ impl Dsv4Gpu {
         }
         let fault =
             (words.device_ptr(&stream).0 + (il * std::mem::size_of::<i32>()) as u64) as *mut i32;
+        // Only this step's rows: the routed slots, then the shared expert's rows. A wide
+        // workspace (16 B-row lanes, memra #667) would otherwise clear 16 rows' planes per layer.
+        let used =
+            (t * (topk + usize::from(self.topology.is_tp_ep())) * hidden).min(vws.contrib.len());
         stream
-            .memset_zeros(&mut vws.contrib)
+            .memset_zeros(&mut vws.contrib.slice_mut(0..used))
             .map_err(|e| format!("TP/EP fused contribution clear: {e}"))?;
         let shared_run = vws.shared_run.as_mut().map_or(std::ptr::null_mut(), |w| {
             w.device_ptr_mut(&stream).0 as *mut i32
