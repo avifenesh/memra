@@ -45,7 +45,7 @@ class ReleaseBatteryCoverageTests(unittest.TestCase):
         self.fake_path = self.root / "bin"
         for path in (self.tools, self.bin, self.fake_path):
             path.mkdir(parents=True)
-        for name in ("release-battery.sh", "release-coverage.py", *MANIFESTS):
+        for name in ("release-battery.sh", "release-coverage.py", "resolve-physical-gpu.py", *MANIFESTS):
             source = ROOT / "tools" / name
             if source.exists():
                 shutil.copy2(source, self.tools / name)
@@ -78,7 +78,18 @@ exit "${FIXTURE_SPEC_RC:-0}"
 echo '  SUMMARY flips=0 bad=0'
 echo '  PASS: fixture calibrated margin gate'
 """)
-        self.write_executable(self.fake_path / "nvidia-smi", "#!/bin/sh\necho 999999999\n")
+        # A fake nvidia-smi must answer THREE distinct query shapes now (memra#264 follow-up,
+        # PR #898): the physical-GPU resolver's `index,uuid,memory.free` device list, the
+        # per-UUID `memory.free` headroom read, and the per-UUID compute-apps tenant read.
+        # One card, ample free memory, no tenants; the fixture is about CONTROL FLOW, not
+        # about exercising a real multi-GPU host (which needs an actual box run).
+        self.write_executable(self.fake_path / "nvidia-smi", '''#!/bin/sh
+case "$*" in
+  *"query-gpu=index,uuid,memory.free"*) echo "0, GPU-fixture, 999999999" ;;
+  *"query-compute-apps"*) exit 0 ;;
+  *) echo 999999999 ;;
+esac
+''')
         # Exercise the actual battery on macOS too, without changing its Linux sizing arm.
         self.write_executable(self.fake_path / "stat", "#!/bin/sh\necho 1048576\n")
         self.env = dict(
@@ -109,6 +120,13 @@ echo '  PASS: fixture calibrated margin gate'
 
     def test_complete(self):
         self.run_battery()
+
+    def test_card_receipt_names_the_resolved_physical_gpu(self):
+        # memra#264 follow-up (PR #898): the card line must name WHICH physical GPU the
+        # headroom number came from, not just the number. The fake nvidia-smi's device list
+        # names one card, GPU-fixture; that UUID must appear in the receipt.
+        stdout = self.run_battery()
+        self.assertIn("gpu=GPU-fixture", stdout)
 
     def test_evidence_records_each_actual_producer_before_parsing(self):
         for code in ("0", "1"):

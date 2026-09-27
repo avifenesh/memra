@@ -1352,6 +1352,11 @@ fn serve_lane(
         // Occupancy rises before the ticket falls (`RouteLoad::begin`), so an arrival
         // never reads a free route between the two.
         let mut run = load.begin();
+        // memra#522: the request's own ticket still knows how long it sat reserved; record
+        // that BEFORE `release_request_reservation` drops it.
+        if let Some(ticket) = req.route_ticket.as_ref() {
+            load.record_wait(ticket.waited());
+        }
         // The worker's DSV4 channel is unbounded, so the hard admission reservation
         // remains held until this serving thread actually receives the request. Merely
         // forwarding it from the command channel must not make the queue appear empty.
