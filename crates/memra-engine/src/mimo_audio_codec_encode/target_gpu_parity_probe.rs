@@ -70,6 +70,22 @@ const PUBLISHER_GPU_LAYER0_LINEAR_CONTROL: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../memra-reference/src/fixtures/mimo-v26-publisher-pro6000-audio-layer0-linear-control.bf16"
 ));
+const PUBLISHER_GPU_LAYER0_ATTN_NORM_LINEAR_CONTROL: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../memra-reference/src/fixtures/mimo-v26-publisher-pro6000-audio-layer0-attn-norm-linear-control.bf16"
+));
+const PUBLISHER_GPU_LAYER0_ATTENTION_LINEAR_CONTROL: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../memra-reference/src/fixtures/mimo-v26-publisher-pro6000-audio-layer0-attention-linear-control.bf16"
+));
+const PUBLISHER_GPU_LAYER0_MLP_NORM_LINEAR_CONTROL: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../memra-reference/src/fixtures/mimo-v26-publisher-pro6000-audio-layer0-mlp-norm-linear-control.bf16"
+));
+const PUBLISHER_GPU_LAYER0_FC2_LINEAR_CONTROL: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../memra-reference/src/fixtures/mimo-v26-publisher-pro6000-audio-layer0-fc2-linear-control.bf16"
+));
 const PUBLISHER_GPU_FRONTEND_LINEAR_CONTROL: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../memra-reference/src/fixtures/mimo-v26-publisher-pro6000-audio-frontend-linear-control.bf16"
@@ -227,6 +243,26 @@ fn prepared_mel_target_features_and_rvq_diagnostic() -> Result<(), Fail> {
         format!("{:x}", Sha256::digest(PUBLISHER_GPU_LAYER0_LINEAR_CONTROL)),
         "70624fd0c6dc490801117559883ab75707667d3bb0326e300463405b317d324d"
     );
+    for (bytes, expected) in [
+        (
+            PUBLISHER_GPU_LAYER0_ATTN_NORM_LINEAR_CONTROL,
+            "6ca25de5a479365ba9d7cdd0b172e10487abf61e2d9bc9d220383f1ab3e0d089",
+        ),
+        (
+            PUBLISHER_GPU_LAYER0_ATTENTION_LINEAR_CONTROL,
+            "abb16d8d8e2f3528062b90869267a77c233310f6aaaffd154bbeb43effcd351f",
+        ),
+        (
+            PUBLISHER_GPU_LAYER0_MLP_NORM_LINEAR_CONTROL,
+            "d3ace5bb650a597bb959c7ae687e091d810fba939293ad696465ced282133a70",
+        ),
+        (
+            PUBLISHER_GPU_LAYER0_FC2_LINEAR_CONTROL,
+            "699708e10dcb9ddb6d8b5ebac04268f7e7c26da0e63e9fbd8c3c7937c817913b",
+        ),
+    ] {
+        assert_eq!(format!("{:x}", Sha256::digest(bytes)), expected);
+    }
     assert_eq!(
         format!("{:x}", Sha256::digest(PUBLISHER_GPU_STACK)),
         "fc95bf4a5f0bc569ce8fb0d31c19824395e92f2e4c5e9271aa06a2926a6aafd2"
@@ -340,7 +376,34 @@ fn prepared_mel_target_features_and_rvq_diagnostic() -> Result<(), Fail> {
         5,
     )?;
     let fused_frontend_values = engine.dtoh(&fused_frontend)?;
+    let layer0_capture = crate::mimo_audio_codec_layer::start_layer0_stage_capture();
     let fused_layer0 = weights.encode_one_transformer_layer(&engine, &fused_frontend, 5, 0)?;
+    let layer0_stages = layer0_capture.finish();
+    for ((label, actual), (expected_label, fixture)) in layer0_stages.iter().zip([
+        (
+            "layer0_attn_norm",
+            PUBLISHER_GPU_LAYER0_ATTN_NORM_LINEAR_CONTROL,
+        ),
+        (
+            "layer0_attention",
+            PUBLISHER_GPU_LAYER0_ATTENTION_LINEAR_CONTROL,
+        ),
+        (
+            "layer0_mlp_norm",
+            PUBLISHER_GPU_LAYER0_MLP_NORM_LINEAR_CONTROL,
+        ),
+        ("layer0_fc2", PUBLISHER_GPU_LAYER0_FC2_LINEAR_CONTROL),
+        ("layer0", PUBLISHER_GPU_LAYER0_LINEAR_CONTROL),
+    ]) {
+        assert_eq!(*label, expected_label);
+        feature_stats(
+            &format!("memra_fused_bias_{label}_vs_gpu_publisher_linear_control"),
+            actual,
+            &decode_bf16(fixture, 5)?,
+            5,
+        )?;
+    }
+    assert_eq!(layer0_stages.len(), 5);
     let fused_layer0_values = engine.dtoh(&fused_layer0)?;
     let fused_stack = weights.encode_transformer_stack(&engine, &fused_frontend, 5)?;
     let fused_stack_values = engine.dtoh(&fused_stack)?;

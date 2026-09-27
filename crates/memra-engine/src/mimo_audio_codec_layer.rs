@@ -20,6 +20,62 @@ use crate::mimo_audio_codec_weights::{
 type Fail = Box<dyn Error>;
 const HIDDEN: usize = 1_024;
 
+#[cfg(test)]
+std::thread_local! {
+    static LAYER0_STAGES: std::cell::RefCell<Option<Vec<(&'static str, Vec<f32>)>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub(crate) struct Layer0StageCaptureGuard;
+
+#[cfg(test)]
+pub(crate) fn start_layer0_stage_capture() -> Layer0StageCaptureGuard {
+    LAYER0_STAGES.with(|capture| {
+        assert!(
+            capture.borrow_mut().replace(Vec::new()).is_none(),
+            "MiMo codec layer-0 capture is already active"
+        );
+    });
+    Layer0StageCaptureGuard
+}
+
+#[cfg(test)]
+impl Layer0StageCaptureGuard {
+    pub(crate) fn finish(self) -> Vec<(&'static str, Vec<f32>)> {
+        LAYER0_STAGES.with(|capture| capture.borrow_mut().take().unwrap_or_default())
+    }
+}
+
+#[cfg(test)]
+impl Drop for Layer0StageCaptureGuard {
+    fn drop(&mut self) {
+        LAYER0_STAGES.with(|capture| {
+            capture.borrow_mut().take();
+        });
+    }
+}
+
+#[cfg(test)]
+fn capture_layer0_stage(
+    engine: &Engine,
+    layer_index: usize,
+    label: &'static str,
+    values: &CudaSlice<f32>,
+) -> Result<(), Fail> {
+    if layer_index == 0 && LAYER0_STAGES.with(|capture| capture.borrow().is_some()) {
+        let host = engine.dtoh(values)?;
+        LAYER0_STAGES.with(|capture| {
+            capture
+                .borrow_mut()
+                .as_mut()
+                .expect("MiMo codec layer-0 capture disappeared")
+                .push((label, host));
+        });
+    }
+    Ok(())
+}
+
 unsafe extern "C" {
     fn memra_mimo_codec_layer_check_values(
         values: *const f32,
@@ -404,6 +460,8 @@ impl MiMoAudioCodecEncoderWeights {
         let weights = self.encoder_layer_bf16(layer_index)?;
         check_input(engine, input)?;
         let attention_input = normalized(engine, input, &weights.attention_norm, tokens)?;
+        #[cfg(test)]
+        capture_layer0_stage(engine, layer_index, "layer0_attn_norm", &attention_input)?;
         let mut query = projected(engine, &attention_input, &weights.query, tokens)?;
         let mut key = projected(engine, &attention_input, &weights.key, tokens)?;
         let value = projected(engine, &attention_input, &weights.value, tokens)?;
@@ -417,6 +475,8 @@ impl MiMoAudioCodecEncoderWeights {
             weights.attention_window(),
         )?;
         let projection = projected(engine, &context, &weights.attention_output, tokens)?;
+        #[cfg(test)]
+        capture_layer0_stage(engine, layer_index, "layer0_attention", &projection)?;
         let residual = epilogue(
             engine,
             &projection,
@@ -426,9 +486,13 @@ impl MiMoAudioCodecEncoderWeights {
             Epilogue::Residual,
         )?;
         let mlp_input = normalized(engine, &residual, &weights.final_norm, tokens)?;
+        #[cfg(test)]
+        capture_layer0_stage(engine, layer_index, "layer0_mlp_norm", &mlp_input)?;
         let hidden = projected(engine, &mlp_input, &weights.fc1, tokens)?;
         let hidden = epilogue(engine, &hidden, None, None, 4_096, Epilogue::Gelu)?;
         let projection = projected(engine, &hidden, &weights.fc2, tokens)?;
+        #[cfg(test)]
+        capture_layer0_stage(engine, layer_index, "layer0_fc2", &projection)?;
         let output = epilogue(
             engine,
             &projection,
@@ -437,6 +501,8 @@ impl MiMoAudioCodecEncoderWeights {
             HIDDEN,
             Epilogue::Residual,
         )?;
+        #[cfg(test)]
+        capture_layer0_stage(engine, layer_index, "layer0", &output)?;
         check_result(engine, &output)?;
         Ok(output)
     }
