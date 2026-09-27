@@ -23,6 +23,8 @@ const FOUR_GIB: usize = 4 * 1024 * 1024 * 1024;
 const TOKENIZER_SHA256: &str = "ff15eb925890d6b71b5160de4b846fbd13178438ab463b38ecc953e8cd1dcb3e";
 const TOKENIZER_CONFIG_SHA256: &str =
     "413a7845f52943ccf4de0e5c838414507d16c44dbf573da9e20bc8902b384d06";
+const CHAT_GOLDENS_SHA256: &str =
+    "e4dc470fed7f15916185bdb4e19a783600c79f657bffb545e4d7a09937403b43";
 
 struct Case {
     label: String,
@@ -35,6 +37,18 @@ fn parse_ids(field: &str) -> Result<Vec<u32>, Fail> {
         .split(',')
         .map(str::parse::<u32>)
         .collect::<Result<Vec<_>, _>>()?)
+}
+
+fn decode_hex_utf8(field: &str) -> Result<String, Fail> {
+    if !field.len().is_multiple_of(2) {
+        return Err("MiMo generation hex has odd length".into());
+    }
+    let bytes = field
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair)?, 16).map_err(Into::into))
+        .collect::<Result<Vec<u8>, Fail>>()?;
+    Ok(String::from_utf8(bytes)?)
 }
 
 fn parse_cases(corpus: &str, references: &str, tokenizer: &Tokenizer) -> Result<Vec<Case>, Fail> {
@@ -52,15 +66,7 @@ fn parse_cases(corpus: &str, references: &str, tokenizer: &Tokenizer) -> Result<
         if fields.len() != 2 || !matches!(fields[0], "natural" | "code" | "multilingual") {
             return Err("MiMo generation corpus columns or prompt changed".into());
         }
-        let bytes = fields[1]
-            .as_bytes()
-            .chunks_exact(2)
-            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair)?, 16).map_err(Into::into))
-            .collect::<Result<Vec<u8>, Fail>>()?;
-        if fields[1].len() % 2 != 0 {
-            return Err("MiMo generation corpus hex has odd length".into());
-        }
-        let prompt = String::from_utf8(bytes)?;
+        let prompt = decode_hex_utf8(fields[1])?;
         let (without, with) = receipts
             .remove(fields[0])
             .ok_or("MiMo generation corpus has no reference IDs")?;
@@ -82,6 +88,36 @@ fn parse_cases(corpus: &str, references: &str, tokenizer: &Tokenizer) -> Result<
         return Err("MiMo generation corpus or reference case count changed".into());
     }
     Ok(cases)
+}
+
+fn parse_chat_seed(text: &str, tokenizer: &Tokenizer) -> Result<Case, Fail> {
+    let mut seed = None;
+    for line in text.lines() {
+        let fields = line.split('\t').collect::<Vec<_>>();
+        if fields.first() != Some(&"answer_17_plus_25") {
+            continue;
+        }
+        if fields.len() != 3 || seed.is_some() {
+            return Err("MiMo chat golden answer row is ambiguous".into());
+        }
+        let prompt = decode_hex_utf8(fields[1])?;
+        let ids = parse_ids(fields[2])?;
+        if prompt
+            != "<|im_start|>user\nWhat is 17 plus 25? Answer with the number only.<|im_end|><|im_start|>assistant\n"
+            || ids != tokenizer.encode(&prompt, false)
+            || ids.is_empty()
+            || ids.len() + MAX_NEW > 256
+            || ids.iter().any(|&id| id as usize >= VOCAB)
+        {
+            return Err("MiMo chat golden answer bytes or IDs differ from pinned source".into());
+        }
+        seed = Some(Case {
+            label: "answer_17_plus_25".into(),
+            prompt,
+            ids,
+        });
+    }
+    seed.ok_or_else(|| "MiMo chat goldens omit the answer-bearing seed".into())
 }
 
 fn argmax(logits: &[f32]) -> Result<u32, Fail> {
@@ -137,14 +173,17 @@ fn longest_common_prefix(a: &[u32], b: &[u32]) -> usize {
 fn run() -> Result<(), Fail> {
     let mut args = std::env::args().skip(1);
     let root = args.next().ok_or(
-        "usage: mimo_continuing_generation_battery <model-dir> <corpus.tsv> <ref-ids.tsv>",
+        "usage: mimo_continuing_generation_battery <model-dir> <corpus.tsv> <ref-ids.tsv> <chat-goldens.tsv>",
     )?;
     let corpus_path = args.next().ok_or("MiMo generation needs a pinned corpus")?;
     let ids_path = args
         .next()
         .ok_or("MiMo generation needs pinned reference IDs")?;
+    let chat_path = args
+        .next()
+        .ok_or("MiMo generation needs pinned chat goldens")?;
     if args.next().is_some() || std::env::var("MEMRA_BF16_MMV").as_deref() != Ok("1") {
-        return Err("MiMo generation needs three paths and MEMRA_BF16_MMV=1".into());
+        return Err("MiMo generation needs four paths and MEMRA_BF16_MMV=1".into());
     }
     let model_dir = Path::new(&root);
     for (name, expected) in [
@@ -163,11 +202,20 @@ fn run() -> Result<(), Fail> {
     }
     let corpus_bytes = fs::read(corpus_path)?;
     let reference_bytes = fs::read(ids_path)?;
-    let cases = parse_cases(
+    let chat_bytes = fs::read(chat_path)?;
+    let chat_sha = format!("{:x}", Sha256::digest(&chat_bytes));
+    if chat_sha != CHAT_GOLDENS_SHA256 {
+        return Err("MiMo source chat goldens SHA changed".into());
+    }
+    let mut cases = parse_cases(
         std::str::from_utf8(&corpus_bytes)?,
         std::str::from_utf8(&reference_bytes)?,
         &tokenizer,
     )?;
+    cases.push(parse_chat_seed(
+        std::str::from_utf8(&chat_bytes)?,
+        &tokenizer,
+    )?);
     let stop = tokenizer.eog_ids().into_iter().collect::<HashSet<_>>();
     let source = Arc::new(SafetensorsSource::open(model_dir)?);
     let cards = [Engine::new(0)?, Engine::new(1)?];
@@ -180,7 +228,8 @@ fn run() -> Result<(), Fail> {
     println!("source\tXiaomiMiMo/MiMo-V2.6-Flash-RL@3b38d063180c3e4aed9691fdc735f3d10b266ee4");
     println!("corpus_sha256\t{:x}", Sha256::digest(&corpus_bytes));
     println!("ref_ids_sha256\t{:x}", Sha256::digest(&reference_bytes));
-    println!("shape\traw_text\tmax_new={MAX_NEW}\tbf16_mmv=1");
+    println!("chat_goldens_sha256\t{chat_sha}");
+    println!("shape\traw_text_and_pinned_chat\tmax_new={MAX_NEW}\tbf16_mmv=1");
     for case in cases {
         println!(
             "prompt\t{}\tinput_tokens={}\ttext={:?}",
