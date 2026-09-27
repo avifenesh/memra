@@ -174,6 +174,32 @@ pub fn verify_model(request: VerifyRequest) -> Result<VerifySummary, Box<dyn std
             if first != second {
                 return Err("native reference fixture is not bit-deterministic".into());
             }
+            // Bit-determinism above only proves the executor agrees with itself; it is
+            // vacuous against a wrong numerical program because a bug reproduces identically
+            // on both calls. The oracle below is a git-committed, reviewed value pinned in a
+            // prior lane, independent of this run, and it is the actual correctness gate: any
+            // change to the reference kernels, correct or not, must show as a diff here and be
+            // re-pinned deliberately after review.
+            let oracle_text = format_reference_oracle(&first);
+            match pinned_tiny_oracle(pack.family) {
+                None => {
+                    return Err(format!(
+                        "tiny parity requires a pinned oracle for {}; add crates/memra-cli/tests/fixtures/tiny-oracle/{}.tsv (reviewed, committed) before this family can pass tiny parity; no fallback is allowed",
+                        pack.family, pack.family
+                    )
+                    .into());
+                }
+                Some(pinned) => {
+                    if pinned != oracle_text {
+                        return Err(format!(
+                            "tiny parity diverges from the pinned oracle at {} (first differing line: {:?}); this reference-implementation change must be reviewed and the pinned oracle re-committed deliberately, not silently regenerated",
+                            pinned_tiny_oracle_path(pack.family),
+                            first_diff_line(pinned, &oracle_text),
+                        )
+                        .into());
+                    }
+                }
+            }
             let vision = fixture
                 .vision
                 .as_ref()
@@ -231,7 +257,12 @@ pub fn verify_model(request: VerifyRequest) -> Result<VerifySummary, Box<dyn std
             }
             write_atomic(
                 &out_dir.join("tiny-gate.tsv"),
-                format!("status\tpassed\nfamily\t{}\n", pack.family).as_bytes(),
+                format!(
+                    "status\tpassed\nfamily\t{}\npinned_oracle_sha256\t{}\n",
+                    pack.family,
+                    hex_sha256(oracle_text.as_bytes())
+                )
+                .as_bytes(),
             )?;
             write_atomic(
                 &out_dir.join("gates.txt"),
@@ -423,6 +454,169 @@ fn verify_rewrite_receipt(
     Ok(())
 }
 
+/// Structural validation of a `/v1/completions` response, replacing a substring probe
+/// (`response.contains("\"choices\"")`) that any stub HTTP server satisfies trivially (memra#543:
+/// a readiness-only or stub-HTTP success must not be able to promote a model to
+/// NativeQualified). This requires the OpenAI-compatible completion envelope the real server
+/// stamps (`Envelope::stamp` + `usage_json` in memra-server/src/lib.rs): a nonempty id and
+/// model, a nonempty choices array whose entries carry generated text (or a chat message) and a
+/// named finish reason, and usage counters consistent with the request actually having done
+/// `requested_max_tokens` worth of generation rather than just answering HTTP 200 with a canned
+/// string.
+fn validate_completion_response(response: &str, requested_max_tokens: u64) -> Result<(), String> {
+    let value: serde_json::Value =
+        serde_json::from_str(response).map_err(|error| format!("is not valid JSON ({error})"))?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| "is not a JSON object".to_string())?;
+    if object.contains_key("error") {
+        return Err("carries an error field".to_string());
+    }
+    if value
+        .get("id")
+        .and_then(|v| v.as_str())
+        .is_none_or(str::is_empty)
+    {
+        return Err("is missing a nonempty id".to_string());
+    }
+    if value
+        .get("model")
+        .and_then(|v| v.as_str())
+        .is_none_or(str::is_empty)
+    {
+        return Err("is missing a nonempty model".to_string());
+    }
+    let choices = value
+        .get("choices")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| "is missing a choices array".to_string())?;
+    if choices.is_empty() {
+        return Err("carries an empty choices array".to_string());
+    }
+    for choice in choices {
+        let has_text = choice.get("text").and_then(|v| v.as_str()).is_some();
+        let has_message = choice.get("message").is_some_and(|m| m.is_object());
+        if !has_text && !has_message {
+            return Err("a choice carries neither text nor message".to_string());
+        }
+        let names_a_finish = matches!(
+            choice.get("finish_reason"),
+            Some(serde_json::Value::String(reason)) if !reason.is_empty()
+        );
+        if !names_a_finish {
+            return Err("a choice does not name a nonempty finish_reason".to_string());
+        }
+    }
+    let usage = value
+        .get("usage")
+        .and_then(|v| v.as_object())
+        .ok_or_else(|| "is missing a usage object".to_string())?;
+    let (Some(prompt_tokens), Some(completion_tokens), Some(total_tokens)) = (
+        usage.get("prompt_tokens").and_then(|v| v.as_u64()),
+        usage.get("completion_tokens").and_then(|v| v.as_u64()),
+        usage.get("total_tokens").and_then(|v| v.as_u64()),
+    ) else {
+        return Err(
+            "usage is missing an integer prompt_tokens/completion_tokens/total_tokens".to_string(),
+        );
+    };
+    if prompt_tokens == 0 {
+        return Err("usage reports zero prompt_tokens for a nonempty prompt".to_string());
+    }
+    if completion_tokens == 0 || completion_tokens > requested_max_tokens {
+        return Err(format!(
+            "usage reports completion_tokens={completion_tokens}, outside the requested 1..={requested_max_tokens}"
+        ));
+    }
+    if total_tokens != prompt_tokens + completion_tokens {
+        return Err(format!(
+            "usage total_tokens={total_tokens} does not equal prompt_tokens+completion_tokens ({prompt_tokens}+{completion_tokens})"
+        ));
+    }
+    Ok(())
+}
+
+/// Required per-model serving cells a qualification record must name (memra#543 acceptance
+/// criterion 3): the record cannot promote a model on readiness and one completion alone,
+/// because that says nothing about streaming, cross-request cache, concurrency, cancellation
+/// or long-context behavior, and every one of those has broken a "working" model before. Naming
+/// a cell `not_exercised` is honest and allowed for a `NativeReference` (bring-up) record; it is
+/// not allowed to sit behind a `NativeQualified` or `NativeTuned` promotion.
+pub const REQUIRED_QUALIFICATION_CELLS: &[&str] = &[
+    "cell.streaming",
+    "cell.cache",
+    "cell.concurrency",
+    "cell.cancellation",
+    "cell.long_context",
+];
+
+/// Validates a `memra-qualification-record-v1` TSV record before it may recommend promoting a
+/// model's `NativeSupport` state. This is the acceptance-criteria-3/4 machinery for memra#543:
+/// the record must NAME every required serving cell (not silently omit it), and a promotion to
+/// `NativeQualified` or `NativeTuned` is refused unless every named cell actually passed: a
+/// readiness-only or stub-HTTP record (the cells left `not_exercised`, exactly what a
+/// `/readyz` probe or a canned-string completion proves) cannot promote a model.
+///
+/// This function does not itself run any serving cell; the CPU-only onboarding lane wires
+/// naming and refusal, and a box/GPU lane must supply the actual cell results before a real
+/// promotion record can be produced. A record that carries no cells run at all (a stub of
+/// nothing but readiness) is exactly what this refuses.
+pub fn validate_qualification_record(record: &str) -> Result<(), String> {
+    let mut fields = BTreeMap::new();
+    for line in record.lines() {
+        let Some((key, value)) = line.split_once('\t') else {
+            return Err(format!("malformed qualification record line {line:?}"));
+        };
+        if fields.insert(key, value).is_some() {
+            return Err(format!("duplicate qualification record field {key}"));
+        }
+    }
+    if fields.get("format").copied() != Some("memra-qualification-record-v1") {
+        return Err("qualification record has an unrecognized or missing format".to_string());
+    }
+    let family = fields
+        .get("family")
+        .filter(|value| !value.is_empty())
+        .ok_or("qualification record is missing a nonempty family")?;
+    let promote_to = *fields
+        .get("promote_to")
+        .ok_or("qualification record is missing promote_to")?;
+    if !matches!(
+        promote_to,
+        "NativeReference" | "NativeQualified" | "NativeTuned"
+    ) {
+        return Err(format!(
+            "qualification record promote_to {promote_to:?} is not a recognized support state"
+        ));
+    }
+    let mut cells = Vec::with_capacity(REQUIRED_QUALIFICATION_CELLS.len());
+    for cell in REQUIRED_QUALIFICATION_CELLS {
+        let value = fields
+            .get(cell)
+            .ok_or_else(|| format!("qualification record for {family} does not name {cell}"))?;
+        if !matches!(*value, "passed" | "failed" | "not_exercised") {
+            return Err(format!(
+                "qualification record {cell}={value:?} for {family} is not passed/failed/not_exercised"
+            ));
+        }
+        cells.push((*cell, *value));
+    }
+    if matches!(promote_to, "NativeQualified" | "NativeTuned") {
+        let unmet: Vec<_> = cells
+            .iter()
+            .filter(|(_, status)| *status != "passed")
+            .map(|(cell, status)| format!("{cell}={status}"))
+            .collect();
+        if !unmet.is_empty() {
+            return Err(format!(
+                "qualification record for {family} claims promote_to={promote_to} but has not passed: {}",
+                unmet.join(", ")
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn verify_native_serve(
     pack: &ModelPack,
     source: &str,
@@ -547,9 +741,8 @@ fn verify_native_serve(
             .into());
         }
         let response = String::from_utf8(response.stdout)?;
-        if !response.contains("\"choices\"") || response.contains("\"error\"") {
-            return Err(format!("native completion response is not successful: {response}").into());
-        }
+        validate_completion_response(&response, 1)
+            .map_err(|reason| format!("native completion response {reason}: {response}"))?;
         Ok(response)
     })();
     let _ = child.kill();
@@ -2021,6 +2214,59 @@ fn format_tiny_fixture(
     output
 }
 
+/// The pinned, git-committed tiny oracle for a family, embedded at compile time so the check
+/// works from any current working directory. `None` means the family has no committed oracle
+/// yet, and tiny parity must refuse rather than fall back to a vacuous self-comparison.
+///
+/// A new family is onboarded by generating this file once under review (`memra model verify
+/// tiny --against <family> --out <dir>`, then copy `reference-oracle.tsv` into
+/// `crates/memra-cli/tests/fixtures/tiny-oracle/<family>.tsv`), never by regenerating it
+/// automatically inside this function.
+fn pinned_tiny_oracle(family: &str) -> Option<&'static str> {
+    match family {
+        "qwen3" => Some(include_str!("../tests/fixtures/tiny-oracle/qwen3.tsv")),
+        "qwen3_moe" => Some(include_str!("../tests/fixtures/tiny-oracle/qwen3_moe.tsv")),
+        "qwen35" => Some(include_str!("../tests/fixtures/tiny-oracle/qwen35.tsv")),
+        "qwen35_moe" => Some(include_str!("../tests/fixtures/tiny-oracle/qwen35_moe.tsv")),
+        "glm5_next" => Some(include_str!("../tests/fixtures/tiny-oracle/glm5_next.tsv")),
+        "glm_dsa" => Some(include_str!("../tests/fixtures/tiny-oracle/glm_dsa.tsv")),
+        "gemma4_dense" => Some(include_str!(
+            "../tests/fixtures/tiny-oracle/gemma4_dense.tsv"
+        )),
+        "gemma4_moe" => Some(include_str!("../tests/fixtures/tiny-oracle/gemma4_moe.tsv")),
+        "hy3" => Some(include_str!("../tests/fixtures/tiny-oracle/hy3.tsv")),
+        "llama_dense" => Some(include_str!(
+            "../tests/fixtures/tiny-oracle/llama_dense.tsv"
+        )),
+        "deepseek_v4_dspark" => Some(include_str!(
+            "../tests/fixtures/tiny-oracle/deepseek_v4_dspark.tsv"
+        )),
+        _ => None,
+    }
+}
+
+fn pinned_tiny_oracle_path(family: &str) -> String {
+    format!("crates/memra-cli/tests/fixtures/tiny-oracle/{family}.tsv")
+}
+
+/// Human-readable pointer to where two oracle texts first disagree, for the error message;
+/// not used for the comparison itself (that is a plain string equality).
+fn first_diff_line<'a>(expected: &'a str, actual: &'a str) -> String {
+    for (index, (a, b)) in expected.lines().zip(actual.lines()).enumerate() {
+        if a != b {
+            return format!("line {index}: pinned={a:?} actual={b:?}");
+        }
+    }
+    if expected.lines().count() != actual.lines().count() {
+        return format!(
+            "line count differs: pinned={} actual={}",
+            expected.lines().count(),
+            actual.lines().count()
+        );
+    }
+    "no textual difference found (unexpected)".to_string()
+}
+
 fn format_reference_oracle(output: &memra_reference::ReferenceOutput) -> String {
     let mut text = String::from("stream\tposition\ttoken\tlogit_f32_bits\n");
     append_oracle_rows(
@@ -2546,6 +2792,123 @@ mod tests {
     }
 
     #[test]
+    fn tiny_parity_refuses_a_family_with_no_pinned_oracle() {
+        assert!(pinned_tiny_oracle("not-a-real-family").is_none());
+        assert!(pinned_tiny_oracle("qwen3").is_some());
+    }
+
+    fn qualification_record(promote_to: &str, cells: &[(&str, &str)]) -> String {
+        let mut record = format!(
+            "format\tmemra-qualification-record-v1\nfamily\tqwen3\npromote_to\t{promote_to}\n"
+        );
+        for (cell, status) in cells {
+            writeln!(record, "{cell}\t{status}").unwrap();
+        }
+        record
+    }
+
+    fn all_cells(status: &'static str) -> Vec<(&'static str, &'static str)> {
+        REQUIRED_QUALIFICATION_CELLS
+            .iter()
+            .map(|cell| (*cell, status))
+            .collect()
+    }
+
+    #[test]
+    fn qualification_record_accepts_a_fully_exercised_promotion() {
+        let record = qualification_record("NativeQualified", &all_cells("passed"));
+        validate_qualification_record(&record).unwrap();
+    }
+
+    #[test]
+    fn qualification_record_allows_not_exercised_cells_for_bringup_only() {
+        let record = qualification_record("NativeReference", &all_cells("not_exercised"));
+        validate_qualification_record(&record).unwrap();
+    }
+
+    #[test]
+    fn qualification_record_refuses_a_readiness_only_record_claiming_qualified() {
+        // This is acceptance criterion 4 as a unit: a record that is honest about having
+        // exercised nothing but readiness (every cell not_exercised) must not be able to claim
+        // promote_to=NativeQualified, which is exactly what a readiness-only or stub-HTTP
+        // "success" would otherwise buy.
+        let record = qualification_record("NativeQualified", &all_cells("not_exercised"));
+        let error = validate_qualification_record(&record).unwrap_err();
+        assert!(error.contains("has not passed"), "{error}");
+    }
+
+    #[test]
+    fn qualification_record_refuses_a_partially_failed_qualified_promotion() {
+        let mut cells = all_cells("passed");
+        cells[1] = ("cell.cache", "failed");
+        let record = qualification_record("NativeQualified", &cells);
+        let error = validate_qualification_record(&record).unwrap_err();
+        assert!(error.contains("cell.cache=failed"), "{error}");
+    }
+
+    #[test]
+    fn qualification_record_refuses_an_unnamed_cell() {
+        let mut cells = all_cells("passed").to_vec();
+        cells.retain(|(cell, _)| *cell != "cell.long_context");
+        let record = qualification_record("NativeQualified", &cells);
+        let error = validate_qualification_record(&record).unwrap_err();
+        assert!(error.contains("cell.long_context"), "{error}");
+    }
+
+    #[test]
+    fn qualification_record_refuses_an_unrecognized_cell_status() {
+        let mut cells = all_cells("passed");
+        cells[0] = ("cell.streaming", "yes");
+        let record = qualification_record("NativeQualified", &cells);
+        assert!(validate_qualification_record(&record).is_err());
+    }
+
+    /// The bit-determinism check alone (`execute(plan) == execute(plan)` on the same weights)
+    /// is vacuous against a wrong numerical program: a bug in the reference kernels reproduces
+    /// identically on both calls and self-comparison passes either way. This is the red arm the
+    /// issue asks for: corrupt one fixture weight (a stand-in for a wrong numerical program,
+    /// e.g. a transposed matmul or a dropped scale) and show that the self-comparison the old
+    /// gate relied on still passes, while the pinned-oracle comparison the new gate relies on
+    /// fails, because it diverges from the git-committed independent expectation.
+    #[test]
+    fn tiny_parity_pinned_oracle_catches_a_corrupted_reference_run_that_self_comparison_misses() {
+        let pack = model_packs::by_alias("qwen3").unwrap();
+        let plan = pack.compile_tiny_plan().unwrap();
+        let mut fixture = deterministic_fixture(&plan).unwrap();
+        let good_first = execute(&plan, &fixture.weights, &fixture.token_ids).unwrap();
+        let good_second = execute(&plan, &fixture.weights, &fixture.token_ids).unwrap();
+        assert_eq!(
+            good_first, good_second,
+            "sanity: the real fixture is deterministic"
+        );
+        let good_oracle = format_reference_oracle(&good_first);
+        assert_eq!(
+            pinned_tiny_oracle("qwen3").unwrap(),
+            good_oracle,
+            "sanity: the pinned oracle matches the real fixture before corruption"
+        );
+
+        let embedding = fixture
+            .weights
+            .get_mut(&memra_gguf::tensor_contract::TensorId::TokenEmbedding)
+            .expect("tiny fixture always carries a token embedding");
+        embedding.data[0] += 1.0;
+
+        let bad_first = execute(&plan, &fixture.weights, &fixture.token_ids).unwrap();
+        let bad_second = execute(&plan, &fixture.weights, &fixture.token_ids).unwrap();
+        assert_eq!(
+            bad_first, bad_second,
+            "self-comparison is vacuous: the corrupted run is still bit-deterministic against itself"
+        );
+        let bad_oracle = format_reference_oracle(&bad_first);
+        assert_ne!(
+            pinned_tiny_oracle("qwen3").unwrap(),
+            bad_oracle,
+            "pinned-oracle comparison must catch what self-comparison missed"
+        );
+    }
+
+    #[test]
     fn checkpoint_oracle_bundle_is_pinned_and_parity_is_fail_closed() {
         let root = std::env::temp_dir().join(format!(
             "memra-cli-checkpoint-oracle-{}",
@@ -2689,7 +3052,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("content-length", "0"))
         self.rfile.read(length)
-        body = json.dumps({"choices":[{"text":"ok"}]}).encode()
+        body = json.dumps({
+            "id": "verify-0",
+            "object": "text_completion",
+            "model": "verify",
+            "choices": [{"index": 0, "text": "ok", "finish_reason": "length"}],
+            "usage": {"prompt_tokens": 3, "completion_tokens": 1, "total_tokens": 4},
+        }).encode()
         self.send_response(200)
         self.send_header("content-type", "application/json")
         self.send_header("content-length", str(len(body)))
@@ -2715,6 +3084,114 @@ HTTPServer((host, int(port)), Handler).serve_forever()
                 .unwrap()
                 .contains("Serve=passed")
         );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn completion_response_validation_accepts_the_real_shape_and_a_red_arm_catches_a_stub() {
+        // The real shape memra-server stamps (Envelope::stamp + usage_json).
+        validate_completion_response(
+            r#"{"id":"r-1","created":1,"system_fingerprint":"x","object":"text_completion",
+                "model":"verify","choices":[{"index":0,"text":"ok","finish_reason":"length"}],
+                "usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}"#,
+            1,
+        )
+        .unwrap();
+
+        // Red arm: the readiness-only/stub-HTTP shape this gate used to accept on a bare
+        // `"choices"` substring probe (memra#543). It answers HTTP 200 with a canned string and
+        // proves nothing about actual generation; the structural check must refuse it.
+        let stub = r#"{"choices":[{"text":"ok"}]}"#;
+        assert!(validate_completion_response(stub, 1).is_err());
+
+        // A response carrying the word "error" inside real generated text used to be refused
+        // by the old substring probe even though it is a perfectly valid completion; the
+        // structural check must accept it because there is no `error` field.
+        let text_mentions_error = r#"{"id":"r-2","model":"verify",
+            "choices":[{"index":0,"text":"an error occurred upstream","finish_reason":"stop"}],
+            "usage":{"prompt_tokens":5,"completion_tokens":4,"total_tokens":9}}"#;
+        validate_completion_response(text_mentions_error, 4).unwrap();
+
+        // usage inconsistent with the request (claims 0 generated tokens) must be refused even
+        // though the envelope otherwise looks correct.
+        let zero_completion = r#"{"id":"r-3","model":"verify",
+            "choices":[{"index":0,"text":"","finish_reason":"stop"}],
+            "usage":{"prompt_tokens":3,"completion_tokens":0,"total_tokens":3}}"#;
+        assert!(validate_completion_response(zero_completion, 1).is_err());
+
+        // an explicit error field must be refused regardless of what else is present.
+        let carries_error = r#"{"id":"r-4","model":"verify","error":{"message":"boom"},
+            "choices":[{"index":0,"text":"ok","finish_reason":"stop"}],
+            "usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#;
+        assert!(validate_completion_response(carries_error, 1).is_err());
+    }
+
+    #[test]
+    fn native_serve_gate_refuses_a_readiness_only_stub_completion() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root =
+            std::env::temp_dir().join(format!("memra-cli-serve-gate-stub-{}", std::process::id()));
+        let model = root.join("model");
+        std::fs::create_dir_all(&model).unwrap();
+        let artifact_lock = format!(
+            "source={}\nbinding=passed\ntokenizer=passed\n",
+            lock_value(model.to_str().unwrap())
+        );
+        std::fs::write(root.join("artifact.lock"), &artifact_lock).unwrap();
+        std::fs::write(
+            root.join("checkpoint-parity.tsv"),
+            format!(
+                "status\tpassed\nartifact_lock_sha256\t{}\n",
+                hex_sha256(artifact_lock.as_bytes())
+            ),
+        )
+        .unwrap();
+        let runner = root.join("fake-memra-server.py");
+        std::fs::write(
+            &runner,
+            r#"#!/usr/bin/env python3
+import json, os
+from http.server import BaseHTTPRequestHandler, HTTPServer
+host, port = os.environ["MEMRA_ADDR"].rsplit(":", 1)
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *args): pass
+    def do_GET(self):
+        self.send_response(200 if self.path == "/readyz" else 404)
+        self.end_headers()
+        self.wfile.write(b"ready")
+    def do_POST(self):
+        length = int(self.headers.get("content-length", "0"))
+        self.rfile.read(length)
+        # A readiness-only/stub HTTP success: HTTP 200 with a bare "choices" key and no id,
+        # model, finish_reason, or usage. This is exactly the shape the old substring probe
+        # (`response.contains("\"choices\"")`) let through; it must not pass the serve gate.
+        body = json.dumps({"choices":[{"text":"ok"}]}).encode()
+        self.send_response(200)
+        self.send_header("content-type", "application/json")
+        self.send_header("content-length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+HTTPServer((host, int(port)), Handler).serve_forever()
+"#,
+        )
+        .unwrap();
+        let mut permissions = std::fs::metadata(&runner).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&runner, permissions).unwrap();
+        let error = verify_native_serve(
+            model_packs::by_alias("qwen3").unwrap(),
+            model.to_str().unwrap(),
+            &root,
+            &runner,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error.contains("id") || error.contains("usage"),
+            "expected the structural validator's reason in the error, got: {error}"
+        );
+        assert!(!root.join("serve-gate.tsv").is_file());
         std::fs::remove_dir_all(root).unwrap();
     }
 }
