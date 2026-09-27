@@ -261,3 +261,10 @@ GPU. Both registrations said "the 5090 half follows"; this file fixes how, befor
     disk-cleanup sessions list. `IN-USE.txt` stays at the root.
   - The first start's log is banked as `rtx5090-r1/incident-20260927/chain-day68c-first-start.log`. The chain, drivers
     and order are otherwise unchanged.
+- **The third start.** The second start's R1 build hung at 0% CPU. The rig's shared `sccache` server stopped taking
+  requests: `Compile requests 7320 -> 7320` over 30 s, with 38 client processes stalled for 20 to 33 minutes, other
+  lanes' builds among them.
+  - That server is not this lane's, so it was left alone and reported to the lead. This lane stopped only its own
+    chain and its own stalled check, and removed its partial trees.
+  - The chain restarted with `RUSTC_WRAPPER=` (sccache bypassed for this lane's builds). The log is
+    `incident-20260927/chain-day68c-second-start.log`.
