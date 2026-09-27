@@ -99,6 +99,7 @@ def main():
     ap.add_argument("--host-mb", type=int)
     ap.add_argument("--tenant-pct", type=int)
     ap.add_argument("--arm", help="spec regime: the F lock arm to run run-spec with")
+    ap.add_argument("--bin18", default=BIN18, help="handoff gate binaries dir (section E v2 uses bin18v2)")
     ap.add_argument("--mirror", help="copy each finished cell (and the waits log) here at once (after the 2026-09-27 scratch loss)")
     a = ap.parse_args()
     out = Path(a.out)
@@ -149,8 +150,8 @@ def main():
                 elif a.regime == "handoff":
                     order = "buffered,direct" if k % 2 else "direct,buffered"
                     argv[-4:-4] = ["--storage-root", B2_SCRATCH, "--storage-proof", str(PUBLIC_PROOF)]
-                    argv += [str(HERE / "m1-handoff-driver.py"), "run", "--gate", BIN18 + "/kv-handoff-gate",
-                             "--server", BIN18 + "/memra-server", "--artifact", ART, "--prompts", B2_PROMPTS,
+                    argv += [str(HERE / "m1-handoff-driver.py"), "run", "--gate", a.bin18 + "/kv-handoff-gate",
+                             "--server", a.bin18 + "/memra-server", "--artifact", ART, "--prompts", B2_PROMPTS,
                              "--proof", PROOF, "--scratch", B2_SCRATCH, "--out", str(target / "visits"),
                              "--size-bytes", str(a.size_bytes), "--host-mb", str(a.host_mb), "--rig", "rtx5090",
                              "--lock-fd", "@COLLECTOR_LOCK_FD@", "--io-schedule", order]

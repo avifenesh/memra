@@ -1,0 +1,11 @@
+   Compiling tokio v1.52.3
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-spill-f/crates/memra-server)
+   Compiling tokio-util v0.7.19
+   Compiling tower v0.5.3
+   Compiling h2 v0.4.19
+   Compiling hyper v1.10.1
+   Compiling hyper-util v0.1.20
+   Compiling axum v0.7.9
+    Finished `release` profile [optimized] target(s) in 30.22s
+nice -n 19 systemd-run --user --scope -q -p CPUQuota=600% -p MemoryMax=12G en  24.29s user 1.06s system 83% cpu 30.284 total
