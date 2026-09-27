@@ -270,6 +270,9 @@ def run_publisher(source, encoder, mel, frames, codec, torch):
         grouped_tensor = source["_pad_and_group_audio_codes"](
             token_tensor, audio_channels=CHANNELS, group_size=GROUP_SIZE
         )
+        _, pre_rvq, _, no_quant_codes = encoder.encode(
+            features, input_lens=lengths, use_quantizer=False
+        )
     tokens = (frames + 3) // 4
     groups = (tokens + GROUP_SIZE - 1) // GROUP_SIZE
     if (
@@ -277,6 +280,9 @@ def run_publisher(source, encoder, mel, frames, codec, torch):
         or list(token_tensor.shape) != [tokens, CHANNELS]
         or list(grouped_tensor.shape) != [groups, GROUP_SIZE, CHANNELS]
         or output_lengths.tolist() != [tokens]
+        or list(pre_rvq.shape) != [tokens, codec["d_model"]]
+        or pre_rvq.dtype != torch.bfloat16
+        or no_quant_codes is not None
     ):
         raise ValueError("publisher code or grouping extent differs from pinned geometry")
     depth_major = depth_tensor.tolist()
@@ -291,7 +297,26 @@ def run_publisher(source, encoder, mel, frames, codec, torch):
     if any(grouped[g][r] != token_major[min(g * GROUP_SIZE + r, tokens - 1)]
            for g in range(groups) for r in range(GROUP_SIZE)):
         raise ValueError("publisher grouped rows differ from expected final-row padding")
-    return depth_major, token_major, grouped
+    residual = pre_rvq.float()
+    margins = []
+    second_codes = []
+    for depth, layer in enumerate(encoder.quantizer.vq.layers):
+        x = layer.project_in(residual)
+        embed = layer._codebook.embed.t()
+        distance = -(x.pow(2).sum(1, keepdim=True) - 2 * x @ embed + embed.pow(2).sum(0, keepdim=True))
+        best = distance.max(dim=-1).indices
+        if best.tolist() != depth_major[depth]:
+            raise ValueError(f"publisher RVQ diagnostic replay changed depth {depth} IDs")
+        best_score = distance.gather(1, best[:, None])[:, 0]
+        remaining = distance.clone()
+        remaining.scatter_(1, best[:, None], float("-inf"))
+        second_score, second = remaining.max(dim=-1)
+        margins.append((best_score - second_score).tolist())
+        second_codes.append(second.tolist())
+        residual = residual - layer.decode(best)
+    bits = [int(value) & 0xffff for value in pre_rvq.contiguous().view(torch.int16).reshape(-1).tolist()]
+    pre_rvq_bytes = struct.pack(f"<{len(bits)}H", *bits)
+    return depth_major, token_major, grouped, pre_rvq_bytes, margins, second_codes
 
 
 def main():
@@ -301,9 +326,10 @@ def main():
     parser.add_argument("--weights", type=Path, help="default: SOURCE_ROOT/audio_tokenizer/model.safetensors")
     parser.add_argument("--check-source", action="store_true", help="no weights or third-party packages")
     parser.add_argument("--out", type=Path, help="write JSON receipt after a successful full run")
+    parser.add_argument("--features-out", type=Path, help="write pre-RVQ BF16 feature rows after a full run")
     args = parser.parse_args()
-    if args.check_source and args.out:
-        parser.error("--out requires a full checkpoint run")
+    if args.check_source and (args.out or args.features_out):
+        parser.error("--out and --features-out require a full checkpoint run")
 
     alignment, codec, selected, source_path = check_source(args.source_root)
     mel, frames, mel_sha256 = read_mel(args.mel_f32)
@@ -348,9 +374,11 @@ def main():
     source = load_audio_nodes(selected, source_path, torch)
     encoder = build_encoder(source, codec, torch, expected)
     copy_encoder_weights(encoder, weights_path, expected, torch)
-    depth_major, token_major, grouped = run_publisher(
+    depth_major, token_major, grouped, pre_rvq_bytes, margins, second_codes = run_publisher(
         source, encoder, mel, frames, codec, torch
     )
+    if args.features_out:
+        args.features_out.write_bytes(pre_rvq_bytes)
     receipt.update({
         "status": "publisher_cpu_codes_generated",
         "memra_code_id_parity": "unchecked",
@@ -369,6 +397,11 @@ def main():
         "depth_major": depth_major,
         "token_major": token_major,
         "grouped_patch_input": grouped,
+        "pre_rvq_features_shape": [(frames + 3) // 4, codec["d_model"]],
+        "pre_rvq_features_dtype": "BF16",
+        "pre_rvq_features_sha256": hashlib.sha256(pre_rvq_bytes).hexdigest(),
+        "rvq_top_two_score_margin_depth_major": margins,
+        "rvq_second_code_depth_major": second_codes,
         "code_ids_sha256": hashlib.sha256(
             json.dumps(depth_major, separators=(",", ":")).encode("utf-8")
         ).hexdigest(),
