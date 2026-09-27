@@ -37,6 +37,10 @@ const PUBLISHER_GPU_CONV1: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../memra-reference/src/fixtures/mimo-v26-publisher-pro6000-audio-conv1.bf16"
 ));
+const PUBLISHER_GPU_CONV1_PRE_GELU: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../memra-reference/src/fixtures/mimo-v26-publisher-pro6000-audio-conv1-pre-gelu.bf16"
+));
 const PUBLISHER_GPU_STACK: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../memra-reference/src/fixtures/mimo-v26-publisher-pro6000-audio-stack.bf16"
@@ -136,6 +140,10 @@ fn prepared_mel_target_features_and_rvq_diagnostic() -> Result<(), Fail> {
         "5a8828316406c5702487789ed75a08ef49b7c9a8ed2d97de1763082c718afbe2"
     );
     assert_eq!(
+        format!("{:x}", Sha256::digest(PUBLISHER_GPU_CONV1_PRE_GELU)),
+        "d22f4ee4205209c45c70695a3dbd53dd45cf2cf9c3675475dac8bea63a749c78"
+    );
+    assert_eq!(
         format!("{:x}", Sha256::digest(PUBLISHER_GPU_STACK)),
         "fc95bf4a5f0bc569ce8fb0d31c19824395e92f2e4c5e9271aa06a2926a6aafd2"
     );
@@ -150,6 +158,15 @@ fn prepared_mel_target_features_and_rvq_diagnostic() -> Result<(), Fail> {
         .parse()?;
     let engine = Engine::new(gpu)?;
     let weights = MiMoAudioCodecEncoderWeights::load(&engine, Path::new(&root))?;
+    let preactivation =
+        weights.encode_prepared_mel_conv1_preact(&engine, &engine.htod(&mel)?, 9)?;
+    let publisher_preactivation = decode_bf16(PUBLISHER_GPU_CONV1_PRE_GELU, 9)?;
+    feature_stats(
+        "memra_vs_gpu_publisher_conv1_pre_gelu",
+        &preactivation,
+        &publisher_preactivation,
+        9,
+    )?;
     let first_conv = weights.encode_prepared_mel_conv1(&engine, &engine.htod(&mel)?, 9)?;
     let first_conv_values = engine.dtoh(&first_conv)?;
     let publisher_gpu_conv1 = decode_bf16(PUBLISHER_GPU_CONV1, 9)?;

@@ -242,6 +242,59 @@ fn run_conv(
 
 impl MiMoAudioCodecEncoderWeights {
     #[cfg(test)]
+    pub(crate) fn encode_prepared_mel_conv1_preact(
+        &self,
+        engine: &Engine,
+        mel: &CudaSlice<f32>,
+        mel_frames: usize,
+    ) -> Result<Vec<f32>, Fail> {
+        use memra_reference::mimo_audio_codec_layer::bf16;
+
+        if self.device_ordinal != engine.stream().context().ordinal() {
+            return Err("MiMo codec first preactivation weight GPU changed".into());
+        }
+        let first = self.conv1_bf16()?;
+        let spec = ConvSpec {
+            frames: mel_frames,
+            in_channels: MEL_CHANNELS,
+            out_channels: HIDDEN,
+            stride: first.stride(),
+        };
+        let rows = spec.validate(mel.len(), first.weight().len(), first.bias().len())?;
+        engine.gpu.ctx.bind_to_thread()?;
+        let ordinal = engine.stream().context().ordinal();
+        if mel.ordinal() != ordinal
+            || first.weight().ordinal() != ordinal
+            || first.bias().ordinal() != ordinal
+        {
+            return Err("MiMo codec first preactivation crossed GPU devices".into());
+        }
+        ensure_finite(engine, mel)?;
+        let columns = im2col(engine, mel, spec, rows)?;
+        let projected = engine
+            .bf16_tc_gemm(first.weight(), &columns, rows, MEL_CHANNELS * 3, HIDDEN)?
+            .ok_or("MiMo first preactivation lost its source BF16 GEMM arm")?;
+        let projected = engine.dtoh(&projected)?;
+        let bias_bytes = engine.dtoh_u8(first.bias())?;
+        let bias = bias_bytes
+            .chunks_exact(2)
+            .map(|pair| f32::from_bits(u32::from(u16::from_le_bytes([pair[0], pair[1]])) << 16))
+            .collect::<Vec<_>>();
+        if projected.len() != rows * HIDDEN || bias.len() != HIDDEN {
+            return Err("MiMo first preactivation output or bias shape changed".into());
+        }
+        let output = projected
+            .iter()
+            .enumerate()
+            .map(|(index, &value)| bf16(value + bias[index % HIDDEN]))
+            .collect::<Vec<_>>();
+        if output.iter().any(|value| !value.is_finite()) {
+            return Err("MiMo first preactivation has non-finite output".into());
+        }
+        Ok(output)
+    }
+
+    #[cfg(test)]
     pub(crate) fn encode_prepared_mel_conv1(
         &self,
         engine: &Engine,
