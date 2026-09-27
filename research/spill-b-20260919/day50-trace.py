@@ -3,8 +3,9 @@
 
 usage: day50-trace.py <card> <L> <rows,comma> <reps> <cuda_gpu_trace.csv> <callcost stdout>
 The probe leaves an idle gap (--gap-ms, 50 ms) before every restore and every timed call, so the trace's clusters
-(events separated by at least 20 ms of idle GPU) read: setup (the prime of [0, L) and the snapshot), then per R and rep
-(one warm-up rep first) a restore cluster and a call cluster. Per timed call: the GPU span (first start to last end),
+(events separated by at least 20 ms of idle GPU) read: leading work (the weight upload, the setup prime and its
+snapshot), then per R and rep (one warm-up rep first) a restore cluster and a call cluster. Addendum B: the pairs are
+the last 2 x len(rows) x (reps + 1) clusters, each restore cluster memops only and each call cluster with kernels. Per timed call: the GPU span (first start to last end),
 the GPU-busy time (the union of kernel and memop intervals), the idle gaps inside the span, and the busy time in
 full-attention, GDN/conv, GEMM and other kernels. The host wall comes from the probe's own `callcost` line.
 The rule of 1.3 reads `busy_share = busy / wall` of the 32-row call.
@@ -64,12 +65,20 @@ for line in open(stdout, errors="replace"):
     m = re.match(r"callcost L=(\d+) R=(\d+) N=\d+ wall_ms p50=([\d.]+) .*all=\[([\d.,]*)\]", line)
     if m:
         walls[int(m.group(2))] = [float(x) for x in m.group(4).split(",") if x]
-expect = 1 + len(rows) * (reps + 1) * 2
-print(f"DAY50 S0-TRACE card={card} L={L} clusters={len(clusters)} expected={expect}"
-      + ("" if len(clusters) == expect else " (cluster count off: the per-call split is not read)"))
-if len(clusters) != expect:
+# DAY50 addendum B: the calls are the LAST pairs; anything before them (the weight upload, the setup prime and its
+# snapshot) is leading work. Every pair's first cluster must be memops only (the restore), its second must hold kernels.
+pairs = len(rows) * (reps + 1)
+lead = len(clusters) - 2 * pairs
+memop = lambda n: n.startswith("[CUDA mem")
+shape_ok = lead >= 1 and all(
+    all(memop(x[2]) for x in clusters[lead + 2 * k]) and any(not memop(x[2]) for x in clusters[lead + 2 * k + 1])
+    for k in range(pairs)) if lead >= 1 else False
+print(f"DAY50 S0-TRACE card={card} L={L} clusters={len(clusters)} leading={lead} pairs={pairs} "
+      f"restore_call_shape={'ok' if shape_ok else 'off'}"
+      + ("" if shape_ok else " (the per-call split is not read)"))
+if not shape_ok:
     sys.exit(0)
-i = 1
+i = lead
 for r in rows:
     spans, busys, cats = [], [], {"attn": [], "gdn": [], "gemm": [], "other": []}
     for rep in range(reps + 1):
