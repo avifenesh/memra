@@ -896,7 +896,7 @@ fn parse_one(
     }
     Ok((
         Shard {
-            mmap: Arc::new(mmap),
+            mmap,
             file,
             path,
             data_start,
