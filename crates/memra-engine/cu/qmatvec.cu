@@ -6362,71 +6362,11 @@ extern "C" __global__ void moe_down8_fma_q8_rows(
     if (lane == 0) dst[(size_t)tok * out_f + o] = chain;
 }
 
-// ---- WARP-PACKED twins of the verify-rows MoE pair (lane/glm5-matvec, MEMRA_MOE_VROWS_PACK).
-// The _rows pair launches block=(32,1,1) — ONE warp per block, so the resident-warp count is
-// capped by the blocks/SM limit (<=32 of 48 warp slots, <=67% occupancy) and every launch
-// schedules ~65k one-warp blocks (diet-battery c8-ship census: the pair is 26% of decode-round
-// GPU at the 57-64%-of-bound class the decode-gap attribution measured). These twins pack
-// MEMRA_MMVQ_ROWS = 4 warps per block on threadIdx.y — the qmatvec mmvq family's standing
-// shape — with the per-warp body VERBATIM (same expert_dot_g g-strided chain, same
-// warp_reduce_sum, same epilogue / slot-ordered __fmaf_rn chain; neither kernel has a
-// __syncthreads, so the early return on a ragged row tail is safe). Packing moves no bits:
-// output (o, pair) is computed by exactly one warp running exactly the _rows program.
-// Bonus locality: the 4 warps of a block share one pair's activation row and read 4 ADJACENT
-// expert rows (contiguous bank bytes). Bit-gated vs the unpacked pair (glm5_matvec_doors_gpu).
-extern "C" __global__ void moe_gate_up_preclamp8_q8_rows_w4(
-        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
-        const signed char* __restrict__ aq, const float* __restrict__ ad, float limit,
-        float* __restrict__ act, int in_f, int n_ff, int n_used, int n_pairs,
-        int qt_g, int qt_u, long rb_g, long rb_u) {
-    int o = blockIdx.x * MEMRA_MMVQ_ROWS + threadIdx.y;  // expert-FFN row (packed)
-    int pr = blockIdx.y;                                 // (token, slot) pair
-    if (o >= n_ff || pr >= n_pairs) return;
-    int lane = threadIdx.x;                              // 32 lanes, one warp per (o,pr)
-    int nsb = in_f >> 5;
-    int tok = pr / n_used;
-    const unsigned char* grow = (const unsigned char*)ptrs[pr] + (long)o * rb_g;
-    const unsigned char* urow = (const unsigned char*)ptrs[n_pairs + pr] + (long)o * rb_u;
-    const signed char* arow = aq + (size_t)tok * in_f;
-    const float* adrow = ad + (size_t)tok * nsb;
-    float accg = 0.0f, accu = 0.0f;
-    for (int g = lane; g < nsb; g += 32) {
-        const signed char* aqb = arow + (size_t)g * 32;
-        float d8 = adrow[g];
-        accg += expert_dot_g(qt_g, grow, g, aqb, d8, nsb);
-        accu += expert_dot_g(qt_u, urow, g, aqb, d8, nsb);
-    }
-    accg = warp_reduce_sum(accg);
-    accu = warp_reduce_sum(accu);
-    if (lane == 0) {
-        float u = fmaxf(fminf(accu * scl[n_pairs + pr], limit), -limit);
-        float x = fminf(accg * scl[pr], limit);
-        act[(size_t)pr * n_ff + o] = (x / (1.0f + expf(-x))) * u;
-    }
-}
-extern "C" __global__ void moe_down8_fma_q8_rows_w4(
-        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
-        const signed char* __restrict__ aq2, const float* __restrict__ ad2,
-        float* __restrict__ dst, int in_f, int out_f, int n_used, int n_pairs, int qt, long rb) {
-    int o = blockIdx.x * MEMRA_MMVQ_ROWS + threadIdx.y;  // output row (packed)
-    int tok = blockIdx.y;
-    if (o >= out_f) return;
-    int lane = threadIdx.x;
-    int nsb = in_f >> 5;
-    float chain = 0.0f;
-    for (int j = 0; j < n_used; j++) {
-        int pr = tok * n_used + j;
-        const unsigned char* wrow = (const unsigned char*)ptrs[2 * n_pairs + pr] + (long)o * rb;
-        const signed char* arow = aq2 + (size_t)pr * in_f;
-        const float* adrow = ad2 + (size_t)pr * nsb;
-        float acc = 0.0f;
-        for (int g = lane; g < nsb; g += 32)
-            acc += expert_dot_g(qt, wrow, g, arow + (size_t)g * 32, adrow[g], nsb);
-        acc = warp_reduce_sum(acc);
-        if (lane == 0) chain = __fmaf_rn(scl[2 * n_pairs + pr], acc, chain);
-    }
-    if (lane == 0) dst[(size_t)tok * out_f + o] = chain;
-}
+// The WARP-PACKED twins of the verify-rows MoE pair (door M, MEMRA_MOE_VROWS_PACK:
+// moe_gate_up_preclamp8_q8_rows_w4 / moe_down8_fma_q8_rows_w4) were removed 2026-09-28
+// (memra#886, door hygiene): +0.70% alone, superseded as a posture by the ILP twins below
+// (composed 76.84 vs ILP alone 77.50), never armed in the served launcher. See docs/FLAGS.md
+// "Removed doors" and darklanes verdicts-ledger glm5-b200-vrows-pack-plus-0-70-ord-neutral.
 
 // ---- ILP twins of the verify-rows MoE pair (lane/glm5-moe-rows-ilp-20260904, door
 // MEMRA_MOE_VROWS_ILP, default OFF) ----
@@ -6865,17 +6805,8 @@ extern "C" __global__ void moe_gate_up_preclamp8_q8_rows_ilp(
     moe_gate_up_rows_ilp_warp(ptrs, scl, aq, ad, limit, act, in_f, n_ff, n_used, n_pairs, qt_g,
                               qt_u, rb_g, rb_u, o, pr, threadIdx.x);
 }
-extern "C" __global__ void moe_gate_up_preclamp8_q8_rows_w4_ilp(
-        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
-        const signed char* __restrict__ aq, const float* __restrict__ ad, float limit,
-        float* __restrict__ act, int in_f, int n_ff, int n_used, int n_pairs,
-        int qt_g, int qt_u, long rb_g, long rb_u) {
-    int o = blockIdx.x * MEMRA_MMVQ_ROWS + threadIdx.y;
-    int pr = blockIdx.y;
-    if (o >= n_ff || pr >= n_pairs) return;
-    moe_gate_up_rows_ilp_warp(ptrs, scl, aq, ad, limit, act, in_f, n_ff, n_used, n_pairs, qt_g,
-                              qt_u, rb_g, rb_u, o, pr, threadIdx.x);
-}
+// moe_gate_up_preclamp8_q8_rows_w4_ilp (door M composed with the ILP twin) was removed
+// 2026-09-28 (memra#886, door hygiene) along with door M itself.
 __device__ __forceinline__ void moe_down_rows_ilp_warp(
         const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
         const signed char* __restrict__ aq2, const float* __restrict__ ad2,
@@ -6906,16 +6837,8 @@ extern "C" __global__ void moe_down8_fma_q8_rows_ilp(
     moe_down_rows_ilp_warp(ptrs, scl, aq2, ad2, dst, in_f, out_f, n_used, n_pairs, qt, rb, o, tok,
                            threadIdx.x);
 }
-extern "C" __global__ void moe_down8_fma_q8_rows_w4_ilp(
-        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
-        const signed char* __restrict__ aq2, const float* __restrict__ ad2,
-        float* __restrict__ dst, int in_f, int out_f, int n_used, int n_pairs, int qt, long rb) {
-    int o = blockIdx.x * MEMRA_MMVQ_ROWS + threadIdx.y;
-    int tok = blockIdx.y;
-    if (o >= out_f) return;
-    moe_down_rows_ilp_warp(ptrs, scl, aq2, ad2, dst, in_f, out_f, n_used, n_pairs, qt, rb, o, tok,
-                           threadIdx.x);
-}
+// moe_down8_fma_q8_rows_w4_ilp (door M composed with the ILP twin) was removed 2026-09-28
+// (memra#886, door hygiene) along with door M itself.
 
 
 // =====================================================================================
@@ -7150,7 +7073,7 @@ extern "C" __global__ void memra_q8_to_lane_major(const int* __restrict__ aq, in
 }
 
 
-// ---- DEDUP-SCHEDULE twins of the verify-rows MoE pair (lane/glm5-dedup, 2026-08-31) ----
+// ---- DEDUP-SCHEDULE twin of the verify-rows MoE down launch (lane/glm5-dedup, 2026-08-31) ----
 //
 // WHY: the struct-battery instrument measured **21.96% cumulative repeat fraction** across the
 // pair's expert visits (2.55M visits / 99,751 layer-calls, mode-stable 22.27% greedy / 21.53%
@@ -7160,70 +7083,31 @@ extern "C" __global__ void memra_q8_to_lane_major(const int* __restrict__ aq, in
 // peak (moe-loc LANE.md §1.3) so there is no efficiency left to win — the ONLY remaining lever is
 // reading less, and a repeat read is only avoided if it is SCHEDULED inside the reuse window.
 //
-// The mechanism is a pure VISIT-ORDER change: which block computes which (row, pair) output.
+// The gate/up half of this lever (`_ord`, door E, MEMRA_MOE_VROWS_DEDUP_ORDER: an expert-major
+// order plane read from a fourth pointer-table plane) was REMOVED 2026-09-28 (memra#886, door
+// hygiene): neutral on the pair (-0.18%, one boot an outlier aside), never armed in the served
+// launcher, past its decide-by with no positive receipt. `moe_vrows_order_from_sel` (its
+// device-side order-plane build) went with it. See docs/FLAGS.md "Removed doors" and darklanes
+// verdicts-ledger glm5-b200-vrows-pack-plus-0-70-ord-neutral.
 //
-//   * `_ord` (gate/up): the grid is TRANSPOSED so the pair index is the FASTEST dimension
-//     (grid = (n_pairs, n_ff) instead of (n_ff, n_pairs)), and the pair walked by block
-//     `blockIdx.x` is read from an EXPERT-MAJOR order plane (`ptrs[3*n_pairs + q]`, built by
-//     `moe_vrows_order_from_sel` on device / the host arm's stable sort). Consequence: the whole
-//     pair union for ONE expert-FFN row `o` is co-resident, and two pairs sharing an expert are
-//     ADJACENT blocks reading the IDENTICAL gate row and up row. The reuse distance collapses
-//     from "one 9.44 MB slab pass must survive in L2" (the shipped o-fastest schedule: 2048
-//     blocks) to ~1 block over ~2 x 2.3 KB — an L1-class hit instead of an L2 gamble. The
-//     charter's slab-residency argument (4.72 MB slab vs ~128 MB L2) is the FALLBACK argument
-//     here, not the operative one.
-//   * `_tmaj` (down): same idea where the accumulation forbids a permutation. The down kernel's
-//     block owns one (token, out-row) and MUST walk j = 0..n_used-1 in SLOT order (that
-//     `__fmaf_rn` chain is the vrest gate-4 bit bar), so the pair order inside a block is
-//     untouchable. Only the GRID is transposed — token fastest, grid = (t, out_f) — so the t
-//     blocks at the same out-row `o` are adjacent and a repeated expert's down row (1152 B at
-//     the serving shape) is read once for all the tokens that share it.
+// `_tmaj` (down, door E-down, MEMRA_MOE_VROWS_DOWN_TMAJ) stays: it needs no order plane. The
+// down kernel's block owns one (token, out-row) and MUST walk j = 0..n_used-1 in SLOT order (that
+// `__fmaf_rn` chain is the vrest gate-4 bit bar), so the pair order inside a block is untouchable.
+// Only the GRID is transposed, token fastest, grid = (t, out_f), so the t blocks at the same
+// out-row `o` are adjacent and a repeated expert's down row (1152 B at the serving shape) is read
+// once for all the tokens that share it.
 //
-// BIT IDENTITY, and why it is structural rather than measured: in both kernels every output is a
-// pure function of its (o, pr) / (o, tok) coordinate — `ptrs[pr]`, `scl[pr]`, `tok = pr / n_used`,
-// `act[pr*n_ff + o]`, `dst[tok*out_f + o]` — and the bodies below are their twins' character for
-// character (same `expert_dot_g` g-strided chain, same `warp_reduce_sum`, same
-// `swiglu_preclamped_mul_scaled_f32` expression, same slot-ordered `__fmaf_rn` chain). Neither
-// kernel has a `__syncthreads`, shared memory, or any cross-block communication, so RE-INDEXING
-// WHICH BLOCK COMPUTES WHICH OUTPUT MOVES NO BITS. The order plane is a permutation, so every
-// pair is still computed exactly once. Gated in `glm5_dedup_sched_gpu`: bit identity vs the
-// shipped pair at t=2..8 x {live macros, none} x both table provenances, a valid-shuffle arm that
-// must stay bit-INERT, and a non-permutation order plane that must BITE.
+// BIT IDENTITY, and why it is structural rather than measured: every output is a pure function
+// of its (o, tok) coordinate (`ptrs[pr]`, `scl[pr]`, `dst[tok*out_f + o]`), and the body below is
+// its shipped twin's character for character (same `expert_dot_g` g-strided chain, same
+// `warp_reduce_sum`, same slot-ordered `__fmaf_rn` chain). The kernel has no `__syncthreads`,
+// shared memory, or any cross-block communication, so RE-INDEXING WHICH BLOCK COMPUTES WHICH
+// OUTPUT MOVES NO BITS. Gated in `glm5_dedup_sched_gpu`: bit identity vs the shipped pair at
+// t=2..8 x {live macros, none}.
 //
 // The win, by contrast, is a SCHEDULING property (CUDA dispatches blocks in increasing linear id,
 // x fastest — the ordering every locality door in this family already rides), so it is unpriceable
-// on an exactness-only rig: both doors ship default OFF and the box prices the wall.
-extern "C" __global__ void moe_gate_up_preclamp8_q8_rows_ord(
-        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
-        const signed char* __restrict__ aq, const float* __restrict__ ad, float limit,
-        float* __restrict__ act, int in_f, int n_ff, int n_used, int n_pairs,
-        int qt_g, int qt_u, long rb_g, long rb_u) {
-    // Guard BEFORE the order-plane load: the plane is [3*n_pairs .. 4*n_pairs).
-    if (blockIdx.x >= (unsigned)n_pairs || blockIdx.y >= (unsigned)n_ff) return;
-    int pr = (int)ptrs[3 * n_pairs + blockIdx.x];   // expert-major visit order
-    int o = blockIdx.y;                             // expert-FFN row (now the SLOW dimension)
-    int lane = threadIdx.x;          // 32 lanes, one warp per (o,pr)
-    int nsb = in_f >> 5;
-    int tok = pr / n_used;
-    const unsigned char* grow = (const unsigned char*)ptrs[pr] + (long)o * rb_g;
-    const unsigned char* urow = (const unsigned char*)ptrs[n_pairs + pr] + (long)o * rb_u;
-    const signed char* arow = aq + (size_t)tok * in_f;
-    const float* adrow = ad + (size_t)tok * nsb;
-    float accg = 0.0f, accu = 0.0f;
-    for (int g = lane; g < nsb; g += 32) {
-        const signed char* aqb = arow + (size_t)g * 32;
-        float d8 = adrow[g];
-        accg += expert_dot_g(qt_g, grow, g, aqb, d8, nsb);
-        accu += expert_dot_g(qt_u, urow, g, aqb, d8, nsb);
-    }
-    accg = warp_reduce_sum(accg);
-    accu = warp_reduce_sum(accu);
-    if (lane == 0) {
-        float u = fmaxf(fminf(accu * scl[n_pairs + pr], limit), -limit);
-        float x = fminf(accg * scl[pr], limit);
-        act[(size_t)pr * n_ff + o] = (x / (1.0f + expf(-x))) * u;
-    }
-}
+// on an exactness-only rig: the door ships default OFF and the box prices the wall.
 // TOKEN-MAJOR grid twin of moe_down8_fma_q8_rows: grid = (t, out_f), token fastest. The j loop —
 // the slot-ordered __fmaf_rn chain that IS the accumulation order — is verbatim and keeps its
 // ORIGINAL slot order; only which block runs when changes.
@@ -7251,29 +7135,8 @@ extern "C" __global__ void moe_down8_fma_q8_rows_tmaj(
     if (lane == 0) dst[(size_t)tok * out_f + o] = chain;
 }
 
-// EXPERT-MAJOR ORDER PLANE for the `_ord` gate/up twin (lane/glm5-dedup door E). Writes the
-// permutation into the pointer table's fourth plane, `ptrs[3*n_pairs .. 4*n_pairs)`, so the door
-// costs the device-tables arm ONE extra launch and the host-tables arm NOTHING (the host appends
-// the plane to the vector it already uploads in one `htod_u64_into`).
-//
-// STABLE COUNTING RANK, chosen so the device build is bit-identical to the host's stable sort by
-// (expert id, pair index) with no scratch, no scan and no order-of-execution dependence: thread p
-// counts how many pairs sort strictly before it and stores itself at that rank. Ties break on the
-// pair index, so the permutation is a total order and per-expert runs keep ascending slot order.
-// O(n_pairs^2) with n_pairs = t*n_used <= 64 on every serving shape (4096 comparisons total),
-// one 128-thread block: cheaper than any scan, and there is no correctness cliff to grow into.
-extern "C" __global__ void moe_vrows_order_from_sel(
-        const int* __restrict__ sel, unsigned long long* __restrict__ ptrs, int n_pairs) {
-    int p = blockIdx.x * blockDim.x + threadIdx.x;
-    if (p >= n_pairs) return;
-    int ep = sel[p];
-    int rank = 0;
-    for (int q = 0; q < n_pairs; q++) {
-        int eq = sel[q];
-        if (eq < ep || (eq == ep && q < p)) rank++;
-    }
-    ptrs[3 * n_pairs + rank] = (unsigned long long)p;
-}
+// moe_vrows_order_from_sel (door E's device-side expert-major order-plane build) was removed
+// 2026-09-28 (memra#886, door hygiene) along with door E itself.
 
 // DEVICE-SIDE POINTER/SCALE TABLE BUILD for the verify-rows pair (lane/glm5-moe-loc door D,
 // MEMRA_MOE_VROWS_DEV_TABLES). The pair's `ptrs`/`scl` tables were built on the HOST, which

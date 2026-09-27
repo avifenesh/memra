@@ -2578,24 +2578,12 @@ pub fn bf16_tcols_red_fused_dispatches() -> u64 {
     BF16_TCOLS_RED_FUSED_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// `MEMRA_MOE_VROWS_PACK=1` (lane/glm5-matvec door M, default OFF): the verify-rows MoE pair
-/// launches its `_w4` warp-packed twins — MEMRA_MMVQ_ROWS = 4 warps per block on threadIdx.y
-/// (the qmatvec mmvq family's standing shape) instead of one warp per block. The unpacked
-/// launch caps residency at the blocks/SM limit (<=67% of warp slots) and schedules ~65k
-/// one-warp blocks per launch; per-warp body verbatim, bit-identical per (row, pair). Gated
-/// by `glm5_matvec_doors_gpu`. Read per call.
-pub(crate) fn moe_vrows_pack_on() -> bool {
-    std::env::var("MEMRA_MOE_VROWS_PACK").as_deref() == Ok("1")
-}
-
-/// Engagement counter for the warp-packed verify-rows MoE door (`MEMRA_MOE_VROWS_PACK`).
-pub static MOE_VROWS_PACK_DISPATCHES: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-
-/// Snapshot of [`MOE_VROWS_PACK_DISPATCHES`] — gates take a before/after delta.
-pub fn moe_vrows_pack_dispatches() -> u64 {
-    MOE_VROWS_PACK_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
-}
+// MEMRA_MOE_VROWS_PACK (door M, the `_w4` warp-packed verify-rows MoE twins) was removed
+// 2026-09-28 (memra#886, door hygiene): +0.70% alone, superseded as a posture by the ILP twins
+// (composed with ILP 76.84 vs ILP alone 77.50, so the served posture takes ILP and drops PACK).
+// Never armed in the served launcher (explicitly `env -u MEMRA_MOE_VROWS_PACK`). See
+// docs/FLAGS.md "Removed doors" and darklanes verdicts-ledger
+// glm5-b200-vrows-pack-plus-0-70-ord-neutral for the receipt.
 
 /// `MEMRA_MOE_VROWS_ILP` (lane/glm5-moe-rows-ilp-20260904; default ON on sm_100a builds since
 /// 2026-09-04, OFF elsewhere, `=0`/`=1` override): the verify-rows MoE pair launches its `_ilp` twins, the same per-warp program with the loads of four (then two)
@@ -2756,45 +2744,25 @@ pub fn moe_vrows_pair_overlap() -> (u64, u64) {
     )
 }
 
-/// `MEMRA_MOE_VROWS_DEDUP_ORDER=1` (lane/glm5-dedup door E, default OFF): the verify-rows
-/// gate/up launch takes the `_ord` twin — grid TRANSPOSED so the pair index is the fastest
-/// dimension, walking an EXPERT-MAJOR order plane appended to the pointer table. WHY: the
-/// struct-battery instrument measured a **21.96% repeat fraction** across the pair's expert
-/// visits (2.55M visits, 6.9x the 3.21% independent-routing bound), and the pair is already at
-/// 90.2% of theoretical DRAM peak, so the only lever left is not re-reading a slab a sibling
-/// verify row already read — which requires the repeat visit to be SCHEDULED inside the reuse
-/// window. Bit-identical by construction: every output is a pure function of its `(o, pr)`
-/// coordinate and no block communicates, so re-indexing which block computes which output moves
-/// no bits (`glm5_dedup_sched_gpu`). The WIN is a scheduling property, unpriceable on an
-/// exactness-only rig — hence default OFF with the box pricing the flip.
-///
-/// Refused by name, falling closed to the shipped schedule: door M (`MEMRA_MOE_VROWS_PACK`, the
-/// refuted 4-warp pack) takes precedence in the launcher, and the door engages only when the
-/// order plane is actually present (`ptrs.len() >= 4*n_pairs`), so a direct launcher call with a
-/// 3-plane table keeps the shipped program.
-pub(crate) fn moe_vrows_dedup_order_on() -> bool {
-    std::env::var("MEMRA_MOE_VROWS_DEDUP_ORDER").as_deref() == Ok("1")
-}
+// MEMRA_MOE_VROWS_DEDUP_ORDER (door E, the gate/up expert-major order-plane twin) was removed
+// 2026-09-28 (memra#886, door hygiene): neutral on the pair (-0.18%, one boot an outlier), never
+// armed in the served launcher, past its decide-by with no positive receipt. Its order-plane
+// build (`vrows_expert_major_order`, the `moe_vrows_order_from_sel` FFI), its engagement counter,
+// and the AVOIDED-SLAB-READS receipt (`MOE_VROWS_SLAB_READS_AVOIDED`, host-arm only) went with it.
+// See docs/FLAGS.md "Removed doors" and darklanes verdicts-ledger
+// glm5-b200-vrows-pack-plus-0-70-ord-neutral for the receipt. Door E-down
+// (`MEMRA_MOE_VROWS_DOWN_TMAJ`, below) is unaffected: it needs no order plane of its own.
 
 /// `MEMRA_MOE_VROWS_DOWN_TMAJ=1` (lane/glm5-dedup door E-down, default OFF): the verify-rows down
 /// launch takes the `_tmaj` twin — grid transposed to `(t, out_f)` so the t verify rows at one
 /// output row are adjacent blocks and a repeated expert's down row is read once for every token
 /// sharing it. The down chain's slot-ordered `__fmaf_rn` accumulation is INSIDE the block and is
 /// untouched (it keeps its original slot order — the vrest gate-4 bit bar); only the grid moves.
-/// Split from [`moe_vrows_dedup_order_on`] as its own flag so the box can attribute the two
-/// halves of the lever separately (gate/up is 2/3 of the pair's bytes, down 1/3). Same refusals:
-/// door M wins, and `out_f > 65535` falls closed (a grid.y bound, not a serving shape).
+/// Needs no table plane of its own (the down chain cannot be permuted). Refused by name, falling
+/// closed to the shipped schedule: door M (`MEMRA_MOE_VROWS_PACK`, the refuted 4-warp pack) takes
+/// precedence, and `out_f > 65535` falls closed (a grid.y bound, not a serving shape).
 fn moe_vrows_down_tmaj_on() -> bool {
     std::env::var("MEMRA_MOE_VROWS_DOWN_TMAJ").as_deref() == Ok("1")
-}
-
-/// Engagement counter for the expert-major gate/up schedule (`MEMRA_MOE_VROWS_DEDUP_ORDER`).
-pub static MOE_VROWS_DEDUP_ORDER_DISPATCHES: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-
-/// Snapshot of [`MOE_VROWS_DEDUP_ORDER_DISPATCHES`] — gates take a before/after delta.
-pub fn moe_vrows_dedup_order_dispatches() -> u64 {
-    MOE_VROWS_DEDUP_ORDER_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Engagement counter for the token-major down schedule (`MEMRA_MOE_VROWS_DOWN_TMAJ`).
@@ -2804,42 +2772,6 @@ pub static MOE_VROWS_DOWN_TMAJ_DISPATCHES: std::sync::atomic::AtomicU64 =
 /// Snapshot of [`MOE_VROWS_DOWN_TMAJ_DISPATCHES`] — gates take a before/after delta.
 pub fn moe_vrows_down_tmaj_dispatches() -> u64 {
     MOE_VROWS_DOWN_TMAJ_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// AVOIDED SLAB READS — the box receipt for door E. Every layer-call adds `visits - distinct`,
-/// i.e. the expert-slab reads whose repeat visit the expert-major schedule places inside the
-/// reuse window. Multiply by the per-visit slab bytes (gate+up 9.4372 MB, down 4.7186 MB at the
-/// serving geometry) for the bytes the schedule makes avoidable; that product is the CEILING of
-/// the win, not the win (the realized share is a cache/scheduling property the box prices).
-///
-/// HOST-ARM ONLY, by construction: with door D on there is no host-side selection to count and a
-/// 4-byte readback would reintroduce the very `cuStreamSynchronize` door D removed. The counting
-/// boot is therefore `MEMRA_MOE_VROWS_DEV_TABLES=0`, exactly like the dedup instrument — while
-/// [`MOE_VROWS_DEDUP_ORDER_DISPATCHES`] moves in BOTH table arms.
-pub static MOE_VROWS_SLAB_READS_AVOIDED: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-
-/// Snapshot of [`MOE_VROWS_SLAB_READS_AVOIDED`].
-pub fn moe_vrows_slab_reads_avoided() -> u64 {
-    MOE_VROWS_SLAB_READS_AVOIDED.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// The EXPERT-MAJOR order plane, host build — the stable sort by `(expert id, pair index)` whose
-/// bit-for-bit twin is the `moe_vrows_order_from_sel` counting rank. Returned as the `[n_pairs]`
-/// tail plane the pointer table carries at `[3*n_pairs ..)`, and split out from the call site so
-/// the device kernel can be gated against it directly.
-pub(crate) fn vrows_expert_major_order(sel_all: &[u32]) -> Vec<u64> {
-    let mut ord: Vec<u64> = (0..sel_all.len() as u64).collect();
-    // Stable by construction: `sort_by_key` on the expert id keeps ascending pair order inside
-    // each expert's run, so per-token slot order survives within a shared expert.
-    ord.sort_by_key(|&p| sel_all[p as usize]);
-    ord
-}
-
-/// Gate hook for [`vrows_expert_major_order`] — the permutation is the whole door, so it is gated
-/// against the device build and on planted selections rather than inferred from a live tape.
-pub fn vrows_expert_major_order_for_test(sel_all: &[u32]) -> Vec<u64> {
-    vrows_expert_major_order(sel_all)
 }
 
 // ---- THE FLAG-ALIAS LAW for boolean doors (lane/glm5-extract2, phase 2) ------------------
@@ -8837,44 +8769,9 @@ impl Engine {
         Ok(())
     }
 
-    /// DEVICE-SIDE build of the verify-rows pair's EXPERT-MAJOR order plane (door E,
-    /// `MEMRA_MOE_VROWS_DEDUP_ORDER`) from the router's own device selection, written into the
-    /// pointer table's fourth plane `ptrs[3*n_pairs ..)`. Bit-identical to
-    /// [`crate::vrows_expert_major_order`]: both are a stable order on `(expert id, pair index)`,
-    /// the kernel by counting rank (see its comment in `qmatvec.cu`), the host by a stable sort.
-    ///
-    /// This launch exists ONLY in the door-D (device tables) arm — the host arm appends the plane
-    /// to the vector it already uploads, so it costs zero extra transfers there. Cost in the
-    /// device arm: 42 launches/round = ~0.093 ms at the box's 2.216 us eager-launch constant,
-    /// against a predicted -2.17 ms/round; folding it into `moe_vrows_tables_from_sel` (same
-    /// inputs, same one-thread-per-pair grid) is the named follow-up that recovers it.
-    pub fn moe_vrows_order_from_sel(
-        &self,
-        sel: &CudaSlice<i32>,
-        n_pairs: usize,
-        ptrs: &mut CudaSlice<u64>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        debug_assert!(sel.len() >= n_pairs);
-        debug_assert!(
-            ptrs.len() >= 4 * n_pairs,
-            "the order plane lives at ptrs[3*n_pairs .. 4*n_pairs)"
-        );
-        let f = self.func("moe_vrows_order_from_sel");
-        let threads = 128u32;
-        let cfg = LaunchConfig {
-            grid_dim: ((n_pairs as u32).div_ceil(threads), 1, 1),
-            block_dim: (threads, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let np = n_pairs as i32;
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(sel).arg(&mut *ptrs).arg(&np);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
+    // `moe_vrows_order_from_sel` (door E's device-side order-plane build) was removed 2026-09-28
+    // (memra#886, door hygiene) with `MEMRA_MOE_VROWS_DEDUP_ORDER` itself. See docs/FLAGS.md
+    // "Removed doors".
 
     /// Verify-rows twin of [`Self::moe_gate_up_preclamp8_q8`] (lane/glm5-vrest): one launch
     /// covers ALL `n_pairs = t * n_used` routed pairs of a spec-verify batch. `ptrs` /
@@ -9154,18 +9051,12 @@ impl Engine {
         );
         debug_assert!(ptrs.len() >= 3 * n_pairs);
         debug_assert_eq!(scl.len(), 3 * n_pairs);
-        // MEMRA_MOE_VROWS_DEDUP_ORDER (lane/glm5-dedup door E, default OFF): the `_ord` twin —
-        // pair index the FASTEST grid dimension, walked in expert-major order from the table's
-        // fourth plane, so two verify rows sharing an expert read the identical gate/up rows in
-        // adjacent blocks. `ptrs.len() >= 4*n_pairs` is a REQUIREMENT not a hint: the door engages
-        // only when the caller actually built the order plane, so a direct launcher call with the
-        // shipped 3-plane table (every standing gate) keeps the shipped program. Door M wins the
-        // tie by being tested first — the two are refused together rather than crossed.
-        let packed = moe_vrows_pack_on();
-        let ordered =
-            !packed && moe_vrows_dedup_order_on() && ptrs.len() >= 4 * n_pairs && n_ff <= 65535;
-        // MEMRA_MOE_VROWS_ILP (lane/glm5-moe-rows-ilp-20260904, default OFF): the `_ilp` twins,
-        // interleaved-NVFP4 only, composed with door M as `_w4_ilp`. Refuses by name otherwise.
+        // Doors M (MEMRA_MOE_VROWS_PACK) and E (MEMRA_MOE_VROWS_DEDUP_ORDER) were removed
+        // 2026-09-28 (memra#886, door hygiene): superseded / neutral, neither armed in the served
+        // launcher. See docs/FLAGS.md "Removed doors".
+        //
+        // MEMRA_MOE_VROWS_ILP (lane/glm5-moe-rows-ilp-20260904, default OFF): the `_ilp` twin,
+        // interleaved-NVFP4 only. Refuses by name otherwise.
         let ilp = moe_vrows_ilp_on()
             && if (qt_g == QT_NVFP4 && qt_u == QT_NVFP4)
                 || (qt_g == QT_NVFP4_V2 && qt_u == QT_NVFP4_V2)
@@ -9178,61 +9069,21 @@ impl Engine {
         if ilp && MOE_VROWS_ILP_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
             eprintln!(
                 "[moe-vrows-ilp] engaged: verify-rows MoE pair with four groups' loads per lane \
-                 hoisted ahead of their math (MEMRA_MOE_VROWS_ILP=1, packed={packed})"
+                 hoisted ahead of their math (MEMRA_MOE_VROWS_ILP=1)"
             );
         }
-        let (f, cfg) = if packed {
-            if MOE_VROWS_PACK_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
-                eprintln!(
-                    "[moe-vrows-pack] engaged: 4-warp blocks on the verify-rows MoE pair \
-                     (MEMRA_MOE_VROWS_PACK=1)"
-                );
-            }
-            (
-                self.func(if ilp {
-                    "moe_gate_up_preclamp8_q8_rows_w4_ilp"
-                } else {
-                    "moe_gate_up_preclamp8_q8_rows_w4"
-                }),
-                LaunchConfig {
-                    grid_dim: ((n_ff as u32).div_ceil(4), n_pairs as u32, 1),
-                    block_dim: (32, 4, 1),
-                    shared_mem_bytes: 0,
-                },
-            )
-        } else if ordered {
-            if MOE_VROWS_DEDUP_ORDER_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-                == 0
-            {
-                eprintln!(
-                    "[moe-vrows-dedup-order] engaged: verify-rows gate/up walks the pair union \
-                     EXPERT-MAJOR with the pair index as the fastest grid dimension, so the \
-                     21.96%-measured repeat visits read a shared expert slab's rows in adjacent \
-                     blocks (MEMRA_MOE_VROWS_DEDUP_ORDER=1)"
-                );
-            }
-            (
-                self.func("moe_gate_up_preclamp8_q8_rows_ord"),
-                LaunchConfig {
-                    grid_dim: (n_pairs as u32, n_ff as u32, 1),
-                    block_dim: (32, 1, 1),
-                    shared_mem_bytes: 0,
-                },
-            )
-        } else {
-            (
-                self.func(if ilp {
-                    "moe_gate_up_preclamp8_q8_rows_ilp"
-                } else {
-                    "moe_gate_up_preclamp8_q8_rows"
-                }),
-                LaunchConfig {
-                    grid_dim: (n_ff as u32, n_pairs as u32, 1),
-                    block_dim: (32, 1, 1),
-                    shared_mem_bytes: 0,
-                },
-            )
-        };
+        let (f, cfg) = (
+            self.func(if ilp {
+                "moe_gate_up_preclamp8_q8_rows_ilp"
+            } else {
+                "moe_gate_up_preclamp8_q8_rows"
+            }),
+            LaunchConfig {
+                grid_dim: (n_ff as u32, n_pairs as u32, 1),
+                block_dim: (32, 1, 1),
+                shared_mem_bytes: 0,
+            },
+        );
         // Door W: the vrows launcher is verify-walk-only; act is a pooled draw.
         let mut act = self.vws_uninit(n_pairs * n_ff)?;
         let (inf, nff, nu, np) = (in_f as i32, n_ff as i32, n_used as i32, n_pairs as i32);
@@ -9283,14 +9134,16 @@ impl Engine {
         debug_assert_eq!(n_pairs % n_used, 0, "pairs are dense slot-major");
         let t = n_pairs / n_used;
         debug_assert!(dst.len() >= t * out_f);
-        // MEMRA_MOE_VROWS_PACK (door M): the _w4 twin, same packing as the gate/up launch.
-        let packed = moe_vrows_pack_on();
+        // MEMRA_MOE_VROWS_PACK (door M, the _w4 twin) was removed 2026-09-28 (memra#886, door
+        // hygiene): superseded, never armed in the served launcher. See docs/FLAGS.md
+        // "Removed doors".
+        //
         // MEMRA_MOE_VROWS_DOWN_TMAJ (door E-down): grid transposed to (t, out_f) — token fastest —
         // so the t verify rows at one output row are adjacent blocks and a repeated expert's down
         // row is read once for every token that shares it. The slot-ordered __fmaf_rn chain is
         // inside the block and keeps its ORIGINAL slot order; only the grid moves. Needs no table
-        // plane (the down chain cannot be permuted), so it composes with either table provenance.
-        let tmaj = !packed && moe_vrows_down_tmaj_on() && out_f <= 65535;
+        // plane (the down chain cannot be permuted).
+        let tmaj = moe_vrows_down_tmaj_on() && out_f <= 65535;
         // MEMRA_MOE_VROWS_ILP: the down `_ilp` twins, interleaved-NVFP4 only (see gate/up).
         let ilp = moe_vrows_ilp_on()
             && if qt == QT_NVFP4 || qt == QT_NVFP4_V2 {
@@ -9302,20 +9155,7 @@ impl Engine {
         if ilp {
             MOE_VROWS_ILP_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
-        let (f, cfg) = if packed {
-            (
-                self.func(if ilp {
-                    "moe_down8_fma_q8_rows_w4_ilp"
-                } else {
-                    "moe_down8_fma_q8_rows_w4"
-                }),
-                LaunchConfig {
-                    grid_dim: ((out_f as u32).div_ceil(4), t as u32, 1),
-                    block_dim: (32, 4, 1),
-                    shared_mem_bytes: 0,
-                },
-            )
-        } else if tmaj {
+        let (f, cfg) = if tmaj {
             if MOE_VROWS_DOWN_TMAJ_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
                 == 0
             {
