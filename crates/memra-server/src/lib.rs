@@ -5055,7 +5055,7 @@ fn reject_unsupported(fields: &[(&str, bool, &str)]) -> Result<(), (String, Stri
     Ok(())
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 enum ToolChoice {
     Auto,
     None,
