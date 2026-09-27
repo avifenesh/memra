@@ -69,6 +69,26 @@ DAY46 has read (2.2), so the day leaves text only. No clause or bound changes; t
   first boot), served as `o15`. The 5090: B = 32, L = 6,144 at `MEMRA_CTX=65536`. The target card: B = 64, L = 30,720 at
   the checkpoint's context. Both orders, 4 boots per card.
 
+### 1.6 Addendum B (2026-09-27, revuto on integ72, before the fix)
+
+The door's read is not read-only. `dspark_vg_admission_debt` calls `DsparkVerifyGraphs::admission_debt`, which records
+the pool's `(captures, reserved)` observation whenever captures have grown past the last one. The physical gate calls
+the same function later in the same admission. With the door on, the predictive read takes the marginal branch of the
+projection and records the observation, so the physical read falls to the bootstrap branch: up to one more pool's worth
+of reserve on an export whose pool does not grow per key. So the door can change the physical reserve (its FLAGS row
+says it does not) and can print a `vg_debt=` that differs from the physical `pool debt` line. The fix gives each
+admission one debt:
+- The engine gains a non-mutating peek (`admission_debt_peek`: the same projection, no observation recorded) and the
+  model's `dspark_vg_admission_debt_peek`. The predictive seam reads the peek. The physical call is unchanged and
+  records the observation as today, so it returns what the peek returned.
+- A test drives the pool's debt state across admissions where captures grow between them. On one path the physical
+  read runs alone (the door off); on the other the peek runs, then the physical read (the door on). The physical
+  values must be equal on both paths, and the peek must equal the physical value on the second path.
+- **The eighteenth sitting's reading (2.1) is checked against its logs:** every physical `pool debt` line reads `+34MB`
+  on all four boots, both arms, and every predictive `vg_debt=` above 0 reads 33,554,432 bytes (the same 32 MiB), so
+  the double read changed no reserve in that run (the pool reached its high-water before the first measured
+  admissions). 2.1 stands as it read. The cell reruns on the fix to confirm, with a pool that grows during the burst.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
