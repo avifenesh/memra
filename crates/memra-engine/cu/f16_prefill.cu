@@ -555,3 +555,78 @@ extern "C" int memra_bf16_pp_gemm(
     if (rc != 0) return rc;
     return memra_bf16_pp_gemm_pre(w_bf16, xb_bf16, y_f32, m, n, k, ws, ws_bytes, stream_v);
 }
+
+// Diagnostic numeric control for the pinned MiMo audio conv2 shape. Keep the
+// same BF16 operands as memra_bf16_pp_gemm, but ask cuBLASLt to add BF16 bias
+// in its epilogue and write BF16 directly, as a source F.linear may do.
+// This does not replace the general F32-output prefill GEMM.
+extern "C" int memra_bf16_pp_gemm_bias_out_bf16(
+    const void* w_bf16, const float* x_f32, void* xb_bf16,
+    const void* bias_bf16, void* y_bf16,
+    int m, int n, int k, void* ws, size_t ws_bytes, void* stream_v) {
+    if (!w_bf16 || !x_f32 || !xb_bf16 || !bias_bf16 || !y_bf16 || !ws
+        || m != 5 || n != 1024 || k != 3072 || ws_bytes < (64ull << 20)) return 40030;
+    int rc = memra_bf16_cvt(x_f32, xb_bf16, (size_t)m * (size_t)k, stream_v);
+    if (rc != 0) return rc;
+
+    std::lock_guard<std::mutex> lk(g_mubf);
+    cublasLtHandle_t handle = nullptr;
+    cublasStatus_t s = memra_lt_handle_for_device(
+        g_ltbf_dev, memra_lt_current_device(), &handle);
+    if (s != CUBLAS_STATUS_SUCCESS) return 40000 + (int)s;
+    cublasLtMatmulDesc_t op = nullptr;
+    cublasLtMatrixLayout_t la = nullptr, lb = nullptr, ld = nullptr;
+    cublasLtMatmulPreference_t pref = nullptr;
+    int result = 0;
+    do {
+        s = cublasLtMatmulDescCreate(&op, CUBLAS_COMPUTE_32F, CUDA_R_32F);
+        if (s != CUBLAS_STATUS_SUCCESS) { result = 40000 + (int)s; break; }
+        cublasOperation_t tA = CUBLAS_OP_T, tB = CUBLAS_OP_N;
+        cublasLtEpilogue_t epilogue = CUBLASLT_EPILOGUE_BIAS;
+        cudaDataType_t bias_type = CUDA_R_16BF;
+        s = cublasLtMatmulDescSetAttribute(op, CUBLASLT_MATMUL_DESC_TRANSA, &tA, sizeof(tA));
+        if (s != CUBLAS_STATUS_SUCCESS) { result = 40000 + (int)s; break; }
+        s = cublasLtMatmulDescSetAttribute(op, CUBLASLT_MATMUL_DESC_TRANSB, &tB, sizeof(tB));
+        if (s != CUBLAS_STATUS_SUCCESS) { result = 40000 + (int)s; break; }
+        s = cublasLtMatmulDescSetAttribute(op, CUBLASLT_MATMUL_DESC_EPILOGUE,
+                                           &epilogue, sizeof(epilogue));
+        if (s != CUBLAS_STATUS_SUCCESS) { result = 40000 + (int)s; break; }
+        s = cublasLtMatmulDescSetAttribute(op, CUBLASLT_MATMUL_DESC_BIAS_POINTER,
+                                           &bias_bf16, sizeof(bias_bf16));
+        if (s != CUBLAS_STATUS_SUCCESS) { result = 40000 + (int)s; break; }
+        s = cublasLtMatmulDescSetAttribute(op, CUBLASLT_MATMUL_DESC_BIAS_DATA_TYPE,
+                                           &bias_type, sizeof(bias_type));
+        if (s != CUBLAS_STATUS_SUCCESS) { result = 40000 + (int)s; break; }
+        s = cublasLtMatrixLayoutCreate(&la, CUDA_R_16BF, k, n, k);
+        if (s != CUBLAS_STATUS_SUCCESS) { result = 40000 + (int)s; break; }
+        s = cublasLtMatrixLayoutCreate(&lb, CUDA_R_16BF, k, m, k);
+        if (s != CUBLAS_STATUS_SUCCESS) { result = 40000 + (int)s; break; }
+        s = cublasLtMatrixLayoutCreate(&ld, CUDA_R_16BF, n, m, n);
+        if (s != CUBLAS_STATUS_SUCCESS) { result = 40000 + (int)s; break; }
+        s = cublasLtMatmulPreferenceCreate(&pref);
+        if (s != CUBLAS_STATUS_SUCCESS) { result = 40000 + (int)s; break; }
+        s = cublasLtMatmulPreferenceSetAttribute(
+            pref, CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES, &ws_bytes, sizeof(ws_bytes));
+        if (s != CUBLAS_STATUS_SUCCESS) { result = 40000 + (int)s; break; }
+        cublasLtMatmulHeuristicResult_t heur{};
+        int nh = 0;
+        s = cublasLtMatmulAlgoGetHeuristic(
+            handle, op, la, lb, ld, ld, pref, 1, &heur, &nh);
+        if (s != CUBLAS_STATUS_SUCCESS || nh == 0) {
+            result = 20000 + (int)s;
+            break;
+        }
+        float alpha = 1.f, beta = 0.f;
+        s = cublasLtMatmul(
+            handle, op, &alpha, w_bf16, la, xb_bf16, lb,
+            &beta, y_bf16, ld, y_bf16, ld, &heur.algo, ws, ws_bytes,
+            (cudaStream_t)stream_v);
+        if (s != CUBLAS_STATUS_SUCCESS) result = 30000 + (int)s;
+    } while (false);
+    if (pref) cublasLtMatmulPreferenceDestroy(pref);
+    if (ld) cublasLtMatrixLayoutDestroy(ld);
+    if (lb) cublasLtMatrixLayoutDestroy(lb);
+    if (la) cublasLtMatrixLayoutDestroy(la);
+    if (op) cublasLtMatmulDescDestroy(op);
+    return result;
+}

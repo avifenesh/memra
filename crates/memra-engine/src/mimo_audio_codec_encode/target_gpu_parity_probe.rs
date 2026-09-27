@@ -292,6 +292,20 @@ fn prepared_mel_target_features_and_rvq_diagnostic() -> Result<(), Fail> {
         &publisher_linear_conv2_preact,
         5,
     )?;
+    let fused_bias =
+        weights.encode_prepared_mel_conv2_fused_bias_diagnostic(&engine, &first_conv, 9)?;
+    feature_stats(
+        "memra_fused_bias_vs_gpu_publisher_conv2_linear_control",
+        &fused_bias,
+        &publisher_linear_conv2_preact,
+        5,
+    )?;
+    feature_stats(
+        "memra_fused_bias_vs_plain_conv2_preact",
+        &fused_bias,
+        &second_preact,
+        5,
+    )?;
     let source_conv2_gelu = MiMoAudioCodecEncoderWeights::encode_gelu_from_preact(
         &engine,
         &engine.htod(&publisher_linear_conv2_preact)?,
