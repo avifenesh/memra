@@ -525,16 +525,18 @@ fn glm5_anchor(
     }
 }
 
-/// `MEMRA_SPEC_PMIN`, honored by the glm5 loop (loop-port 2 — the step37 shipping family,
-/// `MEMRA_SPEC_PMIN=0.5 MEMRA_SPEC_PMIN0=1` is what step37 serves; NO new flag): stop the
-/// draft chain early when the drafter's confidence in its own pick drops below p_min.
-/// Native chain: p = the head's softmax confidence in its pick (the spec.rs `g_p`
-/// statistic, `prob_of_token_device`). DFlash2: q = the selector's recorded per-slot
-/// candidate-set confidence (`q_chosen`; T=1 twin on the greedy walk) — the owner's
-/// "take only high confidence offers" tau-slot form, truncated PRE-verify.
+/// `MEMRA_SPEC_PMIN`, honored by the glm5 loop (loop-port 2; NO new flag): stop the draft
+/// chain early when the drafter's confidence drops below p_min. The confidence is always
+/// draw-independent (memra#673, memra#412, `memra_sampling::spec_stop`): a sampled round
+/// that thresholds the token it just drew censors its own proposal and stops emitting the
+/// target law. Native chain: p = the head's softmax max (the spec.rs `g_p` statistic; for a
+/// greedy pick the pick's own probability). DFlash2: the slot's max candidate probability
+/// (greedy walk: the T=1 `q` of its chosen candidate, which is that max; sampled walk: the
+/// max of the recorded `q_rows` row at the sampling temperature), the owner's "take only
+/// high confidence offers" tau-slot form, truncated PRE-verify.
 /// Unset/0 = OFF (today's rounds, byte-identical). The VALUE is a per-model measurement
-/// (spec.rs bank: q27 PMIN=0.3 was -1.9% on one pack; step37 ships 0.5) — the box-B tau
-/// ladder prices glm5's.
+/// (spec.rs bank: q27 PMIN=0.3 was -1.9% on one pack; the retired step37 launcher carried
+/// 0.5 with PMIN0=1); the box-B tau ladder prices glm5's.
 pub(crate) fn glm5_pmin() -> f32 {
     use std::sync::OnceLock;
     static P: OnceLock<f32> = OnceLock::new();
@@ -3512,21 +3514,28 @@ impl HybridModel {
                         }
                     };
                     // P-MIN CONFIDENCE GATE (loop-port 2, the spec.rs chain break): p =
-                    // the head's softmax confidence in its own pick (the `g_p` statistic,
-                    // prob_of_token_device kernels), one 4-byte read — armed rounds only.
-                    // Break BEFORE the pick is drafted or the next full-MoE-layer chain
-                    // forward is paid; a discarded sampled draw's Philox advance stands
-                    // (spec.rs eager parity: "counts the p-min-discarded token too").
+                    // the head's softmax MAX (the `g_p` statistic), one 4-byte read, armed
+                    // rounds only. Greedy: the pick's own probability, which IS the max.
+                    // Sampled: the max over the row, never the drawn token's probability, so
+                    // the stop does not depend on the draw and the round keeps the target
+                    // law (memra#673, memra_sampling::spec_stop). Break BEFORE the pick is
+                    // drafted or the next full-MoE-layer chain forward is paid; a discarded
+                    // sampled draw's Philox advance stands (spec.rs eager parity: "counts
+                    // the p-min-discarded token too").
                     if p_min > 0.0 {
-                        // MEMRA_GLM5_SPEC_DEV_IO: the probability reads the token from the
-                        // device word the draw produced; no upload of the host copy.
-                        let tok_d = match tok_dev {
-                            Some(td) if crate::glm5_spec_dev_io_on() => td,
-                            _ => eh.htod_u32_v(&[idx])?,
+                        let p_d = if sampled_stats.is_some() {
+                            eh.max_prob_device(&d_logits, d_vocab)?
+                        } else {
+                            // MEMRA_GLM5_SPEC_DEV_IO: the probability reads the token from
+                            // the device word the argmax produced; no upload of the host copy.
+                            let tok_d = match tok_dev {
+                                Some(td) if crate::glm5_spec_dev_io_on() => td,
+                                _ => eh.htod_u32_v(&[idx])?,
+                            };
+                            eh.prob_of_token_device(&d_logits, &tok_d, d_vocab)?
                         };
-                        let p_d = eh.prob_of_token_device(&d_logits, &tok_d, d_vocab)?;
                         let p = eh.dtoh(&p_d)?[0];
-                        if p < p_min && (ki > 0 || pmin0) {
+                        if crate::spec::spec_stops_at(p, ki, p_min, pmin0) {
                             break;
                         }
                     }
@@ -4034,9 +4043,16 @@ impl HybridModel {
                     .as_ref()
                     .ok_or("glm5 dflash drafter lost its DFlash2 head")?
                     .top_k;
+                // p-min statistic per slot = the max of the slot's candidate distribution
+                // (q_rows[j] depends on the context and the prefix x_<j only), never
+                // q_chosen[j], the drawn candidate's own mass: gating on the draw censors
+                // the proposal and moved (0.5, 0.5) to (0.55, 0.45) in the memra#412
+                // counterexample. memra_sampling::spec_stop proves the row-max rule exact.
+                let slot_conf =
+                    memra_sampling::spec_stop::row_confidences(&q_rows, top_k, q_chosen.len());
                 (
                     path,
-                    q_chosen.clone(),
+                    slot_conf,
                     Glm5DraftQ::Selector {
                         prop: DsparkDraftSample::Selector {
                             cand,
