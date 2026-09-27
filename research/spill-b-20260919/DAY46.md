@@ -82,6 +82,28 @@ Two facts from DAY45 on the target card change this cell before it is built. No 
   `w-retire-unreleased` (bytes equal, none twice), and the probe reads `booked_bytes=0 booked_real=0` on every arm.
 - Everything else of section 1 stands. The day stays text only until the ninth sitting (DAY44) has read.
 
+### 1.7 Addendum B (2026-09-27, the cells as built, after the ninth sitting read and before any cell)
+
+The ninth sitting (DAY44 2.1) has read, so the day leaves text only. No clause, bound or reading changes.
+
+- **The binary:** the lane's crates at `8926ccfb3` (DAY45's W release, and every door since, all default off), built
+  by `build-arms.sh` (`target/day46` locally, `bins/tip` on the box).
+- **The client (`day46-client.py`):** `/v1/completions` with `prompt_ids`, greedy, streamed with usage. The TTFT
+  reading is the first streamed token after submit. The DAY24 sequence uses exact token windows: 64 warm tokens; four
+  of 6,000 with `max_tokens=96`; one of 12,000; the same four again. `(a)i` and `(c)i` share their cache salt
+  `seq<i>` so the prefixes are retained, as DAY24's chat requests were. Every other request has its own salt, which is
+  its tenant on the `[admit-predict]` line. The second wave (addendum A) is released when the burst's first request
+  completes; its release time is in `wave2.txt`. A 429's `Retry-After` header is recorded per row.
+- **The runner (`day46-run.sh`):** `run-day26-cell.sh` arms `MEMRA_ADMIT_PREDICT_SHADOW=1` on every boot; `enforce`
+  adds `MEMRA_ADMIT_PREDICT_ENFORCE=1`; `enforce-wrel` adds `MEMRA_ADMIT_W_RELEASE=1` as well. `MEMRA_ADMIT_BY_MEMORY`,
+  `MEMRA_ADMIT_OPEN_OUTPUT_TOKENS` and `MEMRA_ADMIT_PREDICT_BUDGET_MB` are unset on every arm.
+- **The reader (`day46-read.py`):** P1 maps each 429 to a `verdict=reject-kv ... enforce=1` line of its salt. P3 reads
+  `booked_bytes + kv_hat <= budget_bytes` on every `verdict=admit` line of an enforcing boot. P5-PROBE reads the probe's
+  line on every arm, and P5 reads the W receipts on `enforce-wrel` with DAY45 addendum B's rule. The readings are per
+  wave: the 200 and 429 counts, `booked_bytes` at the wave's first line, TTFT p50 and p95 with N, and time to each 429.
+- **Cells:** the 5090 (`rtx5090-day46/run.sh`, B = 32, L = 6,144, the 9B at 65,536) and the target card (the fifteenth
+  sitting, `pro-single-b-sitting15.sh`, B = 64, L = 30,720, the 27B at the checkpoint's context), six boots each.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
