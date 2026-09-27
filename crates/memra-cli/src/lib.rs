@@ -2334,6 +2334,7 @@ fn pinned_tiny_oracle(family: &str) -> Option<&'static str> {
         )),
         "gemma4_moe" => Some(include_str!("../tests/fixtures/tiny-oracle/gemma4_moe.tsv")),
         "hy3" => Some(include_str!("../tests/fixtures/tiny-oracle/hy3.tsv")),
+        "hy3_nvfp4" => Some(include_str!("../tests/fixtures/tiny-oracle/hy3_nvfp4.tsv")),
         "llama_dense" => Some(include_str!(
             "../tests/fixtures/tiny-oracle/llama_dense.tsv"
         )),
