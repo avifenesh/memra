@@ -1,3 +1,8 @@
+# WP-B checkpoint 2026-09-27 03:4xZ: integ71's GPU cells for this lane sent to the lead (12 cells: grid_capture_gpu,
+the continuation gate, the rewind probe, prime-gate, run-spec, run-gen, the health gate g,h,j and j under VMM, the VMM grow
+series, the serving gates under VMM, a DAY44 mini cell with EXTERNAL_LOCK=1, admit-mem burst with the W release); tip
+bdaaf311f (the gate's default arms drop i, DAY49 addendum E; day44-run.sh EXTERNAL_LOCK). The seventeenth sitting (DAY46C)
+runs on BOX43.
 # WP-B checkpoint 2026-09-27 03:0xZ: the integ71 merge `c2c32539e` (main caf5b7d28 into the lane, one conflict, both kept;
 all suites green) pushing; DAY46 2.1 read (P1 to P5 PASS; the value reading owed, addendum C, the seventeenth sitting);
 DAY50 stage 0 read (GPU-bound: arm O); the chains' manifests exclude themselves; the lead-overwritten manifests noted.
