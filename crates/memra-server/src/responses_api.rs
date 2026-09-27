@@ -113,8 +113,50 @@ fn refuse(field: &str, why: &str) -> String {
     format!("{field} is not supported on this stateless server: {why}")
 }
 
+/// Env var for the `background: true` door (memra#550,
+/// `docs/decisions/COMPLETE-RESULT-PATH-V1.md`). Default OFF: unset, empty, or anything
+/// other than `1`/`true` (case-insensitive) keeps `background` refused, same as before this
+/// change. `docs/FLAGS.md` carries this flag's row.
+pub(crate) const BACKGROUND_RESPONSES_ENV: &str = "MEMRA_BACKGROUND_RESPONSES";
+
+/// Whether the `background: true` door is armed. Read once per call; cheap, and the flag is
+/// not on a hot path (it gates one field on one translation call per request).
+fn background_door_open() -> bool {
+    match std::env::var(BACKGROUND_RESPONSES_ENV) {
+        Ok(v) => {
+            let v = v.trim();
+            v == "1" || v.eq_ignore_ascii_case("true")
+        }
+        Err(_) => false,
+    }
+}
+
 /// Translate one Responses API request into the internal OpenAI-chat request value.
 pub(crate) fn translate(v: &Value) -> Result<Value, (String, Option<String>)> {
+    translate_with_door(v, background_door_open())
+}
+
+/// [`translate`]'s actual logic, taking the `background` door state as a parameter instead
+/// of reading the environment directly, so unit tests can exercise both arms without mutating
+/// process-global environment state (tests in this binary run in parallel).
+///
+/// This is the split the design doc calls for: `previous_response_id`, `store`, and
+/// `conversation` are CROSS-REQUEST state (asking the server to remember a prior turn) and
+/// stay refused unconditionally, door or no door. `background` is SINGLE-REQUEST state (the
+/// server already owns this one request; the only ask is where its own result is held until
+/// collected) and is refused only while the door is closed.
+///
+/// With the door open, `background: true` is accepted by this translation step: the field
+/// passes validation and is not carried into the internal chat request (the same
+/// accepted-and-ignored treatment already given to `include`, `parallel_tool_calls`, and
+/// friends). Accepting it here is NOT the same as delivering it: no route yet creates a
+/// queued job, polls one, or cancels one in flight for this field. That wiring is still owed
+/// (memra#550); until it lands, a request that sets `background: true` with the door open
+/// runs exactly like one that never set it, translated and served synchronously.
+fn translate_with_door(
+    v: &Value,
+    background_door_open: bool,
+) -> Result<Value, (String, Option<String>)> {
     let obj = v
         .as_object()
         .ok_or(("request body must be a JSON object".to_string(), None))?;
@@ -149,8 +191,16 @@ pub(crate) fn translate(v: &Value) -> Result<Value, (String, Option<String>)> {
             "server-side conversation state does not exist here",
         ));
     }
-    if obj.get("background").and_then(|b| b.as_bool()) == Some(true) {
+    let background_requested = obj.get("background").and_then(|b| b.as_bool()) == Some(true);
+    if background_requested && !background_door_open {
         return Err(gate("background", "background responses are not supported"));
+    }
+    if background_requested && obj.get("stream").and_then(|s| s.as_bool()) == Some(true) {
+        return Err(gate(
+            "background",
+            "background and stream are both delivery modes for holding no live connection \
+             vs. holding one open; combining them is a contradiction, set only one",
+        ));
     }
     if obj.get("truncation").and_then(|t| t.as_str()) == Some("auto") {
         return Err(gate(
@@ -1324,6 +1374,72 @@ mod tests {
         // store:false and absent both pass.
         assert!(translate(&json!({"model": "m", "input": "hi", "store": false})).is_ok());
         assert!(translate(&json!({"model": "m", "input": "hi"})).is_ok());
+    }
+
+    #[test]
+    fn background_door_off_still_refuses_background() {
+        // Door closed (the parameter form the tests use to avoid mutating process env):
+        // background:true is refused exactly like before this change.
+        let req = json!({"model": "m", "input": "hi", "background": true});
+        let (msg, field) = translate_with_door(&req, false).unwrap_err();
+        assert_eq!(field, Some("background".to_string()));
+        assert!(msg.contains("background"), "got: {msg}");
+
+        // The public entry point reads the real env var, which is unset in this test
+        // process by default, so it must land on the same refusal.
+        let (msg, field) = translate(&req).unwrap_err();
+        assert_eq!(field, Some("background".to_string()));
+        assert!(msg.contains("background"), "got: {msg}");
+    }
+
+    #[test]
+    fn background_door_on_accepts_background_but_still_refuses_cross_request_state() {
+        // Door open: background:true alone is accepted (not refused).
+        let bg_only = json!({"model": "m", "input": "hi", "background": true});
+        translate_with_door(&bg_only, true)
+            .expect("background alone must be served with the door open");
+
+        // The door restores NOTHING else: previous_response_id, store:true, and
+        // conversation stay refused whether or not the door is open, because they are
+        // cross-request state, not this one request's own delivery mode.
+        for extra in [
+            json!({"background": true, "previous_response_id": "resp_x"}),
+            json!({"background": true, "store": true}),
+            json!({"background": true, "conversation": "conv_1"}),
+        ] {
+            let mut req = json!({"model": "m", "input": "hi"});
+            for (k, val) in extra.as_object().unwrap() {
+                req[k] = val.clone();
+            }
+            let (msg, _) = translate_with_door(&req, true).unwrap_err();
+            assert!(
+                msg.contains("previous_response_id")
+                    || msg.contains("store")
+                    || msg.contains("conversation"),
+                "door being open must not restore cross-request state: {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn background_true_and_stream_true_together_is_refused_only_with_the_door_open() {
+        // With the door closed, background itself refuses first (stream:true or not); the
+        // contradiction check only matters once background is otherwise acceptable.
+        let with_stream = json!({"model": "m", "input": "hi", "background": true, "stream": true});
+        let (msg, _) = translate_with_door(&with_stream, true).unwrap_err();
+        assert!(
+            msg.contains("background") || msg.contains("stream"),
+            "got: {msg}"
+        );
+
+        // background alone (no stream) still translates with the door open.
+        let without_stream = json!({"model": "m", "input": "hi", "background": true});
+        assert!(translate_with_door(&without_stream, true).is_ok());
+
+        // stream alone (no background) is unaffected, door open or closed.
+        let stream_only = json!({"model": "m", "input": "hi", "stream": true});
+        assert!(translate_with_door(&stream_only, true).is_ok());
+        assert!(translate_with_door(&stream_only, false).is_ok());
     }
 
     #[test]
