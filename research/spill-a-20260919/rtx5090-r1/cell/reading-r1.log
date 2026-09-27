@@ -1,0 +1,11 @@
+R1 (a) gates {'contract-fault-plain': '0', 'contract-fault': '0', 'failure-off': '0', 'failure-on': '0', 'hitgate-off': '0', 'hitgate-on': '0', 'identity-default-off': '0', 'identity-default-on': '0', 'identity-plain-off': '0', 'identity-plain-on': '0', 'pause-demote': '0'}
+R1 READING order=o1 mode=retire-seam-nosource | no-source settles base N=0 median=nan r1 N=0 skips r1=0 | second-capture base N=0 nan r1 N=0 nan | source-retire base N=0 nan r1 N=0 nan | stall base=1009.66 r1=1004.01 | e2e base=6095.7 r1=6043.7 short base=219.3 r1=216.3 | mid-gap base=82.4 r1=78.0 ms
+R1 READING order=o1 mode=retire-seam | no-source settles base N=0 median=nan r1 N=0 skips r1=0 | second-capture base N=0 nan r1 N=0 nan | source-retire base N=45 87.37 r1 N=45 85.60 | stall base=1020.16 r1=1005.43 | e2e base=5607.4 r1=5562.3 short base=nan r1=nan | mid-gap base=219.1 r1=207.2 ms
+R1 READING order=o1 mode=prime | no-source settles base N=0 median=nan r1 N=0 skips r1=0 | second-capture base N=0 nan r1 N=0 nan | source-retire base N=45 87.15 r1 N=45 87.38 | stall base=1007.92 r1=1000.98 | e2e base=5054.7 r1=5047.8 short base=nan r1=nan | mid-gap base=104.6 r1=104.6 ms
+R1 READING order=o2 mode=retire-seam-nosource | no-source settles base N=0 median=nan r1 N=0 skips r1=0 | second-capture base N=0 nan r1 N=0 nan | source-retire base N=0 nan r1 N=0 nan | stall base=1051.56 r1=1040.39 | e2e base=6268.8 r1=6208.2 short base=223.1 r1=223.2 | mid-gap base=80.2 r1=70.1 ms
+R1 READING order=o2 mode=retire-seam | no-source settles base N=0 median=nan r1 N=0 skips r1=0 | second-capture base N=0 nan r1 N=0 nan | source-retire base N=45 86.62 r1 N=45 88.53 | stall base=1052.86 r1=1051.13 | e2e base=5754.9 r1=5773.1 short base=nan r1=nan | mid-gap base=212.1 r1=207.5 ms
+R1 READING order=o2 mode=prime | no-source settles base N=0 median=nan r1 N=0 skips r1=0 | second-capture base N=0 nan r1 N=0 nan | source-retire base N=45 87.52 r1 N=45 87.50 | stall base=1050.67 r1=1040.90 | e2e base=5334.4 r1=5312.9 short base=nan r1=nan | mid-gap base=103.1 r1=103.8 ms
+R1 (b) FAIL [False, False]
+R1 (c) FAIL [True, True, True, True, False, True]
+R1 (d) FAIL [True, True, False, True]
+R1 VERDICT -> REVERT ((a) passed; failed b, c, d): recorded as read, reverted in one commit
