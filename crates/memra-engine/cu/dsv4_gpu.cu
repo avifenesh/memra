@@ -3186,6 +3186,51 @@ extern "C" int memra_dsv4_argmax(const float* v, long n, int* out, void* stream_
     return 0;
 }
 
+// The greedy rows of a B-row graph step in one launch (memra #710 B-row): CTA y is
+// dsv4_argmax_kernel over row y (v + y * n) into out[y], with the same thread partition and
+// tree, so each row's pick is its one-row launch's even with non-finite logits.
+__global__ void dsv4_argmax_rows_kernel(const float* __restrict__ v, long n,
+                                        int* __restrict__ out) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    __shared__ float bv[256];
+    __shared__ long bi[256];
+    const float* row = v + (long)blockIdx.x * n;
+    int tid = threadIdx.x;
+    float best = -INFINITY;
+    long besti = -1;
+    for (long i = tid; i < n; i += blockDim.x) {
+        float x = row[i];
+        if (besti < 0 || x > best) {
+            best = x;
+            besti = i;
+        }
+    }
+    bv[tid] = best;
+    bi[tid] = besti;
+    __syncthreads();
+    for (int off = blockDim.x >> 1; off > 0; off >>= 1) {
+        if (tid < off) {
+            bool take = (bi[tid + off] >= 0) &&
+                        (bi[tid] < 0 || bv[tid + off] > bv[tid] ||
+                         (bv[tid + off] == bv[tid] && bi[tid + off] < bi[tid]));
+            if (take) {
+                bv[tid] = bv[tid + off];
+                bi[tid] = bi[tid + off];
+            }
+        }
+        __syncthreads();
+    }
+    if (tid == 0) out[blockIdx.x] = (int)bi[0];
+}
+
+extern "C" int memra_dsv4_argmax_rows(const float* v, long n, int rows, int* out,
+                                      void* stream_v) {
+    if (!v || !out || n < 1 || rows < 1) return 40020;
+    memra_chain_launch(dsv4_argmax_rows_kernel, rows, 256, 0, (cudaStream_t)stream_v)(v, n, out);
+    DSV4_ERR();
+    return 0;
+}
+
 // =====================================================================================
 // 0731 re-gate extension rung (owner-authorized 2026-08-19, pending ratification;
 // derivation + gates in RECEIPTS.md "Lane 0731-regate"): f32-accumulation TWINS for the
@@ -8861,6 +8906,32 @@ extern "C" int memra_dsv4_replay_compressor_emit(float* pending_kv,float* pendin
     return 0;
 }
 
+// A B-row graph step's ring commit for one layer (memra #710 B-row): row y's transient row
+// src.p[y] into its ring slot slot_rows[y] of dst.p[y], dsv4_scatter_rows_kernel's one-row
+// move for each request.
+__global__ void dsv4_scatter_rows_rows_kernel(const __grid_constant__ Dsv4RowPtrs src,
+                                              const __grid_constant__ Dsv4RowPtrs dst,
+                                              const int* __restrict__ slot_rows, int d) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    const int y = blockIdx.y;
+    const int c = blockIdx.x * blockDim.x + threadIdx.x;
+    if (c >= d || slot_rows[y] < 0) return;
+    dst.p[y][(long)slot_rows[y] * d + c] = src.p[y][c];
+}
+extern "C" int memra_dsv4_scatter_rows_rows(float* const* src, float* const* dst,
+    const int* slot_rows, int n_rows, int d, void* raw_stream) {
+    if (!src || !dst || !slot_rows || n_rows < 1 || n_rows > DSV4_ROWS_MAX || d < 1) return 40020;
+    Dsv4RowPtrs s{}, t{};
+    for (int i = 0; i < n_rows; ++i) {
+        if (!src[i] || !dst[i]) return 40020;
+        s.p[i] = src[i];
+        t.p[i] = dst[i];
+    }
+    memra_chain_launch(dsv4_scatter_rows_rows_kernel, dim3((unsigned)((d + 255) / 256), n_rows), 256,
+                       0, (cudaStream_t)raw_stream)(s, t, slot_rows, d);
+    DSV4_ERR();
+    return 0;
+}
 // The ring writes of a multi-request replay step (memra #710 B-row): row y's `width` floats at
 // src + y * width to dst.p[y], the bytes of its one-row memcpy.
 __global__ void dsv4_rows_copy_kernel(const __grid_constant__ Dsv4RowPtrs dst,

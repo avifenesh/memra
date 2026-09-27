@@ -22515,12 +22515,15 @@ impl Dsv4Gpu {
     ) -> Res<()> {
         let b = states.len();
         rows.rows_replay.as_mut().expect("allocated").begin(1)?;
+        let batched =
+            b <= ROWS_BATCH_MAX && self.rows_graph_commit_batch(states, rank1, steps, rows)?;
         for (r, (((state, caches1), step), &p0)) in states
             .iter_mut()
             .zip(rank1.iter_mut())
             .zip(steps.iter_mut())
             .zip(pos0)
             .enumerate()
+            .filter(|_| !batched)
         {
             self.commit_verify_dev_plane_row(
                 &mut state.caches,
@@ -22555,7 +22558,24 @@ impl Dsv4Gpu {
         let stream = self.stages[1].gpu.stream();
         let input = rows.rows_replay.as_ref().expect("allocated").input_ptr(1);
         let vocab = rows.ws[1].logits.len() / rows.ws[1].tmax;
-        for (i, draw) in draws.iter().enumerate() {
+        let all_greedy = draws.iter().all(|d| matches!(d, Dsv4RowDraw::Argmax));
+        if all_greedy {
+            // Every row greedy: one launch, one CTA per row (memra #710 B-row).
+            let vws = &mut rows.ws[1];
+            unsafe {
+                ck(
+                    "B-row graph argmax rows",
+                    k::memra_dsv4_argmax_rows(
+                        dpf!(vws.logits, &stream),
+                        vocab as i64,
+                        draws.len() as i32,
+                        vws.argmax.device_ptr_mut(&stream).0 as *mut i32,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+        }
+        for (i, draw) in draws.iter().enumerate().filter(|_| !all_greedy) {
             let vws = &mut rows.ws[1];
             let row = (vws.logits.device_ptr(&stream).0 as usize + i * vocab * 4) as *const f32;
             match draw {
@@ -22582,6 +22602,100 @@ impl Dsv4Gpu {
             }
         }
         rows.rows_replay.as_mut().expect("allocated").end(1)
+    }
+
+    /// The commit segment's ring writes of a captured B-row step, one launch per layer and rank
+    /// over every row (memra #710 B-row): each row's transient row into its ring slot, the move
+    /// [`Self::commit_verify_dev_plane_row`] makes per row. A one-row round's compressor
+    /// rollback has nothing to replay, so only the scatter remains. `Ok(false)` leaves the
+    /// per-row commit to the caller, for a cache layout whose transient rows are not past the
+    /// ring.
+    #[allow(clippy::needless_range_loop)] // allow: `il` and `r` index each request's cache and checkpoint vectors of one rank together
+    fn rows_graph_commit_batch(
+        &self,
+        states: &mut [&mut DecodeState],
+        rank1: &mut [Vec<LayerCache>],
+        steps: &mut [Box<MatrixStep>],
+        rows: &mut VerifyState,
+    ) -> Res<bool> {
+        let win = self.model.cfg().sliding_window as usize;
+        let hd = self.model.cfg().head_dim as usize;
+        let n_trunk = (self.model.mc.n_layer - self.model.mc.nextn_predict_layers) as usize;
+        let b = states.len();
+        let trans = |cache: &LayerCache, lck: &LayerCkptDev| {
+            if cache.c4_host.is_some() {
+                win
+            } else if let Some(sp_) = cache.split.as_ref() {
+                win + sp_.local_rows
+            } else {
+                lck.trans_base
+            }
+        };
+        for stage in 0..2 {
+            for r in 0..b {
+                let layers = if stage == 0 {
+                    &steps[r].verify.layers
+                } else {
+                    steps[r]
+                        .verify
+                        .tp_ep_layers
+                        .as_ref()
+                        .ok_or("checked TP/EP checkpoints")?
+                };
+                let caches = if stage == 0 {
+                    &states[r].caches
+                } else {
+                    &rank1[r]
+                };
+                if caches.len() != n_trunk || layers.len() != n_trunk {
+                    return Err("B-row commit plane shape mismatch".into());
+                }
+                if caches.iter().zip(layers).any(|(c, l)| trans(c, l) < win) {
+                    return Ok(false);
+                }
+            }
+        }
+        for stage in 0..2 {
+            let st = &self.stages[stage];
+            st.gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("bind ctx B-row commit"))?;
+            let stream = st.gpu.stream();
+            let slot_rows = rows.ws[stage].slot_rows.device_ptr(&stream).0 as *const i32;
+            for il in 0..n_trunk {
+                let mut srcs = Vec::with_capacity(b);
+                let mut dsts = Vec::with_capacity(b);
+                for r in 0..b {
+                    let (cache, lck) = if stage == 0 {
+                        (&mut states[r].caches[il], &steps[r].verify.layers[il])
+                    } else {
+                        (
+                            &mut rank1[r][il],
+                            &steps[r].verify.tp_ep_layers.as_ref().expect("checked")[il],
+                        )
+                    };
+                    let base = trans(cache, lck);
+                    let kvc = cache.kvc.device_ptr_mut(&stream).0 as usize;
+                    srcs.push((kvc + base * hd * 4) as *mut f32);
+                    dsts.push(kvc as *mut f32);
+                }
+                unsafe {
+                    ck(
+                        "B-row graph ring commit",
+                        k::memra_dsv4_scatter_rows_rows(
+                            srcs.as_ptr(),
+                            dsts.as_ptr(),
+                            slot_rows,
+                            b as i32,
+                            hd as i32,
+                            sp(&stream),
+                        ),
+                    )?;
+                }
+            }
+        }
+        Ok(true)
     }
 
     fn decode_rows_tp_ep_walk(

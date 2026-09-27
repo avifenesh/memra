@@ -45,6 +45,25 @@ pub struct Dsv4SplitRow {
 }
 
 unsafe extern "C" {
+    /// The greedy rows of a B-row graph step (memra #710 B-row): `memra_dsv4_argmax` over row
+    /// `y` (`v + y * n`) into `out[y]`, one CTA per row.
+    pub fn memra_dsv4_argmax_rows(
+        v: *const f32,
+        n: i64,
+        rows: i32,
+        out: *mut i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// A B-row graph step's ring commit for one layer (memra #710 B-row): row y's transient row
+    /// `src[y]` into ring slot `slot_rows[y]` of `dst[y]` (host arrays of at most 16).
+    pub fn memra_dsv4_scatter_rows_rows(
+        src: *const *mut f32,
+        dst: *const *mut f32,
+        slot_rows: *const i32,
+        n_rows: i32,
+        d: i32,
+        stream: *mut c_void,
+    ) -> i32;
     /// A multi-request replay step's ring writes (memra #710 B-row): row y's `width` floats at
     /// `src + y * width` to `dst[y]` (host array of at most 16).
     pub fn memra_dsv4_rows_copy(
