@@ -2751,6 +2751,8 @@ mod tests {
                             scratch.weights.device_ptr(&s).0 as *const f32,
                             scale2.device_ptr(&s).0 as *const f32,
                             x.device_ptr(&s).0 as *const f32,
+                            std::ptr::null(),
+                            std::ptr::null(),
                             fused_h.device_ptr_mut(&s).0 as *mut f32,
                             shared_run.device_ptr_mut(&s).0 as *mut i32,
                             topk as i32,
@@ -2763,6 +2765,80 @@ mod tests {
                         )
                     };
                     assert_eq!(gu, 0, "fused partition gate/up rc");
+                    if red == Red::Clean {
+                        // The router launch's x mirror (memra #710): the gate/up launch that
+                        // loads it writes the same h as the one that mirrors x itself.
+                        let raw = s.alloc_zeros::<f32>(ne).unwrap();
+                        let tok = s.alloc_zeros::<i32>(1).unwrap();
+                        let mut rsel = s.alloc_zeros::<i32>(topk).unwrap();
+                        let mut rselw = s.alloc_zeros::<f32>(topk).unwrap();
+                        let mut rorder = s.alloc_zeros::<i32>(topk).unwrap();
+                        let mut xm = s.alloc_zeros::<u32>(hidden / 2).unwrap();
+                        let mut xrs = s.alloc_zeros::<f32>(1).unwrap();
+                        let mut h2 = s.alloc_zeros::<f32>(topk * inter).unwrap();
+                        let mut run2 = s.alloc_zeros::<i32>(1).unwrap();
+                        let rc = unsafe {
+                            k::memra_dsv4_route_mirror_m(
+                                raw.device_ptr(&s).0 as *const f32,
+                                std::ptr::null(),
+                                std::ptr::null(),
+                                tok.device_ptr(&s).0 as *const i32,
+                                1,
+                                ne as i32,
+                                topk as i32,
+                                1.0,
+                                rsel.device_ptr_mut(&s).0 as *mut i32,
+                                rselw.device_ptr_mut(&s).0 as *mut f32,
+                                rorder.device_ptr_mut(&s).0 as *mut i32,
+                                x.device_ptr(&s).0 as *const f32,
+                                hidden as i32,
+                                xm.device_ptr_mut(&s).0 as *mut u32,
+                                xrs.device_ptr_mut(&s).0 as *mut f32,
+                                word.device_ptr(&s).0 as *mut i32,
+                                s.cu_stream().cast(),
+                            )
+                        };
+                        assert_eq!(rc, 0, "router x mirror rc");
+                        let gu2 = unsafe {
+                            k::memra_dsv4_moe_fused_gu_part(
+                                table.device_ptr(&s).0 as *const u64,
+                                count as i32,
+                                ne as i32,
+                                first as i32,
+                                ids.device_ptr(&s).0 as *const i32,
+                                scratch.weights.device_ptr(&s).0 as *const f32,
+                                scale2.device_ptr(&s).0 as *const f32,
+                                x.device_ptr(&s).0 as *const f32,
+                                xm.device_ptr(&s).0 as *const u32,
+                                xrs.device_ptr(&s).0 as *const f32,
+                                h2.device_ptr_mut(&s).0 as *mut f32,
+                                run2.device_ptr_mut(&s).0 as *mut i32,
+                                topk as i32,
+                                1,
+                                hidden as i32,
+                                inter as i32,
+                                limit,
+                                word.device_ptr(&s).0 as *mut i32,
+                                s.cu_stream().cast(),
+                            )
+                        };
+                        assert_eq!(gu2, 0, "fused gate/up over the router's mirror rc");
+                        let own: Vec<usize> = sel
+                            .iter()
+                            .enumerate()
+                            .filter(|&(_, &e)| (first..first + count).contains(&(e as usize)))
+                            .map(|(i, _)| i)
+                            .collect();
+                        let a = s.clone_dtoh(&fused_h).unwrap();
+                        let b = s.clone_dtoh(&h2).unwrap();
+                        for slot in own {
+                            assert_eq!(
+                                bits(&a[slot * inter..(slot + 1) * inter]),
+                                bits(&b[slot * inter..(slot + 1) * inter]),
+                                "router mirror h case={case} rank={rank} slot={slot}"
+                            );
+                        }
+                    }
                     if red == Red::Intermediate {
                         let slot = first_local.unwrap();
                         let mut row = vec![1.0f32; inter];
@@ -2958,6 +3034,8 @@ mod tests {
                     scratch.weights.device_ptr(&s).0 as *const f32,
                     scale2.device_ptr(&s).0 as *const f32,
                     x_dev.device_ptr(&s).0 as *const f32,
+                    std::ptr::null(),
+                    std::ptr::null(),
                     fused_h_rows.device_ptr_mut(&s).0 as *mut f32,
                     std::ptr::null_mut(),
                     topk as i32,
