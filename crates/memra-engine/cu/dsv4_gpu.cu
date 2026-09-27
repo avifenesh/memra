@@ -5173,8 +5173,33 @@ extern "C" int memra_dsv4_small_hc_f32_fixed_order(
 // tree of the kernels it replaces: dsv4_hc_dot_split_reduce_kernel<S>, this
 // file's small HC kernel, dsv4_rmsnorm_f32acc_regs<32> and dsv4_cvt_bf16_kernel.
 // dsv4_block_sum128_f32 pairs as dsv4_block_sum_f32 does at 128 threads.
+//
+// A fifth warp runs the Sinkhorn projection (memra #710): only comb depends on it, and comb is
+// read by the block's hc_post, so the collapse and the RMSNorm run beside its twenty serial
+// iterations instead of after them. The four row warps sync among themselves on named barrier
+// 1; the one block-wide barrier hands the fifth warp the scaled mixes.
+__device__ __forceinline__ void dsv4_bar128(int id) {
+    asm volatile("bar.sync %0, 128;" ::"r"(id) : "memory");
+}
+
+__device__ __forceinline__ float dsv4_block_sum128_f32_bar1(float v, float* sh) {
+    int tid = threadIdx.x;
+    sh[tid] = v;
+    dsv4_bar128(1);
+    if (tid < 64) sh[tid] += sh[tid + 64];
+    dsv4_bar128(1);
+    if (tid < 32) {
+        float s = sh[tid] + sh[tid + 32];
+#pragma unroll
+        for (int off = 16; off > 0; off >>= 1) s += __shfl_down_sync(0xffffffffu, s, off);
+        if (tid == 0) sh[0] = s;
+    }
+    dsv4_bar128(1);
+    return sh[0];
+}
+
 template <int S>
-__global__ void __launch_bounds__(128) dsv4_hc_finish_f32_fixed_order_kernel(
+__global__ void __launch_bounds__(160) dsv4_hc_finish_f32_fixed_order_kernel(
         const float* __restrict__ partial, const float* __restrict__ x,
         float* __restrict__ mixes, const float* __restrict__ scale,
         const float* __restrict__ base, float* __restrict__ pre, float* __restrict__ post,
@@ -5194,37 +5219,16 @@ __global__ void __launch_bounds__(128) dsv4_hc_finish_f32_fixed_order_kernel(
     if (y) y += p * D;
     if (out_b) out_b += p * D;
     const int t = threadIdx.x;
-    float mix = 0.0f;
-    if (t < ROWS) {
-#pragma unroll
-        for (int s = 0; s < S; ++s) mix = __fadd_rn(mix, partial[t * S + s]);
-    }
-    float xv[J];
-#pragma unroll
-    for (int j = 0; j < J; ++j) xv[j] = x[t + j * B];
-    float acc = 0.0f;
-#pragma unroll
-    for (int j = 0; j < J; ++j) acc += xv[j] * xv[j];
     __shared__ float sh_x[B], sh_y[B];
-    float tot = dsv4_block_sum128_f32(acc, sh_x);
-    float rsq = 1.0f / sqrtf(tot / (float)W + hc_eps);
     __shared__ float smix[ROWS], spre[HC];
-    if (t < ROWS) {
-        float v = mix * rsq;
-        mixes[t] = v;
-        smix[t] = v;
-    }
-    __syncthreads();
-    if (t < 32) {
+    if (t >= B) {
+        // The Sinkhorn warp: waits for the scaled mixes, then projects comb.
+        __syncthreads();
         constexpr unsigned MASK = 0xffffffffu;
-        if (t < HC) {
-            float pv = dsv4_sigmoid(smix[t]*scale[0] + base[t]) + hc_eps;
-            pre[t] = spre[t] = pv;
-            post[t] = 2.0f * dsv4_sigmoid(smix[HC+t]*scale[1] + base[HC+t]);
-        }
-        int r = t < 16 ? t / HC : 0;
-        int c = t < 16 ? t % HC : 0;
-        float cv = t < 16 ? smix[2*HC+t]*scale[2] + base[2*HC+t] : 0.0f;
+        const int l = t - B;
+        int r = l < 16 ? l / HC : 0;
+        int c = l < 16 ? l % HC : 0;
+        float cv = l < 16 ? smix[2*HC+l]*scale[2] + base[2*HC+l] : 0.0f;
         float mx = -INFINITY;
         for (int k = 0; k < HC; ++k) mx = fmaxf(mx, __shfl_sync(MASK, cv, r*HC+k));
         float ev = expf(cv-mx), sum = 0.0f;
@@ -5240,9 +5244,34 @@ __global__ void __launch_bounds__(128) dsv4_hc_finish_f32_fixed_order_kernel(
             for (int j = 0; j < HC; ++j) cs += __shfl_sync(MASK, cv, j*HC+c);
             cv /= cs + hc_eps;
         }
-        if (t < 16) comb[t] = cv;
+        if (l < 16) comb[l] = cv;
+        return;
+    }
+    float mix = 0.0f;
+    if (t < ROWS) {
+#pragma unroll
+        for (int s = 0; s < S; ++s) mix = __fadd_rn(mix, partial[t * S + s]);
+    }
+    float xv[J];
+#pragma unroll
+    for (int j = 0; j < J; ++j) xv[j] = x[t + j * B];
+    float acc = 0.0f;
+#pragma unroll
+    for (int j = 0; j < J; ++j) acc += xv[j] * xv[j];
+    float tot = dsv4_block_sum128_f32_bar1(acc, sh_x);
+    float rsq = 1.0f / sqrtf(tot / (float)W + hc_eps);
+    if (t < ROWS) {
+        float v = mix * rsq;
+        mixes[t] = v;
+        smix[t] = v;
     }
     __syncthreads();
+    if (t < HC) {
+        float pv = dsv4_sigmoid(smix[t]*scale[0] + base[t]) + hc_eps;
+        pre[t] = spre[t] = pv;
+        post[t] = 2.0f * dsv4_sigmoid(smix[HC+t]*scale[1] + base[HC+t]);
+    }
+    dsv4_bar128(1);
     float yv[K];
 #pragma unroll
     for (int k = 0; k < K; ++k) {
@@ -5254,7 +5283,7 @@ __global__ void __launch_bounds__(128) dsv4_hc_finish_f32_fixed_order_kernel(
     float acc2 = 0.0f;
 #pragma unroll
     for (int k = 0; k < K; ++k) acc2 += yv[k] * yv[k];
-    float tot2 = dsv4_block_sum128_f32(acc2, sh_y);
+    float tot2 = dsv4_block_sum128_f32_bar1(acc2, sh_y);
     float mean = tot2 / (float)D;
     float rsq2 = 1.0f / sqrtf(mean + eps);
 #pragma unroll
@@ -5280,17 +5309,17 @@ extern "C" int memra_dsv4_hc_finish_f32_fixed_order(
     auto ob = (__nv_bfloat16*)out_b;
     switch (slices) {
         case 8:
-            memra_chain_launch(dsv4_hc_finish_f32_fixed_order_kernel<8>,(unsigned)s, 128, 0, stream)(
+            memra_chain_launch(dsv4_hc_finish_f32_fixed_order_kernel<8>,(unsigned)s, 160, 0, stream)(
                 partial, x, mixes, scale, base, pre, post, comb, y, norm_w, out, ob, iters,
                 hc_eps, eps);
             break;
         case 16:
-            memra_chain_launch(dsv4_hc_finish_f32_fixed_order_kernel<16>,(unsigned)s, 128, 0, stream)(
+            memra_chain_launch(dsv4_hc_finish_f32_fixed_order_kernel<16>,(unsigned)s, 160, 0, stream)(
                 partial, x, mixes, scale, base, pre, post, comb, y, norm_w, out, ob, iters,
                 hc_eps, eps);
             break;
         case 32:
-            memra_chain_launch(dsv4_hc_finish_f32_fixed_order_kernel<32>,(unsigned)s, 128, 0, stream)(
+            memra_chain_launch(dsv4_hc_finish_f32_fixed_order_kernel<32>,(unsigned)s, 160, 0, stream)(
                 partial, x, mixes, scale, base, pre, post, comb, y, norm_w, out, ob, iters,
                 hc_eps, eps);
             break;
