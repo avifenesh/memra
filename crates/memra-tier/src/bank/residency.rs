@@ -686,6 +686,11 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             }
         }
     }
+    /// Day 93 (`research/spill-c-20260919/DAY93.md`): the hotness this bank records (read-only; the I26 fixture reads it,
+    /// since under the SLRU nothing else does).
+    pub fn heat(&self) -> &H {
+        &self.heat
+    }
     /// Records the host cache holds (day 43; read-only).
     pub fn cached_records(&self) -> usize {
         self.cache.map.len()

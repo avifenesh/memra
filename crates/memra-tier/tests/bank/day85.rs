@@ -19,7 +19,7 @@ impl Rng {
     }
 }
 
-fn spread() -> (Vec<(BankId, CatalogRecord)>, Vec<BankId>) {
+pub(super) fn spread() -> (Vec<(BankId, CatalogRecord)>, Vec<BankId>) {
     let mut entries = Vec::new();
     let mut seed = 0u64;
     for layer in [0u32, 5, u32::from(u16::MAX)] {
@@ -47,7 +47,16 @@ fn spread() -> (Vec<(BankId, CatalogRecord)>, Vec<BankId>) {
     (entries, ids)
 }
 
-fn bank(slots: usize, priority: Priority) -> (Banks, BudgetRequest) {
+pub(super) fn bank(slots: usize, priority: Priority) -> (Banks, BudgetRequest) {
+    let (bank, req, _) = bank_governed(slots, priority);
+    (bank, req)
+}
+
+/// Day 93: `bank` with its governor, whose `used` the I26 fixture reads.
+pub(super) fn bank_governed(
+    slots: usize,
+    priority: Priority,
+) -> (Banks, BudgetRequest, Rc<RefCell<Governor>>) {
     let (entries, _) = spread();
     let g = gov();
     let bank = BankService::<ExpertDomain, _, _>::new(
@@ -77,7 +86,7 @@ fn bank(slots: usize, priority: Priority) -> (Banks, BudgetRequest) {
         .with_slru(SlruPolicy::new(&[(16, slots)]).unwrap(), &metadata)
         .unwrap();
     req.bytes = TierBudget::zero(2);
-    (bank, req)
+    (bank, req, g)
 }
 
 /// The pre-I22 adapter's demand, on the hashed path: one batch of the demanded ids, pumped, published, finished.
@@ -97,11 +106,11 @@ fn hashed_demand(b: &mut Banks, ids: &[BankId], req: &BudgetRequest) -> Result<V
 }
 
 /// A lease's first payload byte (the fixture reader's and the fill's bytes are heap vectors).
-fn first(lease: &BankLease) -> u8 {
+pub(super) fn first(lease: &BankLease) -> u8 {
     lease.resource::<Vec<u8>>().map(|bytes| bytes[0]).unwrap()
 }
 
-fn state(b: &Banks, ids: &[BankId]) -> String {
+pub(super) fn state(b: &Banks, ids: &[BankId]) -> String {
     let policy = b.slru_policy().unwrap();
     let resident: Vec<_> = ids.iter().map(|id| policy.resident(id)).collect();
     format!(

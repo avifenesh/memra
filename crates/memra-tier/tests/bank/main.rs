@@ -1479,4 +1479,6 @@ mod day84;
 mod day85;
 // Day 90 (WP-C, `research/spill-c-20260919/DAY90.md` I24): the proxy and bank trace fixture.
 mod day90;
+// Day 93 (WP-C, `research/spill-c-20260919/DAY93.md` I26): the adapter's observable-outcome fixture.
+mod day93;
 mod slru_oracle;
