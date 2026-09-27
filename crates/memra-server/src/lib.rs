@@ -22766,6 +22766,8 @@ temperature = 0.6
             std::time::Duration::from_secs(60),
             8,
         ));
+        let mock = MockMetering::admit_all();
+        st.metering = Some(mock.clone());
         let resp = responses_api::responses(
             State(st.clone()),
             axum::http::HeaderMap::new(),
@@ -22780,6 +22782,153 @@ temperature = 0.6
         assert_eq!(
             body["error"]["code"],
             "background_job_store_capacity_exceeded"
+        );
+
+        // revuto's finding: this refusal must settle the receipt through `ledger_rejected`
+        // like every other admission refusal, not drop it and let the metering seam's Drop
+        // price it as an abandoned CLIENT rather than OUR refusal.
+        let events = mock.events();
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, MeterEvent::Reject { status: 503, .. })),
+            "the capacity refusal must settle as a rejected receipt: {events:?}"
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, MeterEvent::Dropped { .. })),
+            "the receipt must not be left to Drop as an abandoned client: {events:?}"
+        );
+    }
+
+    /// revuto's second round of findings: a ledger failure INSIDE `run_background_job`
+    /// (its `Receipt::complete` returning `Err`) must not leave the receipt unfinalized
+    /// (which `Drop` would price as an abandoned client) and must not answer the job
+    /// `Completed` when it was never actually billed.
+    #[tokio::test]
+    async fn a_complete_ledger_failure_rejects_the_receipt_and_fails_the_job() {
+        let _l = drain_lock();
+        let _env_lock = background_env_lock();
+        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
+
+        struct FailCompleteReceipt {
+            events: Arc<std::sync::Mutex<Vec<&'static str>>>,
+        }
+        impl metering::Receipt for FailCompleteReceipt {
+            fn arm_capture(&mut self, _prompt: serde_json::Value) {}
+            fn capture_completion_delta(&mut self, _text: &str) {}
+            fn record_prompt_usage(&mut self, _p: u64, _c: u64) -> Result<(), String> {
+                Ok(())
+            }
+            fn record_completion_token(&mut self) -> Result<(), String> {
+                Ok(())
+            }
+            fn complete(&mut self, _u: metering::UsageCounts, _e: f64) -> Result<(), String> {
+                Err("simulated ledger failure".to_string())
+            }
+            fn complete_deadline_partial(
+                &mut self,
+                _u: metering::UsageCounts,
+                _e: f64,
+            ) -> Result<(), String> {
+                Err("simulated ledger failure".to_string())
+            }
+            fn reject(&mut self, status: u16, code: &str) -> Result<(), String> {
+                self.events.lock().unwrap().push(
+                    if status == 500 && code == "request_ledger_unavailable" {
+                        "rejected"
+                    } else {
+                        "rejected_other"
+                    },
+                );
+                Ok(())
+            }
+            fn settle_unbilled(
+                &mut self,
+                _outcome: &'static str,
+                _status: u16,
+                _code: &str,
+            ) -> Result<(), String> {
+                Ok(())
+            }
+        }
+        struct FailCompleteMetering {
+            events: Arc<std::sync::Mutex<Vec<&'static str>>>,
+        }
+        impl metering::Metering for FailCompleteMetering {
+            fn enforces_limits(&self) -> bool {
+                false
+            }
+            fn is_limited(&self, _tenant: &str) -> Result<bool, metering::AdmitError> {
+                Ok(true)
+            }
+            fn reserve(
+                &self,
+                _t: &str,
+                _p: Option<&str>,
+                _m: &str,
+                _pt: u64,
+                _cb: u64,
+            ) -> Result<Option<metering::Permit>, metering::AdmitError> {
+                Ok(None)
+            }
+            fn open(
+                &self,
+                _meta: &metering::RequestMeta<'_>,
+                _permit: Option<metering::Permit>,
+            ) -> Box<dyn metering::Receipt> {
+                Box::new(FailCompleteReceipt {
+                    events: self.events.clone(),
+                })
+            }
+            fn limits_health(&self) -> Option<metering::LimitsHealth> {
+                None
+            }
+        }
+        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut st = fake_worker_state_with_steps(1, std::time::Duration::ZERO);
+        st.metering = Some(Arc::new(FailCompleteMetering {
+            events: events.clone(),
+        }));
+
+        let resp = responses_api::responses(
+            State(st.clone()),
+            axum::http::HeaderMap::new(),
+            None,
+            axum::body::Bytes::from(
+                json!({"model": "m", "input": "hi", "background": true}).to_string(),
+            ),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let id = body_value(resp).await["id"].as_str().unwrap().to_string();
+
+        let mut terminal_body = None;
+        for _ in 0..500 {
+            let poll = responses_api::poll_admitted(
+                State(st.clone()),
+                axum::http::HeaderMap::new(),
+                Path(id.clone()),
+            )
+            .await;
+            let b = body_value(poll).await;
+            if b["status"] != "queued" && b["status"] != "in_progress" {
+                terminal_body = Some(b);
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        let b = terminal_body.expect("job never reached a terminal state");
+        assert_eq!(
+            b["status"], "failed",
+            "a ledger failure at completion must not be reported as completed: {b}"
+        );
+        assert_eq!(
+            *events.lock().unwrap(),
+            vec!["rejected"],
+            "the receipt must be explicitly rejected, not left for Drop to price as an \
+             abandoned client"
         );
     }
 
