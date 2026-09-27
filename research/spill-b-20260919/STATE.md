@@ -1,3 +1,6 @@
+# WP-B checkpoint 2026-09-27 11:5xZ: DAY44 addendum D is pending the owner, not adopted (the lead): R1 stays FAIL as
+registered, beside E2, as a blocker on flipping MEMRA_RESUME_EXACT. The reader prints both R1 lines. The c13 receipts are
+copied into integ71-c13-rw/ and read there; never run a reader inside the lead's worktrees.
 # WP-B checkpoint 2026-09-27 11:3xZ: integ71 merges with the doors-off program green (revuto round 2 approved 451ccd0c3).
 The RW cell's R1 FAIL placed on its wording (the G=32 later turns resume through the exact path at the settle point;
 all 20 resumed on both exact boots, R2 matched cold); DAY44 2.2 and addendum D; the revised reader at f7901d987; the
