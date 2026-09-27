@@ -367,3 +367,15 @@ The held groups push the gate/up kernel from 47 registers to 57 (55 in H2): `cuo
 costs more than the saved loads. The down kernel stays at 48. Neither form is merged. Recovering
 the probe's 0.3 ms needs a mirror that adds no work to the gate/up launch's critical path and
 no registers to it.
+
+## Refuted: dense-fast blocks prefetching their weight rows into L2 before the PDL wait
+
+Weights never depend on the predecessor. A dense-fast block that becomes resident while a
+latency-bound predecessor runs (an HC finish, a norm) could start its stream from L2. The probe
+issues `prefetch.global.L2` over each block's weight rows ahead of `griddepcontrol.wait`. It covers
+the single, pair and dots launches (`raw/se2-l2-prefetch-s2w/l2-prefetch.patch`). A prefetch
+moves no value, and the hash stays `fbce1a0492d69635`.
+
+Long gate, second SE pair, order M P P M M P: main 10.85 .. 11.04 ms/token against 10.82 .. 10.95.
+That is flat. Few blocks are resident early enough to matter. Where they are, the predecessor's
+own stream already holds the bandwidth. Not merged.
