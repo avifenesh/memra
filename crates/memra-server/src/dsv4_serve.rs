@@ -197,14 +197,15 @@ fn env_text(name: &str, raw: Option<OsString>) -> Result<Option<String>, String>
 }
 
 /// `MEMRA_DSV4_SESSIONS` (memra #667): serving lanes that share the route's queue and launch
-/// turn. `1` is the serial route; `2..=4` pipeline plain steps across sessions. Unset or empty
+/// turn. `1` is the serial route; `2..=16` pipeline plain steps across sessions (PP-2) or share
+/// B-row steps (TP/EP, memra #710). Unset or empty
 /// takes `default`, which the load derives from the program it loaded.
 fn resolve_sessions(raw: Option<&str>, default: usize) -> Result<usize, String> {
     match raw.map(str::trim) {
         None | Some("") => Ok(default),
         Some(text) => match text.parse::<usize>() {
-            Ok(n @ 1..=4) => Ok(n),
-            _ => Err(format!("MEMRA_DSV4_SESSIONS {text:?} must be 1..=4")),
+            Ok(n @ 1..=16) => Ok(n),
+            _ => Err(format!("MEMRA_DSV4_SESSIONS {text:?} must be 1..=16")),
         },
     }
 }
@@ -229,7 +230,7 @@ fn default_tp_ep_sessions(rows_steps: bool, drafter: bool) -> usize {
 }
 
 /// `MEMRA_DSV4_ROWS` (memra #667 lever 2): the most plain rows one step runs across the lanes.
-/// `0` or `1` keeps each lane's own step; `2..=8` coalesces them. Unset or empty takes
+/// `0` or `1` keeps each lane's own step; `2..=16` coalesces them. Unset or empty takes
 /// `default`: one on PP-2, the lane count on TP/EP (memra #710), where lanes only help by
 /// sharing steps.
 fn resolve_rows(raw: Option<&str>, default: usize) -> Result<usize, String> {
@@ -237,8 +238,8 @@ fn resolve_rows(raw: Option<&str>, default: usize) -> Result<usize, String> {
         None | Some("") => Ok(default),
         Some(text) => match text.parse::<usize>() {
             Ok(0) => Ok(1),
-            Ok(n @ 1..=8) => Ok(n),
-            _ => Err(format!("MEMRA_DSV4_ROWS {text:?} must be 0..=8")),
+            Ok(n @ 1..=16) => Ok(n),
+            _ => Err(format!("MEMRA_DSV4_ROWS {text:?} must be 0..=16")),
         },
     }
 }
@@ -3668,10 +3669,10 @@ mod c4_host_budget_tests {
             for raw in [Some("1"), Some(" 1 ")] {
                 assert_eq!(resolve_sessions(raw, default), Ok(1));
             }
-            for n in 2..=4 {
+            for n in 2..=16 {
                 assert_eq!(resolve_sessions(Some(&n.to_string()), default), Ok(n));
             }
-            for raw in ["0", "5", "two", "-1", "2.0"] {
+            for raw in ["0", "17", "two", "-1", "2.0"] {
                 assert!(resolve_sessions(Some(raw), default).is_err(), "{raw}");
             }
         }
@@ -3758,10 +3759,10 @@ mod c4_host_budget_tests {
             for raw in [Some("0"), Some("1")] {
                 assert_eq!(resolve_rows(raw, default), Ok(1));
             }
-            for n in 2..=8 {
+            for n in 2..=16 {
                 assert_eq!(resolve_rows(Some(&n.to_string()), default), Ok(n));
             }
-            for raw in ["9", "two", "-1", "2.5"] {
+            for raw in ["17", "two", "-1", "2.5"] {
                 assert!(resolve_rows(Some(raw), default).is_err(), "{raw}");
             }
         }
