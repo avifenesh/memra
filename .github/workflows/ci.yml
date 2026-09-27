@@ -202,6 +202,14 @@ jobs:
       - name: Release-battery coverage fixtures (CPU only)
         run: python3 tools/test_release_battery_coverage.py
 
+      # Physical GPU resolution fixtures (memra#264 reopened, CPU only). CUDA_VISIBLE_DEVICES
+      # can select a physical card other than 0; these command-routing tests plant an NVML
+      # stand-in and assert logical device 0 resolves to the physical UUID it actually names,
+      # for an ordinal selector, a UUID selector, a reordered visible set, and both directions
+      # of asymmetric free memory. No GPU touches this fixture.
+      - name: Physical GPU resolution fixtures (CPU only)
+        run: python3 tools/test_resolve_physical_gpu.py
+
       # Changelog teeth (2026-09-02): the tag walk, the skip list, the explicit FROM, and the
       # history-root baseline that keeps the first tag on the rebuilt history from dropping the
       # 108 pre-snapshot commits (docs/RELEASING.md, "The 2026-09-01 history swap").

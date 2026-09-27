@@ -12,6 +12,18 @@
 #
 # Exit 0 only when every required arm PASSED. Prints a receipt block for the tag message.
 set -u
+
+# PIN CUDA'S DEVICE ORDER TO nvidia-smi's, for the whole script and every child process it
+# execs (revuto, PR #898). CUDA's default numbering is FASTEST_FIRST, not nvidia-smi's PCI
+# bus order; an unset or ordinal CUDA_VISIBLE_DEVICES is read in CUDA's order, so on a host
+# with more than one GPU model, CUDA's logical device 0 can be a different physical card than
+# nvidia-smi index 0 unless this is pinned. tools/qualify-model-device-memory.py already sets
+# this next to CUDA_VISIBLE_DEVICES for the identical reason. Exporting it here, before the
+# physical-GPU resolver runs and before kernel-check/run-spec/argmax-margin-gate.sh ever
+# start, keeps the resolver's assumption and the engine's actual device numbering the same
+# thing rather than two guesses that happen to agree.
+export CUDA_DEVICE_ORDER=PCI_BUS_ID
+
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/.." && pwd)
 BIN=$ROOT/target/release
@@ -75,8 +87,44 @@ KC_REQUIRED=(--require-manifest "$HERE/kernel-check-27b.cells" --require-manifes
 #
 # Deliberately NOT done: killing or waiting out other tenants. The rig's card is shared with
 # owner-run work and a release gate has no business evicting it; it says so and stops.
-gpu_free_mib() { nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits -i 0 2>/dev/null | head -1; }
-gpu_tenants() { nvidia-smi --query-compute-apps=pid,used_memory,process_name --format=csv,noheader 2>/dev/null; }
+#
+# SELECTED PHYSICAL CARD (memra#264 reopened, 2026-09-20). `-i 0` used to mean "physical card
+# 0", unconditionally. CUDA executables honor CUDA_VISIBLE_DEVICES, so a lease that selects
+# physical card 1 (or a UUID) runs the engine there while a hardcoded `-i 0` still measures
+# physical card 0: an empty unselected card can mask insufficient headroom on the selected
+# card, and a busy unselected card can falsely refuse an otherwise available selected card. So
+# CUDA's logical device 0 is resolved to its physical UUID once, up front, by
+# tools/resolve-physical-gpu.py (a CUDA-free seam, unit-tested in
+# tools/test_resolve_physical_gpu.py), and every headroom and tenant read below queries THAT
+# UUID. An ambiguous or unresolvable selector REFUSES the whole battery: it never falls back
+# to another card or skips the check, the same rule this file already applies to a skip.
+PHYSICAL_UUID=""
+resolve_physical_gpu() {
+  command -v nvidia-smi >/dev/null || return 0   # no card at all: nothing to isolate
+  RPG_OUT=$(python3 "$HERE/resolve-physical-gpu.py" 2>&1) || {
+    echo "release-battery: REFUSED, physical GPU resolution failed:" >&2
+    printf '%s\n' "$RPG_OUT" >&2
+    return 1
+  }
+  PHYSICAL_UUID=$(printf '%s\n' "$RPG_OUT" | sed -n 's/^uuid=//p')
+  [ -n "$PHYSICAL_UUID" ] || {
+    echo "release-battery: REFUSED, physical GPU resolution returned no uuid" >&2
+    return 1
+  }
+}
+resolve_physical_gpu || exit 1
+
+gpu_free_mib() {
+  [ -n "$PHYSICAL_UUID" ] || return 0
+  nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits -i "$PHYSICAL_UUID" 2>/dev/null | head -1
+}
+gpu_tenants() {
+  if [ -n "$PHYSICAL_UUID" ]; then
+    nvidia-smi --query-compute-apps=pid,used_memory,process_name --format=csv,noheader -i "$PHYSICAL_UUID" 2>/dev/null
+  else
+    nvidia-smi --query-compute-apps=pid,used_memory,process_name --format=csv,noheader 2>/dev/null
+  fi
+}
 
 # await_card <need_mib> <what> — wait up to CARD_WAIT_S for free memory to reach need.
 # Returns 0 when it does, 1 when it does not (the caller REFUSES; it never proceeds anyway).
@@ -197,12 +245,12 @@ while IFS=$'\t' read -r class id path _ || [ -n "${class:-}" ]; do
   # as not-a-defect. The calibrated gate returns flips=0 bad=0 PASS on the same model.
   NEED=$(model_need_mib "$path")
   if ! await_card "$NEED" "$id argmax-margin"; then
-    note "$id  argmax-margin  REFUSED   card cannot seat the model (free ${CARD_FREE}MiB, need ${NEED}MiB after ${CARD_WAIT_S}s)"
+    note "$id  argmax-margin  REFUSED   card cannot seat the model (gpu=${PHYSICAL_UUID:-?} free ${CARD_FREE}MiB, need ${NEED}MiB after ${CARD_WAIT_S}s)"
     gpu_tenants | sed 's/^/    on the card: /'
     FAILED=1
     continue
   fi
-  note "$id  card  free=${CARD_FREE:-?}MiB need=${NEED}MiB"
+  note "$id  card  gpu=${PHYSICAL_UUID:-?} free=${CARD_FREE:-?}MiB need=${NEED}MiB"
   argmax_evidence=()
   if [ -n "$EVIDENCE_DIR" ]; then
     argmax_evidence=(--logdir "$EVIDENCE_DIR/argmax-$EVIDENCE_SEQ")
@@ -226,7 +274,7 @@ while IFS=$'\t' read -r class id path _ || [ -n "${class:-}" ]; do
   # anyway and died with CUDA_ERROR_STREAM_CAPTURE_UNSUPPORTED, which reads like a bug in
   # the engine rather than a bug in the conditions (memra#263).
   if ! await_card "$NEED" "$id run-spec"; then
-    note "$id  run-spec  REFUSED   card cannot seat the model (free ${CARD_FREE}MiB, need ${NEED}MiB after ${CARD_WAIT_S}s)"
+    note "$id  run-spec  REFUSED   card cannot seat the model (gpu=${PHYSICAL_UUID:-?} free ${CARD_FREE}MiB, need ${NEED}MiB after ${CARD_WAIT_S}s)"
     gpu_tenants | sed 's/^/    on the card: /'
     FAILED=1
     continue
