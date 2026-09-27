@@ -1,13 +1,16 @@
-//! Source-backed, bounded one-layer MiMo bundled audio-tokenizer encoder.
+//! Source-backed, bounded MiMo bundled audio-tokenizer transformer encoder.
 //!
-//! This consumes the resident BF16 rows. It does not run the other 23 layers,
-//! encoder skip/pool, RVQ, PCM processing, or a serving request.
+//! This consumes the resident BF16 rows after the convolutional frontend. It
+//! stops at the final encoder LayerNorm, before downsampling, RVQ, or PCM.
 
 use core::ffi::c_void;
 use std::error::Error;
 
 use cudarc::driver::{CudaSlice, DevicePtr, DevicePtrMut};
-use memra_reference::mimo_audio_codec_layer::MAX_COMPONENT_TOKENS;
+use memra_gguf::model_packs::mimo_v2::audio_tokenizer::AudioTokenizerAuxiliaryContract;
+use memra_reference::mimo_audio_codec_layer::{
+    ENCODER_LAYERS, ENCODER_SKIP_LAYER_ID, MAX_COMPONENT_TOKENS,
+};
 
 use crate::Engine;
 use crate::mimo_audio_codec_weights::{
@@ -81,9 +84,26 @@ enum Epilogue {
 fn request(tokens: usize, elements: usize, layer_index: usize) -> Result<(), Fail> {
     if !(1..=MAX_COMPONENT_TOKENS).contains(&tokens)
         || elements != tokens * HIDDEN
-        || layer_index >= 24
+        || layer_index >= ENCODER_LAYERS
     {
         return Err("MiMo codec one-layer token count, input extent, or layer changed".into());
+    }
+    Ok(())
+}
+
+fn stack_plan(contract: &AudioTokenizerAuxiliaryContract) -> Result<(), Fail> {
+    // The resident loader verifies the exact pinned config, including
+    // encoder_skip_layer_id=3, LayerNorm, causal attention, and avg_pooler=2.
+    if contract.encoder_layers != ENCODER_LAYERS
+        || contract.hidden_size != HIDDEN
+        || contract.attention_heads != 16
+        || contract.ffn_size != 4_096
+        || !contract.hybrid_attention
+        || contract.hybrid_block_size != 8
+        || contract.swa_per_block != 2
+        || ENCODER_SKIP_LAYER_ID != 3
+    {
+        return Err("MiMo codec encoder source stack plan changed".into());
     }
     Ok(())
 }
@@ -391,6 +411,52 @@ impl MiMoAudioCodecEncoderWeights {
         check_result(engine, &output)?;
         Ok(output)
     }
+
+    /// Execute source-order layers 0..23 on already-frontended BF16-valued
+    /// `[tokens,1024]`, add the output after layer index 2, and apply the
+    /// source `encoder.layer_norm`. This is a 1..256 token component; it does
+    /// not downsample, quantize, process PCM, or handle full raw audio.
+    pub fn encode_transformer_stack(
+        &self,
+        engine: &Engine,
+        input: &CudaSlice<f32>,
+        tokens: usize,
+    ) -> Result<CudaSlice<f32>, Fail> {
+        request(tokens, input.len(), 0)?;
+        stack_plan(&self.contract)?;
+        engine.gpu.ctx.bind_to_thread()?;
+        self.check_device(engine)?;
+        if input.ordinal() != self.device_ordinal {
+            return Err("MiMo codec input belongs to another GPU".into());
+        }
+        let final_norm = self.encoder_final_norm_bf16()?;
+        // Refuse a partial stack before launching any layer.
+        for index in 0..ENCODER_LAYERS {
+            self.encoder_layer_bf16(index)?;
+        }
+
+        let mut hidden = self.encode_one_transformer_layer(engine, input, tokens, 0)?;
+        for index in 1..ENCODER_SKIP_LAYER_ID {
+            hidden = self.encode_one_transformer_layer(engine, &hidden, tokens, index)?;
+        }
+        let skip = hidden;
+        let mut hidden =
+            self.encode_one_transformer_layer(engine, &skip, tokens, ENCODER_SKIP_LAYER_ID)?;
+        for index in ENCODER_SKIP_LAYER_ID + 1..ENCODER_LAYERS {
+            hidden = self.encode_one_transformer_layer(engine, &hidden, tokens, index)?;
+        }
+        let hidden = epilogue(
+            engine,
+            &hidden,
+            None,
+            Some(&skip),
+            HIDDEN,
+            Epilogue::Residual,
+        )?;
+        let output = normalized(engine, &hidden, &final_norm, tokens)?;
+        check_result(engine, &output)?;
+        Ok(output)
+    }
 }
 
 #[cfg(test)]
@@ -405,6 +471,29 @@ mod tests {
         assert!(request(257, 257 * HIDDEN, 0).is_err());
         assert!(request(1, HIDDEN - 1, 0).is_err());
         assert!(request(1, HIDDEN, 24).is_err());
+    }
+
+    #[test]
+    fn source_stack_plan_requires_pinned_encoder_geometry() {
+        use memra_gguf::model_packs::mimo_v2::audio_tokenizer::{
+            LFS_WEIGHT_SHA256, SOURCE, verify_pinned_auxiliary,
+        };
+
+        let config = include_bytes!(
+            "../../memra-gguf/src/model_packs/mimo_v2/fixtures/audio-tokenizer-config.json"
+        );
+        let header = include_bytes!(
+            "../../memra-gguf/src/model_packs/mimo_v2/fixtures/audio-tokenizer-header.json"
+        );
+        let mut contract =
+            verify_pinned_auxiliary(SOURCE, config, header, LFS_WEIGHT_SHA256, 1_872_618_384)
+                .unwrap();
+        stack_plan(&contract).unwrap();
+        contract.encoder_layers = 23;
+        assert!(stack_plan(&contract).is_err());
+        contract.encoder_layers = 24;
+        contract.swa_per_block = 1;
+        assert!(stack_plan(&contract).is_err());
     }
 
     #[test]
@@ -472,6 +561,88 @@ mod tests {
             assert!(
                 (got - want).abs() <= 0.0625,
                 "element {index}: {got} != {want}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "requires pinned bundled weights and a dedicated GPU for the 24-layer source gate"]
+    fn pinned_encoder_stack_gpu_source_gate() -> Result<(), Fail> {
+        use memra_reference::mimo_audio_codec_layer::{
+            Layer, Linear, Norm, bf16, forward_encoder_stack,
+        };
+        use std::collections::BTreeMap;
+        use std::path::Path;
+
+        let root = std::env::var("MIMO_PINNED_SOURCE_ROOT")?;
+        let gpu: usize = std::env::var("MEMRA_MIMO_COMPONENT_GPU")
+            .unwrap_or_else(|_| "0".into())
+            .parse()?;
+        let engine = Engine::new(gpu)?;
+        let resident = MiMoAudioCodecEncoderWeights::load(&engine, Path::new(&root))?;
+        let mut host = BTreeMap::new();
+        for (name, tensor) in resident.tensors() {
+            if !name.starts_with("encoder.layers.") && !name.starts_with("encoder.layer_norm.") {
+                continue;
+            }
+            let bytes = engine.dtoh_u8(&tensor.bytes)?;
+            host.insert(
+                name.to_string(),
+                bytes
+                    .chunks_exact(2)
+                    .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+                    .collect::<Vec<_>>(),
+            );
+        }
+        assert_eq!(host.len(), ENCODER_LAYERS * 15 + 2);
+        let fetch = |name: &str| host.get(name).map(Vec::as_slice).unwrap();
+        let norm = |stem: &str| Norm {
+            weight: fetch(&format!("{stem}.weight")),
+            bias: fetch(&format!("{stem}.bias")),
+        };
+        let linear = |stem: &str, input: usize, output: usize, bias: bool| Linear {
+            weight: fetch(&format!("{stem}.weight")),
+            bias: bias.then(|| fetch(&format!("{stem}.bias"))),
+            input,
+            output,
+        };
+        let layers = (0..ENCODER_LAYERS)
+            .map(|index| {
+                let stem = format!("encoder.layers.{index}");
+                let attention = format!("{stem}.self_attn");
+                Layer {
+                    attention_norm: norm(&format!("{stem}.self_attn_layer_norm")),
+                    query: linear(&format!("{attention}.q_proj"), HIDDEN, HIDDEN, true),
+                    key: linear(&format!("{attention}.k_proj"), HIDDEN, HIDDEN, false),
+                    value: linear(&format!("{attention}.v_proj"), HIDDEN, HIDDEN, true),
+                    attention_output: linear(
+                        &format!("{attention}.out_proj"),
+                        HIDDEN,
+                        HIDDEN,
+                        true,
+                    ),
+                    final_norm: norm(&format!("{stem}.final_layer_norm")),
+                    fc1: linear(&format!("{stem}.fc1"), HIDDEN, 4_096, true),
+                    fc2: linear(&format!("{stem}.fc2"), 4_096, HIDDEN, true),
+                    heads: 16,
+                    window: (index % 2 == 0).then_some(128),
+                }
+            })
+            .collect::<Vec<_>>();
+        let final_norm = norm("encoder.layer_norm");
+        let tokens = 2;
+        let input = (0..tokens * HIDDEN)
+            .map(|index| bf16((index as f32 % 17.0 - 8.0) * 0.015625))
+            .collect::<Vec<_>>();
+        let expected = forward_encoder_stack(&input, tokens, &layers, &final_norm)?;
+        let actual = resident.encode_transformer_stack(&engine, &engine.htod(&input)?, tokens)?;
+        let actual = engine.dtoh(&actual)?;
+        assert_eq!(actual.len(), expected.len());
+        for (index, (got, want)) in actual.iter().zip(expected).enumerate() {
+            assert!(
+                (got - want).abs() <= 0.25,
+                "24-layer encoder element {index}: {got} != {want}"
             );
         }
         Ok(())

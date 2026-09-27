@@ -392,6 +392,16 @@ impl MiMoAudioCodecEncoderWeights {
         Ok(bound)
     }
 
+    /// Bind the source `encoder.layer_norm` after all 24 transformer layers.
+    /// `load` has verified the exact source config and weight payload before
+    /// these BF16 vectors can be borrowed.
+    pub fn encoder_final_norm_bf16(&self) -> Result<CodecEncoderBf16Norm<'_>, String> {
+        if self.contract.encoder_layers != 24 || self.contract.hidden_size != 1_024 {
+            return Err("MiMo codec encoder final LayerNorm plan changed".into());
+        }
+        self.layer_norm_bf16("encoder.layer_norm")
+    }
+
     fn conv_bf16(
         &self,
         stem: &str,
@@ -704,5 +714,43 @@ mod tests {
             }
             assert!(!selected.contains(&format!("{stem}.self_attn.k_proj.bias")));
         }
+    }
+
+    #[test]
+    fn pinned_encoder_final_norm_is_exact_bf16_affine() {
+        let rows = fixture_rows();
+        for suffix in ["weight", "bias"] {
+            let name = format!("encoder.layer_norm.{suffix}");
+            let row = &rows[&name];
+            let bytes = row.data_offsets[1] - row.data_offsets[0];
+            check_conv_row(
+                &name,
+                CodecEncoderDtype::from_header(&name, &row.dtype).unwrap(),
+                &row.shape,
+                bytes,
+                &[1_024],
+            )
+            .unwrap();
+            assert!(
+                check_conv_row(&name, CodecEncoderDtype::F32, &row.shape, bytes, &[1_024]).is_err()
+            );
+            assert!(
+                check_conv_row(&name, CodecEncoderDtype::Bf16, &row.shape, bytes, &[1_023])
+                    .is_err()
+            );
+        }
+        let config = include_bytes!(
+            "../../memra-gguf/src/model_packs/mimo_v2/fixtures/audio-tokenizer-config.json"
+        );
+        let contract = verify_pinned_auxiliary(
+            SOURCE,
+            config,
+            FIXTURE.as_bytes(),
+            LFS_WEIGHT_SHA256,
+            FILE_BYTES,
+        )
+        .unwrap();
+        assert_eq!(contract.encoder_layers, 24);
+        assert_eq!(contract.hidden_size, 1_024);
     }
 }

@@ -1,4 +1,5 @@
-//! Portable one-layer oracle for the pinned MiMo bundled audio encoder.
+//! Portable transformer-layer and pre-pool encoder oracles for the pinned MiMo
+//! bundled audio tokenizer.
 //!
 //! The public helper accepts small dimensions for semantic tests. The resident
 //! GPU caller binds the pinned 1024/16/4096 shape separately.
@@ -6,6 +7,8 @@
 use crate::speech::encoder::gelu_erf;
 
 pub const MAX_COMPONENT_TOKENS: usize = 256;
+pub const ENCODER_LAYERS: usize = 24;
+pub const ENCODER_SKIP_LAYER_ID: usize = 3;
 
 pub fn bf16(value: f32) -> f32 {
     let bits = value.to_bits();
@@ -221,6 +224,51 @@ pub fn forward(input: &[f32], tokens: usize, layer: &Layer<'_>) -> Result<Vec<f3
     Ok(result)
 }
 
+/// Run the 24 source-order transformer layers, add the output of layer index 2,
+/// and apply `encoder.layer_norm`. Input is already frontended BF16-valued
+/// `[tokens, width]`; downsampling and quantization are outside this component.
+pub fn forward_encoder_stack(
+    input: &[f32],
+    tokens: usize,
+    layers: &[Layer<'_>],
+    final_norm: &Norm<'_>,
+) -> Result<Vec<f32>, String> {
+    if layers.len() != ENCODER_LAYERS
+        || !(1..=MAX_COMPONENT_TOKENS).contains(&tokens)
+        || layers
+            .iter()
+            .enumerate()
+            .any(|(index, layer)| layer.window != (index % 2 == 0).then_some(128))
+    {
+        return Err("MiMo codec encoder source layer plan or token count changed".into());
+    }
+    let width = layers[0].query.input;
+    if width == 0
+        || width > 1_024
+        || input.len() != tokens * width
+        || !valid_norm(final_norm, width)
+    {
+        return Err("MiMo codec encoder input or final LayerNorm changed".into());
+    }
+    let mut hidden = input.to_vec();
+    let mut skip = None;
+    for (index, layer) in layers.iter().enumerate() {
+        hidden = forward(&hidden, tokens, layer)?;
+        if index + 1 == ENCODER_SKIP_LAYER_ID {
+            skip = Some(hidden.clone());
+        }
+    }
+    let skip = skip.ok_or("MiMo codec encoder skip layer missing")?;
+    for (value, previous) in hidden.iter_mut().zip(skip) {
+        *value = bf16(*value + previous);
+    }
+    let result = norm(&hidden, tokens, width, final_norm);
+    if result.iter().any(|value| !value.is_finite()) {
+        return Err("MiMo codec encoder final LayerNorm produced a non-finite result".into());
+    }
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -337,6 +385,126 @@ mod tests {
         assert!(values[2] < 1.0 && values[3] > 0.0);
         assert!(values.iter().all(|value| value.to_bits() & 0xffff == 0));
         assert_eq!(bf16(1.0 + 1.0 / 256.0), 1.0);
+    }
+
+    #[test]
+    fn source_order_skip_and_final_affine_are_observable() {
+        let width = 4;
+        let zeros = vec![bits(0.0); width];
+        let ones = vec![bits(1.0); width];
+        let zero_linear = vec![bits(0.0); width * width];
+        let zero_fc1 = vec![bits(0.0); 8 * width];
+        let zero_fc2 = vec![bits(0.0); width * 8];
+        let zero_ff_bias = vec![bits(0.0); 8];
+        let updates = (0..ENCODER_LAYERS)
+            .map(|index| {
+                vec![
+                    bits(match index {
+                        2 => 1.0,
+                        23 => 0.5,
+                        _ => 0.25,
+                    }),
+                    bits(0.0),
+                    bits(0.0),
+                    bits(0.0),
+                ]
+            })
+            .collect::<Vec<_>>();
+        let affine = Norm {
+            weight: &ones,
+            bias: &zeros,
+        };
+        let mut layers = (0..ENCODER_LAYERS)
+            .map(|index| Layer {
+                attention_norm: Norm {
+                    weight: &ones,
+                    bias: &zeros,
+                },
+                query: Linear {
+                    weight: &zero_linear,
+                    bias: Some(&zeros),
+                    input: width,
+                    output: width,
+                },
+                key: Linear {
+                    weight: &zero_linear,
+                    bias: None,
+                    input: width,
+                    output: width,
+                },
+                value: Linear {
+                    weight: &zero_linear,
+                    bias: Some(&zeros),
+                    input: width,
+                    output: width,
+                },
+                attention_output: Linear {
+                    weight: &zero_linear,
+                    bias: Some(&updates[index]),
+                    input: width,
+                    output: width,
+                },
+                final_norm: Norm {
+                    weight: &ones,
+                    bias: &zeros,
+                },
+                fc1: Linear {
+                    weight: &zero_fc1,
+                    bias: Some(&zero_ff_bias),
+                    input: width,
+                    output: 8,
+                },
+                fc2: Linear {
+                    weight: &zero_fc2,
+                    bias: Some(&zeros),
+                    input: 8,
+                    output: width,
+                },
+                heads: 2,
+                window: (index % 2 == 0).then_some(128),
+            })
+            .collect::<Vec<_>>();
+        let final_weight = vec![bits(1.0), bits(0.5), bits(2.0), bits(1.0)];
+        let final_bias = vec![bits(0.0), bits(0.25), bits(-0.5), bits(1.0)];
+        let final_norm = Norm {
+            weight: &final_weight,
+            bias: &final_bias,
+        };
+        let input = [1.0, 2.0, -1.0, -2.0];
+        let actual = forward_encoder_stack(&input, 1, &layers, &final_norm).unwrap();
+        // Every layer adds its declared first-channel bias. The 24 updates
+        // total 7, while the first three total 1.5. The source skip therefore
+        // makes the final LayerNorm input [10.5, 4, -2, -4].
+        let merged = [10.5f32, 4.0, -2.0, -4.0];
+        let mean = merged.iter().sum::<f32>() / width as f32;
+        let variance = merged
+            .iter()
+            .map(|value| (value - mean).powi(2))
+            .sum::<f32>()
+            / width as f32;
+        let expected = merged
+            .iter()
+            .enumerate()
+            .map(|(index, value)| {
+                bf16(
+                    ((value - mean) / (variance + 1e-5).sqrt()) * decode(&final_weight)[index]
+                        + decode(&final_bias)[index],
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected);
+        layers[1].window = Some(128);
+        assert!(forward_encoder_stack(&input, 1, &layers, &affine).is_err());
+        layers[1].window = None;
+        assert!(forward_encoder_stack(&input, 1, &layers[..23], &affine).is_err());
+        assert!(forward_encoder_stack(&input, 0, &layers, &affine).is_err());
+        assert!(forward_encoder_stack(&input, 257, &layers, &affine).is_err());
+        assert!(forward_encoder_stack(&[1.001, 2.0, -1.0, -2.0], 1, &layers, &affine).is_err());
+        let bad_affine = Norm {
+            weight: &ones[..3],
+            bias: &zeros,
+        };
+        assert!(forward_encoder_stack(&input, 1, &layers, &bad_affine).is_err());
     }
 
     #[test]
