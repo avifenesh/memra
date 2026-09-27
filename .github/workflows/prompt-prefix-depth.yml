@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
@@ -54,7 +54,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Install CUDA compiler without allocating a GPU
@@ -70,7 +70,7 @@ jobs:
             --out "$RUNNER_TEMP/prompt-prefix-native"
       - name: Retain source, programs and complete command records
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: prompt-prefix-native-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
@@ -86,7 +86,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
@@ -105,7 +105,7 @@ jobs:
             --out "$RUNNER_TEMP/prefix-v2-render"
           cp "$RUNNER_TEMP/prefix-v2-render/RESULTS.md" "$RUNNER_TEMP/prefix-v2-replay/RESULTS.md"
       - name: Retain independently replayed reports for exact publication
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: prompt-prefix-replayed-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
@@ -123,7 +123,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Re-audit every fixed-confidence request and the one-file runtime patch
@@ -145,7 +145,7 @@ jobs:
           cmp "$RUNNER_TEMP/confidence-replay/FAILED-QUALIFICATION.json" "$lane/FAILED-QUALIFICATION.json"
           cmp "$RUNNER_TEMP/confidence-replay/PHASE-RESULTS.json" "$lane/PHASE-RESULTS.json"
       - name: Retain exact replay receipt
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: qwen-confidence-replay-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
@@ -164,7 +164,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Check evidence-derived C behavior on the hosted CPU
@@ -190,7 +190,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
@@ -212,7 +212,7 @@ jobs:
           cmp "$RUNNER_TEMP/confidence-v3-replay/RESULTS.md" "$lane/RESULTS.md"
       - name: Retain independently replayed v3 result files
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: qwen-confidence-v3-replay-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
@@ -226,7 +226,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
@@ -257,7 +257,7 @@ jobs:
           diff -r "$RUNNER_TEMP/joint-v4-workloads" "$lane/joint-v4/workloads-v4"
       - name: Retain observational feature pilot
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: joint-v4-history-pilot-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
@@ -270,7 +270,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Install CUDA compiler without allocating a GPU
@@ -300,7 +300,7 @@ jobs:
           cargo test --locked -p memra-engine --lib learned_depth::tests
       - name: Retain pinned source preflight
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: joint-v4-native-cpu-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
@@ -313,7 +313,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Install CUDA compiler without allocating a GPU
@@ -336,7 +336,7 @@ jobs:
             "$RUNNER_TEMP/joint-v4-release/mtp-depth-study"
       - name: Retain source and RTX 5090 policy program
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: joint-v4-native-release-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
@@ -351,7 +351,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Install CUDA compiler without allocating a GPU
@@ -390,7 +390,7 @@ jobs:
             "$RUNNER_TEMP/joint-v5-native/mtp-depth-study"
       - name: Retain corrected source and RTX 5090 program
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: joint-v5-native-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
@@ -405,7 +405,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Install CUDA compiler without allocating a GPU
@@ -444,7 +444,7 @@ jobs:
             "$RUNNER_TEMP/joint-v6-native/mtp-depth-study"
       - name: Retain draft-only source and RTX 5090 program
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: joint-v6-draft-only-native-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
@@ -460,7 +460,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Install CUDA compiler without allocating a GPU
@@ -501,7 +501,7 @@ jobs:
             "$RUNNER_TEMP/joint-v8-native/mtp-depth-study"
       - name: Retain corrected source and program
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: joint-v8-prime-probability-native-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
@@ -517,7 +517,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Recompute parent lineage, code probes and complete-request ETE
