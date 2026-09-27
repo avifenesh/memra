@@ -93,7 +93,17 @@ bank. The full-bank form stays one row, because its in-kernel slot sum is one ro
   and row moves, and the sampled B-row graph draws equal the eager ones;
 - `dsv4_kv_split_gate` passes;
 - the DSpark TP/EP gate gives main's proposal shas, with batched equal to sequential over 3206 cache
-  classes.
+  classes. It still reported `[FAIL]` on one finding, "MROW STREAM ENGAGEMENT: stream ON but the
+  batched arm took 0 dispatches". The partition form now takes the verify rows the multi-row
+  visitor took, so the claim was stale, not the program: every bit verdict passed. The gate now
+  claims fused dispatches for the batched arm on TP/EP (`7ffe5281c`); re-run below.
+
+**Rebased on main** (the DSpark round lane and the route fix under it; `raw/se2-rebased-s2n/`):
+- the component tests pass, including the three-row case;
+- `PROGRAM_SHA256` is `fbce1a0492d69635`;
+- the rows and split gates pass;
+- the DSpark TP/EP gate with the engagement fix reads `GPU DSPARK GATE [PASS]`. The batched arm
+  takes 15480 fused dispatches and 0 multi-row visitor ones, with main's proposal shas.
 
 **Served, multi-row form**, same pair, one boot per row, plain M F F M M F then DSpark M F F M M F,
 N=3:
@@ -198,6 +208,19 @@ the second SE pair, box-local builds, order M F G H H G F M (`raw/se2-fused-ring
 | G (256, 3) | 11.24 .. 11.31, -0.6% |
 | H (512, 2) | 11.25 .. 11.35, -0.6% |
 
-The ring is not what holds the pair near 0.9 TB/s. With about three local experts, the committed
-4 warps per projection give about 192 live CTAs of 8 warps on 188 SMs, so the SMs that hold two
-CTAs set the kernel time. The CTA-width sweep is `raw/se-fused-cta-v6c/`.
+The ring is not what holds the pair near 0.9 TB/s. The next guess was the CTA count: with about
+three local experts, the committed 4 warps per projection give about 192 live CTAs of 8 warps on
+188 SMs, so the SMs that hold two CTAs would set the kernel time. Wider grids of narrower CTAs
+refute it. On the first pair, order F I J K K J I F (`raw/se-fused-cta-v6c/`):
+
+| build (warps per projection, KC, stages) | replay ms/token |
+|---|---|
+| F (4, 256, 2), committed | 11.12 .. 11.27 |
+| I (2, 256, 3) | 11.40 .. 11.52 |
+| K (2, 512, 2) | 11.50 .. 11.64 |
+| J (1, 256, 3) | 12.60 .. 12.76 |
+
+Each CTA computes its row's x mirror before it streams, so halving the warps per CTA doubles the
+mirrors and halves the warps that share each one. Nsight Compute on the committed pair
+(`raw/se-ncu-v6b/`) reads 18% of peak warps active, 27% of SM throughput and 22% of L2
+throughput. The committed setting stays.
