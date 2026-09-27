@@ -10,7 +10,8 @@ The mel input is little-endian F32 [frames, 128] without a file header. The
 checked-in mimo-pcm-mel-voiced-2048.logmel.f32 is one deterministic example.
 --stages-dir includes conv1_pre_gelu.bf16 as frame-major BF16 [frames, 1024]
 ([9, 1024] for the checked-in mel) alongside the existing post-GELU conv1
-and later source stages.
+and later source stages. It also records layer0.bf16 after the first hybrid
+attention transformer layer.
 --conv-linear-control reruns that same pinned encoder and checkpoint with
 conv1 and conv2 computed by BF16 im2col plus F.linear. The receipt records
 both paths' code IDs and stage hashes. With --stages-dir, control tensors go
@@ -399,6 +400,9 @@ def run_publisher(source, encoder, mel, frames, codec, torch, device, capture_st
         def before_frontend_layer(_module, args):
             stage_snapshots["frontend"] = args[0].detach().clone()
 
+        def after_layer0(_module, _args, output):
+            stage_snapshots["layer0"] = output.detach().clone()
+
         def after_stack_norm(_module, _args, output):
             stage_snapshots["stack"] = output.detach().clone()
 
@@ -407,6 +411,7 @@ def run_publisher(source, encoder, mel, frames, codec, torch, device, capture_st
             encoder.conv2.register_forward_pre_hook(before_conv2),
             encoder.conv2.register_forward_hook(after_conv2),
             encoder.layers[0].register_forward_pre_hook(before_frontend_layer),
+            encoder.layers[0].register_forward_hook(after_layer0),
             encoder.layer_norm.register_forward_hook(after_stack_norm),
         ]
     with torch.inference_mode():
@@ -475,6 +480,7 @@ def run_publisher(source, encoder, mel, frames, codec, torch, device, capture_st
             "conv1": [frames, codec["d_model"]],
             "conv2_pre_gelu": [(frames + 1) // 2, codec["d_model"]],
             "frontend": [(frames + 1) // 2, codec["d_model"]],
+            "layer0": [(frames + 1) // 2, codec["d_model"]],
             "stack": [(frames + 1) // 2, codec["d_model"]],
             "pre_rvq": [tokens, codec["d_model"]],
         }
