@@ -1,0 +1,13 @@
+build main2 7b9815296 SERVER_EXIT=0 ENGINE_EXIT=0 
+build moes4 SERVER_EXIT=0 ENGINE_EXIT=0  diff_lines 0
+build moes8 SERVER_EXIT=0 ENGINE_EXIT=0  diff_lines 13
+build moes12 SERVER_EXIT=0 ENGINE_EXIT=0  diff_lines 13
+long r1 M rc=0 PROGRAM_SHA256 fbce1a0492d69635 PASS: 304  replay_ms_per_token=12.508 replay_ms_per_token=12.461 replay_ms_per_token=12.407 
+long r2 S4 rc=0 PROGRAM_SHA256 fbce1a0492d69635 PASS: 304  replay_ms_per_token=12.490 replay_ms_per_token=12.465 replay_ms_per_token=12.367 
+long r3 S8 rc=0 PROGRAM_SHA256 fbce1a0492d69635 PASS: 304  replay_ms_per_token=12.724 replay_ms_per_token=12.688 replay_ms_per_token=12.598 
+long r4 S12 rc=0 PROGRAM_SHA256 fbce1a0492d69635 PASS: 304  replay_ms_per_token=12.801 replay_ms_per_token=12.747 replay_ms_per_token=12.675 
+long r5 S12 rc=0 PROGRAM_SHA256 fbce1a0492d69635 PASS: 304  replay_ms_per_token=12.861 replay_ms_per_token=12.789 replay_ms_per_token=12.728 
+long r6 S8 rc=0 PROGRAM_SHA256 fbce1a0492d69635 PASS: 304  replay_ms_per_token=12.719 replay_ms_per_token=12.637 replay_ms_per_token=12.607 
+long r7 S4 rc=0 PROGRAM_SHA256 fbce1a0492d69635 PASS: 304  replay_ms_per_token=12.504 replay_ms_per_token=12.421 replay_ms_per_token=12.372 
+long r8 M rc=0 PROGRAM_SHA256 fbce1a0492d69635 PASS: 304  replay_ms_per_token=12.516 replay_ms_per_token=12.427 replay_ms_per_token=12.388 
+S2I_DONE 3347cf197572d31dc019ff07501c339b887e7d55

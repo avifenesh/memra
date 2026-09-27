@@ -18538,12 +18538,23 @@ impl Dsv4Gpu {
     /// other composition, including a gate that pins the GU_FUSE or M1 tensor-core tails,
     /// keeps the chain.
     fn moe_fused_engages(&self, vws: &VerifyWs, t: usize, allow_gu_fuse: bool) -> bool {
-        t == 1
-            && crate::dsv4_moe_fused_on()
+        t == 1 && vws.moe_tile_cnt.is_some() && self.moe_fused_eligible(vws, allow_gu_fuse)
+    }
+
+    /// The TP/EP partition form sums its slots after the rank-order join, not in the kernel,
+    /// so it takes every step the stream visitors take: one row, a B-row step or a verify
+    /// round up to the multi-row visitor's bound (memra #710).
+    fn moe_tp_ep_fused_engages(&self, vws: &VerifyWs, t: usize, allow_gu_fuse: bool) -> bool {
+        (1..=crate::dsv4_grouped::MROW_STREAM_MAX_ROWS).contains(&t)
+            && self.moe_fused_eligible(vws, allow_gu_fuse)
+    }
+
+    /// The row-count-free half of the fused pair's engagement.
+    fn moe_fused_eligible(&self, vws: &VerifyWs, allow_gu_fuse: bool) -> bool {
+        crate::dsv4_moe_fused_on()
             && !self.grouped_fresh_storage_control
             && vws.moe_fault_armed
             && vws.moe_fault.is_some()
-            && vws.moe_tile_cnt.is_some()
             && self.grouped_route_device
             && crate::dsv4_grouped::route_validation_enabled()
             && crate::dsv4_grouped::mirror_validation_enabled()
@@ -18624,6 +18635,110 @@ impl Dsv4Gpu {
         if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
             eprintln!(
                 "[dsv4-moe-fused] ENGAGED: t=1 slots={topk} experts={ne} hidden={hidden} inter={inter}, two launches, deferred faults"
+            );
+        }
+        Ok(())
+    }
+
+    /// The fused program over this rank's expert partition (memra #710): what
+    /// `dsv4_ep::execute_matrix_local` runs as the grouped chain, in two launches, for `t`
+    /// token rows. The contribution plane is cleared first, as the chain clears it, so another
+    /// rank's slots enter the rank-order join as zeros; the slot sums stay after the join. Each
+    /// own slot's h and contribution rows are the chain's (the full-bank form's construction,
+    /// #694: one slot is the one-token visitor's program, which is the multi-row visitor's too).
+    #[allow(clippy::too_many_arguments)]
+    fn moe_tp_ep_fused(
+        &self,
+        st: &Stage,
+        layer: &LayerDev,
+        ep: &crate::dsv4_ep::EpLayer,
+        vws: &mut VerifyWs,
+        t: usize,
+        hidden: usize,
+        ne: usize,
+        topk: usize,
+        inter: usize,
+        limit: f32,
+    ) -> Res<()> {
+        let stream = st.gpu.stream();
+        let table = layer
+            .experts_modelopt_table
+            .as_ref()
+            .ok_or("TP/EP local matrix table missing")?;
+        if !ep.local_only || table.len() != ep.count * 6 || layer.experts_s2_dev.len() < ne * 3 {
+            return Err(format!(
+                "TP/EP fused MoE: local table {} for {} experts, macro scales {} for {ne}",
+                table.len(),
+                ep.count,
+                layer.experts_s2_dev.len()
+            ));
+        }
+        let il = layer.il as usize;
+        let words = vws.moe_fault.as_ref().ok_or("MoE fault words missing")?;
+        if il >= words.len() {
+            return Err(format!(
+                "TP/EP MoE fault word for layer {il} outside workspace"
+            ));
+        }
+        let fault =
+            (words.device_ptr(&stream).0 + (il * std::mem::size_of::<i32>()) as u64) as *mut i32;
+        stream
+            .memset_zeros(&mut vws.contrib)
+            .map_err(|e| format!("TP/EP fused contribution clear: {e}"))?;
+        unsafe {
+            ck(
+                "TP/EP fused MoE gate/up",
+                k::memra_dsv4_moe_fused_gu_part(
+                    table.device_ptr(&stream).0 as *const u64,
+                    ep.count as i32,
+                    ne as i32,
+                    ep.local_first as i32,
+                    vws.sel.device_ptr(&stream).0 as *const i32,
+                    dpf!(vws.selw, &stream),
+                    dpf!(layer.experts_s2_dev, &stream),
+                    dpf!(vws.xf, &stream),
+                    dpm!(vws.hbuf, &stream),
+                    topk as i32,
+                    t as i32,
+                    hidden as i32,
+                    inter as i32,
+                    limit,
+                    fault,
+                    sp(&stream),
+                ),
+            )?;
+            ck(
+                "TP/EP fused MoE down",
+                k::memra_dsv4_moe_fused_down_part(
+                    table.device_ptr(&stream).0 as *const u64,
+                    ep.count as i32,
+                    ne as i32,
+                    ep.local_first as i32,
+                    vws.sel.device_ptr(&stream).0 as *const i32,
+                    dpf!(layer.experts_s2_dev, &stream),
+                    dpf!(vws.hbuf, &stream),
+                    dpm!(vws.contrib, &stream),
+                    std::ptr::null(),
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    topk as i32,
+                    t as i32,
+                    inter as i32,
+                    hidden as i32,
+                    fault,
+                    sp(&stream),
+                ),
+            )?;
+        }
+        self.grouped_device_route_calls
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            eprintln!(
+                "[dsv4-moe-fused] ENGAGED on TP/EP: t={t} slots={} experts [{}, {}) of {ne}, two launches, the slot sums after the rank-order join",
+                t * topk,
+                ep.local_first,
+                ep.local_first + ep.count
             );
         }
         Ok(())
@@ -18893,18 +19008,32 @@ impl Dsv4Gpu {
 
         let mut routed_combined = false;
         if let Some(ep) = &layer.ep {
-            unsafe {
-                ck(
-                    "EP activation quantization",
-                    k::memra_dsv4_act_quant_fp8(
-                        dpf!(vws.xf, &stream),
-                        vws.xq.device_ptr_mut(&stream).0 as *mut c_void,
-                        dpm!(vws.xs, &stream),
-                        t as i32,
-                        hidden as i32,
-                        sp(&stream),
-                    ),
-                )?;
+            // A TP/EP one-token step runs the fused partition form, which mirrors x itself.
+            let tp_ep_fused = self.matrix_moe
+                && self.topology.is_tp_ep()
+                && defer_tp_ep_tail
+                && ep.local_only
+                && self.moe_tp_ep_fused_engages(vws, t, allow_gu_fuse);
+            if !tp_ep_fused {
+                unsafe {
+                    ck(
+                        "EP activation quantization",
+                        k::memra_dsv4_act_quant_fp8(
+                            dpf!(vws.xf, &stream),
+                            vws.xq.device_ptr_mut(&stream).0 as *mut c_void,
+                            dpm!(vws.xs, &stream),
+                            t as i32,
+                            hidden as i32,
+                            sp(&stream),
+                        ),
+                    )?;
+                }
+            }
+            if tp_ep_fused {
+                self.moe_tp_ep_fused(st, layer, ep, vws, t, hidden, ne, topk, inter, limit)?;
+                self.ep_calls
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                return Ok(());
             }
             if self.matrix_moe {
                 if !self.grouped_route_device || self.grouped_fresh_storage_control {

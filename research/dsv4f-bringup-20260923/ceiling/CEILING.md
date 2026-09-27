@@ -98,6 +98,34 @@ gate bit-identical:
   for removing both barriers (1.9% of that program's token); what the extra comes from is not
   measured yet.
 
+## Levers, 2026-09-27
+
+Source: `../levers-20260927/`.
+- **Adopted: the fused MoE pair on the TP/EP partition.** Measured on the second SE pair, greedy
+  c1 77.48 to 85.16 tok/s (decode p50 89.32), +9.91%, bit-identical.
+- **Refuted: weight loads ahead of the PDL wait** (-1.8%).
+- **Refuted: a deeper MoE stream ring** (+1.6% and +2.3% ms per token).
+
+The plain step after the fused pair, with PDL off: 11.3 ms of kernels per step. That breaks
+down as:
+- dense FP8 GEMV 3.13 ms;
+- the fused MoE pair 2.01 ms, at about 0.9 TB/s;
+- dots 1.17 ms;
+- joins 1.16 ms, most of the expert reduce being one rank waiting for the other;
+- about 3 ms of small latency-bound kernels. HC finish alone is 0.63 ms: two single-block calls
+  per layer at 7 us each. After it come sink attention, the router, the q norm pack, HC split
+  dots and the indexer.
+
+**Expert placement is free in this numeric class.** The rank-order expert sum adds a slot's value
+on its owning rank to the other rank's cleared +0.0. A fused or chain contribution starts its
+accumulator at +0.0 and cannot become -0.0, so `x + 0.0 = x` exactly. Which rank computes a slot
+therefore does not change a bit.
+
+Splitting every expert's rows across both ranks (TP inside the experts) would also keep each
+output element's dot on one rank. That removes the per-token imbalance the reduce waits on. The
+expected max of a Binomial(6, 0.5) split is 3.94 experts against 3, 31% more MoE time on the
+critical path. The cost is one more small join per layer, for the intermediate.
+
 ## The gap, by lever, largest first
 
 1. **Concurrency on TP/EP.** The B-row step: several requests' rows in one TP step, each weight

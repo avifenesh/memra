@@ -50,6 +50,18 @@ A DSpark round's compressor rollback and its verify row placement are single lau
 tok/s and sampled 75.84 to 78.65 on a second SE pair (N=3), and the chunked prefill's TTFT 18% to
 21% lower. Same bits.
 
+Since 2026-09-27 a TP/EP step of 1 to 16 rows runs the routed experts as the fused pair over the
+rank's experts: two launches per layer, where the grouped chain took about fourteen
+(`research/dsv4f-bringup-20260923/levers-20260927/`). Same bits. On a second SE pair, greedy
+aggregate tok/s, main against fused, N=3:
+
+| cell | main | fused |
+|---|---|---|
+| c1 | 77.36 | 84.49 (decode 88.86), +9.2% |
+| c2 | 103.75 | 116.45, +12.2% |
+| c4 | 130.48 | 146.44, +12.2% |
+| DSpark c1 | 88.99 | 95.63, +7.5% |
+
 Concurrency: the plain TP/EP route serves four lanes whose steps share one captured B-row
 graph step (memra #710). Aggregate on the Workstation pair:
 

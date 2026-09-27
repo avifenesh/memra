@@ -1,0 +1,13 @@
+diff --git a/crates/memra-engine/cu/dsv4_gpu.cu b/crates/memra-engine/cu/dsv4_gpu.cu
+index 307c11415..4a3788d4e 100644
+--- a/crates/memra-engine/cu/dsv4_gpu.cu
++++ b/crates/memra-engine/cu/dsv4_gpu.cu
+@@ -8092,7 +8092,7 @@ __device__ __forceinline__ bool dsv4_moe_fused_mirror(const float* __restrict__
+     return bad;
+ }
+ 
+-constexpr int DSV4_MOE_FUSED_WARPS = 4, DSV4_MOE_FUSED_KC = 256, DSV4_MOE_FUSED_STAGES = 2;
++constexpr int DSV4_MOE_FUSED_WARPS = 4, DSV4_MOE_FUSED_KC = 256, DSV4_MOE_FUSED_STAGES = 3;
+ 
+ // grid (out_f / (8*WP), topk), block (32, 2*WP): warps [0,WP) gate, [WP,2WP) up, same columns.
+ template<int WP, int KC, int STAGES>
