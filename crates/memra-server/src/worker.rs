@@ -37521,18 +37521,24 @@ fn send_token_event(s: &mut Session, id: u32, text: String) -> bool {
 
 /// Record one committed token into the session's public generation, and, on the FIRST such
 /// token, the hybrid-lane TTFT histogram (memra#522, `crate::hybrid_telemetry`): admission
-/// (`s.t0`) to this session's first committed token, composing with the queue-wait histogram
+/// (`t0`) to this session's first committed token, composing with the queue-wait histogram
 /// the same way the dedicated route's queue-wait + round decomposition already does. Every
 /// decode path (plain, spec, gspec, dspark, glm5, step) funnels its committed tokens through
 /// this one function, so it is the single choke point that needs the check, regardless of
-/// which path a given session takes. `s.generated` starts empty for every freshly admitted
+/// which path a given session takes. `generated` starts empty for every freshly admitted
 /// session (see `admit`'s `Session` literal), so `is_empty()` here is exactly "this session's
 /// first token", not an artifact of resume/continuation state from an earlier turn.
-fn push_generated(s: &mut Session, tok: u32) {
-    if s.generated.is_empty() {
-        crate::hybrid_telemetry::record_ttft(&s.model, s.t0.elapsed());
+///
+/// Takes disjoint field references rather than `&mut Session`: several call sites (the spec,
+/// gspec, dspark, glm5 and step paths) already hold a live mutable borrow of a Session field
+/// (`s.spec.as_mut()` and its siblings) across the loop that commits tokens, and a whole-`s`
+/// reborrow through an opaque function call would conflict with it (E0499) even though this
+/// function never touches that field.
+fn push_generated(generated: &mut Vec<u32>, model: &str, t0: Instant, tok: u32) {
+    if generated.is_empty() {
+        crate::hybrid_telemetry::record_ttft(model, t0.elapsed());
     }
-    s.generated.push(tok);
+    generated.push(tok);
 }
 
 /// Number of tokens from an engine-committed speculative burst that belong to this request.
@@ -38473,7 +38479,7 @@ fn advance_sample_emit(
         return (false, None);
     }
     s.sampler.accept(next);
-    push_generated(s, next);
+    push_generated(&mut s.generated, &s.model, s.t0, next);
     if let Some(trace) = s.ttft.as_ref() {
         trace.mark_first_decode();
     }
@@ -38539,7 +38545,7 @@ fn advance_token_emit(
         return (false, ());
     }
     s.sampler.accept(tok);
-    push_generated(s, tok);
+    push_generated(&mut s.generated, &s.model, s.t0, tok);
     if let Some(trace) = s.ttft.as_ref() {
         trace.mark_first_decode();
     }
@@ -39501,7 +39507,7 @@ fn step_session(
         }
         for &tok in public_burst {
             s.sampler.accept(tok);
-            push_generated(s, tok);
+            push_generated(&mut s.generated, &s.model, s.t0, tok);
             s.fed.push(tok);
             if s.params.eos.contains(&tok) {
                 stop = Some(StopReason::Eos);
@@ -39708,7 +39714,7 @@ fn step_session(
         return Ok(false);
     }
     s.sampler.accept(next);
-    push_generated(s, next);
+    push_generated(&mut s.generated, &s.model, s.t0, next);
     if let Some(trace) = s.ttft.as_ref() {
         trace.mark_first_decode();
     }
@@ -40030,7 +40036,7 @@ fn step_gemma_spec(
     );
     for &tok in public_burst {
         s.sampler.accept(tok);
-        push_generated(s, tok);
+        push_generated(&mut s.generated, &s.model, s.t0, tok);
         s.fed.push(tok);
         if s.params.eos.contains(&tok) {
             stop = Some(StopReason::Eos);
@@ -40351,7 +40357,7 @@ fn step_dspark_spec(
     };
     for &tok in public_burst {
         s.sampler.accept(tok);
-        push_generated(s, tok);
+        push_generated(&mut s.generated, &s.model, s.t0, tok);
         s.fed.push(tok);
         if s.params.eos.contains(&tok) {
             stop = Some(StopReason::Eos);
@@ -40698,7 +40704,7 @@ fn step_glm5_spec(
     glm5_prof_rounds_flush(s, false);
     for &tok in public_burst {
         s.sampler.accept(tok);
-        push_generated(s, tok);
+        push_generated(&mut s.generated, &s.model, s.t0, tok);
         s.fed.push(tok);
         if s.params.eos.contains(&tok) {
             stop = Some(StopReason::Eos);
@@ -48979,22 +48985,27 @@ mod tests {
         let prod = &code[..code.find("\nmod tests").expect("tests module exists")];
 
         // TTFT: every committed token, on every decode path, goes through `push_generated`.
-        // No production call site bypasses it with a raw `s.generated.push(`.
+        // No production call site bypasses it with a raw `s.generated.push(`. push_generated
+        // takes disjoint field references (not `&mut Session`) so a call site already
+        // holding a live borrow of another Session field (spec/gspec/dspark/glm5's
+        // `as_mut()`) does not conflict with it (E0499 fixed after CI first caught it).
         assert!(
-            prod.matches("push_generated(s,").count() >= 7,
+            prod.matches("push_generated(&mut s.generated, &s.model, s.t0,")
+                .count()
+                >= 7,
             "every decode path must commit tokens through push_generated"
         );
         assert_eq!(
             prod.matches("s.generated.push(").count(),
-            1,
-            "the only raw s.generated.push must be push_generated's own body"
+            0,
+            "no production call site bypasses push_generated with a raw s.generated.push"
         );
         let ttft_at = prod
             .find("crate::hybrid_telemetry::record_ttft(")
             .expect("ttft recording site exists");
         let ttft_before = &prod[ttft_at.saturating_sub(200)..ttft_at];
         assert!(
-            ttft_before.contains("s.generated.is_empty()"),
+            ttft_before.contains("generated.is_empty()"),
             "ttft records exactly once, on the first committed token"
         );
 
