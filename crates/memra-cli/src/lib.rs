@@ -213,6 +213,31 @@ pub fn verify_model(request: VerifyRequest) -> Result<VerifySummary, Box<dyn std
                 })
                 .transpose()
                 .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
+            // Same vacuity problem as the text stream above, and the same fix: a family whose
+            // tiny fixture carries a vision input is pinned too, and one with no pinned file
+            // fails rather than shipping on self-comparison alone (revuto, memra#543 PR #897).
+            if let Some(vision) = vision.as_ref() {
+                let vision_oracle_text = format_reference_vision_oracle(vision);
+                match pinned_tiny_vision_oracle(pack.family) {
+                    None => {
+                        return Err(format!(
+                            "tiny parity requires a pinned vision oracle for {}; add crates/memra-cli/tests/fixtures/tiny-oracle/{}-vision.tsv (reviewed, committed); no fallback is allowed",
+                            pack.family, pack.family
+                        )
+                        .into());
+                    }
+                    Some(pinned) => {
+                        if pinned != vision_oracle_text {
+                            return Err(format!(
+                                "tiny vision parity diverges from the pinned oracle at crates/memra-cli/tests/fixtures/tiny-oracle/{}-vision.tsv (first differing line: {:?})",
+                                pack.family,
+                                first_diff_line(pinned, &vision_oracle_text),
+                            )
+                            .into());
+                        }
+                    }
+                }
+            }
             let multimodal = match (
                 fixture.multimodal_token_ids.as_ref(),
                 fixture.vision.as_ref(),
@@ -234,6 +259,28 @@ pub fn verify_model(request: VerifyRequest) -> Result<VerifySummary, Box<dyn std
                     );
                 }
             };
+            if let Some(multimodal) = multimodal.as_ref() {
+                let multimodal_oracle_text = format_reference_oracle(&multimodal.language);
+                match pinned_tiny_multimodal_oracle(pack.family) {
+                    None => {
+                        return Err(format!(
+                            "tiny parity requires a pinned multimodal oracle for {}; add crates/memra-cli/tests/fixtures/tiny-oracle/{}-multimodal.tsv (reviewed, committed); no fallback is allowed",
+                            pack.family, pack.family
+                        )
+                        .into());
+                    }
+                    Some(pinned) => {
+                        if pinned != multimodal_oracle_text {
+                            return Err(format!(
+                                "tiny multimodal parity diverges from the pinned oracle at crates/memra-cli/tests/fixtures/tiny-oracle/{}-multimodal.tsv (first differing line: {:?})",
+                                pack.family,
+                                first_diff_line(pinned, &multimodal_oracle_text),
+                            )
+                            .into());
+                        }
+                    }
+                }
+            }
             std::fs::create_dir_all(&out_dir)?;
             write_atomic(
                 &out_dir.join("tiny-fixture.txt"),
@@ -557,11 +604,21 @@ pub const REQUIRED_QUALIFICATION_CELLS: &[&str] = &[
 /// readiness-only or stub-HTTP record (the cells left `not_exercised`, exactly what a
 /// `/readyz` probe or a canned-string completion proves) cannot promote a model.
 ///
+/// A `passed` cell is not free text (revuto flagged, memra#543 PR #897: a record with five
+/// hand-typed `passed` lines and no backing evidence used to satisfy this check, the same
+/// failure mode the record exists to refuse). Every `passed` cell must name an evidence file
+/// (`<cell>.evidence`, a path relative to `evidence_dir`) and its sha256
+/// (`<cell>.evidence_sha256`); the file must exist under `evidence_dir` and hash to the
+/// declared value. This binds a `passed` claim to a receipt on disk, the same pattern
+/// `checkpoint-parity.tsv`/`serve-gate.tsv` already use against `artifact.lock`. It does not
+/// prove the receipt's *content* is the real cell result (nothing here re-runs the cell); it
+/// proves the claim was not typed with no backing artifact at all.
+///
 /// This function does not itself run any serving cell; the CPU-only onboarding lane wires
-/// naming and refusal, and a box/GPU lane must supply the actual cell results before a real
-/// promotion record can be produced. A record that carries no cells run at all (a stub of
-/// nothing but readiness) is exactly what this refuses.
-pub fn validate_qualification_record(record: &str) -> Result<(), String> {
+/// naming, evidence-binding and refusal, and a box/GPU lane must supply the actual cell
+/// results and their receipts before a real promotion record can be produced. A record that
+/// carries no cells run at all (a stub of nothing but readiness) is exactly what this refuses.
+pub fn validate_qualification_record(record: &str, evidence_dir: &Path) -> Result<(), String> {
     let mut fields = BTreeMap::new();
     for line in record.lines() {
         let Some((key, value)) = line.split_once('\t') else {
@@ -574,10 +631,15 @@ pub fn validate_qualification_record(record: &str) -> Result<(), String> {
     if fields.get("format").copied() != Some("memra-qualification-record-v1") {
         return Err("qualification record has an unrecognized or missing format".to_string());
     }
-    let family = fields
+    let family = *fields
         .get("family")
         .filter(|value| !value.is_empty())
         .ok_or("qualification record is missing a nonempty family")?;
+    if model_packs::by_alias(family).is_none() {
+        return Err(format!(
+            "qualification record names family {family:?}, which is not a known model pack alias"
+        ));
+    }
     let promote_to = *fields
         .get("promote_to")
         .ok_or("qualification record is missing promote_to")?;
@@ -591,15 +653,52 @@ pub fn validate_qualification_record(record: &str) -> Result<(), String> {
     }
     let mut cells = Vec::with_capacity(REQUIRED_QUALIFICATION_CELLS.len());
     for cell in REQUIRED_QUALIFICATION_CELLS {
-        let value = fields
+        let value = *fields
             .get(cell)
             .ok_or_else(|| format!("qualification record for {family} does not name {cell}"))?;
-        if !matches!(*value, "passed" | "failed" | "not_exercised") {
+        if !matches!(value, "passed" | "failed" | "not_exercised") {
             return Err(format!(
                 "qualification record {cell}={value:?} for {family} is not passed/failed/not_exercised"
             ));
         }
-        cells.push((*cell, *value));
+        if value == "passed" {
+            let evidence_key = format!("{cell}.evidence");
+            let hash_key = format!("{cell}.evidence_sha256");
+            let evidence_name = fields
+                .get(evidence_key.as_str())
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    format!(
+                        "qualification record {cell}=passed for {family} names no {evidence_key}"
+                    )
+                })?;
+            let declared_hash = fields
+                .get(hash_key.as_str())
+                .filter(|value| {
+                    value.len() == 64
+                        && value
+                            .bytes()
+                            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+                })
+                .ok_or_else(|| {
+                    format!("qualification record {cell}=passed for {family} names no lowercase-hex {hash_key}")
+                })?;
+            let evidence_path = evidence_dir.join(evidence_name);
+            let bytes = std::fs::read(&evidence_path).map_err(|error| {
+                format!(
+                    "qualification record {cell}=passed for {family} names evidence {} which could not be read: {error}",
+                    evidence_path.display()
+                )
+            })?;
+            let actual_hash = hex_sha256(&bytes);
+            if actual_hash != *declared_hash {
+                return Err(format!(
+                    "qualification record {cell}=passed for {family} declares {hash_key}={declared_hash} but {} hashes to {actual_hash}",
+                    evidence_path.display()
+                ));
+            }
+        }
+        cells.push((*cell, value));
     }
     if matches!(promote_to, "NativeQualified" | "NativeTuned") {
         let unmet: Vec<_> = cells
@@ -2249,6 +2348,40 @@ fn pinned_tiny_oracle_path(family: &str) -> String {
     format!("crates/memra-cli/tests/fixtures/tiny-oracle/{family}.tsv")
 }
 
+/// Pinned vision-stream oracle, same discipline as [`pinned_tiny_oracle`]. Only families whose
+/// tiny fixture carries a vision input need one; `pinned_tiny_oracle` covers the text stream
+/// every native-reference family produces.
+fn pinned_tiny_vision_oracle(family: &str) -> Option<&'static str> {
+    match family {
+        "glm5_next" => Some(include_str!(
+            "../tests/fixtures/tiny-oracle/glm5_next-vision.tsv"
+        )),
+        "gemma4_dense" => Some(include_str!(
+            "../tests/fixtures/tiny-oracle/gemma4_dense-vision.tsv"
+        )),
+        "gemma4_moe" => Some(include_str!(
+            "../tests/fixtures/tiny-oracle/gemma4_moe-vision.tsv"
+        )),
+        _ => None,
+    }
+}
+
+/// Pinned multimodal-stream oracle, same discipline as [`pinned_tiny_oracle`].
+fn pinned_tiny_multimodal_oracle(family: &str) -> Option<&'static str> {
+    match family {
+        "glm5_next" => Some(include_str!(
+            "../tests/fixtures/tiny-oracle/glm5_next-multimodal.tsv"
+        )),
+        "gemma4_dense" => Some(include_str!(
+            "../tests/fixtures/tiny-oracle/gemma4_dense-multimodal.tsv"
+        )),
+        "gemma4_moe" => Some(include_str!(
+            "../tests/fixtures/tiny-oracle/gemma4_moe-multimodal.tsv"
+        )),
+        _ => None,
+    }
+}
+
 /// Human-readable pointer to where two oracle texts first disagree, for the error message;
 /// not used for the comparison itself (that is a plain string equality).
 fn first_diff_line<'a>(expected: &'a str, actual: &'a str) -> String {
@@ -2797,12 +2930,27 @@ mod tests {
         assert!(pinned_tiny_oracle("qwen3").is_some());
     }
 
-    fn qualification_record(promote_to: &str, cells: &[(&str, &str)]) -> String {
+    /// Builds a qualification record. For each `passed` cell this also writes a real evidence
+    /// file under `dir` and pins its actual sha256 into the record, because `validate_qualification_record`
+    /// refuses a `passed` claim with no backing receipt (revuto, memra#543 PR #897).
+    fn qualification_record(dir: &Path, promote_to: &str, cells: &[(&str, &str)]) -> String {
         let mut record = format!(
             "format\tmemra-qualification-record-v1\nfamily\tqwen3\npromote_to\t{promote_to}\n"
         );
         for (cell, status) in cells {
             writeln!(record, "{cell}\t{status}").unwrap();
+            if *status == "passed" {
+                let file_name = format!("{}.receipt", cell.replace('.', "-"));
+                let content = format!("evidence for {cell}\n");
+                std::fs::write(dir.join(&file_name), &content).unwrap();
+                writeln!(record, "{cell}.evidence\t{file_name}").unwrap();
+                writeln!(
+                    record,
+                    "{cell}.evidence_sha256\t{}",
+                    hex_sha256(content.as_bytes())
+                )
+                .unwrap();
+            }
         }
         record
     }
@@ -2814,16 +2962,29 @@ mod tests {
             .collect()
     }
 
+    fn qualification_test_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "memra-cli-qualification-{name}-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
     #[test]
     fn qualification_record_accepts_a_fully_exercised_promotion() {
-        let record = qualification_record("NativeQualified", &all_cells("passed"));
-        validate_qualification_record(&record).unwrap();
+        let dir = qualification_test_dir("full");
+        let record = qualification_record(&dir, "NativeQualified", &all_cells("passed"));
+        validate_qualification_record(&record, &dir).unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
     fn qualification_record_allows_not_exercised_cells_for_bringup_only() {
-        let record = qualification_record("NativeReference", &all_cells("not_exercised"));
-        validate_qualification_record(&record).unwrap();
+        let dir = qualification_test_dir("bringup");
+        let record = qualification_record(&dir, "NativeReference", &all_cells("not_exercised"));
+        validate_qualification_record(&record, &dir).unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
@@ -2832,35 +2993,82 @@ mod tests {
         // exercised nothing but readiness (every cell not_exercised) must not be able to claim
         // promote_to=NativeQualified, which is exactly what a readiness-only or stub-HTTP
         // "success" would otherwise buy.
-        let record = qualification_record("NativeQualified", &all_cells("not_exercised"));
-        let error = validate_qualification_record(&record).unwrap_err();
+        let dir = qualification_test_dir("readiness-only");
+        let record = qualification_record(&dir, "NativeQualified", &all_cells("not_exercised"));
+        let error = validate_qualification_record(&record, &dir).unwrap_err();
         assert!(error.contains("has not passed"), "{error}");
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
     fn qualification_record_refuses_a_partially_failed_qualified_promotion() {
+        let dir = qualification_test_dir("partial-fail");
         let mut cells = all_cells("passed");
         cells[1] = ("cell.cache", "failed");
-        let record = qualification_record("NativeQualified", &cells);
-        let error = validate_qualification_record(&record).unwrap_err();
+        let record = qualification_record(&dir, "NativeQualified", &cells);
+        let error = validate_qualification_record(&record, &dir).unwrap_err();
         assert!(error.contains("cell.cache=failed"), "{error}");
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
     fn qualification_record_refuses_an_unnamed_cell() {
+        let dir = qualification_test_dir("unnamed-cell");
         let mut cells = all_cells("passed").to_vec();
         cells.retain(|(cell, _)| *cell != "cell.long_context");
-        let record = qualification_record("NativeQualified", &cells);
-        let error = validate_qualification_record(&record).unwrap_err();
+        let record = qualification_record(&dir, "NativeQualified", &cells);
+        let error = validate_qualification_record(&record, &dir).unwrap_err();
         assert!(error.contains("cell.long_context"), "{error}");
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
     fn qualification_record_refuses_an_unrecognized_cell_status() {
+        let dir = qualification_test_dir("bad-status");
         let mut cells = all_cells("passed");
         cells[0] = ("cell.streaming", "yes");
-        let record = qualification_record("NativeQualified", &cells);
-        assert!(validate_qualification_record(&record).is_err());
+        let record = qualification_record(&dir, "NativeQualified", &cells);
+        assert!(validate_qualification_record(&record, &dir).is_err());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn qualification_record_refuses_an_unknown_family() {
+        let dir = qualification_test_dir("unknown-family");
+        let record = qualification_record(&dir, "NativeReference", &all_cells("not_exercised"))
+            .replace("family\tqwen3", "family\tnot-a-real-family");
+        let error = validate_qualification_record(&record, &dir).unwrap_err();
+        assert!(error.contains("not a known model pack alias"), "{error}");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn qualification_record_refuses_a_passed_cell_with_no_evidence_file() {
+        // The red arm for the evidence-binding fix: hand-typing `cell.x=passed` with no
+        // `.evidence`/`.evidence_sha256` fields, or naming a file that is not actually on disk,
+        // must not satisfy the check.
+        let dir = qualification_test_dir("no-evidence");
+        let record = format!(
+            "format\tmemra-qualification-record-v1\nfamily\tqwen3\npromote_to\tNativeQualified\n{}",
+            REQUIRED_QUALIFICATION_CELLS
+                .iter()
+                .map(|cell| format!("{cell}\tpassed\n"))
+                .collect::<String>()
+        );
+        let error = validate_qualification_record(&record, &dir).unwrap_err();
+        assert!(error.contains("evidence"), "{error}");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn qualification_record_refuses_a_passed_cell_whose_evidence_hash_does_not_match() {
+        let dir = qualification_test_dir("bad-hash");
+        let record = qualification_record(&dir, "NativeQualified", &all_cells("passed"));
+        // Tamper with the on-disk receipt after the record pinned its hash.
+        std::fs::write(dir.join("cell-streaming.receipt"), "tampered\n").unwrap();
+        let error = validate_qualification_record(&record, &dir).unwrap_err();
+        assert!(error.contains("hashes to"), "{error}");
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     /// The bit-determinism check alone (`execute(plan) == execute(plan)` on the same weights)
@@ -2905,6 +3113,60 @@ mod tests {
             pinned_tiny_oracle("qwen3").unwrap(),
             bad_oracle,
             "pinned-oracle comparison must catch what self-comparison missed"
+        );
+    }
+
+    /// The same red arm as above, for the vision stream (revuto flagged that PR #897's first
+    /// pass only pinned the text stream and left `execute_vision`/`execute_multimodal` on
+    /// self-comparison, so a wrong vision kernel on gemma4/glm5_next would still pass tiny
+    /// parity). Corrupts the vision patch-projection bias and shows self-comparison still
+    /// passes while the pinned vision oracle catches it.
+    #[test]
+    fn tiny_parity_pinned_vision_oracle_catches_a_corrupted_reference_run_that_self_comparison_misses()
+     {
+        use memra_gguf::tensor_contract::{TensorId, VisionTensor};
+
+        let pack = model_packs::by_alias("glm5_next").unwrap();
+        let plan = pack.compile_tiny_plan().unwrap();
+        let mut fixture = deterministic_fixture(&plan).unwrap();
+        let input = fixture
+            .vision
+            .clone()
+            .expect("glm5_next carries a vision fixture");
+
+        let good_first = execute_vision(&plan, &fixture.weights, &input).unwrap();
+        let good_second = execute_vision(&plan, &fixture.weights, &input).unwrap();
+        assert_eq!(
+            good_first, good_second,
+            "sanity: the real vision fixture is deterministic"
+        );
+        let good_oracle = format_reference_vision_oracle(&good_first);
+        assert_eq!(
+            pinned_tiny_vision_oracle("glm5_next").unwrap(),
+            good_oracle,
+            "sanity: the pinned vision oracle matches the real fixture before corruption"
+        );
+
+        let bias = fixture
+            .weights
+            .get_mut(&TensorId::Vision {
+                layer: None,
+                tensor: VisionTensor::PatchProjectionBias,
+            })
+            .expect("tiny glm5_next fixture always carries a patch-projection bias");
+        bias.data[0] += 1.0;
+
+        let bad_first = execute_vision(&plan, &fixture.weights, &input).unwrap();
+        let bad_second = execute_vision(&plan, &fixture.weights, &input).unwrap();
+        assert_eq!(
+            bad_first, bad_second,
+            "self-comparison is vacuous: the corrupted vision run is still bit-deterministic against itself"
+        );
+        let bad_oracle = format_reference_vision_oracle(&bad_first);
+        assert_ne!(
+            pinned_tiny_vision_oracle("glm5_next").unwrap(),
+            bad_oracle,
+            "pinned vision oracle comparison must catch what self-comparison missed"
         );
     }
 
