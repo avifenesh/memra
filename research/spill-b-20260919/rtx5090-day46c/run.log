@@ -1,0 +1,11 @@
+2026-09-27T02:59:28Z start HEAD=1a455871131a528c3285d2942cb016f5cd8ee486 b619eb4228e283af9c9a9c0daafcc486c8c08dc10648ba026393acb45db7ffce  ./tip/memra-server  source=8926ccfb3e8a27cf8f91aa747e2b088251215c7a
+2026-09-27T02:59:28Z boot O1-shadow: waiting for an idle rig
+2026-09-27T03:28:28Z boot O1-shadow start arm=shadow bin=b619eb4228e283af env=[MEMRA_ADMIT_PREDICT_SHADOW=1] args=[--burst 32 --length 6144 --max-tokens 64]
+2026-09-27T03:30:24Z boot O1-shadow rc=0 DAY46 BOOT rows=59 ok=59 r429=0 rejects=41 w_release=0 oom=0
+2026-09-27T03:34:24Z boot O1-enforce: waiting for an idle rig
+2026-09-27T03:41:24Z boot O1-enforce start arm=enforce bin=b619eb4228e283af env=[MEMRA_ADMIT_PREDICT_SHADOW=1 MEMRA_ADMIT_PREDICT_ENFORCE=1] args=[--burst 32 --length 6144 --max-tokens 64]
+2026-09-27T03:42:18Z boot O1-enforce rc=0 DAY46 BOOT rows=59 ok=19 r429=40 rejects=40 w_release=0 oom=0
+2026-09-27T03:46:18Z boot O1-enforce-wrel: waiting for an idle rig
+2026-09-27T05:46:19Z boot O1-enforce-wrel: rig not idle after 7200 s; not run
+2026-09-27T05:46:19Z boots rc=3
+2026-09-27T05:46:19Z done
