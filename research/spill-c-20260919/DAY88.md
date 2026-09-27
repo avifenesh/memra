@@ -310,3 +310,25 @@ Read as registered: `promo-res` passes on the 9950X class. The resident decode i
 decides on both classes, so phase 1 still does not land while the 285K class's `promo` loses. That half of DAY88b
 (BOX44, after integ73's GPU battery) records whether the resident shape needs its own fix there (section 6a's last
 clause).
+
+**285K class** (BOX44, the first sitting's host and card, a Core Ultra 9 285K, one RTX PRO 6000 WS at 600 W, driver
+580.173.02; tree `1cb4e8a93`, after integ73's GPU run; 20:11Z to 20:14Z; `pro-single-day88b/`, 106 files, the lead's
+manifest re-checked here OK):
+- **The build.** The cell ran the first sitting's `run-gen-p88`, `5683c63f...` from `0155bc69f`, found cached (0.02 s,
+  the same hash).
+- **The card.** 43 to 51 C over 662 samples; SM median 2617 MHz over the 273 samples with GPU utilization above zero.
+- **The reading, verbatim** (re-read here with the same command; the output is identical):
+  - `DAY88 PROMO-RES CHECKS rig=pro-single runs=20 integrity=ok`
+  - `DAY88 PROMO-RES ADMISSIBILITY rig=pro-single ceiling=0.005 max_iqr_gen=0.0010 failing=[] -> admissible`
+  - `DAY88 PROMO-RES gen-only decode medians (N=10 each): naked=0.153 legacy=0.153`
+  - `DAY88 PROMO-RES naked_vs_legacy gen-only decode: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0010 -> flat`
+  - `DAY88 PROMO-RES to_prefill_s medians (beside): naked=6.23 legacy=8.96`
+  - `DAY88 PROMO-RES VERDICT rig=pro-single -> passes`
+
+Read as registered: `promo-res` passes on the 285K class too.
+- The first sitting's inadmissible arithmetic had put the resident decode at +1 ms (0.153 against 0.152 s, noise 0.3
+  ms). The admissible rerun reads it `flat` (0.153 and 0.153 s, noise 1 ms), and the rerun is the reading of record.
+- The promoted binary reaches prefill 2.7 s sooner (6.23 against 8.96 s, as in the first sitting's 6.19 against 8.84).
+- Section 6a's last clause does not fire on either class: the resident shape needs no fix.
+- Phase 1 now waits on one cell only: `promo` on the 285K class, where `naked` loses to `legacy` by 2.5 ms gen-only.
+  That is the owner's question in section 6b.
