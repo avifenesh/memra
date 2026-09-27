@@ -3274,6 +3274,130 @@ extern "C" int memra_dsv4_headrms_f32acc(float* x, int rows, int d, float eps,
     return 0;
 }
 
+__device__ __forceinline__ float dsv4_warp_max_f32(float v) {
+#pragma unroll
+    for (int o = 16; o; o >>= 1) v = fmaxf(v, __shfl_xor_sync(0xffffffffu, v, o));
+    return v;
+}
+
+// Per-head RMS then RoPE in one launch (memra #710): dsv4_headrms_f32acc_kernel's register form
+// over the row, then dsv4_rope_kernel's rotation of the row's last rd dims. Each value is those
+// kernels' op in their order, so the bits cannot move; two launches become one. One CTA of 128
+// threads per (position, head) row; rows are [n_pos][n_vec][d] and positions[p] selects the cs row.
+extern "C" __global__ void dsv4_headrms_rope_f32acc_kernel(float* __restrict__ x, int d, float eps,
+                                                           int n_vec, int rd,
+                                                           const float* __restrict__ cs,
+                                                           const int* __restrict__ positions) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    const int row = blockIdx.x, p = row / n_vec;
+    float* xr = x + (long)row * d;
+    __shared__ float sh[128];
+    float xv[4];
+#pragma unroll
+    for (int k = 0; k < 4; ++k) {
+        const int j = threadIdx.x + k * 128;
+        xv[k] = j < d ? xr[j] : 0.0f;
+    }
+    float acc = 0.0f;
+#pragma unroll
+    for (int k = 0; k < 4; ++k)
+        if (threadIdx.x + k * 128 < d) acc += xv[k] * xv[k];
+    const float tot = dsv4_block_sum128_f32(acc, sh);
+    const float rsq = 1.0f / sqrtf(tot / (float)d + eps);
+#pragma unroll
+    for (int k = 0; k < 4; ++k) {
+        const int j = threadIdx.x + k * 128;
+        if (j < d) xr[j] = xv[k] * rsq;
+    }
+    __syncthreads();
+    const int kk = threadIdx.x;
+    if (kk < rd / 2) {
+        const float* crow = cs + (long)positions[p] * rd + 2 * kk;
+        const float c = crow[0], sn = crow[1];
+        const int base = (d - rd) + 2 * kk;
+        const float x0 = xr[base], x1 = xr[base + 1];
+        xr[base] = x0 * c - x1 * sn;
+        xr[base + 1] = x0 * sn + x1 * c;
+    }
+}
+
+extern "C" int memra_dsv4_headrms_rope_f32acc(float* x, int n_pos, int n_vec, int d, float eps,
+                                              int rd, const float* cs, const int* positions,
+                                              void* stream_v) {
+    if (!x || !cs || !positions || n_pos < 1 || n_vec < 1 || d > 4 * 128 || rd > d ||
+        rd % 2 || rd / 2 > 128)
+        return 40004;
+    memra_chain_launch(dsv4_headrms_rope_f32acc_kernel, (unsigned)(n_pos * n_vec), 128, 0,
+                       (cudaStream_t)stream_v)(x, d, eps, n_vec, rd, cs, positions);
+    DSV4_ERR();
+    return 0;
+}
+
+// The shared K==V latent row's norm, RoPE and window QAT in one launch (memra #710):
+// dsv4_rmsnorm_f32acc_kernel's register form in place, dsv4_rope_kernel's rotation of the last rd
+// dims, and dsv4_act_quant_kernel's FP8 round trip of the prefix in groups of `block` (the group
+// max is exact in any order). Each value is those kernels' op in their order; three launches
+// become one. One CTA of 128 threads per row.
+extern "C" __global__ void dsv4_kv_norm_rope_quant_f32acc_kernel(
+        float* __restrict__ x, const float* __restrict__ w, int d, float eps, int rd,
+        const float* __restrict__ cs, const int* __restrict__ positions, int block,
+        int clamp_only) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    const int p = blockIdx.x;
+    float* xr = x + (long)p * d;
+    __shared__ float sh[128];
+    __shared__ float gmax[2][2];
+    dsv4_rmsnorm_f32acc_regs<8>(xr, w, xr, d, eps, sh);
+    __syncthreads();
+    const int t = threadIdx.x;
+    if (t < rd / 2) {
+        const float* crow = cs + (long)positions[p] * rd + 2 * t;
+        const float c = crow[0], sn = crow[1];
+        const int base = (d - rd) + 2 * t;
+        const float x0 = xr[base], x1 = xr[base + 1];
+        xr[base] = x0 * c - x1 * sn;
+        xr[base + 1] = x0 * sn + x1 * c;
+    }
+    // Two groups at a time, one per 64-thread half; each thread holds one element (block 64).
+    const int half = t >> 6, lane64 = t & 63, warp = t >> 5;
+    const int groups = (d - rd) / block;
+    for (int g0 = 0; g0 < groups; g0 += 2) {
+        const int g = g0 + half;
+        const bool live = g < groups;
+        float* grp = xr + (long)g * block;
+        const float v = live ? grp[lane64] : 0.0f;
+        float a = dsv4_warp_max_f32(fabsf(v));
+        if ((t & 31) == 0) gmax[half][warp & 1] = a;
+        __syncthreads();
+        float amax = fmaxf(gmax[half][0], gmax[half][1]);
+        __syncthreads();
+        amax = fmaxf(amax, 1e-4f);
+        const float inv = (float)(1.0 / 448.0);
+        const float s = dsv4_pow2_ceil(amax * inv);
+        if (live) {
+            float q = fminf(fmaxf(v / s, -448.0f), 448.0f);
+            if (!clamp_only) {
+                __nv_fp8_storage_t c8 = __nv_cvt_float_to_fp8(q, __NV_SATFINITE, __NV_E4M3);
+                q = __half2float(__nv_cvt_fp8_to_halfraw(c8, __NV_E4M3));
+            }
+            grp[lane64] = q * s;
+        }
+    }
+}
+
+extern "C" int memra_dsv4_kv_norm_rope_quant_f32acc(float* x, const float* w, int rows, int d,
+                                                    float eps, int rd, const float* cs,
+                                                    const int* positions, int block,
+                                                    int clamp_only, void* stream_v) {
+    if (!x || !cs || !positions || rows < 1 || d > 8 * 128 || rd > d || rd % 2 ||
+        rd / 2 > 128 || block != 64 || (d - rd) % block)
+        return 40004;
+    memra_chain_launch(dsv4_kv_norm_rope_quant_f32acc_kernel, (unsigned)rows, 128, 0,
+                       (cudaStream_t)stream_v)(x, w, d, eps, rd, cs, positions, block, clamp_only);
+    DSV4_ERR();
+    return 0;
+}
+
 // twin of dsv4_rowsq_scale_kernel.
 extern "C" __global__ void dsv4_rowsq_scale_f32acc_kernel(const float* __restrict__ x,
                                                           float* __restrict__ mixes, int w,

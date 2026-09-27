@@ -744,6 +744,37 @@ unsafe extern "C" {
         eps: f32,
         stream: *mut c_void,
     ) -> i32;
+    /// `memra_dsv4_headrms_f32acc` then `memra_dsv4_rope` (no inverse) in one launch over
+    /// `n_pos * n_vec` rows of `d`, rows up to 512 (memra #710). The bits are the pair's.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_headrms_rope_f32acc(
+        x: *mut f32,
+        n_pos: i32,
+        n_vec: i32,
+        d: i32,
+        eps: f32,
+        rd: i32,
+        cs: *const f32,
+        positions: *const i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// `memra_dsv4_rmsnorm_f32acc` in place, `memra_dsv4_rope` of the last `rd` dims and
+    /// `memra_dsv4_act_quant` of the prefix in groups of `block` (64) in one launch, rows up to
+    /// 1024 (memra #710). The bits are the three launches'.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_kv_norm_rope_quant_f32acc(
+        x: *mut f32,
+        w: *const f32,
+        rows: i32,
+        d: i32,
+        eps: f32,
+        rd: i32,
+        cs: *const f32,
+        positions: *const i32,
+        block: i32,
+        clamp_only: i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_rope(
         x: *mut f32,
         n_pos: i32,
