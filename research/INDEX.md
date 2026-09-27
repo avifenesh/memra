@@ -7,6 +7,8 @@ Check here BEFORE re-running an experiment; add your lane's row at close. Full r
 live in each dir (jsonl/logs are out of default rg via the repo .ignore — `rg -u` to
 include). `rg '<topic>' research/INDEX.md` = the fast path to any lane's verdict.
 
+mimo-tokenizer-cpu-20260927 | Three self-authored raw text prompts matched the pinned Hugging Face tokenizers==0.22.1 reference in both special-token modes. No tokenizer code change was needed. | mimo-tokenizer-cpu-20260927/RESULTS.md
+
 mtp-continuing-session-20260921 | The cost learner did not beat the calibrated fixed-depth control on either artifact. | mtp-continuing-session-20260921/RESULTS.md
 
 mtp-calibrated-depth-20260920 | The completed cold-prefill follow-up favors calibrated fixed depth over the unchanged cost learner on both tested artifacts. | mtp-calibrated-depth-20260920/RESULTS.md
