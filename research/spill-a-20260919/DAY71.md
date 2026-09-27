@@ -82,3 +82,64 @@ both sides go away.**
 
 **Budget:** 1 agent-day: the code and its censuses 0.5, the CPU cells 0.1, the sitting and reader 0.2, the reading
 0.2.
+
+## 2. Design F2 as built (`7b38cc013` on `lane/spill-a-f2-20260927`, over main's T-H' tree `d6132710e`), and its sitting prepared
+
+- **(F2.1) The demote.**
+  - The hash helper hashes a landed span where it landed (`host_hash_payload_digest(staged.as_f32_slice())`, the
+    same program over the same bytes). Nothing is copied to the heap.
+  - The publication lends the span's staging buffer to the entry as `HostF32::Resident(HostResidentF32)`: an
+    `Rc<PinnedHostBuf>` with a weak handle on the context's staging set.
+  - When the last holder drops it, `Rc::try_unwrap` hands the buffer back to the set (`HostStaging::put`, which frees
+    it once the set is latched). The set is now shared (`Rc<RefCell<HostStaging>>`) and keeps each buffer's charge
+    while the buffer is lent.
+  - A span whose staging comes back not quiet is a typed latch (`tier hash reply mismatch: .. device read pending`),
+    never a published hole.
+- **(F2.2) The promote.**
+  - The engine's span source is `H2dSource::{Staged, Resident(Rc<PinnedHostBuf>)}`.
+  - The filled attach refuses a resident source at admission. The copy reads either kind through `buf()`, and only a
+    staging source is marked landed.
+  - `host_promote_stage` returns `HostPromoteSpans::Resident` for an entry with resident payloads: the payloads are
+    shared, with no staging taken. `host_h2d_spans_submit_resident` attaches them unfilled (`submit_h2d_spans`).
+    `HostStagingBack::push_source` drops a returned resident share, or brings the buffer home when the entry dropped
+    it while the span was in flight.
+  - The `span-flip-resident` red arm copies the first plane into a staging buffer with one byte flipped, so the
+    resident stays intact and the gate's checks are unchanged.
+  - An entry with both resident and heap planes is refused by name.
+- **(F2.3)** The demote's residency charge takes the spanned bytes off the pageable remainder on the off-tick route
+  (`checked_sub(spanned)`).
+- **(F2.4) As built, corrected before any cell.**
+  - P2's payload reserve is deleted: the reverse of P2's diff, with its conflicts against T-H' and F2 resolved by
+    hand. P2's tests go with it, and the ledger's pageable dimension returns to twice the budget, P2's third term
+    gone.
+  - The fill task and the promote's staging stay, for the entries the on-tick routes demote (heap payloads) and for
+    the red arm. Section 1 overstated that they go: they still serve those entries.
+- **Censuses updated to F2's statements:**
+  - day 33's source return (`push_source`);
+  - day 49's split (the copy gone; `thread_minflt()` 3, not 5);
+  - day 65's helper map (`host_scoped_map(job.payloads, ..)`, no `src.to_vec()`);
+  - the Demoting census (`ContractD2h::OffTick` 5: the residency charge);
+  - the Hashing census (`tier hash reply mismatch:` 3).
+- **Cells:**
+  - CPU census `day71_a_landed_span_stays_resident_and_the_promote_reads_it_in_place` (server) and
+    `day71_a_resident_source_is_read_in_place_and_never_filled` (engine), both green.
+  - Red arm `day71/red-arm.patch`, the helper copying a landed span to the heap again, with a marker. It fails the
+    census and day 65's (`day71/red-arm.log`).
+  - GPU cells `option_b_published_spans_stay_resident_in_their_staging` (a real off-tick demote through publication:
+    resident, bitwise, lent, home at the drop) and `option_c_resident_spans_read_the_entry_in_place` (a resident
+    promote: bitwise, no staging, the resident intact, home at the drop). Both go to the target card's battery.
+- **CPU:**
+  - server lib `988 passed; 0 failed; 29 ignored`, engine lib `667 passed; 0 failed; 79 ignored`
+    (`day71/server-lib.log`, `day71/engine-lib.log`);
+  - clippy `-p memra-engine -p memra-server --all-targets -D warnings` clean; fmt.
+  - Built under the lead's caps with `RUSTC_WRAPPER=` (the rig's sccache server wedged, DAY68 section 12). The build
+    windows are logged in `f2-build-windows.log` beside the 5090 chain; its builds ran in its build phase, before its
+    first hold.
+- **The sitting** `pro-single-f2/` is T-H''s scripts with the arm named f2, receipts `/root/spill-receipts/a-f2`,
+  marker `the first span reads a staging copy of its resident plane`.
+  - The cells: the 11 gates; demote, chain and promote, base against f2, 20 boots each; the hump (4 boots).
+  - The reader `f2-reading.py` reads clauses (a) to (f) of section 1. It was dry-run for parsing on T-H''s mirror,
+    mapping th as f2, and parsed every term: late, PIN, e2e, the fill, copies and digests phases, helper, copy, wall,
+    chain, demote counts and the hump.
+  - Commands: `build.sh <branch tip> d6132710e`, then `driver.sh`, last line `F2 VERDICT -> ..`. About 2.5 hours of
+    card time.

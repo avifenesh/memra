@@ -1,4 +1,4 @@
-# WP-A resumable state (2026-09-27: T-H' ADOPTED (DAY65 section 10); the next integ takes `lane/spill-a-integ73-20260927` (`20bf78b42`, on main 21ce97836); the second DAY68 5090 chain running)
+# WP-A resumable state (2026-09-27: F2 built and its sitting frozen, NEED TARGET CARD (lane/spill-a-f2-20260927 502e780bd, base d6132710e); the DAY68 5090 chain rebuilding and running)
 
 - Lane `lane/spill-a-20260919`; worktree `wt-spill-a`. integ67 takes B1 (`e522a9417`, adopted on both cards) and the
   grid refusal (`231fba087`, cherry-picked as 95f275859).
@@ -57,3 +57,11 @@
   `21ce97836`: `43a956340` (T-H', the sitting's diff line for line) and `20bf78b42` (this directory at `3a2e2886f`).
   Not built here (R1's repeat holds the 5090 in a timed cell). T-H' adds no GPU cell (its cells are CPU); its 5090 half
   ((b') and (d)) is owed after the DAY68 chain, beside P2's. Delete `lane/spill-a-th2-20260927` once it merges.
+
+- **F2 (DAY71):** built on `lane/spill-a-f2-20260927` (`7b38cc013` code, `502e780bd` records and sitting) over
+  main's T-H' tree `d6132710e`. CPU green (server 988, engine 667, clippy), red arm caught. The sitting:
+  `build.sh 502e780bd d6132710e` then `driver.sh`, last line `F2 VERDICT -> ..`, about 2.5 h on one PRO 6000 WS.
+  Its two GPU cells (`option_b_published_spans_stay_resident_in_their_staging`,
+  `option_c_resident_spans_read_the_entry_in_place`) go to the target battery.
+- **DAY68 chain, third start** (section 12, sccache bypassed): cell root `~/.local/share/memra-lane-a-cells/`,
+  `IN-USE.txt` kept.
