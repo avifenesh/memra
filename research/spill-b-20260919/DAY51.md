@@ -103,3 +103,53 @@ A server test pins the demand arithmetic: the ladder's maximum across rung edges
 ### 1.6 Price
 
 Code and CPU tests about half an agent-day; the two cells about 10 minutes each plus builds.
+
+## 2. Results
+
+Written after the runs. Section 1 is unchanged.
+
+### 2.1 The target card (the twenty-first sitting, one RTX PRO 6000 Blackwell Workstation Edition at 600 W, 2026-09-27 19:14 to 19:15Z)
+
+Chain tree `c6d7f034f`; the binary built on the box from `11ee6ed77` (sha256 `2752bf5d...`, mirrored by hash). The 27B,
+sha256 `1facf36c...` checked at start, `MEMRA_CTX` unset. Receipts at `pro-single-day51/box/`: the sitting's own
+`MANIFEST.sha256`, and the lead's box-side manifest, re-checked. The hold runner held the box lock at once and found the
+card idle under the hold. The cell ran `rc=0`, 25 of 25 requests `200`. Verbatim (`cells/after/REPORT.txt` and the boot):
+
+```
+1790536464025 [fa-pool] pre-grown model="q38" dev=0 served_ctx=262144 rows=16 o_len=201326592 ml_len=786432 bytes=811597824 (pool holds o_len 201326592 ml_len 786432)
+1790536464025 [fa-pool] grow #0 dev=0 o_len 0 -> 201326592 ml_len 0 -> 786432 (retired kept, zero=false)  g_i=811597824 G_fa=811597824
+G_fa at ready (the probe's grows, inside the floor's measurement) = 811597824; grows after ready = 0
+G3: exact rows max |residual| = 0 (tolerance 0); line~ rows max |residual| = 396772 (tolerance 2e6 at the 1 MB grain)
+G1: growth(end) = 0 (G_fa after ready 0 + delta_D 0) <= 10% floor = 237397606: PASS
+G2: while inflight > 0, max_underbook_real = 7263370392 <= floor = 2373976064: FAIL
+G4: Overloaded/OOM lines = 0: PASS
+```
+
+- **P1 PASS: `grows after ready = 0`.** The pool was grown once, at boot, to 1.3's size. The walk that grew it twice after
+  ready in DAY28 3.1 (S8 at 8 in flight, L at 22,760 keys) grows it no more. The probe's own three grows are gone too.
+- **P2 PASS:** the pre-grown line reads `o_len=201326592 ml_len=786432 bytes=811597824`, 1.3's figures to the element.
+- **P3 PASS:** G3 exact (`residual = 0` on every exact row) and G4 (no Overloaded, no OOM line).
+- **G2 is not a clause of this day** (1.4 names P1 to P3). It reads FAIL, and it is DAY28 3.1's reading, not a graph
+  term:
+  - The maximum in-flight under-booking, 7,263,370,392 B, is at the `S8b-0` admit (one request booked, 1,494,336,360
+    B, `mem.used` 27,414 MiB).
+  - It is the device delta the walk leaves behind between bursts. The pool's reserved bytes rose from 19,360,907,264 B
+    at ready to 28,118,614,016 B. At that sample 2,676,090,064 B of it were cached free blocks (`RELEASE_THRESHOLD =
+    u64::MAX`), which `effective_free_bytes` hands back to the gate.
+  - The rest is the retention the budget intends: the walk's prompts as prefix-cache entries under the 15.9 GB
+    budget, the last parked spec sessions, and L's 22,760 x 31,552 B = 718 MB.
+  - Subtracting `growth(t)` moves it by 0 B now, against DAY28's 38.6 MB: the graph term's share of the under-booking
+    went from 0.5 % to nothing.
+  - DAY28 3.1 read 7,443,968,680 B at the same admit; this is 180 MB lower.
+- **P4 (readings), after against DAY28's before on the same card class and model:**
+  - The calibrated floor: 2,264 MB against 2,194 MB (+70 MB).
+  - The prefix budget: 15,883,042,816 B in both.
+  - `effective_free_bytes` at boot: 83,261,614,080 B against 84,065,415,872 B (-804 MB).
+  - `admit-predict`'s derived budget: 65,003,806,992 B against 65,881,157,328 B (-877 MB, the pre-grow's 812 MB plus
+    the floor's 70 MB).
+  - `mem.used` at ready: 19,062 MiB against 18,325 MiB (+737 MiB).
+  - The pool reserved at ready: +771,751,936 B.
+- **What it means:** the booking point works as the owner approved it. No request grows the FA partial pool after ready
+  on this model and card. The cost is the reachable envelope, 774 MiB, booked at boot, and the admission budget is
+  smaller by that much. The 5090 half runs from `rtx5090-day51/run.sh`.
+
