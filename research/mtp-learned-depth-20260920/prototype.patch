@@ -1,0 +1,1298 @@
+diff --git a/crates/memra-engine/Cargo.toml b/crates/memra-engine/Cargo.toml
+index 5f0dc6d10..f77dcc778 100644
+--- a/crates/memra-engine/Cargo.toml
++++ b/crates/memra-engine/Cargo.toml
+@@ -462,3 +462,11 @@ path = "src/bin/qwen_a4_sink_diag.rs"
+ [[bin]]
+ name = "dsv4-ar-phase-gate"
+ path = "src/bin/dsv4_ar_phase_gate.rs"
++
++[[bin]]
++name = "mtp-depth-study"
++path = "src/bin/mtp_depth_study.rs"
++
++[[bin]]
++name = "gemma-depth-study"
++path = "src/bin/gemma_depth_study.rs"
+diff --git a/crates/memra-engine/src/bin/gemma_depth_study.rs b/crates/memra-engine/src/bin/gemma_depth_study.rs
+new file mode 100644
+index 000000000..da7e8e7e5
+--- /dev/null
++++ b/crates/memra-engine/src/bin/gemma_depth_study.rs
+@@ -0,0 +1,272 @@
++//! Gemma native-session twin of dspark-depth-study; full head, current K=5 cap.
++use memra_engine::Engine;
++use memra_engine::gemma_spec::{GemmaDepthExperiment, GemmaDraft};
++use memra_engine::hybrid::HybridModel;
++use memra_engine::learned_depth::LearnedDepth;
++use memra_engine::spec::SpecSampling;
++use memra_gguf::GgufFile;
++use memra_tokenizer::Tokenizer;
++use memra_tokenizer::chat::{ThinkMode, Turn};
++use std::io::Write;
++use std::path::Path;
++use std::time::{Duration, Instant};
++
++const K: usize = 5;
++
++fn policy(arm: &str) -> Result<Option<GemmaDepthExperiment>, Box<dyn std::error::Error>> {
++    Ok(match arm {
++        "native" => None,
++        "measured" => Some(GemmaDepthExperiment::MeasuredNative),
++        "learned" => Some(GemmaDepthExperiment::Learned(LearnedDepth::new(
++            (2..=K + 1).collect(),
++            K + 1,
++            16,
++            8,
++        )?)),
++        "fixed" => Some(GemmaDepthExperiment::Learned(LearnedDepth::new(
++            vec![K + 1],
++            K + 1,
++            16,
++            8,
++        )?)),
++        _ => return Err("arm must be native|measured|learned|fixed".into()),
++    })
++}
++
++fn render(tok: &Tokenizer, turns: &[Turn]) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
++    let text = tok
++        .apply_chat_template_tools(turns, true, &[], ThinkMode::Default, None)
++        .map_err(|e| format!("chat template: {e}"))?;
++    Ok(tok.encode(&text, true))
++}
++
++fn save_ids(path: &Path, ids: &[u32]) -> std::io::Result<()> {
++    let mut f = std::fs::File::create_new(path)?;
++    for id in ids {
++        writeln!(f, "{id}")?;
++    }
++    Ok(())
++}
++
++fn main() -> Result<(), Box<dyn std::error::Error>> {
++    let args: Vec<_> = std::env::args().collect();
++    if !(10..=11).contains(&args.len()) {
++        return Err("usage: gemma-depth-study <target.gguf> <assistant.gguf> <workload> <new-output-dir> <arm> <seed> <max-new> <ctx> <temperature> [gate]".into());
++    }
++    let arm = args[5].as_str();
++    let seed: u64 = args[6].parse()?;
++    let max_new: usize = args[7].parse()?;
++    let ctx: usize = args[8].parse()?;
++    let temperature: f32 = args[9].parse()?;
++    let gate = args.get(10).is_some_and(|v| v == "gate");
++    if args.get(10).is_some() && !gate {
++        return Err("last argument must be gate".into());
++    }
++    if max_new == 0 || !temperature.is_finite() || temperature < 0.0 {
++        return Err("invalid generation length or temperature".into());
++    }
++    let workload = std::fs::read_to_string(&args[3])?;
++    let users: Vec<_> = workload.split("\n---TURN---\n").map(str::trim).collect();
++    if users.len() != 8 || users.iter().any(|s| s.is_empty()) {
++        return Err("workload needs eight nonempty turns".into());
++    }
++    let out = Path::new(&args[4]);
++    std::fs::create_dir(out)?;
++    let mut rows = std::fs::File::create_new(out.join("turns.tsv"))?;
++    writeln!(
++        rows,
++        "turn\tseed\tprompt_tokens\toutput_tokens\telapsed_s\tresumed\tdrafted\taccepted\tpolicy_rounds\tswitches\tcommitted_overshoot"
++    )?;
++    let mut traces = std::fs::File::create_new(out.join("rounds.tsv"))?;
++    writeln!(
++        traces,
++        "turn\tround\tdraft_depth\tcommitted\telapsed_ns\teligible_for_learning"
++    )?;
++    let e = Engine::new(0)?;
++    let gguf = GgufFile::open(&args[1])?;
++    let tok = Tokenizer::from_gguf(&gguf)?;
++    let model = HybridModel::load(&e, &gguf)?;
++    let dg = GgufFile::open(&args[2])?;
++    let mut draft = GemmaDraft::load(&e, &dg)?;
++    if draft.d2t.is_some()
++        || draft.trim_adapt.is_some()
++        || draft.head.out_features() != model.output.out_features()
++        || draft.n_backbone != model.cfg.n_embd as usize
++    {
++        return Err("assistant must have the full target vocabulary and matching backbone geometry, with H off".into());
++    }
++    let eos = tok.eog_ids();
++    let sp = SpecSampling {
++        temp: temperature,
++        seed,
++        top_k: 20,
++        top_p: 0.95,
++        min_p: 0.0,
++        penalty_last_n: 0,
++        penalty_repeat: 1.0,
++        penalty_freq: 0.0,
++        penalty_present: 0.0,
++    };
++    let _ = policy(arm)?;
++    eprintln!(
++        "study family=gemma arm={arm} seed={seed} full_vocab={} draft_cap={K} max_new={max_new} ctx={ctx} temperature={temperature} correctness_only={gate}",
++        model.output.out_features()
++    );
++
++    let warm_prompt = render(&tok, &[Turn { role:"user".into(), content:"Explain how a distributed queue uses acknowledgments, retries, timeouts, deduplication and backpressure. Include failure cases and concrete recovery rules.".into(), ..Default::default() }])?;
++    let warm_started = Instant::now();
++    while warm_started.elapsed() < Duration::from_secs(10) {
++        let mut s = model.gemma_spec_session_new(
++            &e,
++            &mut draft,
++            &warm_prompt,
++            warm_prompt.len() + 128,
++            Some(&sp),
++        )?;
++        if temperature == 0.0 {
++            model.gemma_spec_session_burst(&e, &mut draft, &mut s, 32, K, &eos)?;
++        } else {
++            model.gemma_spec_session_burst_sampled(&e, &mut draft, &mut s, 32, K, &eos, &sp)?;
++        }
++        e.stream().synchronize()?;
++    }
++    let conversations = 2usize;
++    let (mut total_tokens, mut total_seconds) = (0usize, 0.0f64);
++    for conversation in 0..conversations {
++        let mut history = Vec::new();
++        let mut carried = policy(arm)?;
++        let mut observed_rounds = 0usize;
++        let sp = SpecSampling {
++            seed: seed.wrapping_add(conversation as u64 * 1_000_003),
++            ..sp
++        };
++        let seed = sp.seed;
++        for (i, user) in users.iter().enumerate() {
++            let turn = conversation * 8 + i + 1;
++            let started = Instant::now();
++            history.push(Turn {
++                role: "user".into(),
++                content: (*user).into(),
++                ..Default::default()
++            });
++            let prompt = render(&tok, &history)?;
++            if prompt.len() + max_new + K + 8 > ctx {
++                return Err(format!("turn {turn} does not fit ctx {ctx}").into());
++            }
++            // This native Gemma API starts a fresh request. The learner alone is carried
++            // across the conversation; model and random state obey the existing request API.
++            let mut sess = model.gemma_spec_session_new(&e, &mut draft, &prompt, ctx, Some(&sp))?;
++            if let Some(p) = carried.clone() {
++                sess.set_depth_experiment(p)?;
++            }
++            let (mut ids, drafted, accepted) = if temperature == 0.0 {
++                model.gemma_spec_session_burst(&e, &mut draft, &mut sess, max_new, K, &eos)?
++            } else {
++                model.gemma_spec_session_burst_sampled(
++                    &e, &mut draft, &mut sess, max_new, K, &eos, &sp,
++                )?
++            };
++            e.stream().synchronize()?;
++            carried = sess.depth_experiment().cloned();
++            let seconds = started.elapsed().as_secs_f64();
++            ids.truncate(max_new);
++            if ids.is_empty()
++                || ids
++                    .iter()
++                    .any(|&id| id as usize >= model.output.out_features())
++            {
++                return Err("empty or out-of-vocabulary generation".into());
++            }
++            if sess.cache.pos != sess.committed.len()
++                || sess.committed.len() < prompt.len() + ids.len()
++                || sess.committed[..prompt.len()] != prompt
++                || sess.committed[prompt.len()..prompt.len() + ids.len()] != ids
++            {
++                return Err("Gemma committed state disagrees with the public token prefix".into());
++            }
++            let overshoot = sess.committed.len() - prompt.len() - ids.len();
++            for r in sess.depth_rounds() {
++                writeln!(
++                    traces,
++                    "{turn}\t{}\t{}\t{}\t{}\t{}",
++                    r.round,
++                    r.draft_depth,
++                    r.committed,
++                    r.elapsed.as_nanos(),
++                    r.eligible_for_learning
++                )?;
++            }
++            observed_rounds += sess.depth_rounds().len();
++            let switches = match &carried {
++                Some(GemmaDepthExperiment::Learned(p)) => p.switches(),
++                _ => 0,
++            };
++            writeln!(
++                rows,
++                "{turn}\t{seed}\t{}\t{}\t{seconds:.9}\tfalse\t{drafted}\t{accepted}\t{}\t{switches}\t{overshoot}",
++                prompt.len(),
++                ids.len(),
++                sess.depth_rounds().len()
++            )?;
++            rows.flush()?;
++            traces.flush()?;
++            save_ids(&out.join(format!("turn-{turn}.prompt.ids")), &prompt)?;
++            save_ids(&out.join(format!("turn-{turn}.output.ids")), &ids)?;
++            let end = ids
++                .iter()
++                .position(|id| eos.contains(id))
++                .unwrap_or(ids.len());
++            let answer = tok.decode_special(&ids[..end], true);
++            std::fs::write(out.join(format!("turn-{turn}.answer.txt")), &answer)?;
++            history.push(Turn {
++                role: "assistant".into(),
++                content: answer,
++                ..Default::default()
++            });
++            total_tokens += ids.len();
++            total_seconds += seconds;
++            eprintln!(
++                "turn={turn} tokens={} seconds={seconds:.3} switches={switches}",
++                ids.len()
++            );
++        }
++        if arm != "native" && observed_rounds == 0 {
++            return Err("depth instrument did not engage".into());
++        }
++        if let Some(GemmaDepthExperiment::Learned(p)) = &carried {
++            let mut f = std::fs::File::create_new(
++                out.join(format!("depth-stats-{}.tsv", conversation + 1)),
++            )?;
++            writeln!(
++                f,
++                "draft_depth\trounds\ttokens\telapsed_ns\tblocks\tewma_tok_s"
++            )?;
++            for s in p.stats() {
++                writeln!(
++                    f,
++                    "{}\t{}\t{}\t{}\t{}\t{}",
++                    s.depth - 1,
++                    s.rounds,
++                    s.tokens,
++                    s.elapsed.as_nanos(),
++                    s.blocks,
++                    s.ewma_tokens_per_second.unwrap_or(0.0)
++                )?;
++            }
++            if arm == "learned" && (p.switches() == 0 || p.stats().iter().any(|s| s.blocks == 0)) {
++                return Err("learner did not exercise every depth".into());
++            }
++        }
++    }
++    if !gate && total_seconds < 60.0 {
++        return Err("run below 60 seconds; unscored short run".into());
++    }
++    let turn_count = 8 * conversations;
++    println!("PERF_METRICS_START");
++    println!(
++        "{{\"scenarios\":{{\"{arm}\":{{\"tokens\":{total_tokens},\"elapsed_s\":{total_seconds:.9},\"e2e_tok_s\":{:.9},\"turns\":{turn_count},\"conversations\":{conversations},\"turns_per_conversation\":8,\"correctness_only\":{gate}}}}}}}",
++        total_tokens as f64 / total_seconds
++    );
++    println!("PERF_METRICS_END");
++    Ok(())
++}
+diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engine/src/bin/mtp_depth_study.rs
+new file mode 100644
+index 000000000..1aefdaa2f
+--- /dev/null
++++ b/crates/memra-engine/src/bin/mtp_depth_study.rs
+@@ -0,0 +1,375 @@
++//! Full-vocabulary embedded-MTP depth research, Qwen native-session driver.
++use memra_engine::Engine;
++use memra_engine::hybrid::HybridModel;
++use memra_engine::learned_depth::LearnedDepth;
++use memra_engine::spec::MtpDepthExperiment;
++use memra_engine::spec::SpecSampling;
++use memra_gguf::GgufFile;
++use memra_tokenizer::Tokenizer;
++use memra_tokenizer::chat::{ThinkMode, Turn};
++use std::io::Write;
++use std::path::Path;
++use std::time::{Duration, Instant};
++
++fn experiment(
++    arm: &str,
++    cap: usize,
++) -> Result<Option<MtpDepthExperiment>, Box<dyn std::error::Error>> {
++    Ok(match arm {
++        "native" => None,
++        "measured" => Some(MtpDepthExperiment::MeasuredNative),
++        "learned" => Some(MtpDepthExperiment::Learned(LearnedDepth::new(
++            (2..=cap + 1).collect(),
++            4,
++            16,
++            8,
++        )?)),
++        "fixed" => Some(MtpDepthExperiment::Learned(LearnedDepth::new(
++            vec![4],
++            4,
++            16,
++            8,
++        )?)),
++        _ => return Err("arm must be native|measured|learned|fixed".into()),
++    })
++}
++
++fn render(tok: &Tokenizer, turns: &[Turn]) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
++    let text = tok
++        .apply_chat_template_tools(turns, true, &[], ThinkMode::Default, None)
++        .map_err(|e| format!("chat template: {e}"))?;
++    Ok(tok.encode(&text, true))
++}
++
++fn save_ids(path: &Path, ids: &[u32]) -> std::io::Result<()> {
++    let mut out = std::fs::File::create_new(path)?;
++    for id in ids {
++        writeln!(out, "{id}")?;
++    }
++    Ok(())
++}
++
++/// Qwen's generation prefix already opened `<think>`. Keep reasoning separate
++/// even when generation reaches its length cap before the closing tag.
++fn qwen_assistant_turn(raw: &str) -> Turn {
++    let (reasoning, mut content) = raw.split_once("</think>").unwrap_or((raw, ""));
++    for _ in 0..2 {
++        if let Some(rest) = content.strip_prefix('\n') {
++            content = rest;
++        } else {
++            break;
++        }
++    }
++    Turn {
++        role: "assistant".into(),
++        reasoning: Some(reasoning.into()),
++        content: content.into(),
++        ..Default::default()
++    }
++}
++
++fn main() -> Result<(), Box<dyn std::error::Error>> {
++    let args: Vec<_> = std::env::args().collect();
++    if !(10..=11).contains(&args.len()) {
++        return Err("usage: mtp-depth-study <target.gguf> embedded <workload.txt> <new-output-dir> <native|measured|learned|fixed> <seed> <max-new> <ctx> <temperature> [gate]".into());
++    }
++    let arm = args[5].as_str();
++    let seed: u64 = args[6].parse()?;
++    let max_new: usize = args[7].parse()?;
++    let ctx: usize = args[8].parse()?;
++    let temperature: f32 = args[9].parse()?;
++    let gate = args.get(10).is_some_and(|v| v == "gate");
++    if args.get(10).is_some() && !gate {
++        return Err("last argument must be gate".into());
++    }
++    if max_new == 0 || !temperature.is_finite() || temperature < 0.0 {
++        return Err("max-new must be positive and temperature finite and nonnegative".into());
++    }
++    let workload = std::fs::read_to_string(&args[3])?;
++    let user_turns: Vec<_> = workload.split("\n---TURN---\n").map(str::trim).collect();
++    if user_turns.len() != 8 || user_turns.iter().any(|s| s.is_empty()) {
++        return Err("workload must contain eight nonempty turns separated by ---TURN---".into());
++    }
++    let output = Path::new(&args[4]);
++    std::fs::create_dir(output)?;
++    let mut rows = std::fs::File::create_new(output.join("turns.tsv"))?;
++    writeln!(
++        rows,
++        "turn\tseed\tprompt_tokens\toutput_tokens\telapsed_s\tresumed\tdrafted\taccepted\tpolicy_rounds\tswitches\tfinish_reason\tcommitted_overshoot"
++    )?;
++    let mut trace = std::fs::File::create_new(output.join("rounds.tsv"))?;
++    writeln!(
++        trace,
++        "turn\tround\tdraft_depth\temitted\telapsed_ns\teligible_for_learning"
++    )?;
++    let e = Engine::new(0)?;
++    let gguf = GgufFile::open(&args[1])?;
++    let tok = Tokenizer::from_gguf(&gguf)?;
++    if !tok.has_qwen_effort_ladder() {
++        return Err("study requires Qwen's think-open, reasoning-preserving template".into());
++    }
++    let model = HybridModel::load(&e, &gguf)?;
++    if args[2] != "embedded" {
++        return Err("this Qwen study requires the model's embedded MTP head".into());
++    }
++    let mtp = model.mtp.as_ref().ok_or("model has no embedded MTP head")?;
++    let draft_vocab = mtp
++        .shared_head_head
++        .as_ref()
++        .unwrap_or(&model.output)
++        .out_features();
++    if mtp.d2t.is_some() || draft_vocab != model.output.out_features() {
++        return Err("MTP draft and target heads must both use the full vocabulary".into());
++    }
++    let cap = 7;
++    let initial_experiment = experiment(arm, cap)?;
++    let eos = tok.eog_ids();
++    let sampling = SpecSampling {
++        temp: temperature,
++        seed,
++        top_k: 20,
++        top_p: 0.95,
++        min_p: 0.0,
++        penalty_last_n: 0,
++        penalty_repeat: 1.0,
++        penalty_freq: 0.0,
++        penalty_present: 0.0,
++    };
++    eprintln!(
++        "study arm={arm} seed={seed} full_vocab={} draft_vocab={} mtp=embedded draft_cap={cap} fixed_depth=3 max_new={max_new} ctx={ctx} temperature={temperature} mode={}",
++        model.output.out_features(),
++        draft_vocab,
++        if gate {
++            "correctness-only"
++        } else {
++            "measurement"
++        }
++    );
++
++    // Warm the model for at least ten seconds; discard session and learner state.
++    let warm_prompt = render(&tok, &[Turn { role: "user".into(), content: "Explain how a reliable distributed queue uses acknowledgments, retries, timeouts, deduplication, and backpressure. Give several concrete failure cases and discuss their recovery in detail.".into(), ..Default::default() }])?;
++    let warm_start = Instant::now();
++    while warm_start.elapsed() < Duration::from_secs(10) {
++        let mut warm = model.new_session(&e, warm_prompt.len() + 256)?;
++        let _ = model.generate_spec_session_sampled(
++            &e,
++            &mut warm,
++            &warm_prompt,
++            32,
++            cap,
++            Some(sampling),
++            None,
++        )?;
++        e.stream().synchronize()?;
++    }
++
++    let mut history: Vec<Turn> = Vec::new();
++    let mut carried_policy = initial_experiment;
++    let mut total_tokens = 0usize;
++    let mut total_seconds = 0f64;
++    let mut measured_rounds = 0usize;
++    for (index, user) in user_turns.iter().enumerate() {
++        let turn = index + 1;
++        let started = Instant::now();
++        history.push(Turn {
++            role: "user".into(),
++            content: (*user).into(),
++            ..Default::default()
++        });
++        let prompt = render(&tok, &history)?;
++        if prompt.len() < memra_engine::hybrid_forward::PRIME_MIN_T
++            || prompt.len() + max_new + cap + 8 > ctx
++        {
++            return Err(format!("turn {turn}: prompt {} + max-new {max_new} does not fit ctx {ctx}, or is below the prime floor", prompt.len()).into());
++        }
++        // Hold prompt priming constant across depth policies. Native commit
++        // overshoot depends on K; using it to decide reuse also changes the
++        // numeric lineage of later prompts. Keep only learner state across turns.
++        let resumed = false;
++        let mut sess = model.new_session(&e, ctx)?;
++        sess.depth_experiment = carried_policy.clone();
++        let trace_start = sess.depth_rounds.len();
++        let mut on_commit = |chunk: &[u32]| !chunk.iter().any(|id| eos.contains(id));
++        let (mut ids, drafted, accepted) = model.generate_spec_session_sampled(
++            &e,
++            &mut sess,
++            &prompt,
++            max_new,
++            cap,
++            Some(sampling),
++            Some(&mut on_commit),
++        )?;
++        model.spec_flush_pending(&e, &mut sess, Some(sampling))?;
++        ids.truncate(max_new);
++        if let Some(end) = ids.iter().position(|id| eos.contains(id)) {
++            ids.truncate(end + 1);
++        }
++        e.stream().synchronize()?;
++        carried_policy = sess.depth_experiment.clone();
++        let seconds = started.elapsed().as_secs_f64();
++        if ids.is_empty()
++            || ids
++                .iter()
++                .any(|&id| id as usize >= model.output.out_features())
++        {
++            return Err("generation was empty or contained an out-of-vocabulary id".into());
++        }
++        let stop_reason = if eos.contains(ids.last().unwrap()) {
++            "eos"
++        } else if ids.len() == max_new {
++            "length"
++        } else {
++            return Err("generation stopped before its budget without an EOS token".into());
++        };
++        let mut public_tape = prompt.clone();
++        public_tape.extend(&ids);
++        if !sess.committed.starts_with(&public_tape) {
++            return Err("MTP cache does not contain the full published token prefix".into());
++        }
++        let overshoot = sess.committed.len() - public_tape.len();
++        let new_trace = &sess.depth_rounds[trace_start..];
++        for row in new_trace {
++            writeln!(
++                trace,
++                "{turn}\t{}\t{}\t{}\t{}\t{}",
++                row.round,
++                row.draft_depth,
++                row.emitted,
++                row.elapsed.as_nanos(),
++                row.eligible_for_learning
++            )?;
++        }
++        measured_rounds += new_trace.len();
++        let switches = match &carried_policy {
++            Some(MtpDepthExperiment::Learned(p)) => p.switches(),
++            _ => 0,
++        };
++        writeln!(
++            rows,
++            "{turn}\t{seed}\t{}\t{}\t{seconds:.9}\t{resumed}\t{drafted}\t{accepted}\t{}\t{switches}\t{stop_reason}\t{overshoot}",
++            prompt.len(),
++            ids.len(),
++            new_trace.len()
++        )?;
++        rows.flush()?;
++        trace.flush()?;
++        save_ids(&output.join(format!("turn-{turn}.prompt.ids")), &prompt)?;
++        save_ids(&output.join(format!("turn-{turn}.output.ids")), &ids)?;
++        let end = ids
++            .iter()
++            .position(|id| eos.contains(id))
++            .unwrap_or(ids.len());
++        let raw = tok.decode_special(&ids[..end], true);
++        let answer = qwen_assistant_turn(&raw);
++        std::fs::write(output.join(format!("turn-{turn}.raw.txt")), &raw)?;
++        std::fs::write(
++            output.join(format!("turn-{turn}.answer.txt")),
++            &answer.content,
++        )?;
++        std::fs::write(
++            output.join(format!("turn-{turn}.reasoning.txt")),
++            answer.reasoning.as_deref().unwrap_or(""),
++        )?;
++        history.push(answer);
++        total_tokens += ids.len();
++        total_seconds += seconds;
++        eprintln!(
++            "turn={turn} tokens={} seconds={seconds:.3} resumed={resumed} switches={switches}",
++            ids.len()
++        );
++    }
++    if arm != "native" && measured_rounds == 0 {
++        return Err("MTP depth instrument did not engage".into());
++    }
++    if let Some(MtpDepthExperiment::Learned(policy)) = &carried_policy {
++        let mut stats = std::fs::File::create_new(output.join("depth-stats.tsv"))?;
++        writeln!(
++            stats,
++            "verify_rows\trounds\ttokens\telapsed_ns\tblocks\tewma_tok_s"
++        )?;
++        for row in policy.stats() {
++            writeln!(
++                stats,
++                "{}\t{}\t{}\t{}\t{}\t{}",
++                row.depth,
++                row.rounds,
++                row.tokens,
++                row.elapsed.as_nanos(),
++                row.blocks,
++                row.ewma_tokens_per_second.unwrap_or(0.0)
++            )?;
++        }
++        if arm == "learned"
++            && (policy.switches() == 0 || policy.stats().iter().any(|r| r.blocks == 0))
++        {
++            return Err("learned policy did not exercise every candidate depth".into());
++        }
++    }
++    if !gate && total_seconds < 60.0 {
++        return Err(
++            "measurement below 60 seconds; retain as an unscored short run and increase workload"
++                .into(),
++        );
++    }
++    println!("PERF_METRICS_START");
++    println!(
++        "{{\"scenarios\":{{\"{arm}\":{{\"tokens\":{total_tokens},\"elapsed_s\":{total_seconds:.9},\"e2e_tok_s\":{:.9},\"turns\":8,\"correctness_only\":{gate}}}}}}}",
++        total_tokens as f64 / total_seconds
++    );
++    println!("PERF_METRICS_END");
++    Ok(())
++}
++
++#[cfg(test)]
++mod history_tests {
++    use super::*;
++
++    #[test]
++    fn length_stopped_thinking_is_not_replayed_as_an_answer() {
++        let t = qwen_assistant_turn("unfinished reasoning");
++        assert_eq!(t.reasoning.as_deref(), Some("unfinished reasoning"));
++        assert_eq!(t.content, "");
++    }
++
++    #[test]
++    fn completed_thinking_preserves_answer_and_only_consumes_two_newlines() {
++        let t = qwen_assistant_turn("plan\n</think>\n\n\nanswer </think> literal");
++        assert_eq!(t.reasoning.as_deref(), Some("plan\n"));
++        assert_eq!(t.content, "\nanswer </think> literal");
++    }
++
++    #[test]
++    fn native_qwen_template_replays_the_correct_channel() {
++        let template = include_str!(
++            "../../../../research/reasoning-schema-20260823/qwen38-27b.chat_template.jinja"
++        );
++        let user = Turn {
++            role: "user".into(),
++            content: "Continue.".into(),
++            ..Default::default()
++        };
++        let render_turn = |assistant| {
++            memra_tokenizer::chat::apply_chat_template_tools(
++                Some(template),
++                &[assistant, user.clone()],
++                true,
++                &[],
++                ThinkMode::Default,
++                None,
++            )
++            .unwrap()
++        };
++        let good = render_turn(qwen_assistant_turn("  unfinished reasoning  "));
++        assert!(good.contains("<think>\nunfinished reasoning\n</think>\n\n<|im_end|>"));
++        let bad = render_turn(Turn {
++            role: "assistant".into(),
++            content: "unfinished reasoning".into(),
++            ..Default::default()
++        });
++        assert!(bad.contains("<think>\n\n</think>\n\nunfinished reasoning"));
++        assert_ne!(
++            good, bad,
++            "the former history-placement bug must be observable"
++        );
++    }
++}
+diff --git a/crates/memra-engine/src/gemma_spec.rs b/crates/memra-engine/src/gemma_spec.rs
+index 83277f7fd..6999161f6 100644
+--- a/crates/memra-engine/src/gemma_spec.rs
++++ b/crates/memra-engine/src/gemma_spec.rs
+@@ -1554,6 +1554,25 @@ impl HybridModel {
+ /// RESULTS.md) were measured on this same eager arm. Dense gemma4 only (E4B refused).
+ /// Fresh session per request: no prefix reuse, no multi-turn suffix — continuation
+ /// bursts are always empty-suffix by construction.
++#[derive(Clone, Debug)]
++pub enum GemmaDepthExperiment {
++    MeasuredNative,
++    /// Actions count verification rows: a learned action of 6 drafts 5 tokens.
++    /// Qualified here with whole-request bursts; the final round is censored at
++    /// the burst target or EOS. Scheduler-sized experimental bursts need a separate
++    /// request-budget boundary before this policy can be admitted in the server.
++    Learned(crate::learned_depth::LearnedDepth),
++}
++
++#[derive(Clone, Debug)]
++pub struct GemmaDepthRound {
++    pub round: usize,
++    pub draft_depth: usize,
++    pub committed: usize,
++    pub elapsed: std::time::Duration,
++    pub eligible_for_learning: bool,
++}
++
+ pub struct GemmaSpecSession {
+     pub cache: Cache,
+     /// Every token whose rows the cache holds, in order (prompt + emitted, incl. overshoot).
+@@ -1573,9 +1592,93 @@ pub struct GemmaSpecSession {
+     /// bursts and two concurrent sessions never share a stream position.
+     pub sctr: u32,
+     pub uctr: u32,
++    depth_experiment: Option<GemmaDepthExperiment>,
++    depth_rounds: Vec<GemmaDepthRound>,
+ }
+ 
+ impl GemmaSpecSession {
++    pub fn set_depth_experiment(
++        &mut self,
++        experiment: GemmaDepthExperiment,
++    ) -> Result<(), &'static str> {
++        if self.rounds != 0 || self.depth_experiment.is_some() {
++            return Err("depth experiment must be attached once, before generation");
++        }
++        self.depth_experiment = Some(experiment);
++        Ok(())
++    }
++
++    pub fn depth_experiment(&self) -> Option<&GemmaDepthExperiment> {
++        self.depth_experiment.as_ref()
++    }
++
++    pub fn depth_rounds(&self) -> &[GemmaDepthRound] {
++        &self.depth_rounds
++    }
++
++    fn validate_depth_experiment(&self, k_cap: usize, adapt: bool) -> Result<(), &'static str> {
++        if let Some(experiment) = &self.depth_experiment {
++            if !adapt {
++                return Err("depth experiment requires the native adaptive path enabled");
++            }
++            if let GemmaDepthExperiment::Learned(policy) = experiment {
++                if policy
++                    .stats()
++                    .iter()
++                    .any(|s| s.depth < 2 || s.depth > k_cap + 1)
++                {
++                    return Err("learned verification rows exceed the configured Gemma depth cap");
++                }
++            }
++        }
++        Ok(())
++    }
++
++    fn selected_depth(&self, native: usize) -> usize {
++        match &self.depth_experiment {
++            Some(GemmaDepthExperiment::Learned(policy)) => policy.depth() - 1,
++            _ => native,
++        }
++    }
++
++    fn start_depth_round(
++        &self,
++        e: &Engine,
++    ) -> Result<Option<std::time::Instant>, Box<dyn std::error::Error>> {
++        if self.depth_experiment.is_some() {
++            e.stream().synchronize()?;
++            Ok(Some(std::time::Instant::now()))
++        } else {
++            Ok(None)
++        }
++    }
++
++    fn finish_depth_round(
++        &mut self,
++        e: &Engine,
++        started: Option<std::time::Instant>,
++        draft_depth: usize,
++        committed: usize,
++        terminal: bool,
++    ) -> Result<(), Box<dyn std::error::Error>> {
++        if let Some(started) = started {
++            e.stream().synchronize()?;
++            let elapsed = started.elapsed();
++            if !terminal {
++                if let Some(GemmaDepthExperiment::Learned(policy)) = &mut self.depth_experiment {
++                    policy.observe(draft_depth + 1, committed, elapsed)?;
++                }
++            }
++            self.depth_rounds.push(GemmaDepthRound {
++                round: self.rounds,
++                draft_depth,
++                committed,
++                elapsed,
++                eligible_for_learning: !terminal,
++            });
++        }
++        Ok(())
++    }
+     /// Tokens the session has emitted (committed past the prompt). The pending token is
+     /// NOT included — it has no cache row and the next burst emits it first.
+     pub fn emitted_len(&self) -> usize {
+@@ -1684,6 +1787,8 @@ impl HybridModel {
+             accepted: 0,
+             sctr,
+             uctr: 0,
++            depth_experiment: None,
++            depth_rounds: Vec::new(),
+         })
+     }
+ 
+@@ -1786,6 +1891,8 @@ impl HybridModel {
+             accepted: 0,
+             sctr,
+             uctr: 0,
++            depth_experiment: None,
++            depth_rounds: Vec::new(),
+         })
+     }
+ 
+@@ -1846,6 +1953,15 @@ impl HybridModel {
+             .and_then(|v| v.parse().ok())
+             .unwrap_or(7);
+         let k_cap = k.min(cap_max).max(1);
++        sess.validate_depth_experiment(k_cap, adapt)?;
++        if sess.depth_experiment.is_some()
++            && (d.d2t.is_some() || pmin != 0.0 || pmin_ir_env != Some(0.0))
++        {
++            return Err(
++                "Gemma depth experiment requires full head and explicit zero confidence cutoffs"
++                    .into(),
++            );
++        }
+         let mut kc = sess.kc_next.min(k_cap);
+         let mut prev_full = sess.prev_full;
+ 
+@@ -1868,7 +1984,8 @@ impl HybridModel {
+         let (mut drafted, mut accepted) = (0usize, 0usize);
+         let mut ended = false;
+         while burst_out.len() < target && !ended {
+-            let mut kr = if adapt { kc } else { k_cap };
++            let mut kr = sess.selected_depth(if adapt { kc } else { k_cap });
++            let depth_started = sess.start_depth_round(e)?;
+             let dc_bucket: Option<usize> = {
+                 static DC: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+                 if *DC.get_or_init(|| std::env::var("MEMRA_GEMMA_DRAFT_DC").as_deref() != Ok("0")) {
+@@ -1990,6 +2107,13 @@ impl HybridModel {
+             }
+             sess.pending = vam[m];
+             trim_adapt_learn(e, d, &vam)?;
++            sess.finish_depth_round(
++                e,
++                depth_started,
++                kr,
++                keep,
++                ended || burst_out.len() >= target,
++            )?;
+             if adapt {
+                 let fl_now = floor_at(sess.cache.pos);
+                 kc = (m + 1).clamp(fl_now.min(k_cap), k_cap);
+@@ -2086,6 +2210,7 @@ impl HybridModel {
+             .and_then(|v| v.parse().ok())
+             .unwrap_or(7);
+         let k_cap = k.min(cap_max).max(1);
++        sess.validate_depth_experiment(k_cap, adapt)?;
+         let mut kc = sess.kc_next.min(k_cap);
+ 
+         let mut batch_d = e.stream().alloc_zeros::<u32>(k_cap + 1)?;
+@@ -2108,7 +2233,8 @@ impl HybridModel {
+         let (mut drafted, mut accepted) = (0usize, 0usize);
+         let mut ended = false;
+         while burst_out.len() < target && !ended {
+-            let kr = if adapt { kc } else { k_cap };
++            let kr = sess.selected_depth(if adapt { kc } else { k_cap });
++            let depth_started = sess.start_depth_round(e)?;
+             e.u32_set_k(&mut batch_d, sess.pending, 0)?;
+             e.copy_into(&mut g_seed, 0, &sess.h, n_embd)?;
+             for (j, slot) in pos_slots.iter_mut().take(kr).enumerate() {
+@@ -2200,6 +2326,13 @@ impl HybridModel {
+             }
+             sess.pending = next;
+             trim_adapt_learn(e, d, &cand[1..=m])?;
++            sess.finish_depth_round(
++                e,
++                depth_started,
++                kr,
++                keep,
++                ended || burst_out.len() >= target,
++            )?;
+             if adapt {
+                 kc = (m + 1).clamp(adapt_floor.min(k_cap), k_cap);
+             }
+diff --git a/crates/memra-engine/src/learned_depth.rs b/crates/memra-engine/src/learned_depth.rs
+new file mode 100644
+index 000000000..aa55d8d24
+--- /dev/null
++++ b/crates/memra-engine/src/learned_depth.rs
+@@ -0,0 +1,217 @@
++//! Experimental, session-owned depth selection from measured committed tokens / time.
++//!
++//! This is a new Memra policy, not a reproduction of the unavailable H/C/D prototype.
++//! Each depth is held for a block of complete rounds. All depths are measured before
++//! exploitation; periodic round-robin probes allow recovery after a workload change.
++//! Timing and token commitment stay with the caller. No model, sampler, or CUDA state
++//! is owned here, and no environment variable enables this policy in the server.
++
++use std::time::Duration;
++
++#[derive(Clone, Debug)]
++pub struct DepthStats {
++    pub depth: usize,
++    pub rounds: u64,
++    pub tokens: u64,
++    pub elapsed: Duration,
++    pub blocks: u64,
++    pub ewma_tokens_per_second: Option<f64>,
++}
++
++#[derive(Clone, Debug)]
++pub struct LearnedDepth {
++    stats: Vec<DepthStats>,
++    current: usize,
++    rounds_per_block: u64,
++    exploit_blocks: u64,
++    blocks_since_probe: u64,
++    next_probe: usize,
++    block_rounds: u64,
++    block_tokens: u64,
++    block_time: Duration,
++    switches: u64,
++}
++
++impl LearnedDepth {
++    pub fn new(
++        depths: Vec<usize>,
++        initial: usize,
++        rounds_per_block: u64,
++        exploit_blocks: u64,
++    ) -> Result<Self, &'static str> {
++        if depths.is_empty() || depths.contains(&0) || depths.windows(2).any(|w| w[0] >= w[1]) {
++            return Err("depths must be positive, unique, and ascending");
++        }
++        let current = depths
++            .iter()
++            .position(|&d| d == initial)
++            .ok_or("initial depth must be in the candidate set")?;
++        if rounds_per_block == 0 || exploit_blocks == 0 {
++            return Err("block size and exploitation interval must be positive");
++        }
++        Ok(Self {
++            stats: depths
++                .into_iter()
++                .map(|depth| DepthStats {
++                    depth,
++                    rounds: 0,
++                    tokens: 0,
++                    elapsed: Duration::ZERO,
++                    blocks: 0,
++                    ewma_tokens_per_second: None,
++                })
++                .collect(),
++            current,
++            rounds_per_block,
++            exploit_blocks,
++            blocks_since_probe: 0,
++            next_probe: 0,
++            block_rounds: 0,
++            block_tokens: 0,
++            block_time: Duration::ZERO,
++            switches: 0,
++        })
++    }
++
++    pub fn depth(&self) -> usize {
++        self.stats[self.current].depth
++    }
++
++    pub fn stats(&self) -> &[DepthStats] {
++        &self.stats
++    }
++
++    pub fn switches(&self) -> u64 {
++        self.switches
++    }
++
++    /// Record one successful, untruncated round at the selected depth. Failed or
++    /// terminally truncated rounds are not observations. Their cost still belongs
++    /// in the caller's end-to-end benchmark denominator.
++    pub fn observe(
++        &mut self,
++        depth: usize,
++        committed: usize,
++        elapsed: Duration,
++    ) -> Result<(), &'static str> {
++        if depth != self.depth() {
++            return Err("observation depth differs from the selected depth");
++        }
++        if committed == 0 || committed > depth || elapsed.is_zero() {
++            return Err("observation needs 1..=depth committed tokens and positive time");
++        }
++        let stat = &mut self.stats[self.current];
++        stat.rounds += 1;
++        stat.tokens += committed as u64;
++        stat.elapsed += elapsed;
++        self.block_rounds += 1;
++        self.block_tokens += committed as u64;
++        self.block_time += elapsed;
++        if self.block_rounds < self.rounds_per_block {
++            return Ok(());
++        }
++        // Pool tokens and elapsed time before division; averaging round rates
++        // overweights short rounds and is the wrong optimization objective.
++        let rate = self.block_tokens as f64 / self.block_time.as_secs_f64();
++        stat.ewma_tokens_per_second = Some(match stat.ewma_tokens_per_second {
++            Some(old) => 0.5 * old + 0.5 * rate,
++            None => rate,
++        });
++        stat.blocks += 1;
++        self.block_rounds = 0;
++        self.block_tokens = 0;
++        self.block_time = Duration::ZERO;
++
++        let next = if let Some(unseen) = self.stats.iter().position(|s| s.blocks == 0) {
++            unseen
++        } else if self.blocks_since_probe >= self.exploit_blocks {
++            let probe = self.next_probe;
++            self.next_probe = (self.next_probe + 1) % self.stats.len();
++            self.blocks_since_probe = 0;
++            probe
++        } else {
++            self.blocks_since_probe += 1;
++            let mut best = self.current;
++            for (index, candidate) in self.stats.iter().enumerate() {
++                if candidate.ewma_tokens_per_second.unwrap()
++                    > self.stats[best].ewma_tokens_per_second.unwrap() * 1.01
++                {
++                    best = index;
++                }
++            }
++            best
++        };
++        self.switches += u64::from(next != self.current);
++        self.current = next;
++        Ok(())
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn refuses_bad_configuration_and_observations_without_mutation() {
++        for depths in [vec![], vec![0, 2], vec![3, 3], vec![4, 3]] {
++            assert!(LearnedDepth::new(depths, 3, 2, 8).is_err());
++        }
++        assert!(LearnedDepth::new(vec![3, 4], 8, 2, 8).is_err());
++        assert!(LearnedDepth::new(vec![3, 4], 3, 0, 8).is_err());
++        let mut policy = LearnedDepth::new(vec![3, 4], 3, 2, 8).unwrap();
++        for (depth, tokens, time) in [
++            (4, 2, Duration::from_millis(1)),
++            (3, 0, Duration::from_millis(1)),
++            (3, 4, Duration::from_millis(1)),
++            (3, 2, Duration::ZERO),
++        ] {
++            assert!(policy.observe(depth, tokens, time).is_err());
++        }
++        assert_eq!(policy.stats()[0].rounds, 0);
++        assert_eq!(policy.depth(), 3);
++    }
++
++    #[test]
++    fn ranks_throughput_instead_of_acceptance_or_mean_round_rates() {
++        let mut policy = LearnedDepth::new(vec![3, 8], 3, 2, 8).unwrap();
++        policy.observe(3, 1, Duration::from_millis(1)).unwrap();
++        policy.observe(3, 1, Duration::from_millis(99)).unwrap();
++        assert_eq!(policy.stats()[0].ewma_tokens_per_second, Some(20.0));
++        assert_eq!(policy.depth(), 8);
++        // The deeper round commits more tokens, but at only 10 tok/s.
++        policy.observe(8, 8, Duration::from_millis(800)).unwrap();
++        policy.observe(8, 8, Duration::from_millis(800)).unwrap();
++        assert_eq!(policy.depth(), 3);
++    }
++
++    #[test]
++    fn explores_every_depth_and_tracks_a_changed_workload_in_both_directions() {
++        let mut policy = LearnedDepth::new(vec![3, 4, 6, 8], 8, 2, 3).unwrap();
++        for best in [8, 3, 6] {
++            let mut selections = [0u64; 9];
++            for _ in 0..2000 {
++                let d = policy.depth();
++                selections[d] += 1;
++                let millis = if d == best { 10 } else { 100 };
++                policy.observe(d, 2, Duration::from_millis(millis)).unwrap();
++            }
++            assert!(selections[best] > 1000, "did not adapt to depth {best}");
++        }
++        assert!(policy.stats().iter().all(|s| s.blocks > 1));
++        assert!(policy.switches() > 10);
++    }
++
++    #[test]
++    fn independent_sessions_and_partial_blocks_do_not_share_learning() {
++        let mut a = LearnedDepth::new(vec![3, 8], 8, 3, 8).unwrap();
++        let b = a.clone();
++        a.observe(8, 2, Duration::from_millis(10)).unwrap();
++        a.observe(8, 2, Duration::from_millis(10)).unwrap();
++        assert_eq!(a.depth(), 8);
++        assert_eq!(a.stats()[1].blocks, 0);
++        a.observe(8, 2, Duration::from_millis(10)).unwrap();
++        assert_eq!(a.depth(), 3);
++        assert_eq!(b.depth(), 8);
++        assert_eq!(b.stats()[1].rounds, 0);
++    }
++}
+diff --git a/crates/memra-engine/src/lib.rs b/crates/memra-engine/src/lib.rs
+index b5ebadadd..297e882cb 100644
+--- a/crates/memra-engine/src/lib.rs
++++ b/crates/memra-engine/src/lib.rs
+@@ -99,6 +99,7 @@ pub mod glm5_tp_sym_graph;
+ pub mod glm_spec;
+ pub mod graph_update;
+ pub mod kda;
++pub mod learned_depth;
+ /// MLA (multi-head latent attention) CPU f32 reference — GLM-5.2 bring-up lane increment 1.
+ /// Naive vs absorbed decode forms + NORM/NEOX rope permutation, unit-tested; the permanent
+ /// oracle for the MLA kernel family (`research/mla-bringup-20260801/DESIGN.md`). No CUDA deps.
+diff --git a/crates/memra-engine/src/spec.rs b/crates/memra-engine/src/spec.rs
+index c9a61d47f..ee251c2eb 100644
+--- a/crates/memra-engine/src/spec.rs
++++ b/crates/memra-engine/src/spec.rs
+@@ -1479,7 +1479,25 @@ struct SpecDraftSetup {
+     s_capturable: bool,
+ }
+ 
++/// Explicit research-only policy; no server environment variable enables it.
++#[derive(Clone)]
++pub enum MtpDepthExperiment {
++    MeasuredNative,
++    Learned(crate::learned_depth::LearnedDepth),
++}
++
++pub struct MtpDepthRound {
++    pub round: usize,
++    pub draft_depth: usize,
++    pub emitted: usize,
++    pub elapsed: std::time::Duration,
++    pub eligible_for_learning: bool,
++}
++
+ pub struct SpecSession {
++    /// A learned action counts K+1 (draft steps plus the bonus), as in Gemma.
++    pub depth_experiment: Option<MtpDepthExperiment>,
++    pub depth_rounds: Vec<MtpDepthRound>,
+     prime_ready: Option<prime::PreparedMtp>,
+     pub(crate) cache: Cache,
+     pub(crate) scratch: MtpScratch,
+@@ -9067,6 +9085,8 @@ impl HybridModel {
+         max_ctx: usize,
+     ) -> Result<SpecSession, Box<dyn std::error::Error>> {
+         Ok(SpecSession {
++            depth_experiment: None,
++            depth_rounds: Vec::new(),
+             prime_ready: None,
+             // STAGE-OWNED KV (lane/pp2-spec 2026-08-06): `pp::new_cache`, not `Cache::new`. This
+             // is the SERVING spec-session path, and with the ppN door open across two cards a
+@@ -9646,6 +9666,8 @@ impl HybridModel {
+             cache,
+             scratch,
+             committed,
++            depth_experiment: None,
++            depth_rounds: Vec::new(),
+             last_h: last_h_dev,
+             next_pred,
+             sctr,
+@@ -11212,6 +11234,7 @@ impl HybridModel {
+         let mut ckpt_req: Option<usize> = None;
+         // FAIL-SAFE bit threaded out of the session (see `SpecSession::capture_disabled`).
+         let mut sess_capture_disabled = false;
++        let mut depth_study = None;
+         let (
+             cache,
+             scratch,
+@@ -11237,6 +11260,8 @@ impl HybridModel {
+         ) = match sess.take() {
+             Some(sr) => {
+                 let SpecSession {
++                    depth_experiment,
++                    depth_rounds,
+                     cache,
+                     scratch,
+                     committed,
+@@ -11254,6 +11279,9 @@ impl HybridModel {
+                     capture_disabled,
+                     prime_ready: _,
+                 } = sr;
++                depth_study = depth_experiment
++                    .as_mut()
++                    .map(|policy| (policy, depth_rounds));
+                 sess_capture_disabled = *capture_disabled;
+                 sess_capture = Some((capture_at.take(), boundary_captures));
+                 ckpt_req = ckpt_at.take();
+@@ -12160,6 +12188,11 @@ impl HybridModel {
+             }
+         }
+         let stream_active = stream_on && stream_graph.is_some();
++        if depth_study.is_some()
++            && (stream_active || p_min != 0.0 || d_vocab != n_vocab || mtp.d2t.is_some())
++        {
++            return Err("MTP depth study requires full vocabulary, confidence cuts off, and host round boundaries".into());
++        }
+         if debug_spec {
+             eprintln!(
+                 "[spec] stream_on={stream_on} env={} samp={sampled} dg={} captured={} active={stream_active} session={session_mode} replay={spec_replay}",
+@@ -12492,6 +12525,12 @@ impl HybridModel {
+                 keep_going = flush_commit(&mut on_commit, &out, &mut flushed);
+                 continue;
+             }
++            let depth_started = if depth_study.is_some() {
++                e.stream().synchronize()?;
++                Some((std::time::Instant::now(), out.len()))
++            } else {
++                None
++            };
+             let pos = cache.pos; // #tokens committed (EXCLUDES a pending bonus)
+             cache.snapshot_into(e, &mut snap)?; // §C: snapshot BEFORE draft+verify
+             ph_mark(&mut ph_rest, phase_on);
+@@ -12503,7 +12542,19 @@ impl HybridModel {
+             let base0 = if pending.is_some() { 1usize } else { 0usize };
+             // fixed draft length by default; MEMRA_SPEC_ADAPT=1 drafts at last round's
+             // accepted run + 1 (the gemma law — see the setup block above the loop).
+-            let k_this = if adapt { kc } else { k };
++            let k_this = match depth_study.as_ref().map(|(policy, _)| &**policy) {
++                Some(MtpDepthExperiment::Learned(policy)) => policy.depth().saturating_sub(1),
++                _ => {
++                    if adapt {
++                        kc
++                    } else {
++                        k
++                    }
++                }
++            };
++            if k_this == 0 || k_this > k {
++                return Err("MTP depth action is outside the allocated draft range".into());
++            }
+             let mut draft: Vec<u32> = Vec::with_capacity(k);
+             let mut draft_idx: Vec<u32> = Vec::with_capacity(k); // trimmed-vocab ids (== draft when untrimmed)
+             {
+@@ -13999,6 +14050,25 @@ impl HybridModel {
+             // sse-cadence: this round's accepted drafts + bonus are committed (out is
+             // append-only past step 4) — flush at round cadence.
+             keep_going = flush_commit(&mut on_commit, &out, &mut flushed);
++            if let Some((started, output_before)) = depth_started {
++                e.stream().synchronize()?;
++                let elapsed = started.elapsed();
++                let emitted = out.len() - output_before;
++                let eligible_for_learning = keep_going && out.len() < max_new && emitted > 0;
++                let (policy, traces) = depth_study.as_mut().expect("study timer has policy");
++                if eligible_for_learning {
++                    if let MtpDepthExperiment::Learned(learner) = &mut **policy {
++                        learner.observe(k_this + 1, emitted, elapsed)?;
++                    }
++                }
++                traces.push(MtpDepthRound {
++                    round,
++                    draft_depth: k_this,
++                    emitted,
++                    elapsed,
++                    eligible_for_learning,
++                });
++            }
+         }
+         // sse-cadence: nothing below appends to `out`; flush any remainder (defensive).
+         // (verdict ignored — the burst is over either way; the session tail runs unchanged.)
+diff --git a/crates/memra-tokenizer/src/chat.rs b/crates/memra-tokenizer/src/chat.rs
+index 7568c965d..7155e9874 100644
+--- a/crates/memra-tokenizer/src/chat.rs
++++ b/crates/memra-tokenizer/src/chat.rs
+@@ -55,15 +55,18 @@ pub struct ToolCall {
+ }
+ 
+ /// One chat turn for the tools-capable renderer (`apply_chat_template_tools`).
+-/// The `reasoning` field is consumed by gemma4 and HY3; `tool_call_id`/`tool_name`/
+-/// `tool_responses` are gemma4-only. The qwen/step arms use role/content/tool_calls.
++/// Reasoning replay is template-specific: Qwen3.8's preserving template consumes
++/// `reasoning` separately from `content`, as do the other reasoning-aware renderers.
++/// Do not place raw think-open generation in `content`, including a length-stopped
++/// reasoning segment. `tool_call_id`/`tool_name`/`tool_responses` are gemma4-only.
+ #[derive(Debug, Clone, Default, PartialEq)]
+ pub struct Turn {
+     pub role: String,
+     pub content: String,
+     pub tool_calls: Vec<ToolCall>,
+-    /// gemma4: assistant reasoning re-rendered as a `<|channel>thought` span (only for a
+-    /// tool_calls-carrying assistant after the last user message — the template's guard).
++    /// Assistant reasoning, separate from visible answer content. Qwen3.8 replays it
++    /// inside `<think>` under its preserving default. Gemma4 replays a thought channel
++    /// only for a tool-carrying assistant after the last user message.
+     pub reasoning: Option<String>,
+     /// gemma4: on a role:"tool" turn, the OpenAI `tool_call_id` used to resolve the response
+     /// name against the preceding assistant's `tool_calls[].id`.
