@@ -1,3 +1,8 @@
+# WP-B checkpoint 2026-09-27 12:4xZ (NEED TARGET CARD, the nineteenth sitting's rerun): the nineteenth sitting did not
+run (its idle poll never saw the box lock free while another lane's load re-took it per run, 10:28 to 12:28Z; the lead
+banks the not-run receipts). DAY48 addendum D (b25a4b763) and its runner (a6ea7c49f): day48-run.sh holds the lock, checks
+idle under the hold, boots with LOCK=none (rig-hold.sh, test-rig-hold.sh all PASS). The lead reruns the same command on
+the lane tip after the other lane's load; integ72 waits for it.
 # WP-B checkpoint 2026-09-27 13:xxZ (NEED TARGET CARD, the nineteenth sitting): revuto's DAY48 finding fixed (the peek,
 521fdbbbc; lane tip 02b45bb48); DAY48 2.1 unaffected; sitting 19 reruns the DAY48 cell with V5.
 # WP-B checkpoint 2026-09-27 12:xxZ: integ71 merged (#844, main 9852e3b12); main merged into the lane for integ72 at
