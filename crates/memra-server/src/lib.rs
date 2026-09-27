@@ -105,6 +105,11 @@ mod dsv4_serve;
 mod embed_api;
 mod handoff_io;
 mod histogram;
+/// In-memory reference implementation of `metering::JobStore` (memra#550,
+/// `docs/decisions/COMPLETE-RESULT-PATH-V1.md`): the bounded, TTL'd buffer a background
+/// (`background: true`) job's output would live in between the worker finishing and the
+/// caller's poll. Not yet wired to a live generation; see the module doc.
+pub mod job_store;
 /// `MEMRA_KV_ALLOCATOR=vmm` (WP-B day 37, decide-by 2026-10-04): the serving arm of the
 /// `--kv-allocator vmm` door, on-demand fixed-address K/V planes for covered sessions.
 mod kv_vmm;
