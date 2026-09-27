@@ -242,6 +242,26 @@ fn run_conv(
 
 impl MiMoAudioCodecEncoderWeights {
     #[cfg(test)]
+    pub(crate) fn encode_conv1_gelu_from_preact(
+        engine: &Engine,
+        preactivation: &CudaSlice<f32>,
+        frames: usize,
+    ) -> Result<CudaSlice<f32>, Fail> {
+        if !(1..=1_024).contains(&frames)
+            || preactivation.len() != frames * HIDDEN
+            || preactivation.ordinal() != engine.stream().context().ordinal()
+        {
+            return Err("MiMo source conv1 GELU diagnostic shape or GPU changed".into());
+        }
+        engine.gpu.ctx.bind_to_thread()?;
+        ensure_finite(engine, preactivation)?;
+        let zero_bias = engine.htod_bytes(&vec![0u8; HIDDEN * 2])?;
+        let output = epilogue(engine, preactivation, &zero_bias, frames, HIDDEN)?;
+        ensure_finite(engine, &output)?;
+        Ok(output)
+    }
+
+    #[cfg(test)]
     pub(crate) fn encode_prepared_mel_conv1_preact(
         &self,
         engine: &Engine,

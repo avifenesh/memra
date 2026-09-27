@@ -176,6 +176,18 @@ fn prepared_mel_target_features_and_rvq_diagnostic() -> Result<(), Fail> {
         &publisher_gpu_conv1,
         9,
     )?;
+    let source_gelu = MiMoAudioCodecEncoderWeights::encode_conv1_gelu_from_preact(
+        &engine,
+        &engine.htod(&publisher_preactivation)?,
+        9,
+    )?;
+    let source_gelu = engine.dtoh(&source_gelu)?;
+    feature_stats(
+        "memra_gelu_on_gpu_publisher_preact_vs_post",
+        &source_gelu,
+        &publisher_gpu_conv1,
+        9,
+    )?;
     let first = weights.encode_prepared_mel_conv(&engine, &engine.htod(&mel)?, 9)?;
     let frontend_values = engine.dtoh(&first)?;
     let stack = weights.encode_transformer_stack(&engine, &first, 5)?;
