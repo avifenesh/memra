@@ -6908,6 +6908,16 @@ enum RouteHist {
     Round,
 }
 
+/// Which histogram of a [`hybrid_telemetry::HybridSnapshot`] a family-outer render loop is on
+/// (memra#522 revuto finding: the Prometheus text format needs one metric family's lines kept
+/// together, so the loop below is metric-outer, model-inner, and this selects the field).
+#[derive(Clone, Copy)]
+enum HybridSample {
+    QueueWait,
+    Ttft,
+    E2e,
+}
+
 /// Render the Prometheus text exposition (memra#522) from the same authorized snapshot the
 /// JSON body reads. Gated identically: process-wide counters only with
 /// [`MetricsScope::process_wide`], per-route detail only with [`MetricsScope::operator`] (the
@@ -7010,23 +7020,29 @@ fn render_prometheus_metrics(
         // dedicated route). Same per-model cardinality bound and operator scope as the
         // route block above; distinct metric names so a scraper never conflates a
         // dedicated route's own book with the shared scheduler's per-model one.
-        out.push_str("# TYPE memra_hybrid_queue_wait_seconds histogram\n");
-        out.push_str("# TYPE memra_hybrid_ttft_seconds histogram\n");
-        out.push_str("# TYPE memra_hybrid_e2e_seconds histogram\n");
-        for h in hybrid {
-            let labels = format!("model=\"{}\"", h.model);
-            out.push_str(
-                &h.queue_wait_hist
-                    .render_prometheus("memra_hybrid_queue_wait_seconds", &labels),
-            );
-            out.push_str(
-                &h.ttft_hist
-                    .render_prometheus("memra_hybrid_ttft_seconds", &labels),
-            );
-            out.push_str(
-                &h.e2e_hist
-                    .render_prometheus("memra_hybrid_e2e_seconds", &labels),
-            );
+        //
+        // revuto finding on this PR: the Prometheus text format (0.0.4) requires every
+        // line of one metric family to appear together. The hybrid lane, unlike the route
+        // block above (one route in practice today), routinely has several models at
+        // once, so a model-outer loop here would split each family across the output and
+        // trip a strict parser (promtool, OpenMetrics, the Go expfmt text parser). Loop
+        // the metric name on the outside, the model on the inside, so each family's lines
+        // stay contiguous.
+        for (name, sample) in [
+            ("memra_hybrid_queue_wait_seconds", HybridSample::QueueWait),
+            ("memra_hybrid_ttft_seconds", HybridSample::Ttft),
+            ("memra_hybrid_e2e_seconds", HybridSample::E2e),
+        ] {
+            out.push_str(&format!("# TYPE {name} histogram\n"));
+            for h in hybrid {
+                let labels = format!("model=\"{}\"", h.model);
+                let hist = match sample {
+                    HybridSample::QueueWait => &h.queue_wait_hist,
+                    HybridSample::Ttft => &h.ttft_hist,
+                    HybridSample::E2e => &h.e2e_hist,
+                };
+                out.push_str(&hist.render_prometheus(name, &labels));
+            }
         }
     }
     out
@@ -19699,6 +19715,78 @@ default_reasoning_effort = "always"
         let json_resp = get_metrics(State(st.clone()), HeaderMap::new()).await;
         let json_body = body_value(json_resp).await;
         assert!(json_body.get("hybrid").is_none());
+    }
+
+    /// memra#522 revuto finding: the Prometheus text format (0.0.4) requires every line of
+    /// one metric family to appear together. A model-outer render loop would split each
+    /// family's lines apart the moment TWO models are in the hybrid lane (the normal case:
+    /// it is every model without a dedicated route, unlike the route block's single dsv4
+    /// route today). This drives `render_prometheus_metrics` directly with two synthetic
+    /// models and asserts every family's lines are one contiguous run.
+    #[test]
+    fn hybrid_prometheus_families_stay_contiguous_across_two_models() {
+        let sample = |ms: u64| {
+            let h = histogram::Histogram::new();
+            h.record_ms(ms);
+            h.snapshot()
+        };
+        let hybrid = vec![
+            hybrid_telemetry::HybridSnapshot {
+                model: "model-a".into(),
+                queue_wait_hist: sample(5),
+                ttft_hist: sample(50),
+                e2e_hist: sample(500),
+            },
+            hybrid_telemetry::HybridSnapshot {
+                model: "model-b".into(),
+                queue_wait_hist: sample(6),
+                ttft_hist: sample(60),
+                e2e_hist: sample(600),
+            },
+        ];
+        let text = render_prometheus_metrics(
+            &worker::Metrics::default(),
+            &[],
+            &hybrid,
+            &MetricsScope::All,
+        );
+        for family in [
+            "memra_hybrid_queue_wait_seconds",
+            "memra_hybrid_ttft_seconds",
+            "memra_hybrid_e2e_seconds",
+        ] {
+            // Every line for this family (both models, every bucket plus _sum/_count) sits
+            // between this family's own `# TYPE` line and the next family's `# TYPE` line
+            // (or the end of the text): no other family's line interrupts it.
+            let type_line = format!("# TYPE {family} histogram\n");
+            let start = text
+                .find(&type_line)
+                .unwrap_or_else(|| panic!("family {family} missing its TYPE line: {text}"))
+                + type_line.len();
+            let rest = &text[start..];
+            let end = rest.find("# TYPE ").unwrap_or(rest.len());
+            let block = &rest[..end];
+            assert!(
+                block.contains("model=\"model-a\""),
+                "{family} block must carry model-a's lines: {block}"
+            );
+            assert!(
+                block.contains("model=\"model-b\""),
+                "{family} block must carry model-b's lines: {block}"
+            );
+            for other in [
+                "memra_hybrid_queue_wait_seconds",
+                "memra_hybrid_ttft_seconds",
+                "memra_hybrid_e2e_seconds",
+            ] {
+                if other != family {
+                    assert!(
+                        !block.contains(other),
+                        "{family}'s block must not carry any {other} line: {block}"
+                    );
+                }
+            }
+        }
     }
 
     /// A fake DSv4-shaped route whose worker runs the route's real memory door
