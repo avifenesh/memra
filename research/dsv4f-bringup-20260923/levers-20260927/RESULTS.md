@@ -460,3 +460,76 @@ moves no value, and the hash stays `fbce1a0492d69635`.
 Long gate, second SE pair, order M P P M M P: main 10.85 .. 11.04 ms/token against 10.82 .. 10.95.
 That is flat. Few blocks are resident early enough to matter. Where they are, the predecessor's
 own stream already holds the bandwidth. Not merged.
+
+## The joined MoE tail in one launch (adopted)
+
+Lane `lane/dsv4-moe-tail-fuse-20260927`, measured against main `286c0c54c` on the second SE pair
+(`raw/se2-moe-tail-s2zf/`).
+- **What changed.** With the shared expert on the join, the tail was three launches per layer:
+  `combine_rows_m`, the add of the joined shared rows, and hc_post.
+  `dsv4_moe_tail_hc_post_kernel` runs all three: the slot sum, `y += shared`, then hc_post for
+  each copy. Each value is the same op in the same order.
+- **Census.** The replay graph census counts the kernel as the FFN site's hc_post. The first
+  build refused its capture (`incomplete full-token graph ... census[4] 43 != 86`), and the
+  second build adds the kernel to the count.
+- **Correctness.** The long gate hash is `fbce1a0492d69635`. The TP/EP rows gate, the KV split
+  gate and the DSpark TP/EP gate pass.
+- **Long gate,** M T T M M T: 10.17 .. 10.33 against 10.15 .. 10.27 ms/token, about -0.4%.
+- **Served,** cells-pdl M T T M, N=2, on the four-lane build of the time:
+
+| cell | main | lane |
+|---|---|---|
+| greedy c1 | 94.64 / 94.39 | 94.94 / 94.60 |
+| sampled c1 | 94.92 / 94.48 | 95.17 / 95.31 |
+| greedy c2 | 126.51 / 125.93 | 126.75 / 125.68 |
+| greedy c4 | 158.34 / 158.10 | 146.55 / 156.97 |
+
+The 146.55 is a phase-split cell of the old four-lane coalescer (`../lanes16/`), not the tail's.
+The tail saves two launches per layer, and it is kept for that. Its gain is at the edge of the
+row spread.
+
+## The fused pair on one card: where its time goes, and a refuted wider CTA
+
+`tools/dsv4-moe-fused-bench.cu` times the pair on one card at the TP/EP partition shape: 128
+local experts of 256, 6 slots per row, 3 of them local. Each launch takes a fresh expert set, so
+the weights stream from DRAM.
+
+Its variants instantiate the kernel templates directly:
+- a stage-major packed copy of the weights (each warp's stage contiguous), checked bit for bit
+  against the standard kernel;
+- decomposition twins that stream without computing, or compute without streaming, with and
+  without the x mirror;
+- other ring depths and CTA widths.
+
+Receipts: `raw/se2-moe-bench-s2z/`, `raw/se2-moe-bench2-s2za/`, `raw/se2-moe-bench3-s2zb/`,
+`raw/se2-moe-bench4-s2zc/`. Second SE pair. The pair has no performance-counter access, so the
+Nsight run in s2z refused.
+
+**One token row**, gate/up launch, us:
+
+| arm | us | TB/s over the weights |
+|---|---|---|
+| the committed kernel | 28.6 | 0.99 |
+| its skeleton (no epilogue) | 27.9 | 1.02 |
+| no x mirror | 22.8 | 1.24 |
+| streaming only, no mirror | 20.7 | 1.37 |
+| compute only, no loads | 18.7 | 1.51 |
+| the stage-major packed copy | 29.7 | 0.95 |
+
+At one row the launch is compute and stream in about equal parts, overlapped well, plus about
+5 us of x mirror that does not overlap. The packed layout loses 3%, which refutes the access
+pattern as the limit. At four rows the same kernel reads 1.17 TB/s, and the down launch 0.95.
+
+**Refuted: 16-warp CTAs.** On the bench, 16-warp CTAs cut both launches at one row:
+- gate/up from 28.6 to 25.2 us (8 warps per projection);
+- down from 17.5 to 15.2 us (16 warps).
+
+Fewer CTAs rebuild each mirror. In the program they lose. Long gate, second SE pair, order
+M W W M M W, the bits the same (`fbce1a0492d69635`, `raw/se2-moe-wide-s2zd/`, code in
+`wide-cta.patch`):
+- main: 10.60 .. 10.70 ms/token;
+- lane: 10.74 .. 10.87, +1.4%.
+
+One served row per arm agrees: greedy c1 91.00 against 90.30. The bench times each launch alone.
+In the chain, the wider CTAs leave half the SMs idle at one row (96 CTAs of 512 threads against
+192 of 256), and that costs more than the mirrors it saves. Not merged.

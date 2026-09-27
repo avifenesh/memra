@@ -1,0 +1,34 @@
+tools/../crates/memra-engine/cu/dsv4_gpu.cu(4751): warning #1556-D: name linkage conflicts with previous declaration of variable "shd" (declared at line 402)
+      extern __attribute__((shared)) double shd[];
+                                            ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+tools/../crates/memra-engine/cu/dsv4_gpu.cu(4751): warning #1556-D: name linkage conflicts with previous declaration of variable "shd" (declared at line 402)
+      extern __attribute__((shared)) double shd[];
+                                            ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+tools/dsv4-moe-fused-bench.cu(219): warning #128-D: loop is not reachable
+          for (int s = 0; s < KC / 128; s++) {
+          ^
+          detected during:
+            instantiation of "void bench_dot_mode<KC,STAGES,MODE>(float (&)[4], unsigned char *, const uint32_t *, const uint8_t *, const uint8_t *, long, int, int, int) [with KC=256, STAGES=2, MODE=1]" at line 276
+            instantiation of "void bench_gu_mode_kernel<WP,KC,STAGES,MODE,MIRROR>(const unsigned long long *, const int *, const float *, float *, int, int) [with WP=4, KC=256, STAGES=2, MODE=1, MIRROR=0]" at line 286
+            instantiation of "void bench_gu_mode<MODE,MIRROR>(const unsigned long long *, const int *, const float *, float *, int, cudaStream_t) [with MODE=1, MIRROR=0]" at line 446
+
+tools/../crates/memra-engine/cu/dsv4_gpu.cu(4751): warning #1556-D: name linkage conflicts with previous declaration of variable "shd" (declared at line 402)
+      extern __attribute__((shared)) double shd[];
+                                            ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+tools/dsv4-moe-fused-bench.cu(219): warning #128-D: loop is not reachable
+          for (int s = 0; s < KC / 128; s++) {
+          ^
+          detected during:
+            instantiation of "void bench_dot_mode<KC,STAGES,MODE>(float (&)[4], unsigned char *, const uint32_t *, const uint8_t *, const uint8_t *, long, int, int, int) [with KC=256, STAGES=2, MODE=1]" at line 276
+            instantiation of "void bench_gu_mode_kernel<WP,KC,STAGES,MODE,MIRROR>(const unsigned long long *, const int *, const float *, float *, int, int) [with WP=4, KC=256, STAGES=2, MODE=1, MIRROR=0]" at line 286
+            instantiation of "void bench_gu_mode<MODE,MIRROR>(const unsigned long long *, const int *, const float *, float *, int, cudaStream_t) [with MODE=1, MIRROR=0]" at line 446
+

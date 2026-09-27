@@ -19070,6 +19070,33 @@ impl Dsv4Gpu {
     ) -> Res<()> {
         let stream = st.gpu.stream();
         let contribution = joined_contribution.unwrap_or(&vws.contrib);
+        if shared_joined && include_hc_post && !routed_combined {
+            // The joined tail in one launch: slot sum, the joined shared rows, hc_post (memra #710).
+            let hc = self.model.cfg().hc_mult as usize;
+            let shared =
+                (contribution.device_ptr(&stream).0 as *const f32).wrapping_add(t * topk * hidden);
+            unsafe {
+                ck(
+                    "moe tail hc_post batch",
+                    k::memra_dsv4_moe_tail_hc_post(
+                        dpf!(contribution, &stream),
+                        vws.order.device_ptr(&stream).0 as *const i32,
+                        topk as i32,
+                        shared,
+                        dpm!(vws.y, &stream),
+                        dpf!(vws.h_b, &stream),
+                        dpf!(vws.post, &stream),
+                        dpf!(vws.comb, &stream),
+                        dpm!(vws.h_a, &stream),
+                        t as i32,
+                        hc as i32,
+                        hidden as i64,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+            return Ok(());
+        }
         unsafe {
             if !routed_combined {
                 ck(
