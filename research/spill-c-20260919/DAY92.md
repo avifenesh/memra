@@ -71,3 +71,25 @@ the thread handle. The engine enters `access` four times per ticket (`host_resid
     it also saves are outside every leaf, so the rule reads the cut conservatively.
   - A `short` reading sends the work to I26's design. A `reaches` reading makes NEED TARGET CARD for the `promo`
     sitting with the traced twin.
+
+## 4. Queue v22 read as registered (2026-09-27, 23:44Z to 23:57Z; `rtx5090-day92/`)
+
+**The check** (`check/reading.log`): `DAY89 GPU CHECK PASS`. I25 traced reads p88's tape and host demand sequence
+(`4bdc2610c3534e42`, 22077 lines) in both orders. `DAY92 UNTRACED i25u-a rc=0 MATCH the same tape as p88-a
+trace_lines=0 -> PASS`.
+
+**The split** (`split25/reading.log`): `DAY83 SPLIT CHECKS rig=rtx5090 runs=40 integrity=ok`. Verbatim:
+- `DAY92 SPLIT rig=rtx5090 p88s generate N=10 door-only leaves summed=314.5 us per token`
+- `DAY92 SPLIT rig=rtx5090 i24s generate N=10 door-only leaves summed=264.7 us per token`
+- `DAY92 SPLIT rig=rtx5090 i25s generate N=10 door-only leaves summed=233.0 us per token`
+- `DAY92 CHANGE rig=rtx5090 generate i25s minus i24s: -31.8 us per token`
+- `DAY92 SIZING rig=rtx5090 generate door-only change p88s->i25s=-81.6 us per token, threshold -155 -> short`
+- `DAY92 CHANGE rig=rtx5090 generate i25t minus i25s: +36.3 us per token`
+
+**Read as registered.**
+- I25 removes 31.8 us per generated token beyond I24: `outer` -22.8 (the untraced door's pre-demand reads) and
+  `own_trace` -14.9. From p88 to I25 the door-only work falls 81.6 us per token.
+- The trace alone costs 36.3 us per token clocked (`i25t` against `i25s`); its stderr writes add more outside every
+  leaf.
+- The rule reads `short`. `DAY91.md` section 3 retired it as the 285K predictor, so it decides nothing here; the
+  285K question is `DAY94.md`'s.
