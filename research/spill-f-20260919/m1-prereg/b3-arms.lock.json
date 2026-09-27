@@ -23,7 +23,7 @@
   },
   "common_env": {
     "MEMRA_SPILL_DISK": "1",
-    "MEMRA_SPILL_PINNED_FRAC": "0",
+    "MEMRA_SPILL_PINNED_FRAC": "0.000000001",
     "MEMRA_MOE_CACHE": "1",
     "MEMRA_MOE_RESIDENT": "0",
     "MEMRA_MOE_SLOTS": "8",
@@ -98,5 +98,12 @@
     "sign_agreement_min_per_order": 4,
     "rounds_per_order": 5,
     "metric": "gen-only decode tok/s, X over worker16 within each round"
+  },
+  "amendments": [
+    "2026-09-25 B3 amendment 2: MEMRA_SPILL_PINNED_FRAC 0 -> 0.000000001 (0 is rejected by the engine's range check)"
+  ],
+  "expected_placement": {
+    "pinned": 0,
+    "mmapd": 30720
   }
 }

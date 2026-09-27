@@ -1,0 +1,147 @@
+[server] build: memra-0.138.0-f94b11da3953 (id: source-tree, git: 11db56e719e6)
+[server] starting; models config = [("dsv4f", "/data/dsv4f/nvfp4", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "dsv4f" <- /data/dsv4f/nvfp4
+[load] programmatic dependent launch on the decode chain: true
+[load] sampled candidate order: Radix
+[load] placement: split_at=22 trunk_layers=43 dspark_tail_reserve=0.00 GiB
+[load] plain sampler: Device (the topology's default)
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+[load] topology: TpEpAllLayers | layers=43 per-rank-resident=all
+[load] indexer score: Knee
+[load] prefill head: All
+[load] prefill DSpark prime: All
+[load] sampled DSpark proposal: Greedy
+[load] prefill MoE: reference
+[load] dspark exit-head dots arm: f32x (rung-4c fork; drafts only, never the emitted stream)
+[load] dspark selected-expert dispatch: per-expert reference
+[load] dense arm: fp8 (iteration-5; fp8 = FP8-blk linears as-stored on the device decode/verify paths, bit-identical twins)
+[load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 353.0ms
+[load] lane-8 peer transport enabled (1 boundaries)
+[load] layer 3 -> 2 rank copies done t=20s
+[load] layer 7 -> 2 rank copies done t=40s
+[load] layer 11 -> 2 rank copies done t=60s
+[load] layer 15 -> 2 rank copies done t=80s
+[load] layer 19 -> 2 rank copies done t=101s
+[load] layer 23 -> 2 rank copies done t=120s
+[load] layer 27 -> 2 rank copies done t=140s
+[load] layer 31 -> 2 rank copies done t=160s
+[load] layer 35 -> 2 rank copies done t=180s
+[load] layer 39 -> 2 rank copies done t=200s
+[load] layer 42 -> 2 rank copies done t=216s
+[load] drafter: 3 DSpark block(s) (mtp.0.e_proj absent) — GPU drafter path off (set MEMRA_DSV4_DRAFTER=dspark); trunk-only
+[load] TP/EP push joins: true
+[TP/EP load] local expert banks resident by ID: rank0=0..128, rank1=128..256; peer dispatch disabled
+[load] expert program: matrix (grouped ModelOpt split-plane executor via dsv4_grouped; tensor-core MMA class, the loaded default since 2026-09-11), EP pair (all-layer TP/EP local banks)
+[attention-TP2] packed rank-local Q_b/wo_a/wo_b rows: heads=32 groups=4 wo_b_rows=2048 full_planes_freed=8.06 GiB numeric_class=dsv4_attention_head_split_row_gather_exact
+[load] position-split staging: 131072 rows (256 MiB) per rank
+[load] TP/EP vocab-parallel decode head: true
+[dsv4-doors] program=loaded door="push joins" env=MEMRA_DSV4_AR_PUSH merged=#788 declared_default=On resolved=On(AllRoutedShapes) disposition=Engaged
+[dsv4-doors] program=loaded door="vocab-parallel head" env=MEMRA_DSV4_VOCAB_HEAD merged=#783 declared_default=On resolved=On(DecodeOnlyM1) disposition=Engaged
+[dsv4-doors] program=loaded door="PDL chain" env=MEMRA_DSV4_PDL merged=#782 declared_default=On resolved=On(AllRoutedShapes) disposition=Engaged
+[dsv4-doors] program=loaded door="replay cadence" env=MEMRA_DSV4_REPLAY_CADENCE merged=#374 declared_default=On resolved=On(DecodeOnlyM1) disposition=PortAdmissionOrRedeclare
+[dsv4-doors] program=loaded door="dense exact-tail transport" env=MEMRA_DSV4_DENSE_EXACT_TAIL merged=#374 declared_default=On resolved=On(DecodeOnlyM1) disposition=Engaged
+[dsv4-doors] program=loaded door="dense-fast" env=MEMRA_DSV4_DENSE_FAST merged=#404 declared_default=On resolved=On(DecodeOnlyM1) disposition=Engaged
+[dsv4-doors] program=loaded door="HC dot split S16" env=MEMRA_DSV4_HC_DOT_SPLIT merged=#418 declared_default=On resolved=On(AllRoutedShapes) disposition=Engaged
+[dsv4-serve] dsv4f: placement TP/EP (expert-ID EP pair, attention TP2) (default), plain sampler Device
+[dsv4-serve] dsv4f: loaded on devices [0, 1], contract RefFp8Round, max_seq 1048576, drafter absent (plain only), parked-host-cache OFF (MEMRA_DSV4_KV_HOST_MB=0), chunked-prefill 512 tokens, active-C4-host-budget 0 bytes (0=OFF; separate from parked cache)
+[dsv4-serve] dsv4f: B-row steps up to 4 rows, 1 group(s) in flight (MEMRA_DSV4_ROWS)
+[dsv4-serve] dsv4f: 4 serving lane(s) (default on the plain TP/EP program, sharing B-row steps; MEMRA_DSV4_SESSIONS=1 is the serial route)
+[admit-mem] route=dsv4-thread model="dsv4f" calibrated fixed_plain=0:4706979932,1:4706979932 fixed_spec=0:4706979932,1:4706979932 ceiling=0:15664540308,1:15693436556 defer_budget_ms=8000
+[route-contract] model="dsv4f" route=dsv4-thread capacity=4 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,service-metrics] refused=[rewrite-qualification: the route consumes no MEMRA_REWRITE_BUNDLE and none of its programs is a plan rewrite (memra#449); prime-fairness: no worker Session exists for a dsv4 request; the prime is one synchronous chunked call on the serving thread (memra#535 P4)]
+[prefix-cache] WARNING: derived budget is 0 B after the boot free-VRAM reserve clamp; prefix caching disabled
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[server] worker ready; serving models: ["dsv4f"]
+[server] listening on http://127.0.0.1:56601
+[meter] admit id=chatcmpl-727c0f750a0fefe3ae3044b88cc98c32 tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-727c0f750a0fefe3ae3044b88cc98c32 model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[dsv4-moe-fused] ENGAGED on TP/EP: t=1 slots=6 experts [0, 128) of 256, two launches, the slot sums after the rank-order join
+[moe-sk-form] dev=0 qt=108 sms=188 occ128=1 occ32=7 occt=3 cross=2147483647 xcross=2147483647 bdb=0 in_f=4096 out_f=2048 n_active=128 max_m=228
+[meter] admit id=chatcmpl-56be91865a5cd29882db7c1292297fc1 tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-56be91865a5cd29882db7c1292297fc1 model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-17c5ec1b50332f28f68c0faa07637dce tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-17c5ec1b50332f28f68c0faa07637dce model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-58d9fbf4c29c498de54c74281a7370d5 tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-58d9fbf4c29c498de54c74281a7370d5 model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-aef9191da9ba8cfe4ad895b03e7c8077 tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-aef9191da9ba8cfe4ad895b03e7c8077 model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-eae02513b31e885e67ff6e6f9956d34b tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-eae02513b31e885e67ff6e6f9956d34b model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-7a3081fdb17469a3f08a55b7b607c3dd tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-7a3081fdb17469a3f08a55b7b607c3dd model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-58712ff336c663a753fee05568a766d3 tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-58712ff336c663a753fee05568a766d3 model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-b8bf1d011683ee0a7d88a355fbbf7f32 tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-b8bf1d011683ee0a7d88a355fbbf7f32 model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-d0c1b4aec094a0f16572e41d169d9ce8 tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-d0c1b4aec094a0f16572e41d169d9ce8 model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-d5c750a2ef2d151089a2f8fce008704d tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-d5c750a2ef2d151089a2f8fce008704d model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-4bd49326ce9f742d80f9e40b86c4282c tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-4bd49326ce9f742d80f9e40b86c4282c model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-5fd37f855675428b8a177cf6b2bb308d tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-5fd37f855675428b8a177cf6b2bb308d model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-b7c9238f6946f6a1c752cdb8f13187a5 tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-b7c9238f6946f6a1c752cdb8f13187a5 model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-12cea72d85dc340c90180d78c65b537a tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-12cea72d85dc340c90180d78c65b537a model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-37cbb19acf1e45bac0af8168d6291850 tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-37cbb19acf1e45bac0af8168d6291850 model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-04932492bda10fe59c6dc9d65424ae89 tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-04932492bda10fe59c6dc9d65424ae89 model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-594f9b056cb02863cbb7c4a6faec4f67 tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-594f9b056cb02863cbb7c4a6faec4f67 model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-43d386c543e0688df81aaf62910a5673 tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-43d386c543e0688df81aaf62910a5673 model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-837c5a28c9d2a8cf99afd8a12de66e86 tenant=default lane=interactive model="dsv4f"
+[meter] admit id=chatcmpl-525bb660840c2003a80dd4bc9b10cc2f tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-837c5a28c9d2a8cf99afd8a12de66e86 model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[admit-mem] id=chatcmpl-525bb660840c2003a80dd4bc9b10cc2f model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-2066c0766cb626d7f83a6a9c1a1ef2d7 tenant=default lane=interactive model="dsv4f"
+[meter] admit id=chatcmpl-3c743e580f4a8f826b6464fc3ebc649f tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-2066c0766cb626d7f83a6a9c1a1ef2d7 model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[admit-mem] id=chatcmpl-3c743e580f4a8f826b6464fc3ebc649f model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-69a1034be162fd34736e36d490fe0745 tenant=default lane=interactive model="dsv4f"
+[meter] admit id=chatcmpl-0c6635744eb96365ace0f21a7bbc8503 tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-69a1034be162fd34736e36d490fe0745 model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[admit-mem] id=chatcmpl-0c6635744eb96365ace0f21a7bbc8503 model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-b2c6213186c8f9e68d05b8d315c82633 tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-b2c6213186c8f9e68d05b8d315c82633 model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-4a8b00d031a452e6dcec70cf866a08f5 tenant=default lane=interactive model="dsv4f"
+[meter] admit id=chatcmpl-1a00df41b3bd9a255b8084eb570e3c39 tenant=default lane=interactive model="dsv4f"
+[meter] admit id=chatcmpl-e43e1462b06092ef71f7bf4e4e4fea2d tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-4a8b00d031a452e6dcec70cf866a08f5 model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[admit-mem] id=chatcmpl-1a00df41b3bd9a255b8084eb570e3c39 model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[admit-mem] id=chatcmpl-e43e1462b06092ef71f7bf4e4e4fea2d model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-e3b169dd90100333240c393631d86f51 tenant=default lane=interactive model="dsv4f"
+[meter] admit id=chatcmpl-1292c514d61d586d97b54d9bd2e40c43 tenant=default lane=interactive model="dsv4f"
+[meter] admit id=chatcmpl-517f1ff5593f9db1afb3e9eef821bb5c tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-e3b169dd90100333240c393631d86f51 model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-ba189fc87fca4656eb119a347a1676bd tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-1292c514d61d586d97b54d9bd2e40c43 model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[admit-mem] id=chatcmpl-517f1ff5593f9db1afb3e9eef821bb5c model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[admit-mem] id=chatcmpl-ba189fc87fca4656eb119a347a1676bd model="dsv4f" route=dsv4-thread verdict=admit capacity=512 spec=false need=0:4785355356,1:4785355356 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-e2137dc01fe99f769a5dc3d3bc9ca8a5 tenant=default lane=interactive model="dsv4f"
+[meter] admit id=chatcmpl-e4b0c746ec1519d0f58e230019692a46 tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-e2137dc01fe99f769a5dc3d3bc9ca8a5 model="dsv4f" route=dsv4-thread verdict=admit capacity=2339 spec=false need=0:4800637532,1:4800637532 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[admit-mem] id=chatcmpl-e4b0c746ec1519d0f58e230019692a46 model="dsv4f" route=dsv4-thread verdict=admit capacity=2326 spec=false need=0:4800562268,1:4800562268 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-c3e035d05cb88e7c5568a3ea05c156b1 tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-c3e035d05cb88e7c5568a3ea05c156b1 model="dsv4f" route=dsv4-thread verdict=admit capacity=2351 spec=false need=0:4800755804,1:4800755804 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-e12d08f16283ef53add4155662de44f9 tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-e12d08f16283ef53add4155662de44f9 model="dsv4f" route=dsv4-thread verdict=admit capacity=2361 spec=false need=0:4800831068,1:4800831068 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-62526bb1434defca12c3e9620ce22e67 tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-62526bb1434defca12c3e9620ce22e67 model="dsv4f" route=dsv4-thread verdict=admit capacity=2352 spec=false need=0:4800766556,1:4800766556 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-324a1e678f3b862f1994a1223d828343 tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-324a1e678f3b862f1994a1223d828343 model="dsv4f" route=dsv4-thread verdict=admit capacity=2322 spec=false need=0:4800508508,1:4800508508 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-eadc378de828990fae1bc08e350c42e5 tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-eadc378de828990fae1bc08e350c42e5 model="dsv4f" route=dsv4-thread verdict=admit capacity=2314 spec=false need=0:4800443996,1:4800443996 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[meter] admit id=chatcmpl-4f2fbda6aaef43f5106463c9b340253e tenant=default lane=interactive model="dsv4f"
+[admit-mem] id=chatcmpl-4f2fbda6aaef43f5106463c9b340253e model="dsv4f" route=dsv4-thread verdict=admit capacity=2328 spec=false need=0:4800573020,1:4800573020 ceiling=0:15664540308,1:15693436556 host_need=0 short=- waited_ms=0 reclaimed=0 retry_after_s=-
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

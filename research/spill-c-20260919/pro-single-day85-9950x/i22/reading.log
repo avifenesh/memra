@@ -1,0 +1,21 @@
+DAY85 host demand sequence i15 sha256 4bdc2610c3534e42 lines=[22077]
+DAY85 host demand sequence i21 sha256 4bdc2610c3534e42 lines=[22077]
+DAY85 host demand sequence i22 sha256 4bdc2610c3534e42 lines=[22077]
+DAY85 host demand sequence i22c sha256 4bdc2610c3534e42 lines=[22077]
+DAY85 I22 CHECKS rig=pro-single runs=50 integrity=ok
+DAY85 ADMISSIBILITY rig=pro-single ceiling=0.005 max_iqr_gen=0.0010 max_iqr_window=0.0020 failing=[] -> admissible
+DAY85 gen-only decode medians (N=10 each): ref=0.319 i15=0.324 i21=0.322 i22=0.320 i22c=0.320
+DAY85 STEP i22_vs_i21 gen-only decode: pooled=-0.0020 o1=-0.0020 o2=-0.0020 noise=0.0010 -> improves
+DAY85 steady window medians (N=10 each): ref=0.285 i15=0.286 i21=0.286 i22=0.285 i22c=0.285
+DAY85 STEP i22_vs_i21 steady window: pooled=-0.0010 o1=-0.0020 o2=+0.0000 noise=0.0020 -> flat
+DAY85 BESIDE i22_vs_i15 gen-only decode: pooled=-0.0040 o1=-0.0030 o2=-0.0040 noise=0.0010 -> improves (deciding nothing)
+DAY85 BESIDE i22_vs_i15 steady window: pooled=-0.0010 o1=-0.0020 o2=+0.0000 noise=0.0020 -> flat (deciding nothing)
+DAY85 DOOR i22_vs_ref gen-only decode: pooled=+0.0010 o1=+0.0010 o2=+0.0010 noise=0.0010 -> matches
+DAY85 DOOR i22_vs_ref steady window: pooled=+0.0000 o1=-0.0010 o2=+0.0010 noise=0.0020 -> matches
+DAY85 I22C brackets per window token (ms, medians): dispatch_ns=0.0669 prefetch_ns=0.3436 pf_demand_ns=0.0590 pf_resident_ns=0.0016 pf_retire_ns=0.0210 pf_stage_ns=0.2243
+DAY85 B p-ref-r1: window_ms=310.0 gpu_busy=5.2915 gpu_idle=4.3960 h2d_exposed=0.8516 (ms per window token)
+DAY85 B p-on-r1: window_ms=314.0 gpu_busy=5.3035 gpu_idle=4.5090 h2d_exposed=0.8471 (ms per window token)
+DAY85 B p-on-r2: window_ms=315.0 gpu_busy=5.3012 gpu_idle=4.5425 h2d_exposed=0.8553 (ms per window token)
+DAY85 B p-ref-r2: window_ms=310.0 gpu_busy=5.3020 gpu_idle=4.3855 h2d_exposed=0.8429 (ms per window token)
+DAY85 B i22_minus_ref per window token (ms, medians of two; deciding nothing): gpu_busy=+0.0056 gpu_idle=+0.1350 h2d_exposed=+0.0040 kernel_sum=+0.0056
+DAY85 VERDICT rig=pro-single integrity=ok i22=improves door=i22 vs_ref=matches (window: i22=flat vs_ref=matches)

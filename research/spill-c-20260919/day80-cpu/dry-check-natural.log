@@ -1,0 +1,7 @@
+# DAY80 section 3: the regtime reader with the natural-slow reading, re-run on BOX37's regtime receipts (the 285K reading above stands; this checks the new lines only)
+DAY80 NATURAL rig=box37-285k ref_median=0.311 d slow=0 of 10 dr slow=0 of 10 -> no_natural_slow
+DAY80 REGTIME VERDICT rig=box37-285k integrity=ok dr=flat vs_ref=loses (window: dr=flat vs_ref=matches)
+# and on DAY64's BOX15 i15 receipts relabelled (ref as ref, i13 as d, i15 as dr; a 9950X host with natural slow boots in every door arm; meaningless as a fix reading)
+DAY80 REGTIME CHECKS rig=synthetic-box15 runs=30 integrity=ok
+DAY80 NATURAL rig=synthetic-box15 ref_median=0.245 d slow=6 of 10 dr slow=6 of 10 -> registered_does_not_natural
+DAY80 REGTIME VERDICT rig=synthetic-box15 integrity=ok -> void (inadmissible) [as read: dr=flat vs_ref=matches (window: dr=flat vs_ref=matches)]

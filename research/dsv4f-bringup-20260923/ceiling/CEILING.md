@@ -87,6 +87,45 @@ The profile mode is `DSV4_REPLAY_GATE_PROFILE`. A step takes 14.07 ms:
 The earlier split-K replay (`raw/tp-anatomy-se/`, 17.62 ms per step) spent 5.8 ms per card in
 `moe_kq_sktail_gu` plus `moe_kq_sktail`. The stream visitor does that work in 1.9 ms.
 
+## Levers taken, 2026-09-26
+
+`../levers-20260926/`, SE pair, greedy c1 aggregate 67.53 to 77.19 tok/s (decode p50 80.95), every
+gate bit-identical:
+- programmatic dependent launch: +4.99%;
+- vocab-parallel head: +2.44% (lever 3 below);
+- one kernel for the compressor snapshots: +0.94%;
+- push joins: +7.75% (lever 4 below). That is more than the 2026-09-10 AR instrument's ceiling
+  for removing both barriers (1.9% of that program's token); what the extra comes from is not
+  measured yet.
+
+## Levers, 2026-09-27
+
+Source: `../levers-20260927/`.
+- **Adopted: the fused MoE pair on the TP/EP partition.** Measured on the second SE pair, greedy
+  c1 77.48 to 85.16 tok/s (decode p50 89.32), +9.91%, bit-identical.
+- **Refuted: weight loads ahead of the PDL wait** (-1.8%).
+- **Refuted: a deeper MoE stream ring** (+1.6% and +2.3% ms per token).
+
+The plain step after the fused pair, with PDL off: 11.3 ms of kernels per step. That breaks
+down as:
+- dense FP8 GEMV 3.13 ms;
+- the fused MoE pair 2.01 ms, at about 0.9 TB/s;
+- dots 1.17 ms;
+- joins 1.16 ms, most of the expert reduce being one rank waiting for the other;
+- about 3 ms of small latency-bound kernels. HC finish alone is 0.63 ms: two single-block calls
+  per layer at 7 us each. After it come sink attention, the router, the q norm pack, HC split
+  dots and the indexer.
+
+**Expert placement is free in this numeric class.** The rank-order expert sum adds a slot's value
+on its owning rank to the other rank's cleared +0.0. A fused or chain contribution starts its
+accumulator at +0.0 and cannot become -0.0, so `x + 0.0 = x` exactly. Which rank computes a slot
+therefore does not change a bit.
+
+Splitting every expert's rows across both ranks (TP inside the experts) would also keep each
+output element's dot on one rank. That removes the per-token imbalance the reduce waits on. The
+expected max of a Binomial(6, 0.5) split is 3.94 experts against 3, 31% more MoE time on the
+critical path. The cost is one more small join per layer, for the intermediate.
+
 ## The gap, by lever, largest first
 
 1. **Concurrency on TP/EP.** The B-row step: several requests' rows in one TP step, each weight
@@ -98,8 +137,10 @@ The earlier split-K replay (`raw/tp-anatomy-se/`, 17.62 ms per step) spent 5.8 m
 4. **The collectives.** About 1.85 ms per card of row gathers and the expert all-reduce: 43 layers
    times three one-shot collectives. Fewer or fused joins per layer would cut it.
 5. **Small chains.** About 2.9 ms per card, a latency floor per layer.
-6. **Context under TP/EP.** Not a speed lever. The head-split KV lane brings the session capacity
-   back toward PP-2's 1M.
+6. **Context under TP/EP.** Not a speed lever. Closed for plain by the position-split C4 store
+   (`../kv-split/`): 1M plain, 500k DSpark, at 0.4% to 2.0% decode. The decode cost is the
+   remote row reads; an owner-push of the rows both ranks know are selected would trade them for
+   posted writes plus one join per C4 layer.
 7. **Prefill.** About 360 tok/s at 8k prompts on the exact CUDA-core tiles (#713). The owner ruled
    PP-2 is not the target, so prefill work follows the TP program.
 

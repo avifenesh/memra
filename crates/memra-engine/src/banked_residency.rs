@@ -256,6 +256,17 @@ pub struct ExpertBankBudget {
     pub host_bytes: u64,
     pub gpu_bytes: Option<u64>,
     pub stage_clock: bool,
+    /// DAY76 (`research/spill-c-20260919/DAY76.md`, a diagnostic door, decide-by 2026-10-10):
+    /// `--expert-bank-pool-chunk-bytes=N` makes the pinned host pool out of allocations of at
+    /// most N bytes; `None` keeps the one allocation.
+    pub pool_chunk_bytes: Option<u64>,
+    /// DAY78 (`research/spill-c-20260919/DAY78.md`, a diagnostic door, decide-by 2026-10-10):
+    /// `--expert-bank-pool-pageable` makes the host pool from heap memory, not `cuMemHostAlloc`.
+    pub pool_pageable: bool,
+    /// DAY80 (`research/spill-c-20260919/DAY80.md`, a diagnostic door, decide-by 2026-10-10):
+    /// `--expert-bank-pool-registered` makes the host pool from private anonymous memory pinned
+    /// with `cuMemHostRegister`, which compaction skips instead of isolating.
+    pub pool_registered: bool,
 }
 impl Default for ExpertBankBudget {
     fn default() -> Self {
@@ -263,6 +274,9 @@ impl Default for ExpertBankBudget {
             host_bytes: 256 * 1024 * 1024,
             gpu_bytes: None,
             stage_clock: false,
+            pool_chunk_bytes: None,
+            pool_pageable: false,
+            pool_registered: false,
         }
     }
 }
@@ -297,11 +311,17 @@ pub fn expert_bank_cli<I: IntoIterator<Item = String>>(
     const HOST: &str = "--expert-bank-host-bytes";
     const GPU: &str = "--expert-bank-gpu-bytes";
     const STAGES: &str = "--expert-bank-stages";
+    const CHUNK: &str = "--expert-bank-pool-chunk-bytes";
+    const PAGEABLE: &str = "--expert-bank-pool-pageable";
+    const REGISTERED: &str = "--expert-bank-pool-registered";
     const FAMILY: &str = "--expert-bank-";
     let mut door = false;
     let mut stages = false;
+    let mut pageable = false;
+    let mut registered = false;
     let mut host = None;
     let mut gpu = None;
+    let mut chunk = None;
     for arg in args {
         let (key, value) = match arg.split_once('=') {
             Some((key, value)) => (key, Some(value)),
@@ -324,11 +344,30 @@ pub fn expert_bank_cli<I: IntoIterator<Item = String>>(
                 }
                 continue;
             }
+            PAGEABLE => {
+                if value.is_some() {
+                    return Err(format!("{PAGEABLE} takes no value"));
+                }
+                if std::mem::replace(&mut pageable, true) {
+                    return Err(format!("{PAGEABLE} given more than once"));
+                }
+                continue;
+            }
+            REGISTERED => {
+                if value.is_some() {
+                    return Err(format!("{REGISTERED} takes no value"));
+                }
+                if std::mem::replace(&mut registered, true) {
+                    return Err(format!("{REGISTERED} given more than once"));
+                }
+                continue;
+            }
             HOST => &mut host,
             GPU => &mut gpu,
+            CHUNK => &mut chunk,
             _ if key.starts_with(FAMILY) || key.starts_with(DOOR) => {
                 return Err(format!(
-                    "unknown expert bank flag {key:?}; expected {DOOR}, {HOST}=<bytes>, {GPU}=<bytes> or {STAGES}"
+                    "unknown expert bank flag {key:?}; expected {DOOR}, {HOST}=<bytes>, {GPU}=<bytes>, {CHUNK}=<bytes>, {PAGEABLE}, {REGISTERED} or {STAGES}"
                 ));
             }
             _ => continue,
@@ -341,8 +380,14 @@ pub fn expert_bank_cli<I: IntoIterator<Item = String>>(
             return Err(format!("{key} given more than once"));
         }
     }
+    if pageable && registered {
+        return Err(format!("{PAGEABLE} and {REGISTERED} name two pool kinds"));
+    }
+    if chunk == Some(0) {
+        return Err(format!("{CHUNK} expects a positive byte count"));
+    }
     if !door {
-        if host.is_some() || gpu.is_some() {
+        if host.is_some() || gpu.is_some() || chunk.is_some() || pageable || registered {
             return Err(format!("expert bank budgets require {DOOR}"));
         }
         if stages {
@@ -356,6 +401,9 @@ pub fn expert_bank_cli<I: IntoIterator<Item = String>>(
     }
     budget.gpu_bytes = gpu;
     budget.stage_clock = stages;
+    budget.pool_chunk_bytes = chunk;
+    budget.pool_pageable = pageable;
+    budget.pool_registered = registered;
     Ok(Some(budget))
 }
 

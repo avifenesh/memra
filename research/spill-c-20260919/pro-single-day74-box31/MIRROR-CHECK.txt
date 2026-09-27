@@ -1,0 +1,11 @@
+Mirror 2026-09-26 by the lead. Host: BOX31, a Ryzen 9 9950X with one RTX PRO 6000 WS, 123 GB, kernel 7.0.0-31, after
+integ65's GPU batteries and lane A's DAY59 and DAY60 sittings on the same card.
+- attempt1-notrun-memfree26/: the first run (03:56Z) read `DAY74 INDUCER rig=box31 memfree_gib=26 F_gib=-44 induce=0`
+  and `DAY74 INDUCE VERDICT rig=box31 -> not_run`: the page cache held 77 GB (the staged 27B, 9B and 35B, the build
+  trees) and the container refuses /proc/sys/vm/drop_caches.
+- Between the attempts the lead evicted the clean page-cache pages of every file the cell does not use (the 27B and 9B,
+  the target/ trees, the toolchains, earlier battery dirs) with unprivileged posix_fadvise(POSIX_FADV_DONTNEED), keeping
+  the 35B artifact cached as DAY74 section 1 requires: MemFree 26 -> 57 GiB (Cached 77 -> 46 GB).
+- The run in this directory (from 04:13Z): `memfree_gib=56 F_gib=16 induce=1`, `-> not_induced (compaction in 0 of 6
+  REF+I and 0 of 6 door+I spans)`.
+Both directories are sha256-checked against their box-side manifests; run-gen-p71 by hash only (box-binaries.sha256).

@@ -41,12 +41,15 @@ def load(name, path):
 
 B = load("battery", ROOT / "tools/tier-battery.py")
 CACHE = load("regime", HERE / "m1-cache-regime.py")
+GPU = load("gpusampler", HERE / "m1-gpu-sampler.py")  # telemetry amendment: recording only
 SAMPLER = HERE / "m1-host-sampler.py"
 SAMPLE = load("sampler", SAMPLER)
 
 PATTERNS = {
     "gate": r"argmax=(\d+)\s+decode argmax=(\d+)\s+logit maxdiff=\S+\s+(MATCH|MISMATCH)",
     "ttft": r"\[ttft\] prompt_tokens=(\d+) prefill_wall_s=([\d.]+)",
+    "prefill_pp": r"^prefill (\d+) tok in ([\d.]+)s = ([\d.]+) tok/s",
+    "config_invalid": r"^\[spill(?:-pread)?\] invalid (MEMRA_\w+)",
     "generated": r"^generated (\d+) tokens in ([\d.]+)s = ([\d.]+) tok/s",
     "tokens": r"^tokens: \[([\d, ]*)\]",
     "placed": r"\[spill\] experts placed: (\d+) pinned .*?, (\d+) mmap'd",
@@ -76,7 +79,12 @@ def parse_log(text):
 
 
 def sha(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    # Streamed (1 MiB blocks): hashing the 18.2 GB artifact must fit the bounded regime's cgroup.
+    h = hashlib.sha256()
+    with Path(path).open("rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
 
 
 def proof_view(path):
@@ -114,6 +122,9 @@ def expected_depth(arm):
     return int(arm["env"].get("MEMRA_SPILL_PREAD_DEPTH", "2"))
 
 
+lock_placement = {}
+
+
 def correctness(arm, parsed, oracle_tokens, ngen, overread_per_read):
     problems = []
     if parsed["panics"]:
@@ -124,6 +135,13 @@ def correctness(arm, parsed, oracle_tokens, ngen, overread_per_read):
         problems.append(f"did not generate {ngen} tokens")
     if parsed["tokens"] is None or (oracle_tokens is not None and parsed["tokens"] != oracle_tokens):
         problems.append("token ids differ from the byte oracle")
+    expected = lock_placement.get("expected")
+    if expected is not None:
+        placed = parsed.get("placed")
+        if placed is None or [int(placed[0]), int(placed[1])] != [expected["pinned"], expected["mmapd"]]:
+            problems.append(f"expert placement {placed} != {expected['pinned']} pinned / {expected['mmapd']} on disk")
+    if parsed.get("config_invalid"):
+        problems.append(f"config fallback: {parsed['config_invalid'][0]} rejected")
     depth = expected_depth(arm)
     if depth is None:
         if parsed["pread_enabled"] is not None:
@@ -136,16 +154,12 @@ def correctness(arm, parsed, oracle_tokens, ngen, overread_per_read):
             problems.append("no [spill-pread] totals line")
         elif int(drop[2]) or int(drop[3]):
             problems.append(f"read errors={drop[2]} short_reads={drop[3]}")
-        if arm["name"].startswith("direct"):
-            window = parsed["window"]
-            stages = parsed["stages"]
-            if window is None or stages is None:
-                problems.append("direct arm without window or stage lines")
-            else:
-                if int(window[4]):
-                    problems.append(f"direct arm fell back to mmap {window[4]} times")
-                if int(stages[4]) != overread_per_read * int(window[0]):
-                    problems.append(f"overread_bytes {stages[4]} != {overread_per_read} x reads {window[0]}")
+        if arm["name"].startswith("direct") and drop is not None:
+            # B3 amendment 2: the GGUF path's whole-visit totals line (prefill included).
+            if int(drop[4]):
+                problems.append(f"direct arm fell back to mmap {drop[4]} times")
+            if int(drop[7]) != overread_per_read * int(drop[0]):
+                problems.append(f"overread_bytes {drop[7]} != {overread_per_read} x reads {drop[0]}")
     return problems
 
 
@@ -173,6 +187,18 @@ def thermal_ok(header, ticks):
     return True
 
 
+def gpu_apps():
+    """Compute applications on the card (pid, name, MiB); None if the query fails."""
+    try:
+        out = subprocess.run(["nvidia-smi", "--query-compute-apps=pid,process_name,used_gpu_memory",
+                              "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if out.returncode != 0:
+        return None
+    return [[x.strip() for x in l.split(",")] for l in out.stdout.splitlines() if l.strip()]
+
+
 def run_visit(args, lock, arm, round_index, position, visit_dir, identity, leaves, top, env_extra=None):
     visit_dir.mkdir(parents=True)
     rec = {"arm": arm["name"], "round": round_index + 1, "position": position,
@@ -190,6 +216,12 @@ def run_visit(args, lock, arm, round_index, position, visit_dir, identity, leave
     env = arm_env(lock, arm)
     env.update(env_extra or {})
     raw = visit_dir / "run.log"
+    gpu = None
+    if not args.stub_no_lock:
+        try:
+            gpu = GPU.GpuSampler(visit_dir / "gpu.csv").start()
+        except OSError as err:
+            rec["gpu_telemetry"] = {"error": str(err)}
     started = time.monotonic_ns()
     with raw.open("xb") as log:
         child = subprocess.Popen([str(args.binary), str(args.artifact)], stdout=log,
@@ -201,7 +233,17 @@ def run_visit(args, lock, arm, round_index, position, visit_dir, identity, leave
                                    stdout=subprocess.DEVNULL, stderr=sampler_err)
     timed_out = False
     deadline = time.monotonic() + args.visit_timeout_s
+    gpu_seen, next_gpu = [], 0.0
     while True:
+        if args.gpu_cotenant_gate and time.monotonic() >= next_gpu:
+            apps = gpu_apps()
+            if apps is None:
+                gpu_seen = None
+            elif gpu_seen is not None:
+                for a in apps:
+                    if a not in gpu_seen:
+                        gpu_seen.append(a)
+            next_gpu = time.monotonic() + 5
         try:
             info = os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOWAIT | os.WNOHANG)
         except ChildProcessError:
@@ -223,9 +265,14 @@ def run_visit(args, lock, arm, round_index, position, visit_dir, identity, leave
                "utime_s": usage.ru_utime, "stime_s": usage.ru_stime, "maxrss_kB": usage.ru_maxrss,
                "source": "wait4 rusage (ru_inblock, ru_oublock x 512)"}
     rec["wall_ns"] = time.monotonic_ns() - started
+    if gpu is not None:
+        rec["gpu_telemetry"] = gpu.stop()
     sampler.send_signal(signal.SIGTERM)
     sampler.wait(timeout=10)
     rec.update(exit_code=code, timed_out=timed_out, proc_io=proc_io, raw_log_sha256=sha(raw))
+    if args.gpu_cotenant_gate:
+        rec["gpu_apps_during"] = gpu_seen
+        rec["gpu_cotenant"] = bool(gpu_seen is None or any(a[0] != str(child.pid) for a in gpu_seen))
     after = B.filesystem_identity(Path(args.artifact).parent)
     rec["identity_after_ok"] = after == identity
     resident, pages = CACHE.residency(args.artifact)
@@ -281,6 +328,7 @@ def verdicts(visits, arms, baseline, contam_limit=0.02, max_contaminated=2):
 
 def run(args):
     lock = json.loads(Path(args.arms_lock).read_text())
+    lock_placement["expected"] = lock.get("expected_placement")
     arms = [a for a in lock["arms"] if not args.arms or a["name"] in args.arms.split(",")]
     names = [a["name"] for a in arms]
     B.require(lock["baseline"] in names, "baseline arm must be in the run")
@@ -311,26 +359,32 @@ def run(args):
     balloon = None
     if args.regime == "bounded":
         nbytes = args.balloon_bytes
-        if nbytes is None:
-            half_bank = lock["artifact"]["expert_bank_bytes"] // 2
-            B.require(args.floor_bytes <= args.bounded_leave_bytes < half_bank,
-                      "bounded regime needs floor <= leave < half the expert bank")
+        half_bank = lock["artifact"]["expert_bank_bytes"] // 2
+        B.require(args.bounded_leave_bytes < half_bank, "bounded regime needs leave < half the expert bank")
+        if nbytes is None and args.balloon_touch:
+            head = CACHE.cgroup_headroom()
+            B.require(head is not None, "touched balloon needs a bounded cgroup memory.max")
+            nbytes = head - args.bounded_leave_bytes
+        elif nbytes is None:
+            B.require(args.floor_bytes <= args.bounded_leave_bytes, "bounded regime needs floor <= leave")
             nbytes = CACHE.meminfo_kb("MemAvailable") * 1024 - args.bounded_leave_bytes
         balloon_log = (args.out / "balloon.log").open("xb")
         balloon = subprocess.Popen([sys.executable, str(HERE / "m1-cache-regime.py"), "balloon",
-                                    "--bytes", str(nbytes), "--floor-bytes", str(args.floor_bytes)],
+                                    "--bytes", str(nbytes), "--floor-bytes", str(args.floor_bytes),
+                                    *(["--touch"] if args.balloon_touch else [])],
                                    stdout=balloon_log, stderr=subprocess.STDOUT)
-        deadline = time.monotonic() + 120
+        deadline = time.monotonic() + 600
         while "LOCKED" not in (args.out / "balloon.log").read_text():
             B.require(balloon.poll() is None and time.monotonic() < deadline,
                       "balloon refused or did not lock; see balloon.log")
             time.sleep(0.1)
     visits = []
     oracle = json.loads(Path(args.oracle_tokens).read_text()) if args.oracle_tokens else None
+    rounds = [args.only_round - 1] if args.only_round else list(range(args.rounds))
     ngen = int(lock["common_env"]["MEMRA_NGEN"])
     overread = int(lock["artifact"].get("overread_bytes_per_read", 4096))
     try:
-        for r in range(args.rounds):
+        for r in rounds:
             for position, name in enumerate(order_for(names, r)):
                 arm = next(a for a in arms if a["name"] == name)
                 vdir = args.out / f"r{r + 1:02d}-{position + 1}-{name}"
@@ -355,9 +409,20 @@ def run(args):
         if oracle is None:
             v["correctness_problems"].append("no byte oracle tokens in this run")
         c = v["contamination"]
+        if args.regime == "bounded" or args.bound_residency_check:
+            resident, pages = v["residency_end"]
+            v["bound_held"] = bool(pages and resident / pages < args.bound_residency_max)
+            v["regime_ok"] = bool(v.get("regime_ok", True) and v["bound_held"])
+        # OWED 26 G1: the fallback count is part of every positioned-read arm's gate. A direct arm
+        # with fallbacks is refused in correctness(); any other positioned-read arm is unclean.
+        drop = v["parsed"]["drop"]
+        v["mmap_fallbacks"] = int(drop[4]) if drop else None
+        v["fallback_unclean"] = bool(expected_depth(arm) is not None and not arm["name"].startswith("direct")
+                                     and v["mmap_fallbacks"])
         v["clean_timing"] = bool(v["telemetry_ok"] and v["thermal_ok"] and v["identity_after_ok"]
                                  and v.get("regime_ok", True) and c is not None
-                                 and c["foreign_share"] <= args.contamination_limit)
+                                 and c["foreign_share"] <= args.contamination_limit
+                                 and not v.get("gpu_cotenant", False) and not v["fallback_unclean"])
         v["scored"] = bool(v["clean_timing"] and not v["correctness_problems"]
                            and v["exit_code"] == 0 and not v["timed_out"])
         v["tok_s"] = float(v["parsed"]["generated"][2]) if v["parsed"]["generated"] else None
@@ -365,10 +430,16 @@ def run(args):
     refused = {n for n in names if any(v["correctness_problems"] for v in visits if v["arm"] == n)}
     summary = verdicts([v for v in visits if v["arm"] not in refused], [n for n in names if n not in refused],
                        lock["baseline"])
+    if args.smoke:
+        summary = {"smoke": True, "scored": False, "arms": {}, "regime_scored": False,
+                   "note": "one-round smoke: line shapes and visit time only, never a verdict"}
+    summary["mmap_fallback_visits"] = {n: sum(1 for v in visits if v["arm"] == n and v.get("mmap_fallbacks"))
+                                       for n in names}
     summary.update(refused_arms=sorted(refused), regime=args.regime, visits=len(visits), qualified=False,
                    identity_sha256=sha(args.out / "identity.json"))
     (args.out / "summary.json").write_text(json.dumps(summary, indent=1) + "\n")
-    print("M1-SUMMARY " + json.dumps({k: summary[k] for k in ("regime", "visits", "regime_scored", "refused_arms")}))
+    print("M1-SUMMARY " + json.dumps({k: summary[k] for k in ("regime", "visits", "regime_scored", "refused_arms",
+                                                               "mmap_fallback_visits")}))
     for arm, s in summary["arms"].items():
         print(f"M1-VERDICT regime={args.regime} arm={arm} vs {lock['baseline']}: {s['verdict']} "
               f"median_ratio={s['median_ratio']} pairs={s['n_pairs']}")
@@ -405,8 +476,15 @@ def main(argv=None):
     r.add_argument("--bounded-leave-bytes", type=int, default=7_000_000_000)
     r.add_argument("--floor-bytes", type=int, default=6 << 30)
     r.add_argument("--balloon-bytes", type=int)
+    r.add_argument("--balloon-touch", action="store_true", help="B3 regime (iii) amendment: swapless-cgroup touched balloon")
+    r.add_argument("--bound-residency-max", type=float, default=0.5)
     r.add_argument("--oracle-tokens", help="byte-oracle token ids when the oracle arm is not in the run")
     r.add_argument("--contamination-limit", type=float, default=0.02)
+    r.add_argument("--smoke", action="store_true", help="one round, output labelled smoke and never scored")
+    r.add_argument("--only-round", type=int, help="run exactly this 1-based round in its registered order (5090 half)")
+    r.add_argument("--gpu-cotenant-gate", action="store_true", help="5090 half: a visit sharing the card is unclean")
+    r.add_argument("--bound-residency-check", action="store_true",
+                   help="5090 bounded regime: the cgroup is the bound; require residency at visit end below --bound-residency-max")
     r.add_argument("--stub-no-lock", action="store_true")
     p = sub.add_parser("reparse")
     p.add_argument("dir")
@@ -414,7 +492,9 @@ def main(argv=None):
     if args.cmd == "reparse":
         return reparse(args.dir)
     B.require(args.stub_no_lock or args.lock_fd is not None, "--lock-fd (inherited canonical lock) required")
-    B.require(args.rounds >= 10 or args.stub_no_lock, "registered protocol is 10 rounds")
+    B.require(args.rounds >= 10 or args.stub_no_lock or (args.smoke and args.rounds == 1),
+              "registered protocol is 10 rounds (a smoke is exactly 1 round and never scored)")
+    B.require(args.only_round is None or 1 <= args.only_round <= args.rounds, "--only-round outside 1..rounds")
     B.require(args.contamination_limit == 0.02 or args.stub_no_lock, "the registered co-tenancy limit is 2%")
     return run(args)
 

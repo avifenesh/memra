@@ -1,0 +1,16 @@
+
+running 1 test
+test fused_gate_bounds_tests::copy_batch_items_u8_is_the_memcpy_program ... [b1 red arm] the kernel skips each item's last byte
+
+thread 'fused_gate_bounds_tests::copy_batch_items_u8_is_the_memcpy_program' (109745) panicked at crates/memra-engine/src/lib.rs:35916:13:
+item 1 (0, 0, 1): first differing byte at Some(0)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    fused_gate_bounds_tests::copy_batch_items_u8_is_the_memcpy_program
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 620 filtered out; finished in 0.24s
+

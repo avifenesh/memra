@@ -1,0 +1,359 @@
+diff --git a/crates/memra-engine/cu/moe_f16_grouped.cu b/crates/memra-engine/cu/moe_f16_grouped.cu
+index 80f27ccf1..2a289a0e7 100644
+--- a/crates/memra-engine/cu/moe_f16_grouped.cu
++++ b/crates/memra-engine/cu/moe_f16_grouped.cu
+@@ -1988,7 +1988,9 @@ static int moe_kq_gemm_sk_launch(const unsigned long long* table, int proj, int
+ #define KQS_WARPS 4
+ #define KQS_CHUNK 128                // k values per ring stage
+ #define KQS_ROW 80                   // 64 code bytes + 8 scale bytes + 8 pad per row stage
++#ifndef KQS_STAGES
+ #define KQS_STAGES 4
++#endif
+ #define KQS_WARP_RING (KQS_STAGES * 8 * KQS_ROW)
+ 
+ static std::atomic<unsigned long long> g_moe_kq_m1_stream_dispatches{0};
+@@ -2018,11 +2020,17 @@ static __global__ void kqs_dequant_probe_kernel(uint16_t* out, uint16_t* ref){
+ template<int WARPS>
+ static __global__ void __launch_bounds__(WARPS * 32)
+ moe_kq_m1_stream_kernel(
+-        const unsigned long long* __restrict__ table, int proj, int n_expert,
+-        const int* __restrict__ ex_ids, const __half* __restrict__ A,
+-        float* __restrict__ Y, const float* __restrict__ row_scale,
++        const unsigned long long* __restrict__ table, int proj, int proj_b, int x_blocks,
++        int n_expert, const int* __restrict__ ex_ids, const __half* __restrict__ A,
++        float* __restrict__ Y, float* __restrict__ Y_b, const float* __restrict__ row_scale,
+         const int* __restrict__ ex_off, int n_active, int in_f, int out_f, long row_bytes){
+     MEMRA_PDL_CHAIN_ENTRY();
++    // Gate and up in one launch (memra #710): blocks past x_blocks run projection proj_b into
++    // Y_b over the same rows and activation. Each warp's program is the one it runs in its own
++    // launch, so only the schedule changes.
++    const bool second = (int)blockIdx.x >= x_blocks;
++    const int bx = second ? (int)blockIdx.x - x_blocks : (int)blockIdx.x;
++    if(second){ proj = proj_b; Y = Y_b; }
+     extern __shared__ __align__(16) unsigned char kqs_smem[];
+     uint32_t* As = reinterpret_cast<uint32_t*>(kqs_smem);          // in_f / 2 permuted words
+     const int r = blockIdx.y;
+@@ -2046,7 +2054,7 @@ moe_kq_m1_stream_kernel(
+     __syncthreads();
+ 
+     const int lane = threadIdx.x, warp = threadIdx.y;
+-    const int n0 = (blockIdx.x * WARPS + warp) * 8;
++    const int n0 = (bx * WARPS + warp) * 8;
+     if(n0 >= out_f) return;                                        // no block barrier follows
+     unsigned char* ring = kqs_smem + (size_t)in_f * 2 + (size_t)warp * KQS_WARP_RING;
+     const int nch = in_f / KQS_CHUNK;
+@@ -2129,11 +2137,16 @@ static std::atomic<unsigned long long> g_moe_kq_mrow_stream_dispatches{0};
+ template<int WARPS>
+ static __global__ void __launch_bounds__(WARPS * 32)
+ moe_kq_mrow_stream_kernel(
+-        const unsigned long long* __restrict__ table, int proj, int n_expert,
+-        const int* __restrict__ ex_ids, const __half* __restrict__ A,
+-        float* __restrict__ Y, const float* __restrict__ row_scale,
++        const unsigned long long* __restrict__ table, int proj, int proj_b, int x_blocks,
++        int n_expert, const int* __restrict__ ex_ids, const __half* __restrict__ A,
++        float* __restrict__ Y, float* __restrict__ Y_b, const float* __restrict__ row_scale,
+         const int* __restrict__ ex_off, int n_active, int in_f, int out_f, long row_bytes){
++    MEMRA_PDL_CHAIN_ENTRY();
+     __shared__ __align__(16) unsigned char kqm_ring[WARPS * KQS_WARP_RING];
++    // Gate and up in one launch, as in the one-token visitor.
++    const bool second = (int)blockIdx.x >= x_blocks;
++    const int bx = second ? (int)blockIdx.x - x_blocks : (int)blockIdx.x;
++    if(second){ proj = proj_b; Y = Y_b; }
+     const int r = blockIdx.y;
+     if(r >= ex_off[n_active]) return;                              // block-uniform exits only
+     int lo_i = 1, hi_i = n_active;
+@@ -2149,7 +2162,7 @@ moe_kq_mrow_stream_kernel(
+     const uint8_t* Wsc = (const uint8_t*)table[(size_t)(2 * proj + 1) * n_expert + eid];
+ 
+     const int lane = threadIdx.x, warp = threadIdx.y;
+-    const int n0 = (blockIdx.x * WARPS + warp) * 8;
++    const int n0 = (bx * WARPS + warp) * 8;
+     if(n0 >= out_f) return;
+     unsigned char* ring = kqm_ring + (size_t)warp * KQS_WARP_RING;
+     const int nch = in_f / KQS_CHUNK;
+@@ -2621,50 +2634,90 @@ unsigned long long memra_moe_kq_gemm_sk_m1_half2_dispatches(){
+     return g_moe_kq_m1_h2_dispatches.load(std::memory_order_relaxed);
+ }
+ 
+-int memra_moe_kq_m1_stream(
+-        const unsigned long long* table, int proj, int n_expert, const int* ex_ids,
+-        const void* act_f16, float* y, const float* row_scale, const int* ex_off_dev,
++// proj_b >= 0 runs a second projection of the same rows and activation into y_b in the same
++// launch (gate and up, memra #710); the dispatch counter advances once per projection.
++static int moe_kq_m1_stream_launch(
++        const unsigned long long* table, int proj, int proj_b, int n_expert, const int* ex_ids,
++        const void* act_f16, float* y, float* y_b, const float* row_scale, const int* ex_off_dev,
+         int n_active, int slots, int in_f, int out_f, long row_bytes, void* stream){
+     if(!table || !ex_ids || !act_f16 || !y || !row_scale || !ex_off_dev
+-       || proj < 0 || proj > 2 || n_expert <= 0 || n_active <= 0 || slots <= 0
++       || proj < 0 || proj > 2 || proj_b < -1 || proj_b > 2 || (proj_b >= 0 && !y_b)
++       || n_expert <= 0 || n_active <= 0 || slots <= 0
+        || slots > 65535 || in_f <= 0 || out_f <= 0 || in_f % KQS_CHUNK || out_f % 8
+        || row_bytes != in_f / 2)
+         return 40004;
+     const size_t smem = (size_t)in_f * 2 + (size_t)KQS_WARPS * KQS_WARP_RING;
+     if(smem > 48 * 1024) return 40004;
+-    const dim3 grid((unsigned)((out_f / 8 + KQS_WARPS - 1) / KQS_WARPS), (unsigned)slots, 1);
++    const int x_blocks = (out_f / 8 + KQS_WARPS - 1) / KQS_WARPS;
++    const dim3 grid((unsigned)(proj_b >= 0 ? 2 * x_blocks : x_blocks), (unsigned)slots, 1);
+     cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
+     memra_chain_launch(moe_kq_m1_stream_kernel<KQS_WARPS>,grid, dim3(32, KQS_WARPS, 1), smem, st)(
+-        table, proj, n_expert, ex_ids, (const __half*)act_f16, y, row_scale, ex_off_dev,
+-        n_active, in_f, out_f, row_bytes);
++        table, proj, proj_b, x_blocks, n_expert, ex_ids, (const __half*)act_f16, y, y_b,
++        row_scale, ex_off_dev, n_active, in_f, out_f, row_bytes);
+     cudaError_t e = cudaGetLastError();
+-    if(!e) g_moe_kq_m1_stream_dispatches.fetch_add(1, std::memory_order_relaxed);
++    if(!e) g_moe_kq_m1_stream_dispatches.fetch_add(proj_b >= 0 ? 2 : 1, std::memory_order_relaxed);
+     return e ? 1000 + (int)e : 0;
+ }
+ 
++int memra_moe_kq_m1_stream(
++        const unsigned long long* table, int proj, int n_expert, const int* ex_ids,
++        const void* act_f16, float* y, const float* row_scale, const int* ex_off_dev,
++        int n_active, int slots, int in_f, int out_f, long row_bytes, void* stream){
++    return moe_kq_m1_stream_launch(table, proj, -1, n_expert, ex_ids, act_f16, y, nullptr,
++        row_scale, ex_off_dev, n_active, slots, in_f, out_f, row_bytes, stream);
++}
++
++int memra_moe_kq_m1_stream_gu(
++        const unsigned long long* table, int proj, int proj_b, int n_expert, const int* ex_ids,
++        const void* act_f16, float* y, float* y_b, const float* row_scale, const int* ex_off_dev,
++        int n_active, int slots, int in_f, int out_f, long row_bytes, void* stream){
++    if(proj_b < 0) return 40004;
++    return moe_kq_m1_stream_launch(table, proj, proj_b, n_expert, ex_ids, act_f16, y, y_b,
++        row_scale, ex_off_dev, n_active, slots, in_f, out_f, row_bytes, stream);
++}
++
+ unsigned long long memra_moe_kq_m1_stream_dispatches(){
+     return g_moe_kq_m1_stream_dispatches.load(std::memory_order_relaxed);
+ }
+ 
+ // Multi-row streaming visitor: the one-token visitor's contract, any CSR group size (16-row
+ // chunks). `slots` bounds grid.y; rows past the CSR end and rows inside a chunk exit on the device.
++static int moe_kq_mrow_stream_launch(
++        const unsigned long long* table, int proj, int proj_b, int n_expert, const int* ex_ids,
++        const void* act_f16, float* y, float* y_b, const float* row_scale, const int* ex_off_dev,
++        int n_active, int slots, int in_f, int out_f, long row_bytes, void* stream){
++    if(!table || !ex_ids || !act_f16 || !y || !row_scale || !ex_off_dev
++       || proj < 0 || proj > 2 || proj_b < -1 || proj_b > 2 || (proj_b >= 0 && !y_b)
++       || n_expert <= 0 || n_active <= 0 || slots <= 0
++       || slots > 65535 || in_f <= 0 || out_f <= 0 || in_f % KQS_CHUNK || out_f % 8
++       || row_bytes != in_f / 2)
++        return 40004;
++    const int x_blocks = (out_f / 8 + KQS_WARPS - 1) / KQS_WARPS;
++    const dim3 grid((unsigned)(proj_b >= 0 ? 2 * x_blocks : x_blocks), (unsigned)slots, 1);
++    cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
++    memra_chain_launch(moe_kq_mrow_stream_kernel<KQS_WARPS>,grid, dim3(32, KQS_WARPS, 1), 0, st)(
++        table, proj, proj_b, x_blocks, n_expert, ex_ids, (const __half*)act_f16, y, y_b,
++        row_scale, ex_off_dev, n_active, in_f, out_f, row_bytes);
++    cudaError_t e = cudaGetLastError();
++    if(!e) g_moe_kq_mrow_stream_dispatches.fetch_add(proj_b >= 0 ? 2 : 1, std::memory_order_relaxed);
++    return e ? 1000 + (int)e : 0;
++}
++
+ int memra_moe_kq_mrow_stream(
+         const unsigned long long* table, int proj, int n_expert, const int* ex_ids,
+         const void* act_f16, float* y, const float* row_scale, const int* ex_off_dev,
+         int n_active, int slots, int in_f, int out_f, long row_bytes, void* stream){
+-    if(!table || !ex_ids || !act_f16 || !y || !row_scale || !ex_off_dev
+-       || proj < 0 || proj > 2 || n_expert <= 0 || n_active <= 0 || slots <= 0
+-       || slots > 65535 || in_f <= 0 || out_f <= 0 || in_f % KQS_CHUNK || out_f % 8
+-       || row_bytes != in_f / 2)
+-        return 40004;
+-    const dim3 grid((unsigned)((out_f / 8 + KQS_WARPS - 1) / KQS_WARPS), (unsigned)slots, 1);
+-    cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
+-    moe_kq_mrow_stream_kernel<KQS_WARPS><<<grid, dim3(32, KQS_WARPS, 1), 0, st>>>(
+-        table, proj, n_expert, ex_ids, (const __half*)act_f16, y, row_scale, ex_off_dev,
+-        n_active, in_f, out_f, row_bytes);
+-    cudaError_t e = cudaGetLastError();
+-    if(!e) g_moe_kq_mrow_stream_dispatches.fetch_add(1, std::memory_order_relaxed);
+-    return e ? 1000 + (int)e : 0;
++    return moe_kq_mrow_stream_launch(table, proj, -1, n_expert, ex_ids, act_f16, y, nullptr,
++        row_scale, ex_off_dev, n_active, slots, in_f, out_f, row_bytes, stream);
++}
++
++int memra_moe_kq_mrow_stream_gu(
++        const unsigned long long* table, int proj, int proj_b, int n_expert, const int* ex_ids,
++        const void* act_f16, float* y, float* y_b, const float* row_scale, const int* ex_off_dev,
++        int n_active, int slots, int in_f, int out_f, long row_bytes, void* stream){
++    if(proj_b < 0) return 40004;
++    return moe_kq_mrow_stream_launch(table, proj, proj_b, n_expert, ex_ids, act_f16, y, y_b,
++        row_scale, ex_off_dev, n_active, slots, in_f, out_f, row_bytes, stream);
+ }
+ 
+ unsigned long long memra_moe_kq_mrow_stream_dispatches(){
+diff --git a/crates/memra-engine/src/dsv4_grouped.rs b/crates/memra-engine/src/dsv4_grouped.rs
+index 038085275..f840fdd84 100644
+--- a/crates/memra-engine/src/dsv4_grouped.rs
++++ b/crates/memra-engine/src/dsv4_grouped.rs
+@@ -6,7 +6,7 @@ use crate::mmq_ffi::{
+     memra_bind_device, memra_moe_kq_gemm_sk, memra_moe_kq_gemm_sk_gu,
+     memra_moe_kq_gemm_sk_gu_half2, memra_moe_kq_gemm_sk_gu_m1, memra_moe_kq_gemm_sk_gu_m1_half2,
+     memra_moe_kq_gemm_sk_m1, memra_moe_kq_gemm_sk_m1_half2, memra_moe_kq_m1_stream,
+-    memra_moe_kq_mrow_stream,
++    memra_moe_kq_m1_stream_gu, memra_moe_kq_mrow_stream, memra_moe_kq_mrow_stream_gu,
+ };
+ use cudarc::driver::{CudaSlice, CudaStream, DevicePtr, DevicePtrMut};
+ use memra_runtime::Gpu;
+@@ -577,26 +577,19 @@ impl GroupedWork {
+                 }
+             } else {
+                 let stream = crate::moe_f16g_tail_on() && crate::dsv4_moe_m1_stream_on();
+-                for (projection, dst) in [(0, &mut *out.g1), (2, &mut *out.g3)] {
+-                    if stream && self.plain_single {
+-                        self.routes.project_stream(
+-                            &s,
+-                            table,
+-                            projection,
+-                            &self.input,
+-                            self.intermediate.cols,
+-                            dst,
+-                        )?;
+-                    } else if stream && self.stream_rows {
+-                        self.routes.project_mrow(
+-                            &s,
+-                            table,
+-                            projection,
+-                            &self.input,
+-                            self.intermediate.cols,
+-                            dst,
+-                        )?;
+-                    } else {
++                if stream && (self.plain_single || self.stream_rows) {
++                    // Gate and up stream in one launch (memra #710).
++                    self.routes.project_stream_gu(
++                        &s,
++                        table,
++                        self.plain_single,
++                        &self.input,
++                        self.intermediate.cols,
++                        &mut *out.g1,
++                        &mut *out.g3,
++                    )?;
++                } else {
++                    for (projection, dst) in [(0, &mut *out.g1), (2, &mut *out.g3)] {
+                         self.routes.project(
+                             &s,
+                             table,
+@@ -901,6 +894,62 @@ impl GroupedRoutes {
+         Ok(())
+     }
+ 
++    /// Gate (projection 0 into `g1`) and up (projection 2 into `g3`) in one launch of the
++    /// one-token (`single`) or multi-row streaming visitor. Each warp runs the program of its
++    /// own projection's launch, so the outputs are those two launches' bits.
++    #[allow(clippy::too_many_arguments)]
++    fn project_stream_gu(
++        &self,
++        s: &Arc<CudaStream>,
++        table: &CudaSlice<u64>,
++        single: bool,
++        input: &HalfMirror,
++        out_f: usize,
++        g1: &mut CudaSlice<f32>,
++        g3: &mut CudaSlice<f32>,
++    ) -> Res<()> {
++        if table.len() != self.experts * 6
++            || g1.len() < self.live_slots * out_f
++            || g3.len() < self.live_slots * out_f
++            || crate::moe_f16g_mode() < 2
++            || crate::dsv4_moe_f16g_sk_params().0 < 0
++            || !crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT)
++        {
++            return Err(
++                "matrix gate/up stream requires a complete local table and direct visitor".into(),
++            );
++        }
++        let launch = if single {
++            memra_moe_kq_m1_stream_gu
++        } else {
++            memra_moe_kq_mrow_stream_gu
++        };
++        let rc = unsafe {
++            launch(
++                table.device_ptr(s).0 as *const u64,
++                0,
++                2,
++                self.experts as i32,
++                self.ids.device_ptr(s).0 as *const i32,
++                input.half.device_ptr(s).0 as *const std::ffi::c_void,
++                g1.device_ptr_mut(s).0 as *mut f32,
++                g3.device_ptr_mut(s).0 as *mut f32,
++                input.scale.device_ptr(s).0 as *const f32,
++                self.offsets.device_ptr(s).0 as *const i32,
++                self.experts as i32,
++                self.live_slots as i32,
++                input.cols as i32,
++                out_f as i32,
++                (input.cols / 2) as i64,
++                s.cu_stream().cast(),
++            )
++        };
++        if rc != 0 {
++            return Err(format!("matrix gate/up stream (single={single}) rc={rc}"));
++        }
++        Ok(())
++    }
++
+     /// Multi-row streaming visitor: `project_stream`'s program for groups of any size, the
+     /// rows of each 16-row chunk sharing one pass over the expert.
+     fn project_mrow(
+diff --git a/crates/memra-engine/src/mmq_ffi.rs b/crates/memra-engine/src/mmq_ffi.rs
+index fccf5c9ff..0097dd38d 100644
+--- a/crates/memra-engine/src/mmq_ffi.rs
++++ b/crates/memra-engine/src/mmq_ffi.rs
+@@ -1348,6 +1348,26 @@ unsafe extern "C" {
+         row_bytes: i64,
+         stream: *mut core::ffi::c_void,
+     ) -> i32;
++    // Gate and up in one launch (memra #710): projection `proj` into `y_f32` and `proj_b` into
++    // `y_b` over the same rows and activation, each warp running its own launch's program.
++    pub fn memra_moe_kq_m1_stream_gu(
++        table: *const u64,
++        proj: i32,
++        proj_b: i32,
++        n_expert: i32,
++        ex_ids: *const i32,
++        act_f16: *const core::ffi::c_void,
++        y_f32: *mut f32,
++        y_b: *mut f32,
++        row_scale: *const f32,
++        ex_off_dev: *const i32,
++        n_active: i32,
++        slots: i32,
++        in_f: i32,
++        out_f: i32,
++        row_bytes: i64,
++        stream: *mut core::ffi::c_void,
++    ) -> i32;
+     pub fn memra_moe_kq_m1_stream_dispatches() -> u64;
+     // DSV4 multi-row streaming visitor (the verify-round companion): the CTA at each 16-row
+     // chunk start of a CSR group puts the chunk's rows in the MMA m16 dimension; the same chain and
+@@ -1368,6 +1388,26 @@ unsafe extern "C" {
+         row_bytes: i64,
+         stream: *mut core::ffi::c_void,
+     ) -> i32;
++    // Gate and up in one launch (memra #710): projection `proj` into `y_f32` and `proj_b` into
++    // `y_b` over the same rows and activation, each warp running its own launch's program.
++    pub fn memra_moe_kq_mrow_stream_gu(
++        table: *const u64,
++        proj: i32,
++        proj_b: i32,
++        n_expert: i32,
++        ex_ids: *const i32,
++        act_f16: *const core::ffi::c_void,
++        y_f32: *mut f32,
++        y_b: *mut f32,
++        row_scale: *const f32,
++        ex_off_dev: *const i32,
++        n_active: i32,
++        slots: i32,
++        in_f: i32,
++        out_f: i32,
++        row_bytes: i64,
++        stream: *mut core::ffi::c_void,
++    ) -> i32;
+     pub fn memra_moe_kq_mrow_stream_dispatches() -> u64;
+     // Component-test probe: 16 codes x 256 scale bytes of the visitor's f16 B value (`out`)
+     // and the sktail store's value (`ref`).

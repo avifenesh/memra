@@ -104,6 +104,22 @@ class EndToEnd(unittest.TestCase):
         self.assertFalse((self.dir / "m1-fio-envelope.bin").exists(), "envelope file must be removed")
         self.assertTrue((out / "grid-557056-16-io_uring.host.jsonl").exists())
 
+    def test_io_uring_refusal_is_recorded_not_replaced(self):
+        env_before = dict(os.environ)
+        os.environ["M1_STUB_FIO_REFUSE_URING"] = "1"
+        try:
+            p = self.run_env("uring-refused")
+        finally:
+            os.environ.clear(); os.environ.update(env_before)
+        self.assertEqual(p.returncode, 0, p.stdout[-2000:] + p.stderr[-2000:])
+        summary = json.loads((self.tmp / "uring-refused" / "summary.json").read_text())
+        self.assertEqual({k: v["verdict"] for k, v in summary["screen"].items()},
+                         {"depth2": "refused-io_uring-unavailable", "depth16": "refused-io_uring-unavailable"})
+        self.assertIn("io_queue_init", summary["screen"]["depth16"]["reason"])
+        self.assertEqual(summary["sustained_read_bytes_per_s_max"], 1_050_000_000)
+        rows = [json.loads(l) for l in (self.tmp / "uring-refused" / "rows.jsonl").read_text().splitlines()]
+        self.assertEqual(sum(1 for r in rows if "refused" in r), 15 + 20)
+
     def test_refusals(self):
         proof = json.loads(self.proof.read_text())
         proof["A8_identity"]["device"] += 1

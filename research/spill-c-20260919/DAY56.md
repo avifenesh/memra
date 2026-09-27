@@ -203,3 +203,16 @@ layers, 10 Role::Tail segments (3645440 B, hashed in 0.8 ms on the owner thread)
 the promote restores it and re-arms the drafter (`DSPARK restore: 89 of 89 prompt tokens + draft tail from cache (0
 suffix tokens to prime)` in both arms), equal demote bytes, no refusal, both arms ALL GREEN. The RTX 5090 runs the same
 shape next.
+
+## 4. The RTX 5090 (queue v9, 2026-09-25 23:38Z to 2026-09-26 01:02Z; `rtx5090-day56/`)
+
+The RTX 5090 queue v9 (`rtx5090-queue-v9-20260926.sh`) ran these after the rig's reboot wiped the queued binaries in `/tmp`: every binary was rebuilt from its named commit by `c-local-build.sh` in a build worktree under the lane's `target/` (CUDA 13.1, sm_120a; build logs in each cell's `builds/`), behind `/tmp/memra-5090.lock` with the card idle (no compute app) before each hold. A rebuilt binary's hash differs from the one named before the first attempt (the build path is part of the binary); its source tree is the named one. Here `memra-server-c5` `c050f6ff...`, tree `1b130f1ef`, the 27B with the DFlash2 export, the same cell as section
+3's attempt 4 (`day56-cell.sh`, 256 MB device prefix budget). Verbatim (`reading.log`):
+
+- `DAY56 ARM off rig=rtx5090 exit=0 verdict='KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)' checks=13 demotes=[('89', '164.2'), ('86', '164.0')] tails=[] restores=2 refusals=0`
+- `DAY56 ARM on rig=rtx5090 exit=0 verdict='KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)' checks=15 demotes=[('89', '164.2'), ('86', '164.0')] tails=[(5, 10, 3645440), (5, 10, 3522560)] restores=2 refusals=0`
+- `DAY56 TERM all_green_both -> PASS`, `same_verdict_lines -> PASS`, `equal_demote_bytes -> PASS`, `tail_receipt_2L -> PASS`, `restore_both_same_text -> PASS`, `no_refusal_on -> PASS`
+- `DAY56 DFLASH TAIL rig=rtx5090 -> PASS`
+
+**Read as registered: PASS on the RTX 5090**, as on the target card: both arms ALL GREEN, equal demote bytes, the
+two-layer tail receipt on the DSpark arm, the same restored text, no refusal. The slice passes on both cards.

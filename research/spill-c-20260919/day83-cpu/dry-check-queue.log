@@ -1,0 +1,35 @@
+queue rc=0
+2026-09-26T19:16:59Z queue v17 start at 450be5cd1
+2026-09-26T19:16:59Z lock held; runs start (P-cores 0-7)
+2026-09-26T19:17:02Z runs done; lock released
+2026-09-26T19:17:02Z reader rc=0
+2026-09-26T19:17:02Z queue v17 done
+== calls: 30 lines; per binary and clocks:
+     10 run-gen-i15 --experts-via-tier --expert-bank-host-bytes=17179869184 --moe-dispatch-clock --expert-bank-stages
+     10 run-gen-i20 --experts-via-tier --expert-bank-host-bytes=17179869184 --moe-dispatch-clock
+     10 run-gen-i20 --experts-via-tier --expert-bank-host-bytes=17179869184 --moe-dispatch-clock --expert-bank-stages
+== order (marks):
+o1-i15s-r1 o1-i20s-r1 o1-i20c-r1 o1-i15s-r2 o1-i20s-r2 o1-i20c-r2 o1-i15s-r3 o1-i20s-r3 o1-i20c-r3 o1-i15s-r4 o1-i20s-r4 o1-i20c-r4 o1-i15s-r5 o1-i20s-r5 o1-i20c-r5 o2-i20c-r1 o2-i20s-r1 o2-i15s-r1 o2-i20c-r2 o2-i20s-r2 o2-i15s-r2 o2-i20c-r3 o2-i20s-r3 o2-i15s-r3 o2-i20c-r4 o2-i20s-r4 o2-i15s-r4 o2-i20c-r5 o2-i20s-r5 o2-i15s-r5 
+== reading
+DAY83 SPLIT CHECKS rig=rtx5090 runs=30 integrity=ok
+DAY83 SPLIT i15s generate N=10 tickets=2443.0 prefetched_blocks=6007.0 dispatch_misses=440.0 (us per generated token, medians)
+DAY83 SPLIT i15s generate leaves: outer=73.4 dispatch_inner=54.5 own_trace=13.1 bank_stage_lookup=8.2 bank_stage_cache=106.3 bank_stage_charge=26.7 stage_rest=21.0 bank_publish_output=5.4 bank_publish_policy=27.2 publish_rest=4.7 pf_resident=87.2 bank_host_use=3.3 bank_retire_only=0.9 bank_ack=30.2 bank_collect=1.5 retire_outer=54.5
+DAY83 SPLIT i15s generate beside: pf_demand=294.9 pf_resident=87.2 pf_retire=52.3 pf_stage=470.6 own_inner_demand=254.0 bank_stage=162.1 bank_publish=37.4 bank_retire=34.4 eng_demand=45.7
+DAY83 SPLIT i20s generate N=10 tickets=2443.0 prefetched_blocks=6007.0 dispatch_misses=440.0 (us per generated token, medians)
+DAY83 SPLIT i20s generate leaves: outer=73.4 dispatch_inner=54.5 own_trace=13.1 bank_stage_lookup=8.2 bank_stage_cache=106.3 bank_stage_charge=26.7 stage_rest=21.0 bank_publish_output=5.4 bank_publish_policy=27.2 publish_rest=4.7 pf_resident=87.2 bank_host_use=3.3 bank_retire_only=0.9 bank_ack=30.2 bank_collect=1.5 retire_outer=54.5
+DAY83 SPLIT i20s generate beside: pf_demand=294.9 pf_resident=87.2 pf_retire=52.3 pf_stage=470.6 own_inner_demand=254.0 bank_stage=162.1 bank_publish=37.4 bank_retire=34.4 eng_demand=45.7
+DAY83 SPLIT i20c generate N=10 tickets=None prefetched_blocks=6007.0 dispatch_misses=None (us per generated token, medians)
+DAY83 SPLIT i20c generate leaves: outer=- dispatch_inner=- own_trace=- bank_stage_lookup=- bank_stage_cache=- bank_stage_charge=- stage_rest=- bank_publish_output=- bank_publish_policy=- publish_rest=- pf_resident=87.2 bank_host_use=- bank_retire_only=- bank_ack=- bank_collect=- retire_outer=-
+DAY83 SPLIT i20c generate beside: pf_demand=294.9 pf_resident=87.2 pf_retire=52.3 pf_stage=470.6 own_inner_demand=- bank_stage=- bank_publish=- bank_retire=- eng_demand=-
+DAY83 SPLIT i15s window N=10 tickets=1065.0 prefetched_blocks=2835.0 dispatch_misses=120.0 (us per generated token, medians)
+DAY83 SPLIT i15s window leaves: outer=34.8 dispatch_inner=29.0 own_trace=5.7 bank_stage_lookup=3.9 bank_stage_cache=47.8 bank_stage_charge=12.3 stage_rest=9.5 bank_publish_output=2.6 bank_publish_policy=10.8 publish_rest=2.1 pf_resident=43.6 bank_host_use=1.4 bank_retire_only=0.4 bank_ack=15.1 bank_collect=0.6 retire_outer=22.2
+DAY83 SPLIT i15s window beside: pf_demand=145.1 pf_resident=43.6 pf_retire=25.5 pf_stage=232.2 own_inner_demand=118.0 bank_stage=73.5 bank_publish=15.5 bank_retire=16.9 eng_demand=13.3
+DAY83 SPLIT i20s window N=10 tickets=1065.0 prefetched_blocks=2835.0 dispatch_misses=120.0 (us per generated token, medians)
+DAY83 SPLIT i20s window leaves: outer=34.8 dispatch_inner=29.0 own_trace=5.7 bank_stage_lookup=3.9 bank_stage_cache=47.8 bank_stage_charge=12.3 stage_rest=9.5 bank_publish_output=2.6 bank_publish_policy=10.8 publish_rest=2.1 pf_resident=43.6 bank_host_use=1.4 bank_retire_only=0.4 bank_ack=15.1 bank_collect=0.6 retire_outer=22.2
+DAY83 SPLIT i20s window beside: pf_demand=145.1 pf_resident=43.6 pf_retire=25.5 pf_stage=232.2 own_inner_demand=118.0 bank_stage=73.5 bank_publish=15.5 bank_retire=16.9 eng_demand=13.3
+DAY83 SPLIT i20c window N=10 tickets=None prefetched_blocks=2835.0 dispatch_misses=None (us per generated token, medians)
+DAY83 SPLIT i20c window leaves: outer=- dispatch_inner=- own_trace=- bank_stage_lookup=- bank_stage_cache=- bank_stage_charge=- stage_rest=- bank_publish_output=- bank_publish_policy=- publish_rest=- pf_resident=43.6 bank_host_use=- bank_retire_only=- bank_ack=- bank_collect=- retire_outer=-
+DAY83 SPLIT i20c window beside: pf_demand=145.1 pf_resident=43.6 pf_retire=25.5 pf_stage=232.2 own_inner_demand=- bank_stage=- bank_publish=- bank_retire=- eng_demand=-
+DAY83 LARGEST rig=rtx5090 i20 generate: bank_stage_cache=106.3 us per token (21% of the door-only leaves' 518.2); second pf_resident=87.2 -> named
+DAY83 CLOCK COST rig=rtx5090 generate pf_demand i20s=294.9 i20c=294.9 us per token (the stage clock's own brackets, deciding nothing)
+DAY83 I15_TO_I20 rig=rtx5090 generate (i20s minus i15s, us per token, deciding nothing): outer=+0.0 dispatch_inner=+0.0 own_trace=+0.0 bank_stage_lookup=+0.0 bank_stage_cache=+0.0 bank_stage_charge=+0.0 stage_rest=+0.0 bank_publish_output=+0.0 bank_publish_policy=+0.0 publish_rest=+0.0 pf_resident=+0.0 bank_host_use=+0.0 bank_retire_only=+0.0 bank_ack=+0.0 bank_collect=+0.0 retire_outer=+0.0

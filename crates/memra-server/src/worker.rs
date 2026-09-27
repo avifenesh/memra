@@ -2026,14 +2026,29 @@ fn decrement_atomic(counter: &std::sync::atomic::AtomicUsize) {
 /// Release the command-channel portion of an HTTP admission. This is separate from the hard
 /// queue reservation because the latter survives while a request waits in the worker queue.
 pub(crate) fn release_pending_admit() {
-    decrement_atomic(&PENDING_ADMITS);
+    release_pending_admit_on(&PENDING_ADMITS);
+}
+
+/// The same on the gauge a reservation was taken on (WP-A day 56 section 3: a pending-admission guard
+/// releases where it reserved; every production reservation is on `PENDING_ADMITS`).
+pub(crate) fn release_pending_admit_on(gauge: &std::sync::atomic::AtomicUsize) {
+    decrement_atomic(gauge);
 }
 
 /// Release a request's hard admission reservation. This is intentionally saturating because
 /// a few embedders/tests inject commands directly without going through the HTTP reservation
 /// path.
 pub(crate) fn release_admission_reservation(lane: Lane) {
-    decrement_atomic(&ADMISSION_RESERVATIONS[lane.idx()]);
+    release_admission_reservation_on(&ADMISSION_RESERVATIONS, lane);
+}
+
+/// The same over the lane counters a reservation was taken on (WP-A day 56: a pending-admission
+/// guard releases where it reserved; every production reservation is on `ADMISSION_RESERVATIONS`).
+pub(crate) fn release_admission_reservation_on(
+    counters: &[std::sync::atomic::AtomicUsize; 3],
+    lane: Lane,
+) {
+    decrement_atomic(&counters[lane.idx()]);
 }
 
 /// Release whichever hard reservation this request holds: its route ticket when a dedicated
@@ -5206,12 +5221,6 @@ fn host_tier_governor(
     let dimensions = device
         .checked_add(1)
         .ok_or("host tier governor: device ordinal overflow")?;
-    let twice = |bytes: usize| {
-        u64::try_from(bytes)
-            .ok()
-            .and_then(|b| b.checked_mul(2))
-            .ok_or("host tier governor: capacity overflow")
-    };
     // Option C (day 16): a promote's residency charge (`tier_charge`, device=true, taken before
     // the copy) and the registration of its fresh destination planes (`register_device`, released
     // at `take_plane`) are both on this dimension while the H2D runs, over the promoted residents'
@@ -5223,8 +5232,13 @@ fn host_tier_governor(
             .ok_or("host tier governor: capacity overflow")
     };
     let mut capacity = TierBudget::zero(dimensions);
-    capacity.pinned = twice(host_budget)?;
-    capacity.pageable = twice(host_budget)?;
+    // WP-A day 63 (`DAY63.md` design L1.5): one more host budget on the pinned dimension, the lease
+    // pool's idle backings (capped at one budget), so a lease's charge taken while its pooled
+    // backing's charge is still held never refuses.
+    capacity.pinned = thrice(host_budget)?;
+    // WP-A day 51 (design P): a third pageable term, the hash helper's payload reserve (at most
+    // one budget, `HostPayloadReserve::cap`), so its charge is never what refuses a demote.
+    capacity.pageable = thrice(host_budget)?;
     capacity.device[device] = thrice(device_budget)?;
     // Option B: the transfer engine charges one in-flight op per K or V plane of the batch
     // (`submit_batch`); the day-13 ledger left this dimension at zero, which would have refused
@@ -5380,6 +5394,9 @@ fn host_tier_context(
         .and_then(|n| n.checked_mul(3))
         .ok_or("MEMRA_KV_HOST_CONTRACTS=1: in-flight bound overflow")?;
     let governor = host_tier_governor(device, hpx.budget, prefix_cache_budget_bytes(), inflight)?;
+    // WP-A day 51 (design P): the hash helper's payload reserve, capped at one host budget (the
+    // ledger's third pageable term).
+    let reserve = HostPayloadReserve::new(governor.clone(), hpx.budget as u64);
     let ledger: std::rc::Rc<std::cell::RefCell<dyn memra_engine::cache::tiered::BudgetGovernor>> =
         std::rc::Rc::new(std::cell::RefCell::new(HostTierLedger(governor.clone())));
     // WP-A day 17 (memra#536 Move 1): the engine carries a second stream of the same context for
@@ -5397,7 +5414,13 @@ fn host_tier_context(
         "[prefix-host] contracts door: D2H demotes and H2D promotes ride the transfer engine's \
          copy stream and publish at the tick top (memra#536 Move 1)"
     );
-    Ok(HostTierContext {
+    // WP-A day 63 (`DAY63.md` design L1.5): the lease pool's cap is one host budget.
+    transfers.set_lease_pool_cap(hpx.budget as u64);
+    let lease_pool = Some(transfers.lease_pool());
+    // WP-A day 63 (L2.1): the span staging set's lengths, one image's worth over the loaded
+    // models (the max count per length, one demote in flight per worker).
+    let staging_lengths = host_staging_lengths(loaded.values().map(|lm| &lm.model.plan));
+    let ctx = HostTierContext {
         governor,
         programs,
         device: u32::try_from(device)
@@ -5405,9 +5428,87 @@ fn host_tier_context(
         transfers: Some(std::cell::RefCell::new(transfers)),
         inflight,
         fault: std::cell::Cell::new(HostContractFault::from_door(kv_host_fault())),
-        hasher: HostHashWorker::spawn(HostHashFault::from_door(kv_host_fault()))?,
+        hasher: HostHashWorker::spawn(HostHashFault::from_door(kv_host_fault()), reserve)?,
         staging: std::cell::RefCell::new(HostStaging::default()),
-    })
+        lease_pool,
+    };
+    // WP-A day 63 (L2.2, L2.3): the staging set allocated at boot, charged as today; a refusal
+    // leaves the set partial (the first demote allocates the rest) and never fails the boot.
+    let t0 = Instant::now();
+    let (mut n, mut bytes) = (0usize, 0u64);
+    let mut taken = Vec::new();
+    let mut refused = None;
+    'lengths: for &(len, count) in &staging_lengths {
+        for _ in 0..count {
+            match ctx.staging_take(len) {
+                Ok((buf, _)) => {
+                    n += 1;
+                    bytes += len as u64;
+                    taken.push(buf);
+                }
+                Err(e) => {
+                    refused = Some(e);
+                    break 'lengths;
+                }
+            }
+        }
+    }
+    for buf in taken {
+        ctx.staging_put(buf);
+    }
+    match refused {
+        None => eprintln!(
+            "[prefix-host] contracts door: span staging set allocated at boot: {n} buffers, {:.1} \
+             MB in {:.1} ms",
+            bytes as f64 / 1e6,
+            t0.elapsed().as_secs_f64() * 1e3
+        ),
+        Some(e) => eprintln!(
+            "[prefix-host] contracts door: span staging set at boot stopped after {n} buffers \
+             ({:.1} MB): {e}; the first demote allocates the rest",
+            bytes as f64 / 1e6
+        ),
+    }
+    Ok(ctx)
+}
+
+/// WP-A day 63 (`DAY63.md` design L2.1): the span staging lengths of one image over the loaded
+/// models' plans: each recurrent layer's conv plane (`conv_width x (conv_kernel - 1)` f32) and ssm
+/// plane (`state_width` f32), trunk and MTP blocks, as (bytes, count) with each length's count the
+/// maximum over the models (one demote is in flight per worker). Sorted by length.
+fn host_staging_lengths<'a>(
+    plans: impl Iterator<Item = &'a memra_gguf::model_plan::ModelPlan>,
+) -> Vec<(usize, usize)> {
+    use memra_gguf::model_plan::StatePlan;
+    let mut need: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new();
+    for plan in plans {
+        let mut here: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new();
+        for layer in plan
+            .layers
+            .iter()
+            .chain(plan.mtp_blocks.iter().map(|b| &b.layer))
+        {
+            if let StatePlan::Recurrent {
+                conv_width,
+                conv_kernel,
+                state_width,
+            } = layer.state
+            {
+                let conv = conv_width as usize * (conv_kernel as usize).saturating_sub(1) * 4;
+                let ssm = state_width as usize * 4;
+                for len in [conv, ssm] {
+                    if len > 0 {
+                        *here.entry(len).or_default() += 1;
+                    }
+                }
+            }
+        }
+        for (len, c) in here {
+            let e = need.entry(len).or_default();
+            *e = (*e).max(c);
+        }
+    }
+    need.into_iter().collect()
 }
 
 fn kv_host_budget_bytes() -> usize {
@@ -6002,6 +6103,21 @@ fn serve_batching() -> bool {
 /// unset without a drafter = off (nothing to draft with); `0` = the eager/plain kill
 /// switch; explicit K >= 1 = armed at that depth (and REQUIRES MEMRA_DRAFT — boot
 /// refuses loud). Any other value REFUSES LOUD (the mis-typed-seam law).
+/// A drafter path with the route off (memra #478): `MEMRA_DSPARK_DRAFT` set while
+/// `MEMRA_DSPARK_SPEC` is not `1` loads nothing and boots the MTP route, so the operator's drafter
+/// would be discarded in silence. The reverse pairing already refuses by name; this is its twin.
+fn dspark_draft_without_spec(spec: Option<&str>, draft: Option<&str>) -> Option<String> {
+    match (spec, draft) {
+        (spec, Some(draft)) if !draft.is_empty() && spec != Some("1") => Some(format!(
+            "MEMRA_DSPARK_DRAFT={draft:?} is set but MEMRA_DSPARK_SPEC is {}: the drafter will not \
+             be used and the model would serve its MTP route; set MEMRA_DSPARK_SPEC=1 or unset \
+             MEMRA_DSPARK_DRAFT",
+            spec.map_or("unset".to_string(), |v| format!("{v:?}"))
+        )),
+        _ => None,
+    }
+}
+
 /// Boot-time ambiguity refuse list for `MEMRA_DSPARK_SPEC=1` — the 3f4597f02 guard law:
 /// two spec/parallelism programs on one model must never silently coexist, and every
 /// combination that has never been co-gated refuses LOUD at spawn. Pure (env values in,
@@ -10093,6 +10209,15 @@ impl HostPrefixCache {
                 .close("the tier latched off", HOST_HASH_LATCH_JOIN);
             // WP-A day 30: a latched tier demotes nothing more; its span staging set frees.
             tier.staging.borrow_mut().clear();
+            // WP-A day 63 (L1.6): and its lease pool: idle backings free, pool charges release.
+            if let Some(pool) = &tier.lease_pool {
+                let (n, bytes) = pool.close();
+                eprintln!(
+                    "[prefix-host] lease pool closed (the tier latched off): {n} idle backings, \
+                     {:.1} MB freed",
+                    bytes as f64 / 1e6
+                );
+            }
         }
     }
 
@@ -10396,7 +10521,27 @@ impl HostPrefixCache {
         self.purges += 1;
         self.purged_entries += entries as u64;
         self.purged_bytes += bytes as u64;
+        // WP-A day 69 (`DAY69.md` design P.4): the scrub, after the settles and the entries' drop.
+        self.purge_scrub();
         (victims.len(), entries, bytes)
+    }
+
+    /// WP-A day 69 (`DAY69.md` design P.4): the pinned host memory the tier keeps for reuse holds
+    /// no revoked tenant's bytes after a purge. The lease pool drains (every idle backing frees, and
+    /// a lease allocated before the drain frees at its drop instead of parking), and every idle
+    /// buffer of the span staging set is zeroed in place. Every purge, whichever tenant it names.
+    fn purge_scrub(&self) {
+        let Some(tier) = &self.tier else {
+            return;
+        };
+        let (pooled, pooled_bytes) = tier.lease_pool.as_ref().map_or((0, 0), |p| p.drain());
+        let (zeroed, zeroed_bytes) = tier.staging.borrow_mut().scrub();
+        eprintln!(
+            "[prefix-host] purge scrub: lease pool drained ({pooled} idle backings, {:.1} MB freed; \
+             earlier leases free at their drop), staging set zeroed ({zeroed} buffers, {:.1} MB)",
+            pooled_bytes as f64 / 1e6,
+            zeroed_bytes as f64 / 1e6
+        );
     }
 }
 
@@ -10434,6 +10579,8 @@ struct HostTierContext {
     /// buffer is charged to the governor's pinned ledger when it is allocated (`HostStaging`);
     /// the set and its charges free at the tier's latch.
     staging: std::cell::RefCell<HostStaging>,
+    /// WP-A day 63 (`DAY63.md` design L1.6): the transfer engine's lease pool, closed at the latch.
+    lease_pool: Option<std::rc::Rc<memra_engine::tier_transfer::LeasePool>>,
 }
 /// WP-A day 31 (DAY30 owed items: the governor charge of the staging, the staging back on every
 /// post-take refusal): the context's span staging set and its pinned charges. A buffer is
@@ -10466,6 +10613,17 @@ impl HostStaging {
         self.idle.clear();
         self.charges.clear();
         self.charged = 0;
+    }
+    /// WP-A day 69 (`DAY69.md` design P.4): every idle buffer zeroed in place (an idle buffer holds
+    /// the last span that used it); the set keeps its buffers and their charges. Returns (buffers,
+    /// bytes).
+    fn scrub(&mut self) -> (usize, u64) {
+        let mut bytes = 0u64;
+        for buf in &mut self.idle {
+            buf.fill(0);
+            bytes += buf.len() as u64;
+        }
+        (self.idle.len(), bytes)
     }
 }
 /// One loaded model's programs under the door: the plain program (day 13) and, for a model with
@@ -11157,6 +11315,8 @@ struct ContractPlanned {
 struct DemotePresubmitSplit {
     leases_ms: f64,
     leases: usize,
+    /// WP-A day 63 (`DAY63.md` L1.7, log only): the leases the pool served.
+    pooled: u64,
     lease_bytes: u64,
     leases_minflt: i64,
     register_submit_ms: f64,
@@ -11544,6 +11704,9 @@ struct HostHashSplit {
     copy_bytes: u64,
     copy_minflt: i64,
     hash_ms: f64,
+    /// Day 51 (design P, log only): the staged payloads and how many took a reserve buffer.
+    staged: u32,
+    reserve_hits: u32,
 }
 
 /// WP-A day 35 (`DAY35.md` design M'): which KV lease of the image a view reads and a digest names.
@@ -11767,6 +11930,213 @@ impl HostHashFault {
 /// and an idle 2 ms poll early).
 const HOST_HASH_DEADLINE: Duration = Duration::from_secs(10);
 
+/// WP-A day 51 (`DAY51.md` design P, OWED item 17): the hash helper's reserve of heap payload
+/// buffers whose every page is already written, keyed by exact length. DAY49 placed the helper's
+/// copy into a fresh `Vec` at one minor fault per 4 KiB page (16 ms of a 157 MB job, one tick-top
+/// poll of every publication) while no host entry frees; the reserve moves those faults into the
+/// helper's idle time. Its target is the staged lengths of the last `Hash` job, clamped to `cap`
+/// bytes. It is charged on the governor's pageable ledger for the whole target BEFORE its first
+/// buffer is allocated (a refused charge allocates nothing), and the charge is released at the
+/// retarget and when the helper exits. A hit is written with `copy_from_slice` from the staged
+/// bytes and a miss allocates as before, so the payload's bytes are the same either way.
+struct HostPayloadReserve {
+    governor: memra_engine::cache::tiered::hostprefix::SharedGovernor,
+    cap: u64,
+    /// The lengths (floats) of the current target still to allocate.
+    owed: Vec<usize>,
+    /// Allocated buffers, every element written.
+    ready: Vec<Vec<f32>>,
+    charge: Option<memra_engine::cache::tiered::hostprefix::ResidentCharge>,
+    /// The current target's bytes (the charge's size).
+    target_bytes: u64,
+    /// The governor refused this target's charge: no refill until the next retarget.
+    refused: bool,
+    /// The current target's refill figures, printed when it completes (log only).
+    refill_ms: f64,
+    refill_minflt: i64,
+    yields: u32,
+    /// WP-A day 52 (`DAY52.md` design P2): the arming state. Armed, the last job's staged lengths
+    /// are the target; disarmed, the target is empty (nothing held, no charge).
+    armed: bool,
+}
+
+/// The payload reserve's ledger tenant: it belongs to the context's helper and serves every
+/// request's demote, so its charge names its own digest, disjoint from every `tenant_salt`.
+fn host_payload_reserve_tenant() -> [u8; 32] {
+    memra_engine::cache::record::digest("host-tier-payload-reserve", b"hash helper payload reserve")
+}
+
+impl HostPayloadReserve {
+    fn new(governor: memra_engine::cache::tiered::hostprefix::SharedGovernor, cap: u64) -> Self {
+        Self {
+            governor,
+            cap,
+            owed: Vec::new(),
+            ready: Vec::new(),
+            charge: None,
+            target_bytes: 0,
+            refused: false,
+            refill_ms: 0.0,
+            refill_minflt: 0,
+            yields: 0,
+            armed: true,
+        }
+    }
+    /// WP-A day 52 (`DAY52.md` design P2, the arming rule): after a `Hash` job's copies, the job's
+    /// fresh pages are its copy's minor faults (a miss faults where its memory is new, a hit does
+    /// not) plus, when the job took any reserve buffer, the minor faults of the refill that wrote
+    /// them. Armed when the fresh pages are at least half the job's staged pages: the reserve
+    /// refills to the job's shape (`retarget(lengths)`); disarmed otherwise: it holds nothing
+    /// (`retarget(&[])`), and the next copies are today's, which reuse freed memory. A job with no
+    /// staged payload decides nothing. The one line prints on a change of state.
+    fn after_job(&mut self, lengths: &[usize], copy_minflt: i64, hits: u32) {
+        if lengths.is_empty() {
+            self.retarget(&[]);
+            return;
+        }
+        let pages = lengths
+            .iter()
+            .map(|&l| (l as u64).saturating_mul(4))
+            .sum::<u64>()
+            / 4096;
+        let fresh = copy_minflt.max(0) as u64
+            + if hits > 0 {
+                self.refill_minflt.max(0) as u64
+            } else {
+                0
+            };
+        let armed = fresh.saturating_mul(2) >= pages;
+        if armed != self.armed {
+            eprintln!(
+                "[prefix-host] payload reserve {}: the job took {fresh} fresh pages of {pages} \
+                 (rule >= {pages}/2)",
+                if armed { "armed" } else { "disarmed" }
+            );
+            self.armed = armed;
+        }
+        if armed {
+            self.retarget(lengths);
+        } else {
+            self.retarget(&[]);
+        }
+    }
+    /// A written buffer of exactly `len` floats, if the reserve holds one.
+    fn take(&mut self, len: usize) -> Option<Vec<f32>> {
+        let i = self.ready.iter().position(|v| v.len() == len)?;
+        Some(self.ready.swap_remove(i))
+    }
+    /// After a `Hash` job's copies: the buffers it did not take free, the charge releases (the
+    /// image's own pageable charge covers what the job took), and `lengths` (the job's staged
+    /// payloads, in floats) become the target, clamped to `cap` bytes in the job's order.
+    fn retarget(&mut self, lengths: &[usize]) {
+        self.ready.clear();
+        self.charge = None;
+        self.owed.clear();
+        self.target_bytes = 0;
+        for &len in lengths {
+            let bytes = (len as u64).saturating_mul(4);
+            if self.target_bytes.saturating_add(bytes) > self.cap {
+                break;
+            }
+            self.target_bytes += bytes;
+            self.owed.push(len);
+        }
+        // Allocated from the end of `owed`: reverse so the job's first payload is written first.
+        self.owed.reverse();
+        self.refused = false;
+        self.refill_ms = 0.0;
+        self.refill_minflt = 0;
+        self.yields = 0;
+    }
+    /// One refill step: the charge first (once per target), then one buffer, every element
+    /// written with a value the compiler cannot see is zero (a zeroed allocation would map its
+    /// pages lazily and move the faults back onto the copy). `false` when there is nothing to do.
+    fn refill_step(&mut self) -> bool {
+        use memra_engine::cache::tiered::*;
+        if self.refused || self.owed.is_empty() {
+            return false;
+        }
+        if self.charge.is_none() {
+            let dimensions = self
+                .governor
+                .lock()
+                .map(|g| g.used().device.len())
+                .map_err(|_| "the governor is poisoned".to_string());
+            let charge = dimensions.and_then(|dimensions| {
+                let mut request = BudgetRequest {
+                    bytes: TierBudget::zero(dimensions),
+                    priority: Priority::Backup,
+                    deadline: Deadline(u64::MAX),
+                    tenant: host_payload_reserve_tenant(),
+                };
+                request.bytes.pageable = self.target_bytes;
+                hostprefix::ResidentCharge::reserve(self.governor.clone(), &request)
+                    .map_err(|e| format!("{e:?}"))
+            });
+            match charge {
+                Ok(charge) => self.charge = Some(charge),
+                Err(why) => {
+                    self.refuse(why);
+                    return false;
+                }
+            }
+        }
+        let Some(len) = self.owed.pop() else {
+            return false;
+        };
+        let (t0, f0) = (Instant::now(), thread_minflt());
+        let mut v = Vec::with_capacity(len);
+        v.resize(len, std::hint::black_box(0.0f32));
+        self.ready.push(v);
+        self.refill_minflt += thread_minflt() - f0;
+        self.refill_ms += t0.elapsed().as_secs_f64() * 1e3;
+        if self.owed.is_empty() {
+            eprintln!(
+                "[prefix-host] payload reserve ready: {} buffers, {:.1} MB in {:.2} ms (minflt +{}, \
+                 yielded {} time(s)), charged to the governor's pageable ledger",
+                self.ready.len(),
+                self.target_bytes as f64 / 1e6,
+                self.refill_ms,
+                self.refill_minflt,
+                self.yields,
+            );
+        }
+        true
+    }
+    fn refuse(&mut self, why: String) {
+        self.refused = true;
+        self.owed.clear();
+        eprintln!(
+            "[prefix-host] payload reserve refused ({} bytes): {why}; the next copies allocate",
+            self.target_bytes
+        );
+    }
+    /// The helper's idle time: refill one buffer at a time, checking the job channel before each.
+    /// `Ok(Some(job))` is a job that is waiting (served before the refill resumes), `Ok(None)` the
+    /// reserve complete (or refused, or nothing to do), `Err(())` the channel closed.
+    fn refill_until_job(
+        &mut self,
+        jobs: &std::sync::mpsc::Receiver<HostHelperJob>,
+    ) -> Result<Option<HostHelperJob>, ()> {
+        loop {
+            match jobs.try_recv() {
+                Ok(job) => {
+                    if !self.owed.is_empty() && !self.ready.is_empty() {
+                        self.yields += 1;
+                    }
+                    return Ok(Some(job));
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => return Err(()),
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    if !self.refill_step() {
+                        return Ok(None);
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// One long-lived hash helper per `HostTierContext` (never a thread per demote): a job channel in,
 /// a reply channel out, the thread handle for the join. Between jobs the helper blocks only on its
 /// job channel; inside a job it is busy for as long as the hash takes, which is unbounded when the
@@ -11784,7 +12154,7 @@ struct HostHashWorker {
 /// inside a job is the deadline's cause, and the owner thread must not wait for that job.
 const HOST_HASH_LATCH_JOIN: Duration = Duration::from_millis(50);
 impl HostHashWorker {
-    fn spawn(fault: Option<HostHashFault>) -> Result<Self, String> {
+    fn spawn(fault: Option<HostHashFault>, reserve: HostPayloadReserve) -> Result<Self, String> {
         let (jobs_tx, jobs_rx) = std::sync::mpsc::channel::<HostHelperJob>();
         let (reply_tx, reply_rx) = std::sync::mpsc::channel::<HostHashReply>();
         let (sources_tx, sources_rx) = std::sync::mpsc::channel::<HostSourcesReply>();
@@ -11792,7 +12162,20 @@ impl HostHashWorker {
             .name("memra-host-hash".into())
             .spawn(move || {
                 let mut fault = fault;
-                for job in jobs_rx {
+                // WP-A day 51 (design P): the reserve lives and dies with this thread; its charge
+                // releases when the thread exits by any path.
+                let mut reserve = reserve;
+                loop {
+                    // Design P: the idle time before the next job refills the reserve, one buffer
+                    // at a time; a job that is waiting is served first.
+                    let job = match reserve.refill_until_job(&jobs_rx) {
+                        Ok(Some(job)) => job,
+                        Ok(None) => match jobs_rx.recv() {
+                            Ok(job) => job,
+                            Err(_) => return,
+                        },
+                        Err(()) => return,
+                    };
                     if fault == Some(HostHashFault::HelperGone) {
                         // The red arm: the helper is gone; the job drops with it and the owner
                         // thread finds the reply channel closed.
@@ -11871,18 +12254,32 @@ impl HostHashWorker {
                     };
                     let t = Instant::now();
                     let mut split = HostHashSplit::default();
+                    let mut staged_lengths = Vec::new();
                     let hashed = job
                         .payloads
                         .into_iter()
                         .map(|mut p| {
                             // WP-A day 30: a landed f32 span becomes the payload's heap `Vec`.
                             // Day 49 (log only): the copy and the hash timed apart, in order.
+                            // Day 51 (design P): the `Vec` comes from the reserve when it holds
+                            // one of this length (every element written from the staged bytes),
+                            // else it is allocated as before.
                             if let Some(staged) = &p.staged {
                                 let (c0, f0) = (Instant::now(), thread_minflt());
-                                p.data = Arc::new(staged.as_f32_slice().to_vec());
+                                let src = staged.as_f32_slice();
+                                p.data = Arc::new(match reserve.take(src.len()) {
+                                    Some(mut v) => {
+                                        v.copy_from_slice(src);
+                                        split.reserve_hits += 1;
+                                        v
+                                    }
+                                    None => src.to_vec(),
+                                });
                                 split.copy_minflt += thread_minflt() - f0;
                                 split.copy_ms += c0.elapsed().as_secs_f64() * 1e3;
                                 split.copy_bytes += staged.len() as u64;
+                                split.staged += 1;
+                                staged_lengths.push(src.len());
                             }
                             let h0 = Instant::now();
                             let (n, d) = host_hash_payload_digest(&p.data);
@@ -11890,6 +12287,9 @@ impl HostHashWorker {
                             (p, n, d)
                         })
                         .collect();
+                    // Design P2 (day 52): the job's staged shape is the reserve's next target
+                    // while the job's copies took fresh pages; otherwise the reserve disarms.
+                    reserve.after_job(&staged_lengths, split.copy_minflt, split.reserve_hits);
                     // WP-A day 35 (design M'): the bind's KV re-hash, the same program over the
                     // same lease bytes; the views end here, before the reply is sent.
                     let leases = job
@@ -12112,6 +12512,33 @@ struct PendingContractPromote {
     /// WP-A day 34 (`DAY34.md` design K): `Some` when the KV items' completion checksums are on the
     /// hash helper (the off-tick route); the settle takes the reply before its completion step.
     helper_sums: Option<PendingSources>,
+    /// WP-A day 64 (`DAY64.md` step 1, log only): what the last `Pending` answer waited on
+    /// (`sources`, `copies`, `receipt`, joined by `+`); printed on the promote's timeline.
+    waiting: String,
+}
+
+/// WP-A day 64 (step 1, log only): the requirements a pending promote still waits on: the helper's
+/// source checksums, the batch's copies, the spans' destination-digest receipt.
+fn host_promote_waiting(
+    t: &memra_engine::tier_transfer::CudaTransfers,
+    ticket: &memra_engine::cache::tiered::TransferTicket,
+    sources_pending: bool,
+) -> String {
+    let (copies, receipt) = t.h2d_landing_parts(ticket).unwrap_or((false, false));
+    let mut w = Vec::new();
+    if sources_pending {
+        w.push("sources");
+    }
+    if !copies {
+        w.push("copies");
+    } else if !receipt {
+        w.push("receipt");
+    }
+    if w.is_empty() {
+        "none".into()
+    } else {
+        w.join("+")
+    }
 }
 
 /// WP-A day 34: the hash helper's source-checksum job of one promote: how many views went, when,
@@ -12274,6 +12701,52 @@ struct PendingCapture {
     /// WP-A day 24: the `trace_prefix_entry_state` role the OFF publisher prints (`snapshot` for
     /// the seed and lcp-split publishes, `spec-snapshot` for the spec-boundary publish).
     trace_role: &'static str,
+    /// WP-A day 62 (`DAY62.md` step 1, log only): the source cache's identity (its layer vector's
+    /// heap address, stable while the cache moves between owners) and the copy-stream work the
+    /// worker had in flight when the capture was submitted, by kind. Printed on the publish line;
+    /// nothing decides on either.
+    source_kv: usize,
+    queued_ahead: String,
+    /// WP-A day 62 (design R1.1): the source session's request id.
+    source_request: String,
+}
+
+/// WP-A day 62 (`DAY62.md` design R1.1): whether a retiring session is the pending capture's
+/// source. Either identity is enough: the request id recorded at submission, or the cache's
+/// layer-vector address (a session with no cache matches by id only). Conservative by
+/// construction: a miss would let a source's cache drop or park under the copy.
+fn r1_is_source(
+    request_id: &str,
+    kv: Option<usize>,
+    source_request: &str,
+    source_kv: usize,
+) -> bool {
+    request_id == source_request || kv.is_some_and(|k| k == source_kv)
+}
+
+/// WP-A day 62 (R1): the retire pass settles the pending capture only when its source retires.
+fn r1_settle_at_retire(source_retiring: bool) -> bool {
+    source_retiring
+}
+
+/// WP-A day 62 (step 1, log only): the copy-stream tickets in flight on this worker, by kind.
+fn host_copy_stream_in_flight(hpx: &HostPrefixCache) -> String {
+    let kinds: Vec<&str> = [
+        (hpx.demoting.is_some(), "demote"),
+        (hpx.promoting.is_some(), "promote"),
+        (
+            hpx.restoring.as_ref().is_some_and(|r| r.contract.is_some()),
+            "restore",
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(on, k)| on.then_some(k))
+    .collect();
+    if kinds.is_empty() {
+        "none".into()
+    } else {
+        kinds.join(", ")
+    }
 }
 
 /// What one settle step of a capture batch produced.
@@ -12584,6 +13057,7 @@ fn host_kv_planes_submit_contract(
     let mut hosts = Vec::with_capacity(planned.len() * 2);
     // WP-A day 49 (log only): the pinned destinations' time, count, bytes and minor faults.
     let (leases_t0, leases_f0) = (Instant::now(), thread_minflt());
+    let pooled0 = t.lease_pool_counts().0;
     for p in &planned {
         for n in [p.kb, p.vb] {
             if kv_host_fault() == "alloc-fail" {
@@ -12602,6 +13076,7 @@ fn host_kv_planes_submit_contract(
     let mut split = DemotePresubmitSplit {
         leases_ms: leases_t0.elapsed().as_secs_f64() * 1e3,
         leases: hosts.len(),
+        pooled: t.lease_pool_counts().0 - pooled0,
         lease_bytes: planned.iter().map(|p| (p.kb + p.vb) as u64).sum(),
         leases_minflt: thread_minflt() - leases_f0,
         ..DemotePresubmitSplit::default()
@@ -14082,6 +14557,7 @@ fn host_kv_planes_submit_promote(
         submitted: Instant::now(),
         spans: Vec::new(),
         helper_sums: None,
+        waiting: String::new(),
     })
 }
 
@@ -14110,6 +14586,7 @@ fn host_kv_planes_settle_promote(
         submitted,
         spans,
         mut helper_sums,
+        waiting: _,
     } = pending;
     let Some(transfers) = &tier.transfers else {
         return Err(Latched(
@@ -14153,6 +14630,7 @@ fn host_kv_planes_settle_promote(
                 p.landed = Some((r.bytes, r.helper_ms));
             }
             Ok(None) if wait == ContractWait::Poll && p.handed.elapsed() < HOST_HASH_DEADLINE => {
+                let waiting = host_promote_waiting(&t, &ticket, true);
                 return Ok(PromoteSettle::Pending(PendingContractPromote {
                     ticket,
                     producer,
@@ -14165,6 +14643,7 @@ fn host_kv_planes_settle_promote(
                     submitted,
                     spans,
                     helper_sums,
+                    waiting,
                 }));
             }
             Ok(None) => {
@@ -14207,6 +14686,7 @@ fn host_kv_planes_settle_promote(
         }
     };
     if wait == ContractWait::Poll && !completion.producer_done {
+        let waiting = host_promote_waiting(&t, &ticket, false);
         return Ok(PromoteSettle::Pending(PendingContractPromote {
             ticket,
             producer,
@@ -14219,6 +14699,7 @@ fn host_kv_planes_settle_promote(
             submitted,
             spans,
             helper_sums,
+            waiting,
         }));
     }
     // 6b. Rule 3 (WP-A day 19, `memra_tier::conformance::h2d_reader_fence`, the at-settle install):
@@ -14258,6 +14739,9 @@ fn host_kv_planes_settle_promote(
         bufs: Vec::with_capacity(spans.len()),
     };
     let mut recur: Vec<(HostHashSlot, CudaSlice<f32>)> = Vec::with_capacity(spans.len());
+    // WP-A day 64 (`DAY64.md` section 4 step 1, log only): the span work's phases, read before the
+    // take while the batch still holds its timing events (complete by now; never a wait).
+    let span_timing = t.h2d_span_timing(&ticket);
     if !spans.is_empty() {
         let back = match t.take_h2d_spans(&ticket) {
             Ok(back) => back,
@@ -14551,8 +15035,11 @@ fn host_kv_planes_settle_promote(
         String::new()
     } else {
         format!(
-            "; {} f32 spans landed under the ticket and taken back before the retire",
-            recur.len()
+            "; {} f32 spans landed under the ticket and taken back before the retire{}",
+            recur.len(),
+            span_timing.map_or_else(String::new, |(fill, copies, digests)| format!(
+                " (span receipt: fill {fill:.2} ms, copies {copies:.2} ms, digests {digests:.2} ms)"
+            ))
         )
     };
     // WP-A day 34: where the KV items' checksums ran, after the span term.
@@ -15880,9 +16367,11 @@ fn host_demote_prefix_ref(
                 let total = pending.owner.presubmit_ms;
                 eprintln!(
                     "[prefix-host] demote pre-submit split: ticket seq={seq} leases {:.2} ms ({} \
-                     pinned, {:.1} MB, minflt +{}), register {:.2} ms, spans {:.2} ms, other {:.2} ms \
-                     (pre-submit {total:.2} ms)",
+                     pinned, pooled {} of {}, {:.1} MB, minflt +{}), register {:.2} ms, spans {:.2} ms, \
+                     other {:.2} ms (pre-submit {total:.2} ms)",
                     sp.leases_ms,
+                    sp.leases,
+                    sp.pooled,
                     sp.leases,
                     sp.lease_bytes as f64 / 1e6,
                     sp.leases_minflt,
@@ -16945,12 +17434,14 @@ fn host_demote_settle_hashing(
         let sp = reply.split;
         eprintln!(
             "[prefix-host] demote helper split: ticket seq={seq} copy {:.2} ms over {:.1} MB (minflt \
-             +{}), hash {:.2} ms (helper {:.1} ms)",
+             +{}), hash {:.2} ms (helper {:.1} ms); reserve {} of {} staged",
             sp.copy_ms,
             sp.copy_bytes as f64 / 1e6,
             sp.copy_minflt,
             sp.hash_ms,
             reply.helper_ms,
+            sp.reserve_hits,
+            sp.staged,
         );
         // WP-A day 52 (`DAY52.md` step 1, log only): the publication segment's parts.
         let ps = host.last_publish_split;
@@ -18284,9 +18775,10 @@ fn host_promote_settle_with(
     };
     // WP-A day 33 (log only): this settle step on the promote's timeline.
     let outcome = match &settled {
-        Ok(PromoteSettle::Pending(_)) => "pending",
-        Ok(PromoteSettle::Done(..)) => "complete",
-        Err(_) => "failed",
+        // WP-A day 64 (step 1, log only): and what it still waits on.
+        Ok(PromoteSettle::Pending(c)) => format!("pending on {}", c.waiting),
+        Ok(PromoteSettle::Done(..)) => "complete".to_string(),
+        Err(_) => "failed".to_string(),
     };
     let step = host_promote_mark(host, pending.t0, Instant::now());
     pending.timeline.push(format!(
@@ -18484,6 +18976,7 @@ fn prefix_capture_off_tick(
     last_logits: &[f32],
     model: Option<&HybridModel>,
     why: &str,
+    source_request: &str,
 ) -> CaptureRoute {
     // WP-A day 54 (log only): every `OnTick` answer records its reason first.
     if hpx.capture_off_tick_disabled || hpx.tier.as_ref().is_none_or(|t| t.transfers.is_none()) {
@@ -18572,6 +19065,7 @@ fn prefix_capture_off_tick(
         CaptureSubmit {
             pool_key,
             why,
+            source_request,
             pos: cache.pos,
             toks,
             cache,
@@ -18599,6 +19093,9 @@ fn prefix_capture_off_tick(
 struct CaptureSubmit<'a> {
     pool_key: &'a PoolKey,
     why: &'a str,
+    /// WP-A day 62 (design R1.1): the source session's request id (every capture's source is an
+    /// active session), the retire pass's first source identity.
+    source_request: &'a str,
     pos: usize,
     toks: &'a [u32],
     cache: &'a Cache,
@@ -18630,6 +19127,7 @@ fn host_capture_submit(
     let CaptureSubmit {
         pool_key,
         why,
+        source_request,
         pos,
         toks,
         cache,
@@ -18996,6 +19494,7 @@ fn host_capture_submit(
         toks.len(),
         bytes as f64 / 1e6,
     );
+    let queued_ahead = host_copy_stream_in_flight(hpx);
     hpx.capturing = Some(PendingCapture {
         pool_key: pool_key.clone(),
         why: why.to_string(),
@@ -19015,6 +19514,9 @@ fn host_capture_submit(
         settle_after_ms: 0.0,
         settle_held_ms: 0.0,
         trace_role,
+        source_kv: cache.kv.as_ptr() as usize,
+        queued_ahead,
+        source_request: source_request.to_string(),
     });
     CaptureRoute::Submitted
 }
@@ -19051,6 +19553,7 @@ fn prefix_spec_capture_off_tick(
     dspark_tail: bool,
     cap: memra_engine::spec::SpecBoundaryCapture,
     why: &str,
+    source_request: &str,
 ) -> SpecCaptureRoute {
     // WP-A day 54 (log only): every `OnTick` answer records its reason first.
     if hpx.capture_off_tick_disabled || hpx.tier.as_ref().is_none_or(|t| t.transfers.is_none()) {
@@ -19139,6 +19642,7 @@ fn prefix_spec_capture_off_tick(
         CaptureSubmit {
             pool_key,
             why,
+            source_request,
             pos,
             toks: &committed[..pos],
             cache,
@@ -19546,6 +20050,7 @@ fn host_capture_publish(
         settle_after_ms,
         settle_held_ms,
         trace_role,
+        queued_ahead,
         ..
     } = pending;
     let Some(e) = shell else {
@@ -19559,7 +20064,7 @@ fn host_capture_publish(
         "[prefix-cache] capture published off the tick ({why}): {} tokens complete after {polls} \
          poll(s), {copy_ms:.1}ms from submission to completion, {:.1}ms to publication ({settled_by}; \
          the settle held the owner thread {settle_held_ms:.2}ms, entered {settle_after_ms:.1}ms after \
-         submission)",
+         submission; copy stream in flight at submission: {queued_ahead})",
         e.toks.len(),
         t0.elapsed().as_secs_f64() * 1e3,
     );
@@ -21757,11 +22262,12 @@ fn host_handoff_export(
     let tmp = format!("{path}.tmp");
     // Stage clocks for the handoff's storage cost (lane/spill-f-20260919 B2): serialize and
     // buffered write, then fsync, measured apart so the durability share is not inferred.
+    // MEMRA_KV_HOST_HANDOFF_IO (OWED 18) picks buffered or O_DIRECT; the bytes are identical.
+    let io_mode = crate::handoff_io::handoff_io_mode()?;
     let (mut write_ms, mut fsync_ms) = (0.0f64, 0.0f64);
     let write = (|| -> Result<(), String> {
         let t_write = Instant::now();
-        let f = std::fs::File::create(&tmp).map_err(|e| format!("create {tmp}: {e}"))?;
-        let mut w = std::io::BufWriter::with_capacity(4 << 20, f);
+        let mut w = crate::handoff_io::HandoffWriter::create(&tmp, io_mode)?;
         handoff_write_header(
             &mut w,
             &HandoffHeader {
@@ -21775,13 +22281,11 @@ fn host_handoff_export(
         for (key, i) in selected.iter().rev() {
             handoff_write_entry(&mut w, &handoff_entry_ref(&hpx.entries[key][*i])?)?;
         }
-        let f = w
-            .into_inner()
-            .map_err(|e| format!("handoff flush failed: {e}"))?;
+        let mut f = w.finish()?;
+        f.complete_writes()?;
         write_ms = t_write.elapsed().as_secs_f64() * 1e3;
         let t_fsync = Instant::now();
-        f.sync_all()
-            .map_err(|e| format!("handoff fsync failed: {e}"))?;
+        f.sync()?;
         fsync_ms = t_fsync.elapsed().as_secs_f64() * 1e3;
         std::fs::rename(&tmp, path).map_err(|e| format!("rename {tmp} -> {path}: {e}"))
     })();
@@ -21795,9 +22299,10 @@ fn host_handoff_export(
         "[prefix-host] handoff export: {} entries / {:.1}MB to {path} in {ms:.0}ms \
          write_ms={write_ms:.1} fsync_ms={fsync_ms:.1} \
          (drain-demoted {demoted} device entries first; {skipped_over_cap} skipped over \
-         the MEMRA_KV_HOST_HANDOFF_MB cap)",
+         the MEMRA_KV_HOST_HANDOFF_MB cap) io={}",
         selected.len(),
         sel_bytes as f64 / 1e6,
+        io_mode.name(),
     );
     Ok(HostHandoffExportReport {
         path: path.to_string(),
@@ -21817,7 +22322,8 @@ fn host_handoff_export(
 /// whole file.
 struct HostHandoffImport {
     path: String,
-    reader: std::io::BufReader<std::fs::File>,
+    reader: crate::handoff_io::HandoffReader,
+    io_mode: crate::handoff_io::HandoffIo,
     max_frame: u64,
     refused_models: std::collections::HashSet<String>,
     header_entries: u64,
@@ -21832,9 +22338,8 @@ fn open_host_handoff_import(
     path: &str,
     local_stamps: &[HandoffModelStamp],
 ) -> Result<(HostHandoffImport, HostHandoffImportStart), String> {
-    let f = std::fs::File::open(path).map_err(|e| format!("open {path}: {e}"))?;
-    let max_frame = f.metadata().map_or(u64::MAX, |m| m.len());
-    let mut reader = std::io::BufReader::with_capacity(4 << 20, f);
+    let io_mode = crate::handoff_io::handoff_io_mode()?;
+    let (mut reader, max_frame) = crate::handoff_io::HandoffReader::open(path, io_mode)?;
     let header = handoff_read_header(&mut reader)?;
     let now = handoff_now_unix();
     let refused = handoff_header_verdict(&header, PREFIX_ENTRY_LAYOUT_VERSION, now, local_stamps)?;
@@ -21853,6 +22358,7 @@ fn open_host_handoff_import(
         HostHandoffImport {
             path: path.to_string(),
             reader,
+            io_mode,
             max_frame,
             refused_models: refused.into_iter().map(|(m, _)| m).collect(),
             header_entries: header.entries,
@@ -21882,12 +22388,13 @@ fn host_handoff_import_step(imp: &mut HostHandoffImport, hpx: &mut HostPrefixCac
         Ok(None) => {
             eprintln!(
                 "[prefix-host] handoff import DONE: {} entries / {:.1}MB re-materialized, \
-                 {} skipped, in {:.1}s from {}",
+                 {} skipped, in {:.1}s from {} io={}",
                 imp.imported,
                 imp.imported_bytes as f64 / 1e6,
                 imp.skipped,
                 imp.started.elapsed().as_secs_f64(),
                 imp.path,
+                imp.io_mode.name(),
             );
             true
         }
@@ -22040,6 +22547,149 @@ fn unsupported_prefix_restore(
     )
 }
 
+/// WP-A day 59 (`research/spill-a-20260919/DAY59.md` step 1, OWED item 10, log only): the owner
+/// thread's time in a snapshot's or a restore's device calls, by kind, accumulated on this thread
+/// and read (and reset) by the fanout's on-tick line. Nothing decides on it.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct PrefixCopySplit {
+    alloc_ms: f64,
+    allocs: u32,
+    copy_ms: f64,
+    copies: u32,
+    clone_ms: f64,
+    clones: u32,
+    set_ms: f64,
+    sets: u32,
+}
+
+thread_local! {
+    static PREFIX_COPY_SPLIT: std::cell::Cell<PrefixCopySplit> =
+        const { std::cell::Cell::new(PrefixCopySplit { alloc_ms: 0.0, allocs: 0, copy_ms: 0.0, copies: 0, clone_ms: 0.0, clones: 0, set_ms: 0.0, sets: 0 }) };
+}
+
+/// Take the split accumulated on this thread since the last take.
+fn prefix_copy_split_take() -> PrefixCopySplit {
+    PREFIX_COPY_SPLIT.with(|c| c.replace(PrefixCopySplit::default()))
+}
+
+/// WP-A day 66 (`DAY66.md`): run `f` with this thread's split scoped to it. Whatever another caller
+/// left since the last take (a retire capture, a park snapshot, a hit restore) is discarded first,
+/// so the returned split holds `f`'s own calls only.
+fn prefix_copy_scoped<T>(f: impl FnOnce() -> T) -> (T, PrefixCopySplit) {
+    let _stale = prefix_copy_split_take();
+    let out = f();
+    (out, prefix_copy_split_take())
+}
+
+/// Time one device call of `kind` into this thread's split (log only; the call is unchanged).
+fn prefix_copy_timed<T>(kind: u8, f: impl FnOnce() -> T) -> T {
+    let t = Instant::now();
+    let out = f();
+    let ms = t.elapsed().as_secs_f64() * 1e3;
+    PREFIX_COPY_SPLIT.with(|c| {
+        let mut sp = c.get();
+        match kind {
+            0 => {
+                sp.alloc_ms += ms;
+                sp.allocs += 1;
+            }
+            1 => {
+                sp.copy_ms += ms;
+                sp.copies += 1;
+            }
+            2 => {
+                sp.clone_ms += ms;
+                sp.clones += 1;
+            }
+            _ => {
+                sp.set_ms += ms;
+                sp.sets += 1;
+            }
+        }
+        c.set(sp);
+    });
+    out
+}
+
+/// Design B1 (DAY59 section 7): a snapshot plane of `bytes`. A plane with bytes is written whole
+/// by [`prefix_snapshot_batch`], so it is allocated without a memset; a zero-byte plane keeps the
+/// zeroed 1-byte buffer the per-plane program allocated.
+fn prefix_plane_alloc(
+    engine: &Engine,
+    bytes: usize,
+) -> Result<CudaSlice<u8>, Box<dyn std::error::Error>> {
+    if bytes > 0 {
+        engine.alloc_u8_uninit(bytes)
+    } else {
+        engine.alloc_u8(1)
+    }
+}
+
+/// Design B1: the snapshot's KV and recurrent copies as ONE launch. Every source keeps its read
+/// event and every destination its write event: the guards are held across the launch, so a
+/// consumer on another stream waits for the batch as it waited for the per-plane copies.
+fn prefix_snapshot_batch(
+    engine: &Engine,
+    cache: &Cache,
+    kv: &mut [Option<PrefixPlane>],
+    conv: &mut [Option<CudaSlice<f32>>],
+    ssm: &mut [Option<CudaSlice<f32>>],
+) -> Result<(), Box<dyn std::error::Error>> {
+    use cudarc::driver::{DevicePtr, DevicePtrMut};
+    let st = engine.stream();
+    let mut items: Vec<(u64, u64, u64)> = Vec::new();
+    let mut guards = Vec::new();
+    for (il, slot) in kv.iter_mut().enumerate() {
+        let (Some(dst), Some(src)) = (slot.as_mut(), cache.kv[il].as_ref()) else {
+            continue;
+        };
+        for (to, from, n) in [
+            (&mut dst.k, &*src.k, dst.len * dst.k_tok_bytes),
+            (&mut dst.v, &*src.v, dst.len * dst.v_tok_bytes),
+        ] {
+            if n == 0 {
+                continue;
+            }
+            if from.len() < n || to.len() < n {
+                return Err(format!(
+                    "prefix snapshot layer {il}: a {n}-byte copy from {} into {} bytes",
+                    from.len(),
+                    to.len()
+                )
+                .into());
+            }
+            let (s, gs) = from.device_ptr(&st);
+            let (d, gd) = to.device_ptr_mut(&st);
+            items.push((s, d, n as u64));
+            guards.push(gs);
+            guards.push(gd);
+        }
+    }
+    for (il, (c, s)) in conv.iter_mut().zip(ssm.iter_mut()).enumerate() {
+        let (Some(c), Some(s), Some(r)) = (c.as_mut(), s.as_mut(), cache.recur[il].as_ref()) else {
+            continue;
+        };
+        for (to, from) in [(c, &r.conv_state), (s, &r.ssm_state)] {
+            if to.len() != from.len() {
+                return Err(format!(
+                    "prefix snapshot recur {il}: {} words into {}",
+                    from.len(),
+                    to.len()
+                )
+                .into());
+            }
+            let (sp, gs) = from.device_ptr(&st);
+            let (dp, gd) = to.device_ptr_mut(&st);
+            items.push((sp, dp, (from.len() * 4) as u64));
+            guards.push(gs);
+            guards.push(gd);
+        }
+    }
+    engine.copy_batch_items_u8(&items, &[])?;
+    drop(guards);
+    Ok(())
+}
+
 fn prefix_snapshot(
     engine: &Engine,
     cache: &Cache,
@@ -22126,14 +22776,10 @@ fn prefix_snapshot(
                 }
                 let kb = l.len * l.k_tok_bytes;
                 let vb = l.len * l.v_tok_bytes;
-                let mut k = engine.alloc_u8(kb.max(1))?;
-                let mut v = engine.alloc_u8(vb.max(1))?;
-                if kb > 0 {
-                    engine.copy_u8_into(&mut k, 0, &l.k, kb)?;
-                }
-                if vb > 0 {
-                    engine.copy_u8_into(&mut v, 0, &l.v, vb)?;
-                }
+                // Design B1 (DAY59 section 7): a plane with bytes is written whole by the batch
+                // below, so it skips the memset; a zero-byte plane keeps its zeroed 1-byte buffer.
+                let k = prefix_copy_timed(0, || prefix_plane_alloc(engine, kb))?;
+                let v = prefix_copy_timed(0, || prefix_plane_alloc(engine, vb))?;
                 bytes += kb + vb;
                 kv.push(Some(PrefixPlane {
                     k,
@@ -22147,8 +22793,12 @@ fn prefix_snapshot(
         }
         match &cache.recur[il] {
             Some(r) => {
-                conv.push(Some(engine.clone_dtod(&r.conv_state)?));
-                ssm.push(Some(engine.clone_dtod(&r.ssm_state)?));
+                conv.push(Some(prefix_copy_timed(0, || {
+                    engine.alloc_f32_uninit(r.conv_state.len())
+                })?));
+                ssm.push(Some(prefix_copy_timed(0, || {
+                    engine.alloc_f32_uninit(r.ssm_state.len())
+                })?));
                 bytes += (r.conv_state.len() + r.ssm_state.len()) * 4;
             }
             None => {
@@ -22157,6 +22807,10 @@ fn prefix_snapshot(
             }
         }
     }
+    // Design B1: every KV and recurrent plane's bytes in one launch, before the TP shards.
+    prefix_copy_timed(1, || {
+        prefix_snapshot_batch(engine, cache, &mut kv, &mut conv, &mut ssm)
+    })?;
     // glm5 TP-2: every rank's shards, on their own devices (gated above).
     let tp = if tp_cache {
         let shards = model
@@ -22438,6 +23092,99 @@ fn prefix_restore_validate(
     Ok(())
 }
 
+/// Design B1: a restore's KV copies (`[0, restore_len * tok_bytes)` of each plane), its length
+/// sets and its recurrent copies as ONE launch. A range too long for its source or destination
+/// fails the request with a named error before any device write. Guards as in
+/// [`prefix_snapshot_batch`].
+fn prefix_restore_batch(
+    engine: &Engine,
+    cache: &mut Cache,
+    e: &PrefixEntry,
+    restore_len: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use cudarc::driver::{DevicePtr, DevicePtrMut};
+    let st = engine.stream();
+    let len_value = i32::try_from(restore_len).map_err(|_| "prefix restore length exceeds i32")?;
+    let mut kv_views = Vec::new();
+    let mut lens = Vec::new();
+    for (il, slot) in cache.kv.iter_mut().enumerate() {
+        let (Some(dst), Some(src)) = (slot.as_mut(), e.kv[il].as_ref()) else {
+            continue;
+        };
+        let kb = restore_len * dst.k_tok_bytes;
+        let vb = restore_len * dst.v_tok_bytes;
+        for (plane, from, n, what) in [(&mut dst.k, &src.k, kb, "K"), (&mut dst.v, &src.v, vb, "V")]
+        {
+            if n == 0 {
+                continue;
+            }
+            let cap = plane.capacity_bytes();
+            if n > cap {
+                return Err(format!(
+                    "prefix restore layer {il} {what}: copy_u8_into dst range [0,{n}) exceeds capacity {cap}"
+                )
+                .into());
+            }
+            if from.len() < n {
+                return Err(format!(
+                    "prefix restore layer {il} {what}: the entry holds {} of {n} bytes",
+                    from.len()
+                )
+                .into());
+            }
+            kv_views.push((plane.as_view_mut(), from, n));
+        }
+        lens.push(&mut dst.len_d);
+    }
+    let mut recur = Vec::new();
+    for (il, slot) in cache.recur.iter_mut().enumerate() {
+        let (Some(dst), Some(c), Some(s)) =
+            (slot.as_mut(), e.conv[il].as_ref(), e.ssm[il].as_ref())
+        else {
+            continue;
+        };
+        for (to, from, what) in [
+            (&mut dst.conv_state, c, "conv"),
+            (&mut dst.ssm_state, s, "ssm"),
+        ] {
+            if to.len() < from.len() {
+                return Err(format!(
+                    "prefix restore recur {il} {what}: {} words into {}",
+                    from.len(),
+                    to.len()
+                )
+                .into());
+            }
+            recur.push((to, from));
+        }
+    }
+    let mut items: Vec<(u64, u64, u64)> = Vec::new();
+    let mut sets: Vec<(u64, i32)> = Vec::new();
+    let mut guards = Vec::new();
+    for (view, from, n) in kv_views.iter_mut() {
+        let (s, gs) = from.device_ptr(&st);
+        let (d, gd) = view.device_ptr_mut(&st);
+        items.push((s, d, *n as u64));
+        guards.push(gs);
+        guards.push(gd);
+    }
+    for (to, from) in recur.iter_mut() {
+        let (s, gs) = from.device_ptr(&st);
+        let (d, gd) = to.device_ptr_mut(&st);
+        items.push((s, d, (from.len() * 4) as u64));
+        guards.push(gs);
+        guards.push(gd);
+    }
+    for len_d in lens.iter_mut() {
+        let (d, gd) = len_d.device_ptr_mut(&st);
+        sets.push((d, len_value));
+        guards.push(gd);
+    }
+    engine.copy_batch_items_u8(&items, &sets)?;
+    drop(guards);
+    Ok(())
+}
+
 fn prefix_restore_at(
     engine: &Engine,
     cache: &mut Cache,
@@ -22448,22 +23195,12 @@ fn prefix_restore_at(
 ) -> Result<(), Box<dyn std::error::Error>> {
     prefix_restore_validate(cache, e, expected_key, restore_len, model)?;
     let max_ctx = cache.max_ctx;
+    // Design B1 (DAY59 section 7): the KV copies, the length sets and the recurrent copies in one
+    // launch, checked before any device write.
+    prefix_copy_timed(1, || prefix_restore_batch(engine, cache, e, restore_len))?;
     for il in 0..cache.kv.len() {
-        if let (Some(dst), Some(src)) = (cache.kv[il].as_mut(), &e.kv[il]) {
-            let kb = restore_len * dst.k_tok_bytes;
-            let vb = restore_len * dst.v_tok_bytes;
-            if kb > 0 {
-                engine.copy_u8_into(&mut dst.k, 0, &src.k, kb)?;
-            }
-            if vb > 0 {
-                engine.copy_u8_into(&mut dst.v, 0, &src.v, vb)?;
-            }
+        if let (Some(dst), Some(_)) = (cache.kv[il].as_mut(), &e.kv[il]) {
             dst.len = restore_len;
-            engine.set_i32_one(&mut dst.len_d, restore_len as i32)?;
-        }
-        if let (Some(dst), Some(c), Some(s)) = (cache.recur[il].as_mut(), &e.conv[il], &e.ssm[il]) {
-            engine.copy_into(&mut dst.conv_state, 0, c, c.len())?;
-            engine.copy_into(&mut dst.ssm_state, 0, s, s.len())?;
         }
         if let (Some(dst), Some(src)) = (cache.latent[il].as_mut(), &e.latent[il]) {
             dst.restore_plane(engine, src, max_ctx)
@@ -23044,6 +23781,7 @@ fn prefix_insert_from_spec_boundary(
     dspark_draft: Option<memra_engine::dflash::DflashKvTail>,
     cap: memra_engine::spec::SpecBoundaryCapture,
     why: &str,
+    source_request: &str,
 ) {
     if memra_engine::pp::pp_host_bounce_active() {
         return;
@@ -23070,6 +23808,7 @@ fn prefix_insert_from_spec_boundary(
         dspark_draft.is_some(),
         cap,
         why,
+        source_request,
     ) {
         SpecCaptureRoute::Routed(CaptureRoute::Submitted | CaptureRoute::Refused) => return,
         SpecCaptureRoute::Routed(CaptureRoute::OnTick) => unreachable!(
@@ -23369,6 +24108,7 @@ fn prefix_insert_from_session(
         &s.last_logits,
         model,
         why,
+        &s.request_id,
     ) {
         CaptureRoute::Submitted | CaptureRoute::Refused => return,
         CaptureRoute::OnTick => {}
@@ -24579,6 +25319,7 @@ fn publish_dspark_prefix_capture_inner(
         dspark_tail,
         cap,
         "dspark-boundary",
+        &s.request_id,
     );
 }
 
@@ -24643,6 +25384,7 @@ fn drain_glm5_prefix_capture(
         tail,
         cap,
         "glm5-boundary",
+        &s.request_id,
     );
 }
 
@@ -25743,6 +26485,12 @@ pub fn run(
     // 3f4597f02 guard law: two spec programs on one model must never silently coexist,
     // so arming dspark DISABLES the MTP spec arm for that model (spec_eligible below)
     // and refuses combinations that have never been co-gated.
+    if let Some(msg) = dspark_draft_without_spec(
+        std::env::var("MEMRA_DSPARK_SPEC").ok().as_deref(),
+        std::env::var("MEMRA_DSPARK_DRAFT").ok().as_deref(),
+    ) {
+        panic!("{msg}");
+    }
     let mut dspark_drafts: std::collections::HashMap<String, memra_engine::dflash::DflashDraft> =
         Default::default();
     if std::env::var("MEMRA_DSPARK_SPEC").as_deref() == Ok("1") {
@@ -29174,6 +29922,7 @@ pub fn run(
                             None, // MTP publisher: its draft state rides `draft`, not the dspark tail
                             cap,
                             "spec-boundary",
+                            &s.request_id,
                         );
                     }
                 }
@@ -30793,13 +31542,41 @@ pub fn run(
         // to rewrite; either would run under the in-flight read. Settle the `Capturing` entry
         // BLOCKING before any session leaves `active`. One capture per worker.
         if !finished.is_empty() && hpx.capturing.is_some() {
-            host_capture_settle_pending(
-                &engine,
-                &mut px,
-                &mut hpx,
-                ContractWait::Block,
-                "a session retire",
-            );
+            // WP-A day 62 (`DAY62.md` design R1): the capture copies only its source's planes, so
+            // it settles here only when a retiring session is its source, by either identity
+            // (its request id, or its cache's layer-vector address); any other retire goes on.
+            let (source_kv, source_request, ticket) = hpx
+                .capturing
+                .as_ref()
+                .map(|c| {
+                    (
+                        c.source_kv,
+                        c.source_request.clone(),
+                        c.contract.as_ref().map(|k| k.ticket.sequence),
+                    )
+                })
+                .unwrap_or_default();
+            let source_retiring = finished.iter().any(|&i| {
+                r1_is_source(
+                    &active[i].request_id,
+                    active[i].cache.as_ref().map(|c| c.kv.as_ptr() as usize),
+                    &source_request,
+                    source_kv,
+                )
+            });
+            if r1_settle_at_retire(source_retiring) {
+                let why = format!(
+                    "a session retire (source retiring: {})",
+                    if source_retiring { "yes" } else { "no" }
+                );
+                host_capture_settle_pending(&engine, &mut px, &mut hpx, ContractWait::Block, &why);
+            } else if hpx.tier.is_some() {
+                eprintln!(
+                    "[prefix-cache] retire with a capture pending: no retiring session is its \
+                     source (ticket seq={}); no settle",
+                    ticket.map_or_else(|| "none".to_string(), |t| t.to_string())
+                );
+            }
         }
         for &i in finished.iter().rev() {
             let mut s = active.remove(i);
@@ -36786,14 +37563,18 @@ fn dedup_interactive_prefixes(
         advanced.insert(leader_i);
         // WP-A day 54 (`DAY54.md` step 1, log only): the fanout's on-tick parts, timed.
         let t_snap = Instant::now();
-        let snapshot = prefix_snapshot(
-            engine,
-            active[leader_i].cache.as_ref().unwrap(),
-            &key,
-            &prefix,
-            &leader_logits,
-            loaded.get(&key.0).map(|l| &l.model),
-        );
+        // WP-A day 59 (log only): the snapshot's calls by kind. Day 66: scoped, so a leftover of
+        // another caller on this thread is discarded rather than added to this line.
+        let (snapshot, snap_split) = prefix_copy_scoped(|| {
+            prefix_snapshot(
+                engine,
+                active[leader_i].cache.as_ref().unwrap(),
+                &key,
+                &prefix,
+                &leader_logits,
+                loaded.get(&key.0).map(|l| &l.model),
+            )
+        });
         let fanout_snapshot_ms = t_snap.elapsed().as_secs_f64() * 1e3;
         {
             let s = &mut active[leader_i];
@@ -36885,6 +37666,8 @@ fn dedup_interactive_prefixes(
         }
 
         let fanout_restores_ms = t_restores.elapsed().as_secs_f64() * 1e3;
+        // Only the sibling restores ran since the scoped snapshot's take.
+        let restore_split = prefix_copy_split_take();
         let t_insert = Instant::now();
         let pin = px.insert_pinned_demoting(
             &key,
@@ -36901,6 +37684,22 @@ fn dedup_interactive_prefixes(
                  {:.2} ms",
                 participants.len().saturating_sub(1),
                 t_insert.elapsed().as_secs_f64() * 1e3,
+            );
+            let (a, r) = (snap_split, restore_split);
+            eprintln!(
+                "[prefix-dedup] on-tick split: snapshot alloc {:.2} ms over {}, copies {:.2} ms over \
+                 {}, clones {:.2} ms over {}; restores copies {:.2} ms over {}, len sets {:.2} ms \
+                 over {}",
+                a.alloc_ms,
+                a.allocs,
+                a.copy_ms,
+                a.copies,
+                a.clone_ms,
+                a.clones,
+                r.copy_ms,
+                r.copies,
+                r.set_ms,
+                r.sets,
             );
         }
         for &i in &participants {
@@ -40648,6 +41447,37 @@ pub fn spawn(
 
 #[cfg(test)]
 mod tests {
+    /// memra #478: a drafter path with the route off refuses by name; the armed pairing and a
+    /// boot with neither stay quiet.
+    #[test]
+    fn a_dspark_drafter_without_the_route_refuses_by_name() {
+        let msg = super::dspark_draft_without_spec(None, Some("/data/q38/dflash2"))
+            .expect("drafter without the route refuses");
+        assert!(
+            msg.contains("MEMRA_DSPARK_DRAFT=\"/data/q38/dflash2\""),
+            "{msg}"
+        );
+        assert!(msg.contains("MEMRA_DSPARK_SPEC is unset"), "{msg}");
+        let msg = super::dspark_draft_without_spec(Some("0"), Some("/d")).expect("spec=0 refuses");
+        assert!(msg.contains("MEMRA_DSPARK_SPEC is \"0\""), "{msg}");
+        assert_eq!(
+            super::dspark_draft_without_spec(Some("1"), Some("/d")),
+            None
+        );
+        assert_eq!(super::dspark_draft_without_spec(None, None), None);
+        assert_eq!(super::dspark_draft_without_spec(Some("0"), None), None);
+        assert_eq!(super::dspark_draft_without_spec(None, Some("")), None);
+    }
+
+    /// WP-A day 51 (design P): a payload reserve on its own governor, for the cells that spawn a
+    /// hash helper and do not read the reserve.
+    fn test_payload_reserve() -> super::HostPayloadReserve {
+        super::HostPayloadReserve::new(
+            super::host_tier_governor(0, 1 << 30, 1 << 30, 4).unwrap(),
+            1 << 30,
+        )
+    }
+
     #[test]
     fn dspark_partial_restore_door_admits_only_strict_prefixes_when_armed() {
         use super::dspark_hit_is_restorable_with as r;
@@ -48777,8 +49607,10 @@ mod tests {
             transfers: None,
             inflight: 4,
             fault: std::cell::Cell::new(None),
-            hasher: super::HostHashWorker::spawn(None).unwrap(),
+            hasher: super::HostHashWorker::spawn(None, super::tests::test_payload_reserve())
+                .unwrap(),
             staging: std::cell::RefCell::new(super::HostStaging::default()),
+            lease_pool: None,
         }
     }
 
@@ -49059,6 +49891,9 @@ mod tests {
             settle_after_ms: 0.0,
             settle_held_ms: 0.0,
             trace_role: "snapshot",
+            source_kv: 0,
+            queued_ahead: "none".into(),
+            source_request: "seed-request".into(),
         });
     }
 
@@ -49701,12 +50536,18 @@ mod tests {
         let settle = body[..remove]
             .rfind("host_capture_settle_pending(")
             .expect("a pending capture settles before any session leaves active");
+        // (Design R1, day 62 section 8: the no-source branch's line sits between them.)
         assert!(
-            remove - settle < 400,
+            remove - settle < 900,
             "the settle sits right before the retire loop"
         );
         assert!(body[settle..settle + 200].contains("ContractWait::Block"));
-        assert!(body[settle..settle + 200].contains("\"a session retire\""));
+        assert!(
+            body[..settle]
+                .rfind("\"a session retire (source retiring: {})\"")
+                .is_some_and(|w| settle - w < 400),
+            "the retire's why names whether the source retires (day 62)"
+        );
         let route = body.find("fn prefix_capture_off_tick(").unwrap();
         let submit = route
             + body[route..]
@@ -50379,6 +51220,7 @@ mod tests {
             submitted: std::time::Instant::now(),
             spans: Vec::new(),
             helper_sums: None,
+            waiting: String::new(),
         };
         host.promoting = Some(super::PendingPromote {
             pool_key: pool_key.clone(),
@@ -51349,8 +52191,11 @@ mod tests {
     fn hash_helper_gone_is_a_typed_refusal_that_latches_under_poll_and_under_block() {
         for wait in [super::ContractWait::Poll, super::ContractWait::Block] {
             let (mut host, key) = cpu_door_host();
-            host.tier.as_mut().unwrap().hasher =
-                super::HostHashWorker::spawn(Some(super::HostHashFault::HelperGone)).unwrap();
+            host.tier.as_mut().unwrap().hasher = super::HostHashWorker::spawn(
+                Some(super::HostHashFault::HelperGone),
+                super::tests::test_payload_reserve(),
+            )
+            .unwrap();
             cpu_pending_hashing(&mut host, &key, 5);
             // The helper exits on its first job; under `Poll` the closed channel is observed at
             // the first poll that runs after the exit (bounded here), under `Block` at once.
@@ -51381,8 +52226,11 @@ mod tests {
     fn hash_digests_never_landing_latch_at_the_deadline_under_poll_and_under_block() {
         // Poll: before the deadline the state is kept; at the first poll past it, the latch.
         let (mut host, key) = cpu_door_host();
-        host.tier.as_mut().unwrap().hasher =
-            super::HostHashWorker::spawn(Some(super::HostHashFault::NeverLands)).unwrap();
+        host.tier.as_mut().unwrap().hasher = super::HostHashWorker::spawn(
+            Some(super::HostHashFault::NeverLands),
+            super::tests::test_payload_reserve(),
+        )
+        .unwrap();
         cpu_pending_hashing(&mut host, &key, 6);
         let short = std::time::Duration::from_millis(60);
         let outcome = super::host_demote_settle_with_deadline(
@@ -51409,8 +52257,11 @@ mod tests {
         // Block: the wait is bounded by the deadline, then the same latch; the helper is alive
         // (it discarded one reply) and the latch joined it.
         let (mut host, key) = cpu_door_host();
-        host.tier.as_mut().unwrap().hasher =
-            super::HostHashWorker::spawn(Some(super::HostHashFault::NeverLands)).unwrap();
+        host.tier.as_mut().unwrap().hasher = super::HostHashWorker::spawn(
+            Some(super::HostHashFault::NeverLands),
+            super::tests::test_payload_reserve(),
+        )
+        .unwrap();
         cpu_pending_hashing(&mut host, &key, 7);
         let t = std::time::Instant::now();
         let outcome = super::host_demote_settle_with_deadline(
@@ -51704,10 +52555,12 @@ mod tests {
         // One helper per context, spawned once in production, from the existing fault door read.
         assert_eq!(code.matches("HostHashWorker::spawn(").count(), 1);
         assert!(code.contains(
-            "hasher: HostHashWorker::spawn(HostHashFault::from_door(kv_host_fault()))?,"
+            "hasher: HostHashWorker::spawn(HostHashFault::from_door(kv_host_fault()), reserve)?,"
         ));
         assert_eq!(code.matches("HostHashFault::from_door(").count(), 1);
-        let spawn_fn = body("    fn spawn(fault: Option<HostHashFault>) -> Result<Self, String> {");
+        let spawn_fn = body(
+            "    fn spawn(fault: Option<HostHashFault>, reserve: HostPayloadReserve) -> Result<Self, String> {",
+        );
         assert!(
             spawn_fn.contains(".name(\"memra-host-hash\".into())"),
             "the helper is one named thread, spawned inside HostHashWorker::spawn"
@@ -51718,7 +52571,9 @@ mod tests {
         // The helper's program is the bind's: `checksum` over the payload's bytes.
         let digest = body("fn host_hash_payload_digest(");
         assert!(digest.contains("memra_engine::cache::tiered::checksum(bytes)"));
-        let spawn = body("    fn spawn(fault: Option<HostHashFault>) -> Result<Self, String> {");
+        let spawn = body(
+            "    fn spawn(fault: Option<HostHashFault>, reserve: HostPayloadReserve) -> Result<Self, String> {",
+        );
         assert!(spawn.contains("host_hash_payload_digest(&p.data)"));
         // The bind consumes a handed-in digest only after the byte count check.
         let bind = body("    fn bind_tier_image(");
@@ -51887,7 +52742,7 @@ mod tests {
         );
         let helper = body("impl HostHashWorker {");
         assert!(
-            at(helper, "p.data = Arc::new(staged.as_f32_slice().to_vec());")
+            at(helper, "p.data = Arc::new(match reserve.take(src.len()) {")
                 < at(helper, "host_hash_payload_digest(&p.data)")
         );
         let hashing = body("fn host_demote_settle_hashing(");
@@ -51913,11 +52768,12 @@ mod tests {
             |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
         assert_eq!(
             production.matches("thread_minflt()").count(),
-            5,
-            "the definition, and two reads around each of the two copies"
+            7,
+            "the definition, two reads around each of the two copies, and (day 51, design P) two \
+             around the reserve's refill of one buffer"
         );
         let job = &production[at(production, "let mut split = HostHashSplit::default();")..];
-        let copy = at(job, "p.data = Arc::new(staged.as_f32_slice().to_vec());");
+        let copy = at(job, "p.data = Arc::new(match reserve.take(src.len()) {");
         let hash = at(job, "let (n, d) = host_hash_payload_digest(&p.data);");
         assert!(
             copy < hash,
@@ -51937,6 +52793,555 @@ mod tests {
         assert!(!production.contains("if sp.") && !production.contains("split.leases_ms >"));
         assert!(production.contains("[prefix-host] demote pre-submit split: ticket seq={seq}"));
         assert!(production.contains("[prefix-host] demote helper split: ticket seq={seq}"));
+    }
+
+    /// WP-A day 59 (`DAY59.md` step 1, then design B1 of section 7; CPU census): the fanout's
+    /// owner-time split is log only, and B1's program is pinned. The snapshot allocates its planes
+    /// (kind 0) and then issues ONE batch (kind 1); the restore issues ONE batch before its host
+    /// lengths; each batch fn launches `copy_batch_items_u8` once and drops its guards after it; no
+    /// per-plane copy, clone or length set is left in any of the four; the split is taken only by
+    /// the fanout's line and decides nothing.
+    #[test]
+    fn day59_the_fanout_copy_split_is_log_only() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let at =
+            |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
+        // Compare on the source with whitespace and braces removed (rustfmt wraps long closures
+        // in a block).
+        let squash = |x: &str| {
+            x.split_whitespace()
+                .collect::<String>()
+                .replace(['{', '}'], "")
+        };
+        let body = |start: &str| {
+            let b = &production[at(production, start)..];
+            squash(&b[..at(b, "\n}\n")])
+        };
+        let snap = body("fn prefix_snapshot(");
+        let order = [
+            "prefix_copy_timed(0, || prefix_plane_alloc(engine, kb))",
+            "prefix_copy_timed(0, || prefix_plane_alloc(engine, vb))",
+            "prefix_copy_timed(0, || engine.alloc_f32_uninit(r.conv_state.len()))",
+            "prefix_copy_timed(0, || engine.alloc_f32_uninit(r.ssm_state.len()))",
+            "prefix_copy_timed(1, || prefix_snapshot_batch(engine, cache, &mut kv, &mut conv, &mut ssm))",
+            ".glm5_tp_prefix_snapshot(",
+        ];
+        let pos: Vec<usize> = order.iter().map(|n| at(&snap, &squash(n))).collect();
+        assert!(
+            pos.windows(2).all(|w| w[0] < w[1]),
+            "the snapshot allocates, then batches, then takes the TP shards"
+        );
+        let restore = body("fn prefix_restore_at(");
+        let order = [
+            "prefix_restore_validate(",
+            "prefix_copy_timed(1, || prefix_restore_batch(engine, cache, e, restore_len))",
+            "dst.len = restore_len;",
+            ".glm5_tp_prefix_restore(",
+        ];
+        let pos: Vec<usize> = order.iter().map(|n| at(&restore, &squash(n))).collect();
+        assert!(
+            pos.windows(2).all(|w| w[0] < w[1]),
+            "the restore validates, batches, then sets the host lengths"
+        );
+        for f in ["fn prefix_snapshot_batch(", "fn prefix_restore_batch("] {
+            let b = body(f);
+            assert_eq!(
+                b.matches("engine.copy_batch_items_u8(").count(),
+                1,
+                "{f}: one launch"
+            );
+            assert!(
+                at(&b, "engine.copy_batch_items_u8(") < at(&b, "drop(guards);"),
+                "{f}: the guards outlive the launch"
+            );
+        }
+        for f in [
+            "fn prefix_snapshot(",
+            "fn prefix_restore_at(",
+            "fn prefix_snapshot_batch(",
+            "fn prefix_restore_batch(",
+        ] {
+            let b = body(f);
+            for call in ["copy_u8_into(", "clone_dtod(", "copy_into(", "set_i32_one("] {
+                assert!(!b.contains(call), "{f} keeps no per-plane {call}");
+            }
+            assert!(!b.contains("prefix_copy_timed(2,") && !b.contains("prefix_copy_timed(3,"));
+        }
+        assert_eq!(
+            production.matches("prefix_copy_split_take()").count(),
+            4,
+            "the fn, the scoped helper's two, and the restores' take (day 66)"
+        );
+        let fanout = &squash(
+            &production[at(
+                production,
+                "let t_snap = Instant::now();\n        // WP-A day 59",
+            )..],
+        );
+        assert!(
+            at(
+                fanout,
+                &squash("let (snapshot, snap_split) = prefix_copy_scoped(|| {")
+            ) < at(fanout, &squash("prefix_snapshot(")),
+            "the fanout's snapshot runs inside the scoped split (day 66)"
+        );
+        let scoped = &production[at(production, "fn prefix_copy_scoped<T>(")..];
+        let scoped = squash(&scoped[..at(scoped, "\n}\n")]);
+        assert!(
+            at(&scoped, "let_stale=prefix_copy_split_take();") < at(&scoped, "letout=f();"),
+            "the scoped split discards before it runs f"
+        );
+        for f in [
+            "a.alloc",
+            "a.cop",
+            "a.clon",
+            "r.cop",
+            "r.set",
+            "snap_split.",
+            "restore_split.",
+        ] {
+            assert!(
+                !production.contains(&format!("if {f}")),
+                "{f} decides nothing"
+            );
+        }
+        assert!(
+            production.contains("[prefix-dedup] on-tick split: snapshot alloc {:.2} ms over {}")
+        );
+    }
+
+    /// WP-A day 62 (`DAY62.md` step 1; CPU census): the retire seam's lines. `source_kv` and
+    /// `queued_ahead` are written at submission and read only by the retire pass and the publish
+    /// line; since design R1 (section 8) the source test decides whether the retire settles, and
+    /// a settle still precedes any session's removal.
+    #[test]
+    fn day62_the_retire_seam_lines_are_log_only() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        // Design R1 (day 62 section 8) makes the source test a decision: computed, handed to
+        // `r1_settle_at_retire` (its parameter and body), then printed on the settle's why.
+        assert_eq!(
+            production.matches("source_retiring").count(),
+            5,
+            "R1's decision and the why"
+        );
+        assert!(production.contains("if source_retiring { \"yes\" } else { \"no\" }"));
+        assert_eq!(
+            production.matches(".source_kv").count(),
+            1,
+            "read once, by the retire's why"
+        );
+        assert_eq!(
+            production.matches("queued_ahead").count(),
+            5,
+            "the field, the submission's read, the struct literal, the destructure, the print"
+        );
+        let retire = &production[production
+            .find("let (source_kv, source_request, ticket) = hpx")
+            .unwrap()..];
+        let settle = retire.find(
+            "host_capture_settle_pending(&engine, &mut px, &mut hpx, ContractWait::Block, &why);",
+        );
+        let remove = retire.find("let mut s = active.remove(i);");
+        assert!(
+            settle.unwrap() < remove.unwrap(),
+            "the Block settle still precedes the removal"
+        );
+    }
+
+    /// WP-A day 62 design R1 (`DAY62.md` section 8): the source test and the settle decision.
+    #[test]
+    fn day62_r1_settles_only_when_the_source_retires_by_either_identity() {
+        use super::{r1_is_source, r1_settle_at_retire};
+        assert!(
+            r1_is_source("req-7", Some(0x10), "req-7", 0x20),
+            "the request id alone"
+        );
+        assert!(
+            r1_is_source("req-8", Some(0x20), "req-7", 0x20),
+            "the cache address alone"
+        );
+        assert!(
+            r1_is_source("req-7", None, "req-7", 0x20),
+            "no cache, the id"
+        );
+        assert!(!r1_is_source("req-8", Some(0x10), "req-7", 0x20), "neither");
+        assert!(
+            !r1_is_source("req-8", None, "req-7", 0x20),
+            "neither, no cache"
+        );
+        assert!(r1_settle_at_retire(true) && !r1_settle_at_retire(false));
+    }
+
+    /// WP-A day 62 design R1 (CPU census): every capture records its source's request id (the
+    /// seed route from its session, the spec-boundary route from each of its three publishers);
+    /// the retire pass computes the source test from both identities and settles only then; no
+    /// other capture settle site changes.
+    #[test]
+    fn day62_r1_every_capture_names_its_source_and_only_the_retire_settle_changes() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        assert_eq!(
+            production
+                .matches("source_request: source_request.to_string(),")
+                .count(),
+            1
+        );
+        assert_eq!(
+            production
+                .matches("            source_request,\n            pos")
+                .count(),
+            2,
+            "both routes' submits"
+        );
+        for publisher in [
+            "\"dspark-boundary\",\n        &s.request_id,",
+            "\"glm5-boundary\",\n        &s.request_id,",
+            "\"spec-boundary\",\n                            &s.request_id,",
+            "        why,\n        &s.request_id,\n    ) {",
+        ] {
+            assert!(
+                production.contains(publisher),
+                "{publisher} names its source"
+            );
+        }
+        let retire = &production[production
+            .find("let (source_kv, source_request, ticket) = hpx")
+            .unwrap()..];
+        let test = retire.find("r1_is_source(").unwrap();
+        let decide = retire
+            .find("if r1_settle_at_retire(source_retiring) {")
+            .unwrap();
+        let settle = retire.find("host_capture_settle_pending(&engine, &mut px, &mut hpx, ContractWait::Block, &why);").unwrap();
+        assert!(test < decide && decide < settle);
+        for site in [
+            "\"a second capture\"",
+            "\"a trim\"",
+            "\"a tenant purge\"",
+            "\"shutdown\"",
+        ] {
+            assert!(production.contains(site), "{site} keeps its settle");
+        }
+        assert_eq!(production.matches("\"a second capture\"").count(), 2);
+    }
+
+    /// WP-A day 63 (`DAY63.md` design L2.1): the staging lengths of one image, the max count per
+    /// length over the loaded models, trunk and MTP blocks.
+    #[test]
+    fn day63_the_staging_set_at_boot_is_one_image_over_the_models() {
+        use memra_gguf::config::{HfConfig, ModelConfig};
+        let plan = |layers: u32, heads: u32| {
+            memra_gguf::model_plan::ModelPlan::compile(&ModelConfig::from_hf(&HfConfig::parse(
+                &format!(
+                    r#"{{"model_type":"qwen3_5","num_hidden_layers":{layers},"hidden_size":64,
+                "num_attention_heads":2,"num_key_value_heads":1,"head_dim":32,
+                "intermediate_size":128,"vocab_size":16,"max_position_embeddings":128,
+                "full_attention_interval":2,"linear_conv_kernel_dim":3,
+                "linear_key_head_dim":32,"linear_value_head_dim":32,
+                "linear_num_key_heads":1,"linear_num_value_heads":{heads}}}"#
+                ),
+            )))
+            .unwrap()
+        };
+        let a = plan(4, 2);
+        let recurrent = |p: &memra_gguf::model_plan::ModelPlan| {
+            p.layers
+                .iter()
+                .chain(p.mtp_blocks.iter().map(|b| &b.layer))
+                .filter(|l| matches!(l.state, memra_gguf::model_plan::StatePlan::Recurrent { .. }))
+                .count()
+        };
+        let one = super::host_staging_lengths([&a].into_iter());
+        assert_eq!(
+            one.iter().map(|&(_, c)| c).sum::<usize>(),
+            2 * recurrent(&a),
+            "two planes per layer"
+        );
+        assert!(one.iter().all(|&(len, _)| len > 0 && len % 4 == 0));
+        let b = plan(8, 2);
+        let two = super::host_staging_lengths([&a, &b].into_iter());
+        assert_eq!(
+            two,
+            super::host_staging_lengths([&b].into_iter()),
+            "the max count, never the sum"
+        );
+        let c = plan(4, 4);
+        let mixed = super::host_staging_lengths([&a, &c].into_iter());
+        let total: usize = mixed.iter().map(|&(_, n)| n).sum();
+        assert!(total <= 2 * recurrent(&a) + 2 * recurrent(&c));
+        assert!(
+            mixed.windows(2).all(|w| w[0].0 < w[1].0),
+            "sorted by length"
+        );
+    }
+
+    /// WP-A day 63 (design L1.5, L1.6, L2; CPU census): the pinned capacity is three host budgets;
+    /// the lease pool's cap is set to one budget at the context's build and it closes at the latch;
+    /// the staging set is allocated at boot through `staging_take` and put back.
+    #[test]
+    fn day63_the_pool_and_the_boot_staging_are_wired_as_stated() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        assert!(production.contains("capacity.pinned = thrice(host_budget)?;"));
+        let build = &production[production.find("fn host_tier_context(").unwrap()..];
+        let build = &build[..build.find("\n}\n").unwrap()];
+        let cap = build
+            .find("transfers.set_lease_pool_cap(hpx.budget as u64);")
+            .unwrap();
+        let take = build.find("match ctx.staging_take(len) {").unwrap();
+        let put = build.find("ctx.staging_put(buf);").unwrap();
+        assert!(cap < take && take < put);
+        let disable = &production[production
+            .find("    fn disable(&mut self, why: &str) {")
+            .unwrap()..];
+        let disable = &disable[..disable.find("\n    }\n").unwrap()];
+        assert!(disable.contains("let (n, bytes) = pool.close();"));
+    }
+
+    /// WP-A day 64 (`DAY64.md` step 1; CPU census): the promote's waiting labels are log only. The
+    /// engine's parts query is read only by `host_promote_waiting`; `waiting` is written only at the
+    /// two `Pending` answers and read only by the timeline's outcome; no decision reads either.
+    #[test]
+    fn day64_the_promote_waiting_labels_are_log_only() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        assert_eq!(production.matches("h2d_landing_parts(").count(), 1);
+        assert_eq!(
+            production
+                .matches("host_promote_waiting(&t, &ticket, ")
+                .count(),
+            2
+        );
+        assert_eq!(
+            production.matches("c.waiting").count(),
+            1,
+            "the timeline's outcome only"
+        );
+        assert!(!production.contains("if waiting") && !production.contains("waiting =="));
+        assert!(
+            production.contains(
+                "Ok(PromoteSettle::Pending(c)) => format!(\"pending on {}\", c.waiting),"
+            )
+        );
+    }
+
+    /// WP-A day 64 (`DAY64.md` section 4 step 1; CPU census): the span receipt's phase timing is
+    /// log only: read once before the take, printed on the H2D receipt line, never compared.
+    #[test]
+    fn day64_the_span_receipt_timing_is_log_only() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        assert_eq!(production.matches("h2d_span_timing(").count(), 1);
+        assert_eq!(
+            production.matches("span_timing").count(),
+            3,
+            "the engine call, the binding, the print"
+        );
+        let settle = &production[production
+            .find("let span_timing = t.h2d_span_timing(&ticket);")
+            .unwrap()..];
+        assert!(
+            settle.find("let span_timing").unwrap()
+                < settle.find("t.take_h2d_spans(&ticket)").unwrap()
+        );
+        assert!(
+            !production.contains("if span_timing") && !production.contains("span_timing.is_some()")
+        );
+    }
+
+    /// WP-A day 66 (`DAY66.md`): a stray timed call of any kind before a scoped call never reaches
+    /// the scoped split; a second scoped call reads only its own calls.
+    #[test]
+    fn day66_a_stray_copy_before_a_fanout_never_reaches_its_split() {
+        use super::{PrefixCopySplit, prefix_copy_scoped, prefix_copy_timed};
+        let counts = |sp: PrefixCopySplit| (sp.allocs, sp.copies, sp.clones, sp.sets);
+        std::thread::spawn(move || {
+            for kind in 0..4u8 {
+                prefix_copy_timed(kind, || ());
+            }
+            let ((), snap) = prefix_copy_scoped(|| {
+                prefix_copy_timed(0, || ());
+                prefix_copy_timed(2, || ());
+            });
+            assert_eq!(
+                counts(snap),
+                (1, 0, 1, 0),
+                "the stray calls stay out of the scoped split"
+            );
+            prefix_copy_timed(1, || ());
+            let ((), again) = prefix_copy_scoped(|| prefix_copy_timed(3, || ()));
+            assert_eq!(
+                counts(again),
+                (0, 0, 0, 1),
+                "a second scope reads only its own call"
+            );
+        })
+        .join()
+        .unwrap();
+    }
+
+    /// WP-A design B1 (`DAY59.md` section 7, cell (a2)): the batched snapshot and restore are the
+    /// copy program. A tiny hybrid config always, and the checkpoint's own geometry when
+    /// `MEMRA_B1_MODEL` names a GGUF (metadata only). The source planes are filled with random
+    /// bytes at `pos`; the entry's planes equal the source's `[0, len * tok_bytes)`; a restore into
+    /// a cache pre-filled with a pattern writes exactly `[0, kb)`, the lengths and the recurrent
+    /// planes, and leaves a layer absent at capture untouched.
+    #[test]
+    #[ignore = "requires a CUDA GPU (WP-A design B1 cell (a2)); MEMRA_B1_MODEL adds a checkpoint's geometry"]
+    fn b1_snapshot_and_restore_are_the_copy_program() {
+        use super::{Cache, PoolKey, prefix_restore, prefix_snapshot};
+        use memra_gguf::config::{HfConfig, ModelConfig};
+        let engine = memra_engine::Engine::new(0).unwrap();
+        let mut cfgs = vec![(
+            "tiny".to_string(),
+            ModelConfig::from_hf(&HfConfig::parse(
+                r#"{"model_type":"qwen3_5","num_hidden_layers":4,"hidden_size":64,
+                "num_attention_heads":2,"num_key_value_heads":1,"head_dim":32,
+                "intermediate_size":128,"vocab_size":16,"max_position_embeddings":256,
+                "full_attention_interval":2,"linear_conv_kernel_dim":3,
+                "linear_key_head_dim":32,"linear_value_head_dim":32,
+                "linear_num_key_heads":1,"linear_num_value_heads":2}"#,
+            )),
+        )];
+        if let Ok(path) = std::env::var("MEMRA_B1_MODEL") {
+            let g = memra_gguf::GgufFile::open(&path).unwrap();
+            cfgs.push((path, ModelConfig::from_gguf(&g)));
+        }
+        let mut seed = 0x2545_f491_4f6c_dd1du64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        let key: PoolKey = ("b1".into(), String::new());
+        for (name, cfg) in &cfgs {
+            for pos in [1usize, 97] {
+                let mut src = Cache::new(&engine, cfg, 256).unwrap();
+                let n_kv = src.kv.iter().flatten().count();
+                assert!(
+                    n_kv > 0 && src.recur.iter().flatten().count() > 0,
+                    "{name}: a hybrid"
+                );
+                // The last attention layer stands for an allocated-but-unexecuted MTP layer.
+                let absent = src
+                    .kv
+                    .iter()
+                    .rposition(Option::is_some)
+                    .filter(|_| n_kv > 1);
+                let mut kv_fill: Vec<Option<(Vec<u8>, Vec<u8>)>> = vec![None; src.kv.len()];
+                for (il, slot) in src.kv.iter_mut().enumerate() {
+                    let Some(l) = slot.as_mut() else { continue };
+                    if Some(il) == absent {
+                        continue;
+                    }
+                    let k: Vec<u8> = (0..pos * l.k_tok_bytes).map(|_| next() as u8).collect();
+                    let v: Vec<u8> = (0..pos * l.v_tok_bytes).map(|_| next() as u8).collect();
+                    engine.htod_u8_into(&mut l.k, 0, &k).unwrap();
+                    engine.htod_u8_into(&mut l.v, 0, &v).unwrap();
+                    l.len = pos;
+                    kv_fill[il] = Some((k, v));
+                }
+                let mut recur_fill: Vec<Option<(Vec<f32>, Vec<f32>)>> = vec![None; src.recur.len()];
+                for (il, slot) in src.recur.iter_mut().enumerate() {
+                    let Some(r) = slot.as_mut() else { continue };
+                    let c: Vec<f32> = (0..r.conv_state.len())
+                        .map(|_| f32::from_bits(next() as u32))
+                        .collect();
+                    let s: Vec<f32> = (0..r.ssm_state.len())
+                        .map(|_| f32::from_bits(next() as u32))
+                        .collect();
+                    engine.htod_f32_into(&c, &mut r.conv_state).unwrap();
+                    engine.htod_f32_into(&s, &mut r.ssm_state).unwrap();
+                    recur_fill[il] = Some((c, s));
+                }
+                src.pos = pos;
+                let toks: Vec<u32> = (0..pos as u32).collect();
+                let entry = prefix_snapshot(&engine, &src, &key, &toks, &[0.5], None).unwrap();
+                let bits = |x: &[f32]| x.iter().map(|f| f.to_bits()).collect::<Vec<u32>>();
+                for (il, fill) in kv_fill.iter().enumerate() {
+                    match (fill, &entry.kv[il]) {
+                        (Some((k, v)), Some(p)) => {
+                            assert_eq!(
+                                engine.dtoh_u8(&p.k).unwrap(),
+                                *k,
+                                "{name} pos {pos} K {il}"
+                            );
+                            assert_eq!(
+                                engine.dtoh_u8(&p.v).unwrap(),
+                                *v,
+                                "{name} pos {pos} V {il}"
+                            );
+                        }
+                        (None, None) => {}
+                        _ => panic!("{name} pos {pos}: layer {il} captured out of kind"),
+                    }
+                }
+                for (il, fill) in recur_fill.iter().enumerate() {
+                    if let Some((c, s)) = fill {
+                        let (ec, es) = (
+                            entry.conv[il].as_ref().unwrap(),
+                            entry.ssm[il].as_ref().unwrap(),
+                        );
+                        assert_eq!(bits(&engine.dtoh(ec).unwrap()), bits(c), "{name} conv {il}");
+                        assert_eq!(bits(&engine.dtoh(es).unwrap()), bits(s), "{name} ssm {il}");
+                    }
+                }
+                // Restore into a fresh cache whose planes carry a pattern.
+                let mut dst = Cache::new(&engine, cfg, 256).unwrap();
+                for l in dst.kv.iter_mut().flatten() {
+                    let kc = l.k.capacity_bytes();
+                    let vc = l.v.capacity_bytes();
+                    engine.htod_u8_into(&mut l.k, 0, &vec![0xa5; kc]).unwrap();
+                    engine.htod_u8_into(&mut l.v, 0, &vec![0x5a; vc]).unwrap();
+                    engine.set_i32_one(&mut l.len_d, -7).unwrap();
+                }
+                prefix_restore(&engine, &mut dst, &entry, &key, None).unwrap();
+                assert_eq!(dst.pos, pos);
+                for (il, slot) in dst.kv.iter().enumerate() {
+                    let Some(l) = slot.as_ref() else { continue };
+                    let (k, v) = (engine.dtoh_u8(&l.k).unwrap(), engine.dtoh_u8(&l.v).unwrap());
+                    let len_d = engine.dtoh_i32(&l.len_d).unwrap();
+                    match &kv_fill[il] {
+                        Some((fk, fv)) => {
+                            assert_eq!(&k[..fk.len()], &fk[..], "{name} pos {pos} restored K {il}");
+                            assert_eq!(&v[..fv.len()], &fv[..], "{name} pos {pos} restored V {il}");
+                            assert!(k[fk.len()..].iter().all(|&b| b == 0xa5), "K {il} past kb");
+                            assert!(v[fv.len()..].iter().all(|&b| b == 0x5a), "V {il} past vb");
+                            assert_eq!((l.len, len_d), (pos, vec![pos as i32]), "len {il}");
+                        }
+                        None => {
+                            assert!(k.iter().all(|&b| b == 0xa5) && v.iter().all(|&b| b == 0x5a));
+                            assert_eq!(
+                                (l.len, len_d),
+                                (0, vec![-7]),
+                                "absent layer {il} untouched"
+                            );
+                        }
+                    }
+                }
+                for (il, fill) in recur_fill.iter().enumerate() {
+                    if let Some((c, s)) = fill {
+                        let r = dst.recur[il].as_ref().unwrap();
+                        assert_eq!(
+                            bits(&engine.dtoh(&r.conv_state).unwrap()),
+                            bits(c),
+                            "{name} rc {il}"
+                        );
+                        assert_eq!(
+                            bits(&engine.dtoh(&r.ssm_state).unwrap()),
+                            bits(s),
+                            "{name} rs {il}"
+                        );
+                    }
+                }
+                eprintln!(
+                    "[b1 cell] {name} pos={pos}: {n_kv} attention and {} recurrent layers equal",
+                    recur_fill.iter().flatten().count()
+                );
+            }
+        }
     }
 
     /// WP-A day 54 (`DAY54.md` step 1; CPU census): the on-tick lines are log only. Every `OnTick`
@@ -52019,7 +53424,7 @@ mod tests {
             assert!(i - guard < 200, "{line} prints only under the door");
         }
         let fanout = body("fn dedup_interactive_prefixes(");
-        let snap = at(fanout, "let snapshot = prefix_snapshot(");
+        let snap = at(fanout, "let (snapshot, snap_split) = prefix_copy_scoped(");
         let restore = at(fanout, "let restored = prefix_restore(");
         let insert = at(fanout, "let pin = px.insert_pinned_demoting(");
         assert!(
@@ -52130,6 +53535,310 @@ mod tests {
         assert!(
             production.contains("[prefix-host] demote publication split: ticket seq={seq} bind")
         );
+    }
+
+    /// WP-A day 51 (`DAY51.md` design P, section 1 (a); CPU census): the payload reserve is the
+    /// copy program. A reserve buffer is written only by `copy_from_slice` of the staged slice and
+    /// a miss allocates with `to_vec`, as before; the refill runs only at the top of the helper's
+    /// loop, before the job is read, and checks the job channel before every buffer; the charge
+    /// is reserved before the first allocation and dropped at the retarget; the ledger's pageable
+    /// capacity carries the reserve's term; nothing decides on the new figures.
+    #[test]
+    fn day51_the_payload_reserve_is_the_copy_program() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let at =
+            |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
+        let body = |start: &str| {
+            let a = at(production, start);
+            &production[a..a + production[a..].find("\n    }\n").unwrap()]
+        };
+        // The copy: one take, a hit written from the staged slice, a miss as before.
+        assert_eq!(production.matches("reserve.take(").count(), 1);
+        let job = &production[at(production, "let mut split = HostHashSplit::default();")..];
+        let take = at(job, "p.data = Arc::new(match reserve.take(src.len()) {");
+        let hit = at(job, "v.copy_from_slice(src);");
+        let miss = at(job, "None => src.to_vec(),");
+        let hash = at(job, "let (n, d) = host_hash_payload_digest(&p.data);");
+        assert!(take < hit && hit < miss && miss < hash);
+        assert_eq!(production.matches("copy_from_slice(src)").count(), 1);
+        // The retarget: after the payload map, before the reply is built.
+        let retarget = at(
+            job,
+            "reserve.after_job(&staged_lengths, split.copy_minflt, split.reserve_hits);",
+        );
+        let reply = at(job, "let reply = HostHashReply {");
+        assert!(hash < retarget && retarget < reply);
+        // The refill: once, at the loop's top, before any job is looked at.
+        assert_eq!(
+            production
+                .matches("reserve.refill_until_job(&jobs_rx)")
+                .count(),
+            1
+        );
+        let spawn = body("    fn spawn(fault: Option<HostHashFault>, reserve: HostPayloadReserve)");
+        let refill = at(
+            spawn,
+            "let job = match reserve.refill_until_job(&jobs_rx) {",
+        );
+        let gone = at(spawn, "if fault == Some(HostHashFault::HelperGone) {");
+        assert!(refill < gone);
+        assert!(!spawn.contains("for job in jobs_rx"));
+        let until = body("    fn refill_until_job(");
+        assert!(at(until, "jobs.try_recv()") < at(until, "self.refill_step()"));
+        // The charge before the first allocation; every element written, not a zeroed map.
+        let step = body("    fn refill_step(&mut self) -> bool {");
+        assert!(
+            at(
+                step,
+                "hostprefix::ResidentCharge::reserve(self.governor.clone(), &request)"
+            ) < at(step, "let mut v = Vec::with_capacity(len);")
+        );
+        assert!(step.contains("request.bytes.pageable = self.target_bytes;"));
+        assert!(step.contains("tenant: host_payload_reserve_tenant(),"));
+        assert!(step.contains("v.resize(len, std::hint::black_box(0.0f32));"));
+        assert!(!step.contains("vec![0"));
+        let re = body("    fn retarget(&mut self, lengths: &[usize]) {");
+        assert!(re.contains("self.ready.clear();") && re.contains("self.charge = None;"));
+        assert!(re.contains("if self.target_bytes.saturating_add(bytes) > self.cap {"));
+        // The ledger's third pageable term, and the one production reserve capped at one budget.
+        assert!(production.contains("capacity.pageable = thrice(host_budget)?;"));
+        assert_eq!(production.matches("HostPayloadReserve::new(").count(), 1);
+        assert!(
+            production.contains("HostPayloadReserve::new(governor.clone(), hpx.budget as u64)")
+        );
+        // Log only.
+        for field in [
+            "reserve_hits",
+            "refill_ms",
+            "refill_minflt",
+            "yields",
+            "split.staged",
+        ] {
+            assert!(
+                !production.contains(&format!("if {field}")),
+                "{field} decides nothing"
+            );
+            assert!(
+                !production.contains(&format!("if self.{field}")),
+                "{field} decides nothing"
+            );
+            assert!(
+                !production.contains(&format!("if sp.{field}")),
+                "{field} decides nothing"
+            );
+        }
+        assert!(production.contains("[prefix-host] payload reserve ready: {} buffers"));
+        assert!(production.contains("; reserve {} of {} staged"));
+    }
+
+    /// WP-A day 52 (`DAY52.md` design P2, (a); CPU census): the arming rule reads only the job's
+    /// fresh pages (its copy's faults, and the faults of the refill that wrote the buffers it
+    /// took) against half its staged pages; the state decides only which target the retarget
+    /// takes; the helper passes the job's own split figures.
+    #[test]
+    fn day52_the_arming_rule_reads_only_the_jobs_fresh_pages() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let at =
+            |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
+        let body = &production[at(production, "    fn after_job(")..];
+        let body = &body[..at(body, "\n    }\n")];
+        assert!(body.contains("let armed = fresh.saturating_mul(2) >= pages;"));
+        assert!(body.contains("if hits > 0 {"));
+        assert!(body.contains("self.refill_minflt"));
+        assert!(body.contains("self.retarget(lengths);") && body.contains("self.retarget(&[]);"));
+        assert_eq!(production.matches("reserve.after_job(").count(), 1);
+        assert!(production.contains(
+            "reserve.after_job(&staged_lengths, split.copy_minflt, split.reserve_hits);"
+        ));
+        // `armed` is read in the rule only: inside the reserve's impl, the rule's two uses.
+        let imp = &production[at(production, "impl HostPayloadReserve {")..];
+        let imp = &imp[..at(imp, "\n}\n")];
+        assert_eq!(imp.matches("self.armed").count(), 2);
+        assert_eq!(imp.matches(".armed").count(), 2);
+        assert!(!imp.contains("if self.armed"));
+        let helper = &production[at(
+            production,
+            "    fn spawn(fault: Option<HostHashFault>, reserve",
+        )..];
+        let helper = &helper[..at(helper, "\n    }\n")];
+        assert!(
+            !helper.contains(".armed"),
+            "the helper loop never reads the state"
+        );
+        assert!(
+            production
+                .contains("[prefix-host] payload reserve {}: the job took {fresh} fresh pages")
+        );
+    }
+
+    /// Day 52 (design P2, (a)): a job whose misses take fresh pages arms (the reserve refills to
+    /// its shape); a job whose hits came from a refill that reused memory disarms (nothing held,
+    /// no charge); a disarmed reserve re-arms on a faulting miss; the boundary is half the pages;
+    /// a job with no staged payload decides nothing.
+    #[test]
+    fn day52_the_reserve_arms_while_copies_fault_and_disarms_on_recycled_memory() {
+        let gov = super::host_tier_governor(0, 1 << 30, 1 << 30, 4).unwrap();
+        let used = || gov.lock().unwrap().used().pageable;
+        let mut r = super::HostPayloadReserve::new(gov.clone(), 1 << 30);
+        let lengths = [1024usize; 8]; // 8 x 4 KiB: 8 pages
+        let (_tx, rx) = std::sync::mpsc::channel::<super::HostHelperJob>();
+        // The first job's misses faulted every page: armed, the target is the job's shape.
+        r.after_job(&lengths, 8, 0);
+        assert!(r.armed && r.owed.len() == 8 && r.target_bytes == 8 * 4096);
+        assert!(matches!(r.refill_until_job(&rx), Ok(None)));
+        assert_eq!((r.ready.len(), used()), (8, 8 * 4096));
+        // Hits whose refill took fresh pages (at least half): still armed.
+        r.refill_minflt = 4;
+        r.after_job(&lengths, 0, 8);
+        assert!(r.armed && r.owed.len() == 8 && r.ready.is_empty());
+        assert!(matches!(r.refill_until_job(&rx), Ok(None)));
+        // Hits whose refill reused memory (3 of 8, under half): disarmed, nothing held.
+        r.refill_minflt = 3;
+        r.after_job(&lengths, 0, 8);
+        assert!(!r.armed && r.owed.is_empty() && r.ready.is_empty() && r.charge.is_none());
+        assert_eq!(used(), 0, "a disarmed reserve holds no charge");
+        assert!(matches!(r.refill_until_job(&rx), Ok(None)));
+        assert!(r.ready.is_empty(), "nothing refills while disarmed");
+        // Misses that reuse memory keep it disarmed; the refill's figures do not count without a hit.
+        r.refill_minflt = 1000;
+        r.after_job(&lengths, 3, 0);
+        assert!(!r.armed && r.owed.is_empty());
+        // A faulting miss re-arms (the boundary: 4 of 8 is half).
+        r.after_job(&lengths, 4, 0);
+        assert!(r.armed && r.owed.len() == 8);
+        // A job with no staged payload decides nothing and leaves nothing held.
+        r.after_job(&[], 0, 0);
+        assert!(r.armed && r.owed.is_empty() && r.ready.is_empty());
+        assert_eq!(used(), 0);
+    }
+
+    /// Day 51 (design P, (a)): a reserve hit carries the staged bytes bitwise, special values
+    /// included, as the miss path's `to_vec` does.
+    #[test]
+    fn day51_a_reserve_hit_is_the_staged_bytes_bitwise() {
+        let mut r = test_payload_reserve();
+        r.retarget(&[5, 1030]);
+        let (_tx, rx) = std::sync::mpsc::channel::<super::HostHelperJob>();
+        assert!(matches!(r.refill_until_job(&rx), Ok(None)));
+        let bits = [
+            0x8000_0000u32, // -0.0
+            0x7fc0_0001,    // a NaN with a payload
+            0xffff_ffff,    // a negative NaN, all payload bits set
+            0x0000_0001,    // the smallest denormal
+            0x7f80_0000,    // +inf
+            0x3f80_0000,    // 1.0
+        ];
+        let src: Vec<f32> = (0..1030)
+            .map(|i| f32::from_bits(bits[i % bits.len()]))
+            .collect();
+        let mut v = r.take(1030).expect("a buffer of the job's length");
+        assert!(
+            v.iter().all(|x| x.to_bits() == 0),
+            "every element written by the refill"
+        );
+        v.copy_from_slice(&src);
+        let miss = src.to_vec();
+        assert!(v.iter().zip(&miss).all(|(a, b)| a.to_bits() == b.to_bits()));
+        assert!(r.take(1030).is_none(), "one buffer per staged length");
+        assert_eq!(r.take(5).map(|v| v.len()), Some(5));
+    }
+
+    /// Day 51 (design P, (a)): the refill yields. A job already waiting is returned before any
+    /// buffer is allocated or any charge taken; a job sent mid-refill is returned before the
+    /// reserve completes, and the refill resumes after it.
+    #[test]
+    fn day51_the_refill_yields_to_a_waiting_job() {
+        let gov = super::host_tier_governor(0, 1 << 30, 1 << 30, 4).unwrap();
+        let mut r = super::HostPayloadReserve::new(gov.clone(), 1 << 30);
+        r.retarget(&[4096; 8]);
+        let (tx, rx) = std::sync::mpsc::channel::<super::HostHelperJob>();
+        let job = || {
+            super::HostHelperJob::Hash(super::HostHashJob {
+                seq: 1,
+                payloads: Vec::new(),
+                leases: Vec::new(),
+            })
+        };
+        tx.send(job()).unwrap();
+        assert!(matches!(r.refill_until_job(&rx), Ok(Some(_))));
+        assert!(r.ready.is_empty() && r.charge.is_none() && r.owed.len() == 8);
+        assert_eq!(gov.lock().unwrap().used().pageable, 0);
+        // One buffer, then a job arrives: it is served before the next buffer.
+        assert!(r.refill_step());
+        tx.send(job()).unwrap();
+        assert!(matches!(r.refill_until_job(&rx), Ok(Some(_))));
+        assert_eq!((r.ready.len(), r.owed.len(), r.yields), (1, 7, 1));
+        // The channel empty again: the refill completes.
+        assert!(matches!(r.refill_until_job(&rx), Ok(None)));
+        assert_eq!((r.ready.len(), r.owed.len()), (8, 0));
+        drop(tx);
+        r.retarget(&[4096]);
+        assert!(
+            matches!(r.refill_until_job(&rx), Err(())),
+            "a closed channel ends the refill"
+        );
+        assert!(
+            r.ready.is_empty(),
+            "nothing allocated once the channel is closed"
+        );
+    }
+
+    /// Day 51 (design P, (a)): the reserve's charge is on the pageable ledger for the whole
+    /// target from its first buffer on, never before the first refill step, and gone after the
+    /// retarget and after the reserve drops (the helper's exit); a refusing governor leaves the
+    /// reserve empty; the reserve never holds more than its cap; a shape change frees the old
+    /// buffers.
+    #[test]
+    fn day51_the_reserve_charge_the_cap_and_the_shape_change() {
+        let gov = super::host_tier_governor(0, 1 << 30, 1 << 30, 4).unwrap();
+        let used = || gov.lock().unwrap().used().pageable;
+        let mut r = super::HostPayloadReserve::new(gov.clone(), 1 << 30);
+        r.retarget(&[1024, 2048]);
+        assert_eq!(used(), 0, "no charge before the first refill step");
+        assert!(r.refill_step());
+        assert_eq!(
+            used(),
+            (1024 + 2048) * 4,
+            "the whole target, from the first buffer on"
+        );
+        assert!(r.refill_step() && !r.refill_step());
+        assert_eq!(used(), (1024 + 2048) * 4);
+        r.retarget(&[3000]);
+        assert_eq!(used(), 0, "the retarget releases the charge");
+        assert!(
+            r.take(1024).is_none() && r.take(2048).is_none(),
+            "the old shape is freed"
+        );
+        let (_tx, rx) = std::sync::mpsc::channel::<super::HostHelperJob>();
+        assert!(matches!(r.refill_until_job(&rx), Ok(None)));
+        assert_eq!(used(), 3000 * 4);
+        assert_eq!(r.take(3000).map(|v| v.len()), Some(3000));
+        drop(r);
+        assert_eq!(used(), 0, "the helper's exit releases the charge");
+        // The cap: the job's order, clamped.
+        let mut r = super::HostPayloadReserve::new(gov.clone(), 10_000);
+        r.retarget(&[1000, 1000, 1000]);
+        assert_eq!((r.owed.len(), r.target_bytes), (2, 8000));
+        assert!(matches!(r.refill_until_job(&rx), Ok(None)));
+        assert_eq!((r.ready.len(), used()), (2, 8000));
+        drop(r);
+        // A refusing governor: a 1000-byte budget has 3000 pageable bytes; 4000 are refused.
+        let small = super::host_tier_governor(0, 1000, 1 << 30, 4).unwrap();
+        let mut r = super::HostPayloadReserve::new(small.clone(), 1 << 20);
+        r.retarget(&[1000]);
+        assert!(!r.refill_step());
+        assert!(r.refused && r.ready.is_empty() && r.take(1000).is_none());
+        assert_eq!(small.lock().unwrap().used().pageable, 0);
+        assert!(
+            matches!(r.refill_until_job(&rx), Ok(None)),
+            "refused: nothing to do"
+        );
+        // The next retarget tries again.
+        r.retarget(&[500]);
+        assert!(r.refill_step());
+        assert_eq!(small.lock().unwrap().used().pageable, 2000);
     }
 
     /// WP-A day 47 (`DAY47.md` design V, sections 1 and 1a; CPU census): the pause sweep's two shapes
@@ -52713,7 +54422,7 @@ mod tests {
         let src = include_str!("worker.rs");
         let production = &src[..src.find("\nmod tests {").unwrap()];
         let at = production
-            .find("    fn spawn(fault: Option<HostHashFault>)")
+            .find("    fn spawn(fault: Option<HostHashFault>, reserve: HostPayloadReserve)")
             .unwrap();
         let spawn = &production[at..at + production[at..].find("\n    }\n").unwrap()];
         let sources = spawn.find("HostHelperJob::Sources(job) => {").unwrap();
@@ -52732,7 +54441,9 @@ mod tests {
         assert!(cleared < gone);
         // Behaviour: under each Sources fault a Hash job runs clean (its reply lands).
         for f in [H::SourcesGone, H::SourcesNeverLand, H::SourcesForeignReply] {
-            let helper = super::HostHashWorker::spawn(Some(f)).unwrap();
+            let helper =
+                super::HostHashWorker::spawn(Some(f), super::tests::test_payload_reserve())
+                    .unwrap();
             helper
                 .submit(super::HostHashJob {
                     seq: 9,
@@ -53011,8 +54722,10 @@ mod tests {
             transfers: Some(std::cell::RefCell::new(transfers)),
             inflight,
             fault: std::cell::Cell::new(None),
-            hasher: super::HostHashWorker::spawn(None).unwrap(),
+            hasher: super::HostHashWorker::spawn(None, super::tests::test_payload_reserve())
+                .unwrap(),
             staging: std::cell::RefCell::new(super::HostStaging::default()),
+            lease_pool: None,
         }
     }
 
@@ -53084,6 +54797,15 @@ mod tests {
             && planes.iter().zip(want).all(|(p, (k, v))| {
                 stream.clone_dtoh(&p.k).unwrap() == *k && stream.clone_dtoh(&p.v).unwrap() == *v
             })
+    }
+
+    /// The pinned charge of `gpu_entry`'s six KV leases (three planes of 8 rows: K 272 bytes, V 192
+    /// bytes). WP-A day 70 (`DAY70.md` design Q.1): each lease is charged its length
+    /// (`lease_charge`); these fixtures' pool cap is 0, so no tail is charged to the pool (DAY63
+    /// section 7's class charge, design L1.2, is superseded).
+    fn gpu_lease_charge() -> u64 {
+        use memra_engine::tier_transfer::lease_charge;
+        3 * (lease_charge(8 * 34) + lease_charge(8 * 24))
     }
 
     fn gpu_used(host: &super::HostPrefixCache) -> (u64, u64, u64) {
@@ -53325,7 +55047,7 @@ mod tests {
         assert!(gpu_entry_whole(&engine, &entry, &want));
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58, 0, 0),
+            (gpu_lease_charge(), 0, 0),
             "six leases hold the pinned charge"
         );
         drop(image);
@@ -53381,6 +55103,228 @@ mod tests {
             };
             plane.is_some_and(|p| f32_bits(&stream.clone_dtoh(p).unwrap()) == f32_bits(pattern))
         })
+    }
+
+    /// WP-A day 69 (`DAY69.md` design P, cell (d)): a purge leaves no tenant bytes in the pinned
+    /// memory the tier keeps for reuse. An entry demotes through the real contract route (day 30's
+    /// cell, to its staging back in the set); its KV leases drop into the lease pool; then a purge.
+    /// The pool holds no idle backing and has drained, every idle staging buffer is zero (the set
+    /// keeps its buffers and charges), and the ledger holds the staging charge alone.
+    #[test]
+    #[ignore = "requires one CUDA device; run on the target card under the rig lock"]
+    fn option_b_purge_drains_the_pool_and_zeroes_the_staging_set() {
+        let engine = Engine::new(0).expect("device0");
+        let generation = Arc::new(());
+        let mut host = super::HostPrefixCache::new(1 << 30);
+        host.model_generations
+            .insert("m".into(), generation.clone());
+        let mut ctx = gpu_contracts_context(&engine, "m", generation, 3);
+        {
+            let t = ctx.transfers.as_ref().unwrap().borrow();
+            t.set_lease_pool_cap(1 << 30);
+            ctx.lease_pool = Some(t.lease_pool());
+        }
+        host.tier = Some(ctx);
+        let (mut entry, want) = gpu_entry(&engine);
+        let recur = gpu_recurrent(&engine, &mut entry, None);
+        let (image, pending) = match super::host_entry_from_device(
+            &engine,
+            &mut host,
+            &mut entry,
+            None,
+            super::ContractD2h::OffTick,
+        ) {
+            Ok(super::HostImage::Demoting(image, pending)) => (image, pending),
+            Ok(super::HostImage::Whole(_)) => panic!("an off-tick contract demote came back whole"),
+            Err(e) => panic!("the off-tick demote failed: {e:?}"),
+        };
+        let slots: Vec<super::HostHashSlot> = recur.iter().map(|(s, _)| *s).collect();
+        assert_eq!(
+            pending.spans, slots,
+            "every recurrent plane rides the ticket"
+        );
+        for slot in &slots {
+            let (shell, placeholder) = match *slot {
+                super::HostHashSlot::Conv(i) => (&entry.conv[i], &image.conv[i]),
+                super::HostHashSlot::Ssm(i) => (&entry.ssm[i], &image.ssm[i]),
+                _ => unreachable!(),
+            };
+            assert!(shell.is_none(), "{slot:?}: the engine owns the source");
+            assert!(
+                matches!(placeholder, Some(super::HostF32::Heap(v)) if v.is_empty()),
+                "{slot:?}: the image holds an empty heap placeholder"
+            );
+        }
+        let tier = host.tier.as_ref().unwrap();
+        let (kv, draft, staged, span_id) = match super::host_kv_planes_settle_contract(
+            tier,
+            &mut entry,
+            pending,
+            super::ContractWait::Block,
+        ) {
+            Ok(super::ContractSettle::Done(kv, draft, staged, span_id)) => {
+                (kv, draft, staged, span_id)
+            }
+            Ok(super::ContractSettle::Pending(_)) => panic!("a blocking settle came back pending"),
+            Err(
+                super::HostContractFailure::Alloc(why)
+                | super::HostContractFailure::Refused(why)
+                | super::HostContractFailure::SourceQuarantined(why)
+                | super::HostContractFailure::TicketLeaked(why),
+            ) => panic!("the settle failed: {why}"),
+        };
+        assert_eq!(staged.len(), recur.len());
+        for ((slot, buf), (want_slot, pattern)) in staged.iter().zip(&recur) {
+            assert_eq!(slot, want_slot);
+            assert_eq!(
+                f32_bits(buf.as_f32_slice()),
+                f32_bits(pattern),
+                "{slot:?}: the span landed bit for bit"
+            );
+        }
+        assert!(
+            gpu_recurrent_whole(&engine, &entry, &recur),
+            "every source back in its slot with its bytes"
+        );
+        assert!(gpu_entry_whole(&engine, &entry, &want));
+        assert!(
+            kv.iter()
+                .flatten()
+                .chain(draft.iter())
+                .all(|p| p.k.receipt().is_some() && p.v.receipt().is_some()),
+            "every KV plane crossed through the contract"
+        );
+        // WP-A day 42 (`DAY42.md` design S2): the hand-off as the `Done` arm runs it: every staging
+        // buffer guarded, the quiet flag cleared, the span receipt sealed over the staging in attach
+        // order, then the job to the helper; the receipt observed (its pairs each the four-lane
+        // program over the pattern, source and landed alike) before any staging goes back.
+        let quiet = super::HostStagingQuiet::new();
+        let payloads: Vec<super::HostHashPayload> = staged
+            .into_iter()
+            .map(|(slot, buf)| super::HostHashPayload {
+                slot,
+                data: Default::default(),
+                staged: Some(super::HostStagingHeld::new(buf, &quiet)),
+            })
+            .collect();
+        let id = span_id.expect("a span receipt on the contracts route");
+        quiet.set(false);
+        {
+            let refs: Vec<&memra_engine::PinnedHostBuf> = payloads
+                .iter()
+                .map(|p| p.staged.as_ref().unwrap().buf())
+                .collect();
+            let mut t = tier.transfers.as_ref().unwrap().borrow_mut();
+            t.seal_d2h_span_receipt(id, &refs).unwrap();
+        }
+        tier.hasher
+            .submit(super::HostHashJob {
+                seq: 1,
+                payloads,
+                leases: Vec::new(),
+            })
+            .unwrap();
+        let pairs = tier
+            .transfers
+            .as_ref()
+            .unwrap()
+            .borrow_mut()
+            .d2h_span_receipt_wait(id)
+            .unwrap();
+        assert_eq!(pairs.len(), recur.len());
+        for ((source, landed), (slot, pattern)) in pairs.iter().zip(&recur) {
+            let bytes: Vec<u8> = pattern.iter().flat_map(|x| x.to_le_bytes()).collect();
+            let oracle = memra_engine::tier_transfer::receipt_digest(&bytes);
+            assert_eq!(*source, oracle, "{slot:?}: the source digest");
+            assert_eq!(*landed, oracle, "{slot:?}: the landed digest");
+        }
+        quiet.set(true);
+        let reply = tier
+            .hasher
+            .reply_within(std::time::Duration::from_secs(10))
+            .unwrap()
+            .expect("the helper replied");
+        assert_eq!(reply.hashed.len(), recur.len());
+        for ((p, n, d), (slot, pattern)) in reply.hashed.iter().zip(&recur) {
+            assert_eq!(p.slot, *slot);
+            assert_eq!(
+                (*n, *d),
+                super::host_hash_payload_digest(pattern),
+                "{slot:?}: the helper's digest of the landed span is the owner thread's"
+            );
+            assert_eq!(
+                f32_bits(&p.data),
+                f32_bits(pattern),
+                "{slot:?}: the heap copy"
+            );
+            assert!(p.staged.is_some(), "{slot:?}: the staging comes back");
+        }
+        // WP-A day 31: the staging goes back to the set as the driver puts it; the set's charge
+        // (every buffer charged once, at allocation) is the ledger's only pinned bytes once the
+        // KV planes drop, and the latch frees the set and releases it.
+        let span_bytes: u64 = recur.iter().map(|(_, p)| p.len() as u64 * 4).sum();
+        for (p, _, _) in reply.hashed {
+            let guard = p.staged.expect("the staging came back");
+            tier.staging_put(
+                guard
+                    .into_quiet()
+                    .expect("quiet once the receipt was observed"),
+            );
+        }
+        drop((kv, draft, image));
+        // WP-A day 69 (`DAY69.md` design P, cell (d)): the demote's KV leases parked in the pool and
+        // its landed spans idle in the staging set, both holding the tenant's bytes; the purge's
+        // scrub drains the pool and zeroes the set in place.
+        let pool = tier.lease_pool.clone().expect("the pool");
+        let (taken0, fresh0, idle0) = tier
+            .transfers
+            .as_ref()
+            .unwrap()
+            .borrow()
+            .lease_pool_counts();
+        assert!(idle0 > 0, "the demote's KV leases parked");
+        {
+            let set = tier.staging.borrow();
+            assert_eq!(set.idle.len(), recur.len(), "every buffer back in the set");
+            assert!(
+                set.idle
+                    .iter()
+                    .any(|b| b.as_slice().iter().any(|&x| x != 0)),
+                "the set holds the spans' bytes"
+            );
+        }
+        assert_eq!(gpu_used(&host), (span_bytes + idle0, 0, 0));
+        let epoch = pool.epoch();
+        let _ = host.purge_tenant("org-a");
+        let tier = host.tier.as_ref().unwrap();
+        assert_eq!(pool.epoch(), epoch + 1, "the purge drained the pool");
+        assert_eq!(
+            tier.transfers
+                .as_ref()
+                .unwrap()
+                .borrow()
+                .lease_pool_counts(),
+            (taken0, fresh0, 0),
+            "no idle backing is left"
+        );
+        {
+            let set = tier.staging.borrow();
+            assert_eq!(set.idle.len(), recur.len(), "the set keeps its buffers");
+            assert_eq!(set.charged, span_bytes, "and their charges");
+            assert!(
+                set.idle
+                    .iter()
+                    .all(|b| b.as_slice().iter().all(|&x| x == 0)),
+                "every idle buffer zeroed"
+            );
+        }
+        assert_eq!(
+            gpu_used(&host),
+            (span_bytes, 0, 0),
+            "the staging set's charge alone"
+        );
+        host.disable("day-69 cell: the latch releases the staging charge");
+        assert_eq!(gpu_used(&host), (0, 0, 0));
     }
 
     /// WP-A day 30 (memra#536 Move 2 owed item 1, the D2H half; `d2h_span_batch` through the
@@ -53818,8 +55762,10 @@ mod tests {
             first,
             "the second span needs a second buffer"
         );
-        // A co-tenant charge that leaves room for the six KV destinations and ONE staging buffer.
-        let kv_bytes = 3 * 8 * 58;
+        // A co-tenant charge that leaves room for the six KV destinations and ONE staging buffer
+        // (DAY63 section 7: the pinned capacity is three budgets, design L1.5, and each KV lease is
+        // charged its size class, design L1.2).
+        let kv_bytes = gpu_lease_charge();
         let governor = host.tier.as_ref().unwrap().governor.clone();
         let hog = {
             let dimensions = governor.lock().unwrap().used().device.len();
@@ -53829,7 +55775,7 @@ mod tests {
                 deadline: Deadline(u64::MAX),
                 tenant: hostprefix::tenant_salt("co-tenant"),
             };
-            request.bytes.pinned = 2 * (1u64 << 30) - kv_bytes - first;
+            request.bytes.pinned = 3 * (1u64 << 30) - kv_bytes - first;
             hostprefix::ResidentCharge::reserve(governor.clone(), &request).unwrap()
         };
         let why = match super::host_entry_from_device(
@@ -53872,7 +55818,7 @@ mod tests {
         }
         assert_eq!(
             gpu_used(&host),
-            (2 * (1u64 << 30) - kv_bytes, 0, 0),
+            (3 * (1u64 << 30) - kv_bytes, 0, 0),
             "the KV destinations released; the co-tenant and the one buffer's charge remain"
         );
         drop(hog);
@@ -54073,7 +56019,7 @@ mod tests {
         .map(super::HostImage::whole)
         .expect("a clean demote after the aborted ticket");
         assert!(gpu_entry_whole(&engine, &entry, &want));
-        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        assert_eq!(gpu_used(&host), (gpu_lease_charge(), 0, 0));
         drop(image);
         assert_eq!(gpu_used(&host), (0, 0, 0));
     }
@@ -54098,7 +56044,7 @@ mod tests {
                 .all(|p| p.k.receipt().is_some() && p.v.receipt().is_some()),
             "every plane crossed through the contract"
         );
-        assert_eq!(gpu_used(host), (3 * 8 * 58, 0, 0));
+        assert_eq!(gpu_used(host), (gpu_lease_charge(), 0, 0));
         image
     }
 
@@ -54164,12 +56110,12 @@ mod tests {
         gpu_image_intact_and_sole_owner(&mut image, &want);
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58, 0, 0),
+            (gpu_lease_charge(), 0, 0),
             "the twins dropped with retire_source, the destinations left the registry, in-flight \
              released"
         );
         drop(promoted);
-        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        assert_eq!(gpu_used(&host), (gpu_lease_charge(), 0, 0));
         drop(image);
         assert_eq!(gpu_used(&host), (0, 0, 0));
     }
@@ -54209,14 +56155,14 @@ mod tests {
         gpu_image_intact_and_sole_owner(&mut image, &want);
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58, 0, 0),
+            (gpu_lease_charge(), 0, 0),
             "nothing but the image's leases charged after the unwind"
         );
         let promoted = super::device_entry_from_host(&engine, &image, route)
             .expect("a clean promote after the refusal");
         assert!(gpu_entry_whole(&engine, &promoted, &want));
         gpu_image_intact_and_sole_owner(&mut image, &want);
-        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        assert_eq!(gpu_used(&host), (gpu_lease_charge(), 0, 0));
         drop(promoted);
         drop(image);
         assert_eq!(gpu_used(&host), (0, 0, 0));
@@ -54258,13 +56204,13 @@ mod tests {
         gpu_image_intact_and_sole_owner(&mut image, &want);
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58, 0, 0),
+            (gpu_lease_charge(), 0, 0),
             "in-flight released by retire, twins by retire_source, destinations by take_plane"
         );
         let promoted = super::device_entry_from_host(&engine, &image, route)
             .expect("a clean promote after the aborted ticket");
         assert!(gpu_entry_whole(&engine, &promoted, &want));
-        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        assert_eq!(gpu_used(&host), (gpu_lease_charge(), 0, 0));
         drop(promoted);
         drop(image);
         assert_eq!(gpu_used(&host), (0, 0, 0));
@@ -54306,13 +56252,13 @@ mod tests {
         gpu_image_intact_and_sole_owner(&mut image, &want);
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58, 0, 0),
+            (gpu_lease_charge(), 0, 0),
             "the cancelled ticket retired: in-flight released, destinations released"
         );
         let promoted = super::device_entry_from_host(&engine, &image, route)
             .expect("a clean promote once the bytes match the receipt again");
         assert!(gpu_entry_whole(&engine, &promoted, &want));
-        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        assert_eq!(gpu_used(&host), (gpu_lease_charge(), 0, 0));
         drop(promoted);
         drop(image);
         assert_eq!(gpu_used(&host), (0, 0, 0));
@@ -54357,13 +56303,13 @@ mod tests {
         gpu_image_intact_and_sole_owner(&mut image, &want);
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58, 0, 0),
+            (gpu_lease_charge(), 0, 0),
             "the ticket retired, every fresh destination released, the twins dropped"
         );
         let promoted = super::device_entry_from_host(&engine, &image, route)
             .expect("a clean promote after the partial acceptance");
         assert!(gpu_entry_whole(&engine, &promoted, &want));
-        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        assert_eq!(gpu_used(&host), (gpu_lease_charge(), 0, 0));
         drop(promoted);
         drop(image);
         assert_eq!(gpu_used(&host), (0, 0, 0));
@@ -54410,13 +56356,13 @@ mod tests {
         gpu_image_intact_and_sole_owner(&mut image, &want);
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58, 0, 0),
+            (gpu_lease_charge(), 0, 0),
             "in-flight released by retire against the consumer fence, destinations released"
         );
         let promoted = super::device_entry_from_host(&engine, &image, route)
             .expect("a clean promote after the aborted published ticket");
         assert!(gpu_entry_whole(&engine, &promoted, &want));
-        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        assert_eq!(gpu_used(&host), (gpu_lease_charge(), 0, 0));
         drop(promoted);
         drop(image);
         assert_eq!(gpu_used(&host), (0, 0, 0));
@@ -54559,7 +56505,7 @@ mod tests {
             assert_eq!(set.charged, span_bytes, "charged once, at allocation");
         }
         drop((shell, landed));
-        assert_eq!(gpu_used(&host), (3 * 8 * 58 + span_bytes, 0, 0));
+        assert_eq!(gpu_used(&host), (gpu_lease_charge() + span_bytes, 0, 0));
         drop(image);
         host.disable("day-32 cell: the latch releases the staging charge");
         assert_eq!(gpu_used(&host), (0, 0, 0));
@@ -54627,7 +56573,7 @@ mod tests {
         gpu_image_intact_and_sole_owner(&mut image, &want);
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58, 0, 0),
+            (gpu_lease_charge(), 0, 0),
             "nothing in flight, nothing leaked"
         );
         let (mut shell, kv, draft) = settle(&host, &image).expect("the next clean promote");
@@ -54799,7 +56745,7 @@ mod tests {
         }
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58 + span_bytes, 0, 0),
+            (gpu_lease_charge() + span_bytes, 0, 0),
             "nothing in flight, no destination charged"
         );
         gpu_image_intact_and_sole_owner(&mut image, &want);
@@ -54886,7 +56832,7 @@ mod tests {
         }
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58 + span_bytes, 0, 0),
+            (gpu_lease_charge() + span_bytes, 0, 0),
             "the ledger is clean"
         );
         gpu_image_intact_and_sole_owner(&mut image, &want);
@@ -55697,11 +57643,19 @@ mod tests {
             .unwrap()
             .reserve(&request(budget as u64, 500))
             .unwrap();
-        // A third whole-budget charge is what the LRU could never have made room for.
+        // A third whole-budget charge fits the ledger's third term on both host dimensions (the lease
+        // pool's on the pinned one, design L of WP-A day 63; the payload reserve's on the pageable
+        // one, design P2 re-applied on day 67); a fourth is what neither could make room for.
+        let third = governor
+            .lock()
+            .unwrap()
+            .reserve(&request(budget as u64, 0))
+            .unwrap();
         assert_eq!(
             governor.lock().unwrap().reserve(&request(1, 0)).err(),
             Some(Error::Capacity)
         );
+        governor.lock().unwrap().release(&third).unwrap();
         governor.lock().unwrap().release(&resident).unwrap();
         governor.lock().unwrap().release(&incoming).unwrap();
         assert_eq!(governor.lock().unwrap().used().pinned, 0);
@@ -56173,6 +58127,46 @@ mod tests {
         ));
         assert!(h.promoted_pin.is_some());
         assert_eq!(px.entries[&beta][0].pins, 1);
+    }
+
+    /// WP-A day 69 (`DAY69.md` design P, cell (c), CPU census): the purge's last work is the scrub,
+    /// after its settles and after the tenant's entries drop; the scrub drains the lease pool and
+    /// zeroes the staging set's idle buffers in place (their charges kept).
+    #[test]
+    fn day69_the_purge_ends_with_the_pool_drain_and_the_staging_zero() {
+        let src = include_str!("worker.rs");
+        let code = &src[..src.find("#[cfg(test)]\nmod tests").unwrap()];
+        let body = |sig: &str| {
+            let at = code.find(sig).unwrap_or_else(|| panic!("{sig}"));
+            &code[at..at + code[at..].find("\n    }\n").unwrap()]
+        };
+        let purge = body("    fn purge_tenant(&mut self, tenant: &str) -> (usize, usize, usize) {");
+        let scrub = purge.find("self.purge_scrub();").expect("the purge scrubs");
+        for before in [
+            "host_demote_settle_pending(self, ContractWait::Block, \"a tenant purge\");",
+            "host_promote_settle_contract(self, ContractWait::Block, \"a tenant purge\");",
+            "host_capture_settle_contract(self, ContractWait::Block, \"a tenant purge\");",
+            "if let Some(pool) = self.entries.remove(key) {",
+            "self.tenant_bytes.remove(&row);",
+        ] {
+            assert!(
+                purge.find(before).unwrap() < scrub,
+                "{before} precedes the scrub"
+            );
+        }
+        assert!(
+            purge[scrub..]
+                .trim_start_matches("self.purge_scrub();")
+                .trim()
+                == "(victims.len(), entries, bytes)",
+            "the scrub is the purge's last work"
+        );
+        let f = body("    fn purge_scrub(&self) {");
+        assert!(f.contains("tier.lease_pool.as_ref().map_or((0, 0), |p| p.drain())"));
+        assert!(f.contains("tier.staging.borrow_mut().scrub()"));
+        let staging = body("    fn scrub(&mut self) -> (usize, u64) {");
+        assert!(staging.contains("for buf in &mut self.idle {\n            buf.fill(0);"));
+        assert!(!staging.contains("charges"), "the set keeps its charges");
     }
 
     #[test]
@@ -60365,6 +62359,92 @@ mod host_handoff_tests {
         let mut r: &[u8] = &huge;
         let err = handoff_read_entry(&mut r, 1024).unwrap_err();
         assert!(err.contains("exceeds the file-size bound"), "{err}");
+    }
+
+    /// OWED 18: the file layer under both `MEMRA_KV_HOST_HANDOFF_IO` arms. Frames written
+    /// through either writer are byte-identical on disk, either reader restores them exactly,
+    /// and a truncated file breaks the stream the same way under both readers.
+    #[test]
+    fn host_handoff_file_arms_are_byte_identical_and_cross_readable() {
+        use crate::handoff_io::{HandoffIo, HandoffReader, HandoffWriter};
+        let dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/handoff-io-tests");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = |tag: &str| {
+            dir.join(format!("frames-{tag}-{}", std::process::id()))
+                .to_string_lossy()
+                .into_owned()
+        };
+        let a = handoff_fixture("m", "ns-a", 7);
+        let b = handoff_fixture("m", "ns-b", 91);
+        let write = |p: &str, mode: HandoffIo| -> Result<(), String> {
+            let mut w = HandoffWriter::create(p, mode)?;
+            handoff_write_header(&mut w, &handoff_header_fixture(1000))?;
+            handoff_write_entry(&mut w, &a.as_wire_ref())?;
+            handoff_write_entry(&mut w, &b.as_wire_ref())?;
+            let mut f = w.finish()?;
+            f.complete_writes()?;
+            f.sync()
+        };
+        let (pb, pd) = (path("buffered"), path("direct"));
+        write(&pb, HandoffIo::Buffered).unwrap();
+        if let Err(e) = write(&pd, HandoffIo::Direct) {
+            assert!(e.contains("O_DIRECT open refused"), "{e}");
+            eprintln!("SKIP: the test filesystem refuses O_DIRECT: {e}");
+            let _ = std::fs::remove_file(&pb);
+            return;
+        }
+        let bytes = std::fs::read(&pb).unwrap();
+        assert_eq!(
+            bytes,
+            std::fs::read(&pd).unwrap(),
+            "both arms write the same bytes"
+        );
+        for file in [&pb, &pd] {
+            for mode in [HandoffIo::Buffered, HandoffIo::Direct] {
+                let (mut r, max) = HandoffReader::open(file, mode).unwrap();
+                assert_eq!(max, bytes.len() as u64);
+                assert_eq!(
+                    handoff_read_header(&mut r).unwrap(),
+                    handoff_header_fixture(1000)
+                );
+                assert_eq!(
+                    handoff_read_entry(&mut r, max).unwrap().unwrap().unwrap(),
+                    a
+                );
+                assert_eq!(
+                    handoff_read_entry(&mut r, max).unwrap().unwrap().unwrap(),
+                    b
+                );
+                assert!(
+                    handoff_read_entry(&mut r, max).unwrap().is_none(),
+                    "clean EOF"
+                );
+            }
+        }
+        // Truncate mid-frame B: both readers see a broken stream after frame A.
+        let cut = bytes.len() as u64 - 40;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&pd)
+            .unwrap()
+            .set_len(cut)
+            .unwrap();
+        for mode in [HandoffIo::Buffered, HandoffIo::Direct] {
+            let (mut r, _) = HandoffReader::open(&pd, mode).unwrap();
+            handoff_read_header(&mut r).unwrap();
+            assert_eq!(
+                handoff_read_entry(&mut r, 1 << 20)
+                    .unwrap()
+                    .unwrap()
+                    .unwrap(),
+                a
+            );
+            let err = handoff_read_entry(&mut r, 1 << 20).unwrap_err();
+            assert!(err.contains("failed"), "{mode:?}: {err}");
+        }
+        let _ = std::fs::remove_file(&pb);
+        let _ = std::fs::remove_file(&pd);
     }
 
     #[test]

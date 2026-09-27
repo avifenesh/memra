@@ -1100,6 +1100,24 @@ shapes. The dense test's red arm moves one output row's weight codes and require
 move in every token row and its neighbour in none. Output buffers start as a NaN pattern, so an
 unwritten element fails, and the dense test also requires the stride gaps to stay unwritten. `_tile_timing` prints device time against the loop. Receipts:
 `research/dsv4f-bringup-20260923/prefill-tile/`.
+### DSv4 TP/EP position-split C4 store (#710)
+
+`dsv4_kv_split_gate <model-dir> <source-tape> [prompt-tokens] [steps]` (a 2x RTX PRO 6000 pair,
+under `/tmp/memra-gpu.lock`, defaults 3000 and 300) loads the TP/EP program once and allocates
+one state with replicated caches (the reference) and one with the C4 stores split by block
+parity across the ranks (`set_c4_split_for_gate`). The prompt is long enough that the indexer
+picks from more blocks than its top-k.
+
+Each check compares full logits bits against the replicated state:
+- The chunked prefill (512-token chunks) of both states.
+- Every eager greedy step after it.
+- A third, split state primed the same way, decoding on the full-token replay graphs.
+- Both eager states parked to host and restored, then continued.
+
+It also prints both states' cache bytes. With the split the TP/EP default, the long replay gate,
+the TP/EP rows gate and the DSpark gate on TP/EP run on split states and must keep their receipts'
+tokens and accept shas. Receipts: `research/dsv4f-bringup-20260923/kv-split/`.
+
 ### DSv4 TP/EP B-row steps and their graphs (#710)
 
 `DSV4_ROWS_GATE_TOPOLOGY=tp_ep dsv4_rows_gate <model-dir> <source-tape> 24 64` (a 2x RTX PRO 6000
@@ -2185,6 +2203,16 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   census `day54_the_on_tick_lines_are_log_only` (every `OnTick` answer of both capture routes and of the submit core
   records its reason first; the routes refuse the same conditions as before, one `else if` chain each; no decision reads
   the reason; the publish lines print only under the door; the fanout's snapshot, restores and insert keep their order).
+- The admission-counter isolation (WP-A day 56, `research/spill-a-20260919/DAY56.md`, OWED item 23): the reservation
+  path takes its lane counters (`reserve_pending_admit_on`; production passes the global ones); the seven shed and
+  ceiling tests run on their own counters with no lock; `global_counter_writer_guard()` (the drain lock, then the
+  counters' lock) orders the three tests that set the global counters against the handler tests;
+  `admission_counters_guard()` (the counters' lock alone) orders the route tests against them. Census
+  `day56_the_admission_writers_are_ordered_against_the_handler_readers` (replacing day 53's; since section 3 it also
+  catches indirect writers: a test that reserves through a global entry or a handler holds a lock, a test that reserves
+  on the counters path passes its own pair). Section 3's fix passes the lane counters and the pending-admits gauge as one
+  `AdmitCounters` pair (`AdmitCounters::GLOBAL` on every production path); cell
+  `day56_an_isolated_reservation_never_moves_the_global_gauges`.
 - The starved-runner fixes (WP-A day 55, `research/spill-a-20260919/DAY55.md`, OWED item 22): the health snapshot and
   stall verdict read the clock once (census `day55_a_snapshot_reads_the_clock_once`); the extended-stream commit test on
   tokio's paused clock; the slow-constraint-compile test on its loop's step clock and a test-only virtual health clock

@@ -114,6 +114,9 @@ jobs:
       - name: CPU-only artifact path safety tests
         run: python3 tools/test_nvme_builder_safety.py
 
+      - name: Chain-launched kernels open with the PDL entry
+        run: python3 tools/check-pdl-chain.py
+
       - name: Per-card native qualification runner controls
         run: python3 tools/test_qualify_model_device_memory.py
 

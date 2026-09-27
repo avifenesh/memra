@@ -1,0 +1,14 @@
+diff --git a/crates/memra-engine/src/learned_depth.rs b/crates/memra-engine/src/learned_depth.rs
+--- a/crates/memra-engine/src/learned_depth.rs
++++ b/crates/memra-engine/src/learned_depth.rs
+@@ -440,6 +440,10 @@
+         let expected_cost = confidence.model.lambda
+             * confidence.model.marginal_ms[position] / 1000.0;
+         let stop = expected_gain < expected_cost;
++        if confidence.decisions < 4 {
++            eprintln!("[ckd-c-debug] pos={position} q={q} chance={chance} chain={} next={} gain={expected_gain} cost={expected_cost} stop={stop}",
++                confidence.chain, confidence.model.next_rate[position]);
++        }
+         std::hint::black_box(stop);
+         confidence.decisions += 1;
+         if stop && !confidence.noop {

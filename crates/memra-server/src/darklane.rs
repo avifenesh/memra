@@ -591,6 +591,25 @@ mod tests {
             .and_then(|i| s[i + 1..].trim_start().chars().next())
     }
 
+    /// WP-A day 57 (`research/spill-a-20260919/DAY57.md`, OWED item 24): wait for an
+    /// acknowledgement under a 30 s hang guard. The stop-mode cycle's claim is the wiring (the
+    /// runner acts on each signal and the job reaches the state it names); a wall bound on how soon
+    /// the scheduler runs the runner thread failed under starvation (1 of 100 beside sixteen
+    /// burners at 3 s). A runner that never acts never acknowledges and fails at the guard. The
+    /// latency each wait read is printed.
+    fn wait_acknowledged<F: Fn() -> bool>(what: &str, f: F) {
+        let t0 = std::time::Instant::now();
+        let guard = std::time::Duration::from_secs(30);
+        while t0.elapsed() < guard {
+            if f() {
+                println!("{what}: acknowledged after {}ms", t0.elapsed().as_millis());
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        panic!("no acknowledgement within the 30 s guard: {what}");
+    }
+
     fn wait_for<F: Fn() -> bool>(what: &str, ms: u64, f: F) {
         let deadline = std::time::Instant::now() + std::time::Duration::from_millis(ms);
         while std::time::Instant::now() < deadline {
@@ -695,38 +714,35 @@ mod tests {
         assert_eq!(st.state.load(Ordering::Acquire), BG_WAITING);
         // valley -> launch.
         sig.valley.store(true, Ordering::Release);
-        wait_for("launch", 1000, || {
-            st.state.load(Ordering::Acquire) == BG_RUNNING
-        });
+        wait_acknowledged("launch", || st.state.load(Ordering::Acquire) == BG_RUNNING);
         let pid = st.job_pid.load(Ordering::Acquire);
         assert!(pid > 0);
-        wait_for("job running", 1000, || {
-            matches!(proc_state(pid), Some('R' | 'S'))
-        });
+        wait_acknowledged("job running", || matches!(proc_state(pid), Some('R' | 'S')));
         // busy edge -> SIGSTOP. The wiring claim is the yield itself plus the counters;
         // wall-clock tightness is poll_ms config, not an OS promise — a 500ms bound
         // starved out under a co-running perf battery (2026-08-30, local-ci full load:
-        // the runner thread didn't get scheduled for >500ms). 3s keeps the gate loud on
-        // real wiring breaks without asserting scheduler latency.
+        // the runner thread didn't get scheduled for >500ms), and the 3s bound that replaced it
+        // starved out too (WP-A day 57: 1 of 100 beside sixteen burners). The runner acknowledges
+        // the yield (its state), then the job reads stopped.
         sig.valley.store(false, Ordering::Release);
         sig.busy.store(true, Ordering::Release);
-        let t0 = std::time::Instant::now();
-        wait_for("yield to T", 3000, || proc_state(pid) == Some('T'));
-        println!("yield latency: {}ms", t0.elapsed().as_millis());
+        wait_acknowledged("the runner yields", || {
+            st.state.load(Ordering::Acquire) == BG_YIELDED
+        });
+        wait_acknowledged("yield to T", || proc_state(pid) == Some('T'));
         assert_eq!(st.state.load(Ordering::Acquire), BG_YIELDED);
         assert_eq!(st.yields.load(Ordering::Relaxed), 1);
         // back to valley -> SIGCONT.
         sig.busy.store(false, Ordering::Release);
         sig.valley.store(true, Ordering::Release);
-        wait_for("resume", 1000, || {
-            matches!(proc_state(pid), Some('R' | 'S'))
+        wait_acknowledged("the runner resumes", || {
+            st.resumes.load(Ordering::Relaxed) == 1
         });
+        wait_acknowledged("resume", || matches!(proc_state(pid), Some('R' | 'S')));
         assert_eq!(st.resumes.load(Ordering::Relaxed), 1);
         // shutdown never leaves an orphan (stopped or otherwise).
         h.shutdown();
-        wait_for("job reaped", 3000, || {
-            proc_state(pid).is_none_or(|s| s == 'Z')
-        });
+        wait_acknowledged("job reaped", || proc_state(pid).is_none_or(|s| s == 'Z'));
     }
 
     #[test]

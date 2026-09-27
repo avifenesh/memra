@@ -1,0 +1,11 @@
+# DAY74 section 4 reader dry check (mechanics only): day74-read.py --induce-b over BOX29's induce receipts (its registered reading is void, section 3; this output decides nothing)
+DAY74 INDUCER rig=mechanics-box29 memfree_gib=105 F_gib=64 induce=1
+DAY74 STATE rig=mechanics-box29 reading=ns_per_step
+DAY74 INDUCE CHECKS rig=mechanics-box29 runs=24 integrity=ok
+DAY74 R2 rig=mechanics-box29 ref: window_ns_per_step median=1.112 (N=6) compacted=0 of 6 compact_isolated median=0/s migrate_fail median=0/s | R3 gen median=0.255 window median=0.226
+DAY74 R2 rig=mechanics-box29 refi: window_ns_per_step median=1.112 (N=6) compacted=0 of 6 compact_isolated median=0/s migrate_fail median=0/s | R3 gen median=0.258 window median=0.230
+DAY74 R2 rig=mechanics-box29 i15: window_ns_per_step median=1.113 (N=6) compacted=0 of 6 compact_isolated median=0/s migrate_fail median=0/s | R3 gen median=0.264 window median=0.234
+DAY74 R2 rig=mechanics-box29 i15i: window_ns_per_step median=1.112 (N=6) compacted=0 of 6 compact_isolated median=0/s migrate_fail median=0/s | R3 gen median=0.270 window median=0.238
+DAY74 INDUCE VERDICT rig=mechanics-box29 integrity=ok -> not_induced (compaction in 0 of 6 REF+I and 0 of 6 door+I spans)
+# and without --induce-b (section 1's reader): void as the box read
+DAY74 INDUCE VERDICT rig=mechanics-box29 integrity=FAIL -> void

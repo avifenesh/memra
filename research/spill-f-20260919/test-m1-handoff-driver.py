@@ -57,12 +57,12 @@ class Harness(unittest.TestCase):
         shutil.rmtree(self.tmp)
 
     def run_driver(self, name, size=1 << 29, cycles="2", env=None, gate="m1-stub-kv-gate",
-                   server="m1-stub-kv-server", scratch=None):
+                   server="m1-stub-kv-server", scratch=None, extra=()):
         out = self.tmp / name
         argv = [sys.executable, str(DRIVER), "run", "--gate", str(self.tmp / gate), "--server", str(self.tmp / server),
                 "--artifact", "/nonexistent-stub-artifact", "--prompts", str(self.prompts), "--proof", str(self.proof),
                 "--scratch", str(scratch or self.scratch), "--out", str(out), "--size-bytes", str(size),
-                "--cycles", cycles, "--port", str(free_port()), "--stub-no-lock"]
+                "--cycles", cycles, "--port", str(free_port()), "--stub-no-lock", *extra]
         e = dict(os.environ, M1_STUB_ENTRY_BYTES=str(128 << 20), **(env or {}))
         proc = subprocess.run(argv, capture_output=True, text=True, env=e, timeout=600)
         return proc, out
@@ -100,6 +100,23 @@ class Red(Harness):
         self.assertFalse(c["passed"])
         self.assertTrue(any(needle in p for p in c["problems"]), c["problems"])
         return c
+
+    def test_io_schedule_sets_each_cycles_arm(self):
+        proc, out = self.run_driver("io", extra=("--io-schedule", "buffered,direct", "--host-mb", "4096"))
+        self.assertEqual(proc.returncode, 0, proc.stdout[-3000:] + proc.stderr[-3000:])
+        cs = self.cycles(out)
+        self.assertEqual([c["io"] for c in cs], ["buffered", "direct"])
+        self.assertTrue(all(c["passed"] for c in cs), [c["problems"] for c in cs])
+        ident = json.loads((out / "identity.json").read_text())
+        self.assertEqual((ident["io_schedule"], ident["host_mb"]), (["buffered", "direct"], 4096))
+
+    def test_io_line_mismatch_fails_the_cycle(self):
+        proc, out = self.run_driver("wrongio", extra=("--io-schedule", "direct,direct"),
+                                    env={"M1_STUB_WRONG_IO": "1"})
+        self.assertNotEqual(proc.returncode, 0)
+        c = self.cycles(out)[0]
+        self.assertIn("export line does not carry io=direct", c["problems"])
+        self.assertIn("import DONE line does not carry io=direct", c["problems"])
 
     def test_refused_export(self):
         c = self.failed("refuse", "export refused", env={"M1_STUB_REFUSE_EXPORT": "1"})

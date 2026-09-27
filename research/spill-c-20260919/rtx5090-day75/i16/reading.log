@@ -1,0 +1,18 @@
+DAY75 host demand sequence i15 sha256 4bdc2610c3534e42 lines=[22077]
+DAY75 host demand sequence i16 sha256 0e220d04f52d13e9 lines=[22077]
+DAY75 host demand sequence i16c sha256 0e220d04f52d13e9 lines=[22077]
+DAY75 I16 CHECKS rig=rtx5090 runs=40 integrity=ok
+DAY75 ADMISSIBILITY rig=rtx5090 ceiling=0.005 max_iqr_gen=0.0090 max_iqr_window=0.0045 failing=['i15:gen_s=0.0090'] -> inadmissible
+DAY75 gen-only decode medians (N=10 each): ref=0.366 i15=0.374 i16=0.393 i16c=0.398
+DAY75 STEP i16_vs_i15 gen-only decode: pooled=+0.0190 o1=+0.0180 o2=+0.0190 noise=0.0090 -> regresses
+DAY75 steady window medians (N=10 each): ref=0.403 i15=0.410 i16=0.411 i16c=0.409
+DAY75 STEP i16_vs_i15 steady window: pooled=+0.0010 o1=+0.0000 o2=+0.0020 noise=0.0043 -> flat
+DAY75 DOOR i15_vs_ref gen-only decode: pooled=+0.0080 o1=+0.0080 o2=+0.0070 noise=0.0090 -> matches
+DAY75 DOOR i15_vs_ref steady window: pooled=+0.0075 o1=+0.0090 o2=+0.0060 noise=0.0043 -> loses
+DAY75 I16C brackets per window token (ms, medians): dispatch_ns=0.1221 prefetch_ns=0.6868 pf_demand_ns=0.2359 pf_resident_ns=0.0762 pf_retire_ns=0.0298 pf_stage_ns=0.2430
+DAY75 B p-ref-r1: window_ms=412.0 gpu_busy=9.6248 gpu_idle=3.2502 h2d_exposed=1.1435 (ms per window token)
+DAY75 B p-on-r1: window_ms=423.0 gpu_busy=8.7741 gpu_idle=4.4446 h2d_exposed=1.5078 (ms per window token)
+DAY75 B p-on-r2: window_ms=417.0 gpu_busy=9.1454 gpu_idle=3.8858 h2d_exposed=1.4934 (ms per window token)
+DAY75 B p-ref-r2: window_ms=410.0 gpu_busy=9.5874 gpu_idle=3.2251 h2d_exposed=1.1467 (ms per window token)
+DAY75 B i16_minus_ref per window token (ms, medians of two; deciding nothing): gpu_busy=-0.6463 gpu_idle=+0.9276 h2d_exposed=+0.3555 kernel_sum=-0.6467
+DAY75 VERDICT rig=rtx5090 integrity=ok -> void (inadmissible) [as read: i16=regresses door=i15 vs_ref=matches (window: i16=flat vs_ref=loses)]

@@ -1,0 +1,21 @@
+DAY84 host demand sequence i15 sha256 4bdc2610c3534e42 lines=[22077]
+DAY84 host demand sequence i20 sha256 4bdc2610c3534e42 lines=[22077]
+DAY84 host demand sequence i21 sha256 4bdc2610c3534e42 lines=[22077]
+DAY84 host demand sequence i21c sha256 4bdc2610c3534e42 lines=[22077]
+DAY84 I21 CHECKS rig=pro-single runs=50 integrity=ok
+DAY84 ADMISSIBILITY rig=pro-single ceiling=0.005 max_iqr_gen=0.0570 max_iqr_window=0.0468 failing=['i15:gen_s=0.0570', 'i15:window_s=0.0468', 'i20:gen_s=0.0535', 'i20:window_s=0.0448', 'i21:gen_s=0.0500', 'i21:window_s=0.0450'] -> inadmissible
+DAY84 gen-only decode medians (N=10 each): ref=0.244 i15=0.248 i20=0.247 i21=0.294 i21c=0.296
+DAY84 STEP i21_vs_i20 gen-only decode: pooled=+0.0470 o1=+0.0480 o2=+0.0440 noise=0.0535 -> flat
+DAY84 steady window medians (N=10 each): ref=0.217 i15=0.218 i20=0.236 i21=0.259 i21c=0.264
+DAY84 STEP i21_vs_i20 steady window: pooled=+0.0225 o1=+0.0040 o2=+0.0410 noise=0.0450 -> flat
+DAY84 BESIDE i21_vs_i15 gen-only decode: pooled=+0.0465 o1=+0.0490 o2=+0.0430 noise=0.0570 -> flat (deciding nothing)
+DAY84 BESIDE i21_vs_i15 steady window: pooled=+0.0405 o1=+0.0400 o2=+0.0410 noise=0.0468 -> flat (deciding nothing)
+DAY84 DOOR i21_vs_ref gen-only decode: pooled=+0.0505 o1=+0.0520 o2=+0.0470 noise=0.0500 -> matches
+DAY84 DOOR i21_vs_ref steady window: pooled=+0.0415 o1=+0.0410 o2=+0.0420 noise=0.0450 -> matches
+DAY84 I21C brackets per window token (ms, medians): dispatch_ns=0.1070 prefetch_ns=0.6098 pf_demand_ns=0.1777 pf_resident_ns=0.0067 pf_retire_ns=0.0360 pf_stage_ns=0.2939
+DAY84 B p-ref-r1: window_ms=271.0 gpu_busy=5.2743 gpu_idle=3.1944 h2d_exposed=0.6224 (ms per window token)
+DAY84 B p-on-r1: window_ms=365.0 gpu_busy=5.2893 gpu_idle=6.1169 h2d_exposed=0.7988 (ms per window token)
+DAY84 B p-on-r2: window_ms=368.0 gpu_busy=5.2932 gpu_idle=6.2068 h2d_exposed=0.7994 (ms per window token)
+DAY84 B p-ref-r2: window_ms=273.0 gpu_busy=5.2916 gpu_idle=3.2397 h2d_exposed=0.6222 (ms per window token)
+DAY84 B i21_minus_ref per window token (ms, medians of two; deciding nothing): gpu_busy=+0.0083 gpu_idle=+2.9448 h2d_exposed=+0.1768 kernel_sum=+0.0082
+DAY84 VERDICT rig=pro-single integrity=ok -> void (inadmissible) [as read: i21=flat door=i21 vs_ref=matches (window: i21=flat vs_ref=matches)]

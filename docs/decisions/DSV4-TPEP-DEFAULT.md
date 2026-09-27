@@ -44,8 +44,9 @@ same text on every request of every arm:
   TTFT under load rises tenfold. The DSpark route is serial on both placements, so it does not
   pay this. The owner took the flip with this cost on the record ("Flip now, B-row next"). A
   TP/EP B-row step, several requests' rows in one TP step, is the next lane.
-- **Context.** TP/EP replicates every layer's KV cache. A session holds about 370k tokens with
-  DSpark and 790k plain, against PP-2's 1M. The head-split KV lane follows the B-row lane.
+- **Context.** TP/EP replicated every layer's KV cache: a session held 300k tokens with DSpark
+  and 800k plain, against PP-2's 1M. Since the position-split C4 store (#710,
+  `research/dsv4f-bringup-20260923/kv-split/`) it holds 500k and 1M.
 
 ## Rejected
 

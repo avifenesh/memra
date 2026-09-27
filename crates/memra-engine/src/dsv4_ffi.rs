@@ -28,6 +28,46 @@ unsafe extern "C" {
         eps: f32,
         hadamard_scale: f32,
         stream: *mut c_void,
+        split_recent: *mut f32,
+        split_tags: *mut i32,
+        split_recent_rows: i32,
+        split_rank: i32,
+    ) -> i32;
+    /// TP/EP position-split C4 store (memra #710): gather each query's selected rows from the
+    /// local store, the local recent ring, or the peer's store.
+    pub fn memra_dsv4_c4_split_gather(
+        local: *const f32,
+        peer: *const f32,
+        recent: *const f32,
+        tags: *const i32,
+        recent_rows: i32,
+        rank: i32,
+        indices: *const i32,
+        out: *mut f32,
+        out_indices: *mut i32,
+        nq: i32,
+        slots: i32,
+        stride: i32,
+        cap_blocks: i32,
+        logical_transient: i32,
+        transient_rows: i32,
+        local_transient: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// The emitted block's split store: the owner's row, or the other rank's recent slot.
+    pub fn memra_dsv4_c4_split_store(
+        row: *const f32,
+        store: *mut f32,
+        recent: *mut f32,
+        tags: *mut i32,
+        recent_rows: i32,
+        rank: i32,
+        pos: *const i32,
+        ratio: i32,
+        block: i32,
+        d: i32,
+        row0: i32,
+        stream: *mut c_void,
     ) -> i32;
     pub fn memra_dsv4_sample_device_replay(
         logits: *const f32,
@@ -365,6 +405,50 @@ unsafe extern "C" {
         stream: *mut c_void,
     ) -> i32;
     // iteration-5 F-itemisation instrument (see dsv4_gpu.rs Dsv4Phase).
+    /// The DSv4 chain's programmatic dependent launch switch (`cu/memra_pdl_chain.cuh`).
+    pub fn memra_pdl_chain_set(on: i32);
+    /// A verify round's compressor rows `i0..i1` into their pending slots, both rings.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_cmp_rows_to_slots(
+        pend_kv: *mut f32,
+        pend_sc: *mut f32,
+        rows_kv: *const f32,
+        rows_sc: *const f32,
+        i0: i32,
+        i1: i32,
+        pos0: i32,
+        ratio: i32,
+        latent: i32,
+        slot_off: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// A compressor's verify-round rollback (snapshot restore, committed-row writes and the
+    /// overlap half shifts) in one launch.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_cmp_rollback(
+        pend_kv: *mut f32,
+        pend_sc: *mut f32,
+        kv_snap: *const f32,
+        sc_snap: *const f32,
+        rows_kv: *const f32,
+        rows_sc: *const f32,
+        n_commit: i32,
+        pos0: i32,
+        ratio: i32,
+        latent: i32,
+        overlap: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// Two same-length f32 copies in one PDL-chained launch (`n` a multiple of 4, 16-byte
+    /// aligned pointers).
+    pub fn memra_dsv4_copy2_f32(
+        a: *const f32,
+        a_out: *mut f32,
+        b: *const f32,
+        b_out: *mut f32,
+        n: i64,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_nvtx_push(name: *const std::os::raw::c_char) -> i32;
     pub fn memra_dsv4_nvtx_pop() -> i32;
     pub fn memra_dsv4_nvfp4_deq_bf16(
@@ -478,6 +562,52 @@ unsafe extern "C" {
         fault: *mut i32,
         stream: *mut c_void,
     ) -> i32;
+    /// `memra_dsv4_moe_fused_gu` over a partition (memra #710, a TP/EP rank): `table` holds
+    /// experts `[first, first + n_expert)` of `global_experts`, `sel` and `scale2` carry global
+    /// ids, and another rank's slot is skipped. `rows` token rows of `topk` slots each (x is
+    /// `[rows][in_f]`). Fault bit 0x1 is an id outside the bank.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_moe_fused_gu_part(
+        table: *const u64,
+        n_expert: i32,
+        global_experts: i32,
+        first: i32,
+        sel: *const i32,
+        selw: *const f32,
+        scale2: *const f32,
+        xf: *const f32,
+        h: *mut f32,
+        topk: i32,
+        rows: i32,
+        in_f: i32,
+        out_f: i32,
+        limit: f32,
+        fault: *mut i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// `memra_dsv4_moe_fused_down` over a partition: `order`, `y` and `tile_cnt` null, so only
+    /// this rank's slots' contribution rows are written and the slot sum is the caller's, after
+    /// the rank-order join. A partition with the sum refuses 40004.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_moe_fused_down_part(
+        table: *const u64,
+        n_expert: i32,
+        global_experts: i32,
+        first: i32,
+        sel: *const i32,
+        scale2: *const f32,
+        h: *const f32,
+        contrib: *mut f32,
+        order: *const i32,
+        y: *mut f32,
+        tile_cnt: *mut i32,
+        topk: i32,
+        rows: i32,
+        in_f: i32,
+        out_f: i32,
+        fault: *mut i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_moe_fused_dispatches() -> u64;
     pub fn memra_dsv4_scale_rows(
         y: *mut f32,
@@ -510,18 +640,6 @@ unsafe extern "C" {
         s: i32,
         hc: i32,
         d: i32,
-        stream: *mut c_void,
-    ) -> i32;
-    /// iteration-5: row-blocked twin of `memra_dsv4_dots_f32`. Same arithmetic, same
-    /// reduction tree, same order -- only the block geometry differs, so it is bit-identical.
-    pub fn memra_dsv4_dots_f32_rowblk(
-        x: *const f32,
-        w: *const c_void,
-        w_is_bf16: i32,
-        y: *mut f32,
-        s: i32,
-        k: i32,
-        n: i32,
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_dsv4_dots_f32(
@@ -880,16 +998,6 @@ unsafe extern "C" {
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_dsv4_argmax(v: *const f32, n: i64, out: *mut i32, stream: *mut c_void) -> i32;
-    /// iteration-5: `dst[0..cols) = src[idx[slot] * cols ..]`, the index read on the
-    /// DEVICE so the DSpark markov chain needs no host round trip between steps.
-    pub fn memra_dsv4_gather_row_by_idx(
-        src: *const f32,
-        idx: *const i32,
-        slot: i32,
-        dst: *mut f32,
-        cols: i32,
-        stream: *mut c_void,
-    ) -> i32;
     pub fn memra_dsv4_gemv_bf16(
         w_bf16: *const c_void,
         x_bf16: *const c_void,

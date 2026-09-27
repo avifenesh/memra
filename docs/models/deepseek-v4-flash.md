@@ -34,6 +34,34 @@ row, median of N=3 rows (N=2 for DSpark), 2026-09-24/25, same text on every requ
 | DSpark (`MEMRA_DSV4_DRAFTER=dspark`), TP/EP | 82.73 | 72.79 / 63.57 | 207 ms |
 | DSpark, PP-2 | 70.60 | 61.72 / 53.90 | 267 ms |
 
+Since 2026-09-26 the TP/EP decode chain runs with programmatic dependent launch, a
+vocab-parallel head, one kernel for the compressor snapshots and push joins
+(`research/dsv4f-bringup-20260923/levers-20260926/`). The same bits, and on the Server Edition
+pair, greedy aggregate tok/s:
+
+| cell | before (N=5) | levers on (N=5) |
+|---|---|---|
+| c1 | 67.53 | 77.19 (decode 80.95) |
+| c2 | 93.74 | 104.42 |
+| c4 | 123.39 | 130.44 to 135.10 |
+
+A DSpark round's compressor rollback and its verify row placement are single launches since
+2026-09-26 (`research/dsv4f-bringup-20260923/dspark-round/`): DSpark greedy c1 89.16 to 93.17
+tok/s and sampled 75.84 to 78.65 on a second SE pair (N=3), and the chunked prefill's TTFT 18% to
+21% lower. Same bits.
+
+Since 2026-09-27 a TP/EP step of 1 to 16 rows runs the routed experts as the fused pair over the
+rank's experts: two launches per layer, where the grouped chain took about fourteen
+(`research/dsv4f-bringup-20260923/levers-20260927/`). Same bits. On a second SE pair, greedy
+aggregate tok/s, main against fused, N=3:
+
+| cell | main | fused |
+|---|---|---|
+| c1 | 77.36 | 84.49 (decode 88.86), +9.2% |
+| c2 | 103.75 | 116.45, +12.2% |
+| c4 | 130.48 | 146.44, +12.2% |
+| DSpark c1 | 88.99 | 95.63, +7.5% |
+
 Concurrency: the plain TP/EP route serves four lanes whose steps share one captured B-row
 graph step (memra #710). Aggregate on the Workstation pair:
 
@@ -43,8 +71,10 @@ graph step (memra #710). Aggregate on the Workstation pair:
 | PP-2, two pipelined lanes | 120.9, TTFT 0.30 s | 120.6, TTFT 4.5 s |
 
 Known cost of TP/EP:
-- **Context.** A session holds about 370k tokens with DSpark and 790k plain, against PP-2's 1M.
-  The head-split KV lane follows.
+- **Context.** The C4 compressed stores are split by position across the two ranks (#710,
+  `research/dsv4f-bringup-20260923/kv-split/`): 8.5 KB per token per rank at 1M against 13.8 KB
+  replicated. A served session reaches 1M plain and 500k with DSpark, up from 800k and 300k. The
+  cost is 0.4% to 2.0% decode and about 1% TTFT on the SE pair.
 
 Receipts: `research/dsv4f-bringup-20260923/tpep-default/RESULTS.md`, `tp-rows/RESULTS.md`,
 `dspark-ep/RESULTS.md`, `ceiling/CEILING.md`.

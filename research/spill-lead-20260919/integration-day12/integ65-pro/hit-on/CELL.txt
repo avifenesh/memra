@@ -1,0 +1,8 @@
+cell=hit-on cmd=bash tools/spec-on-cache-hit-gate.sh --external-lock 9 qwen /root/models/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf /root/wt-integ65/target/release/memra-server
+env=MEMRA_KV_HOST_CONTRACTS=1
+lock=/tmp/memra-gpu.lock owner=collector-fd9
+tree=866de03043ca0d658f055d85c119cdb8b3555e14
+binary_sha256=106ceea35292a9aabf57f239ce16be02341de85c1c210c0d67b226699228621d
+model=Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+gpu=NVIDIA RTX PRO 6000 Blackwell Workstation Edition, 600.00 W
+status=executed-not-qualified

@@ -1,0 +1,26 @@
+diff --git a/crates/memra-server/src/worker.rs b/crates/memra-server/src/worker.rs
+index 086623e55..27c255379 100644
+--- a/crates/memra-server/src/worker.rs
++++ b/crates/memra-server/src/worker.rs
+@@ -12372,7 +12372,8 @@ fn host_spans_submit(
+             HostHashSlot::Ssm(i) => dead.ssm[i] = Some(source),
+             HostHashSlot::Logits | HostHashSlot::Hidden => {}
+         }
+-        tier.staging_put(destination);
++        eprintln!("[day63 gate red arm] the refused D2H span drops its staging buffer");
++        drop(destination);
+     }
+     let n = slots.len();
+     Err(host_contract_abort(
+@@ -13082,8 +13083,9 @@ fn host_h2d_spans_submit(
+         Err(refusal) => refusal,
+     };
+     let n = back.len();
+-    for (&(slot, _, _), span) in slots.iter().zip(back) {
+-        staged.bufs.push((slot, span.source));
++    for (&(_slot, _, _), span) in slots.iter().zip(back) {
++        eprintln!("[day63 gate red arm] the refused H2D span drops its staging buffer");
++        drop(span.source);
+     }
+     Err(host_promote_contract_abort(
+         &mut t,
