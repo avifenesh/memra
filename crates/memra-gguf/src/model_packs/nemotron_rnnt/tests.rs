@@ -132,7 +132,7 @@ fn the_qualified_streaming_arm_never_reads_future_audio() {
 fn the_real_archive_census_matches_the_fixture_when_the_artifact_is_present() {
     let path = Path::new(HEBREW_ARCHIVE);
     if !path.exists() {
-        eprintln!("skipping: {HEBREW_ARCHIVE} is not on this machine");
+        eprintln!("SKIP[{HEBREW_ARCHIVE}]: real archive census vs the fixture not run");
         return;
     }
     let file = std::fs::File::open(path).unwrap();

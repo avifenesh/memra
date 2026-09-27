@@ -4281,7 +4281,9 @@ mod hy3_repack_probe {
     #[test]
     fn hy3_manifest_offset_roundtrip() {
         let Some(dir) = repack_dir() else {
-            eprintln!("SKIP: Hy3 repack absent");
+            eprintln!(
+                "SKIP[/data/ai-ml/hf-models/hy3-reap50-q4k-memra]: Hy3 repack assertions not run"
+            );
             return;
         };
         let src = Hy3RepackSource::open(dir).unwrap();
@@ -4319,7 +4321,9 @@ mod hy3_repack_probe {
     #[test]
     fn hy3_inventory_dtype_shape_assertions() {
         let Some(dir) = repack_dir() else {
-            eprintln!("SKIP: Hy3 repack absent");
+            eprintln!(
+                "SKIP[/data/ai-ml/hf-models/hy3-reap50-q4k-memra]: Hy3 repack assertions not run"
+            );
             return;
         };
         let src = Hy3RepackSource::open(dir).unwrap();
@@ -4396,7 +4400,9 @@ mod hy3_repack_probe {
     #[test]
     fn hy3_load_plan_dry_run_no_cuda() {
         let Some(dir) = repack_dir() else {
-            eprintln!("SKIP: Hy3 repack absent");
+            eprintln!(
+                "SKIP[/data/ai-ml/hf-models/hy3-reap50-q4k-memra]: Hy3 repack assertions not run"
+            );
             return;
         };
         let src = Hy3RepackSource::open(dir).unwrap();
@@ -4465,7 +4471,7 @@ mod nv27b_probe {
     fn nvidia_27b_dtype_routing() {
         let dir = std::path::Path::new("/data/ai-ml/hf-models/nvidia-qwen36-27b-nvfp4");
         if !dir.join("model.safetensors.index.json").exists() {
-            eprintln!("SKIP: ckpt absent");
+            eprintln!("SKIP[{}]: checkpoint assertions not run", dir.display());
             return;
         }
         let src = SafetensorsSource::open(dir).unwrap();
@@ -4501,7 +4507,7 @@ mod nv27b_probe {
     fn nvidia_27b_mtp_mapping() {
         let dir = std::path::Path::new("/data/ai-ml/hf-models/nvidia-qwen36-27b-nvfp4");
         if !dir.join("model.safetensors.index.json").exists() {
-            eprintln!("SKIP: ckpt absent");
+            eprintln!("SKIP[{}]: checkpoint assertions not run", dir.display());
             return;
         }
         let src = SafetensorsSource::open(dir).unwrap();
@@ -4559,7 +4565,7 @@ mod m3_probe {
     fn minimax_m3_lm_head_q8() {
         let dir = std::path::Path::new("/data/ai-ml/hf-models/minimax-m3-nvfp4-reap50");
         if !dir.join("model.safetensors.index.json").exists() {
-            eprintln!("SKIP: ckpt absent");
+            eprintln!("SKIP[{}]: checkpoint assertions not run", dir.display());
             return;
         }
         let src = SafetensorsSource::open(dir).unwrap();
@@ -4594,7 +4600,10 @@ mod nv27b_twin_parity {
             "/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf",
         );
         if !st_dir.join("model.safetensors.index.json").exists() || !twin.exists() {
-            eprintln!("SKIP: ckpt/twin absent");
+            eprintln!(
+                "SKIP[{} or its GGUF twin]: safetensors vs GGUF twin parity not run",
+                st_dir.display()
+            );
             return;
         }
         let src = SafetensorsSource::open(st_dir).unwrap();

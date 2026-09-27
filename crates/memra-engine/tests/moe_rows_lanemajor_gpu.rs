@@ -52,7 +52,7 @@ fn mism(a: &[f32], b: &[f32]) -> usize {
 #[test]
 fn lane_major_rows_are_bitwise_the_served_pair() {
     let Ok(e) = Engine::new(0) else {
-        eprintln!("no CUDA device; skipping");
+        eprintln!("SKIP[CUDA device]: GPU test not run");
         return;
     };
     unsafe { std::env::set_var("MEMRA_MOE_VROWS_ILP", "1") };
@@ -259,7 +259,7 @@ fn lane_major_rows_are_bitwise_the_served_pair() {
 #[test]
 fn lane_major_refuses_interleaved_experts() {
     let Ok(e) = Engine::new(0) else {
-        eprintln!("no CUDA device; skipping");
+        eprintln!("SKIP[CUDA device]: GPU test not run");
         return;
     };
     let ptrs = e.htod_u64(&[0u64; 24]).unwrap();

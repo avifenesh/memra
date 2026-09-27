@@ -26,7 +26,7 @@ fn bits(v: &[f32]) -> Vec<u32> {
 #[ignore]
 fn gpu_l2_norm_pair_matches_two_launches_bitwise() {
     let Ok(e) = Engine::new(0) else {
-        eprintln!("no CUDA device; skipping");
+        eprintln!("SKIP[CUDA device]: GPU test not run");
         return;
     };
     let eps = 1e-6f32;
@@ -70,7 +70,7 @@ fn gpu_l2_norm_pair_matches_two_launches_bitwise() {
 #[ignore]
 fn gpu_kda_gate_beta_matches_gate_then_sigmoid_bitwise() {
     let Ok(e) = Engine::new(0) else {
-        eprintln!("no CUDA device; skipping");
+        eprintln!("SKIP[CUDA device]: GPU test not run");
         return;
     };
     for &(qkv, head_dim, t) in &[(8192usize, 128usize, 1usize), (8192, 128, 4), (512, 64, 3)] {

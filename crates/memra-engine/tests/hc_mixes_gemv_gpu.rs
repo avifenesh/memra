@@ -39,7 +39,7 @@ fn run(e: &Engine, w: &[f32], x: &[f32], native: bool) -> Vec<f32> {
 #[test]
 fn hc_mixes_gemv_matches_cublas_within_tolerance_and_is_deterministic() {
     let Ok(e) = Engine::new(0) else {
-        eprintln!("no CUDA device; skipping");
+        eprintln!("SKIP[CUDA device]: GPU test not run");
         return;
     };
     let w = vecf(ROWS * IN_F, 21);

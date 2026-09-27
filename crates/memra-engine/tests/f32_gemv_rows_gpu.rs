@@ -53,7 +53,7 @@ fn bits(v: &[f32]) -> Vec<u32> {
 #[test]
 fn gemv_f32_rows_matches_cublas_deterministic_and_m_identical() {
     let Ok(e) = Engine::new(0) else {
-        eprintln!("no CUDA device; skipping");
+        eprintln!("SKIP[CUDA device]: GPU test not run");
         return;
     };
     for (in_f, out_f) in [(4096usize, 128usize), (4096, 32), (8192, 24)] {

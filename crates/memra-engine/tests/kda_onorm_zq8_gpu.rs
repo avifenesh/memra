@@ -24,7 +24,7 @@ fn bits(v: &[f32]) -> Vec<u32> {
 #[test]
 fn kda_onorm_zq8_matches_norm_then_quantize_bitwise() {
     let Ok(e) = Engine::new(0) else {
-        eprintln!("no CUDA device; skipping");
+        eprintln!("SKIP[CUDA device]: GPU test not run");
         return;
     };
     let (heads, hd) = (32usize, 128usize);

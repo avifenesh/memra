@@ -161,7 +161,8 @@ mod model_memory;
 mod model_memory_fixture;
 /// Pair-only GPU tests (the exclusively locked development pair) announce an explicit skip on
 /// a rig with fewer than two CUDA devices instead of failing on `CUDA_ERROR_INVALID_DEVICE`.
-/// `tools/local-ci.sh` counts the `SKIP-PAIR` lines, so the skip is reported, never silent;
+/// `tools/local-ci.sh` counts the `SKIP[2 CUDA devices]` lines and `tools/skip-census.py` holds
+/// every caller to a manifest row, so the skip is reported, never silent;
 /// on a pair box the test runs unchanged (the "never skip" expectations still hold there).
 #[cfg(test)]
 pub(crate) mod test_support {
@@ -178,7 +179,7 @@ pub(crate) mod test_support {
         if found >= 2 {
             return false;
         }
-        eprintln!("SKIP-PAIR {test} needs 2 CUDA devices, found {found}");
+        eprintln!("SKIP[2 CUDA devices]: pair-only test {test} not run, found {found}");
         true
     }
 }

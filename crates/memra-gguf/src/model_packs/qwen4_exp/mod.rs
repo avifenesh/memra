@@ -1096,7 +1096,7 @@ mod tests {
             "/../../research/qwen4exp-bringup-20260829/raw/census-names.tsv"
         );
         let Ok(text) = std::fs::read_to_string(path) else {
-            eprintln!("SKIP qwen4exp census gate: no fixture at {path}");
+            eprintln!("SKIP[{path}]: qwen4exp census gate not run");
             return;
         };
         let mut artifact: BTreeMap<String, (String, Vec<u64>)> = BTreeMap::new();
@@ -1276,7 +1276,7 @@ mod tests {
             "/../../research/qwen4exp-bringup-20260829/raw/nvfp4-census-names.tsv"
         );
         let Ok(text) = std::fs::read_to_string(path) else {
-            eprintln!("SKIP qwen4exp nvfp4 census gate: no fixture at {path}");
+            eprintln!("SKIP[{path}]: qwen4exp nvfp4 census gate not run");
             return;
         };
         let mut artifact: BTreeMap<String, (String, Vec<u64>)> = BTreeMap::new();

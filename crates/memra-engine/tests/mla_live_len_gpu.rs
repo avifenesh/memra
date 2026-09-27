@@ -24,7 +24,7 @@ fn bits(v: &[f32]) -> Vec<u32> {
 #[test]
 fn mla_live_len_twins_match_scalar_launches_bitwise() {
     let Ok(e) = Engine::new(0) else {
-        eprintln!("no CUDA device; skipping");
+        eprintln!("SKIP[CUDA device]: GPU test not run");
         return;
     };
     let (nh, r, dr, cap) = (32usize, 512usize, 64usize, 300usize);
