@@ -2,7 +2,8 @@
 # DAY44 boots (1.6): one boot per spec through run-day26-cell.sh (it takes the rig lock), after a bounded idle
 # wait (at most 7200 s: lock free, no compute app, >= 24 GB host memory). Never a signal to anything this lane did not
 # start. usage: day44-run.sh <receipt root> <name>:<arm>:<route>:<shape> ...
-#   arm = keep | exact | offprev | fault   route = plain | spec   shape = RX | RXg (1,000 ms turn gap) | RX6 | RXg6
+#   arm = keep | exact | offprev | fault   route = plain | spec   shape = RX | RXg (1,000 ms turn gap) | RX6 | RXg6 |
+#   RW6 (addendum C: the history rewrite at 6,144 with the 1,000 ms gap)
 #   The spec route runs every arm with MEMRA_SPEC_BUDGET_CLAMP=1; every boot with MEMRA_TTFT_TRACE=1.
 # env: WT, RIG_LOCK (/tmp/memra-5090.lock), BIN, PREV_BIN, MODEL, MODEL_KEY, BOOT_CTX (65536; empty = the checkpoint's),
 #      LENGTHS (6144,30720), NO_SCOPE, EXTERNAL_LOCK (1: the caller holds the rig lock).
@@ -51,6 +52,7 @@ for spec in "$@"; do
     RX6) aenv+=(MEMRA_PREFIX_CACHE_MB=0); args="--shapes RX --lengths 6144" ;;
     RXg) aenv+=(MEMRA_PREFIX_CACHE_MB=0); args="--shapes RX --lengths $LENGTHS --turn-gap-ms 1000" ;;
     RXg6) aenv+=(MEMRA_PREFIX_CACHE_MB=0); args="--shapes RX --lengths 6144 --turn-gap-ms 1000" ;;
+    RW6) aenv+=(MEMRA_PREFIX_CACHE_MB=0); args="--shapes RW --lengths 6144 --turn-gap-ms 1000" ;;
     *) log "boot $name: unknown shape $shape"; exit 1 ;;
   esac
   [ -x "$B" ] || { log "boot $name: no binary $B; not run"; exit 1; }
