@@ -189,6 +189,48 @@ On the fixed binary (`rtx5090-day44-smoke/r2/`, spec route under the clamp, same
 and a G=256 settle was still running when the next turn arrived); RXg exact resumed 20 of 20 from settled points with
 0 flips, TTFT p50 52.2 and 53.7 ms.
 
+### 1.12 Addendum C (2026-09-27, revuto's two findings on integ71, before any code of the fix)
+
+Two defects in the settle as built. 1.3 did not list the first, and the code did not do what case 6 registered for the
+second.
+
+- **The settle dropped the checkpoint affinity nominates.** The plain settle set `e.ckpt = None`. The spec settle
+  rewound with the non-retaining `spec_rewind_to_checkpoint`, and its prime-only walk then took a prompt-end
+  checkpoint at `S`. So after a settle, a client that rewrites its history (the think-stripping case plain affinity
+  exists for) misses the exact-extension probe, and affinity declines ("no checkpoint retained", or a history that
+  diverges before `S`): a cold re-prime. The fix keeps the checkpoint at `g` beside the settled state.
+  - Plain: the settle leaves `e.ckpt` at `g`. The settle does not touch rows `[0, g)`, and the snapshot holds the
+    recurrent state at `g`. A settled resume carries it as the session's checkpoint until that call's in-call capture
+    replaces it (case 9's rule).
+  - Spec: the settle rewinds with `spec_rewind_to_checkpoint_retaining`, and the prime-only settle walk takes no
+    prompt-end checkpoint, so the turn checkpoint at `g` survives it.
+  - The cost: a settled entry keeps its snapshot bytes. 2.1's idle driver-free reading on plain RXg (5.95 GB against RX's
+    2.13 GB) was taken with them freed.
+- **No memory reading before a settle (case 6).** A settle now runs only when the reading covers its workspace, where
+  - need = the memory door's pending term for one owed prime of the settle's rows (`pending_prime_for_model`: the slab
+    growth past the resident slab, the call's returned rows, and on the spec route the walker's stack) plus the
+    admission reserve;
+  - the reading = effective free (driver free plus pool cached).
+
+  When need exceeds the reading, or there is no reading, the job stays at the head of the queue, `[kv-reuse] exact:
+  settle <id> waits (needs <MB>, reading <MB>)` prints once per waiting job, and the next idle pass reads again.
+- **Tests.**
+  - CPU: a census that the settle keeps the plain checkpoint, that the settled resume carries it, that the spec settle
+    uses the retaining rewind, and that the prime-only walk takes no prompt-end checkpoint; a unit test of the gate's
+    decision (waits while the reading is short, runs once it covers); a census that `settle_one` reads the gate before
+    it moves an entry.
+  - GPU, a serving cell with a new shape RW (a history rewrite, see below):
+    - R1: on `exact`, every RW turn 2 and 3 resumes through affinity (its `rewound to` line), not cold.
+    - R2: every such turn equals its cold twin (0 flips).
+    - R3 (a reading): the settles land before those turns.
+- **The RW shape (`day44-client.py --shapes RW`):**
+  - Turn 2 is turn 1's prompt, then 32 stream ids in place of turn 1's completion, then 64 new stream ids. Turn 3
+    follows from turn 2 the same way.
+  - Every request of a conversation carries its `session_id`, and each turn has a cold twin in a fresh namespace.
+  - It runs with `--turn-gap-ms 1000`, so the settle lands first.
+  - Arms `keep` and `exact` on both routes, at 6,144 on both cards.
+- **Cells to rerun:** the integ battery's DAY44 mini cell (the E lines), and the RW cell on both routes.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.

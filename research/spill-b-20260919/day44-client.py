@@ -10,6 +10,7 @@ Shape RX (a raw agent loop), `/v1/completions` with `prompt_ids`, greedy, stream
   turn 3 = likewise from turn 2
   each turn's cold twin: the same ids and max_ctx in a fresh namespace, after the conversation.
   G in --gens (every G in every boot, as separate conversations), L in --lengths, N conversations per (L, G).
+Shape RW (DAY44 addendum C): a history rewrite, see the RW block below.
 Shape FX (the fanout cost): --fanout requests sharing a --fanout-prefix-token prefix in one namespace, released
 together, max_tokens 16.
 
@@ -62,6 +63,9 @@ def hits():
 
 text = open(a.serving_md, encoding="utf-8").read()
 need = max(lengths + [a.fanout_prefix]) + 997 * a.n * len(gens) + 64 * 8 + 4096
+if "RW" in shapes:
+    # DAY44 addendum C: the RW conversations start at offset 500 x 997 and walk 96 ids per turn.
+    need = max(need, 997 * (500 + a.n * len(gens) * len(lengths)) + max(lengths) + 96 * 4 + 4096)
 stream = []
 while len(stream) < need and len(stream) < 64 * 400000:
     stream += post_json("/v1/tokenize", {"model": a.model, "prompt": text, "add_special_tokens": False})["tokens"]
@@ -69,11 +73,13 @@ if len(stream) < need:
     sys.exit(f"tokenized stream {len(stream)} shorter than {need}")
 
 
-def stream_completion(tag, meta, ids, max_tokens, salt, max_ctx=None):
+def stream_completion(tag, meta, ids, max_tokens, salt, max_ctx=None, session_id=None):
     body = {"model": a.model, "prompt_ids": ids, "max_tokens": max_tokens, "temperature": 0, "stream": True,
             "stream_options": {"include_usage": True}, "cache_salt": salt}
     if max_ctx is not None:
         body["max_ctx"] = max_ctx
+    if session_id is not None:
+        body["session_id"] = session_id
     h0 = hits()
     submit = time.time() * 1000.0
     first = None
@@ -156,6 +162,33 @@ if "RX" in shapes:
                 for turn, pp in prompts:
                     meta = dict(shape="RX", L=L, G=G, turn=turn, cold=True, rep=rep)
                     stream_completion(f"RX-{L}-g{G}-r{rep}-t{turn}-cold", meta, pp, G, f"rxc-{L}-{G}-{rep}-{turn}", cap)
+
+# DAY44 addendum C: shape RW, a history rewrite (the think-stripping case plain affinity serves). Turn k+1 is turn k's
+# prompt, then 32 stream ids in place of turn k's completion, then 64 new stream ids; every turn of a conversation
+# carries its session_id, so affinity nominates it; each turn has a cold twin in a fresh namespace.
+if "RW" in shapes:
+    k = 500
+    for L in lengths:
+        for G in gens:
+            for rep in range(a.n):
+                off = k * 997
+                k += 1
+                cap = L + a.max_ctx_pad
+                ns = f"rw-{L}-{G}-{rep}"
+                p = stream[off:off + L]
+                nxt = off + L
+                prompts = []
+                for turn in (1, 2, 3):
+                    if turn > 1 and a.turn_gap_ms > 0:
+                        time.sleep(a.turn_gap_ms / 1000.0)
+                    meta = dict(shape="RW", L=L, G=G, turn=turn, cold=False, rep=rep, gap_ms=a.turn_gap_ms)
+                    prompts.append((turn, p))
+                    stream_completion(f"RW-{L}-g{G}-r{rep}-t{turn}", meta, p, G, ns, cap, session_id=ns)
+                    p = p + stream[nxt:nxt + 96]
+                    nxt += 96
+                for turn, pp in prompts:
+                    meta = dict(shape="RW", L=L, G=G, turn=turn, cold=True, rep=rep)
+                    stream_completion(f"RW-{L}-g{G}-r{rep}-t{turn}-cold", meta, pp, G, f"rwc-{L}-{G}-{rep}-{turn}", cap)
 
 if "FX" in shapes:
     base = stream[:a.fanout_prefix]
