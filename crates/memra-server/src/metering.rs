@@ -183,3 +183,127 @@ pub struct MeteringInit<'a> {
 pub type MeteringFactory = Box<
     dyn FnOnce(&MeteringInit<'_>) -> Result<Option<std::sync::Arc<dyn Metering>>, String> + Send,
 >;
+
+// ---- Background job store (memra#550, docs/decisions/COMPLETE-RESULT-PATH-V1.md) --------
+//
+// The one genuinely new piece the design names: holding a request's buffered output between
+// the worker finishing and the caller's `GET`. Mirrors the `Metering` / `Receipt` seam on
+// purpose, same reasoning: what "hold this job" means (in-process map, a shared store behind
+// a router, a database row) is a deployment decision, not a decision this crate makes for it.
+//
+// This trait and its stock in-memory implementation (`crate::job_store::InMemoryJobStore`)
+// exist and are tested by this change. They are NOT yet wired to a live generation: no route
+// creates a job, polls it through a running worker, or cancels one in flight. That wiring, and
+// a real over-90s background generation run against a GPU box, are still owed (memra#550).
+
+/// Terminal and non-terminal states one background job can be in. Named to match the census
+/// vocabulary the design doc uses for the synchronous path (`docs/SERVING.md`): `Completed`
+/// mirrors `complete`, `Incomplete` mirrors `complete_deadline_partial`, `Cancelled` is the
+/// new outcome an explicit client cancel gets that a deadline miss does not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JobStatus {
+    /// Admitted, not yet started by a worker.
+    Queued,
+    /// A worker is generating.
+    InProgress,
+    /// Generation finished inside budget; `output` on the record is the full result.
+    Completed,
+    /// Generation was cut short by a deadline; `output` on the record is the partial result
+    /// that was actually produced, never a resummarized or regenerated answer.
+    Incomplete,
+    /// The worker errored before producing a usable result.
+    Failed,
+    /// An explicit client cancel, distinct from a deadline miss in the outcome census.
+    Cancelled,
+}
+
+impl JobStatus {
+    /// Once a job reaches a terminal state it never leaves it: `put` and `cancel` on an
+    /// already-terminal record are refused so a slow duplicate write, or a cancel racing a
+    /// completion, cannot clobber output that already answered a poll.
+    pub fn is_terminal(self) -> bool {
+        matches!(
+            self,
+            JobStatus::Completed | JobStatus::Incomplete | JobStatus::Failed | JobStatus::Cancelled
+        )
+    }
+}
+
+/// One background job's buffered state. The `output`/`error` shape deliberately mirrors the
+/// accumulator `blocking_response_with_receipt` already builds (text, reasoning, tokens,
+/// calls): a `GET` against a finished job returns exactly that accumulator, never a fresh
+/// generation or a summary of one.
+#[derive(Debug, Clone, PartialEq)]
+pub struct JobRecord {
+    pub status: JobStatus,
+    /// The buffered result once `status` is `Completed` or `Incomplete`. `None` while queued
+    /// or in progress.
+    pub output: Option<serde_json::Value>,
+    /// Set when `status` is `Failed`.
+    pub error: Option<String>,
+}
+
+impl JobRecord {
+    pub fn queued() -> Self {
+        JobRecord {
+            status: JobStatus::Queued,
+            output: None,
+            error: None,
+        }
+    }
+}
+
+/// Why a `JobStore` call could not do what was asked.
+#[derive(Debug, PartialEq, Eq)]
+pub enum JobStoreError {
+    /// No record exists for this id (never existed, or already evicted by TTL).
+    NotFound,
+    /// The record exists but is already terminal; the caller asked to change a state that
+    /// cannot change again (a duplicate `put` past terminal, or a `cancel` after completion).
+    AlreadyTerminal,
+    /// Admitting this record would push the store's resident bytes past its configured cap.
+    CapacityExceeded,
+}
+
+/// The seam a background job's buffered output is held behind, mirroring `Metering`: the
+/// stock binary ships one in-memory reference implementation
+/// (`crate::job_store::InMemoryJobStore`); a deployment that needs a job to survive a process
+/// restart, or a store shared across replicas behind a router, supplies its own.
+///
+/// The stock implementation makes no promise beyond one process's own lifetime, matching the
+/// existing statelessness claim in `docs/API-SURFACES.md`: this buffers one in-flight
+/// request's own output, never a CONVERSATION, and only until collected or expired.
+pub trait JobStore: Send + Sync {
+    /// Insert or update a job's record. A brand-new id may only be admitted as `Queued`
+    /// (`Err(NotFound)` for any other status on an id the store does not already hold): a
+    /// job's own id is minted once, by the `Queued` `put` that creates it, so any later write
+    /// under an id the store has no record of is treated as stale, most likely a worker
+    /// finishing after its job was already cancelled and collected (`take`) or TTL-evicted,
+    /// never as permission to resurrect a job the store has already forgotten. Refused with
+    /// `AlreadyTerminal` if a record already exists for `id` and is terminal (a terminal
+    /// record is final; a subsequent `put` is a bug in the caller, not a state transition).
+    /// Refused with `CapacityExceeded` if storing this record would push the store over its
+    /// configured resident-byte cap.
+    fn put(&self, id: &str, record: JobRecord) -> Result<(), JobStoreError>;
+
+    /// Read the current record without consuming it, for repeated polling before terminal
+    /// state. `None` if `id` was never admitted, or was evicted by the TTL sweep.
+    fn get(&self, id: &str) -> Option<JobRecord>;
+
+    /// Remove and return the record for `id`, whatever its state. `None` if `id` is not
+    /// present. Collecting a job (a `GET` that consumes) once it is terminal is the caller's
+    /// convention, not something this method enforces on its own.
+    fn take(&self, id: &str) -> Option<JobRecord>;
+
+    /// Move a non-terminal job to `Cancelled`, keeping whatever partial output it already
+    /// carries. `Err(JobStoreError::NotFound)` if `id` is not present. `Err(JobStoreError::
+    /// AlreadyTerminal)` if the job already reached a terminal state, so a cancel racing a
+    /// completion never overwrites the result a poll would otherwise see.
+    fn cancel(&self, id: &str) -> Result<(), JobStoreError>;
+
+    /// Evict every entry whose TTL has elapsed since it went terminal. Returns the count
+    /// evicted. Implementations that need no sweep (a database with its own expiry) may
+    /// return 0 unconditionally; the stock in-memory implementation runs this lazily inside
+    /// every other call as well as on demand.
+    fn sweep(&self) -> usize;
+}
