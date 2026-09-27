@@ -77,3 +77,25 @@ the same way), and no minimum of timed GPU hours is required. The lead's plan me
 s at its container's start (21:36Z), and the lanes' 9950X-class sittings run on it from then until at least
 2026-09-27T09:40Z, before `slow86`. The mirror note names the host uptime and the sittings it carried. The rule is
 unchanged: a host that reads `not_reproduced` decides nothing.
+
+## 1c. Whether BOX43 qualifies, and the load that fills it (the lead asked; before any cell)
+
+The lead's record for BOX43 since its container started (21:36Z, host uptime 130029 s then): eight sittings that load
+a model and pin host memory, 21:43Z to 05:52Z (this lane's DAY85 half, integ69's GPU run 5, integ70's and integ71's
+GPU batteries, lane B's DAY46, DAY50 stage 0, DAY46C and DAY48), about 6.5 h of sittings inside 8.3 h, idle since
+05:52Z.
+
+- **The count.** Section 1b's 12 hours are hours in which sittings ran (their running time, as BOX31's 19 hours of
+  lane A sittings were), not the span of the container or the host's uptime; the host's history before the container
+  is unknown and not counted. BOX43 has about 6.5 h.
+- **Idle is not neutral.** While the host idles, the kernel's proactive compaction rebuilds free high-order pages,
+  which is the opposite of the state the cell needs. So `slow86` runs right after the twelfth hour of sittings, with no
+  idle gap longer than one hour before it. BOX43 idle from 05:52Z to 09:40Z does not qualify.
+- **What counts.** Any lane's cell or battery that loads a model and pins host memory (every sitting on the lead's list
+  counts). When nothing else is queued on the host, the fill is the door's own load: `day86-load.sh`, door runs of
+  `run-gen-i22` (the 35B and the door's 16 GiB pinned pool, the cells' argv) back to back for `D86_LOAD_HOURS`, the
+  GPU lock taken per run so another lane's sitting can take the card between runs, each run's gen-only seconds and
+  compaction counters logged (`runs.tsv`), the full log kept for a failed run and every 50th. It decides nothing; its
+  table also shows when, if ever, the host's door runs turn slow. Dry-checked under stubs (`day86-cpu/dry-check-load.log`).
+- **For BOX43 now:** the queued sittings first, then `D86_LOAD_HOURS` set to what the 12 hours still lack (about 5.5
+  if nothing else runs), then `slow86` right after the load ends.
