@@ -133,6 +133,13 @@ pub struct CodecEncoderBf16Downsample<'a> {
     pub norm: CodecEncoderBf16Norm<'a>,
 }
 
+/// One source F32 `encoder.quantizer.vq.layers.{depth}._codebook.embed`.
+/// The bytes are little-endian contiguous `[bins,1024]` F32 values.
+pub struct CodecEncoderF32Codebook<'a> {
+    pub bytes: &'a CudaSlice<u8>,
+    pub bins: usize,
+}
+
 impl CodecEncoderBf16Layer<'_> {
     /// The bundled hybrid plan alternates 128-window and full causal layers.
     pub fn attention_window(&self) -> Option<usize> {
@@ -312,6 +319,40 @@ fn finite_bf16_payload(bytes: &[u8]) -> bool {
             .all(|pair| u16::from_le_bytes([pair[0], pair[1]]) & 0x7f80 != 0x7f80)
 }
 
+fn finite_f32_payload(bytes: &[u8]) -> bool {
+    bytes.len().is_multiple_of(4)
+        && bytes
+            .chunks_exact(4)
+            .all(|word| f32::from_le_bytes([word[0], word[1], word[2], word[3]]).is_finite())
+}
+
+fn check_codebook_row(
+    name: &str,
+    dtype: CodecEncoderDtype,
+    shape: &[u64],
+    byte_len: usize,
+    bins: usize,
+) -> Result<(), String> {
+    if dtype != CodecEncoderDtype::F32
+        || shape != [bins as u64, 1_024]
+        || byte_len != bins * 1_024 * 4
+    {
+        return Err(format!(
+            "MiMo codec {name} F32 codebook shape or extent changed"
+        ));
+    }
+    Ok(())
+}
+
+fn expected_rvq_bins(depth: usize) -> Option<usize> {
+    match depth {
+        0 | 1 => Some(1_024),
+        2 => Some(256),
+        3..=19 => Some(128),
+        _ => None,
+    }
+}
+
 impl MiMoAudioCodecEncoderWeights {
     pub fn tensor(&self, name: &str) -> Option<&CodecEncoderTensor> {
         self.tensors.get(name)
@@ -428,6 +469,33 @@ impl MiMoAudioCodecEncoderWeights {
                 output: 1_024,
             },
             norm: self.layer_norm_bf16("encoder.down_sample_norm")?,
+        })
+    }
+
+    /// Bind only the selected source RVQ depth. The loader has already checked
+    /// the exact auxiliary header/config, full payload hash, and embed finiteness.
+    pub fn codebook_f32(&self, depth: usize) -> Result<CodecEncoderF32Codebook<'_>, String> {
+        let expected_bins = expected_rvq_bins(depth)
+            .ok_or_else(|| format!("MiMo codec RVQ depth {depth} is outside 0..19"))?;
+        if self.contract.quantizers != 20 || self.contract.hidden_size != 1_024 {
+            return Err("MiMo codec RVQ depth or pinned plan changed".into());
+        }
+        let bins = self.contract.codebook_sizes[depth];
+        if bins != expected_bins {
+            return Err("MiMo codec RVQ bin schedule changed".into());
+        }
+        let name = format!("encoder.quantizer.vq.layers.{depth}._codebook.embed");
+        let tensor = self
+            .tensors
+            .get(&name)
+            .ok_or_else(|| format!("MiMo codec encoder missing {name}"))?;
+        check_codebook_row(&name, tensor.dtype, &tensor.shape, tensor.bytes.len(), bins)?;
+        if tensor.bytes.ordinal() != self.device_ordinal {
+            return Err(format!("MiMo codec encoder {name} crossed GPU devices"));
+        }
+        Ok(CodecEncoderF32Codebook {
+            bytes: &tensor.bytes,
+            bins,
         })
     }
 
@@ -548,6 +616,16 @@ impl MiMoAudioCodecEncoderWeights {
                 )
                 .into());
             }
+            if row.name.starts_with("encoder.quantizer.vq.layers.")
+                && row.name.ends_with("._codebook.embed")
+                && !finite_f32_payload(bytes)
+            {
+                return Err(format!(
+                    "MiMo codec encoder {} has non-finite F32 codebook values",
+                    row.name
+                )
+                .into());
+            }
             let tensor = CodecEncoderTensor {
                 bytes: engine.htod_bytes(bytes)?,
                 dtype: row.dtype,
@@ -656,6 +734,35 @@ mod tests {
         assert!(!finite_bf16_payload(&[0x80, 0x7f]));
         assert!(!finite_bf16_payload(&[0xc1, 0xff]));
         assert!(!finite_bf16_payload(&[0x80]));
+    }
+
+    #[test]
+    fn pinned_rvq_embeds_are_exact_f32_rows_at_every_depth() {
+        let rows = fixture_rows();
+        for depth in 0..20 {
+            let bins = expected_rvq_bins(depth).unwrap();
+            let name = format!("encoder.quantizer.vq.layers.{depth}._codebook.embed");
+            let row = &rows[&name];
+            let dtype = CodecEncoderDtype::from_header(&name, &row.dtype).unwrap();
+            let bytes = row.data_offsets[1] - row.data_offsets[0];
+            check_codebook_row(&name, dtype, &row.shape, bytes, bins).unwrap();
+            assert!(
+                check_codebook_row(&name, CodecEncoderDtype::Bf16, &row.shape, bytes, bins)
+                    .is_err()
+            );
+            assert!(check_codebook_row(&name, dtype, &row.shape, bytes - 4, bins).is_err());
+            assert!(check_codebook_row(&name, dtype, &row.shape, bytes, bins + 1).is_err());
+        }
+        assert!(
+            rows.keys()
+                .filter(|name| name.contains("encoder.quantizer.vq.layers."))
+                .all(|name| !name.contains("project_in") && !name.contains("project_out"))
+        );
+        assert!(finite_f32_payload(&1.0f32.to_le_bytes()));
+        assert!(!finite_f32_payload(&f32::NAN.to_le_bytes()));
+        assert!(!finite_f32_payload(&f32::INFINITY.to_le_bytes()));
+        assert!(!finite_f32_payload(&[0, 0, 0]));
+        assert_eq!(expected_rvq_bins(20), None);
     }
 
     #[test]

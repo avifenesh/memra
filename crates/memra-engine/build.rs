@@ -538,6 +538,7 @@ fn main() {
             "cu/mimo_audio_patch_forward.cu",
             "cu/mimo_audio_codec_frontend.cu",
             "cu/mimo_audio_codec_layer.cu",
+            "cu/mimo_audio_codec_rvq.cu",
             // Small-message cross-rank all-reduce for TP decode (lane/tp-allreduce-20260906).
             // Portable CUDA C; peer stores plus a bounded flag wait, no oracle to match, so it
             // takes the default flags rather than dsv4_gpu.cu's -fmad=false.
@@ -671,6 +672,10 @@ fn main() {
                 } else {
                     args.push("-fmad=false".into());
                 }
+            }
+            if mmq_src.ends_with("mimo_audio_codec_rvq.cu") {
+                // Keep the source's separate F32 products and sums.
+                args.push("-fmad=false".into());
             }
             args.extend([
                 "-c".into(),
