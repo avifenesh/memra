@@ -1,3 +1,8 @@
+# WP-B checkpoint 2026-09-27 12:xxZ: integ71 merged (#844, main 9852e3b12); main merged into the lane for integ72 at
+3848bc338 (one add/add conflict in the lane's .gitattributes, main's superset taken; suites green). Trees: commits go
+from wt-b-integ72 (branch merge/spill-b-integ72). wt-b-integ71 stays while queue-n and the DAY48 local runner read it;
+the live wt-spill-b stays at 1df7e7852 while queue-m and chain-r5 read it; fast-forward and remove the others after.
+wt-b-fix71 and fix/spill-b-integ71 removed (in main).
 # WP-B checkpoint 2026-09-27 11:5xZ: DAY44 addendum D is pending the owner, not adopted (the lead): R1 stays FAIL as
 registered, beside E2, as a blocker on flipping MEMRA_RESUME_EXACT. The reader prints both R1 lines. The c13 receipts are
 copied into integ71-c13-rw/ and read there; never run a reader inside the lead's worktrees.
