@@ -4,6 +4,8 @@
 //! payload-keyed KV reuse, or serving dispatch.
 
 use std::error::Error;
+#[cfg(test)]
+use std::time::Instant;
 
 use cudarc::driver::CudaSlice;
 use memra_gguf::model_plan::{AttentionPlan, MlpPlan};
@@ -22,6 +24,17 @@ const LAYERS: usize = 48;
 const STAGE_CUT: usize = 24;
 const MAX_FIRST_BATCH_CHUNK: usize = 128;
 const CONTEXT_WIDTH: usize = 64 * 128;
+
+/// Intrusive test diagnostic: include stream completion in every phase.
+#[cfg(test)]
+fn intrusive_stage_wall_ms(engine: &Engine, started: Option<Instant>) -> Result<f64, Fail> {
+    if let Some(started) = started {
+        engine.stream().synchronize()?;
+        Ok(started.elapsed().as_secs_f64() * 1e3)
+    } else {
+        Ok(0.0)
+    }
+}
 
 fn first_batch_rows(tokens: usize) -> Result<usize, &'static str> {
     if !(1..=MAX_FIRST_BATCH_CHUNK).contains(&tokens) {
@@ -198,6 +211,14 @@ pub struct MiMoCompressedTextForward<'a> {
     failed: bool,
     has_modal_payload: bool,
     experimental_weight_reuse: bool,
+    #[cfg(test)]
+    profile_reuse_first_chunk: bool,
+    #[cfg(test)]
+    profile_rows: Vec<(usize, [f64; 4])>,
+    #[cfg(test)]
+    profile_stage_transfer_ms: f64,
+    #[cfg(test)]
+    profile_head_ms: f64,
 }
 
 impl MiMoTextWeights {
@@ -231,6 +252,14 @@ impl<'a> MiMoCompressedTextForward<'a> {
             failed: false,
             has_modal_payload: false,
             experimental_weight_reuse: false,
+            #[cfg(test)]
+            profile_reuse_first_chunk: false,
+            #[cfg(test)]
+            profile_rows: Vec::new(),
+            #[cfg(test)]
+            profile_stage_transfer_ms: 0.0,
+            #[cfg(test)]
+            profile_head_ms: 0.0,
         })
     }
 
@@ -318,6 +347,10 @@ impl<'a> MiMoCompressedTextForward<'a> {
         chunk: &MiMoGpuEmbeddingChunk,
     ) -> Result<MiMoTextStep, Fail> {
         let tokens = first_batch_rows(chunk.token_count())?;
+        #[cfg(test)]
+        if self.profile_reuse_first_chunk && !self.experimental_weight_reuse {
+            return Err("MiMo intrusive phase profile requires opt-in expert reuse".into());
+        }
         check_chunk_admission(
             self.position,
             self.kv.position(),
@@ -348,6 +381,8 @@ impl<'a> MiMoCompressedTextForward<'a> {
 
         for index in 0..LAYERS {
             if index == STAGE_CUT {
+                #[cfg(test)]
+                let transfer_started = self.profile_reuse_first_chunk.then(Instant::now);
                 let values = first.dtoh(&hidden)?;
                 if values.len() != tokens * HIDDEN || values.iter().any(|value| !value.is_finite())
                 {
@@ -355,6 +390,11 @@ impl<'a> MiMoCompressedTextForward<'a> {
                 }
                 self.engines[1].gpu.ctx.bind_to_thread()?;
                 hidden = self.engines[1].htod(&values)?;
+                #[cfg(test)]
+                {
+                    self.profile_stage_transfer_ms =
+                        intrusive_stage_wall_ms(self.engines[1], transfer_started)?;
+                }
             }
             let stage = stage_for_layer(index)?;
             let engine = self.engines[stage];
@@ -367,6 +407,12 @@ impl<'a> MiMoCompressedTextForward<'a> {
                 }
                 _ => return Err("MiMo batch layer lost its full or sliding attention".into()),
             };
+            #[cfg(test)]
+            if self.profile_reuse_first_chunk && index == 0 {
+                engine.stream().synchronize()?;
+            }
+            #[cfg(test)]
+            let phase_started = self.profile_reuse_first_chunk.then(Instant::now);
             let norm = normalized_rows(
                 engine,
                 &hidden,
@@ -410,7 +456,15 @@ impl<'a> MiMoCompressedTextForward<'a> {
                 attention.rope.base,
                 1.0,
             )?;
+            #[cfg(test)]
+            let qkv_ms = intrusive_stage_wall_ms(engine, phase_started)?;
+            #[cfg(test)]
+            let phase_started = self.profile_reuse_first_chunk.then(Instant::now);
             self.kv.append_prefill_layer(index, &qkv.key, &qkv.value)?;
+            #[cfg(test)]
+            let kv_ms = intrusive_stage_wall_ms(engine, phase_started)?;
+            #[cfg(test)]
+            let phase_started = self.profile_reuse_first_chunk.then(Instant::now);
             let context = self.kv.attend_appended_first_chunk(index, &qkv.query)?;
             drop((qkv, projections, norm));
             let attention_output =
@@ -422,6 +476,10 @@ impl<'a> MiMoCompressedTextForward<'a> {
                 &mut after_attention,
                 tokens * HIDDEN,
             )?;
+            #[cfg(test)]
+            let attention_ms = intrusive_stage_wall_ms(engine, phase_started)?;
+            #[cfg(test)]
+            let phase_started = self.profile_reuse_first_chunk.then(Instant::now);
             let mlp_input = normalized_rows(
                 engine,
                 &after_attention,
@@ -468,6 +526,14 @@ impl<'a> MiMoCompressedTextForward<'a> {
             let mut after_mlp = engine.uninit(tokens * HIDDEN)?;
             engine.add(&after_attention, &mlp, &mut after_mlp, tokens * HIDDEN)?;
             hidden = after_mlp;
+            #[cfg(test)]
+            {
+                let mlp_ms = intrusive_stage_wall_ms(engine, phase_started)?;
+                if self.profile_reuse_first_chunk {
+                    self.profile_rows
+                        .push((index, [qkv_ms, kv_ms, attention_ms, mlp_ms]));
+                }
+            }
         }
         self.kv.finish_prefill_batch()?;
         if self.kv.position() != tokens {
@@ -475,6 +541,8 @@ impl<'a> MiMoCompressedTextForward<'a> {
         }
         let last = self.engines[1];
         last.gpu.ctx.bind_to_thread()?;
+        #[cfg(test)]
+        let head_started = self.profile_reuse_first_chunk.then(Instant::now);
         let mut final_hidden = last.uninit(HIDDEN)?;
         last.dtod_copy_view(
             &hidden.slice((tokens - 1) * HIDDEN..tokens * HIDDEN),
@@ -498,6 +566,10 @@ impl<'a> MiMoCompressedTextForward<'a> {
         let mut logits_gpu = last.uninit(VOCAB)?;
         last.matvec_bf16_rows_into(data, &final_norm, &mut logits_gpu, HIDDEN, VOCAB, 1)?;
         let (logits, final_hidden) = read_text_output::<true>(last, &final_hidden, &logits_gpu)?;
+        #[cfg(test)]
+        {
+            self.profile_head_ms = intrusive_stage_wall_ms(last, head_started)?;
+        }
         self.position = tokens;
         self.failed = false;
         self.has_modal_payload = chunk.requires_payload_identity();
@@ -1024,6 +1096,152 @@ mod tests {
                 return Err(format!("MiMo 128-row expert reuse {label} differs from batch").into());
             }
             println!("mimo_expert_reuse_128_exact\t{label}\t{} bits", got.len());
+        }
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "requires pinned MiMo source and a dedicated two-card GPU lane"]
+    fn source_first_chunk_reuse_intrusive_phase_profile() -> Result<(), Fail> {
+        use std::path::Path;
+        use std::sync::Arc;
+
+        use memra_gguf::source::SafetensorsSource;
+
+        const FOUR_GIB: usize = 4 * 1024 * 1024 * 1024;
+        const TOKENS: usize = 128;
+        let root = std::env::var("MIMO_PINNED_SOURCE_ROOT")?;
+        let source = Arc::new(SafetensorsSource::open(Path::new(&root))?);
+        let cards = [Engine::new(0)?, Engine::new(1)?];
+        let engines = [&cards[0], &cards[1]];
+        let text = MiMoTextWeights::load(engines, source)?;
+        let ids = (42..42 + TOKENS as u32).collect::<Vec<_>>();
+        let prepared = text.modal_embedding_gpu_chunk(&cards[0], &ids, &[], &[], &[])?;
+
+        let (ordinary_step, ordinary_next) = {
+            let mut ordinary = text.compressed_text_forward(engines, TOKENS + 1, [FOUR_GIB; 2])?;
+            let step = ordinary.consume_embedding_chunk_batched(&prepared)?;
+            let next = ordinary.token(220)?;
+            if ordinary.position() != TOKENS + 1 || step.position != TOKENS - 1 {
+                return Err("MiMo ordinary 128-row comparison cursor drifted".into());
+            }
+            (step, next)
+        };
+
+        let mut reused = text.compressed_text_forward(engines, TOKENS + 1, [FOUR_GIB; 2])?;
+        reused.enable_experimental_weight_reuse()?;
+        reused.profile_reuse_first_chunk = true;
+        let moe_profile_guard = crate::mimo_source_moe::start_reuse_phase_profile();
+        let reused_step = reused.consume_embedding_chunk_batched(&prepared)?;
+        let moe_profile = moe_profile_guard.finish();
+        let reused_next = reused.token(220)?;
+        if reused.position() != TOKENS + 1 || reused_step.position != TOKENS - 1 {
+            return Err("MiMo profiled reuse 128-row cursor drifted".into());
+        }
+        for (label, expected_len, got, want) in [
+            (
+                "last",
+                VOCAB,
+                reused_step.logits.as_slice(),
+                ordinary_step.logits.as_slice(),
+            ),
+            (
+                "hidden",
+                HIDDEN,
+                reused_step.hidden_before_norm.as_slice(),
+                ordinary_step.hidden_before_norm.as_slice(),
+            ),
+            (
+                "continuation",
+                VOCAB,
+                reused_next.as_slice(),
+                ordinary_next.as_slice(),
+            ),
+        ] {
+            if got.len() != expected_len
+                || want.len() != expected_len
+                || got
+                    .iter()
+                    .zip(want)
+                    .any(|(got, want)| got.to_bits() != want.to_bits())
+            {
+                return Err(
+                    format!("MiMo profiled reuse {label} differs from ordinary batch").into(),
+                );
+            }
+            println!("exact\t{label}\tf32_values={}\tbit_identical", got.len());
+        }
+        if reused.profile_rows.len() != LAYERS || moe_profile.len() != LAYERS - 1 {
+            return Err("MiMo reuse phase profile omitted a layer".into());
+        }
+        if [reused.profile_stage_transfer_ms, reused.profile_head_ms]
+            .iter()
+            .any(|time| !time.is_finite() || *time <= 0.0)
+        {
+            return Err("MiMo reuse transfer or head timing is missing".into());
+        }
+        println!("format\tmimo-reuse-first-chunk-intrusive-phase-profile-v1");
+        println!("source\tXiaomiMiMo/MiMo-V2.6-Flash-RL@3b38d063180c3e4aed9691fdc735f3d10b266ee4");
+        println!("shape\tfresh_text_tokens=128\tcontext=129\tcontinuation_token=220");
+        println!("arm\topt_in_grouped_expert_reuse");
+        println!("method\tintrusive_wall_ms_extra_stream_sync_at_each_phase_boundary");
+        println!(
+            "stage_scope\tqkv=pre_norm_projection_gather_rope\tkv=append\tattention=attend_output_residual\tmlp=pre_norm_mlp_residual"
+        );
+        println!("columns\tlayer\tstage\tqkv_ms\tkv_ms\tattention_ms\tmlp_ms");
+        let mut stages = [[0.0f64; 4]; 2];
+        for (expected, (index, times)) in reused.profile_rows.iter().enumerate() {
+            if *index != expected || times.iter().any(|time| !time.is_finite() || *time <= 0.0) {
+                return Err("MiMo reuse stage profile layer order or timing changed".into());
+            }
+            let stage = usize::from(*index >= STAGE_CUT);
+            for (total, time) in stages[stage].iter_mut().zip(times) {
+                *total += time;
+            }
+            println!(
+                "layer\t{index}\t{stage}\t{:.6}\t{:.6}\t{:.6}\t{:.6}",
+                times[0], times[1], times[2], times[3],
+            );
+        }
+        for (stage, times) in stages.iter().enumerate() {
+            println!(
+                "stage\t{stage}\t{:.6}\t{:.6}\t{:.6}\t{:.6}",
+                times[0], times[1], times[2], times[3],
+            );
+        }
+        println!("transfer_ms\t{:.6}", reused.profile_stage_transfer_ms);
+        println!("head_ms\t{:.6}", reused.profile_head_ms);
+        println!(
+            "moe_scope\ttopk_includes_host_validation_grouping_and_group_upload\tactivation_requant_combined"
+        );
+        println!(
+            "moe_columns\tlayer\tstage\trouter_ms\ttopk_ms\tinput_quant_ms\tgate_ms\tup_ms\tactivation_requant_ms\tdown_ms\treduction_ms"
+        );
+        let mut moe_stages = [[0.0f64; 8]; 2];
+        for (expected, row) in (1..LAYERS).zip(&moe_profile) {
+            if row.layer != expected
+                || row
+                    .wall_ms
+                    .iter()
+                    .any(|time| !time.is_finite() || *time <= 0.0)
+            {
+                return Err("MiMo reuse MoE profile layer order or timing changed".into());
+            }
+            let stage = usize::from(row.layer >= STAGE_CUT);
+            for (total, time) in moe_stages[stage].iter_mut().zip(row.wall_ms) {
+                *total += time;
+            }
+            let ms = row.wall_ms;
+            println!(
+                "moe_layer\t{}\t{stage}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}",
+                row.layer, ms[0], ms[1], ms[2], ms[3], ms[4], ms[5], ms[6], ms[7],
+            );
+        }
+        for (stage, ms) in moe_stages.iter().enumerate() {
+            println!(
+                "moe_stage\t{stage}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}",
+                ms[0], ms[1], ms[2], ms[3], ms[4], ms[5], ms[6], ms[7],
+            );
         }
         Ok(())
     }

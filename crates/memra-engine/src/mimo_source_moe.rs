@@ -5,6 +5,8 @@
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::ffi::c_void;
+#[cfg(test)]
+use std::time::Instant;
 
 use cudarc::driver::{CudaSlice, DevicePtr, DevicePtrMut};
 use memra_gguf::config::{Arch, ModelConfig};
@@ -42,6 +44,60 @@ pub struct MiMoMoeBatch {
     pub output: CudaSlice<f32>,
     pub selected: Vec<Vec<u32>>,
     pub weights: Vec<Vec<f32>>,
+}
+
+/// Intrusive wall times for the opt-in grouped reuse path. Every recorded
+/// phase ends with stream synchronization.
+#[cfg(test)]
+pub(crate) struct MiMoReusePhaseWallTimes {
+    pub layer: usize,
+    pub wall_ms: [f64; 8],
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static REUSE_PHASE_PROFILE: std::cell::RefCell<Option<Vec<MiMoReusePhaseWallTimes>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub(crate) struct ReusePhaseProfileGuard;
+
+#[cfg(test)]
+impl ReusePhaseProfileGuard {
+    pub(crate) fn finish(self) -> Vec<MiMoReusePhaseWallTimes> {
+        REUSE_PHASE_PROFILE.with(|profile| profile.borrow_mut().take().unwrap_or_default())
+    }
+}
+
+#[cfg(test)]
+impl Drop for ReusePhaseProfileGuard {
+    fn drop(&mut self) {
+        REUSE_PHASE_PROFILE.with(|profile| {
+            profile.borrow_mut().take();
+        });
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn start_reuse_phase_profile() -> ReusePhaseProfileGuard {
+    REUSE_PHASE_PROFILE.with(|profile| {
+        assert!(
+            profile.borrow_mut().replace(Vec::new()).is_none(),
+            "MiMo reuse phase profile is already active"
+        );
+    });
+    ReusePhaseProfileGuard
+}
+
+#[cfg(test)]
+fn intrusive_phase_wall_ms(engine: &Engine, started: Option<Instant>) -> Result<f64, Fail> {
+    if let Some(started) = started {
+        engine.stream().synchronize()?;
+        Ok(started.elapsed().as_secs_f64() * 1e3)
+    } else {
+        Ok(0.0)
+    }
 }
 
 fn validate_batch_request(
@@ -1029,9 +1085,23 @@ impl GroupedMiMoMoeLayer {
             ],
         )?;
         engine.gpu.ctx.bind_to_thread()?;
+        #[cfg(test)]
+        let profile_enabled = weight_reuse
+            && tokens > 1
+            && REUSE_PHASE_PROFILE.with(|profile| profile.borrow().is_some());
+        #[cfg(test)]
+        if profile_enabled {
+            engine.stream().synchronize()?;
+        }
+        #[cfg(test)]
+        let phase_started = profile_enabled.then(Instant::now);
         // Match the one-token router's reduction order. A wide cuBLASLt
         // router GEMM perturbs route weights even when expert IDs agree.
         let logits = engine.linear_decode_exact(x, &self.matrix, tokens, HIDDEN, EXPERTS)?;
+        #[cfg(test)]
+        let router_ms = intrusive_phase_wall_ms(engine, phase_started)?;
+        #[cfg(test)]
+        let phase_started = profile_enabled.then(Instant::now);
         let (ids_gpu, weights_gpu) = engine.moe_router_sigmoid_topk(
             &logits,
             tokens,
@@ -1057,8 +1127,15 @@ impl GroupedMiMoMoeLayer {
         } else {
             None
         };
-
+        #[cfg(test)]
+        let topk_ms = intrusive_phase_wall_ms(engine, phase_started)?;
+        #[cfg(test)]
+        let phase_started = profile_enabled.then(Instant::now);
         let (codes, scales) = quantize_rows(engine, x, HIDDEN, tokens)?;
+        #[cfg(test)]
+        let input_quant_ms = intrusive_phase_wall_ms(engine, phase_started)?;
+        #[cfg(test)]
+        let phase_started = profile_enabled.then(Instant::now);
         let gate = self.experts.project(
             engine,
             &codes,
@@ -1068,6 +1145,10 @@ impl GroupedMiMoMoeLayer {
             tokens,
             groups.as_ref(),
         )?;
+        #[cfg(test)]
+        let gate_ms = intrusive_phase_wall_ms(engine, phase_started)?;
+        #[cfg(test)]
+        let phase_started = profile_enabled.then(Instant::now);
         let up = self.experts.project(
             engine,
             &codes,
@@ -1077,10 +1158,18 @@ impl GroupedMiMoMoeLayer {
             tokens,
             groups.as_ref(),
         )?;
+        #[cfg(test)]
+        let up_ms = intrusive_phase_wall_ms(engine, phase_started)?;
+        #[cfg(test)]
+        let phase_started = profile_enabled.then(Instant::now);
         let mut activated = engine.uninit(slots * EXPERT_WIDTH)?;
         engine.silu_mul(&gate, &up, &mut activated, slots * EXPERT_WIDTH)?;
         let (activation_codes, activation_scales) =
             quantize_rows(engine, &activated, EXPERT_WIDTH, slots)?;
+        #[cfg(test)]
+        let activation_requant_ms = intrusive_phase_wall_ms(engine, phase_started)?;
+        #[cfg(test)]
+        let phase_started = profile_enabled.then(Instant::now);
         let down = self.experts.project(
             engine,
             &activation_codes,
@@ -1090,6 +1179,10 @@ impl GroupedMiMoMoeLayer {
             tokens,
             groups.as_ref(),
         )?;
+        #[cfg(test)]
+        let down_ms = intrusive_phase_wall_ms(engine, phase_started)?;
+        #[cfg(test)]
+        let phase_started = profile_enabled.then(Instant::now);
         let mut output = engine.uninit(tokens * HIDDEN)?;
         engine.axpy_rows_seq_tokens_into(
             &down,
@@ -1099,6 +1192,30 @@ impl GroupedMiMoMoeLayer {
             TOP_K,
             tokens,
         )?;
+        #[cfg(test)]
+        let reduction_ms = intrusive_phase_wall_ms(engine, phase_started)?;
+        #[cfg(test)]
+        if profile_enabled {
+            REUSE_PHASE_PROFILE.with(|profile| {
+                profile
+                    .borrow_mut()
+                    .as_mut()
+                    .expect("MiMo reuse phase profile was disabled during a layer")
+                    .push(MiMoReusePhaseWallTimes {
+                        layer: self.layer,
+                        wall_ms: [
+                            router_ms,
+                            topk_ms,
+                            input_quant_ms,
+                            gate_ms,
+                            up_ms,
+                            activation_requant_ms,
+                            down_ms,
+                            reduction_ms,
+                        ],
+                    });
+            });
+        }
         Ok(MiMoMoeBatch {
             output,
             selected,
