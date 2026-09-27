@@ -1,0 +1,18 @@
+diff --git a/crates/memra-engine/src/tier_transfer.rs b/crates/memra-engine/src/tier_transfer.rs
+index 29159282f..26a516384 100644
+--- a/crates/memra-engine/src/tier_transfer.rs
++++ b/crates/memra-engine/src/tier_transfer.rs
+@@ -475,10 +475,9 @@ impl<B: PoolBacking> LeasePool<B> {
+     /// the lease was allocated in the current epoch (day 69, P.2: no drain since); freed otherwise.
+     fn put(&self, backing: B, epoch: u64) {
+         let class = backing.class() as u64;
+-        if !self.open.get()
+-            || epoch != self.epoch.get()
+-            || self.idle_bytes.get() + class > self.cap.get()
+-        {
++        // day69 red arm: put ignores the epoch.
++        let _ = epoch;
++        if !self.open.get() || self.idle_bytes.get() + class > self.cap.get() {
+             drop(backing);
+             return;
+         }

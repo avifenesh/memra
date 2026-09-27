@@ -67,7 +67,7 @@ for b in 1 2 3; do
   fi
   python3 research/spill-a-20260919/stall_cell.py --port "$PORT" --mode "$mode" --n 5 --server-log "$D/server.log" \
     --out "$D/$mode" --tag "d54-$CELL" > "$D/$mode.log" 2>&1
-  log "$CELL $(basename "$D") rc=$? $(grep -h 'STALL rule' "$D/$mode.log" | cut -c1-120)"
+  step_rc=$?; log "$CELL $(basename "$D") rc=$step_rc $(grep -h 'STALL rule' "$D/$mode.log" | cut -c1-120)"
   stop
   { echo "== $(basename "$D")"; python3 research/spill-a-20260919/stall_cell.py --replay "$D/$mode/receipt.json"; } \
     >> "$O/replays.log" 2>&1

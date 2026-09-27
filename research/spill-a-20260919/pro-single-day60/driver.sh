@@ -8,5 +8,5 @@ export PATH=/root/.cargo/bin:/usr/local/cuda/bin:$PATH
 export MEMRA_GPU_LOCK=/tmp/memra-gpu.lock
 bash research/spill-c-20260919/day29-box-run.sh /root/wt-a "$R" "$MODEL" /root/wt-a-day16
 python3 research/spill-c-20260919/day29-stall-reading.py "$R/stall/ev" > "$R/reading-day60.log" 2>&1
-echo "$(date -u +%FT%TZ) reading rc=$? $(tail -1 "$R/reading-day60.log")" >> "$R/progress.log"
+step_rc=$?; echo "$(date -u +%FT%TZ) reading rc=$step_rc $(tail -1 "$R/reading-day60.log")" >> "$R/progress.log"
 echo "$(date -u +%FT%TZ) A60-DONE" >> "$R/progress.log"
