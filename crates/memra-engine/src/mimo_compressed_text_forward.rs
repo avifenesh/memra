@@ -7,12 +7,11 @@ use memra_gguf::model_plan::{AttentionPlan, MlpPlan};
 
 use crate::Engine;
 use crate::mimo_compressed_kv::{MAX_COMPRESSED_CONTEXT_TOKENS, MiMoCompressedKv};
-use crate::mimo_text_forward::{dense_token, normalized};
+use crate::mimo_text_forward::{MiMoTextStep, dense_token, normalized, read_text_output};
 use crate::mimo_text_weights::{MiMoTextWeights, stage_for_layer};
 
 type Fail = Box<dyn Error>;
 const HIDDEN: usize = 4096;
-const VOCAB: usize = 152_576;
 const LAYERS: usize = 48;
 const STAGE_CUT: usize = 24;
 
@@ -86,6 +85,25 @@ impl<'a> MiMoCompressedTextForward<'a> {
     /// A failed GPU, transfer, or head step poisons this sequence because its
     /// 48 per-layer KV writes cannot be rolled back.
     pub fn token(&mut self, token: u32) -> Result<Vec<f32>, Fail> {
+        Ok(self.token_step::<false>(token)?.0)
+    }
+
+    /// Process one source text token and return complete logits plus its
+    /// pre-final-norm hidden row for the bounded MTP3 drafter.
+    pub fn token_with_hidden(&mut self, token: u32) -> Result<MiMoTextStep, Fail> {
+        let position = self.position;
+        let (logits, hidden) = self.token_step::<true>(token)?;
+        Ok(MiMoTextStep {
+            position,
+            logits,
+            hidden_before_norm: hidden.ok_or("MiMo compressed text hidden capture was omitted")?,
+        })
+    }
+
+    fn token_step<const CAPTURE_HIDDEN: bool>(
+        &mut self,
+        token: u32,
+    ) -> Result<(Vec<f32>, Option<Vec<f32>>), Fail> {
         check_step(
             self.position,
             self.kv.position(),
@@ -95,16 +113,22 @@ impl<'a> MiMoCompressedTextForward<'a> {
         // Validate the source row before any GPU or KV mutation.
         let initial = self.weights.embedding_row(token)?;
         self.failed = true;
-        let logits = self.token_inner(&initial)?;
+        let output = self.token_inner::<CAPTURE_HIDDEN>(&initial)?;
         if self.kv.position() != self.position + 1 {
             return Err("MiMo compressed text did not commit all 48 KV rows".into());
         }
+        if CAPTURE_HIDDEN && output.1.is_none() {
+            return Err("MiMo compressed text hidden capture was omitted".into());
+        }
         self.position += 1;
         self.failed = false;
-        Ok(logits)
+        Ok(output)
     }
 
-    fn token_inner(&mut self, initial: &[f32]) -> Result<Vec<f32>, Fail> {
+    fn token_inner<const CAPTURE_HIDDEN: bool>(
+        &mut self,
+        initial: &[f32],
+    ) -> Result<(Vec<f32>, Option<Vec<f32>>), Fail> {
         self.engines[0].gpu.ctx.bind_to_thread()?;
         let mut hidden = self.engines[0].htod(initial)?;
         for index in 0..LAYERS {
@@ -222,11 +246,7 @@ impl<'a> MiMoCompressedTextForward<'a> {
             self.weights.plan.output_norm.epsilon,
         )?;
         let logits_gpu = last.matmul(&self.weights.output_head, &final_norm, 1)?;
-        let logits = last.dtoh(&logits_gpu)?;
-        if logits.len() != VOCAB || logits.iter().any(|value| !value.is_finite()) {
-            return Err("MiMo text output logits are non-finite or wrong width".into());
-        }
-        Ok(logits)
+        read_text_output::<CAPTURE_HIDDEN>(last, &hidden, &logits_gpu)
     }
 }
 
