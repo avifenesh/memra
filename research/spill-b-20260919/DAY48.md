@@ -47,6 +47,28 @@ at the end; the admitted requests' TTFT p50 and p95.
 Code: about 0.3 agent-day (the verdict's budget term, its line field, a unit test, a census test). Cells: about 1 h on
 the 5090, about 1.5 h on the target card plus the 20 GB staging.
 
+### 1.5 Addendum A (2026-09-27, the implementation and the cell as they will be built, after DAY46 read, before any code)
+
+DAY46 has read (2.2), so the day leaves text only. No clause or bound changes; this names what 1.1 and 1.2 left open.
+
+- **The door (`MEMRA_ADMIT_PREDICT_VG_DEBT=1`)** is read in one place, `admit_predict_vg_debt_on()`. When it is set, the
+  predictive seam reads `dspark_vg_admission_debt` for the request's model, the same function the physical side calls
+  later in the same admission. Nothing between the two seams grows the pool: no device work runs before prefill. The
+  verdict then compares `request_kv_hat + booked` against `budget_bytes - vg_debt` (saturating), and the
+  `[admit-predict]` line gains a trailing ` vg_debt=<bytes>`. Unset: nothing is read, and the verdict and the line are
+  byte for byte today's. The physical side is unchanged.
+- **The cell:** `day48-client.py` is `day46-client.py` (addendum C's trigger) with one change: the burst and second-wave
+  requests cycle through eight prompt lengths, L - 256 k for k = 0 to 7. That makes the verify-graph pool meet new
+  `(segment start, vt)` keys during the burst (1.2's "varied lengths"). `day48-run.sh` runs the arms `enforce` and
+  `enforce-vg` through run-day26-cell.sh on the default (spec) route. `day48-read.py` reads:
+  - V1: the boot's `[spec-vg] MTP verify-graph pool ENGAGED` line and the physical `[admission] dspark verify-graph pool
+    debt: +<MB>` lines, and on `enforce-vg` at least one `vg_debt=` above 0.
+  - V2 to V4 as DAY46's P2, P1 and P4.
+  - The readings as registered.
+- **Model and shapes:** Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf (20 GB; its sha256 goes into the receipts before the
+  first boot), served as `o15`. The 5090: B = 32, L = 6,144 at `MEMRA_CTX=65536`. The target card: B = 64, L = 30,720 at
+  the checkpoint's context. Both orders, 4 boots per card.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
