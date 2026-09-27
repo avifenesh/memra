@@ -108,3 +108,77 @@ classes. Section 1 is text, so this sitting measures I23 and I24 as landed.
   - This sitting's `promo-res` on that class can go either way.
   - A `regresses` there fires section 6a's last clause: the resident load's fix registers on its own.
   - Recorded here before the card so that no reading is argued after it.
+
+## 3. The I24 `promo` sitting, read as registered (run by the lead, tree `ba8a5f4cc`; `pro-single-day89/`, `pro-single-day89-9950x/`)
+
+Both halves are copied in byte for byte: 389 files each, the lead's manifests re-checked here OK. `day88-read.py
+--rig pro-single --6a`, re-run on the copies, gives exactly the boxes' `reading.log`. Every cell's integrity is ok,
+and both classes read one host demand sequence per program (door `4bdc2610c3534e42`, `nopf` `0e220d04f52d13e9`).
+
+**285K class** (BOX46, the 285K machine BOX44 ran on, one RTX PRO 6000 WS, driver 580.173.02; builds `run-gen-i24`
+`0866c7a6...` and `run-gen-i22` `4a9a2ecd...` from their commits; 22:22Z). Verbatim:
+- `DAY88 PROMO ADMISSIBILITY rig=pro-single ceiling=0.005 max_iqr_gen=0.0013 max_iqr_window=0.0013 failing=[] -> admissible`
+- `DAY88 PROMO gen-only decode medians (N=10 each): naked=0.314 q22=0.313 legacy=0.311 alloc=0.314 nopf=0.380 legnopf=0.379`
+- `DAY88 PROMO naked_vs_q22 gen-only decode: pooled=+0.0010 o1=+0.0000 o2=+0.0010 noise=0.0012 -> flat`
+- `DAY88 PROMO naked_vs_legacy gen-only decode: pooled=+0.0030 o1=+0.0030 o2=+0.0030 noise=0.0010 -> loses`
+- `DAY88 PROMO naked_vs_legacy steady window: pooled=+0.0000 o1=+0.0010 o2=+0.0000 noise=0.0010 -> matches`
+- `DAY88 PROMO-RES naked_vs_legacy gen-only decode: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0010 -> flat`
+- `DAY88 PROMO-SPEC spec-naked rc=0 self_consistency=PASS installed=True off_rollback=False` and `spec-legacy ... PASS`
+- `DAY88 VERDICT rig=pro-single -> phase1_does_not_land (naked loses to legacy)`
+
+**9950X class** (BOX45, driver 595.91.07; builds `0e1f9d6f...` and `6dc3bc30...`; 22:12Z). Verbatim:
+- `DAY88 PROMO ADMISSIBILITY rig=pro-single ceiling=0.005 max_iqr_gen=0.0010 max_iqr_window=0.0002 failing=[] -> admissible`
+- `DAY88 PROMO naked_vs_q22 gen-only decode: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0003 -> flat`
+- `DAY88 PROMO naked_vs_legacy gen-only decode: pooled=-0.0010 o1=-0.0010 o2=-0.0010 noise=0.0010 -> matches`
+- `DAY88 PROMO naked_vs_legacy steady window: pooled=-0.0020 o1=-0.0020 o2=-0.0020 noise=0.0000 -> beats`
+- `DAY88 PROMO-RES naked_vs_legacy gen-only decode: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0000 -> flat`
+- `DAY88 VERDICT rig=pro-single -> phase1_lands`
+
+**Read as registered.**
+- Phase 1 lands on the 9950X class and does not land on the 285K class, where the door loses to its rollback by
+  3.0 ms over 32 tokens gen-only and matches it on the steady window. Section 5 decides on both classes, so phase 1
+  does not land.
+- The resident shape reads `flat` on both: the borderline registered in section 2 did not regress.
+- The prefetch wins 66 to 80 ms on both programs and both classes, as before.
+
+**The calibration of `DAY89.md` section 2's rule (recorded before I26 is sized).** The rule assumed the 285K's gap is
+the door-only CPU the local split measures, with a share of it reaching the wall.
+- **This sitting cannot test it.** Translated by the rule, I24's local cut of 42.4 us per token predicts about 0.3
+  ms on the 285K wall, a quarter of the cell's noise. It measured +1.0 ms at noise 1.2, `flat`.
+- **The ladder can.** Each gap below is door against REF gen-only, same-window, per sitting; the local door-only
+  work comes from the RTX 5090 splits.
+
+| rung | local door-only (us/token) | 285K gap (ms) | 9950X gap (ms) | sittings |
+|---|---|---|---|---|
+| I20 | 656.7 | +3.0 | +3.0 | `DAY82.md` |
+| I21 | about 507 (-150) | +2.0 | +2.0 | `DAY84.md` |
+| I22 | 346.6 (323.7 at p88) | +2.0 (noise 2.0) | +1.0 | `DAY85.md` |
+| p88 (I22's door) | 323.7 | +2.5 | -1.0 | `DAY88.md` |
+| I24 | 281.2 | +3.0 | -1.0 | this sitting |
+
+- **What it shows.** Across a local cut of 375 us per token, about 57 percent of the door-only work, the 285K class's
+  gap did not close (+3.0 to +3.0 ms), while the 9950X class's closed by about 4 ms (+3.0 to -1.0).
+  - The two classes run the same program on the same bytes. So on the 9950X the door-only CPU was the gap, and on
+    the 285K the remaining gap is something that CPU cut does not reach.
+  - Each gap is a same-window reading; comparing gaps across sittings carries sitting-to-sitting drift, which is
+    this table's scope.
+- **So the rule is refuted as a predictor for the 285K class.** Neither `short` nor `reaches` says whether a further
+  door-only cut closes that class's gap. I26 keeps its approval as the owner's option 1 and a real CPU cut (it closed
+  the 9950X class's gap in kind), but no local split can size it against the 285K gap. The 285K gap must first be
+  located on the 285K itself.
+- **Where the evidence points, not a finding.** On the 285K class the window matches in every sitting (`DAY79.md` to
+  here), so the loss sits in the generate phase's cold part: after prefill, more GPU misses (440 against 120 per 32
+  tokens locally) and a colder prefetch pipeline. The 285K box also has no systemd scope, so every cell ran under
+  `taskset -c 0-11`, 12 of its 24 cores. The 285K is a hybrid P- and E-core part, its core-type layout is recorded
+  in no receipt, and the local host's splits pin to P-cores. The door does more CPU work between launches than the
+  legacy, so a latency-bound thread on an E-core would cost the door more than the legacy. That is a hypothesis
+  until measured.
+
+**The deciding measurement, proposed for the owner and the lead (registered in `DAY94.md` before any card):** one
+sitting on the 285K class.
+- The provenance records the host's P- and E-core lists (`/sys/devices/cpu_core/cpus`,
+  `/sys/devices/cpu_atom/cpus`).
+- `naked` and `legacy` run under the box's `taskset -c 0-11`, and again pinned to the P-cores alone, both orders,
+  x 5.
+- Dispatch-clock twins of both run pinned alike.
+- The reading asks whether P-pinning closes the gap, and where the generate phase's extra time is on that host.

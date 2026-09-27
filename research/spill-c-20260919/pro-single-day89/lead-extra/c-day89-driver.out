@@ -1,0 +1,84 @@
+box start 2026-09-27T22:22:44Z tree ba8a5f4cc491c9d303dae8f73291fec5d382d266
+name, driver_version, memory.total [MiB], power.limit [W], clocks.max.sm [MHz]
+NVIDIA RTX PRO 6000 Blackwell Workstation Edition, 580.173.02, 97887 MiB, 600.00 W, 3090 MHz
+
+==============NVSMI LOG==============
+
+Timestamp                                              : Sun Sep 27 22:22:45 2026
+Driver Version                                         : 580.173.02
+CUDA Version                                           : 13.1
+
+Attached GPUs                                          : 1
+GPU 00000000:02:00.0
+    Performance State                                  : P8
+    Clocks Event Reasons
+        Idle                                           : Not Active
+        Applications Clocks Setting                    : Not Active
+        SW Power Cap                                   : Not Active
+        HW Slowdown                                    : Not Active
+            HW Thermal Slowdown                        : Not Active
+            HW Power Brake Slowdown                    : Not Active
+        Sync Boost                                     : Not Active
+        SW Thermal Slowdown                            : Not Active
+        Display Clock Setting                          : Not Active
+    Clocks Event Reasons Counters
+        SW Power Capping                               : 79940968967 us
+        Sync Boost                                     : 0 us
+        SW Thermal Slowdown                            : 0 us
+        HW Thermal Slowdown                            : 0 us
+        HW Power Braking                               : 0 us
+    Sparse Operation Mode                              : N/A
+
+24
+CPU(s):                                  24
+Model name:                              Intel(R) Core(TM) Ultra 9 285K
+Thread(s) per core:                      1
+Socket(s):                               24
+CPU(s) scaling MHz:                      22%
+MemTotal:       261106060 kB
+MemAvailable:   255043864 kB
+SwapTotal:       8388604 kB
+Filesystem      Size  Used Avail Use% Mounted on
+overlay         200G   37G  164G  19% /
+overlay         200G   37G  164G  19% /
+/root/artifacts/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf: OK
+label=i22 sha=4b378a064 start=2026-09-27T22:22:50Z
+head=4b378a064e5d3e058390da49177f93ef987a60a1
+Cuda compilation tools, release 13.1, V13.1.115
+Build cuda_13.1.r13.1/compiler.37061995_0
+cargo 1.97.1 (c980f4866 2026-06-30)
+   Compiling memra-validate v0.138.0 (/root/wt-c-build/crates/memra-validate)
+   Compiling base64 v0.22.1
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 2m 31s
+binary=run-gen-i22 tree=4b378a064e5d3e058390da49177f93ef987a60a1 sha256=4a9a2ecd3f12b664c8158fc3feaac6faf767f6690726703ba9d6c9959061dc94
+end=2026-09-27T22:25:23Z
+rc=0
+binary=run-gen-i22 tree=4b378a064e5d3e058390da49177f93ef987a60a1 sha256=4a9a2ecd3f12b664c8158fc3feaac6faf767f6690726703ba9d6c9959061dc94
+label=i24 sha=1fd4b24c0 start=2026-09-27T22:25:23Z
+head=1fd4b24c04f4e2ff5d9c5f425b8878a49ca3d811
+Cuda compilation tools, release 13.1, V13.1.115
+Build cuda_13.1.r13.1/compiler.37061995_0
+cargo 1.97.1 (c980f4866 2026-06-30)
+   Compiling memra-reference v0.138.0 (/root/wt-c-build/crates/memra-reference)
+   Compiling memra-kv v0.138.0 (/root/wt-c-build/crates/memra-kv)
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 2m 26s
+binary=run-gen-i24 tree=1fd4b24c04f4e2ff5d9c5f425b8878a49ca3d811 sha256=0866c7a6293d00bcc133b72841349d6d781605aa93b8f86afa1cef987278619e
+binary=run-spec-i24 tree=1fd4b24c04f4e2ff5d9c5f425b8878a49ca3d811 sha256=e59267bd9a3a238897a000929b7ad1b332c777ad2fc8a76dbba0190591636eeb
+end=2026-09-27T22:27:54Z
+rc=0
+binary=run-gen-i24 tree=1fd4b24c04f4e2ff5d9c5f425b8878a49ca3d811 sha256=0866c7a6293d00bcc133b72841349d6d781605aa93b8f86afa1cef987278619e
+binary=run-spec-i24 tree=1fd4b24c04f4e2ff5d9c5f425b8878a49ca3d811 sha256=e59267bd9a3a238897a000929b7ad1b332c777ad2fc8a76dbba0190591636eeb
+BUILDS-DONE 2026-09-27T22:27:54Z
+cpu cap: taskset -c 0-11 (no systemd scope on this box)
+promo rc=0 2026-09-27T22:39:14Z
+promo validate rc=0
+promo-res rc=0 2026-09-27T22:42:00Z
+promo-res validate rc=0
+promo-spec rc=0 2026-09-27T22:42:29Z
+promo-spec validate rc=0
+reader rc=0
+box done 2026-09-27T22:42:31Z

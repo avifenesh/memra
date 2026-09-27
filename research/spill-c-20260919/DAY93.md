@@ -112,3 +112,59 @@ pre-demand reads and lines stay above the bank.
 - **The local queue v23:** the check (p88 and I26 traced, one tape and one host demand sequence), then the split of
   `p88s`, `i25s` and `i26s` under DAY89 section 2's sizing rule, cumulative from `p88s`.
 - **The card.** At `reaches`, NEED TARGET CARD for the `promo` sitting with the traced twin (`DAY92.md` section 1).
+
+## 3. The lead's read (2026-09-27): approved with two conditions, registered before any I26 line
+
+The lead: "Lead read of DAY93 (I26): approved, code it, with two conditions."
+
+**The ordering argument (the lead's check, recorded here with its lines).** The adapter stages one ticket per call
+and drives it to publication inside that same call (`bank/expert_dispatch.rs`, at I25):
+- `demand` (line 249) stages at line 254, runs `progress` at line 263 and `publish` at line 264;
+- `demand_many` (line 302) stages at line 317, runs `progress` at line 326 and `publish` at line 327.
+
+So nothing can interleave between a demand's stage and its publication. A hit that applies `heat.demand` and the SLRU
+effects at its stage lands at the same logical point as today's publication, in the same order.
+
+**Condition 1: the hit finish is all-or-nothing.**
+- Every fallible step of a hit finish comes before its first mutation: the hit ticket's lookup (`UnknownTicket`), and
+  each leased record's use count checked nonzero.
+- The mutations are three, and none can fail: the use counts down, the hit ticket removed, `open_hits` down.
+- So a failure, injected or real, leaves every count and `open_hits` unchanged. A retried finish succeeds once and
+  never decrements twice, and a finish after success refuses `UnknownTicket`.
+- `collect_evicted` runs after the finish, in the adapter, as today.
+- **The fault seam.** The fixture needs a finish that fails and is retried, so the bank gets a fault-injection
+  method of the check (`#[doc(hidden)] inject_finish_failure`, forwarded by the adapter).
+  - It makes the next `finish_ticket` return `NotReady` at the last fallible point before any mutation: after the
+    lookup, on the ticket path and the hit path alike.
+  - It is a fault-injection door of a check, which door hygiene keeps; it has no env read and no flag.
+- **The fixture adds a scripted case to each seed**, before any I26 line and recorded at I25, with the owned leases
+  and cached records in the transcript at every step:
+  - a group of three host hits is held open;
+  - misses evict its records while it is open, and its leases stay owned (the in-use guard: `collect_evicted` skips
+    them, `Busy`);
+  - its first finish is injected to fail, and the leases stay owned;
+  - the retried finish succeeds, and `collect_evicted` releases them;
+  - a second finish refuses `UnknownTicket`.
+
+**Condition 2: the install's pageable bound names hits.** Tickets plus hits are at most `open_leases` (33), so the
+evicted leases that open tickets or hits may pin are at most `open_leases x MAX_GROUP` records at the largest record
+charge, the same count as today. The install's bound line names the term so, beside the hits' own charge bound. Its
+test covers both branches: the charge dropped, and the charge kept.
+
+**What reads `used()` (the list the "nothing reads it" claim needs; grep at `6d126a48b`).**
+- **The door's governor** is created at `banked_residency/native.rs:1095`, handed to the bank at `:1122` and used
+  once for the SLRU metadata reserve at `:1170`. `BankedExpertGate` keeps it only to release that charge at close
+  (`:793`).
+- **No door code reads its `used()`:** nothing in `banked_residency.rs`, `banked_residency/native.rs`,
+  `moe_cache.rs` or `memra-tier/src/bank/`.
+- **Inside the governor** (`tier/governor.rs:178-210`), `used` feeds its own admission: `fits`, `check_combine`,
+  `combine_in_place`. Section 1's capacity argument covers exactly these.
+- **Every other reader reads another governor, never the door's:**
+  - `memra-kv/src/tiered/` (the host prefix tier and its tests);
+  - `memra-server/src/worker.rs` (its tier dimensions and tests);
+  - `memra-engine/src/tier_transfer.rs`, `ple_rows_tier.rs` and `qwen4exp_gpu.rs`;
+  - the gate binaries `tier_transfer_gate`, `kv_tier_gate` (`active.rs`, `fault.rs`) and `storage_bench`;
+  - `memra-tier/src/conformance/revision_v11.rs`.
+- **The bank tests** read their stand-in governor's `used` field. I24's fixture (`tests/bank/day90.rs`) records it
+  and is re-recorded at I26 by design, with its I25 transcript banked beside it, as registered. I26's fixture reads
+  it only with no demand open.

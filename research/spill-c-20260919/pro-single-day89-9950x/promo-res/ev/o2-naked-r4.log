@@ -1,0 +1,12 @@
+22:32:59.239	[moe-prefetch] default=on (a qualified artifact) effective=on
+22:32:59.239	[experts-via-tier] qualified sha256=df27a780435b7b45c2597536112ea3cb091f8544c3d0c3318d9f4258b31f7adf
+22:32:59.240	[tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+22:32:59.367	[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 100.88GB (expert budget 96.28GB) -> RESIDENT
+22:33:00.476	[q8rp] split-plane decode mirrors built: 191 tensors
+22:33:00.476	[experts-via-tier] off: the experts are resident
+22:33:00.476	loaded qwen35moe (40 trunk layers; optional MTP skipped)
+22:33:00.476	prompt tokens: [55, 88, 13]
+22:33:00.523	[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+22:33:00.534	prefill argmax=198  decode argmax=198  logit maxdiff=6.482e-1  MATCH
+22:33:00.656	generated 32 tokens in 0.112s = 285.06 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.010s) [stop: MaxNew]
+22:33:00.656	tokens: [198, 760, 1118, 3065, 310, 635, 369, 310, 1791, 264, 491, 2313, 13, 353, 2688, 2019, 310, 958, 279, 1581, 46796, 35309, 9237, 4736, 7093, 3683, 13, 198, 40, 2688, 2019, 310]
