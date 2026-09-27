@@ -2,7 +2,8 @@
 // K: GGUF q8_0, 34 bytes / 32 values, [seq, 4, 192].
 // V: GGUF NVFP4, 36 bytes / 64 values, [seq, 4, 128].
 // Q: f32 [64, 192]. Output: f32 [64, 128].
-// This is a source-inspection component, not a serving admission path.
+// An isolated diagnostic variant also reads NVFP4 K rows at 36 bytes / 64
+// values. The model-owned cache remains Q8 K. Neither path admits serving.
 
 #include <cuda_fp16.h>
 #include <cuda_fp8.h>
@@ -21,6 +22,7 @@ constexpr int kKvHeads = 4;
 constexpr int kQk = 192;
 constexpr int kValue = 128;
 constexpr int kQ8RowBytes = (kQk / 32) * 34;
+constexpr int kNvfp4KeyRowBytes = (kQk / 64) * 36;
 constexpr int kNvfp4RowBytes = (kValue / 64) * 36;
 constexpr int kThreads = 256;
 constexpr int kWarps = kThreads / 32;
@@ -95,6 +97,7 @@ __device__ __forceinline__ float q8_scale(const uint8_t* block) {
     return __half2float(*reinterpret_cast<const __half*>(block));
 }
 
+template <bool kNvfp4Key>
 __global__ void mixed_tile(const float* __restrict__ q,
                            const uint8_t* __restrict__ k,
                            const uint8_t* __restrict__ v,
@@ -113,15 +116,21 @@ __global__ void mixed_tile(const float* __restrict__ q,
     float acc[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 
     for (int token = first + warp; token < last; token += kWarps) {
+        constexpr int key_row_bytes = kNvfp4Key ? kNvfp4KeyRowBytes : kQ8RowBytes;
         const uint8_t* key_row =
-            k + (static_cast<size_t>(token) * kKvHeads + kv_head) * kQ8RowBytes;
+            k + (static_cast<size_t>(token) * kKvHeads + kv_head) * key_row_bytes;
         float dot = 0.0f;
 #pragma unroll
         for (int block = 0; block < kQk / 32; ++block) {
-            const uint8_t* packed = key_row + block * 34;
-            const float key_value =
-                q8_scale(packed) * static_cast<float>(
-                    static_cast<int8_t>(packed[2 + lane]));
+            float key_value;
+            if constexpr (kNvfp4Key) {
+                key_value = nvfp4_value(key_row, block * 32 + lane);
+            } else {
+                const uint8_t* packed = key_row + block * 34;
+                key_value =
+                    q8_scale(packed) * static_cast<float>(
+                        static_cast<int8_t>(packed[2 + lane]));
+            }
             dot = fmaf(q[head * kQk + block * 32 + lane], key_value, dot);
         }
 #pragma unroll
@@ -515,9 +524,10 @@ static int dispatch(
     if (seq <= 0 || seq > kMaxSeq) return 41002;
     if (!q || !k || !v || !output || !scratch1 || !scratch2 ||
         !scratch3 || !stream_v) return 41003;
-    if (program < 0 || program > 4) return 41005;
+    if (program < 0 || program > 5) return 41005;
     const int tile_size =
-        program >= 2 ? kDeepSplit : program == 1 ? kGroupedTile : kTile;
+        program >= 2 && program <= 4 ? kDeepSplit :
+        program == 1 ? kGroupedTile : kTile;
     const int tiles = (seq + tile_size - 1) / tile_size;
     const int groups = (tiles + kReduce - 1) / kReduce;
     if (scratch1_floats < static_cast<size_t>(kHeads) * tiles * kPartial ||
@@ -556,8 +566,11 @@ static int dispatch(
     } else if (program == 1) {
         mixed_grouped_tile<<<dim3(kKvHeads, tiles), 1024, 0, stream>>>(
             q, k, v, scratch1, seq, tiles);
+    } else if (program == 5) {
+        mixed_tile<true><<<dim3(kHeads, tiles), kThreads, 0, stream>>>(
+            q, k, v, scratch1, seq, tiles);
     } else {
-        mixed_tile<<<dim3(kHeads, tiles), kThreads, 0, stream>>>(
+        mixed_tile<false><<<dim3(kHeads, tiles), kThreads, 0, stream>>>(
             q, k, v, scratch1, seq, tiles);
     }
     cudaError_t launch = cudaGetLastError();
@@ -595,7 +608,8 @@ static int dispatch(
         std::fprintf(stderr, "mimo_split_stage_ms\t%s\t%.6f\t%.6f\t%.6f\t%.6f\n",
                      program == 4 ? "deep_dp4a_native_vscale" :
                      program == 3 ? "deep_dp4a" : program == 2 ? "deep" :
-                     program == 1 ? "grouped" : "baseline",
+                     program == 1 ? "grouped" :
+                     program == 5 ? "nvfp4_kv" : "baseline",
                      stage_ms[0], stage_ms[1],
                      stage_ms[2], stage_ms[3]);
         for (cudaEvent_t mark : marks) cudaEventDestroy(mark);
@@ -613,6 +627,18 @@ extern "C" int memra_mimo_global_q8_nvfp4_decode(
                     seq, heads, kv_heads, qk_dim, v_dim,
                     scratch1_floats, scratch2_floats, scratch3_floats,
                     stream_v, 0);
+}
+
+extern "C" int memra_mimo_global_nvfp4_nvfp4_decode(
+    const float* q, const uint8_t* k, const uint8_t* v,
+    float* output, float* scratch1, float* scratch2, float* scratch3,
+    int seq, int heads, int kv_heads, int qk_dim, int v_dim,
+    size_t scratch1_floats, size_t scratch2_floats,
+    size_t scratch3_floats, void* stream_v) {
+    return dispatch(q, k, v, output, scratch1, scratch2, scratch3,
+                    seq, heads, kv_heads, qk_dim, v_dim,
+                    scratch1_floats, scratch2_floats, scratch3_floats,
+                    stream_v, 5);
 }
 
 extern "C" int memra_mimo_global_q8_nvfp4_decode_grouped(

@@ -12,6 +12,7 @@ const KV_HEADS: usize = 4;
 const QK: usize = 192;
 const VALUE: usize = 128;
 const Q8_ROW_BYTES: usize = QK / 32 * 34;
+const NVFP4_KEY_ROW_BYTES: usize = QK / 64 * 36;
 const NVFP4_ROW_BYTES: usize = VALUE / 64 * 36;
 const BASE_TILE: usize = 256;
 const GROUPED_TILE: usize = 64;
@@ -21,6 +22,24 @@ const PARTIAL: usize = VALUE + 2;
 const MAX_SEQ: usize = 1_048_576;
 
 unsafe extern "C" {
+    fn memra_mimo_global_nvfp4_nvfp4_decode(
+        q: *const f32,
+        k: *const u8,
+        v: *const u8,
+        output: *mut f32,
+        scratch1: *mut f32,
+        scratch2: *mut f32,
+        scratch3: *mut f32,
+        seq: i32,
+        heads: i32,
+        kv_heads: i32,
+        qk_dim: i32,
+        v_dim: i32,
+        scratch1_floats: usize,
+        scratch2_floats: usize,
+        scratch3_floats: usize,
+        stream: *mut c_void,
+    ) -> i32;
     fn memra_mimo_global_q8_nvfp4_decode(
         q: *const f32,
         k: *const u8,
@@ -121,6 +140,7 @@ fn extents(seq: usize, program: u8) -> Result<(usize, usize, usize), &'static st
         0 => BASE_TILE,
         1 => GROUPED_TILE,
         2..=4 => DEEP_SPLIT,
+        5 => BASE_TILE,
         _ => return Err("MiMo mixed attention program is unavailable"),
     };
     let tiles = seq.div_ceil(tile_size);
@@ -178,6 +198,14 @@ impl MiMoMixedAttentionWorkspace {
         Self::new_for(engine, max_seq, 4)
     }
 
+    /// Diagnostic NVFP4 K and V program. The model-owned cache still uses Q8 K.
+    pub fn new_nvfp4_keys(
+        engine: &Engine,
+        max_seq: usize,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::new_for(engine, max_seq, 5)
+    }
+
     fn new_for(
         engine: &Engine,
         max_seq: usize,
@@ -207,10 +235,41 @@ impl Engine {
         seq: usize,
         workspace: &mut MiMoMixedAttentionWorkspace,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        if workspace.program == 5 {
+            return Err("MiMo Q8 K decode cannot read NVFP4 K rows".into());
+        }
+        self.mimo_global_mixed_decode(query, key, value, seq, workspace, Q8_ROW_BYTES)
+    }
+
+    /// Diagnostic packed NVFP4 K and V split decode for the source MiMo
+    /// global geometry. Does not change model-owned storage or serving.
+    pub fn mimo_global_nvfp4_nvfp4_decode(
+        &self,
+        query: &CudaSlice<f32>,
+        key: &CudaSlice<u8>,
+        value: &CudaSlice<u8>,
+        seq: usize,
+        workspace: &mut MiMoMixedAttentionWorkspace,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        if workspace.program != 5 {
+            return Err("MiMo NVFP4 K decode requires its dedicated workspace".into());
+        }
+        self.mimo_global_mixed_decode(query, key, value, seq, workspace, NVFP4_KEY_ROW_BYTES)
+    }
+
+    fn mimo_global_mixed_decode(
+        &self,
+        query: &CudaSlice<f32>,
+        key: &CudaSlice<u8>,
+        value: &CudaSlice<u8>,
+        seq: usize,
+        workspace: &mut MiMoMixedAttentionWorkspace,
+        key_row_bytes: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let (one, two, three) = extents(seq, workspace.program)?;
         if seq > workspace.max_seq
             || query.len() != HEADS * QK
-            || key.len() < seq * KV_HEADS * Q8_ROW_BYTES
+            || key.len() < seq * KV_HEADS * key_row_bytes
             || value.len() < seq * KV_HEADS * NVFP4_ROW_BYTES
             || workspace.scratch1.len() < one
             || workspace.scratch2.len() < two
@@ -240,6 +299,7 @@ impl Engine {
             2 => memra_mimo_global_q8_nvfp4_decode_deep,
             3 => memra_mimo_global_q8_nvfp4_decode_dp4a,
             4 => memra_mimo_global_q8_nvfp4_decode_dp4a_native_vscale,
+            5 => memra_mimo_global_nvfp4_nvfp4_decode,
             _ => return Err("MiMo mixed attention program is unavailable".into()),
         };
         let rc = unsafe {

@@ -60,14 +60,37 @@ fn check_pattern(
     let value: Vec<f32> = (0..seq * KV_HEADS * VALUE)
         .map(|i| ((i * 17 % 101) as f32 - 50.0) / 50.0)
         .collect();
-    let key_bytes = f32_to_q8_0(&key);
+    let key_bytes = if program == 5 {
+        f32_to_nvfp4(&key)
+    } else {
+        f32_to_q8_0(&key)
+    };
     let value_bytes = f32_to_nvfp4(&value);
-    let expected = cpu_oracle(
-        &query,
-        &dequantize(GgmlType::Q8_0, &key_bytes, key.len()),
-        &dequantize(GgmlType::NVFP4, &value_bytes, value.len()),
-        seq,
+    let decoded_key = dequantize(
+        if program == 5 {
+            GgmlType::NVFP4
+        } else {
+            GgmlType::Q8_0
+        },
+        &key_bytes,
+        key.len(),
     );
+    let decoded_value = dequantize(GgmlType::NVFP4, &value_bytes, value.len());
+    let expected = cpu_oracle(&query, &decoded_key, &decoded_value, seq);
+    let uncompressed_key = cpu_oracle(&query, &key, &decoded_value, seq);
+    let codec_relative_l2 = (expected
+        .iter()
+        .zip(&uncompressed_key)
+        .map(|(&actual, &control)| f64::from(actual - control).powi(2))
+        .sum::<f64>()
+        / uncompressed_key
+            .iter()
+            .map(|&control| f64::from(control).powi(2))
+            .sum::<f64>())
+    .sqrt();
+    if !codec_relative_l2.is_finite() {
+        return Err("MiMo key-codec comparison has zero or non-finite source energy".into());
+    }
     let query_gpu = engine.htod(&query)?;
     let key_gpu = engine.htod_bytes(&key_bytes)?;
     let value_gpu = if attention_only {
@@ -102,16 +125,21 @@ fn check_pattern(
         2 => MiMoMixedAttentionWorkspace::new_deep(engine, seq)?,
         3 => MiMoMixedAttentionWorkspace::new_dp4a(engine, seq)?,
         4 => MiMoMixedAttentionWorkspace::new_dp4a_native_vscale(engine, seq)?,
+        5 => MiMoMixedAttentionWorkspace::new_nvfp4_keys(engine, seq)?,
         _ => return Err("MiMo gate attention program is unavailable".into()),
     };
     let start = Instant::now();
-    let actual = engine.dtoh(&engine.mimo_global_q8_nvfp4_decode(
-        &query_gpu,
-        &key_gpu,
-        &value_gpu,
-        seq,
-        &mut workspace,
-    )?)?;
+    let actual = engine.dtoh(&if program == 5 {
+        engine.mimo_global_nvfp4_nvfp4_decode(
+            &query_gpu,
+            &key_gpu,
+            &value_gpu,
+            seq,
+            &mut workspace,
+        )?
+    } else {
+        engine.mimo_global_q8_nvfp4_decode(&query_gpu, &key_gpu, &value_gpu, seq, &mut workspace)?
+    })?;
     let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
     if actual.len() != expected.len() || actual.iter().any(|value| !value.is_finite()) {
         return Err(format!("seq={seq}: invalid GPU output").into());
@@ -121,7 +149,9 @@ fn check_pattern(
         .zip(&actual)
         .map(|(a, b)| (a - b).abs())
         .fold(0.0f32, f32::max);
-    println!("pattern\t{seq}\t{max_abs:.9e}\t{elapsed_ms:.4}");
+    println!(
+        "pattern\t{seq}\t{max_abs:.9e}\t{elapsed_ms:.4}\tkey_codec_relative_l2={codec_relative_l2:.9e}"
+    );
     if max_abs > 0.0003 {
         return Err(format!("seq={seq}: max error {max_abs} exceeds 0.0003").into());
     }
@@ -130,7 +160,11 @@ fn check_pattern(
 
 fn check_constant(engine: &Engine, seq: usize, program: u8) -> Result<(), Fail> {
     let query = vec![0.0f32; HEADS * QK];
-    let key_row = f32_to_q8_0(&vec![0.0f32; KV_HEADS * QK]);
+    let key_row = if program == 5 {
+        f32_to_nvfp4(&vec![0.0f32; KV_HEADS * QK])
+    } else {
+        f32_to_q8_0(&vec![0.0f32; KV_HEADS * QK])
+    };
     let original_value: Vec<f32> = (0..KV_HEADS * VALUE)
         .map(|i| ((i * 13 % 67) as f32 - 33.0) / 31.0)
         .collect();
@@ -153,16 +187,21 @@ fn check_constant(engine: &Engine, seq: usize, program: u8) -> Result<(), Fail> 
         2 => MiMoMixedAttentionWorkspace::new_deep(engine, seq)?,
         3 => MiMoMixedAttentionWorkspace::new_dp4a(engine, seq)?,
         4 => MiMoMixedAttentionWorkspace::new_dp4a_native_vscale(engine, seq)?,
+        5 => MiMoMixedAttentionWorkspace::new_nvfp4_keys(engine, seq)?,
         _ => return Err("MiMo gate attention program is unavailable".into()),
     };
     let start = Instant::now();
-    let actual = engine.dtoh(&engine.mimo_global_q8_nvfp4_decode(
-        &query_gpu,
-        &key_gpu,
-        &value_gpu,
-        seq,
-        &mut workspace,
-    )?)?;
+    let actual = engine.dtoh(&if program == 5 {
+        engine.mimo_global_nvfp4_nvfp4_decode(
+            &query_gpu,
+            &key_gpu,
+            &value_gpu,
+            seq,
+            &mut workspace,
+        )?
+    } else {
+        engine.mimo_global_q8_nvfp4_decode(&query_gpu, &key_gpu, &value_gpu, seq, &mut workspace)?
+    })?;
     let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
     let max_abs = expected
         .iter()
@@ -359,7 +398,7 @@ fn run() -> Result<(), Fail> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if !(2..=6).contains(&args.len()) {
         return Err(
-            "usage: mimo_mixed_attn_gate <pinned_config.json> <gpu_index> [--million] [--million-varied] [--attention-only] [--grouped | --deep | --dp4a | --native-vscale]"
+            "usage: mimo_mixed_attn_gate <pinned_config.json> <gpu_index> [--million] [--million-varied] [--attention-only] [--grouped | --deep | --dp4a | --native-vscale | --nvfp4-key]"
                 .into(),
         );
     }
@@ -370,6 +409,7 @@ fn run() -> Result<(), Fail> {
     let mut deep = false;
     let mut dp4a = false;
     let mut native_vscale = false;
+    let mut nvfp4_key = false;
     for option in args.iter().skip(2) {
         match option.as_str() {
             "--million" if !million => million = true,
@@ -379,13 +419,25 @@ fn run() -> Result<(), Fail> {
             "--deep" if !deep => deep = true,
             "--dp4a" if !dp4a => dp4a = true,
             "--native-vscale" if !native_vscale => native_vscale = true,
+            "--nvfp4-key" if !nvfp4_key => nvfp4_key = true,
             _ => return Err(format!("unknown or repeated MiMo gate option {option}").into()),
         }
     }
-    if u8::from(grouped) + u8::from(deep) + u8::from(dp4a) + u8::from(native_vscale) > 1 {
+    if u8::from(grouped)
+        + u8::from(deep)
+        + u8::from(dp4a)
+        + u8::from(native_vscale)
+        + u8::from(nvfp4_key)
+        > 1
+    {
         return Err("MiMo gate accepts one attention schedule".into());
     }
-    let program = if native_vscale {
+    if nvfp4_key && million_varied {
+        return Err("MiMo NVFP4 K varied-million diagnostic is not implemented".into());
+    }
+    let program = if nvfp4_key {
+        5
+    } else if native_vscale {
         4
     } else if dp4a {
         3
@@ -405,7 +457,7 @@ fn run() -> Result<(), Fail> {
     let gpu_index: usize = args[1].parse()?;
     let engine = Engine::new(gpu_index)?;
     println!("gpu_index\t{gpu_index}");
-    println!("class\tseq\tmax_abs\twall_ms");
+    println!("class\tseq\tmax_abs\twall_ms\tkey_codec_relative_l2");
     if !attention_only {
         for width in [128, 192] {
             check_codec(&engine, width)?;
