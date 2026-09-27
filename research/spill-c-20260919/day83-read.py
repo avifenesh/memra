@@ -7,6 +7,8 @@ each leaf's change from I15 to I20 on this host. Also reads earlier cells' recei
 
 usage: day83-read.py <ev-dir> --arms i15s,i20s,i20c [--rig <rig>] [--check]
   --check: the cell's integrity as registered (every run exit 0 and MATCH, one tape, one host demand sequence).
+  --traced a,b: day 92 (DAY92.md section 1, I25a): the host demand sequence is read from those arms only (an
+    untraced arm writes none), and each of their runs must hold a nonempty trace; without it every run is read.
 """
 import hashlib
 import re
@@ -46,7 +48,7 @@ def parse(log):
     trace = [SLOT.sub("", line) for line in lines if "[expert-host-slru] key=" in line]
     match = any("MATCH" in line and "argmax" in line for line in lines)
     return {"dispatch": dispatch, "stages": stages, "tape": tape, "match": match,
-            "trace": hashlib.sha256("\n".join(trace).encode()).hexdigest()[:16]}
+            "trace": hashlib.sha256("\n".join(trace).encode()).hexdigest()[:16], "trace_lines": len(trace)}
 
 
 def delta(phases, a, b, key, section=None):
@@ -141,8 +143,17 @@ def main():
                 fails.append(f"{r['label']}: exit={r['exit']} match={r['match']} tape={bool(r['tape'])}")
         if len({r["tape"] for r in every}) != 1:
             fails.append("tapes differ")
-        if len({r["trace"] for r in every}) != 1:
-            fails.append("host demand sequences differ: " + ",".join(sorted({r["trace"] for r in every})))
+        traced = every
+        if "--traced" in sys.argv:
+            names = sys.argv[sys.argv.index("--traced") + 1].split(",")
+            traced = [r for arm in names for r in runs.get(arm, [])]
+            if not traced:
+                fails.append("no traced arm read")
+            for r in traced:
+                if r["trace_lines"] == 0:
+                    fails.append(f"{r['label']}: an empty host demand trace in a traced arm")
+        if len({r["trace"] for r in traced}) != 1:
+            fails.append("host demand sequences differ: " + ",".join(sorted({r["trace"] for r in traced})))
         counts = {arm: len(runs[arm]) for arm in arms}
         if any(n != 10 for n in counts.values()):
             fails.append(f"runs per arm {counts}")
