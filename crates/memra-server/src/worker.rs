@@ -27347,6 +27347,9 @@ pub fn run(
     // The probe rides the SERVED route per model (lane/graph-launch-guard-sweep-20260831):
     // a dspark-armed model is probed through the dspark session, never the MTP spec arm
     // it has disabled — the receipt names the route it measured.
+    // memra#476 (WP-B DAY51): the FA partial pool at its final size before the calibration probe,
+    // so no request grows it after ready and the floor is measured with it in place.
+    pregrow_fa_part_pools(&engine, &loaded, &chunk_policies);
     run_boot_calibration(
         &engine,
         &loaded,
@@ -41061,6 +41064,64 @@ fn calibration_transient_floor(
         .saturating_sub(used_rest)
         .saturating_sub(charged_kv)
         .saturating_sub(charged_draft)
+}
+
+/// The rows the FA partial pool is grown for (WP-B DAY51 1.2): the larger of the model's decode wave
+/// cap (the batched trunk's B) and the spec verify's K + 1 (the automatic table's largest K, or the
+/// `MEMRA_SPEC_K` pin).
+fn fa_pregrow_rows(wave_cap: usize, spec_k_pin: Option<usize>) -> usize {
+    let verify_rows =
+        spec_k_pin.map_or(SPEC_K_CACHED_LONG_TRIM, |k| k.max(SPEC_K_CACHED_LONG_TRIM)) + 1;
+    wave_cap.max(verify_rows)
+}
+
+/// memra#476 (WP-B DAY51): grow each device's FA partial pool at boot to every rung the served
+/// context and the batch cap can reach (`fa_part_pool_demand_for_plan`), before the calibration
+/// probe. A model whose plan has no FA-class attention is skipped and says so; a failed grow is loud
+/// and non-fatal (the pool then grows lazily, as before this step).
+fn pregrow_fa_part_pools(
+    engine: &Engine,
+    loaded: &HashMap<String, LoadedModel>,
+    chunk_policies: &HashMap<String, DecodeChunkPolicy>,
+) {
+    let mut names: Vec<&String> = loaded.keys().collect();
+    names.sort();
+    for name in names {
+        let lm = &loaded[name];
+        let served_ctx = match resolve_env_ctx(lm.model.cfg.context_length as usize) {
+            Ok(ctx) => ctx,
+            Err(err) => {
+                eprintln!("[fa-pool] no pre-grow for model={name:?}: {err}");
+                continue;
+            }
+        };
+        let rows = fa_pregrow_rows(
+            chunk_policies.get(name).map_or(1, |policy| policy.wave_cap),
+            spec_k_pin(),
+        );
+        let (o_len, ml_len) =
+            memra_engine::fa_part_pool_demand_for_plan(&lm.model.plan, served_ctx, rows);
+        if o_len == 0 {
+            eprintln!(
+                "[fa-pool] no pre-grow for model={name:?}: its plan has no FA-class attention"
+            );
+            continue;
+        }
+        for_each_device_engine(engine, loaded, &mut |device, dev_engine| match dev_engine
+            .fa_part_pool_pregrow(o_len, ml_len)
+        {
+            Ok((held_o, held_ml)) => eprintln!(
+                "[fa-pool] pre-grown model={name:?} dev={device} served_ctx={served_ctx} \
+                     rows={rows} o_len={o_len} ml_len={ml_len} bytes={} (pool holds o_len \
+                     {held_o} ml_len {held_ml})",
+                4 * (o_len + 2 * ml_len),
+            ),
+            Err(err) => eprintln!(
+                "[fa-pool] pre-grow FAILED model={name:?} dev={device} o_len={o_len} \
+                     ml_len={ml_len}: {err}; the pool grows lazily"
+            ),
+        });
+    }
 }
 
 /// BOOT ADMISSION CALIBRATION (lane/step37-vram-admission-20260830, defect 1): measure the
@@ -59740,6 +59801,18 @@ mod tests {
         // Each rewind is its pool's own restore.
         assert!(live.contains("if let Err(err) = memra_engine::pp::restore_cache_checkpoint( engine, &lm.model, None, &mut e.cache, &ckpt.snap, )"));
         assert!(live.contains("match lm.model.spec_rewind_to_checkpoint(engine, &mut sess) {"));
+    }
+
+    /// memra#476 (WP-B DAY51 1.2): the pre-grow's rows are the wave cap or the spec verify's K + 1,
+    /// whichever is larger (the automatic table's largest K is 5; a pin raises it, never lowers it).
+    #[test]
+    fn fa_pregrow_rows_cover_the_batched_trunk_and_the_verify() {
+        use super::fa_pregrow_rows;
+        assert_eq!(fa_pregrow_rows(16, None), 16);
+        assert_eq!(fa_pregrow_rows(4, None), 6);
+        assert_eq!(fa_pregrow_rows(4, Some(8)), 9);
+        assert_eq!(fa_pregrow_rows(1, Some(2)), 6);
+        assert_eq!(fa_pregrow_rows(16, Some(20)), 21);
     }
 
     /// DAY49 addendum F: the recovery is the naked default on the RTX PRO 6000 Blackwell class

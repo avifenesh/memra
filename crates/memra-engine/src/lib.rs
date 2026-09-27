@@ -2222,6 +2222,89 @@ pub fn fa_split_keys_pub(t_kv: usize, n_head_kv: usize) -> usize {
     fa_split_keys(t_kv, n_head_kv)
 }
 
+/// memra#476 (WP-B DAY51 1.1): the FA partial pool's demand `(o_len, ml_len)` for one attention
+/// geometry, over every key length from 1 to `max_t_kv` and `rows` rows. Every FA decode and verify
+/// site sizes `o = rows x n_head x n_splits x head_dim`, `ml = rows x n_head x n_splits` with
+/// `n_splits = ceil(t_kv / split(t_kv))`; the split ladder is not monotone in its count across rung
+/// edges, so the maximum count is taken over every `t_kv`, not read at `max_t_kv` alone. `split`
+/// is the ladder (`fa_split_keys` in serving; a fixed ladder in tests).
+pub fn fa_part_pool_demand_with(
+    split: &dyn Fn(usize) -> usize,
+    head_dim: usize,
+    n_head: usize,
+    max_t_kv: usize,
+    rows: usize,
+) -> (usize, usize) {
+    let mut max_splits = 0usize;
+    for t_kv in 1..=max_t_kv {
+        max_splits = max_splits.max(t_kv.div_ceil(split(t_kv).max(1)));
+    }
+    let ml = rows * n_head * max_splits;
+    (ml * head_dim, ml)
+}
+
+/// memra#476 (WP-B DAY51 1.2): the FA partial pool's demand for a model, from its plan. Every `Full`
+/// and `SlidingWindow` attention layer (main layers and MTP blocks) whose value head size is in the FA
+/// vector class (at most 256, a multiple of 32) contributes its geometry; a sliding window caps its
+/// key length at the window; MLA, GatedDeltaNet and Kimi layers do not read this pool. The result is
+/// the maximum `o_len` and `ml_len` over the geometries, `(0, 0)` when there is none.
+pub fn fa_part_pool_demand_for_plan(
+    plan: &memra_gguf::model_plan::ModelPlan,
+    served_ctx: usize,
+    rows: usize,
+) -> (usize, usize) {
+    fa_part_pool_demand_for_plan_with(plan, served_ctx, rows, &|t_kv, n_head_kv| {
+        fa_split_keys(t_kv, n_head_kv)
+    })
+}
+
+/// `fa_part_pool_demand_for_plan` with the ladder given (tests).
+pub fn fa_part_pool_demand_for_plan_with(
+    plan: &memra_gguf::model_plan::ModelPlan,
+    served_ctx: usize,
+    rows: usize,
+    split: &dyn Fn(usize, usize) -> usize,
+) -> (usize, usize) {
+    use memra_gguf::model_plan::AttentionPlan;
+    let mut geometries: Vec<(usize, usize, usize, usize)> = Vec::new();
+    let layers = plan
+        .layers
+        .iter()
+        .chain(plan.mtp_blocks.iter().map(|block| &block.layer));
+    for layer in layers {
+        let (attention, max_t_kv) = match &layer.attention {
+            AttentionPlan::Full(attention) => (attention, served_ctx),
+            AttentionPlan::SlidingWindow { attention, window } => {
+                (attention, served_ctx.min(*window as usize))
+            }
+            AttentionPlan::Mla(_)
+            | AttentionPlan::GatedDeltaNet(_)
+            | AttentionPlan::KimiDeltaNet(_) => {
+                continue;
+            }
+        };
+        let head_dim = attention.value_head_dim as usize;
+        if head_dim == 0 || head_dim > 256 || !head_dim.is_multiple_of(32) {
+            continue;
+        }
+        let geometry = (
+            head_dim,
+            attention.query_heads as usize,
+            attention.kv_heads as usize,
+            max_t_kv,
+        );
+        if !geometries.contains(&geometry) {
+            geometries.push(geometry);
+        }
+    }
+    geometries
+        .into_iter()
+        .map(|(head_dim, n_head, n_head_kv, max_t_kv)| {
+            fa_part_pool_demand_with(&|t| split(t, n_head_kv), head_dim, n_head, max_t_kv, rows)
+        })
+        .fold((0, 0), |(o, ml), (o2, ml2)| (o.max(o2), ml.max(ml2)))
+}
+
 /// A raw pinned (page-locked, CACHEABLE — flags=0, not write-combined) host allocation for
 /// DtoH staging. cudarc's `alloc_pinned` uses CU_MEMHOSTALLOC_WRITECOMBINED, which is right for
 /// HtoD streams but pathologically slow for host READS — the router readback is host-read-heavy,
@@ -32442,6 +32525,23 @@ impl Engine {
         Ok(())
     }
 
+    /// memra#476 (WP-B DAY51): grow the FA partial pool once, at boot, to `(o_len, ml_len)`
+    /// (`fa_part_pool_demand_for_plan`), from outside any capture region. A no-op when the
+    /// pool already holds that much; the grow prints the pool's own `[fa-pool] grow` receipt.
+    /// Returns the pool's `(o, ml)` lengths after the call.
+    pub fn fa_part_pool_pregrow(
+        &self,
+        o_len: usize,
+        ml_len: usize,
+    ) -> Result<(usize, usize), Box<dyn std::error::Error>> {
+        let mut part_guard = self.fa_part_pool.lock().unwrap();
+        self.fa_part_pool_grow(&mut part_guard, o_len, ml_len)?;
+        Ok(part_guard
+            .as_ref()
+            .map(|pp| (pp.0.len(), pp.1.len()))
+            .unwrap_or((0, 0)))
+    }
+
     /// Pre-grow the fa partial pool for a dcw call at (n_head, bucket_max) geometry, from
     /// OUTSIDE any capture region. Idempotent and cheap when already big enough.
     pub fn fa_dcw_pool_ensure(
@@ -36270,5 +36370,115 @@ mod fused_rope_width_tests {
         assert!(Engine::full_width_rope_only("rms_norm_qkv_rope_append_dc", 64, 128).is_err());
         // and the reverse mismatch (a wider rope than the head) is not "close enough" either.
         assert!(Engine::full_width_rope_only("rms_norm_qkv_rope", 256, 128).is_err());
+    }
+}
+
+#[cfg(test)]
+mod fa_pool_pregrow_tests {
+    //! memra#476 (WP-B DAY51 1.1 to 1.3): the FA partial pool's boot demand.
+    use super::{fa_part_pool_demand_for_plan_with, fa_part_pool_demand_with};
+    use memra_gguf::config::{HfConfig, ModelConfig};
+    use memra_gguf::model_plan::ModelPlan;
+
+    /// The 82-SM ladder at `n_head_kv <= 4` (`fa_split_keys`, the local card's rungs).
+    fn small_rig_kv4(t_kv: usize) -> usize {
+        if t_kv <= 512 {
+            8
+        } else if t_kv <= 16384 {
+            64
+        } else {
+            128
+        }
+    }
+
+    /// The 188-SM ladder (`fa_split_keys`, the target card's rungs).
+    fn big_rig(t_kv: usize) -> usize {
+        if t_kv <= 2048 {
+            16
+        } else if t_kv <= 16384 {
+            64
+        } else {
+            128
+        }
+    }
+
+    fn plan(json: &str) -> ModelPlan {
+        ModelPlan::compile(&ModelConfig::from_hf(&HfConfig::parse(json))).unwrap()
+    }
+
+    #[test]
+    fn the_boot_figures_of_day51_1_3() {
+        // Local 9B: 16 query heads, value head 256, MEMRA_CTX=65536, wave cap 16.
+        let (o, ml) = fa_part_pool_demand_with(&small_rig_kv4, 256, 16, 65_536, 16);
+        assert_eq!((o, ml), (33_554_432, 131_072));
+        assert_eq!(4 * (o + 2 * ml), 135_266_304);
+        // Target 27B: 24 query heads, value head 256, the checkpoint's 262,144, wave cap 16.
+        let (o, ml) = fa_part_pool_demand_with(&big_rig, 256, 24, 262_144, 16);
+        assert_eq!((o, ml), (201_326_592, 786_432));
+        assert_eq!(4 * (o + 2 * ml), 811_597_824);
+    }
+
+    #[test]
+    fn the_split_count_is_the_ladders_maximum_not_its_value_at_the_served_context() {
+        // Just past the 16,384 edge the split doubles: 129 splits at 16,385, 256 at 16,384.
+        let (_, ml) = fa_part_pool_demand_with(&big_rig, 1, 1, 16_385, 1);
+        assert_eq!(ml, 256);
+        assert_eq!(16_385usize.div_ceil(big_rig(16_385)), 129);
+        // DAY28's walk on the local card: S8 (8 rows near 2,200 keys) and L (1 row at 22,760 keys)
+        // demanded far less than the 16-row pre-grow holds (its 4,259,840 was the doubling rule).
+        let (o, _) = fa_part_pool_demand_with(&small_rig_kv4, 256, 16, 65_536, 16);
+        let s8 = 8 * 16 * 2_200usize.div_ceil(small_rig_kv4(2_200)) * 256;
+        let l = 16 * 22_760usize.div_ceil(small_rig_kv4(22_760)) * 256;
+        assert!(o >= s8 && o >= l && o >= 4_259_840, "{o} {s8} {l}");
+    }
+
+    #[test]
+    fn the_plan_supplies_the_geometry_full_attention_only() {
+        // A Qwen3.5-shaped hybrid: full attention every 4th layer (16 heads, 4 KV heads, head 256),
+        // GatedDeltaNet elsewhere. The linear layers contribute nothing.
+        let hybrid = plan(
+            r#"{"model_type":"qwen3_5","num_hidden_layers":4,"hidden_size":256,
+            "num_attention_heads":16,"num_key_value_heads":4,"head_dim":256,
+            "intermediate_size":512,"vocab_size":1024,"max_position_embeddings":65536,
+            "full_attention_interval":4,"linear_conv_kernel_dim":4,
+            "linear_key_head_dim":32,"linear_value_head_dim":32,
+            "linear_num_key_heads":2,"linear_num_value_heads":4}"#,
+        );
+        let split = |t: usize, _kv: usize| small_rig_kv4(t);
+        assert_eq!(
+            fa_part_pool_demand_for_plan_with(&hybrid, 65_536, 16, &split),
+            fa_part_pool_demand_with(&small_rig_kv4, 256, 16, 65_536, 16),
+        );
+        // A value head past the FA vector class (512) does not read this pool.
+        let wide = plan(
+            r#"{"model_type":"qwen3","num_hidden_layers":1,"hidden_size":1024,
+            "num_attention_heads":2,"num_key_value_heads":1,"head_dim":512,
+            "intermediate_size":128,"vocab_size":16,"max_position_embeddings":4096}"#,
+        );
+        assert_eq!(
+            fa_part_pool_demand_for_plan_with(&wide, 4096, 16, &split),
+            (0, 0)
+        );
+    }
+
+    #[test]
+    fn a_sliding_window_caps_its_layers_key_length() {
+        // Sliding layers (head 256) capped at a 1,024 window; the global layers' 512 head is outside
+        // the FA vector class. The demand is the sliding geometry's at t_kv <= 1,024.
+        let gemma = plan(
+            r#"{"model_type":"gemma4","num_hidden_layers":2,"hidden_size":512,
+            "num_attention_heads":8,"num_key_value_heads":4,
+            "num_global_key_value_heads":1,"head_dim":256,"global_head_dim":512,
+            "intermediate_size":1024,"vocab_size":32,"max_position_embeddings":131072,
+            "rms_norm_eps":0.000001,"sliding_window":1024,
+            "layer_types":["sliding_attention","full_attention"],
+            "rope_parameters":{"full_attention":{"rope_theta":1000000,
+            "partial_rotary_factor":0.5},"sliding_attention":{"rope_theta":10000}}}"#,
+        );
+        let split = |t: usize, _kv: usize| small_rig_kv4(t);
+        assert_eq!(
+            fa_part_pool_demand_for_plan_with(&gemma, 131_072, 16, &split),
+            fa_part_pool_demand_with(&small_rig_kv4, 256, 8, 1024, 16),
+        );
     }
 }
