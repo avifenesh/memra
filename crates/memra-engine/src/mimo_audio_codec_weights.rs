@@ -87,6 +87,63 @@ pub struct MiMoAudioCodecEncoderWeights {
     pub device_ordinal: usize,
 }
 
+/// A validated BF16 Conv1D weight and bias pair from the pinned encoder.
+///
+/// The byte slices contain little-endian BF16 values. The weight is contiguous
+/// `[out_channels, in_channels, 3]`; the bias is `[out_channels]`.
+pub struct CodecEncoderBf16Conv1d<'a> {
+    weight: &'a CudaSlice<u8>,
+    bias: &'a CudaSlice<u8>,
+    in_channels: usize,
+    out_channels: usize,
+    stride: usize,
+}
+
+impl CodecEncoderBf16Conv1d<'_> {
+    pub fn weight(&self) -> &CudaSlice<u8> {
+        self.weight
+    }
+
+    pub fn bias(&self) -> &CudaSlice<u8> {
+        self.bias
+    }
+
+    pub fn in_channels(&self) -> usize {
+        self.in_channels
+    }
+
+    pub fn out_channels(&self) -> usize {
+        self.out_channels
+    }
+
+    pub fn stride(&self) -> usize {
+        self.stride
+    }
+}
+
+fn check_conv_row(
+    name: &str,
+    dtype: CodecEncoderDtype,
+    shape: &[u64],
+    byte_len: usize,
+    expected_shape: &[u64],
+) -> Result<(), String> {
+    let expected_bytes = expected_shape.iter().try_fold(2usize, |bytes, &dimension| {
+        usize::try_from(dimension)
+            .ok()
+            .and_then(|dimension| bytes.checked_mul(dimension))
+    });
+    if dtype != CodecEncoderDtype::Bf16
+        || shape != expected_shape
+        || expected_bytes != Some(byte_len)
+    {
+        return Err(format!(
+            "MiMo codec {name} BF16 shape or byte extent changed"
+        ));
+    }
+    Ok(())
+}
+
 // Drop synchronizes before its tensor fields are freed. The source mapping is
 // declared before this owner and remains alive until the same synchronization.
 struct PendingUpload<'a> {
@@ -210,6 +267,59 @@ impl MiMoAudioCodecEncoderWeights {
 
     pub fn tensors(&self) -> &BTreeMap<String, CodecEncoderTensor> {
         &self.tensors
+    }
+
+    fn conv_bf16(
+        &self,
+        stem: &str,
+        in_channels: usize,
+        stride: usize,
+    ) -> Result<CodecEncoderBf16Conv1d<'_>, String> {
+        const OUT: usize = 1_024;
+        let weight_name = format!("{stem}.weight");
+        let bias_name = format!("{stem}.bias");
+        let weight = self
+            .tensors
+            .get(&weight_name)
+            .ok_or_else(|| format!("MiMo codec missing {weight_name}"))?;
+        let bias = self
+            .tensors
+            .get(&bias_name)
+            .ok_or_else(|| format!("MiMo codec missing {bias_name}"))?;
+        check_conv_row(
+            &weight_name,
+            weight.dtype,
+            &weight.shape,
+            weight.bytes.len(),
+            &[OUT as u64, in_channels as u64, 3],
+        )?;
+        check_conv_row(
+            &bias_name,
+            bias.dtype,
+            &bias.shape,
+            bias.bytes.len(),
+            &[OUT as u64],
+        )?;
+        if weight.bytes.ordinal() != self.device_ordinal
+            || bias.bytes.ordinal() != self.device_ordinal
+        {
+            return Err(format!("MiMo codec {stem} crossed GPU devices"));
+        }
+        Ok(CodecEncoderBf16Conv1d {
+            weight: &weight.bytes,
+            bias: &bias.bytes,
+            in_channels,
+            out_channels: OUT,
+            stride,
+        })
+    }
+
+    pub fn conv1_bf16(&self) -> Result<CodecEncoderBf16Conv1d<'_>, String> {
+        self.conv_bf16("encoder.conv1", 128, 1)
+    }
+
+    pub fn conv2_bf16(&self) -> Result<CodecEncoderBf16Conv1d<'_>, String> {
+        self.conv_bf16("encoder.conv2", 1_024, 2)
     }
 
     /// Verify the bundled config, actual in-file header, file length and full
@@ -384,5 +494,34 @@ mod tests {
         assert!(in_file_header(&file).is_err());
         file.clear();
         assert!(in_file_header(&file).is_err());
+    }
+
+    #[test]
+    fn pinned_conv_rows_have_exact_bf16_shapes_and_extents() {
+        let rows = fixture_rows();
+        for (name, shape) in [
+            ("encoder.conv1.weight", vec![1_024, 128, 3]),
+            ("encoder.conv1.bias", vec![1_024]),
+            ("encoder.conv2.weight", vec![1_024, 1_024, 3]),
+            ("encoder.conv2.bias", vec![1_024]),
+        ] {
+            let row = rows.get(name).unwrap();
+            let bytes = row.data_offsets[1] - row.data_offsets[0];
+            check_conv_row(
+                name,
+                CodecEncoderDtype::from_header(name, &row.dtype).unwrap(),
+                &row.shape,
+                bytes,
+                &shape,
+            )
+            .unwrap();
+            assert!(
+                check_conv_row(name, CodecEncoderDtype::F32, &row.shape, bytes, &shape).is_err()
+            );
+            assert!(
+                check_conv_row(name, CodecEncoderDtype::Bf16, &row.shape, bytes - 2, &shape)
+                    .is_err()
+            );
+        }
     }
 }
