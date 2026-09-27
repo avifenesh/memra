@@ -530,6 +530,69 @@ __global__ void __launch_bounds__(512, 1) memra_tp_ar_push_reduce_kernel(
     if (threadIdx.x == 0) self_sg->seq[blockIdx.x] = flag;
 }
 
+// The expert join with only owned rows pushed (memra #710). The plane is `routed_rows` slot rows
+// then `shared_rows` shared-expert rows of `width` floats. A slot row belongs to the rank whose
+// expert range holds `sel[row]`, a shared row to the rank whose `shared_run` word is set, and
+// each rank's plane holds +0.0 in every row it does not own (the plane is cleared before the
+// experts run). So each rank pushes only its own rows, and the receiver takes +0.0 for the
+// peer's operand in every row the peer does not own: `out` is the push reduce's `in_rank0 +
+// in_rank1` on the same operands, with about half the bytes crossing the fabric.
+struct MemraArOwned {
+    const int* sel;
+    const int* shared_run;
+    long routed_rows;
+    long shared_rows;
+    long width;
+    int local_first;
+    int peer_first;
+    int count;
+    int pad;
+};
+
+__device__ __forceinline__ void memra_ar_owned_row(const MemraArOwned& o, long row, int shared_mine,
+                                                   bool& own, bool& peer) {
+    if (row < o.routed_rows) {
+        const int e = o.sel[row];
+        own = e >= o.local_first && e < o.local_first + o.count;
+        peer = e >= o.peer_first && e < o.peer_first + o.count;
+    } else {
+        own = shared_mine != 0;
+        peer = !own;
+    }
+}
+
+__global__ void __launch_bounds__(512, 1) memra_tp_ar_push_reduce_owned_kernel(
+        const float* __restrict__ in_self, float* __restrict__ out, float* __restrict__ peer_out,
+        MemraArSignal* self_sg, MemraArSignal* peer_sg, int rank, const MemraArOwned o,
+        int* __restrict__ err, long long spin_limit, const unsigned long long* fault, int site) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    memra_ar_push_fault(fault, site, rank, err);
+    const unsigned flag = self_sg->seq[blockIdx.x] + 1;
+    const long stride = (long)gridDim.x * blockDim.x;
+    const long i0 = (long)blockIdx.x * blockDim.x + threadIdx.x;
+    const long n = (o.routed_rows + o.shared_rows) * o.width;
+    const int shared_mine = o.shared_rows ? *o.shared_run : 0;
+    for (long i = i0; i < n; i += stride) {
+        bool own, peer;
+        memra_ar_owned_row(o, i / o.width, shared_mine, own, peer);
+        if (own) peer_out[i] = in_self[i];
+    }
+    if (memra_ar_push_wait(self_sg, peer_sg, flag, rank, spin_limit)) {
+        if (threadIdx.x == 0) {
+            *(volatile int*)err = 40043;
+            self_sg->seq[blockIdx.x] = flag;
+        }
+        return;
+    }
+    for (long i = i0; i < n; i += stride) {
+        bool own, peer;
+        memra_ar_owned_row(o, i / o.width, shared_mine, own, peer);
+        const float p = peer ? out[i] : 0.0f;
+        out[i] = rank == 0 ? in_self[i] + p : p + in_self[i];
+    }
+    if (threadIdx.x == 0) self_sg->seq[blockIdx.x] = flag;
+}
+
 __global__ void __launch_bounds__(512, 1) memra_tp_ar_push_gather_rows_kernel(
         const float* __restrict__ in_self, float* __restrict__ out, float* __restrict__ peer_out,
         MemraArSignal* self_sg, MemraArSignal* peer_sg, int rank, long rows, long width,
@@ -565,6 +628,26 @@ extern "C" int memra_tp_ar_push_reduce(const float* in_self, float* out, float* 
                        (cudaStream_t)stream_v)(
         in_self, out, peer_out, (MemraArSignal*)self_sg, (MemraArSignal*)peer_sg, rank, n, err,
         spin_limit, (const unsigned long long*)fault, site);
+    TP_AR_ERR();
+    return 0;
+}
+
+extern "C" int memra_tp_ar_push_reduce_owned(const float* in_self, float* out, float* peer_out,
+                                             void* self_sg, void* peer_sg, int rank,
+                                             const MemraArOwned* owned, int* err,
+                                             long long spin_limit, int blocks, void* stream_v,
+                                             const void* fault, int site) {
+    if (!owned || !owned->sel || owned->routed_rows < 0 || owned->shared_rows < 0 ||
+        owned->routed_rows + owned->shared_rows <= 0 || owned->width <= 0 || owned->count <= 0 ||
+        (owned->shared_rows && !owned->shared_run)) return 40041;
+    if (spin_limit <= 0) return 40042;
+    if (rank < 0 || rank >= MEMRA_AR_RANKS) return 40045;
+    if (blocks < 1 || blocks > MEMRA_AR_MAX_BLOCKS) return 40046;
+    if (fault && (site < 0 || site >= 43)) return 40047;
+    memra_chain_launch(memra_tp_ar_push_reduce_owned_kernel, (unsigned)blocks, 512u, 0,
+                       (cudaStream_t)stream_v)(
+        in_self, out, peer_out, (MemraArSignal*)self_sg, (MemraArSignal*)peer_sg, rank, *owned,
+        err, spin_limit, (const unsigned long long*)fault, site);
     TP_AR_ERR();
     return 0;
 }

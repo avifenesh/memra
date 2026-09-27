@@ -22,6 +22,23 @@ use crate::Engine;
 use cudarc::driver::{CudaEvent, CudaSlice, DevicePtr, DevicePtrMut};
 use std::os::raw::c_void;
 
+/// One rank's row ownership for `memra_tp_ar_push_reduce_owned` (`cu/tp_ar.cu` `MemraArOwned`):
+/// `routed_rows` slot rows owned by the rank whose expert range `[first, first + count)` holds
+/// `sel[row]`, then `shared_rows` rows owned by the rank whose `shared_run` word is set.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct MemraArOwned {
+    pub sel: *const i32,
+    pub shared_run: *const i32,
+    pub routed_rows: i64,
+    pub shared_rows: i64,
+    pub width: i64,
+    pub local_first: i32,
+    pub peer_first: i32,
+    pub count: i32,
+    pub pad: i32,
+}
+
 unsafe extern "C" {
     pub fn memra_tp_ar_gather_i32(
         in0: *const i32,
@@ -100,6 +117,24 @@ unsafe extern "C" {
         peer_sg: *mut c_void,
         rank: i32,
         n: i64,
+        err: *mut i32,
+        spin_limit: i64,
+        blocks: i32,
+        stream: *mut c_void,
+        fault: *const c_void,
+        site: i32,
+    ) -> i32;
+    /// The expert join pushing only this rank's rows (`cu/tp_ar.cu`, memra #710): `out` is
+    /// `memra_tp_ar_push_reduce`'s, with +0.0 taken for the peer's rows it does not own.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_tp_ar_push_reduce_owned(
+        in_self: *const f32,
+        out: *mut f32,
+        peer_out: *mut f32,
+        self_sg: *mut c_void,
+        peer_sg: *mut c_void,
+        rank: i32,
+        owned: *const MemraArOwned,
         err: *mut i32,
         spin_limit: i64,
         blocks: i32,

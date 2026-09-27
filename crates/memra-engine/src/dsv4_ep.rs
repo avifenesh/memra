@@ -453,6 +453,9 @@ impl TpEpArState {
         // The outputs are persistent workspace buffers consumed before the next join, so a push
         // join may write them early (`memra_tp_ar_push_reduce`); false keeps the pull join.
         push_ok: bool,
+        // The expert join's row ownership per rank (memra #710): a push join then carries only
+        // each rank's own rows (`memra_tp_ar_push_reduce_owned`) for the same `out`.
+        owned: Option<[crate::tp_ar::MemraArOwned; 2]>,
     ) -> Res<()> {
         if n == 0
             || owner_input.len() < n
@@ -491,6 +494,16 @@ impl TpEpArState {
         {
             return Err("TP/EP one-shot reduction output aliases an input".into());
         }
+        if let Some(o) = owned
+            && o.iter().any(|o| {
+                o.width <= 0
+                    || o.routed_rows < 0
+                    || o.shared_rows < 0
+                    || ((o.routed_rows + o.shared_rows) * o.width) as usize != n
+            })
+        {
+            return Err("TP/EP owned-row join shape does not cover the reduction".into());
+        }
         let blocks = crate::tp_ar::ar_blocks_for(n);
         if self.push_join(
             push_ok,
@@ -522,22 +535,42 @@ impl TpEpArState {
                     gpu.ctx.bind_to_thread().map_err(|e| e.to_string())?;
                 }
                 let stream = gpu.stream();
+                let fault_ptr =
+                    fault.map_or(std::ptr::null(), |(inputs, _)| inputs[rank as usize].cast());
+                let fault_site = fault.map_or(-1, |(_, site)| site);
                 let rc = unsafe {
-                    crate::tp_ar::memra_tp_ar_push_reduce(
-                        input,
-                        out,
-                        peer_out,
-                        self_signal,
-                        peer_signal,
-                        rank,
-                        n as i64,
-                        error,
-                        crate::tp_ar::AR_SPIN_LIMIT,
-                        blocks,
-                        stream.cu_stream().cast(),
-                        fault.map_or(std::ptr::null(), |(inputs, _)| inputs[rank as usize].cast()),
-                        fault.map_or(-1, |(_, site)| site),
-                    )
+                    match owned {
+                        Some(o) => crate::tp_ar::memra_tp_ar_push_reduce_owned(
+                            input,
+                            out,
+                            peer_out,
+                            self_signal,
+                            peer_signal,
+                            rank,
+                            &o[rank as usize],
+                            error,
+                            crate::tp_ar::AR_SPIN_LIMIT,
+                            blocks,
+                            stream.cu_stream().cast(),
+                            fault_ptr,
+                            fault_site,
+                        ),
+                        None => crate::tp_ar::memra_tp_ar_push_reduce(
+                            input,
+                            out,
+                            peer_out,
+                            self_signal,
+                            peer_signal,
+                            rank,
+                            n as i64,
+                            error,
+                            crate::tp_ar::AR_SPIN_LIMIT,
+                            blocks,
+                            stream.cu_stream().cast(),
+                            fault_ptr,
+                            fault_site,
+                        ),
+                    }
                 };
                 if rc != 0 {
                     return Err(format!("TP/EP push reduction launch rc {rc} rank {rank}"));

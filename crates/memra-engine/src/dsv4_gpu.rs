@@ -6668,7 +6668,7 @@ impl Dsv4Gpu {
                 .ok_or("TP/EP one-shot reduction state missing")?
                 .all_reduce_into(
                     &st0.gpu, &st1.gpu, &plane0, &plane1, &mut out0, &mut out1, plane, false, None,
-                    site, false,
+                    site, false, None,
                 )?;
         }
         // Each row's slots in ascending expert id: the order `moe_forward` scatters them in.
@@ -12377,6 +12377,47 @@ impl Dsv4Gpu {
                     "TP/EP layer {il}: the ranks disagree on the shared expert's placement"
                 ));
             }
+            // Which rows each rank computed: its expert range for the slot rows, the owner word
+            // for the joined shared rows (memra #710), so the join carries only those.
+            let owned = {
+                let mut ranks = [None, None];
+                for (rank, ws) in [(0usize, &*owner_ws), (1, &*peer_ws)] {
+                    let ep = self.stages[rank]
+                        .layers
+                        .iter()
+                        .find(|l| l.il == il as u32)
+                        .and_then(|l| l.ep.as_ref());
+                    let st = &self.stages[rank];
+                    let stream = st.gpu.stream();
+                    let shared_run = if shared_joined {
+                        ws.shared_run
+                            .as_ref()
+                            .map(|w| w.device_ptr(&stream).0 as *const i32)
+                    } else {
+                        Some(std::ptr::null())
+                    };
+                    // Only the expert-ID-half loader computes exactly its own id range.
+                    if let (Some(ep), Some(shared_run)) = (ep, shared_run)
+                        && ep.local_only
+                    {
+                        ranks[rank] = Some(crate::tp_ar::MemraArOwned {
+                            sel: ws.sel.device_ptr(&stream).0 as *const i32,
+                            shared_run,
+                            routed_rows: (t * topk) as i64,
+                            shared_rows: if shared_joined { t as i64 } else { 0 },
+                            width: hidden as i64,
+                            local_first: ep.local_first as i32,
+                            peer_first: ep.peer_first as i32,
+                            count: ep.count as i32,
+                            pad: 0,
+                        });
+                    }
+                }
+                match ranks {
+                    [Some(a), Some(b)] => Some([a, b]),
+                    _ => None,
+                }
+            };
             {
                 let (owner_output, peer_output) = ar_outputs.split_at_mut(1);
                 let mut ar = self
@@ -12397,6 +12438,7 @@ impl Dsv4Gpu {
                         None,
                         2 * il as u32 + 1,
                         true,
+                        owned,
                     )?;
             }
             let layer0 = self.stages[0]
