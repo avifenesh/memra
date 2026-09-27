@@ -1,0 +1,14 @@
+warning: memra-engine@0.138.0: nvcc from MEMRA_NVCC: /usr/local/cuda/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running unittests src/lib.rs (/root/lane/target-main13/release/deps/memra_engine-c8ff6b35b7df7707)
+
+running 3 tests
+test dsv4_gpu::dense_wo_a_grouped_fp8_component_tests::cuda_gemv_fp8_grouped_dense_fast_matches_every_slice_program ... PASS grouped dense-fast wo_a FP8: cells=27 shapes=8x1024,2x128,3x256 k=4096 slice programs=3 grouped programs=3 bit-exact, dense-fast enqueue=1 only on the dense-fast arm
+ok
+test dsv4_gpu::dense_wo_a_grouped_fp8_component_tests::cuda_gemv_fp8_grouped_m1_matches_eight_slices_and_counts_one_enqueue ... PASS grouped wo_a FP8: groups=8 rows/group=1024 k=4096 bit-exact, padding guarded, dispatch_delta=1, small=2x128, malformed strides refused
+ok
+test dsv4_gpu::dense_wo_a_grouped_fp8_component_tests::cuda_gemv_fp8_grouped_m_matches_per_group_m_row_launches ... PASS grouped wo_a FP8 m-row: 21 cells bit-exact against per-group launches
+ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 653 filtered out; finished in 1.07s
+
