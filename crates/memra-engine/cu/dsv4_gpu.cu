@@ -4249,29 +4249,13 @@ __device__ __forceinline__ void dsv4_tile_tree(float (&part)[TT][TN], float* red
 // (token, output) pair of the tile. Every output's 128 partials then take the GEMV's halving tree.
 // So each y[t][n] is the GEMV's bits, while an activation chunk is read once per TN outputs and a
 // weight chunk once per TT tokens. -fmad=false applies to this file as to the GEMV.
-// Register diet (memra #710, prefill TTFT): Nsight Compute put the 8x8 tile at 214 registers,
-// two blocks (8 warps) per SM and 15% FMA-pipe activity. SUB splits each 8-element chunk into
-// passes of SUB elements: every (token, output) accumulator still takes its chunk's elements in
-// ascending order, only interleaved with the other accumulators', so the bits cannot move, while
-// the decoded weights held at once shrink from TN*8 to TN*SUB floats. DEC 1 decodes the E4M3 codes
-// with cvt.rn.f16x2.e4m3x2 after clearing the two NaN codes to +0 (dsv4_e4m3's value for them),
-// which is exact for every other code, instead of a shared-memory table lookup. MINB is the
-// occupancy the launch bounds ask the register allocator for.
-#ifndef DSV4_TILE_TT
-#define DSV4_TILE_TT 8
-#endif
-#ifndef DSV4_TILE_TN
-#define DSV4_TILE_TN 4
-#endif
-#ifndef DSV4_TILE_SUB
-#define DSV4_TILE_SUB 8
-#endif
-#ifndef DSV4_TILE_DEC
-#define DSV4_TILE_DEC 1
-#endif
-#ifndef DSV4_TILE_MINB
-#define DSV4_TILE_MINB 4
-#endif
+// Register diet (memra #710, prefill TTFT): the 8x8 tile with a shared-memory E4M3 table sat at
+// 214 registers and two blocks per SM. 8 token rows by 4 outputs, the E4M3 codes decoded with
+// cvt.rn.f16x2.e4m3x2 after clearing the two NaN codes to +0 (dsv4_e4m3's value for them, exact
+// for every other code), and launch bounds asking for four blocks per SM take it to 128
+// registers and 43% less kernel time. The sweep over shapes, chunk passes, the table decode and
+// occupancy is in research/dsv4f-bringup-20260923/prefill-tile/RESULTS.md.
+constexpr int DSV4_TILE_TT = 8, DSV4_TILE_TN = 4, DSV4_TILE_MINB = 4;
 
 __device__ __forceinline__ uint32_t dsv4_e4m3fn_clear_nan4(uint32_t w) {
     const uint32_t nan = ((w & 0x7F7F7F7Fu) + 0x01010101u) & 0x80808080u;
@@ -4286,20 +4270,14 @@ __device__ __forceinline__ void dsv4_e4m3x2_f32(uint32_t w, int i, float& a, flo
     b = __half2float(__ushort_as_half((unsigned short)(d >> 16)));
 }
 
-template <int TT, int TN, int SUB, int DEC, int MINB>
+template <int TT, int TN, int MINB>
 __global__ void __launch_bounds__(128, MINB) dsv4_gemm_fp8_tile_kernel(
         const uint8_t* __restrict__ w, const float* __restrict__ sc, int sc_cols,
         const uint16_t* __restrict__ x, float* __restrict__ y, int m, int n, int k, int xstride,
         int ystride) {
-    static_assert(SUB == 8 || SUB == 4 || SUB == 2, "chunk passes of 8, 4 or 2 elements");
     MEMRA_PDL_CHAIN_ENTRY();
-    __shared__ float e4m3_tab[DEC ? 1 : 256];
     extern __shared__ float tile_red[];  // [TT * TN][64], reused for the 32-leaf stage
     const int v = threadIdx.x;
-    if (!DEC) {
-        for (int i = v; i < 256; i += 128) e4m3_tab[i] = dsv4_e4m3((uint8_t)i);
-        __syncthreads();
-    }
     const int n0 = blockIdx.x * TN, t0 = blockIdx.y * TT;
     float part[TT][TN];
 #pragma unroll
@@ -4315,53 +4293,42 @@ __global__ void __launch_bounds__(128, MINB) dsv4_gemm_fp8_tile_kernel(
             if (row < n) {
                 wr[r] = *(const uint2*)(w + (long)row * k + c);
                 s[r] = sc[(long)(row >> 7) * sc_cols + (c >> 7)];
-                if (DEC) {
-                    wr[r].x = dsv4_e4m3fn_clear_nan4(wr[r].x);
-                    wr[r].y = dsv4_e4m3fn_clear_nan4(wr[r].y);
-                }
+                wr[r].x = dsv4_e4m3fn_clear_nan4(wr[r].x);
+                wr[r].y = dsv4_e4m3fn_clear_nan4(wr[r].y);
             } else {
                 wr[r] = make_uint2(0u, 0u);
                 s[r] = 0.0f;
             }
         }
+        float wv[TN][8];
 #pragma unroll
-        for (int e0 = 0; e0 < 8; e0 += SUB) {
-            float wv[TN][SUB];
+        for (int r = 0; r < TN; r++) {
+            const bool live = n0 + r < n;
 #pragma unroll
-            for (int r = 0; r < TN; r++) {
-                const bool live = n0 + r < n;
+            for (int e = 0; e < 8; e += 2) {
+                float a, b;
+                dsv4_e4m3x2_f32(e < 4 ? wr[r].x : wr[r].y, (e & 3) >> 1, a, b);
+                wv[r][e] = live ? a * s[r] : 0.0f;
+                wv[r][e + 1] = live ? b * s[r] : 0.0f;
+            }
+        }
 #pragma unroll
-                for (int e = e0; e < e0 + SUB; e += 2) {
-                    const uint32_t word = e < 4 ? wr[r].x : wr[r].y;
-                    float a, b;
-                    if (DEC) {
-                        dsv4_e4m3x2_f32(word, (e & 3) >> 1, a, b);
-                    } else {
-                        a = e4m3_tab[(word >> ((e & 3) * 8)) & 0xFFu];
-                        b = e4m3_tab[(word >> (((e & 3) + 1) * 8)) & 0xFFu];
-                    }
-                    wv[r][e - e0] = live ? a * s[r] : 0.0f;
-                    wv[r][e - e0 + 1] = live ? b * s[r] : 0.0f;
-                }
+        for (int t = 0; t < TT; t++) {
+            if (t0 + t >= m) break;
+            const uint4 xv = *(const uint4*)(x + (long)(t0 + t) * xstride + c);
+            const unsigned xw[4] = {xv.x, xv.y, xv.z, xv.w};
+            float xf[8];
+#pragma unroll
+            for (int j = 0; j < 4; j++) {
+                xf[2 * j] = __uint_as_float((xw[j] & 0xFFFFu) << 16);
+                xf[2 * j + 1] = __uint_as_float(xw[j] & 0xFFFF0000u);
             }
 #pragma unroll
-            for (int t = 0; t < TT; t++) {
-                if (t0 + t >= m) break;
-                const uint4 xv = *(const uint4*)(x + (long)(t0 + t) * xstride + c);
-                const unsigned xw[4] = {xv.x, xv.y, xv.z, xv.w};
-                float xf[SUB];
+            for (int r = 0; r < TN; r++) {
+                float acc = part[t][r];
 #pragma unroll
-                for (int e = e0; e < e0 + SUB; e += 2) {
-                    xf[e - e0] = __uint_as_float((xw[e >> 1] & 0xFFFFu) << 16);
-                    xf[e - e0 + 1] = __uint_as_float(xw[e >> 1] & 0xFFFF0000u);
-                }
-#pragma unroll
-                for (int r = 0; r < TN; r++) {
-                    float acc = part[t][r];
-#pragma unroll
-                    for (int e = 0; e < SUB; e++) acc += wv[r][e] * xf[e];
-                    part[t][r] = acc;
-                }
+                for (int e = 0; e < 8; e++) acc += wv[r][e] * xf[e];
+                part[t][r] = acc;
             }
         }
     }
@@ -4384,16 +4351,16 @@ template <int TT, int TN>
 static void dsv4_gemm_fp8_tile_launch(const void* w_codes, const float* sc_f32, int sc_cols,
                                       const void* x_bf16, float* y, int m, int n, int k,
                                       int xstride, int ystride, cudaStream_t stream) {
-    constexpr int SUB = DSV4_TILE_SUB, DEC = DSV4_TILE_DEC, MINB = DSV4_TILE_MINB;
+    constexpr int MINB = DSV4_TILE_MINB;
     const size_t smem = (size_t)TT * TN * 64 * sizeof(float);
     static bool attr = false;
     if (!attr) {
-        cudaFuncSetAttribute(dsv4_gemm_fp8_tile_kernel<TT, TN, SUB, DEC, MINB>,
+        cudaFuncSetAttribute(dsv4_gemm_fp8_tile_kernel<TT, TN, MINB>,
                              cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
         attr = true;
     }
     dim3 grid((unsigned)((n + TN - 1) / TN), (unsigned)((m + TT - 1) / TT));
-    memra_chain_launch(dsv4_gemm_fp8_tile_kernel<TT, TN, SUB, DEC, MINB>,grid, 128, smem, stream)(
+    memra_chain_launch(dsv4_gemm_fp8_tile_kernel<TT, TN, MINB>,grid, 128, smem, stream)(
         (const uint8_t*)w_codes, sc_f32, sc_cols, (const uint16_t*)x_bf16, y, m, n, k, xstride,
         ystride);
 }
@@ -4401,15 +4368,8 @@ static void dsv4_gemm_fp8_tile_launch(const void* w_codes, const float* sc_f32, 
 // The f32-island dots (`dsv4_dots_f32acc_mrow_kernel`) over the same tile: thread v owns the
 // dots kernel's chunks `v*8 + j*1024`, adds `x * w` for the 8 elements ascending with the weight
 // widened from bf16 or read as f32, then every output takes the same halving tree.
-#ifndef DSV4_DOTS_TILE_TT
-#define DSV4_DOTS_TILE_TT 8
-#endif
-#ifndef DSV4_DOTS_TILE_TN
-#define DSV4_DOTS_TILE_TN 8
-#endif
-#ifndef DSV4_DOTS_TILE_MINB
-#define DSV4_DOTS_TILE_MINB 1
-#endif
+// 8 x 8 at one block per SM: the 2026-09-27 sweep's fastest, equal to the form before it.
+constexpr int DSV4_DOTS_TILE_TT = 8, DSV4_DOTS_TILE_TN = 8, DSV4_DOTS_TILE_MINB = 1;
 template <int TT, int TN, int MINB>
 __global__ void __launch_bounds__(128, MINB) dsv4_dots_f32acc_tile_kernel(
         const float* __restrict__ x, const void* __restrict__ w, int w_is_bf16,
@@ -4478,8 +4438,8 @@ static int dsv4_dots_f32acc_tile(const float* x, const void* w, int w_is_bf16, f
 static int dsv4_gemm_fp8_tile(const void* w_codes, const float* sc_f32, int sc_cols,
                               const void* x_bf16, float* y, int m, int n, int k, int xstride,
                               int ystride, cudaStream_t stream) {
-    // 8 token rows x 8 output rows: the sweep's winner on 4 of 5 DSv4 shapes (16x4, 16x8 and 32x4
-    // were measured and deleted; research/dsv4f-bringup-20260923/prefill-tile/RESULTS.md).
+    // 8 token rows x 4 output rows since the 2026-09-27 register diet (the 8x8 table form won the
+    // first shape sweep; research/dsv4f-bringup-20260923/prefill-tile/RESULTS.md).
     dsv4_gemm_fp8_tile_launch<DSV4_TILE_TT, DSV4_TILE_TN>(w_codes, sc_f32, sc_cols, x_bf16, y, m, n,
                                                           k, xstride, ystride, stream);
     g_dsv4_gemm_fp8_tile_launches.fetch_add(1, std::memory_order_relaxed);
