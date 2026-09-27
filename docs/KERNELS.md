@@ -945,6 +945,17 @@ The final tree is ((p[t]+p[t+64])+(p[t+32]+p[t+96])) followed by guarded
 16/8/4/2/1 warp shuffles, all F32 additions. FMAD stays disabled. Ragged tile
 rows participate in barriers without out-of-range operand loads or stores.
 
+**Pair launches (memra #710).** `dsv4_dense_fast_fp8_kernel_pair<2, M>` and
+`dsv4_dense_fast_dots_kernel_pair<M>` run two matrices over the same x rows in one launch:
+blocks `[0, nblk_a)` run matrix a's dense-fast body, the rest matrix b's, each with its own block
+index, so every output keeps the bits of its own launch (the kernel bodies are the device
+functions `dsv4_dense_fast_fp8_body` and `dsv4_dense_fast_dots_body`, which the single kernels
+call too). `memra_dsv4_gemv_fp8_m_pair` and `memra_dsv4_dots_f32acc_mrow_pair` take the pair when
+both matrices admit the dense-fast transport at M = 1..8, and otherwise make the two ordinary
+calls. The TP/EP step pairs the shared expert's gate and up, wq_a and wkv, and each compressor's
+kv and gate projections. The component gate's `pair_case` compares both outputs with the single
+launches at M = 1, 2, 4 and 6, and checks the capture holds one pair node.
+
 `tools/dsv4-dense-fast-gate.cu` checks raw bits, guards, operand immutability
 and actual retained graph functions. All 24 real rank/shape cases, 36 boundary
 cases and two cancellation witnesses pass in normal, memcheck and synccheck;
