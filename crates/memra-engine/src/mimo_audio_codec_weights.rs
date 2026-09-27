@@ -99,6 +99,44 @@ pub struct CodecEncoderBf16Conv1d<'a> {
     stride: usize,
 }
 
+/// Borrowed, geometry-checked source BF16 matrix and optional bias.
+pub struct CodecEncoderBf16Linear<'a> {
+    pub weight: &'a CudaSlice<u8>,
+    pub bias: Option<&'a CudaSlice<u8>>,
+    pub input: usize,
+    pub output: usize,
+}
+
+/// Source LayerNorm affine vectors, both BF16.
+pub struct CodecEncoderBf16Norm<'a> {
+    pub weight: &'a CudaSlice<u8>,
+    pub bias: &'a CudaSlice<u8>,
+}
+
+/// One of the 24 pinned encoder layers. No codec decoder tensors are exposed.
+pub struct CodecEncoderBf16Layer<'a> {
+    pub attention_norm: CodecEncoderBf16Norm<'a>,
+    pub query: CodecEncoderBf16Linear<'a>,
+    pub key: CodecEncoderBf16Linear<'a>,
+    pub value: CodecEncoderBf16Linear<'a>,
+    pub attention_output: CodecEncoderBf16Linear<'a>,
+    pub final_norm: CodecEncoderBf16Norm<'a>,
+    pub fc1: CodecEncoderBf16Linear<'a>,
+    pub fc2: CodecEncoderBf16Linear<'a>,
+    pub layer_index: usize,
+}
+
+impl CodecEncoderBf16Layer<'_> {
+    /// The bundled hybrid plan alternates 128-window and full causal layers.
+    pub fn attention_window(&self) -> Option<usize> {
+        if self.layer_index.is_multiple_of(2) {
+            Some(128)
+        } else {
+            None
+        }
+    }
+}
+
 impl CodecEncoderBf16Conv1d<'_> {
     pub fn weight(&self) -> &CudaSlice<u8> {
         self.weight
@@ -267,6 +305,84 @@ impl MiMoAudioCodecEncoderWeights {
 
     pub fn tensors(&self) -> &BTreeMap<String, CodecEncoderTensor> {
         &self.tensors
+    }
+
+    fn layer_row(&self, name: &str, shape: &[u64]) -> Result<&CudaSlice<u8>, String> {
+        let tensor = self
+            .tensors
+            .get(name)
+            .ok_or_else(|| format!("MiMo codec encoder missing {name}"))?;
+        check_conv_row(name, tensor.dtype, &tensor.shape, tensor.bytes.len(), shape)?;
+        if tensor.bytes.ordinal() != self.device_ordinal {
+            return Err(format!("MiMo codec encoder {name} crossed GPU devices"));
+        }
+        Ok(&tensor.bytes)
+    }
+
+    fn layer_norm_bf16(&self, stem: &str) -> Result<CodecEncoderBf16Norm<'_>, String> {
+        Ok(CodecEncoderBf16Norm {
+            weight: self.layer_row(&format!("{stem}.weight"), &[1_024])?,
+            bias: self.layer_row(&format!("{stem}.bias"), &[1_024])?,
+        })
+    }
+
+    fn layer_linear_bf16(
+        &self,
+        stem: &str,
+        input: usize,
+        output: usize,
+        has_bias: bool,
+    ) -> Result<CodecEncoderBf16Linear<'_>, String> {
+        let weight = self.layer_row(&format!("{stem}.weight"), &[output as u64, input as u64])?;
+        let bias = if has_bias {
+            Some(self.layer_row(&format!("{stem}.bias"), &[output as u64])?)
+        } else {
+            if self.tensors.contains_key(&format!("{stem}.bias")) {
+                return Err(format!(
+                    "MiMo codec encoder {stem} gained an unsupported bias"
+                ));
+            }
+            None
+        };
+        Ok(CodecEncoderBf16Linear {
+            weight,
+            bias,
+            input,
+            output,
+        })
+    }
+
+    /// Bind all 15 physical BF16 rows for one pinned transformer layer.
+    pub fn encoder_layer_bf16(&self, layer: usize) -> Result<CodecEncoderBf16Layer<'_>, String> {
+        if layer >= 24
+            || self.contract.encoder_layers != 24
+            || self.contract.hidden_size != 1_024
+            || self.contract.attention_heads != 16
+            || self.contract.ffn_size != 4_096
+            || !self.contract.hybrid_attention
+            || self.contract.swa_per_block != 2
+        {
+            return Err("MiMo codec encoder layer or pinned plan changed".into());
+        }
+        let stem = format!("encoder.layers.{layer}");
+        let attention = format!("{stem}.self_attn");
+        let bound = CodecEncoderBf16Layer {
+            attention_norm: self.layer_norm_bf16(&format!("{stem}.self_attn_layer_norm"))?,
+            query: self.layer_linear_bf16(&format!("{attention}.q_proj"), 1_024, 1_024, true)?,
+            key: self.layer_linear_bf16(&format!("{attention}.k_proj"), 1_024, 1_024, false)?,
+            value: self.layer_linear_bf16(&format!("{attention}.v_proj"), 1_024, 1_024, true)?,
+            attention_output: self.layer_linear_bf16(
+                &format!("{attention}.out_proj"),
+                1_024,
+                1_024,
+                true,
+            )?,
+            final_norm: self.layer_norm_bf16(&format!("{stem}.final_layer_norm"))?,
+            fc1: self.layer_linear_bf16(&format!("{stem}.fc1"), 1_024, 4_096, true)?,
+            fc2: self.layer_linear_bf16(&format!("{stem}.fc2"), 4_096, 1_024, true)?,
+            layer_index: layer,
+        };
+        Ok(bound)
     }
 
     fn conv_bf16(
@@ -522,6 +638,49 @@ mod tests {
                 check_conv_row(name, CodecEncoderDtype::Bf16, &row.shape, bytes - 2, &shape)
                     .is_err()
             );
+        }
+    }
+
+    #[test]
+    fn pinned_layer_rows_match_projection_bias_and_norm_contract() {
+        let rows = fixture_rows();
+        for layer in 0..24 {
+            let stem = format!("encoder.layers.{layer}");
+            let selected: BTreeSet<_> = rows
+                .keys()
+                .filter(|name| name.starts_with(&format!("{stem}.")))
+                .cloned()
+                .collect();
+            assert_eq!(selected.len(), 15);
+            for (suffix, shape) in [
+                ("self_attn_layer_norm.weight", vec![1_024]),
+                ("self_attn_layer_norm.bias", vec![1_024]),
+                ("self_attn.q_proj.weight", vec![1_024, 1_024]),
+                ("self_attn.q_proj.bias", vec![1_024]),
+                ("self_attn.k_proj.weight", vec![1_024, 1_024]),
+                ("self_attn.v_proj.weight", vec![1_024, 1_024]),
+                ("self_attn.v_proj.bias", vec![1_024]),
+                ("self_attn.out_proj.weight", vec![1_024, 1_024]),
+                ("self_attn.out_proj.bias", vec![1_024]),
+                ("final_layer_norm.weight", vec![1_024]),
+                ("final_layer_norm.bias", vec![1_024]),
+                ("fc1.weight", vec![4_096, 1_024]),
+                ("fc1.bias", vec![4_096]),
+                ("fc2.weight", vec![1_024, 4_096]),
+                ("fc2.bias", vec![1_024]),
+            ] {
+                let name = format!("{stem}.{suffix}");
+                let row = &rows[&name];
+                check_conv_row(
+                    &name,
+                    CodecEncoderDtype::from_header(&name, &row.dtype).unwrap(),
+                    &row.shape,
+                    row.data_offsets[1] - row.data_offsets[0],
+                    &shape,
+                )
+                .unwrap();
+            }
+            assert!(!selected.contains(&format!("{stem}.self_attn.k_proj.bias")));
         }
     }
 }
