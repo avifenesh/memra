@@ -1181,6 +1181,8 @@ impl HybridModel {
         scheduled_dual_mid: Option<usize>,
         pending_out: Option<&mut Option<PendingBatchStep>>,
     ) -> Result<(Vec<Vec<f32>>, Vec<Option<u32>>), Box<dyn std::error::Error>> {
+        // WP-B day 49 (O14): the step guard records that the batched entry was reached.
+        crate::step_guard::entered();
         for cache in caches.iter() {
             cache.ensure_usable("decode_step_batch")?;
         }
@@ -1488,6 +1490,9 @@ impl HybridModel {
         }
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
+        // WP-B day 49 (O14): the generic unsplit body; nothing below writes session state
+        // before `decode_batch_layers`.
+        crate::step_guard::generic();
 
         // MEMRA_BATCH_PHASE=1: sync-bounded phase accumulation (diagnostics — see header note).
         // Initialized BEFORE the tick-input assembly below so slot 0 covers the HOST side of
@@ -3236,6 +3241,8 @@ impl HybridModel {
                     let base = attn_base[il].expect("full layer missing from pointer table");
                     let table = ptr_table.as_ref().expect("pointer table missing");
                     let kv_view = table.slice(base..base + 2 * b_n);
+                    // WP-B day 49 (O14): the first session-state write of this layer.
+                    crate::step_guard::touched();
                     e.append_kv_quantized_seqs(&k, &v, &kv_view, pos_d, b_n, kdk, kdv, ktb, vtb)?;
                     for cache in caches.iter_mut() {
                         let kvl = cache.kv[il].as_mut().unwrap();
@@ -3358,6 +3365,8 @@ impl HybridModel {
                     let in_view = table.slice(base + b_n..base + 2 * b_n);
                     let out_view = table.slice(base + 2 * b_n..base + 3 * b_n);
                     let mut conv_outs = e.uninit(b_n * conv_dim)?;
+                    // WP-B day 49 (O14): the conv ring is updated in place: session state.
+                    crate::step_guard::touched();
                     e.ssm_conv1d_fused_decode_b(
                         &qkv_mixed,
                         &conv_view,
@@ -5137,5 +5146,73 @@ mod tests {
         assert!(!b1_fast_env_on(Some("0")));
         assert!(!b1_fast_env_on(Some("true")));
         assert!(b1_fast_env_on(Some("1")));
+    }
+}
+
+/// WP-B day 49 (DAY49 1.5, O14): every session-state write in the generic batched body is
+/// preceded by the step guard's `touched` mark, and the entry and generic marks sit where
+/// the guard's rule needs them.
+#[cfg(test)]
+mod step_guard_census {
+    #[test]
+    fn every_state_write_in_the_batched_body_is_preceded_by_the_touch_mark() {
+        let src = include_str!("decode_batch.rs");
+        let live = &src[..src.find("mod step_guard_census").unwrap()];
+        let start = live.find("    pub(crate) fn decode_batch_layers(").unwrap();
+        let end = start
+            + live[start..]
+                .find("    pub fn step35_batch_on() -> bool {")
+                .unwrap();
+        let body = &live[start..end];
+        for write in [
+            "e.append_kv_quantized_seqs(",
+            "e.ssm_conv1d_fused_decode_b(",
+        ] {
+            let at = body.find(write).expect(write);
+            let before = &body[..at];
+            let mark = before
+                .rfind("crate::step_guard::touched();")
+                .expect("a touch mark");
+            assert!(
+                at - mark < 200,
+                "{write}: the touch mark sits right before it"
+            );
+        }
+        // Writes after those in the same arm (the scan, the swap, the len advance) come
+        // later, so the mark before the arm's first write covers them.
+        let conv = body.find("e.ssm_conv1d_fused_decode_b(").unwrap();
+        assert!(body.find("e.gdn_scan_s128_batched(").unwrap() > conv);
+        assert!(
+            body.find("std::mem::swap(&mut rl.ssm_state, &mut rl.ssm_state_alt);")
+                .unwrap()
+                > conv
+        );
+        let append = body.find("e.append_kv_quantized_seqs(").unwrap();
+        assert!(body.find("kvl.len += 1;").unwrap() > append);
+        // No other state write in the body.
+        assert_eq!(body.matches("append_kv_quantized").count(), 1);
+        assert_eq!(
+            body.matches("ssm_conv1d").count(),
+            2,
+            "the call and its weight argument"
+        );
+        assert_eq!(body.matches("std::mem::swap(").count(), 1);
+        assert_eq!(body.matches("len += ").count(), 1);
+        assert_eq!(body.matches("pos += ").count(), 0);
+        // The entry and the generic marks.
+        let sched = live
+            .find("    fn decode_step_batch_sampled_lean_masked_schedule(")
+            .unwrap();
+        let sched_body = &live[sched..sched + 900];
+        assert!(sched_body.contains("crate::step_guard::entered();"));
+        let generic = live.find("crate::step_guard::generic();").unwrap();
+        let layers_call = live[generic..]
+            .find("let x = self.decode_batch_layers(e, x, caches, &ctx, &pos_d, &mut ph_last)?;")
+            .unwrap();
+        let between = &live[generic..generic + layers_call];
+        assert!(
+            !between.contains("append_kv") && !between.contains("pos +="),
+            "no state write before the layers"
+        );
     }
 }

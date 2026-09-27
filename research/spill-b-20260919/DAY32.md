@@ -208,7 +208,7 @@ Every number below is read from the committed receipts named next to it, and eve
 | this commit | after 13:40:42 | BOX3 O2 receipts, box `SUMMARY.txt` and `FAULTS.txt`, this section, `STATE.md`, the INDEX row |
 
 Local chain 06:33:04 to 10:57:13 (O1 06:33:04 to 08:42:45, O2 08:43:15 to 10:57:13). BOX3 chain 07:46:07 to 13:40:42 (O1
-to 10:43:25, O2 to 13:40:42). Each collector's lock proof is rc=0 (`LOCK-O1.json`, `LOCK-O2.json`), and no compute
+to 10:43:25, O2 to 13:40:42). Each collector's lock proof held (`LOCK-O1.json`, `LOCK-O2.json` read `inherited-flock-same-open-description`; `tier-lock-proof.py` prints that JSON only when the proof holds. Correction 2026-09-26: the `rc=0` that `order.log` printed was `date`'s exit, because `day31-order.sh` wrote `"$(date ...) rc=$?"`; fixed in the script), and no compute
 app was on either card before a hold or after the last boot.
 
 ### 2.2 Notes on section 1 (no rule, arm, value or reader changed)

@@ -66,6 +66,10 @@ Since 2026-09-27 the prefill FP8 tile runs 8 token rows by 4 outputs at 128 regi
 exact `cvt` E4M3 decode (`research/dsv4f-bringup-20260923/prefill-tile/`): greedy TTFT p50 at an
 8k prompt 17.69 to 14.36 s (-18.9%), at 32k 73.93 to 60.97 s (-17.5%), SE pair, N=3. Same bits.
 
+Since 2026-09-27 the HC finish runs its Sinkhorn projection on a fifth warp, beside the collapse
+and the RMSNorm (`research/dsv4f-bringup-20260923/hc-finish/`). Greedy c1 goes from 89.17 to
+91.01 tok/s (+2.0%, decode 96.1) on the SE pair, N=2. Same bits.
+
 Concurrency: the plain TP/EP route serves four lanes whose steps share one captured B-row
 graph step (memra #710). Aggregate on the Workstation pair:
 

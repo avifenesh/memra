@@ -1,0 +1,6 @@
+lock: collector's inherited FD 3 on /tmp/memra-gpu.lock (no flock of this gate's own)
+== qwen arm: spec-on boot ==
+spec-on-cache-hit-gate: FAIL — cannot observe listening sockets (no ss, no lsof), so this run
+  cannot prove port 18099 is free. An unobservable port is not a free port:
+  a foreign responder would be measured as the model under test.
+  Install iproute2 (ss) or lsof.

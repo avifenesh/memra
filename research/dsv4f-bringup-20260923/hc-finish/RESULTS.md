@@ -134,3 +134,52 @@ round the MoE and attention dominate; the round was not profiled here.
 
 The fused kernel is the default at every row count on the diet shape; there is no door. The lane
 lands.
+
+## The Sinkhorn projection on a fifth warp (2026-09-27, TP/EP served default)
+
+Lane `lane/dsv4-hc-sinkhorn-warp-20260927`, on main `359e850d0`. Raw data is in
+`raw/sinkhorn-warp-v6m/`: the queue script, the summary, and every gate and served row. The run
+used the first 2x RTX PRO 6000 Server Edition pair.
+
+**What changed.**
+- In the fused HC finish, warp 0 used to run the twenty serial Sinkhorn iterations. Only after
+  they finished did all four warps collapse the four copies and take the RMSNorm.
+- Only `comb` depends on the projection, and `comb` is read later, by the block's hc_post.
+- A fifth warp now runs the projection. It waits on the one block-wide barrier that publishes
+  the scaled mixes. The four row warps compute pre and post, then go straight to the collapse
+  and the RMSNorm, syncing among themselves on named barrier 1.
+- Every value is the same op in the same order. The block is now 160 threads.
+
+**Correctness.**
+- `dsv4_hc_finish_is_bit_identical_to_the_unfused_chain`:
+  `DSV4_HC_FINISH EXACT cases=144 outputs=7 slices=8,16,32 rows=1,2,5,6 red_arms=3`.
+- The long gate's `PROGRAM_SHA256` is `fbce1a0492d69635` on every run.
+- Every served request's text is identical in all four rows.
+
+**Component timing.** `dsv4_hc_finish_timing` on one card, device time per HC entry site (the
+partial and the finish), 5 reps per run, order M W W M:
+
+| rows | main us | lane us |
+|---|---|---|
+| 1 | 11.76 .. 11.84 | 9.84 .. 9.94, **-16%** |
+| 6 | 18.73 .. 19.09 | 17.21 .. 17.27, -8% |
+
+**Long gate.** Replay ms/token, 3 reps per run, order M W W M M W: main 10.70 .. 10.82 against
+10.48 .. 10.58, **-2.0%**.
+
+**Served.** cells-pdl, one boot per row, M W W M, N=2 per arm:
+
+| cell | main agg tok/s | lane agg tok/s | delta |
+|---|---|---|---|
+| greedy c1 | 89.17 / 89.30 (decode 94.04) | 91.01 / 91.10 (decode 96.09 / 96.23) | **+2.0%** |
+| sampled c1 | 89.78 / 89.73 | 91.51 / 91.54 | +2.0% |
+| greedy c2 | 121.30 / 121.29 | 122.78 / 123.05 | +1.3% |
+| greedy c4 | 155.28 / 155.54 | 154.99 / 157.19 | flat |
+| greedy c2, 2k prompt | 21.74 / 21.74 | 21.82 / 21.82 | flat |
+
+TPOT p50 at c1 goes from 10.63 ms to 10.39 .. 10.41 ms. The 86 HC entry sites per step save
+about 0.17 ms of kernel time at 2 us each, and the step saves 0.22 ms.
+
+Thermal: median power 278 .. 281 W while the cards work, SM clock median 2400 .. 2407 MHz, max 56 C.
+
+**Verdict.** The fifth warp is the default. There is no door.

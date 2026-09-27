@@ -132,6 +132,9 @@ pub(crate) fn eligible(
             p.rows == t && p.capacity >= seq_end && p.attention_fa2 == e.prime_attn_fa2_enabled()
         });
     supported(m, e)
+        // WP-B day 44: a call carrying a grid capture runs the eager twin (byte-identical by
+        // this module's contract) so the capture's extra launches ride the eager walk.
+        && !crate::grid_capture::armed()
         && crate::spec::graph_launch_headroom_ok(e)
         // A one-off restored suffix or boundary tail cannot amortize capture.
         // It executes the identical eager chunk rather than padding/reusing a graph.

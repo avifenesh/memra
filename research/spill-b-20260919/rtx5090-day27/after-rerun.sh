@@ -8,4 +8,4 @@ while pgrep -f "bash $R/chain-local.sh" >/dev/null; do sleep 30; done
 echo "$(date -u +%FT%TZ) after-ab rerun start" >> "$R/chain.log"
 mv "$R/after-ab" "$R/after-ab-attempt1-lockbound" 2>/dev/null; mv "$R/after-ab.exit" "$R/after-ab-attempt1-lockbound.exit" 2>/dev/null
 env MEMRA_CTX=65536 RIGDIR="$R" bash research/spill-b-20260919/run-day26-cell.sh after-ab AB > "$R/after-ab.launch.log" 2>&1
-echo "$(date -u +%FT%TZ) after-ab rerun exit=$? (cell exit $(cat "$R/after-ab.exit" 2>/dev/null))" >> "$R/chain.log"
+_rc=$?; echo "$(date -u +%FT%TZ) after-ab rerun exit=$_rc (cell exit $(cat "$R/after-ab.exit" 2>/dev/null))" >> "$R/chain.log"

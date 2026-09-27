@@ -69,7 +69,7 @@ Written after the boot; section 1 is unchanged. Receipts: `rtx5090-day31-d4/` (`
 ### 2.1 Run
 
 One boot, `D4-host`, 2026-09-23T03:08:58Z to 03:42:51Z, after the day-31 local chain printed `chain done` at
-03:08:25Z. One collector hold on `/tmp/memra-5090.lock` (lock proof rc=0); `compute-apps-before.csv` and
+03:08:25Z. One collector hold on `/tmp/memra-5090.lock` (lock proof held: `LOCK-D4.json` reads `inherited-flock-same-open-description`, and `tier-lock-proof.py` prints that JSON only when the proof holds and raises otherwise. Correction 2026-09-26: the `rc=0` in `order.log` was `date`'s exit, not the proof's, because `d4-boot.sh` wrote `"$(date ...) rc=$?"`; fixed in the script); `compute-apps-before.csv` and
 `compute-apps-after.csv` list no process. Binary `daccda3b...c4efef` (the day-31 binary); `source.txt` is
 `c426a8be2`, a research-only commit on top of the pre-registration. Boot lines:
 `[admit-mem] door=ON open_output_tokens=32768 defer_budget_ms=8000` and `[prefix-host] on: budget 8590MB pinned

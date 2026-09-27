@@ -1,0 +1,11 @@
+2026-09-25T02:21:19Z boot off-lane start arm=pooled kind=mixspec bin=7e586b8cdb06ef5b env=[ -u MEMRA_SERVE_SPEC -u MEMRA_TIMEOUT_MS_MAX]
+2026-09-25T02:23:58Z boot off-lane rc=0 door_on=0 door_off=1 
+2026-09-25T02:24:03Z boot fault-mapper start arm=vmm-mapperfault kind=mixspec bin=7e586b8cdb06ef5b env=[MEMRA_KV_ALLOCATOR=vmm MEMRA_KV_VMM_FAULT=mapper:all -u MEMRA_SERVE_SPEC -u MEMRA_TIMEOUT_MS_MAX]
+2026-09-25T02:26:42Z boot fault-mapper rc=0 door_on=1 door_off=0 
+2026-09-25T02:26:47Z boot off-main start arm=main kind=mixspec bin=92c1bf3b845e2b1d env=[ -u MEMRA_SERVE_SPEC -u MEMRA_TIMEOUT_MS_MAX]
+2026-09-25T02:29:26Z boot off-main rc=0 door_on=0 door_off=0 
+2026-09-25T02:29:31Z boot burst-g2-vmm start arm=vmm kind=g2 bin=7e586b8cdb06ef5b env=[MEMRA_KV_ALLOCATOR=vmm CLIENT=day33-client.py PARSER=day31-parse.py MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=8192 CLIENT_ARGS=--chars 5000 --skip-long --burst 64]
+2026-09-25T02:32:38Z boot burst-g2-vmm rc=0 door_on=1 door_off=0 DAY31 V-BOOT boot=burst-g2-vmm arm=on8192 door_line=present -> PASS
+2026-09-25T02:32:43Z boot fault-ensure start arm=vmm-ensurefault kind=g2 bin=7e586b8cdb06ef5b env=[MEMRA_KV_ALLOCATOR=vmm MEMRA_KV_VMM_FAULT=mapper:all,ensure:1,ensure:2 CLIENT=day33-client.py PARSER=day31-parse.py MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=8192 CLIENT_ARGS=--chars 5000 --skip-long --burst 64]
+2026-09-25T02:35:51Z boot fault-ensure rc=1 door_on=1 door_off=0 DAY31 V-BOOT boot=fault-ensure arm=on8192 door_line=present -> PASS
+2026-09-25T02:35:56Z boots done: off-lane:pooled:mixspec fault-mapper:vmm-mapperfault:mixspec off-main:main:mixspec burst-g2-vmm:vmm:g2 fault-ensure:vmm-ensurefault:g2

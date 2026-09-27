@@ -1,0 +1,5 @@
+HFG (g) step-oom-parks-and-completes: fault=1 parked_lines=0 completed=0/3 codes={r0:200,r1:200,r2:200} http_5xx=0 panic_lines=0 health_after=200 -> FAIL
+HFG (g-red) step-oom-past-the-retry-budget: fault=4 parked_lines=0 completed=0/3 codes={r0:200,r1:200,r2:200} faulted_error={r0:"message":"the model is temporarily at capacity; retry after the Retry-After delay";r1:"message":"the model is temporarily at capacity; retry after the Retry-After delay";r2:"message":"the model is temporarily at capacity; retry after the Retry-After delay";} http_5xx=0 panic_lines=0 green_assertion_fired=true -> FAIL
+HFG (h) client-disconnect-retires-within-1000ms: frames_at_close=15 abort_lines=1 close_to_abort_line_ms=97 peer_complete=true peer_finish=length active_sessions_after=0 health_after=200 -> PASS
+HFG (h-red) no-disconnect: frames_at_close=15 abort_lines=0 closed_request_complete=true peer_complete=true green_assertion_fired=true -> PASS
+health-fault-gate: arms=g,h pass=2 documented=0 fail=2 receipts=/home/avifenesh/projects/wt-spill-b/research/spill-b-20260919/rtx5090-day47/r1

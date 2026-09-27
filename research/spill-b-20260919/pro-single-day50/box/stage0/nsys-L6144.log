@@ -1,0 +1,12 @@
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+loaded qwen35 (64 layers)
+callcost setup: L=6144 primed in 1590.7 ms
+callcost L=6144 R=32 N=5 wall_ms p50=69.39 min=69.27 max=69.42 all=[69.39,69.27,69.42,69.40,69.35]
+callcost L=6144 R=64 N=5 wall_ms p50=71.18 min=71.16 max=71.20 all=[71.20,71.18,71.20,71.16,71.16]
+callcost L=6144 R=288 N=5 wall_ms p50=112.97 min=112.86 max=114.26 all=[112.86,112.97,112.97,114.26,112.98]
+Collecting data...
+Generating '/tmp/nsys-report-4e2f.qdstrm'
+[1/1] [0%                          ] nsys-L6144.nsys-rep[1/1] [0%                          ] nsys-L6144.nsys-rep[1/1] [=17%                        ] nsys-L6144.nsys-rep[1/1] [14%                         ] nsys-L6144.nsys-rep[1/1] [12%                         ] nsys-L6144.nsys-rep[1/1] [10%                         ] nsys-L6144.nsys-rep[1/1] [==21%                       ] nsys-L6144.nsys-rep[1/1] [==19%                       ] nsys-L6144.nsys-rep[1/1] [=17%                        ] nsys-L6144.nsys-rep[1/1] [=15%                        ] nsys-L6144.nsys-rep[1/1] [14%                         ] nsys-L6144.nsys-rep[1/1] [13%                         ] nsys-L6144.nsys-rep[1/1] [==19%                       ] nsys-L6144.nsys-rep[1/1] [====26%                     ] nsys-L6144.nsys-rep[1/1] [=====32%                    ] nsys-L6144.nsys-rep[1/1] [=======39%                  ] nsys-L6144.nsys-rep[1/1] [=========45%                ] nsys-L6144.nsys-rep[1/1] [===========52%              ] nsys-L6144.nsys-rep[1/1] [=============59%            ] nsys-L6144.nsys-rep[1/1] [===============65%          ] nsys-L6144.nsys-rep[1/1] [=================72%        ] nsys-L6144.nsys-rep[1/1] [==================78%       ] nsys-L6144.nsys-rep[1/1] [====================84%     ] nsys-L6144.nsys-rep[1/1] [====================85%     ] nsys-L6144.nsys-rep[1/1] [========================100%] nsys-L6144.nsys-rep[1/1] [========================100%] nsys-L6144.nsys-rep
+Generated:
+	/root/spill-receipts/b-day50/stage0/nsys-L6144.nsys-rep
+exit=0
