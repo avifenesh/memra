@@ -4,7 +4,7 @@
 DAY24 1.1's sequence (one 64-token warm request; (a) four concurrent requests of 6,000 prompt tokens, max_tokens=96;
 (b) one of 12,000; (c) the four of (a) again, the same salts so their prefixes are retained), then --idle-s, then a
 burst of --burst requests of --length tokens released together (distinct windows, max_tokens --max-tokens), then
-(addendum A) a second wave of burst/2 released when the burst's first request completes, then --idle-s and one
+(addendum A, fixed by addendum C) a second wave of burst/2 released when the burst's first request completes 200, then --idle-s and one
 --probe-tokens probe. `/v1/completions` with `prompt_ids`, greedy, streamed with usage.
 
 Per row (client.jsonl): tag, phase, salt, status, retry_after, submit/done ms, ttft_ms, e2e_ms, completion_tokens,
@@ -32,6 +32,7 @@ out_path = os.path.join(a.out, "client.jsonl")
 open(out_path, "w").close()
 lock = threading.Lock()
 first_burst_done = threading.Event()
+first_trigger = []
 
 
 def post_json(path, body):
@@ -95,8 +96,13 @@ def complete(tag, phase, salt, ids, max_tokens):
         with open(out_path, "a") as f:
             f.write(json.dumps(row, sort_keys=True) + "\n")
     print(f"{tag} status={status} G={row['completion_tokens']} ttft={row['ttft_ms']} e2e={row['e2e_ms']:.0f}", flush=True)
-    if phase == "burst":
-        first_burst_done.set()
+    # DAY46 addendum C: the second wave waits for the burst's first request that completes 200 (its prime completed),
+    # not for its first end (a typed 429 ends in about a second).
+    if phase == "burst" and status == 200 and err is None:
+        with lock:
+            if not first_burst_done.is_set():
+                first_trigger.append(tag)
+                first_burst_done.set()
 
 
 def together(specs):
@@ -128,7 +134,7 @@ burst = together([(f"burst-{i}", "burst", f"burst{i}", stream[i * 997:i * 997 + 
 first_burst_done.wait(timeout=a.timeout_s)
 with lock:
     with open(os.path.join(a.out, "wave2.txt"), "w") as f:
-        f.write(f"wave2_release_ms={time.time() * 1000.0:.1f}\n")
+        f.write(f"wave2_release_ms={time.time() * 1000.0:.1f} trigger={first_trigger[0] if first_trigger else 'timeout'}\n")
 wave2 = together([(f"wave2-{i}", "wave2", f"wave2{i}", stream[(a.burst + 4 + i) * 997:(a.burst + 4 + i) * 997 + a.length],
                    a.max_tokens) for i in range(a.burst // 2)])
 for t in burst + wave2:
