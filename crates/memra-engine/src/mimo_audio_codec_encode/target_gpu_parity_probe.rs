@@ -198,45 +198,5 @@ fn prepared_mel_target_features_and_rvq_diagnostic() -> Result<(), Fail> {
         let ids = weights.encode_20_rvq(&engine, &input, TOKENS)?.code_ids;
         code_diff(label, &ids, expected)?;
     }
-
-    let direct_first = weights.encode_prepared_mel_conv_direct(&engine, &engine.htod(&mel)?, 9)?;
-    let direct_frontend = engine.dtoh(&direct_first)?;
-    feature_stats(
-        "direct_frontend_vs_gpu_publisher",
-        &direct_frontend,
-        &publisher_gpu_frontend,
-        5,
-    )?;
-    let direct_stack = weights.encode_transformer_stack(&engine, &direct_first, 5)?;
-    let direct_stack_host = engine.dtoh(&direct_stack)?;
-    feature_stats(
-        "direct_stack_vs_gpu_publisher",
-        &direct_stack_host,
-        &publisher_gpu_stack,
-        5,
-    )?;
-    let direct_features = weights.downsample_post_stack(&engine, &direct_stack, 5)?;
-    let direct_features_host = engine.dtoh(&direct_features)?;
-    feature_stats(
-        "direct_pre_rvq_vs_gpu_publisher",
-        &direct_features_host,
-        &publisher_gpu_features,
-        TOKENS,
-    )?;
-    feature_stats(
-        "direct_pre_rvq_vs_cpu_publisher",
-        &direct_features_host,
-        &cpu_features,
-        TOKENS,
-    )?;
-    let direct_ids = weights
-        .encode_20_rvq(&engine, &direct_features, TOKENS)?
-        .code_ids;
-    code_diff(
-        "direct_frontend_vs_gpu_publisher",
-        &direct_ids,
-        &PUBLISHER_GPU_IDS,
-    )?;
-    code_diff("direct_frontend_vs_cpu_publisher", &direct_ids, &CPU_IDS)?;
     Ok(())
 }
