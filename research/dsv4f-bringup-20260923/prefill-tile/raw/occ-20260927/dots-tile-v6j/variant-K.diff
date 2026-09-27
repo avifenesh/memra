@@ -1,0 +1,21 @@
+diff --git a/crates/memra-engine/cu/dsv4_gpu.cu b/crates/memra-engine/cu/dsv4_gpu.cu
+index f13146de1..32ef6e22e 100644
+--- a/crates/memra-engine/cu/dsv4_gpu.cu
++++ b/crates/memra-engine/cu/dsv4_gpu.cu
+@@ -4351,13 +4351,13 @@ static void dsv4_gemm_fp8_tile_launch(const void* w_codes, const float* sc_f32,
+ // dots kernel's chunks `v*8 + j*1024`, adds `x * w` for the 8 elements ascending with the weight
+ // widened from bf16 or read as f32, then every output takes the same halving tree.
+ #ifndef DSV4_DOTS_TILE_TT
+-#define DSV4_DOTS_TILE_TT 8
++#define DSV4_DOTS_TILE_TT 4
+ #endif
+ #ifndef DSV4_DOTS_TILE_TN
+-#define DSV4_DOTS_TILE_TN 8
++#define DSV4_DOTS_TILE_TN 4
+ #endif
+ #ifndef DSV4_DOTS_TILE_MINB
+-#define DSV4_DOTS_TILE_MINB 1
++#define DSV4_DOTS_TILE_MINB 6
+ #endif
+ template <int TT, int TN, int MINB>
+ __global__ void __launch_bounds__(128, MINB) dsv4_dots_f32acc_tile_kernel(
