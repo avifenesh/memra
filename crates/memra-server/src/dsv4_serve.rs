@@ -197,14 +197,15 @@ fn env_text(name: &str, raw: Option<OsString>) -> Result<Option<String>, String>
 }
 
 /// `MEMRA_DSV4_SESSIONS` (memra #667): serving lanes that share the route's queue and launch
-/// turn. `1` is the serial route; `2..=4` pipeline plain steps across sessions. Unset or empty
+/// turn. `1` is the serial route; `2..=16` pipeline plain steps across sessions (PP-2) or share
+/// B-row steps (TP/EP, memra #710). Unset or empty
 /// takes `default`, which the load derives from the program it loaded.
 fn resolve_sessions(raw: Option<&str>, default: usize) -> Result<usize, String> {
     match raw.map(str::trim) {
         None | Some("") => Ok(default),
         Some(text) => match text.parse::<usize>() {
-            Ok(n @ 1..=4) => Ok(n),
-            _ => Err(format!("MEMRA_DSV4_SESSIONS {text:?} must be 1..=4")),
+            Ok(n @ 1..=16) => Ok(n),
+            _ => Err(format!("MEMRA_DSV4_SESSIONS {text:?} must be 1..=16")),
         },
     }
 }
@@ -219,17 +220,18 @@ fn default_sessions(pipelined_steps: bool, drafter: bool) -> usize {
     if pipelined_steps && !drafter { 2 } else { 1 }
 }
 
-/// The lanes a TP/EP load gets when `MEMRA_DSV4_SESSIONS` is unset (memra #710 B-row): four on
-/// the plain route, whose requests then share TP/EP B-row graph steps; one with a drafter,
-/// whose rounds hold the launch turn for a whole request. Four against two on 2x RTX PRO 6000
-/// WS: c4 aggregate 132.8 against 102.0 tok/s, TTFT p50 0.42 s against 5.2 s, c1 and c2 the
-/// same (`research/dsv4f-bringup-20260923/tp-rows/`).
+/// The lanes a TP/EP load gets when `MEMRA_DSV4_SESSIONS` is unset (memra #710 B-row, #667):
+/// sixteen on the plain route, whose requests then share TP/EP B-row graph steps; one with a
+/// drafter, whose rounds hold the launch turn for a whole request. Sixteen against four on
+/// 2x RTX PRO 6000 SE with the one-workspace coalescer: c8 190 .. 192 against 155 .. 160 tok/s,
+/// c16 196 .. 198 against 153 .. 155 (TTFT p50 1.5 s against 10.4 s), c24 193 .. 195 with every
+/// request served, c4 the same (`research/dsv4f-bringup-20260923/lanes16/`).
 fn default_tp_ep_sessions(rows_steps: bool, drafter: bool) -> usize {
-    if rows_steps && !drafter { 4 } else { 1 }
+    if rows_steps && !drafter { 16 } else { 1 }
 }
 
 /// `MEMRA_DSV4_ROWS` (memra #667 lever 2): the most plain rows one step runs across the lanes.
-/// `0` or `1` keeps each lane's own step; `2..=8` coalesces them. Unset or empty takes
+/// `0` or `1` keeps each lane's own step; `2..=16` coalesces them. Unset or empty takes
 /// `default`: one on PP-2, the lane count on TP/EP (memra #710), where lanes only help by
 /// sharing steps.
 fn resolve_rows(raw: Option<&str>, default: usize) -> Result<usize, String> {
@@ -237,8 +239,8 @@ fn resolve_rows(raw: Option<&str>, default: usize) -> Result<usize, String> {
         None | Some("") => Ok(default),
         Some(text) => match text.parse::<usize>() {
             Ok(0) => Ok(1),
-            Ok(n @ 1..=8) => Ok(n),
-            _ => Err(format!("MEMRA_DSV4_ROWS {text:?} must be 0..=8")),
+            Ok(n @ 1..=16) => Ok(n),
+            _ => Err(format!("MEMRA_DSV4_ROWS {text:?} must be 0..=16")),
         },
     }
 }
@@ -1692,6 +1694,13 @@ struct CoalesceState<S, A> {
     members: usize,
     /// Rows taken by batches that have not published yet.
     in_flight: usize,
+    /// When the last batch published: with one workspace a partial batch's window runs from here,
+    /// not from the deposit, so rows that deposited while a batch ran wait for its lanes too.
+    published: std::time::Instant,
+    /// How long the last batch ran: with one workspace a partial batch waits for the rest of its
+    /// lanes up to a tenth of it, so a lane's host work between steps (its stream, its stop
+    /// checks) does not cost it the next step.
+    last_run: std::time::Duration,
     next: u64,
     waiting: Vec<(u64, u32, A, Lent<S>)>,
     done: std::collections::HashMap<u64, Result<RowOut, String>>,
@@ -1734,6 +1743,8 @@ impl<S, A: Copy> Coalescer<S, A> {
             inner: std::sync::Mutex::new(CoalesceState {
                 members: 0,
                 in_flight: 0,
+                published: std::time::Instant::now(),
+                last_run: std::time::Duration::ZERO,
                 next: 0,
                 waiting: Vec::new(),
                 done: std::collections::HashMap::new(),
@@ -1781,9 +1792,28 @@ impl<S, A: Copy> Coalescer<S, A> {
             let pos = g.waiting.iter().position(|d| d.0 == ticket);
             let free = g.members.saturating_sub(g.in_flight);
             let target = g.members.div_ceil(self.groups).clamp(1, self.bmax);
-            let full = g.waiting.len() >= target.min(free).max(1);
+            // One workspace (TP/EP, memra #667): a batch in flight holds it, so a row that
+            // deposits meanwhile waits for that batch to publish and then for its lanes to
+            // deposit again. Leading the rows that happened to arrive first would run a second,
+            // partial batch, and the lanes would stay split in two phases for the rest of the run.
+            let serial = self.groups == 1;
+            if serial && g.in_flight > 0 {
+                g = self.cv.wait(g).unwrap_or_else(|p| p.into_inner());
+                continue;
+            }
+            let since = if serial { t0.max(g.published) } else { t0 };
+            let window = if serial {
+                self.window.max(g.last_run / 10)
+            } else {
+                self.window
+            };
+            let full = if serial {
+                g.waiting.len() >= target
+            } else {
+                g.waiting.len() >= target.min(free).max(1)
+            };
             if let Some(mine) = pos
-                && (full || t0.elapsed() >= self.window)
+                && (full || since.elapsed() >= window)
             {
                 // Lead: the oldest deposits, with ours among them.
                 let mut take: Vec<usize> = (0..g.waiting.len()).collect();
@@ -1809,12 +1839,15 @@ impl<S, A: Copy> Coalescer<S, A> {
                     batch.iter().map(|d| unsafe { &mut *d.3.0 }).collect();
                 // A panicking step must not wedge the lanes that lent it their rows: every member
                 // gets an error, `in_flight` comes down, and the leader then unwinds as before.
+                let ran = std::time::Instant::now();
                 let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     run(&toks, &wants, &mut states)
                 }));
                 drop(states);
                 g = self.lock();
                 g.in_flight -= batch.len();
+                g.published = std::time::Instant::now();
+                g.last_run = ran.elapsed();
                 let out = match out {
                     Ok(out) => out,
                     Err(panic) => {
@@ -1852,7 +1885,7 @@ impl<S, A: Copy> Coalescer<S, A> {
                 continue;
             }
             g = if pos.is_some() {
-                let left = self.window.saturating_sub(t0.elapsed());
+                let left = window.saturating_sub(since.elapsed());
                 self.cv
                     .wait_timeout(g, left.max(std::time::Duration::from_micros(20)))
                     .unwrap_or_else(|p| p.into_inner())
@@ -3668,10 +3701,10 @@ mod c4_host_budget_tests {
             for raw in [Some("1"), Some(" 1 ")] {
                 assert_eq!(resolve_sessions(raw, default), Ok(1));
             }
-            for n in 2..=4 {
+            for n in 2..=16 {
                 assert_eq!(resolve_sessions(Some(&n.to_string()), default), Ok(n));
             }
-            for raw in ["0", "5", "two", "-1", "2.0"] {
+            for raw in ["0", "17", "two", "-1", "2.0"] {
                 assert!(resolve_sessions(Some(raw), default).is_err(), "{raw}");
             }
         }
@@ -3758,21 +3791,21 @@ mod c4_host_budget_tests {
             for raw in [Some("0"), Some("1")] {
                 assert_eq!(resolve_rows(raw, default), Ok(1));
             }
-            for n in 2..=8 {
+            for n in 2..=16 {
                 assert_eq!(resolve_rows(Some(&n.to_string()), default), Ok(n));
             }
-            for raw in ["9", "two", "-1", "2.5"] {
+            for raw in ["17", "two", "-1", "2.5"] {
                 assert!(resolve_rows(Some(raw), default).is_err(), "{raw}");
             }
         }
     }
 
-    /// TP/EP lanes only help by sharing B-row steps, so the plain route gets four and a
-    /// drafter route one (memra #710).
+    /// TP/EP lanes only help by sharing B-row steps, so the plain route gets sixteen and a
+    /// drafter route one (memra #710, #667).
     #[test]
-    fn tp_ep_lanes_default_to_four_on_the_plain_route() {
+    fn tp_ep_lanes_default_to_sixteen_on_the_plain_route() {
         use super::default_tp_ep_sessions;
-        assert_eq!(default_tp_ep_sessions(true, false), 4);
+        assert_eq!(default_tp_ep_sessions(true, false), 16);
         assert_eq!(default_tp_ep_sessions(true, true), 1);
         assert_eq!(default_tp_ep_sessions(false, false), 1);
     }
@@ -3900,6 +3933,60 @@ mod c4_host_budget_tests {
         assert!(
             waited >= window,
             "a partial batch ran after {waited:?}, inside its {window:?} window"
+        );
+    }
+
+    /// memra #667: with one workspace, lanes whose host work between steps outlasts the base
+    /// window still ride full batches. Sixteen lanes, a 20 ms step, up to 1.5 ms of jittered host
+    /// work per lane per step: a row that deposits while a batch runs waits for that batch and its
+    /// lanes, and a partial batch waits up to a tenth of the last step, so the lanes never split
+    /// into phases.
+    #[test]
+    fn one_workspace_keeps_jittered_lanes_in_full_batches() {
+        use super::{Coalescer, RowOut};
+        use std::sync::{Arc, Mutex};
+        let (lanes, steps) = (16usize, 12usize);
+        let core = Arc::new(Coalescer::<u32>::new(16, 1));
+        let widths = Arc::new(Mutex::new(Vec::new()));
+        let barrier = Arc::new(std::sync::Barrier::new(lanes));
+        let handles: Vec<_> = (0..lanes)
+            .map(|lane| {
+                let (core, widths, barrier) = (core.clone(), widths.clone(), barrier.clone());
+                std::thread::spawn(move || {
+                    core.join();
+                    barrier.wait();
+                    let mut state = 0u32;
+                    for step in 0..steps {
+                        let r = core.step(step as u32, false, &mut state, &mut |toks, _, _| {
+                            widths.lock().unwrap().push(toks.len());
+                            std::thread::sleep(std::time::Duration::from_millis(20));
+                            Ok(toks
+                                .iter()
+                                .map(|&tok| RowOut { tok, logits: None })
+                                .collect())
+                        });
+                        assert!(r.is_ok());
+                        let jitter = ((lane * 7 + step * 3) % 16) as u64 * 100;
+                        std::thread::sleep(std::time::Duration::from_micros(jitter));
+                    }
+                    core.leave();
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+        let widths = widths.lock().unwrap().clone();
+        assert_eq!(widths.iter().sum::<usize>(), lanes * steps);
+        let full = widths.iter().filter(|&&w| w == lanes).count();
+        eprintln!(
+            "jittered lanes: {full} of {} batches full, widths {widths:?}",
+            widths.len()
+        );
+        // The first step has no last run to size the window, so it may split once.
+        assert!(
+            widths.len() <= steps + 2 && full + 2 >= steps,
+            "the lanes split: widths {widths:?}"
         );
     }
 

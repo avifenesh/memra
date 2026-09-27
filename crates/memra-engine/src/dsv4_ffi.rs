@@ -1655,6 +1655,24 @@ unsafe extern "C" {
         reduce_arm: i32,
         stream: *mut c_void,
     ) -> i32;
+    /// The TP/EP joined MoE tail in one launch (memra #710): `combine_rows_m` over the routed rows,
+    /// the joined shared rows added, then `hc_post` into `out`; y and out keep those kernels' bits.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_moe_tail_hc_post(
+        contrib: *const f32,
+        order: *const i32,
+        topk: i32,
+        shared: *const f32,
+        y: *mut f32,
+        residual: *const f32,
+        post: *const f32,
+        comb: *const f32,
+        out: *mut f32,
+        s: i32,
+        hc: i32,
+        d: i64,
+        stream: *mut c_void,
+    ) -> i32;
     #[allow(clippy::too_many_arguments)]
     pub fn memra_dsv4_combine_rows_m(
         contrib: *const f32,

@@ -1,0 +1,14 @@
+BENCH rows=4 local=3 iters=200 gu_us=101.12 gu_TBps=1.120 down_us=60.29 down_TBps=0.939 pair_us=161.41 fault=0
+PACKED_EQUAL 1
+VARIANT std_4_256_2 rows=4 gu_us=96.95 gu_TBps=1.168
+VARIANT packed_4_256_2 rows=4 gu_us=97.82 gu_TBps=1.158
+VARIANT std_4_256_3 rows=4 gu_us=96.20 gu_TBps=1.177
+VARIANT packed_4_256_3 rows=4 gu_us=100.35 gu_TBps=1.128
+VARIANT std_4_256_4 rows=4 gu_us=97.05 gu_TBps=1.167
+VARIANT packed_4_256_4 rows=4 gu_us=101.69 gu_TBps=1.114
+VARIANT std_4_512_2 rows=4 gu_us=95.59 gu_TBps=1.185
+VARIANT packed_4_512_2 rows=4 gu_us=101.35 gu_TBps=1.117
+VARIANT std_2_256_3 rows=4 gu_us=110.50 gu_TBps=1.025
+VARIANT packed_2_256_3 rows=4 gu_us=113.93 gu_TBps=0.994
+VARIANT std_4_256_2 rows=4 gu_us=96.98 gu_TBps=1.168
+VARIANT packed_4_256_2 rows=4 gu_us=97.95 gu_TBps=1.156

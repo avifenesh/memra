@@ -1,0 +1,10 @@
+START utc=2026-09-27T11:55:22Z bin=/root/lane/bin-L2/memra-server env=MEMRA_ENV_AUDIT=on
+READY after=270s port=60643
+CELL warmup c=1 ok=1/1 agg=43.55 tok/s decode_p50=81.81 tok/s ttft_p50=355 ms tpot_p50=12.22 ms errs=[]
+CELL greedy-c4 c=4 ok=8/8 agg=152.03 tok/s decode_p50=40.58 tok/s ttft_p50=416 ms tpot_p50=24.64 ms errs=[]
+CELL greedy-c8 c=8 ok=16/16 agg=157.02 tok/s decode_p50=41.50 tok/s ttft_p50=6877 ms tpot_p50=24.10 ms errs=[]
+CELL greedy-c16 c=16 ok=16/16 agg=102.83 tok/s decode_p50=26.80 tok/s ttft_p50=15455 ms tpot_p50=37.31 ms errs=[]
+CELL greedy-c24 c=24 ok=20/24 agg=153.37 tok/s decode_p50=41.00 tok/s ttft_p50=13971 ms tpot_p50=24.39 ms errs=['HTTP Error 429: Too Many Requests', 'HTTP Error 429: Too Many Requests', 'HTTP Error 429: Too Many Requests']
+CELL sampled-c8 c=8 ok=16/16 agg=153.89 tok/s decode_p50=40.83 tok/s ttft_p50=6957 ms tpot_p50=24.49 ms errs=[]
+CELLS_DONE utc=2026-09-27T12:02:13Z
+TERMINAL rc=0 utc=2026-09-27T12:02:19Z
