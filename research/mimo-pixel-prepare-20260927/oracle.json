@@ -1,0 +1,161 @@
+{
+  "source_sha256": "218ff9374af6f9c3c3b0e0ca89d2c21308bd1043bf65c8386d658902caf88457",
+  "config_sha256": "b269e51bdc1c53ef7c82522984378513f462869cf83c4c75ec3f98bd92aa7972",
+  "transformers": "5.3.0",
+  "pillow": "12.1.1",
+  "numpy": "2.3.5",
+  "cases": [
+    {
+      "case": "image_unchanged",
+      "input_thwc": [
+        1,
+        64,
+        96,
+        3
+      ],
+      "output_tchw": [
+        1,
+        3,
+        64,
+        96
+      ],
+      "max_abs": 0.0,
+      "max_relative_floor_1e-6": 0.0,
+      "differing_elements": 0,
+      "elements": 18432
+    },
+    {
+      "case": "image_upscale",
+      "input_thwc": [
+        1,
+        33,
+        65,
+        3
+      ],
+      "output_tchw": [
+        1,
+        3,
+        64,
+        96
+      ],
+      "max_abs": 0.0,
+      "max_relative_floor_1e-6": 0.0,
+      "differing_elements": 0,
+      "elements": 18432
+    },
+    {
+      "case": "image_downscale",
+      "input_thwc": [
+        1,
+        80,
+        128,
+        3
+      ],
+      "output_tchw": [
+        1,
+        3,
+        64,
+        128
+      ],
+      "max_abs": 0.0,
+      "max_relative_floor_1e-6": 0.0,
+      "differing_elements": 0,
+      "elements": 24576
+    },
+    {
+      "case": "image_downscale_both_at_cap",
+      "input_thwc": [
+        1,
+        270,
+        270,
+        3
+      ],
+      "output_tchw": [
+        1,
+        3,
+        256,
+        256
+      ],
+      "max_abs": 0.0,
+      "max_relative_floor_1e-6": 0.0,
+      "differing_elements": 0,
+      "elements": 196608
+    },
+    {
+      "case": "image_aspect_edge",
+      "input_thwc": [
+        1,
+        1,
+        200,
+        3
+      ],
+      "output_tchw": [
+        1,
+        3,
+        32,
+        800
+      ],
+      "max_abs": 0.0,
+      "max_relative_floor_1e-6": 0.0,
+      "differing_elements": 0,
+      "elements": 76800
+    },
+    {
+      "case": "video_even_resize",
+      "input_thwc": [
+        2,
+        65,
+        97,
+        3
+      ],
+      "output_tchw": [
+        2,
+        3,
+        64,
+        96
+      ],
+      "max_abs": 0.0,
+      "max_relative_floor_1e-6": 0.0,
+      "differing_elements": 0,
+      "elements": 36864
+    },
+    {
+      "case": "video_odd_unchanged",
+      "input_thwc": [
+        3,
+        64,
+        64,
+        3
+      ],
+      "output_tchw": [
+        3,
+        3,
+        64,
+        64
+      ],
+      "max_abs": 0.0,
+      "max_relative_floor_1e-6": 0.0,
+      "differing_elements": 0,
+      "elements": 36864
+    },
+    {
+      "case": "video_odd_resize",
+      "input_thwc": [
+        3,
+        33,
+        65,
+        3
+      ],
+      "output_tchw": [
+        3,
+        3,
+        64,
+        96
+      ],
+      "max_abs": 0.0,
+      "max_relative_floor_1e-6": 0.0,
+      "differing_elements": 0,
+      "elements": 55296
+    }
+  ]
+}
