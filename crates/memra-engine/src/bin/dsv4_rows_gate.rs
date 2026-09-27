@@ -21,7 +21,8 @@
 //! tokens per second.
 //!
 //! Profile mode (`DSV4_ROWS_GATE_PROFILE=B`, and `DSV4_ROWS_GATE_PROFILE_GRAPH=1` for the TP/EP
-//! graph step): prime B sessions, warm up, then run `timing-steps`
+//! graph step): prime B sessions (1 to 16; past four, the wide phase's prompts), warm up, then
+//! run `timing-steps`
 //! B-row steps between `cuProfilerStart` and `cuProfilerStop` and exit, for
 //! `nsys profile --capture-range=cudaProfilerApi`. Comparing B=1 with B=2 attributes the cost an
 //! added row brings, kernel by kernel.
@@ -438,8 +439,16 @@ fn main() {
         let b: usize = b.parse().expect("DSV4_ROWS_GATE_PROFILE rows");
         // DSV4_ROWS_GATE_PROFILE_GRAPH=1: profile the captured TP/EP B-row step instead.
         let graph = std::env::var("DSV4_ROWS_GATE_PROFILE_GRAPH").as_deref() == Ok("1");
-        assert!((1..=prompts.len()).contains(&b));
-        let mut sessions: Vec<Session> = prompts[..b]
+        assert!((1..=16).contains(&b));
+        // Up to four rows take the gate's prompts; wider ones the wide phase's cycling frames,
+        // each cycle shorter, so every row sits at its own position.
+        let profile_prompts: Vec<Vec<u32>> = (0..b)
+            .map(|i| {
+                let len = LENS[i % 4] - 13 * (i / 4);
+                tape.prompt(&tokenizer, FRAMES[i % 4], len)[..len].to_vec()
+            })
+            .collect();
+        let mut sessions: Vec<Session> = profile_prompts
             .iter()
             .map(|p| prime(&gpu, p, capacity))
             .collect();

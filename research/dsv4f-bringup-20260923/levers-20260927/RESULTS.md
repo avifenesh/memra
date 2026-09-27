@@ -632,3 +632,99 @@ Every value is those kernels' op in their order.
 
 Every lane c1 row is above every main c1 row. The c4 cells swing about 6% between boots of the
 same build, so they settle nothing here.
+
+## Multi-request steps: one launch per stage for every row, and captured steps to 16 rows (adopted)
+
+Lane `lane/dsv4-brow-diet-20260927`, measured against main `80f734c77` on the second SE pair
+(`raw/se2-brow-diet-s2zj/`, `raw/se2-brow-diet-s2zk/`), and its first two commits alone on the
+first SE pair (`raw/se-brow-diet-v6z/`).
+
+**Why.** At four B-row requests a captured step ran about 1,150 more launches per added row than
+one row did (`raw/se-census-rows-v6r/`): each request's compressor chain, index lists, indexer,
+gather and sink attention ran as its own launches. A captured step also stopped at 8 rows, so a
+9- to 16-row step walked eagerly. At 16 rows that walk took 68.2 ms, bound by the host issuing
+about 20,000 launches.
+
+**What changed.**
+1. **Compressor projections.** They are hoisted at any width, in chunks of up to 8 rows. Above 8
+   rows each request used to read the compressor weights itself.
+2. **wo_a.** One grouped M-row launch covers 2 to 8 rows (`memra_dsv4_gemv_fp8_grouped_m`).
+3. **Compressors.** Each compressor takes three launches for every row: append, pool and finish.
+   The per-row chain was about a dozen launches per compressor per row, most of them masked
+   (`memra_dsv4_cmp_rows_replay`).
+4. **The rest of the per-request section.** Ring writes, index lists, the indexer's scores and
+   top-k, the position-split gather and the two-launch sink attention each run as one launch for
+   every row, and a step with the two-launch attention skips the per-request loop.
+5. **Commit segment.** One ring-commit launch per layer and rank, and one greedy argmax launch
+   when every row is greedy.
+6. **Wider graphs.** Captured B-row steps take up to 16 rows.
+7. **One-row kernels unchanged.** The one-row sink kernels keep their own parameter lists, and
+   the multi-row variants are their own kernels over the shared bodies. Templating the one-row
+   kernels had cost c1 about 0.5% in one served pair.
+
+Each row runs the one-row replay program's body on its own cache, checkpoint, position and scratch
+rows, taking its buffers from `__grid_constant__` tables (`docs/KERNELS.md`).
+
+**Correctness** (`raw/se2-brow-diet-s2zk/`, and on the lane rebased onto main `a8d8b60f8`,
+`raw/se2-idx-slots-s2zl/`):
+- the long gate's `PROGRAM_SHA256` is `fbce1a0492d69635`;
+- the TP/EP rows gate passes: graph steps across join, leave and row moves, sampled draws;
+- the wide phases pass at 8 and 16 rows. Every row's logits bits equal its solo steps at widths
+  16, 8 and 3, eager and captured, and some rows cross C128 emissions;
+- the KV split gate passes, and the DSpark TP/EP gate passes with the pair's shas;
+- 80 of 80 served requests on the c4-c24 cells and 40 of 40 on the c1-c4 cells have the same text
+  as main.
+
+**Captured step times** (rows gate, same pair):
+
+| rows | main | lane |
+|---|---|---|
+| 2 | 14.39 .. 14.46 ms | 12.18 .. 12.21 ms, -15.6% |
+| 4 | 21.73 .. 21.84 ms | 16.41 .. 16.45 ms, -24.6% |
+| 16 (L M L M) | 68.19 .. 68.45 ms | 48.53 .. 48.85 ms, -28.8% |
+
+**Served** (cells-c24, one boot per row, main r4 and r7 against lane r2 and r3):
+
+| cell | main | lane | change |
+|---|---|---|---|
+| greedy c4 | 160.37 / 159.70 | 206.06 / 208.83 | +29.5% |
+| greedy c8, 16 requests | 200.11 / 198.13 | 286.25 / 287.67 | +43.8% |
+| greedy c16 | 201.44 / 198.23 (TPOT 72.6 ms) | 266.04 / 266.69 (TPOT 53.2 ms) | +33.3% |
+| greedy c24 | 199.30 / 198.62 | 267.56 / 269.33 | +34.9% |
+| sampled c8 | 194.21 / 193.73 | 271.12 / 269.93 | +39.5% |
+
+cells-pdl, one pair: greedy c2 147.83 against 128.28 (+15.2%), c4 208.46 against 161.74 (+28.9%).
+Before the sink kernels got their own signatures, c1 read 96.49 against 96.97. On the lane rebased
+onto main, the long gate gives 9.90 .. 10.01 ms per token against main's 9.93 .. 10.06.
+
+**The first two commits alone** (first SE pair, graphs still to 8 rows) are neutral served:
+- c8 205.44 / 203.97 against 205.48, c16 198-199 against 200.72;
+- the 16-row eager walk is 3% slower, 71.3 against 69.4 ms, because the hoist adds host
+  operations to a walk that is already host-bound.
+
+The gain comes from the multi-row launches and the 16-row graphs.
+
+**Census after the lane** (`raw/se2-idx-slots-s2zl/census-b16/`, 16 rows, PDL off): 51.7 ms per
+step, 2,123 launches, about as many as one row takes. Most of the time went to one kernel:
+- `dsv4_gemv_fp8_m_kernel` took 19.1 ms of 50.0 over 494 launches. Above 8 rows the dense GEMVs
+  left the dense-fast transport, and the lane `lane/dsv4-dense16-20260927` takes it to 16 rows;
+- the fused MoE pair took 14.3 ms;
+- the expert join took 3.9 ms, carrying all seven slot rows of every token over the fabric. The
+  lane `lane/dsv4-owned-join-20260928` pushes only each rank's own rows.
+
+## Refuted: eight replayed indexer scores per CTA
+
+Lane `lane/dsv4-idx-slots-20260927`, on the B-row lane (`raw/se2-idx-slots-s2zl/`). A replayed
+indexer launch covers the capacity's 4,096 blocks, and at the long gate's positions about 30 to
+110 of them work. Packing eight scores into each 512-thread CTA cut the dispatched blocks eightfold
+with the same bits (long gate hash, rows and KV split gates pass). It made the step slower: 10.30
+.. 10.44 ms per token against 9.90 .. 10.01, +3.8%. The live scores now run on an eighth as many
+SMs, and that costs more than the dispatch saved. Not merged.
+
+## Flat: the greedy argmax on 1024 threads
+
+A float4 argmax on 1024 threads picks the same token as the 256-thread kernel for every row
+without a NaN. It takes a vocabulary row from 18.43 to 10.25 us, stream-serialized
+(`../ceiling/raw/floors-se-v7a/`). That is about 8 us of a 9.9 ms step. The long gate,
+M A A M M A, reads 9.84 .. 9.97 ms per token on both arms. Not merged; the commit stays on the
+remote branch `lane/dsv4-argmax-20260927`.

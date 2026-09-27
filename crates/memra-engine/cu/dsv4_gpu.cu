@@ -56,6 +56,16 @@ __device__ __forceinline__ bool dsv4_replay_emit(const int* pos,int ratio) {
     return !pos || (*pos + 1) % ratio == 0;
 }
 
+// Per-row pointer and integer tables of a multi-request replay step's launches (memra #710
+// B-row), passed by value as `__grid_constant__` parameters: row r of the launch reads entry r.
+#define DSV4_ROWS_MAX 16
+struct Dsv4RowPtrs {
+    float* p[DSV4_ROWS_MAX];
+};
+struct Dsv4RowInts {
+    int v[DSV4_ROWS_MAX];
+};
+
 #define DSV4_ERR()                                             \
     do {                                                       \
         cudaError_t ce_ = cudaGetLastError();                  \
@@ -898,23 +908,13 @@ extern "C" int memra_dsv4_rope_inv_cvt(float* x, void* xb, int n_pos, int heads,
 
 // ---------------------------------------------------------------- compressor / indexer
 
-// Gated softmax pooling over ratio-blocks (model.py:279-377; oracle CompressorW::forward).
-// kv/score: [s, latent] f32 (raw GEMM outputs; ape added HERE). out: [nb, d].
-// overlap != 0 (fine r=4): position slots = prev block via dims [0:d] (block 0 -> -inf),
-// current block via dims [d:2d]. One thread per (j, c), sequential f64 num/den like the
-// oracle.
-extern "C" __global__ void dsv4_compressor_pool_kernel(const float* __restrict__ kv,
-                                                       const float* __restrict__ score,
-                                                       const float* __restrict__ ape,
-                                                       float* __restrict__ out, int nb,
-                                                       int ratio, int d, int latent,
-                                                       int overlap, const int* emit_pos = nullptr) {
-    MEMRA_PDL_CHAIN_ENTRY();
-    if (!dsv4_replay_emit(emit_pos,ratio)) return;
-    long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= (long)nb * d) return;
-    int j = (int)(i / d);
-    int c = (int)(i % d);
+// One pooled channel `c` of block `j`: dsv4_compressor_pool_kernel's per-thread body, shared with
+// the multi-row replay pool (memra #710 B-row).
+__device__ __forceinline__ float dsv4_compressor_pool_elem(const float* __restrict__ kv,
+                                                           const float* __restrict__ score,
+                                                           const float* __restrict__ ape, int j,
+                                                           int c, int ratio, int d, int latent,
+                                                           int overlap) {
     int positions = overlap ? 2 * ratio : ratio;
     float mx = -INFINITY;
     // pass 1: max of gated scores at this channel
@@ -962,7 +962,27 @@ extern "C" __global__ void dsv4_compressor_pool_kernel(const float* __restrict__
         den += (double)e;
         num += (double)e * (double)kvv;
     }
-    out[i] = (float)(num / den);
+    return (float)(num / den);
+}
+
+// Gated softmax pooling over ratio-blocks (model.py:279-377; oracle CompressorW::forward).
+// kv/score: [s, latent] f32 (raw GEMM outputs; ape added HERE). out: [nb, d].
+// overlap != 0 (fine r=4): position slots = prev block via dims [0:d] (block 0 -> -inf),
+// current block via dims [d:2d]. One thread per (j, c), sequential f64 num/den like the
+// oracle.
+extern "C" __global__ void dsv4_compressor_pool_kernel(const float* __restrict__ kv,
+                                                       const float* __restrict__ score,
+                                                       const float* __restrict__ ape,
+                                                       float* __restrict__ out, int nb,
+                                                       int ratio, int d, int latent,
+                                                       int overlap, const int* emit_pos = nullptr) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    if (!dsv4_replay_emit(emit_pos,ratio)) return;
+    long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= (long)nb * d) return;
+    int j = (int)(i / d);
+    int c = (int)(i % d);
+    out[i] = dsv4_compressor_pool_elem(kv, score, ape, j, c, ratio, d, latent, overlap);
 }
 
 extern "C" int memra_dsv4_compressor_pool(const float* kv, const float* score,
@@ -2394,6 +2414,23 @@ extern "C" __global__ void dsv4_topk_idx_numeric_kernel(const float* score, int 
     dsv4_topk_idx_body<true>(score, nb, kk, win, idx_out, npow2, keys);
 }
 
+// The replay top-k of each row of a multi-request step (memra #710 B-row): row y selects from
+// score + y * score_row into idx_tail + y * stride at its position pos[y], as the one-row
+// replay launch does.
+__global__ void dsv4_topk_idx_numeric_rows_kernel(const float* score, long score_row, int kk,
+                                                  int win, int* idx_tail, int stride,
+                                                  const int* pos, int ratio) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    const int y = blockIdx.x;
+    const int nb = (pos[y] + 1) / ratio;
+    kk = min(kk, nb);
+    int npow2 = 1;
+    while (npow2 < nb) npow2 <<= 1;
+    extern __shared__ unsigned long long keys[];
+    dsv4_topk_idx_body<true>(score + y * score_row, nb, kk, win, idx_tail + (long)y * stride,
+                             npow2, keys);
+}
+
 template<bool NumericZero>
 __device__ __forceinline__ unsigned long long dsv4_topk_key(float value, unsigned index) {
     unsigned b = __float_as_uint(value);
@@ -3149,6 +3186,51 @@ extern "C" int memra_dsv4_argmax(const float* v, long n, int* out, void* stream_
     return 0;
 }
 
+// The greedy rows of a B-row graph step in one launch (memra #710 B-row): CTA y is
+// dsv4_argmax_kernel over row y (v + y * n) into out[y], with the same thread partition and
+// tree, so each row's pick is its one-row launch's even with non-finite logits.
+__global__ void dsv4_argmax_rows_kernel(const float* __restrict__ v, long n,
+                                        int* __restrict__ out) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    __shared__ float bv[256];
+    __shared__ long bi[256];
+    const float* row = v + (long)blockIdx.x * n;
+    int tid = threadIdx.x;
+    float best = -INFINITY;
+    long besti = -1;
+    for (long i = tid; i < n; i += blockDim.x) {
+        float x = row[i];
+        if (besti < 0 || x > best) {
+            best = x;
+            besti = i;
+        }
+    }
+    bv[tid] = best;
+    bi[tid] = besti;
+    __syncthreads();
+    for (int off = blockDim.x >> 1; off > 0; off >>= 1) {
+        if (tid < off) {
+            bool take = (bi[tid + off] >= 0) &&
+                        (bi[tid] < 0 || bv[tid + off] > bv[tid] ||
+                         (bv[tid + off] == bv[tid] && bi[tid + off] < bi[tid]));
+            if (take) {
+                bv[tid] = bv[tid + off];
+                bi[tid] = bi[tid + off];
+            }
+        }
+        __syncthreads();
+    }
+    if (tid == 0) out[blockIdx.x] = (int)bi[0];
+}
+
+extern "C" int memra_dsv4_argmax_rows(const float* v, long n, int rows, int* out,
+                                      void* stream_v) {
+    if (!v || !out || n < 1 || rows < 1) return 40020;
+    memra_chain_launch(dsv4_argmax_rows_kernel, rows, 256, 0, (cudaStream_t)stream_v)(v, n, out);
+    DSV4_ERR();
+    return 0;
+}
+
 // =====================================================================================
 // 0731 re-gate extension rung (owner-authorized 2026-08-19, pending ratification;
 // derivation + gates in RECEIPTS.md "Lane 0731-regate"): f32-accumulation TWINS for the
@@ -3558,13 +3640,11 @@ extern "C" int memra_dsv4_rowsq_scale_f32acc(const float* x, float* mixes, int s
 
 // twin of dsv4_indexer_score_kernel: float per-head dot chain (same x order), float
 // thread-0 head sum (same h order).
-extern "C" __global__ void dsv4_indexer_score_f32acc_kernel(
+__device__ __forceinline__ void dsv4_indexer_score_f32acc_body(
     const float* __restrict__ q, const float* __restrict__ ckv, const float* __restrict__ w,
     float wscale, float* __restrict__ score, int s, int heads, int hd, int nb, int ratio,
-    int lim0, const int* replay_pos = nullptr) {
-    MEMRA_PDL_CHAIN_ENTRY();
+    int lim0, const int* replay_pos, long i) {
     if (replay_pos) nb = lim0 = (*replay_pos + 1) / ratio;
-    long i = blockIdx.x;
     if (i >= (long)s * nb) return;
     int t = (int)(i / nb);
     int j = (int)(i % nb);
@@ -3590,6 +3670,29 @@ extern "C" __global__ void dsv4_indexer_score_f32acc_kernel(
         for (int hh = 0; hh < heads; hh++) acc += shhf[hh];  // oracle h order
         score[i] = acc;
     }
+}
+
+extern "C" __global__ void dsv4_indexer_score_f32acc_kernel(
+    const float* __restrict__ q, const float* __restrict__ ckv, const float* __restrict__ w,
+    float wscale, float* __restrict__ score, int s, int heads, int hd, int nb, int ratio,
+    int lim0, const int* replay_pos = nullptr) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    dsv4_indexer_score_f32acc_body(q, ckv, w, wscale, score, s, heads, hd, nb, ratio, lim0,
+                                   replay_pos, blockIdx.x);
+}
+
+// The replay indexer scores of each row of a multi-request step (memra #710 B-row): row y reads
+// its q and weights rows, its own compressed store kv.p[y] and position pos[y], and scores into
+// score + y * score_row.
+__global__ void dsv4_indexer_score_f32acc_rows_kernel(
+    const float* __restrict__ q, const __grid_constant__ Dsv4RowPtrs kv,
+    const float* __restrict__ w, float wscale, float* __restrict__ score, long score_row,
+    int heads, int hd, int nb_max, int ratio, const int* pos) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    const int y = blockIdx.y;
+    dsv4_indexer_score_f32acc_body(q + (long)y * heads * hd, kv.p[y], w + (long)y * heads, wscale,
+                                   score + y * score_row, 1, heads, hd, nb_max, ratio, nb_max,
+                                   pos + y, blockIdx.x);
 }
 
 extern "C" int memra_dsv4_indexer_score_f32acc(const float* q, const float* ckv,
@@ -4005,11 +4108,9 @@ extern "C" int memra_dsv4_build_idx_redirect(int* idx, int pos, int win, int nb,
 // host `pos0`/`pos` launch arguments into the graph. Ratio/compressor layers
 // intentionally keep their original host-scalar path until their state machine
 // gets the same treatment.
-extern "C" __global__ void dsv4_build_idx_redirect_window_pos_kernel(
+__device__ __forceinline__ void dsv4_build_idx_redirect_window_pos_body(
         int* __restrict__ idx, const int* __restrict__ pos_dev, int win, int cap,
-        int trans_base) {
-    MEMRA_PDL_CHAIN_ENTRY();
-    int k = blockIdx.x * blockDim.x + threadIdx.x;
+        int trans_base, int k) {
     if (k >= cap) return;
     const int pos = pos_dev[0];
     int v;
@@ -4025,6 +4126,23 @@ extern "C" __global__ void dsv4_build_idx_redirect_window_pos_kernel(
         if (q >= pos) v = trans_base + (q - pos);
     }
     idx[k] = v;
+}
+
+extern "C" __global__ void dsv4_build_idx_redirect_window_pos_kernel(
+        int* __restrict__ idx, const int* __restrict__ pos_dev, int win, int cap,
+        int trans_base) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    dsv4_build_idx_redirect_window_pos_body(idx, pos_dev, win, cap, trans_base,
+                                            blockIdx.x * blockDim.x + threadIdx.x);
+}
+
+// The window-only list of each row of a multi-request replay step (memra #710 B-row).
+__global__ void dsv4_replay_window_rows_kernel(int* __restrict__ idx, const int* pos, int win,
+                                               int stride, const __grid_constant__ Dsv4RowInts tb) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    const int y = blockIdx.y;
+    dsv4_build_idx_redirect_window_pos_body(idx + (long)y * stride, pos + y, win, win, tb.v[y],
+                                            blockIdx.x * blockDim.x + threadIdx.x);
 }
 
 extern "C" int memra_dsv4_build_idx_redirect_window_pos(
@@ -4090,15 +4208,13 @@ extern "C" int memra_dsv4_build_idx_redirect_fine_pos(
 // launch replaces T scalar launches; each (row,slot) expression is verbatim from
 // dsv4_build_idx_redirect_kernel. fine!=0 leaves the compressed tail padded for the
 // batched top-k kernel; coarse layers append every causally complete ratio block.
-extern "C" __global__ void dsv4_build_idx_redirect_m_kernel(
+__device__ __forceinline__ void dsv4_build_idx_redirect_m_body(
         int* __restrict__ idx, int pos0, int s, int win, int ratio, int cap,
-        int stride, int trans_base, int fine, const int* replay_pos = nullptr, int topk = 512) {
-    MEMRA_PDL_CHAIN_ENTRY();
+        int stride, int trans_base, int fine, const int* replay_pos, int topk, long z) {
     if (replay_pos) {
         pos0 = *replay_pos;
         cap = win + (ratio ? min((pos0 + 1) / ratio, topk) : 0);
     }
-    long z = (long)blockIdx.x * blockDim.x + threadIdx.x;
     if (z >= (long)s * cap) return;
     int row = (int)(z / cap);
     int k = (int)(z % cap);
@@ -4122,6 +4238,26 @@ extern "C" __global__ void dsv4_build_idx_redirect_m_kernel(
         v = (nb >= 0 && c < nb) ? (win + c) : -1;
     }
     idx[(long)row * stride + k] = v;
+}
+
+extern "C" __global__ void dsv4_build_idx_redirect_m_kernel(
+        int* __restrict__ idx, int pos0, int s, int win, int ratio, int cap,
+        int stride, int trans_base, int fine, const int* replay_pos = nullptr, int topk = 512) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    dsv4_build_idx_redirect_m_body(idx, pos0, s, win, ratio, cap, stride, trans_base, fine,
+                                   replay_pos, topk, (long)blockIdx.x * blockDim.x + threadIdx.x);
+}
+
+// A multi-request replay step's index lists (memra #710 B-row): row y is the one-row replay
+// launch's list at idx + y * stride, position pos[y], transient base tb[y].
+__global__ void dsv4_replay_indices_rows_kernel(int* __restrict__ idx, const int* pos, int win,
+                                                int ratio, int cap, int stride,
+                                                const __grid_constant__ Dsv4RowInts tb, int fine,
+                                                int topk) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    const int y = blockIdx.y;
+    dsv4_build_idx_redirect_m_body(idx + (long)y * stride, 0, 1, win, ratio, cap, stride, tb.v[y],
+                                   fine, pos + y, topk, (long)blockIdx.x * blockDim.x + threadIdx.x);
 }
 
 extern "C" int memra_dsv4_build_idx_redirect_m(
@@ -5128,6 +5264,63 @@ extern "C" int memra_dsv4_gemv_fp8_grouped_m1(
     memra_chain_launch(dsv4_gemv_fp8_m_kernel<1, true>,(unsigned)total, 128, 0, stream)(
         (const uint8_t*)w_codes, sc_f32, sc_cols, (const uint16_t*)x_bf16, y,
         rows_per_group, k, 0, 0, x_group_stride, y_group_stride);
+    DSV4_ERR();
+    return 0;
+}
+
+// The grouped output projection over m = 2..8 rows (memra #710 B-row): the per-group M-row
+// launches' dense-fast body in one launch. Token row t of group g reads x + t * xstride +
+// g * x_group_stride and writes y + t * ystride + g * rows_per_group; the flat weight row and
+// its scale row are the ones the group's own launch addresses from its offset slices, so each
+// output keeps its bits. Returns 1 without launching when the transport does not admit the
+// slices, and the caller runs the per-group launches.
+#define DSV4_DENSE_FAST_FP8_GROUPED_M_CASE(MM)                                              \
+    case MM:                                                                               \
+        memra_chain_launch(dsv4_dense_fast_fp8_kernel<2, true, MM>, (unsigned)(total / 2), 256, \
+                           0, stream)(                                                     \
+            (const uint8_t*)w_codes, sc_f32, sc_cols, (const uint16_t*)x_bf16, y,          \
+            rows_per_group, k, xstride, ystride, x_group_stride, rows_per_group);          \
+        break;
+extern "C" int memra_dsv4_gemv_fp8_grouped_m(
+        const void* w_codes, const float* sc_f32, int sc_cols, const void* x_bf16, float* y,
+        int groups, int rows_per_group, int k, int x_group_stride, int m, int xstride,
+        int ystride, void* stream_v) {
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    if (groups <= 0 || rows_per_group <= 0 || k <= 0 || k % 8 != 0 || m < 2 || m > 8 ||
+        sc_cols < (k / 128 + (k % 128 != 0)) || x_group_stride < k ||
+        xstride < groups * x_group_stride || ystride < groups * rows_per_group ||
+        rows_per_group % 128 != 0 || x_group_stride % 8 != 0 || xstride % 8 != 0) {
+        return 40020;
+    }
+    long total = (long)groups * rows_per_group;
+    if (total > 2147483647L) return 40011;
+    if (!(dsv4_dense_exact_tail_enabled && !dsv4_dense_exact_tail_suppressed &&
+          dsv4_dense_fast_enabled &&
+          dsv4_dense_exact_tail_fp8_admits(w_codes, sc_f32, sc_cols, x_bf16, y, 1,
+                                           rows_per_group, k))) {
+        return 1;
+    }
+    if (dsv4_dense_fast_observer) {
+        for (int g = 0; g < groups; g++) {
+            long row0 = (long)g * rows_per_group;
+            int rc = dsv4_dense_fast_observer(0, (const uint8_t*)w_codes + row0 * k,
+                sc_f32 + (row0 >> 7) * sc_cols, sc_cols,
+                (const uint16_t*)x_bf16 + (long)g * x_group_stride, rows_per_group, k,
+                stream_v);
+            if (rc) return rc;
+        }
+    }
+    for (int g = 0; g < groups; g++)
+        dsv4_dense_census_note(DSV4_DENSE_ENTRY_GEMV_FP8, m, rows_per_group, k);
+    switch (m) {
+        DSV4_DENSE_FAST_FP8_GROUPED_M_CASE(2)
+        DSV4_DENSE_FAST_FP8_GROUPED_M_CASE(3)
+        DSV4_DENSE_FAST_FP8_GROUPED_M_CASE(4)
+        DSV4_DENSE_FAST_FP8_GROUPED_M_CASE(5)
+        DSV4_DENSE_FAST_FP8_GROUPED_M_CASE(6)
+        DSV4_DENSE_FAST_FP8_GROUPED_M_CASE(7)
+        DSV4_DENSE_FAST_FP8_GROUPED_M_CASE(8)
+    }
     DSV4_ERR();
     return 0;
 }
@@ -7550,6 +7743,62 @@ __global__ void dsv4_c4_split_gather_kernel(
     }
 }
 
+// The split gather of a multi-request replay step (memra #710 B-row): query row q is request q's
+// one-row gather, from its own local store, peer store and recent ring (table entry q), into
+// the workspace rows q * slots.
+struct Dsv4SplitRow {
+    const float* local;
+    const float* peer;
+    const float* recent;
+    const int* tags;
+    int recent_rows;
+    int cap_blocks;
+    int logical_transient;
+    int transient_rows;
+    int local_transient;
+    int pad;
+};
+struct Dsv4SplitRows {
+    Dsv4SplitRow r[DSV4_ROWS_MAX];
+};
+__global__ void dsv4_c4_split_gather_rows_kernel(const __grid_constant__ Dsv4SplitRows t, int rank,
+    const int* indices, float* out, int* out_indices, int slots, int stride) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    const int slot = blockIdx.x, q = blockIdx.y, lane = threadIdx.x;
+    const Dsv4SplitRow& r = t.r[q];
+    const int index = indices[q * stride + slot];
+    bool is_peer = false;
+    const float* source = dsv4_c4_split_source(r.local, r.peer, r.recent, r.tags, r.recent_rows,
+        rank, index, r.cap_blocks, r.logical_transient, r.transient_rows, r.local_transient,
+        is_peer);
+    if (!source) assert(index == -1);
+    const int row = q * slots + slot;
+    if (lane == 0) out_indices[q * stride + slot] = index == -1 ? -1 : row;
+    auto dst = reinterpret_cast<uint4*>(out + (long)row * 512);
+    const auto src = reinterpret_cast<const uint4*>(source);
+    for (int x = lane; x < 128; x += blockDim.x) {
+        if (!source) dst[x] = make_uint4(0, 0, 0, 0);
+        else dst[x] = is_peer ? __ldcv(src + x) : src[x];
+    }
+}
+extern "C" int memra_dsv4_c4_split_gather_rows(const Dsv4SplitRow* rows, int n_rows, int rank,
+    const int* indices, float* out, int* out_indices, int slots, int stride, void* stream_v) {
+    if (!rows || n_rows < 1 || n_rows > DSV4_ROWS_MAX || !indices || !out || !out_indices ||
+        slots < 1 || slots > 640 || stride < slots || (rank != 0 && rank != 1)) return 40010;
+    Dsv4SplitRows t{};
+    for (int i = 0; i < n_rows; ++i) {
+        const Dsv4SplitRow& r = rows[i];
+        if (!r.local || !r.peer || !r.recent || !r.tags || r.recent_rows < 1 || r.cap_blocks < 0
+            || r.logical_transient < 128 + r.cap_blocks || r.transient_rows < 0
+            || r.local_transient < 128) return 40010;
+        t.r[i] = r;
+    }
+    memra_chain_launch(dsv4_c4_split_gather_rows_kernel, dim3(slots, n_rows), 128, 0,
+                       (cudaStream_t)stream_v)(t, rank, indices, out, out_indices, slots, stride);
+    DSV4_ERR();
+    return 0;
+}
+
 extern "C" int memra_dsv4_c4_split_gather(
     const float* local, const float* peer, const float* recent, const int* tags, int recent_rows,
     int rank, const int* indices, float* out, int* out_indices, int nq, int slots, int stride,
@@ -7934,17 +8183,20 @@ __device__ __forceinline__ int dsv4_sa_slots(int slots, const int* replay_pos, i
     return replay_pos ? win + (ratio ? min((*replay_pos + 1) / ratio, topk) : 0) : slots;
 }
 
-static __global__ void __launch_bounds__(64) dsv4_sink_scores_st_f32acc_kernel(
+// ROWS (memra #710 B-row): query p is request p of a multi-request replay step; the rows kernel
+// passes its own kv store, position and scores base, so the body indexes its scores without p.
+template <bool ROWS>
+__device__ __forceinline__ void dsv4_sink_scores_st_body(
     const float* __restrict__ q_all, const float* __restrict__ kv,
     const int* __restrict__ idxs_all, float* __restrict__ scores_all, int heads, int hd,
     int slots, int idx_stride, float scale, const int* replay_pos, int replay_win,
     int replay_ratio, int replay_topk) {
-    MEMRA_PDL_CHAIN_ENTRY();
     slots = dsv4_sa_slots(slots, replay_pos, replay_win, replay_ratio, replay_topk);
     const int k0 = blockIdx.x * DSV4_SA_KT;
     if (k0 >= slots) return;
     const int h0 = blockIdx.y * DSV4_SA_HT;
     const int p = blockIdx.z;
+    const int sp = ROWS ? 0 : p;
     const int tid = threadIdx.x;
     const int ld = hd + 4;  // row start moves 4 banks per row: conflict-free float4 reads
     const int n4 = hd >> 2;
@@ -7985,25 +8237,49 @@ static __global__ void __launch_bounds__(64) dsv4_sink_scores_st_f32acc_kernel(
         }
         score = acc * scale;
     }
-    scores_all[((long)p * heads + h0 + hl) * slots + slot] = score;
+    scores_all[((long)sp * heads + h0 + hl) * slots + slot] = score;
+}
+
+static __global__ void __launch_bounds__(64) dsv4_sink_scores_st_f32acc_kernel(
+    const float* __restrict__ q_all, const float* __restrict__ kv,
+    const int* __restrict__ idxs_all, float* __restrict__ scores_all, int heads, int hd,
+    int slots, int idx_stride, float scale, const int* replay_pos, int replay_win,
+    int replay_ratio, int replay_topk) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    dsv4_sink_scores_st_body<false>(q_all, kv, idxs_all, scores_all, heads, hd, slots, idx_stride,
+                                    scale, replay_pos, replay_win, replay_ratio, replay_topk);
+}
+
+// Request z of a multi-request replay step reads its own kv store kvt.p[z] and position
+// replay_pos[z]; its scores go to scores_all + z * scores_row.
+static __global__ void __launch_bounds__(64) dsv4_sink_scores_st_rows_kernel(
+    const float* __restrict__ q_all, const int* __restrict__ idxs_all,
+    float* __restrict__ scores_all, int heads, int hd, int slots, int idx_stride, float scale,
+    const int* replay_pos, int replay_win, int replay_ratio, int replay_topk,
+    const __grid_constant__ Dsv4RowPtrs kvt, long scores_row) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    const int z = blockIdx.z;
+    dsv4_sink_scores_st_body<true>(q_all, kvt.p[z], idxs_all, scores_all + z * scores_row, heads,
+                                   hd, slots, idx_stride, scale, replay_pos + z, replay_win,
+                                   replay_ratio, replay_topk);
 }
 
 // A warp is two heads by 16 columns. The max runs on the 16 lanes of a head; den runs on the
 // lane of column 0 while the tile's kv rows are in flight, and reaches the other 15 lanes by
 // shuffle. Every CTA of a head tile computes the same m, ev and den from the same scores.
-static __global__ void __launch_bounds__(256) dsv4_sink_softout_st_f32acc_kernel(
+template <bool ROWS>
+__device__ __forceinline__ void dsv4_sink_softout_st_body(
     const float* __restrict__ kv, const int* __restrict__ idxs_all,
     const float* __restrict__ scores_all, const float* __restrict__ sink,
     float* __restrict__ o_all, int heads, int hd, int slots, int idx_stride,
     const int* replay_pos, int replay_win, int replay_ratio, int replay_topk) {
-    MEMRA_PDL_CHAIN_ENTRY();
     slots = dsv4_sa_slots(slots, replay_pos, replay_win, replay_ratio, replay_topk);
     const int x0 = blockIdx.x * DSV4_SA_XB;
     const int p = blockIdx.z;
     const int tid = threadIdx.x;
     const int hl = tid / DSV4_SA_XB, xl = tid % DSV4_SA_XB;
     const int h = blockIdx.y * DSV4_SA_HB + hl;
-    const float* srow = scores_all + ((long)p * heads + h) * slots;
+    const float* srow = scores_all + ((long)(ROWS ? 0 : p) * heads + h) * slots;
     const int* idxs = idxs_all + (long)p * idx_stride;
     __shared__ __align__(16) float kvs[DSV4_SA_TS * DSV4_SA_XB];
     __shared__ float evs[DSV4_SA_HB * (DSV4_SA_TS + 1)];
@@ -8051,6 +8327,30 @@ static __global__ void __launch_bounds__(256) dsv4_sink_softout_st_f32acc_kernel
     o_all[((long)p * heads + h) * hd + x0 + xl] = acc / d;
 }
 
+static __global__ void __launch_bounds__(256) dsv4_sink_softout_st_f32acc_kernel(
+    const float* __restrict__ kv, const int* __restrict__ idxs_all,
+    const float* __restrict__ scores_all, const float* __restrict__ sink,
+    float* __restrict__ o_all, int heads, int hd, int slots, int idx_stride,
+    const int* replay_pos, int replay_win, int replay_ratio, int replay_topk) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    dsv4_sink_softout_st_body<false>(kv, idxs_all, scores_all, sink, o_all, heads, hd, slots,
+                                     idx_stride, replay_pos, replay_win, replay_ratio,
+                                     replay_topk);
+}
+
+// Request z of a multi-request replay step, as dsv4_sink_scores_st_rows_kernel.
+static __global__ void __launch_bounds__(256) dsv4_sink_softout_st_rows_kernel(
+    const int* __restrict__ idxs_all, const float* __restrict__ scores_all,
+    const float* __restrict__ sink, float* __restrict__ o_all, int heads, int hd, int slots,
+    int idx_stride, const int* replay_pos, int replay_win, int replay_ratio, int replay_topk,
+    const __grid_constant__ Dsv4RowPtrs kvt, long scores_row) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    const int z = blockIdx.z;
+    dsv4_sink_softout_st_body<true>(kvt.p[z], idxs_all, scores_all + z * scores_row, sink, o_all,
+                                    heads, hd, slots, idx_stride, replay_pos + z, replay_win,
+                                    replay_ratio, replay_topk);
+}
+
 extern "C" int memra_dsv4_sink_attn_st_admits(int heads, int hd) {
     return heads > 0 && heads % DSV4_SA_HB == 0 && hd > 0 && hd % DSV4_SA_XB == 0 && hd <= 512;
 }
@@ -8077,6 +8377,37 @@ extern "C" int memra_dsv4_sink_attn_st_f32acc(const float* q, const float* kv, c
     dim3 g2((unsigned)(hd / DSV4_SA_XB), (unsigned)(heads / DSV4_SA_HB), (unsigned)nq);
     memra_chain_launch(dsv4_sink_softout_st_f32acc_kernel,g2, 256, 0, stream)(kv, idxs, scores, sink, o, heads,
         hd, slots, idx_stride, replay_pos, replay_win, replay_ratio, replay_topk);
+    DSV4_ERR();
+    return 0;
+}
+
+// The sink attention of a multi-request replay step (memra #710 B-row): request y is the
+// one-row replay launch over its q, o and index rows, its kv store kv[y] (host array) and its
+// position pos[y]; its scores go to scores + y * scores_row.
+extern "C" int memra_dsv4_sink_attn_st_rows(const float* q, float* const* kv, const int* idxs,
+    const float* sink, float* scores, long scores_row, float* o, int n_rows, int heads, int hd,
+    int slots_max, int idx_stride, float scale, const int* pos, int win, int ratio, int topk,
+    void* stream_v) {
+    if (!q || !kv || !idxs || !sink || !scores || !o || !pos || n_rows < 1 ||
+        n_rows > DSV4_ROWS_MAX || slots_max < win || idx_stride < slots_max ||
+        scores_row < (long)heads * slots_max || !memra_dsv4_sink_attn_st_admits(heads, hd) ||
+        ((unsigned long long)q & 15) != 0) return 40011;
+    Dsv4RowPtrs t{};
+    for (int i = 0; i < n_rows; ++i) {
+        if (!kv[i] || ((unsigned long long)kv[i] & 15) != 0) return 40011;
+        t.p[i] = kv[i];
+    }
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    size_t smem = (size_t)(DSV4_SA_HT + DSV4_SA_KT) * (hd + 4) * sizeof(float)
+        + DSV4_SA_KT * sizeof(int);
+    dim3 g1((unsigned)((slots_max + DSV4_SA_KT - 1) / DSV4_SA_KT), (unsigned)(heads / DSV4_SA_HT),
+        (unsigned)n_rows);
+    memra_chain_launch(dsv4_sink_scores_st_rows_kernel, g1, 64, smem, stream)(q, idxs, scores,
+        heads, hd, slots_max, idx_stride, scale, pos, win, ratio, topk, t, scores_row);
+    DSV4_ERR();
+    dim3 g2((unsigned)(hd / DSV4_SA_XB), (unsigned)(heads / DSV4_SA_HB), (unsigned)n_rows);
+    memra_chain_launch(dsv4_sink_softout_st_rows_kernel, g2, 256, 0, stream)(idxs, scores, sink, o,
+        heads, hd, slots_max, idx_stride, pos, win, ratio, topk, t, scores_row);
     DSV4_ERR();
     return 0;
 }
@@ -8604,6 +8935,327 @@ extern "C" int memra_dsv4_replay_compressor_emit(float* pending_kv,float* pendin
         memra_chain_launch(dsv4_replay_copy_if_kernel,(ratio*latent+255)/256,256,0,stream)(pending+ratio*latent,shift,ratio*latent,pos,ratio);
         DSV4_ERR();
         memra_chain_launch(dsv4_replay_copy_if_kernel,(ratio*latent+255)/256,256,0,stream)(shift,pending,ratio*latent,pos,ratio);
+        DSV4_ERR();
+    }
+    return 0;
+}
+
+// A B-row graph step's ring commit for one layer (memra #710 B-row): row y's transient row
+// src.p[y] into its ring slot slot_rows[y] of dst.p[y], dsv4_scatter_rows_kernel's one-row
+// move for each request.
+__global__ void dsv4_scatter_rows_rows_kernel(const __grid_constant__ Dsv4RowPtrs src,
+                                              const __grid_constant__ Dsv4RowPtrs dst,
+                                              const int* __restrict__ slot_rows, int d) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    const int y = blockIdx.y;
+    const int c = blockIdx.x * blockDim.x + threadIdx.x;
+    if (c >= d || slot_rows[y] < 0) return;
+    dst.p[y][(long)slot_rows[y] * d + c] = src.p[y][c];
+}
+extern "C" int memra_dsv4_scatter_rows_rows(float* const* src, float* const* dst,
+    const int* slot_rows, int n_rows, int d, void* raw_stream) {
+    if (!src || !dst || !slot_rows || n_rows < 1 || n_rows > DSV4_ROWS_MAX || d < 1) return 40020;
+    Dsv4RowPtrs s{}, t{};
+    for (int i = 0; i < n_rows; ++i) {
+        if (!src[i] || !dst[i]) return 40020;
+        s.p[i] = src[i];
+        t.p[i] = dst[i];
+    }
+    memra_chain_launch(dsv4_scatter_rows_rows_kernel, dim3((unsigned)((d + 255) / 256), n_rows), 256,
+                       0, (cudaStream_t)raw_stream)(s, t, slot_rows, d);
+    DSV4_ERR();
+    return 0;
+}
+// The ring writes of a multi-request replay step (memra #710 B-row): row y's `width` floats at
+// src + y * width to dst.p[y], the bytes of its one-row memcpy.
+__global__ void dsv4_rows_copy_kernel(const __grid_constant__ Dsv4RowPtrs dst,
+                                      const float* __restrict__ src, int width) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    const int y = blockIdx.y;
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < width) dst.p[y][i] = src[(long)y * width + i];
+}
+extern "C" int memra_dsv4_rows_copy(float* const* dst, int n_rows, const float* src, int width,
+    void* raw_stream) {
+    if (!dst || !src || n_rows < 1 || n_rows > DSV4_ROWS_MAX || width < 1) return 40074;
+    Dsv4RowPtrs t{};
+    for (int i = 0; i < n_rows; ++i) {
+        if (!dst[i]) return 40074;
+        t.p[i] = dst[i];
+    }
+    memra_chain_launch(dsv4_rows_copy_kernel, dim3((unsigned)((width + 255) / 256), n_rows), 256,
+                       0, (cudaStream_t)raw_stream)(t, src, width);
+    DSV4_ERR();
+    return 0;
+}
+// The replay index lists of a multi-request step (memra #710 B-row): `memra_dsv4_replay_indices`
+// per row (fine or coarse), or with ratio 0 the window-only list
+// (`memra_dsv4_build_idx_redirect_window_pos`), row y at idx + y * stride with position pos[y]
+// and transient base trans_base[y] (host array).
+extern "C" int memra_dsv4_replay_indices_rows(int* idx, const int* pos, const int* trans_base,
+    int n_rows, int win, int ratio, int cap, int stride, int fine, int topk, void* raw_stream) {
+    if (!idx || !pos || !trans_base || n_rows < 1 || n_rows > DSV4_ROWS_MAX || win <= 0 ||
+        cap < win || stride < cap || topk < 0 || (ratio != 0 && ratio != 4 && ratio != 128))
+        return 40074;
+    Dsv4RowInts tb{};
+    for (int i = 0; i < n_rows; ++i) {
+        if (trans_base[i] < win) return 40074;
+        tb.v[i] = trans_base[i];
+    }
+    auto stream = (cudaStream_t)raw_stream;
+    if (ratio == 0)
+        memra_chain_launch(dsv4_replay_window_rows_kernel, dim3((unsigned)((win + 127) / 128), n_rows),
+                           128, 0, stream)(idx, pos, win, stride, tb);
+    else
+        memra_chain_launch(dsv4_replay_indices_rows_kernel, dim3((unsigned)((cap + 127) / 128), n_rows),
+                           128, 0, stream)(idx, pos, win, ratio, cap, stride, tb, fine, topk);
+    DSV4_ERR();
+    return 0;
+}
+// The replay indexer of a multi-request step (memra #710 B-row): `memra_dsv4_replay_indexer` per
+// row, row y reading q + y * heads * hd, its store kv[y] (host array), w + y * heads and
+// position pos[y], scoring into score + y * score_row and selecting into idx_tail + y * stride.
+extern "C" int memra_dsv4_replay_indexer_rows(const float* q, float* const* kv, const float* w,
+    float scale, float* score, long score_row, int* idx_tail, int stride, const int* pos,
+    int n_rows, int heads, int hd, int nb_max, int ratio, int topk, int win, void* raw_stream) {
+    if (!q || !kv || !w || !score || !idx_tail || !pos || n_rows < 1 || n_rows > DSV4_ROWS_MAX ||
+        heads < 1 || heads > 1024 || nb_max < 1 || nb_max > 4096 || ratio != 4 ||
+        score_row < nb_max) return 40074;
+    Dsv4RowPtrs t{};
+    for (int i = 0; i < n_rows; ++i) {
+        if (!kv[i]) return 40074;
+        t.p[i] = kv[i];
+    }
+    auto stream = (cudaStream_t)raw_stream;
+    memra_chain_launch(dsv4_indexer_score_f32acc_rows_kernel, dim3(nb_max, n_rows), heads,
+                       heads * sizeof(float), stream)(q, t, w, scale, score, score_row, heads, hd,
+                                                      nb_max, ratio, pos);
+    DSV4_ERR();
+    int max_pow2 = 1;
+    while (max_pow2 < nb_max) max_pow2 <<= 1;
+    memra_chain_launch(dsv4_topk_idx_numeric_rows_kernel, n_rows, 512,
+                       max_pow2 * sizeof(unsigned long long), stream)(score, score_row, topk, win,
+                                                                      idx_tail, stride, pos, ratio);
+    DSV4_ERR();
+    return 0;
+}
+
+// ---- The compressors of a multi-request replay step (memra #710 B-row). A captured B-row step
+// ran each row's compressor as its own chain: the checkpoint snapshot, the row record, two slot
+// appends, then the emission (pool, RMS norm, RoPE, QAT, store and the overlap shifts), about a
+// dozen launches per compressor per row, most of them skipping on a position that emits
+// nothing. Three launches now cover every row of the step, each reading its row's buffers from
+// the table below and its position from the device, with every element's arithmetic the
+// per-row chain's own.
+#define DSV4_CMP_ROWS_MAX DSV4_ROWS_MAX
+struct Dsv4CmpRowPtrs {
+    float* pend_kv;
+    float* pend_sc;
+    float* kv_snap;   // null: no snapshot
+    float* sc_snap;
+    float* rows_kv;   // the row record a rollback replays
+    float* rows_sc;
+    const float* src_kv;  // this row's projections
+    const float* src_sc;
+    float* emit;      // d floats of scratch: the pooled row
+    float* store;
+    float* recent;    // null: no position split
+    int* tags;
+    const int* pos;
+    int store_row0;
+    int pad;
+};
+struct Dsv4CmpRowTable {
+    Dsv4CmpRowPtrs r[DSV4_CMP_ROWS_MAX];
+};
+
+// The snapshot of both pending rings (dsv4_copy2_f32_kernel's bytes), the row record, and the
+// row's slot write (dsv4_replay_copy_row_kernel's), per element in that order.
+__global__ void dsv4_cmp_rows_append_kernel(const __grid_constant__ Dsv4CmpRowTable t, int ratio,
+                                            int latent, int overlap, long pend_len) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    const Dsv4CmpRowPtrs& r = t.r[blockIdx.y];
+    const long e = (long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (e >= pend_len) return;
+    const long lo = (long)((overlap ? ratio : 0) + *r.pos % ratio) * latent;
+    const float kv = r.pend_kv[e], sc = r.pend_sc[e];
+    if (r.kv_snap) {
+        r.kv_snap[e] = kv;
+        r.sc_snap[e] = sc;
+    }
+    if (e >= lo && e < lo + latent) {
+        const long c = e - lo;
+        const float nk = r.src_kv[c], ns = r.src_sc[c];
+        r.rows_kv[c] = nk;
+        r.rows_sc[c] = ns;
+        r.pend_kv[e] = nk;
+        r.pend_sc[e] = ns;
+    }
+}
+
+// The emitted block's pooled row (dsv4_compressor_pool_kernel's last block), 32 channels per
+// CTA so the f64 pooling of a 128-position block spreads over SMs.
+__global__ void dsv4_cmp_rows_pool_kernel(const __grid_constant__ Dsv4CmpRowTable t,
+                                          const float* __restrict__ ape, int ratio, int d,
+                                          int latent, int overlap) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    const Dsv4CmpRowPtrs& r = t.r[blockIdx.y];
+    if (!dsv4_replay_emit(r.pos, ratio)) return;
+    const int c = blockIdx.x * blockDim.x + threadIdx.x;
+    if (c >= d) return;
+    r.emit[c] = dsv4_compressor_pool_elem(r.pend_kv, r.pend_sc, ape, overlap ? 1 : 0, c, ratio, d,
+                                          latent, overlap);
+}
+
+// One CTA of 128 per row: the overlap ring's half shift (the two copy_if pairs' bytes), then
+// dsv4_rmsnorm_f32acc_kernel (the 128-thread register form), dsv4_rope_at_kernel, either
+// dsv4_hadamard_kernel plus dsv4_fp4_act_quant_kernel or dsv4_act_quant_kernel, and the store
+// (dsv4_c4_split_store_kernel or dsv4_replay_copy_row_kernel), on the row in shared memory. Each
+// stage's per-element expressions and each group maximum's pairing are those kernels' own.
+__global__ void __launch_bounds__(128) dsv4_cmp_rows_finish_kernel(
+        const __grid_constant__ Dsv4CmpRowTable t, const float* __restrict__ norm,
+        const float* __restrict__ cs, int ratio, int d, int latent, int overlap, int rotate,
+        int clamp_only, int rd, float eps, float hadamard_scale, int recent_rows, int rank) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    const Dsv4CmpRowPtrs& r = t.r[blockIdx.x];
+    if (!dsv4_replay_emit(r.pos, ratio)) return;
+    extern __shared__ float sm[];
+    float* row = sm;
+    float* red = sm + d;
+    const int tid = threadIdx.x;
+    const int pos = *r.pos;
+    if (overlap) {
+        const long n = (long)ratio * latent;
+        for (long e = tid; e < n; e += 128) {
+            r.pend_kv[e] = r.pend_kv[e + n];
+            r.pend_sc[e] = r.pend_sc[e + n];
+        }
+    }
+    for (int i = tid; i < d; i += 128) row[i] = r.emit[i];
+    __syncthreads();
+    dsv4_rmsnorm_f32acc_regs<8>(row, norm, row, d, eps, red);
+    __syncthreads();
+    {
+        const int p0 = (pos / ratio) * ratio;
+        for (int kk = tid; kk < rd / 2; kk += 128) {
+            const float* cr = cs + (long)p0 * rd + 2 * kk;
+            const float c = cr[0];
+            const float s = cr[1];
+            const int base = (d - rd) + 2 * kk;
+            const float x0 = row[base], x1 = row[base + 1];
+            row[base] = x0 * c - x1 * s;
+            row[base + 1] = x0 * s + x1 * c;
+        }
+    }
+    __syncthreads();
+    const int lane = tid & 31, warp = tid >> 5;
+    if (rotate) {
+        for (int h = 1; h < d; h *= 2) {
+            for (int p = tid; p < d / 2; p += 128) {
+                const int i = (p / h) * 2 * h + (p % h);
+                const float a = row[i], b = row[i + h];
+                row[i] = a + b;
+                row[i + h] = a - b;
+            }
+            __syncthreads();
+        }
+        for (int i = tid; i < d; i += 128) row[i] = row[i] * hadamard_scale;
+        __syncthreads();
+        const float floorv = 6.0f * ldexpf(1.0f, -126);
+        const float inv = (float)(1.0 / 6.0);
+        for (int g = warp; g < d / 32; g += 4) {
+            const float v = row[g * 32 + lane];
+            float m = fmaxf(0.0f, fabsf(v));
+#pragma unroll
+            for (int off = 16; off > 0; off >>= 1)
+                m = fmaxf(m, __shfl_down_sync(0xffffffffu, m, off));
+            float amax = __shfl_sync(0xffffffffu, m, 0);
+            amax = fmaxf(amax, floorv);
+            const float s = dsv4_pow2_ceil(amax * inv);
+            row[g * 32 + lane] = dsv4_e2m1_rne(fminf(fmaxf(v / s, -6.0f), 6.0f)) * s;
+        }
+    } else {
+        const int ng = (d - rd) / 64;
+        const int half = tid >> 6, t64 = tid & 63;
+        const float inv = (float)(1.0 / 448.0);
+        for (int g0 = 0; g0 < ng; g0 += 2) {
+            const int g = g0 + half;
+            const bool live = g < ng;
+            const float v = live ? row[g * 64 + t64] : 0.0f;
+            red[tid] = fmaxf(0.0f, fabsf(v));
+            __syncthreads();
+            if (t64 < 32) {
+                float m = fmaxf(red[tid], red[tid + 32]);
+#pragma unroll
+                for (int off = 16; off > 0; off >>= 1)
+                    m = fmaxf(m, __shfl_down_sync(0xffffffffu, m, off));
+                if (t64 == 0) red[half * 64] = m;
+            }
+            __syncthreads();
+            float amax = red[half * 64];
+            amax = fmaxf(amax, 1e-4f);
+            const float s = dsv4_pow2_ceil(amax * inv);
+            if (live) {
+                float q = fminf(fmaxf(v / s, -448.0f), 448.0f);
+                if (!clamp_only) {
+                    __nv_fp8_storage_t c8 = __nv_cvt_float_to_fp8(q, __NV_SATFINITE, __NV_E4M3);
+                    q = __half2float(__nv_cvt_fp8_to_halfraw(c8, __NV_E4M3));
+                }
+                row[g * 64 + t64] = q * s;
+            }
+            __syncthreads();
+        }
+    }
+    __syncthreads();
+    const int blk = pos / ratio;
+    float* dst;
+    if (r.recent) {
+        const int hb = blk >> 1;
+        if ((blk & 1) == rank) {
+            dst = r.store + (long)(r.store_row0 + hb) * d;
+        } else {
+            const int slot = hb % recent_rows;
+            dst = r.recent + (long)slot * d;
+            if (tid == 0) r.tags[slot] = blk;
+        }
+    } else {
+        dst = r.store + (long)(r.store_row0 + blk) * d;
+    }
+    for (int i = tid; i < d; i += 128) dst[i] = row[i];
+}
+
+// Validates the table and launches `append`, `pool` and `finish` over `n_rows` rows, in chunks of
+// DSV4_CMP_ROWS_MAX.
+extern "C" int memra_dsv4_cmp_rows_replay(const Dsv4CmpRowPtrs* rows, int n_rows,
+    const float* ape, const float* norm, const float* cs, int ratio, int d, int latent,
+    int overlap, int rotate, int clamp_only, int rd, float eps, float hadamard_scale,
+    long pend_len, int recent_rows, int rank, void* raw_stream) {
+    if (!rows || n_rows < 1 || !ape || !norm || !cs || (ratio != 4 && ratio != 128) || d < rd ||
+        rd <= 0 || rd % 2 || d > 1024 || latent != (overlap ? 2 * d : d) ||
+        (rotate && ((d & (d - 1)) || d % 32)) || (!rotate && (d - rd) % 64) ||
+        pend_len < (long)(overlap ? 2 : 1) * ratio * latent) return 40074;
+    for (int i = 0; i < n_rows; ++i) {
+        const Dsv4CmpRowPtrs& r = rows[i];
+        if (!r.pend_kv || !r.pend_sc || !r.rows_kv || !r.rows_sc || !r.src_kv || !r.src_sc ||
+            !r.emit || !r.store || !r.pos || r.store_row0 < 0 || (!r.kv_snap != !r.sc_snap) ||
+            (r.recent && (!r.tags || recent_rows < 1 || (rank != 0 && rank != 1))))
+            return 40074;
+    }
+    auto stream = (cudaStream_t)raw_stream;
+    for (int base = 0; base < n_rows; base += DSV4_CMP_ROWS_MAX) {
+        const int n = min(DSV4_CMP_ROWS_MAX, n_rows - base);
+        Dsv4CmpRowTable t{};
+        for (int i = 0; i < n; ++i) t.r[i] = rows[base + i];
+        memra_chain_launch(dsv4_cmp_rows_append_kernel, dim3((unsigned)((pend_len + 255) / 256), n),
+                           256, 0, stream)(t, ratio, latent, overlap, pend_len);
+        DSV4_ERR();
+        memra_chain_launch(dsv4_cmp_rows_pool_kernel, dim3((unsigned)((d + 31) / 32), n), 32, 0,
+                           stream)(t, ape, ratio, d, latent, overlap);
+        DSV4_ERR();
+        memra_chain_launch(dsv4_cmp_rows_finish_kernel, dim3(n), 128,
+                           (size_t)(d + 128) * sizeof(float), stream)(
+            t, norm, cs, ratio, d, latent, overlap, rotate, clamp_only, rd, eps, hadamard_scale,
+            recent_rows, rank);
         DSV4_ERR();
     }
     return 0;
