@@ -212,6 +212,71 @@ The wq_b pair on top (`raw/se2-small2-s2r/`):
 - long-gate replay S T T S: 10.86 to 10.99 against 10.91 to 11.01 ms per token, about -0.3%, the
   size its 21 launches predict.
 
+## The shared expert on the rank with fewer routed slots (adopted)
+
+Lane `lane/dsv4-shared-owner-main-20260927`. Raw data is in `raw/se2-shared-owner-s2x/`: the queue
+script, the summary, every gate and served row.
+
+**Why.**
+- TP/EP ran the shared expert on both ranks, after the expert join. That is 25.2 MB of FP8
+  weights per layer (gate, up and down at 2048 x 4096), about 1.08 GB per step per rank: a
+  third of the dense GEMV bytes.
+- The routed experts split between the ranks as Binomial(6, 0.5), so one rank waits in the join
+  for the other in most layers.
+- The shared expert reads only the MoE input, which is replicated. Which rank computes it does
+  not change a bit.
+
+**What changed.**
+1. **The owner word.** One warp of the fused gate/up launch counts the step's routed slots on
+   each rank. It writes the rank's owner word: 1 on the rank with fewer slots, rank 0 on a tie.
+2. **The owner's shared expert.** After the fused down, the owner rank runs the shared expert:
+   - the bf16 pack of the MoE input;
+   - the gate/up pair;
+   - SwiGLU with its bf16 pack, in one launch;
+   - down, into the rows after the routed ones in the contribution plane.
+   The other rank runs the same four launches, and each exits at entry
+   (`memra_dsv4_gemv_fp8_m_gated`, `_pair_gated`, `memra_dsv4_cvt_bf16_gated`,
+   `memra_dsv4_swiglu_bf16_gated`). Every block runs the ungated launch's body.
+3. **The join and the tail.** The expert join carries the shared rows too. The tail adds them
+   where it used to recompute the shared expert. That add is `y + (sh + 0.0)`, and a dense-fast
+   output cannot be -0.0 because its partials start at +0.0 and only add, so y keeps its bits.
+4. **Fallback.** A step of more than 8 rows, or one where a launch would leave the dense-fast
+   transport, keeps the replicated shared expert.
+
+**Expected size.** One routed expert is about 15.5 us per layer at the pair's rate, and the
+shared expert about 22.5 us. Over the Binomial(6, 0.5) split, the critical path falls from
+about 83.6 us per layer to about 68 us, less the gated no-op launches on the heavier rank:
+about 0.5 ms per step.
+
+**Correctness** (second SE pair):
+- The fused partition fixture asserts the owner word on both ranks of every clean case.
+- The dense-fast component gate's `gated_case` compares each gated launch with its ungated
+  launch at M = 1, 2, 4 and 8 on both cards. It also checks that a clear word moves no output
+  byte: `PASS gated ... bits=1 owner_off_untouched=1`, eight lines.
+- The long gate's `PROGRAM_SHA256` is `fbce1a0492d69635`.
+- The TP/EP rows gate, the KV split gate and the DSpark TP/EP gate pass. DSpark's proposal shas
+  are the pair's.
+- Every served request's text is identical in all six rows.
+
+**Long gate.** Replay ms/token, order M S S M M S: main 10.84 .. 11.01 against 10.38 .. 10.59,
+**-4.2%**.
+
+**Served.** cells-pdl, one boot per row, order M S S M M S, N=3 per arm:
+
+| cell | main agg tok/s | lane agg tok/s | delta |
+|---|---|---|---|
+| greedy c1 | 88.52 / 88.84 / 88.76 | 91.96 / 92.39 / 92.07 | **+3.9%** |
+| sampled c1 | 88.26 / 89.37 / 89.33 | 91.79 / 92.79 / 91.95 | +3.6% |
+| greedy c2 | 118.81 / 120.37 / 120.16 | 122.73 / 124.15 / 122.19 | +2.7% |
+| greedy c4 | 150.91 / 153.56 / 151.96 | 112.33 / 157.55 / 152.96 | see below |
+| greedy c2, 2k prompt | 23.81 / 23.87 / 24.10 | 23.88 / 23.25 / 24.14 | flat |
+
+TPOT p50 at c1 falls from 10.74 .. 10.76 ms to 10.31 .. 10.35 ms. One lane boot (r2) ran its c4
+cell at 112 tok/s with TPOT p50 34 ms. Its c1 and c2 cells were in line, and the other two lane
+boots ran c4 at 157.6 and 153.0. Slow-c4 boots have been seen on main on both pairs. This one
+is kept, and the rebased rows below add c4 rows. Thermal: median power 267 .. 271 W while the
+cards work, SM clock median 2400 MHz, max 50 C.
+
 ## Refuted: loading weights before the PDL wait
 
 The weights and block scales of the dense-fast FP8 GEMV, the BF16 dots and the HC split partial
