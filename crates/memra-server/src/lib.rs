@@ -22584,7 +22584,11 @@ temperature = 0.6
                 // (arrival `req.queued_at` to this admission instant) and stamp `admit_at`
                 // for the ttft/e2e mirrors below (the fake worker's stand-in for `Session::t0`).
                 let admit_at = std::time::Instant::now();
-                if route.is_none() {
+                // memra#522 revuto finding: capture (embeddings/rerank) requests are
+                // prefill-only and excluded from every hybrid-lane histogram in `admit`;
+                // mirror that here too so this fake worker cannot hide a regression.
+                let is_capture = req.capture.is_some();
+                if route.is_none() && !is_capture {
                     hybrid_telemetry::record_queue_wait(
                         &req.model,
                         admit_at.saturating_duration_since(req.queued_at),
@@ -22621,7 +22625,7 @@ temperature = 0.6
                     let text = if steps == 1 { "ok" } else { "x" };
                     // memra#522 hybrid-lane twin: mirror `push_generated`'s first-token TTFT
                     // record, admission (`admit_at`) to this session's first committed token.
-                    if route.is_none() && step == 0 {
+                    if route.is_none() && !is_capture && step == 0 {
                         hybrid_telemetry::record_ttft(&req.model, admit_at.elapsed());
                     }
                     let _ = req.tx.send(Event::Token {
@@ -22640,7 +22644,7 @@ temperature = 0.6
                         n_cached: 0,
                         rounds: steps,
                     });
-                } else {
+                } else if !is_capture {
                     // memra#522 hybrid-lane twin: mirror the retire loop's success-only E2E
                     // record. This fake worker models only the success path (it never fails
                     // or aborts a request), which is exactly why the RED ARM for "a failure

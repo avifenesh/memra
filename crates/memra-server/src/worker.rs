@@ -25316,6 +25316,12 @@ struct Session {
     /// hybrid-lane queue-wait histogram from `t0 - queued_at` without re-reading a
     /// consumed `Request`.
     queued_at: Instant,
+    /// memra#522 revuto finding: whether this request was a capture (embeddings/rerank,
+    /// `max_new: 0`, prefill-only). `s.capture` itself is `take()`n during prefill, so this
+    /// is stamped once at admission (before the take can happen) and never changes; both
+    /// hybrid-lane recording sites gate on it so capture traffic never mixes into the same
+    /// per-model queue-wait/e2e distribution as real generation traffic.
+    is_capture: bool,
 }
 
 impl Session {
@@ -29557,11 +29563,16 @@ pub fn run(
                     release_admission_reservation(lane);
                     // memra#522: the hybrid-lane queue-wait histogram, recorded exactly once
                     // per admitted request (route_telemetry::RouteTicket's own contract for
-                    // the dedicated-route twin of this metric).
-                    crate::hybrid_telemetry::record_queue_wait(
-                        &s.model,
-                        s.t0.saturating_duration_since(s.queued_at),
-                    );
+                    // the dedicated-route twin of this metric). Capture (embeddings/rerank)
+                    // traffic is excluded (revuto finding on this PR): it is a different
+                    // Harvest-lane workload shape and must not mix into the same per-model
+                    // distribution real generation traffic reads as an SLO.
+                    if !s.is_capture {
+                        crate::hybrid_telemetry::record_queue_wait(
+                            &s.model,
+                            s.t0.saturating_duration_since(s.queued_at),
+                        );
+                    }
                     // FAIL-SAFE (lane/step37-vram-admission-20260830): a step-OOM park REPLAY
                     // must not re-enter the draft-capture path — the capture appetite is part
                     // of what drove the card to the OOM. The replay serves eager; exhausted
@@ -31807,7 +31818,12 @@ pub fn run(
                 // predicate that gates the completion history above, so a park replay,
                 // client abort, or OOM teardown never widens the latency a client-facing
                 // SLO reads (memra#896's contract for the dedicated route's own E2E).
-                crate::hybrid_telemetry::record_e2e(&s.model, s.t0.elapsed());
+                // Capture traffic is excluded (revuto finding on this PR): it is
+                // prefill-only and has no matching ttft sample, so an e2e sample from it
+                // would pull the "total client latency for a generation" reading down.
+                if !s.is_capture {
+                    crate::hybrid_telemetry::record_e2e(&s.model, s.t0.elapsed());
+                }
             }
             retired_interactive |= s.lane == crate::lanes::Lane::Interactive;
             retire_prefix_pin(&mut px, &mut s.prefix_pin);
@@ -34008,6 +34024,12 @@ fn admit(
     step_tower: Option<&StepTowerPlacement>,
 ) -> Result<Session, (EventSender, EngineError)> {
     let dspark_draft_ready = dspark_draft.is_some();
+    // memra#522 revuto finding: a capture request (embeddings/rerank) is prefill-only
+    // (`max_new: 0`) and never emits a token, so it must never land in the hybrid-lane
+    // histograms alongside real generation traffic (no matching ttft sample, and a
+    // prefill-only e2e sample would pull the "total client latency for a generation"
+    // distribution down). Read before `req.capture` moves into the `Session` literal below.
+    let is_capture = req.capture.is_some();
     let lm = &loaded[&req.model];
     let prompt = req
         .prepared_prompt
@@ -37304,6 +37326,7 @@ fn admit(
         ttft: req.ttft,
         t0: Instant::now(),
         queued_at: req.queued_at,
+        is_capture,
     };
     if memra_engine::glm5_tp_sampler::requested() {
         use memra_engine::glm5_tp_sampler::{Glm5TpDeviceSampler, Glm5TpSampleConfig};
@@ -48991,6 +49014,11 @@ mod tests {
             qw_before.contains("Ok(mut s) => {"),
             "queue-wait records only on a successful admission"
         );
+        assert!(
+            qw_before.contains("!s.is_capture"),
+            "queue-wait excludes capture (embeddings/rerank) traffic, revuto finding on \
+             the PR that introduced this histogram"
+        );
 
         // E2E: success-only, gated on the exact terminal predicate the completion history
         // itself uses (memra#896's success-only contract, carried to the hybrid lane).
@@ -49000,10 +49028,15 @@ mod tests {
             "e2e records at exactly one call site"
         );
         let e2e_at = prod.find("crate::hybrid_telemetry::record_e2e(").unwrap();
-        let e2e_before = &prod[e2e_at.saturating_sub(400)..e2e_at];
+        let e2e_before = &prod[e2e_at.saturating_sub(600)..e2e_at];
         assert!(
             e2e_before.contains("if !s.oom_teardown && !s.aborted && !s.errored {"),
             "e2e must sit behind the same success gate as the completion history record"
+        );
+        assert!(
+            e2e_before.contains("!s.is_capture"),
+            "e2e excludes capture (embeddings/rerank) traffic: it is prefill-only and has \
+             no matching ttft sample"
         );
     }
 
