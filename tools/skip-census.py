@@ -580,11 +580,26 @@ def cmd_run(args: argparse.Namespace) -> int:
         for line in proc.stdout.splitlines():
             if line.startswith("test ") and "FAILED" in line:
                 print(f"    {line}")
-        print("\n".join(proc.stdout.splitlines()[-20:]))
+        # A fixed 20-line tail loses the actual "failures:\n    tests::name" block on any
+        # multi-crate/multi-binary run once doctest or other-binary output follows the failing
+        # binary's summary in the same combined stdout (memra#543 PR #897 cost real time to a
+        # 20-line tail that showed only the aggregate "N passed; M failed" line and an unrelated
+        # crate's doctest output, never the failing test's own name). Print from the LAST
+        # "failures:" section onward, which is cargo's own list of failing test names, falling
+        # back to a much longer tail if no such section is found in this captured output.
+        lines = proc.stdout.splitlines()
+        last_failures_at = None
+        for index, line in enumerate(lines):
+            if line.strip() == "failures:":
+                last_failures_at = index
+        if last_failures_at is not None:
+            print("\n".join(lines[last_failures_at:]))
+        else:
+            print("\n".join(lines[-200:]))
         return 1
     if not results:
         print("skip-census: FAIL: no `test result:` line at all; the suite did not run.")
-        print("\n".join(proc.stdout.splitlines()[-20:]))
+        print("\n".join(proc.stdout.splitlines()[-200:]))
         return 1
     total_passed = sum(r["passed"] for r in results)
     total_failed = sum(r["failed"] for r in results)
