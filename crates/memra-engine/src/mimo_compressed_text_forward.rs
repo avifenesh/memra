@@ -1350,6 +1350,99 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires pinned MiMo source and a dedicated two-card GPU lane"]
+    fn first_batch_128_packed_ab_diagnostic() -> Result<(), Fail> {
+        use std::path::Path;
+        use std::sync::Arc;
+        use std::time::Instant;
+
+        use memra_gguf::source::SafetensorsSource;
+        use sha2::{Digest, Sha256};
+
+        const FOUR_GIB: usize = 4 * 1024 * 1024 * 1024;
+        const TOKENS: usize = 128;
+        let root = std::env::var("MIMO_PINNED_SOURCE_ROOT")?;
+        let source = Arc::new(SafetensorsSource::open(Path::new(&root))?);
+        let cards = [Engine::new(0)?, Engine::new(1)?];
+        let engines = [&cards[0], &cards[1]];
+        let text = MiMoTextWeights::load(engines, source)?;
+        let ids = (42..42 + TOKENS as u32).collect::<Vec<_>>();
+        let prepared = text.modal_embedding_gpu_chunk(&cards[0], &ids, &[], &[], &[])?;
+        let digest = |values: &[f32]| {
+            let mut hasher = Sha256::new();
+            for value in values {
+                hasher.update(value.to_bits().to_le_bytes());
+            }
+            format!("{:x}", hasher.finalize())
+        };
+        let order = [
+            false, true, false, true, true, false, false, true, true, false,
+        ];
+        let mut serial_ms = Vec::new();
+        let mut batch_ms = Vec::new();
+        let mut reference = None;
+        println!("mimo_packed_ab\tshape=text128\tbf16_mmv=1");
+        for (sample, batch) in order.into_iter().enumerate() {
+            let start = Instant::now();
+            let mut sequence = text.compressed_text_forward(engines, TOKENS + 1, [FOUR_GIB; 2])?;
+            let allocation_ms = start.elapsed().as_secs_f64() * 1e3;
+            sequence.batch_packed_attention = batch;
+            let start = Instant::now();
+            let step = if batch {
+                sequence.consume_embedding_chunk_batched(&prepared)?
+            } else {
+                sequence.consume_embedding_chunk(&prepared)?
+            };
+            let prefill_ms = start.elapsed().as_secs_f64() * 1e3;
+            let start = Instant::now();
+            let next = sequence.token(220)?;
+            let continuation_ms = start.elapsed().as_secs_f64() * 1e3;
+            if step.position != TOKENS - 1 || sequence.position() != TOKENS + 1 {
+                return Err("MiMo packed AB cursor drifted".into());
+            }
+            let hashes = (digest(&step.logits), digest(&next));
+            if let Some((last, continuation)) = &reference {
+                if hashes.0 != *last || hashes.1 != *continuation {
+                    return Err(format!(
+                        "MiMo packed AB sample {sample} changed logits or continuation"
+                    )
+                    .into());
+                }
+            } else {
+                reference = Some(hashes.clone());
+            }
+            println!(
+                "mimo_packed_ab\tsample={sample}\tarm={}\tphase={}\tallocation_ms={allocation_ms:.6}\tprefill_ms={prefill_ms:.6}\tcontinuation_ms={continuation_ms:.6}\tlast_sha256={}\tnext_sha256={}",
+                if batch { "batch" } else { "serial" },
+                if sample < 2 { "warmup" } else { "measure" },
+                hashes.0,
+                hashes.1,
+            );
+            if sample >= 2 {
+                if batch {
+                    batch_ms.push(prefill_ms);
+                } else {
+                    serial_ms.push(prefill_ms);
+                }
+            }
+        }
+        let median = |samples: &mut Vec<f64>| -> Result<f64, Fail> {
+            if samples.len() != 4 || samples.iter().any(|ms| !ms.is_finite() || *ms <= 0.0) {
+                return Err("MiMo packed AB measured four samples per arm".into());
+            }
+            samples.sort_by(f64::total_cmp);
+            Ok((samples[1] + samples[2]) / 2.0)
+        };
+        let serial = median(&mut serial_ms)?;
+        let batch = median(&mut batch_ms)?;
+        println!(
+            "mimo_packed_ab\tmedian_serial_ms={serial:.6}\tmedian_batch_ms={batch:.6}\tspeedup={:.6}\tbit_exact=true",
+            serial / batch,
+        );
+        Ok(())
+    }
+
+    #[test]
     fn compressed_forward_plan_keeps_source_value_scale_and_stage_census() {
         let config = ModelConfig::from_hf(&HfConfig::parse(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
