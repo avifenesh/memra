@@ -29,13 +29,21 @@ const PUBLISHER_GPU_FEATURES: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../memra-reference/src/fixtures/mimo-v26-publisher-pro6000-pre-rvq.bf16"
 ));
+const PUBLISHER_GPU_FRONTEND: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../memra-reference/src/fixtures/mimo-v26-publisher-pro6000-audio-frontend.bf16"
+));
+const PUBLISHER_GPU_STACK: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../memra-reference/src/fixtures/mimo-v26-publisher-pro6000-audio-stack.bf16"
+));
 const MEL: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../memra-reference/src/fixtures/mimo-pcm-mel-voiced-2048.logmel.f32"
 ));
 
-fn decode_bf16(bytes: &[u8]) -> Result<Vec<f32>, Fail> {
-    if bytes.len() != TOKENS * WIDTH * 2 {
+fn decode_bf16(bytes: &[u8], rows: usize) -> Result<Vec<f32>, Fail> {
+    if bytes.len() != rows * WIDTH * 2 {
         return Err("MiMo pre-RVQ feature fixture extent changed".into());
     }
     Ok(bytes
@@ -47,8 +55,8 @@ fn decode_bf16(bytes: &[u8]) -> Result<Vec<f32>, Fail> {
         .collect())
 }
 
-fn feature_stats(label: &str, actual: &[f32], reference: &[f32]) -> Result<(), Fail> {
-    if actual.len() != TOKENS * WIDTH || reference.len() != actual.len() {
+fn feature_stats(label: &str, actual: &[f32], reference: &[f32], rows: usize) -> Result<(), Fail> {
+    if actual.len() != rows * WIDTH || reference.len() != actual.len() {
         return Err("MiMo pre-RVQ feature comparison extent changed".into());
     }
     let mut numerator = 0.0f64;
@@ -115,6 +123,14 @@ fn prepared_mel_target_features_and_rvq_diagnostic() -> Result<(), Fail> {
         format!("{:x}", Sha256::digest(PUBLISHER_GPU_FEATURES)),
         "103eab4231e8acef815884e438df7fcb63ab908071fd7a99abff59d1544c90db"
     );
+    assert_eq!(
+        format!("{:x}", Sha256::digest(PUBLISHER_GPU_FRONTEND)),
+        "ede628d13a85d9be7e4522aa0b03b365a815b90b78eaca07c985fff78c96a15c"
+    );
+    assert_eq!(
+        format!("{:x}", Sha256::digest(PUBLISHER_GPU_STACK)),
+        "fc95bf4a5f0bc569ce8fb0d31c19824395e92f2e4c5e9271aa06a2926a6aafd2"
+    );
     assert_eq!(MEL.len(), 9 * MEL_CHANNELS * 4);
     let mel = MEL
         .chunks_exact(4)
@@ -127,21 +143,44 @@ fn prepared_mel_target_features_and_rvq_diagnostic() -> Result<(), Fail> {
     let engine = Engine::new(gpu)?;
     let weights = MiMoAudioCodecEncoderWeights::load(&engine, Path::new(&root))?;
     let first = weights.encode_prepared_mel_conv(&engine, &engine.htod(&mel)?, 9)?;
+    let frontend_values = engine.dtoh(&first)?;
     let stack = weights.encode_transformer_stack(&engine, &first, 5)?;
+    let stack_values = engine.dtoh(&stack)?;
     let features = weights.downsample_post_stack(&engine, &stack, 5)?;
     let memra_features = engine.dtoh(&features)?;
-    let cpu_features = decode_bf16(CPU_FEATURES)?;
-    let publisher_gpu_features = decode_bf16(PUBLISHER_GPU_FEATURES)?;
-    feature_stats("memra_vs_cpu_publisher", &memra_features, &cpu_features)?;
+    let cpu_features = decode_bf16(CPU_FEATURES, TOKENS)?;
+    let publisher_gpu_features = decode_bf16(PUBLISHER_GPU_FEATURES, TOKENS)?;
+    let publisher_gpu_frontend = decode_bf16(PUBLISHER_GPU_FRONTEND, 5)?;
+    let publisher_gpu_stack = decode_bf16(PUBLISHER_GPU_STACK, 5)?;
+    feature_stats(
+        "memra_vs_gpu_publisher_frontend",
+        &frontend_values,
+        &publisher_gpu_frontend,
+        5,
+    )?;
+    feature_stats(
+        "memra_vs_gpu_publisher_stack",
+        &stack_values,
+        &publisher_gpu_stack,
+        5,
+    )?;
+    feature_stats(
+        "memra_vs_cpu_publisher",
+        &memra_features,
+        &cpu_features,
+        TOKENS,
+    )?;
     feature_stats(
         "memra_vs_gpu_publisher",
         &memra_features,
         &publisher_gpu_features,
+        TOKENS,
     )?;
     feature_stats(
         "cpu_vs_gpu_publisher",
         &cpu_features,
         &publisher_gpu_features,
+        TOKENS,
     )?;
 
     let memra_ids = weights.encode_20_rvq(&engine, &features, TOKENS)?.code_ids;
