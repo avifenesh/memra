@@ -124,6 +124,8 @@ def sandbox(stage, runtime, binaries, libraries):
 def valid_result(result, contract):
     roster = result.get("tests", [])
     return (result.get("pass") is True and type(result.get("run")) is int
+            and type(contract.get("min_tests")) is int and contract["min_tests"] > 0
+            and isinstance(roster, list) and all(isinstance(name, str) and name for name in roster)
             and result["run"] >= contract["min_tests"] and result["run"] == len(roster) == len(set(roster))
             and all(type(result.get(k)) is int and result[k] == 0 for k in
                     ("skipped", "failures", "errors", "expected_failures", "unexpected_successes")))

@@ -23,7 +23,8 @@ record = {"tests": roster, "run": result.testsRun, "skipped": len(result.skipped
           "failures": len(result.failures), "errors": len(result.errors),
           "expected_failures": len(result.expectedFailures),
           "unexpected_successes": len(result.unexpectedSuccesses)}
-record["pass"] = (result.wasSuccessful() and result.testsRun >= contract["min_tests"]
+record["pass"] = (result.wasSuccessful() and type(contract["min_tests"]) is int and contract["min_tests"] > 0
+                  and result.testsRun >= contract["min_tests"]
                   and result.testsRun == len(roster) == len(set(roster))
                   and not result.skipped and not result.expectedFailures)
 Path("/out/result.json").write_text(json.dumps(record, sort_keys=True) + "\n")

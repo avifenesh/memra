@@ -29,6 +29,8 @@ class ReceiptTests(unittest.TestCase):
                          {"expected_failures": 1}, {"unexpected_successes": 1}, {"run": True}):
             with self.subTest(mutation=mutation):
                 self.assertFalse(c.valid_result(self.result | mutation, self.contract))
+        self.assertFalse(c.valid_result(self.result | {"run": 0, "tests": []}, {"min_tests": 0}))
+        self.assertFalse(c.valid_result(self.result | {"run": 3, "tests": "abc"}, self.contract))
 
     def test_actual_bytes_modes_and_symlinks(self):
         file = self.root / "input"
