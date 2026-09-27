@@ -48946,24 +48946,43 @@ mod tests {
             "the refusal logs a joined receipt line"
         );
         // The deadline is stamped at every handler submission seam beside the receipt
-        // identity: the two lib.rs handlers plus the shared surfaces body.
-        for (file, want) in [
-            (include_str!("lib.rs"), 2usize),
-            (include_str!("surfaces.rs"), 1usize),
-        ] {
-            let stripped: String = file
-                .lines()
-                .map(|l| l.split("//").next().unwrap_or(""))
-                .collect::<Vec<_>>()
-                .join("\n");
-            assert_eq!(
-                stripped
-                    .matches("wire_deadline = Some(deadline.at.into_std());")
-                    .count(),
-                want,
-                "every handler submission stamps the wire deadline"
-            );
-        }
+        // identity: the two lib.rs handlers unconditionally, plus the shared surfaces
+        // body.
+        let lib_stripped: String = include_str!("lib.rs")
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(
+            lib_stripped
+                .matches("wire_deadline = Some(deadline.at.into_std());")
+                .count(),
+            2,
+            "every handler submission stamps the wire deadline"
+        );
+        // surfaces.rs's stamp (memra#550, docs/decisions/COMPLETE-RESULT-PATH-V1.md) is
+        // conditional on `background`: a background delivery submission leaves this
+        // `None` on purpose so this same gate never fires on a job that legitimately
+        // queues past 90s (background removes the wall-clock bound entirely). The FIELD
+        // WRITE this census actually guards against forgetting still runs
+        // unconditionally on every call; only the stamped VALUE now branches.
+        let surfaces_stripped: String = include_str!("surfaces.rs")
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(
+            surfaces_stripped
+                .matches("plan.request.wire_deadline = if background {")
+                .count(),
+            1,
+            "admit_translated must still stamp wire_deadline on every call, even though \
+             the value it stamps now depends on background"
+        );
+        assert!(
+            surfaces_stripped.contains("Some(deadline.at.into_std())"),
+            "the synchronous (non-background) arm must still stamp the real deadline"
+        );
     }
 
     /// memra#522 follow-up to PR #896's dedicated-route histograms: the hybrid lane's
