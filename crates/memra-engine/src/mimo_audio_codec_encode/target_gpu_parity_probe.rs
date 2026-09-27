@@ -54,6 +54,14 @@ const PUBLISHER_GPU_CONV1_LINEAR_CONTROL: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../memra-reference/src/fixtures/mimo-v26-publisher-pro6000-audio-conv1-linear-control.bf16"
 ));
+const PUBLISHER_GPU_CONV2_PRE_GELU: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../memra-reference/src/fixtures/mimo-v26-publisher-pro6000-audio-conv2-pre-gelu.bf16"
+));
+const PUBLISHER_GPU_CONV2_PRE_GELU_LINEAR_CONTROL: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../memra-reference/src/fixtures/mimo-v26-publisher-pro6000-audio-conv2-pre-gelu-linear-control.bf16"
+));
 const PUBLISHER_GPU_FRONTEND_LINEAR_CONTROL: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../memra-reference/src/fixtures/mimo-v26-publisher-pro6000-audio-frontend-linear-control.bf16"
@@ -193,6 +201,17 @@ fn prepared_mel_target_features_and_rvq_diagnostic() -> Result<(), Fail> {
         assert_eq!(format!("{:x}", Sha256::digest(bytes)), expected);
     }
     assert_eq!(
+        format!("{:x}", Sha256::digest(PUBLISHER_GPU_CONV2_PRE_GELU)),
+        "0291a89751356add18f82512b93e03d6f3c34d74d72f26065cedb60f4f846a92"
+    );
+    assert_eq!(
+        format!(
+            "{:x}",
+            Sha256::digest(PUBLISHER_GPU_CONV2_PRE_GELU_LINEAR_CONTROL)
+        ),
+        "c224a2b9204945c41f67fc8cd753f49a9ceed0942017ab2d7c3d5e60ee1f6d7f"
+    );
+    assert_eq!(
         format!("{:x}", Sha256::digest(PUBLISHER_GPU_STACK)),
         "fc95bf4a5f0bc569ce8fb0d31c19824395e92f2e4c5e9271aa06a2926a6aafd2"
     );
@@ -245,7 +264,7 @@ fn prepared_mel_target_features_and_rvq_diagnostic() -> Result<(), Fail> {
         &publisher_linear_conv1,
         9,
     )?;
-    let source_gelu = MiMoAudioCodecEncoderWeights::encode_conv1_gelu_from_preact(
+    let source_gelu = MiMoAudioCodecEncoderWeights::encode_gelu_from_preact(
         &engine,
         &engine.htod(&publisher_preactivation)?,
         9,
@@ -256,6 +275,34 @@ fn prepared_mel_target_features_and_rvq_diagnostic() -> Result<(), Fail> {
         &source_gelu,
         &publisher_gpu_conv1,
         9,
+    )?;
+    let second_preact = weights.encode_prepared_mel_conv2_preact(&engine, &first_conv, 9)?;
+    let publisher_gpu_conv2_preact = decode_bf16(PUBLISHER_GPU_CONV2_PRE_GELU, 5)?;
+    let publisher_linear_conv2_preact =
+        decode_bf16(PUBLISHER_GPU_CONV2_PRE_GELU_LINEAR_CONTROL, 5)?;
+    feature_stats(
+        "memra_vs_gpu_publisher_conv2_preact",
+        &second_preact,
+        &publisher_gpu_conv2_preact,
+        5,
+    )?;
+    feature_stats(
+        "memra_vs_gpu_publisher_conv2_linear_control",
+        &second_preact,
+        &publisher_linear_conv2_preact,
+        5,
+    )?;
+    let source_conv2_gelu = MiMoAudioCodecEncoderWeights::encode_gelu_from_preact(
+        &engine,
+        &engine.htod(&publisher_linear_conv2_preact)?,
+        5,
+    )?;
+    let publisher_linear_frontend = decode_bf16(PUBLISHER_GPU_FRONTEND_LINEAR_CONTROL, 5)?;
+    feature_stats(
+        "memra_gelu_on_gpu_publisher_conv2_linear_preact_vs_post",
+        &engine.dtoh(&source_conv2_gelu)?,
+        &publisher_linear_frontend,
+        5,
     )?;
     let first = weights.encode_prepared_mel_conv(&engine, &engine.htod(&mel)?, 9)?;
     let frontend_values = engine.dtoh(&first)?;
