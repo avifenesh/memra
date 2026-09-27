@@ -22456,6 +22456,7 @@ temperature = 0.6
     /// lane, and never reaches the JobStore (no id is created, so a follow-up poll on any id
     /// this request could plausibly have gotten is still a 404, not a stale record).
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
     async fn background_door_off_route_refuses_and_creates_no_job() {
         let _env_lock = background_env_lock();
         let st = fake_worker_state();
@@ -22478,6 +22479,7 @@ temperature = 0.6
     /// /v1/responses/{id}`, the same accumulator a synchronous call would have rendered,
     /// never a resummarized answer.
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
     async fn background_submit_returns_queued_then_poll_reaches_completed() {
         let _l = drain_lock();
         let _env_lock = background_env_lock();
@@ -22537,6 +22539,7 @@ temperature = 0.6
     /// A cancel after the job already completed is refused (409), not a silent no-op: the
     /// caller must be able to tell "too late, it already finished" from "cancelled".
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
     async fn cancel_after_completion_is_conflict_not_a_silent_noop() {
         let _l = drain_lock();
         let _env_lock = background_env_lock();
@@ -22597,6 +22600,7 @@ temperature = 0.6
     /// `complete` and never left unfinalized on `Drop`), and the store carries the partial
     /// text under `status: "cancelled"`.
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
     async fn cancel_mid_run_stops_the_worker_and_writes_one_cancelled_row() {
         let _l = drain_lock();
         let _env_lock = background_env_lock();
@@ -22756,6 +22760,7 @@ temperature = 0.6
     /// refused at SUBMIT, before any worker time is spent, with the same 503 shape a deployment
     /// can already recognize by its `code`.
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
     async fn byte_cap_refuses_submission_before_any_worker_time_is_spent() {
         let _env_lock = background_env_lock();
         unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
@@ -22807,6 +22812,7 @@ temperature = 0.6
     /// (which `Drop` would price as an abandoned client) and must not answer the job
     /// `Completed` when it was never actually billed.
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
     async fn a_complete_ledger_failure_rejects_the_receipt_and_fails_the_job() {
         let _l = drain_lock();
         let _env_lock = background_env_lock();
@@ -22938,6 +22944,7 @@ temperature = 0.6
     /// TTL-evicted). `finalize_terminal_job`'s fallback must land a small `Failed` record
     /// instead, so the job still reaches a terminal, pollable state.
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
     async fn a_terminal_write_the_byte_cap_refuses_falls_back_to_failed_not_stuck() {
         let _l = drain_lock();
         let _env_lock = background_env_lock();
@@ -23031,6 +23038,7 @@ temperature = 0.6
     /// the 60 tok/s decode floor estimates ~3333 s, which does not fit the default 90 s
     /// deadline even at the gate's 150% margin: infeasible under the OLD code path.
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
     async fn background_bypasses_the_nonstream_deadline_feasibility_gate() {
         let _l = drain_lock();
         let _env_lock = background_env_lock();
