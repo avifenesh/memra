@@ -1,4 +1,8 @@
-# OWED 20 sitting: storage-bound Step-3.7-Flash IQ4_XS (NEED TARGET CARD)
+# OWED 20 sitting: storage-bound Step-3.7-Flash IQ4_XS (NOT RUN: closed by owner ruling, 2026-09-27)
+
+**Owner ruling, 2026-09-27: option 3.** The storage-bound regime is the BOX27 balloon regime (iii),
+already scored; this sitting is not run and nothing more is owed on it. The text, the lock, the
+runner wrapper and the census stay as the record (`../M1-PREREG.md` section H).
 
 **Market amendment (2026-09-27):** no 2x RTX PRO 6000 container offer has RAM below the bank
 (184 GB and up), and a container cannot shrink its own kernel memory (`../M1-PREREG.md` section H,

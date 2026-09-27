@@ -736,3 +736,11 @@ the pick assumed (a container box under about 128 GB); that is the owner's decis
 form the pick implicitly assumed if the owner prefers containers and a provider can set the limit.
 The sitting's RAM check also records the cell's effective ceiling, the smaller of `MemTotal` and the
 cell cgroup's `memory.max`, and names which one bound it.
+
+Section H, owner ruling (2026-09-27, after the market amendment): option 3. The storage-bound
+regime is the touched balloon, regime (iii), already measured on BOX27: the scored bounded verdict,
+`worker16` over every challenger (`box27/RESULTS.md`: `mmap-random` 0.093, `mmap-normal` 0.435,
+`pread16` 0.407, `direct16` 0.893; `worker2` insufficient, and a mixed worker-plus-mmap program per
+the OWED 26 correction). No VM or bare-metal rental and no Step storage sitting. The market
+amendment stays as the reason. The Step pin and tensor census (`owed20/census.json`) stay as a
+record; nothing more is owed on them. OWED 20 closes on these receipts.
