@@ -143,3 +143,17 @@ both sides go away.**
     chain, demote counts and the hump.
   - Commands: `build.sh <branch tip> d6132710e`, then `driver.sh`, last line `F2 VERDICT -> ..`. About 2.5 hours of
     card time.
+
+## 3. F2's sitting, queued
+
+- The lead queued it on BOX46: a fresh RTX PRO 6000 Blackwell WS on the Core Ultra 9 285K class host (24 threads) that
+  carried BOX44's T-H' sitting. Acceptance: zero PCIe replays, the FMA spin at 2797 MHz.
+- The chain `/root/af2-box46.sh` does, in order:
+  - waits for lane C's DAY89 half on that host;
+  - stages the 27B, with its sha256 in the chain log;
+  - clones `lane/spill-a-f2-20260927` and checks for `502e780bd`;
+  - runs `build.sh 502e780bd d6132710e`, then `driver.sh`;
+  - ends `AF2-CHAIN-DONE` with the reader's `F2 VERDICT -> ..` line.
+- **The host class.** Base and f2 run interleaved on the same box, so the class does not enter the verdict. The 285K
+  meets section 1's at least 16 logical CPUs, and it is the class of T-H''s sitting, whose tree F2's base is. No
+  9950X is asked for.
