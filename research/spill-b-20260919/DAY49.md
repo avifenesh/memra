@@ -258,3 +258,26 @@ DAY49D SERVE-ROUTE card=pro6000 route=spec-default boots=4 reached=4
   `503` (4 of 9 `200`). The same on both orders.
 - With 2.3, O14 is read on the target card: the gates' 3-session chunk and the serving shape's 5- and 8-session chunks
   all recover under `MEMRA_BATCH_OOM_RECOVER=1`. Without it, every session in the faulted chunk is lost.
+
+### 2.5 The 5090 (the 9B; queue-l, 2026-09-26 19:31 to 22:47Z)
+
+- **Arm i on the registered source (`02dbdfa40`, `rtx5090-day49/g1`, `g2`), verbatim `g1` (`g2` reads the same):**
+  ```
+  HFG (i) batch-oom-recovers: retry_lines=1 retried_ok=1 completed=3/3 error_events=0 http_5xx=0 panic_lines=0 digests={r0:20e4033303b76715,r1:16e2547b5b1fafb5,r2:1d620d3efb9e2f90} control={r0:20e4033303b76715,r1:16e2547b5b1fafb5,r2:1d620d3efb9e2f90} control_completed=3/3 -> PASS
+  HFG (i-red) batch-oom-retry-also-fails: retry_lines=1 retry_failed=1 completed=0/3 error_events=3 http_5xx=0 panic_lines=0 green_assertion_fired=true -> PASS
+  ```
+  On this card the unaimed fault landed on a batched chunk of 3 sessions in both runs (`this batched decode chunk
+  reports a synthetic CUDA OOM (3 session(s))`). Arm i reads PASS as registered: the chunk ran again and matched the
+  control, and the red twin ended all three streams.
+- **The i-vmm pair (`rtx5090-day49c/`, `read.log` verbatim):**
+  ```
+  DAY49C I-VMM card=rtx5090 role=green gate_i=FAIL gate_i_red=PASS i-ctrl=[door_on=1 reap_lines=0 retry_lines=0 paired=True] i=[door_on=1 reap_lines=0 retry_lines=0 paired=True] i-red=[door_on=1 reap_lines=1 retry_lines=1 paired=True] expect=one reap per retry, before it -> FAIL
+  DAY49C I-VMM card=rtx5090 role=red gate_i=PASS gate_i_red=PASS i-ctrl=[door_on=1 reap_lines=0 retry_lines=0 paired=True] i=[door_on=1 reap_lines=0 retry_lines=1 paired=False] i-red=[door_on=1 reap_lines=0 retry_lines=1 paired=False] expect=no reap line (the defect as it reads) -> PASS
+  ```
+  Green reads FAIL as registered, on placement: its arm i fault landed on the solo step, the reason 2.1 placed.
+  Wherever green did retry, one reap line preceded the retry. Red reads its registered red: two retries and no reap
+  line.
+- **The unaimed serving shape did not complete.** `O1-off` ran (9 of 9 `200`; the fault parked on a solo step), and
+  `O1-on` never started: `rig not idle after 7200 s; not run`. The `boots rc=0` that queue-l logged after it is `date`'s
+  exit, as noted in queue-l's log. The unaimed shape is superseded by addendum D's aimed shape, which the 5090 half of
+  DAY49D runs (`rtx5090-day49d/run.sh`).

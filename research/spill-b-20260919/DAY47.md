@@ -145,3 +145,27 @@ health-fault-gate: arms=g,h pass=4 documented=1 fail=0 receipts=/root/spill-rece
   chunk. In `b2` it landed on the batched chunk and ended one of the three streams with the error event.
 - The target card ran before the 5090's `a2` and `a3` (addendum B named the 5090 first): the local card was held by
   another lane's cells. The 5090 runs follow from queue-l. No clause changes.
+
+### 2.4 Addendum B's reruns on the 5090 (`rtx5090-day47/a2`, `a3`; the 9B; 2026-09-26 18:08 and 18:49Z, from queue-l)
+
+Tree `50bbd44d7` (the gate as addendum B revised it), the lane checkout's release binary. Verbatim, `a2` then `a3`:
+
+```
+HFG (g) step-oom-parks-and-completes: fault=1 fired_lines=1 parked_lines=1 http=200 finish_reason=length completion_tokens=48 panic_lines=0 health_after=200 -> PASS
+HFG (g-red) step-oom-past-the-retry-budget: fault=4 fired_lines=4 parked_lines=3 http=503 error={the model is temporarily at capacity; retry after the Retry-After delay} panic_lines=0 green_assertion_fired=true -> PASS
+HFG (g-batch) step-oom-on-a-batched-chunk: batched_fired_lines=1 parked_lines=0 completed=0/3 ended_with_error_event=3/3 http_5xx=0 (the chunk's error arm ends every session of the chunk; owed O14) -> DOCUMENTED
+HFG (h) client-disconnect-retires-within-1000ms: frames_at_close=15 abort_lines=1 close_to_abort_line_ms=71 peer_complete=true peer_finish=length active_sessions_after=0 health_after=200 -> PASS
+HFG (h-red) no-disconnect: frames_at_close=11 abort_lines=0 closed_request_complete=true peer_complete=true green_assertion_fired=true -> PASS
+health-fault-gate: arms=g,h pass=4 documented=1 fail=0 receipts=.../rtx5090-day47/a2
+HFG (g) ... fired_lines=1 parked_lines=1 http=200 ... -> PASS
+HFG (g-red) ... fired_lines=4 parked_lines=3 http=503 ... green_assertion_fired=true -> PASS
+HFG (g-batch) ... batched_fired_lines=1 parked_lines=0 completed=0/3 ended_with_error_event=3/3 http_5xx=0 ... -> DOCUMENTED
+HFG (h) ... close_to_abort_line_ms=96 ... -> PASS
+HFG (h-red) ... green_assertion_fired=true -> PASS
+health-fault-gate: arms=g,h pass=4 documented=1 fail=0 receipts=.../rtx5090-day47/a3
+```
+
+- **g, g-red, h and h-red PASS on both runs.** The 5090 class is read, and with 2.3 O7 is read on both cards: every
+  registered arm passes twice on each. Close to abort is 71 and 96 ms against the 1,000 ms bound.
+- g-batch is DOCUMENTED on both runs; its fault ended all three streams of a 3-session batched chunk. That is O14's
+  subject, which DAY49 reads.

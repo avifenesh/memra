@@ -136,7 +136,8 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
 - Status: `running`. The 5090: h and h-red PASS on every run (96 to 97 ms from the close to the retire); addendum A's
   g meets every registered term but read FAIL on the gate's extra `fired` literal (addendum B fixes it; runs a2, a3);
   g-red PASS; g-batch DOCUMENTED (O14). The target card (DAY47 2.3, the eleventh sitting): g, g-red, h, h-red PASS
-  on both runs (close to abort 188 and 187 ms), g-batch DOCUMENTED. The 5090 reruns a2 and a3 run from queue-l.
+  on both runs (close to abort 188 and 187 ms), g-batch DOCUMENTED. The 5090 (DAY47 2.4): a2 and a3 the same, all
+  PASS (71 and 96 ms). Read on both cards; O7 is done (its arms stay in the gate's default list).
 
 ### O8. The `[spec-vg]` predictive gap on MoE and linear families
 
