@@ -17,6 +17,10 @@
 //! later step must still match state E. With the limit inside the run the gate checks the
 //! replay-to-eager handoff; the timing arm then does not run.
 //!
+//! Floor mode (`DSV4_REPLAY_GATE_FLOOR=1`): after the identity arm, the captured graphs back to
+//! back against clones with every kernel empty and with only the joins kept (the step's launch
+//! and dependency floor), instead of the timing reps.
+//!
 //! Profile mode (`DSV4_REPLAY_GATE_PROFILE=replay|eager`): after the identity arm, one warm run
 //! of that arm, then one bracketed by cuProfilerStart/Stop, in place of the timing arm.
 //! Rig law: under the box GPU lock, one pair, no other tenant.
@@ -374,6 +378,26 @@ fn main() {
         let ms = run(armed, &mut eager, &mut replay);
         cudarc::driver::profiler_stop().expect("cuProfilerStop");
         println!("PROFILE arm={arm} steps={steps} ms_per_token={ms:.3}");
+        return;
+    }
+    // Launch floor (`DSV4_REPLAY_GATE_FLOOR=1`, memra #710 ceiling): the captured forward and
+    // commit graphs back to back with no host step, then their clones with every kernel empty
+    // and with only the joins kept, in rotating order, three reps each. Runs last: the held
+    // inputs replay one position, which spends the armed state.
+    if std::env::var("DSV4_REPLAY_GATE_FLOOR").as_deref() == Ok("1") {
+        let iters = 200;
+        let modes = [(None, "graph"), (Some(0), "empty"), (Some(1), "joins")];
+        for rep in 0..3 {
+            for k in 0..modes.len() {
+                let (mode, name) = modes[(k + rep) % modes.len()];
+                let (ms, counts) = gpu
+                    .full_token_replay_floor_for_gate(&replay, mode, iters)
+                    .expect("floor timing");
+                println!(
+                    "FLOOR rep={rep} mode={name} iters={iters} ms_per_step={ms:.4} kernels_emptied_kept={counts:?}"
+                );
+            }
+        }
         return;
     }
     for rep in 0..3 {

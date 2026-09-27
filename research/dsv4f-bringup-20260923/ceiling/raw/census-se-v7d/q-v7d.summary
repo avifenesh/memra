@@ -1,0 +1,5 @@
+build f09bfaf9d SERVER_EXIT=0 ENGINE_EXIT=0 
+census b16 PROFILE B=16 steps=64 ms_per_step=37.569  | capture span 2403.5 ms over 64 steps = 37.56 ms/step dev0: kernels 108544 (1696/step) kernel-sum 36.92 ms/step busy-union 36.97 ms/step memcpys 4/step dev1: kernels 108608 (1697/step) kernel-sum 36.85 ms/step busy-union 36.89 ms/step memcpys 5/step 
+census b4 PROFILE B=4 steps=64 ms_per_step=16.380  | capture span 1048.2 ms over 64 steps = 16.38 ms/step dev0: kernels 108544 (1696/step) kernel-sum 15.76 ms/step busy-union 15.79 ms/step memcpys 4/step dev1: kernels 108608 (1697/step) kernel-sum 15.69 ms/step busy-union 15.72 ms/step memcpys 5/step 
+census replay b1 PROFILE arm=replay steps=64 ms_per_token=10.241  | capture span 655.2 ms over 64 steps = 10.24 ms/step dev0: kernels 112240 (1754/step) kernel-sum 9.53 ms/step busy-union 9.59 ms/step memcpys 50/step dev1: kernels 113584 (1775/step) kernel-sum 9.51 ms/step busy-union 9.58 ms/step memcpys 51/step 
+V7D_DONE f09bfaf9d666c41253ca5798efa4eed60087fd86

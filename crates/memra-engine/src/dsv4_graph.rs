@@ -359,6 +359,90 @@ impl ReplayPair {
         }
         Ok(out)
     }
+    /// Gate-only (memra #710 ceiling): the ordinary forward and the commit graph of both ranks
+    /// launched back to back `iters` times with no host step between them, returning ms per
+    /// step and, for a floor mode, the [emptied, kept] kernel nodes per rank. `mode` None runs
+    /// the captured graphs (the step's device time with its input words held); `Some(0)` runs
+    /// clones whose every kernel is empty, `Some(1)` clones that keep the cross-rank joins. The
+    /// held inputs replay one position, so a state this ran on is spent.
+    pub fn floor_time_for_gate(
+        &self,
+        mode: Option<i32>,
+        iters: usize,
+    ) -> Result<(f64, [[u64; 2]; 2]), String> {
+        self.drain_both()?;
+        let mut execs = [[std::ptr::null_mut::<c_void>(); 2]; 2];
+        let mut counts = [[0u64; 2]; 2];
+        let result = (|| -> Result<f64, String> {
+            for rank in 0..2 {
+                for (s, slot) in [0usize, 1].into_iter().enumerate() {
+                    let g = self.graphs[rank][slot]
+                        .as_ref()
+                        .ok_or("floor timing before a complete capture")?;
+                    g.stream
+                        .context()
+                        .bind_to_thread()
+                        .map_err(|e| e.to_string())?;
+                    execs[rank][s] = match mode {
+                        None => g.executable,
+                        Some(m) => {
+                            let mut exec = std::ptr::null_mut();
+                            let mut c = [0u64; 2];
+                            unsafe {
+                                crate::dsv4_ffi::ck(
+                                    "replay floor instantiate",
+                                    crate::dsv4_ffi::memra_dsv4_replay_floor_instantiate(
+                                        g.graph,
+                                        m,
+                                        &mut exec,
+                                        c.as_mut_ptr(),
+                                    ),
+                                )?;
+                            }
+                            if s == 0 {
+                                counts[rank] = c;
+                            }
+                            exec
+                        }
+                    };
+                }
+            }
+            let t0 = std::time::Instant::now();
+            for _ in 0..iters {
+                for s in 0..2 {
+                    for (rank, row) in execs.iter().enumerate() {
+                        let stream = &self.streams[rank];
+                        stream
+                            .context()
+                            .bind_to_thread()
+                            .map_err(|e| e.to_string())?;
+                        unsafe {
+                            crate::dsv4_ffi::ck(
+                                "replay floor launch",
+                                crate::dsv4_ffi::memra_dsv4_replay_launch(
+                                    row[s],
+                                    stream.cu_stream().cast(),
+                                ),
+                            )?;
+                        }
+                    }
+                }
+            }
+            self.drain_both()?;
+            Ok(1e3 * t0.elapsed().as_secs_f64() / iters as f64)
+        })();
+        if mode.is_some() {
+            for (rank, row) in execs.iter().enumerate() {
+                let _ = self.streams[rank].context().bind_to_thread();
+                for &exec in row {
+                    unsafe {
+                        crate::dsv4_ffi::memra_dsv4_replay_exec_destroy(exec);
+                    }
+                }
+            }
+        }
+        result.map(|ms| (ms, counts))
+    }
     pub fn abort_capture_both(&self) -> Result<(), String> {
         let mut errors = Vec::new();
         for (rank, stream) in self.streams.iter().enumerate() {

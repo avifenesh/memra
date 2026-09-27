@@ -9518,6 +9518,21 @@ impl Dsv4Gpu {
             .counts()
     }
 
+    /// Gate-only launch floor (memra #710 ceiling): see `ReplayPair::floor_time_for_gate`.
+    pub fn full_token_replay_floor_for_gate(
+        &self,
+        state: &DecodeState,
+        mode: Option<i32>,
+        iters: usize,
+    ) -> Res<(f64, [[u64; 2]; 2])> {
+        state
+            .matrix_step
+            .as_ref()
+            .and_then(|w| w.replay.as_ref())
+            .ok_or("full-token replay is not armed")?
+            .floor_time_for_gate(mode, iters)
+    }
+
     /// Slots: ordinary/full forward, commit, C4 forward, C4+C128 forward.
     pub fn full_token_replay_variant_counts_for_gate(
         &self,

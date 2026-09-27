@@ -1,0 +1,35 @@
+capture span 3307.0 ms over 64 steps = 51.67 ms/step
+dev0: kernels 135872 (2123/step) kernel-sum 49.97 ms/step busy-union 50.01 ms/step memcpys 4/step
+dev1: kernels 135936 (2124/step) kernel-sum 48.59 ms/step busy-union 48.64 ms/step memcpys 5/step
+--- dev0 top kernels (ms/step, count/step, share)
+   19.116    494  38.3%  dsv4_gemv_fp8_m_kernel
+    9.086     43  18.2%  dsv4_moe_fused_gu_kernel
+    5.236     43  10.5%  dsv4_moe_fused_down_kernel
+    3.909     43   7.8%  memra_tp_ar_push_reduce_kernel
+    2.289     87   4.6%  memra_tp_ar_push_gather_rows_kernel
+    1.880     45   3.8%  dsv4_dots_f32acc_mrow_kernel
+    1.762    124   3.5%  dsv4_dense_fast_dots_kernel_pair
+    1.134     43   2.3%  dsv4_sink_softout_st_rows_kernel
+    0.862     43   1.7%  dsv4_sink_scores_st_rows_kernel
+    0.730     86   1.5%  dsv4_hc_dot_split_partial_kernel
+--- dev1 top kernels (ms/step, count/step, share)
+   19.149    494  39.4%  dsv4_gemv_fp8_m_kernel
+    9.174     43  18.9%  dsv4_moe_fused_gu_kernel
+    5.262     43  10.8%  dsv4_moe_fused_down_kernel
+    3.742     43   7.7%  memra_tp_ar_push_reduce_kernel
+    1.929     45   4.0%  dsv4_dots_f32acc_mrow_kernel
+    1.819    124   3.7%  dsv4_dense_fast_dots_kernel_pair
+    1.149     43   2.4%  dsv4_sink_softout_st_rows_kernel
+    0.867     43   1.8%  dsv4_sink_scores_st_rows_kernel
+    0.789     87   1.6%  memra_tp_ar_push_gather_rows_kernel
+    0.734     86   1.5%  dsv4_hc_dot_split_partial_kernel
+memcpy kind: count/step bytes/step ms/step {1: (2.0, 768, 0.001), 2: (7.0, 424, 0.004)}
+--- runtime API (count/step, ms/step)
+         7   47.657  cuMemcpyDtoHAsync_v2
+         4    2.758  cudaGraphLaunch_v10000
+         9    1.246  cuStreamSynchronize
+         2    0.006  cuMemcpyHtoDAsync_v2
+        16    0.002  cuCtxSetCurrent
+         0    0.000  cuCtxSynchronize
+         0    0.000  cuProfilerStart
+         0    0.000  cuProfilerStop
