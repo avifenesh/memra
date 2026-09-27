@@ -63,7 +63,7 @@ impl ExpertDispatchBank for Probe {
         self.state("demand");
         r
     }
-    fn finish(&mut self, demand: ExpertDemand) -> Result<()> {
+    fn finish(&mut self, demand: &ExpertDemand) -> Result<()> {
         if self.fail.take() {
             self.state("finish-injected");
             return Err(Error::NotReady);
@@ -80,7 +80,7 @@ impl ExpertDispatchBank for Probe {
         self.state("demand_many");
         r
     }
-    fn finish_many(&mut self, demands: ExpertDemands) -> Result<()> {
+    fn finish_many(&mut self, demands: &ExpertDemands) -> Result<()> {
         if self.fail.take() {
             self.state("finish_many-injected");
             return Err(Error::NotReady);

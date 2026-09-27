@@ -2,7 +2,7 @@ use super::fx::FxMap;
 use super::*;
 use crate::contracts::*;
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::BTreeMap,
     marker::PhantomData,
     sync::atomic::{AtomicU64, Ordering},
     time::Instant,
@@ -325,7 +325,9 @@ pub struct BankService<D: BankDomain, H: Hotness<D>, R: ExactReader> {
     cache: CacheIndex,
     owned: BTreeMap<(u64, u64), BankLease>,
     slru: Option<(SlruPolicy, LeasePin)>,
-    pending: HashMap<TransferTicket, Pending>,
+    /// Day 90 (I24, `research/spill-c-20260919/DAY90.md`): keyed by the tickets this bank mints, on the Fx hasher;
+    /// every reader is order-free (lookups, `len`, `is_empty`, `values().any`, and `tickets()`, read as a set).
+    pending: FxMap<TransferTicket, Pending>,
     issuer: u64,
     sequence: u64,
     clock: Option<BankStageTimes>,
@@ -359,7 +361,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             cache: CacheIndex::new(),
             owned: BTreeMap::new(),
             slru: None,
-            pending: HashMap::new(),
+            pending: FxMap::default(),
             issuer,
             sequence: 0,
             clock: None,

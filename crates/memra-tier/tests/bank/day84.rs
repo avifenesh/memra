@@ -325,7 +325,7 @@ fn the_dispatch_adapter_reads_residency_by_position() {
         let local = dispatch_id(&ids[n].record).unwrap();
         let before = d.bank().slru_policy().unwrap().resident(&ids[n]);
         let demand = d.demand(local, 16).unwrap();
-        d.finish(demand).unwrap();
+        d.finish(&demand).unwrap();
         misses += usize::from(before.is_none());
         assert_reads(&d, &ids, step + 100);
     }

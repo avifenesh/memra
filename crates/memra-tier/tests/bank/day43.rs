@@ -166,7 +166,7 @@ fn eviction_bookkeeping_is_exact_at_a_large_tier() {
             keys[rng.below(u64::from(records)) as usize]
         };
         let demand = dispatch.demand(key, 16).unwrap();
-        dispatch.finish(demand).unwrap();
+        dispatch.finish(&demand).unwrap();
         let bank = dispatch.bank();
         assert!(bank.tickets().is_empty(), "a finished demand left a ticket");
         assert_eq!(

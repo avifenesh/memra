@@ -1,6 +1,8 @@
 //! Day 63 (I13 change 4) and day 64 (I14, `research/spill-c-20260919/DAY64.md`): the bank's deterministic hasher for
-//! its maps keyed by catalog records (the SLRU's two maps, the catalog's index, the host cache). Keys are catalog
-//! records, not untrusted input, and no user of these maps depends on their iteration order.
+//! its maps keyed by catalog records (the SLRU's two maps, the catalog's index, the host cache), and since day 90 (I24,
+//! `research/spill-c-20260919/DAY90.md`) by the transfer tickets the bank mints itself (its pending map). Keys are
+//! catalog records or bank-minted tickets, not untrusted input, and no user of these maps depends on their iteration
+//! order.
 use std::collections::HashMap;
 use std::hash::{BuildHasherDefault, Hasher};
 

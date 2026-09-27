@@ -1,0 +1,18 @@
+# DAY90 I24 gates (DAY89 section 2, as narrowed by the owner): 2026-09-27T21:11:14Z, tree 948216b013 plus the I24 diff
+## cargo test -p memra-tier (the day89 and day90 fixtures included)
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.94s
+test result: ok. 97 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 14.28s
+test result: ok. 106 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.04s
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 53 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.70s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+## cargo test -p memra-engine --lib banked_native
+test result: ok. 21 passed; 0 failed; 1 ignored; 0 measured; 636 filtered out; finished in 9.05s
+## cargo test -p memra-kv --lib
+test result: ok. 84 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s
+## cargo clippy -p memra-tier --all-targets -- -D warnings: rc=0
+## cargo clippy -p memra-engine --lib --tests -- -D warnings: rc=0
+## cargo fmt --all -- --check: rc=0
+## moe_cache.rs untouched (its source pin stands): 0 files

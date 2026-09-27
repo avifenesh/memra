@@ -142,7 +142,7 @@ fn equal_on_a_trace(priority: Priority, seed: u64) {
                         .iter()
                         .map(|l| (l.id().clone(), first(l)))
                         .collect();
-                    d.finish_many(demands).unwrap();
+                    d.finish_many(&demands).unwrap();
                     seen
                 });
                 assert_eq!(
@@ -157,7 +157,7 @@ fn equal_on_a_trace(priority: Priority, seed: u64) {
                 let local = dispatch_id(&id.record).unwrap();
                 let got = d.demand(local, 16).map(|demand| {
                     let seen = vec![(demand.lease.id().clone(), first(&demand.lease))];
-                    d.finish(demand).unwrap();
+                    d.finish(&demand).unwrap();
                     seen
                 });
                 assert_eq!(

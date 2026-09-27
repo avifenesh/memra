@@ -1663,7 +1663,7 @@ impl ExpertDispatchBank for TracedDispatch {
         self.trace_record(local, bytes, before)?;
         Ok(demand)
     }
-    fn finish(&mut self, demand: ExpertDemand) -> Result<()> {
+    fn finish(&mut self, demand: &ExpertDemand) -> Result<()> {
         self.inner.finish(demand)
     }
     /// DAY64 (I15): one ticket for the group, then one trace line per record in block order, each read as the single
@@ -1699,7 +1699,7 @@ impl ExpertDispatchBank for TracedDispatch {
         }
         Ok(demands)
     }
-    fn finish_many(&mut self, demands: ExpertDemands) -> Result<()> {
+    fn finish_many(&mut self, demands: &ExpertDemands) -> Result<()> {
         self.inner.finish_many(demands)
     }
     fn host_resident(&self, local: ExpertDispatchId) -> Result<bool> {
@@ -2699,7 +2699,7 @@ mod day61_profile {
                 "{line} (fresh slot {fresh})"
             );
             traced.trace.clear();
-            traced.finish(demand).unwrap();
+            traced.finish(&demand).unwrap();
         };
         for local in ids.keys() {
             check(&mut s.traced, *local, false);
@@ -2902,7 +2902,7 @@ mod day61_profile {
         let mut s = stack(&path, &bytes, true);
         for local in ids.keys() {
             let demand = s.traced.inner.demand(*local, LEN as usize).unwrap();
-            s.traced.inner.finish(demand).unwrap();
+            s.traced.inner.finish(&demand).unwrap();
         }
         let before = *s.traced.inner.bank().stage_times().unwrap();
         let p3 = median_repeat(|| {
@@ -2912,7 +2912,7 @@ mod day61_profile {
                 let a = Instant::now();
                 let demand = s.traced.inner.demand(local, LEN as usize).unwrap();
                 let b = Instant::now();
-                s.traced.inner.finish(demand).unwrap();
+                s.traced.inner.finish(&demand).unwrap();
                 let c = Instant::now();
                 part[0] += ns(b - a);
                 part[1] += ns(c - b);
@@ -2957,7 +2957,7 @@ mod day61_profile {
                 let a = Instant::now();
                 std::hint::black_box(demand.lease.clone());
                 part[0] += ns(a.elapsed());
-                s.traced.inner.finish(demand).unwrap();
+                s.traced.inner.finish(&demand).unwrap();
             }
             part[1] = ns(started.elapsed());
             part

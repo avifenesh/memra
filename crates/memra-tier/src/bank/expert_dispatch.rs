@@ -54,7 +54,9 @@ pub struct ExpertDemands {
 pub trait ExpertDispatchBank {
     fn validate(&self, local: ExpertDispatchId, bytes: usize) -> Result<()>;
     fn demand(&mut self, local: ExpertDispatchId, bytes: usize) -> Result<ExpertDemand>;
-    fn finish(&mut self, demand: ExpertDemand) -> Result<()>;
+    /// Day 90 (I24, `research/spill-c-20260919/DAY90.md`): the demand by reference; its owner keeps it until the finish
+    /// succeeds and drops it after, so a failed finish leaves it for a retry with no copy made.
+    fn finish(&mut self, demand: &ExpertDemand) -> Result<()>;
     /// The log-only stage clock's `key=value` line, `None` when no clock is installed
     /// (the `--expert-bank-stages` diagnostic; `research/spill-c-20260919/DAY40.md`).
     fn stage_report(&self) -> Option<String> {
@@ -70,7 +72,7 @@ pub trait ExpertDispatchBank {
         Err(Error::Unsupported)
     }
     /// Day 64 (I15): finish a grouped demand's ticket, every lease at once.
-    fn finish_many(&mut self, _demands: ExpertDemands) -> Result<()> {
+    fn finish_many(&mut self, _demands: &ExpertDemands) -> Result<()> {
         Err(Error::Unsupported)
     }
 }
@@ -291,10 +293,10 @@ impl<H: Hotness<ExpertDomain>, R: ExactReader> ExpertDispatchBank for SlruExpert
             .slru_policy()
             .is_some_and(|policy| policy.resident_at(position).is_some()))
     }
-    fn finish(&mut self, demand: ExpertDemand) -> Result<()> {
-        // Day 63 (I13 change 3): the three retire-side calls on one pending lookup.
+    fn finish(&mut self, demand: &ExpertDemand) -> Result<()> {
+        // Day 63 (I13 change 3): the three retire-side calls on one pending lookup. Day 90 (I24): the demand is its
+        // owner's; a release decision reads pins, views and pending tickets, never how many aliases a lease has.
         self.bank.finish_ticket(&demand.ticket)?;
-        drop(demand);
         self.bank.collect_evicted()
     }
     fn demand_many(&mut self, blocks: &[(ExpertDispatchId, usize)]) -> Result<ExpertDemands> {
@@ -341,9 +343,8 @@ impl<H: Hotness<ExpertDomain>, R: ExactReader> ExpertDispatchBank for SlruExpert
         }
         result
     }
-    fn finish_many(&mut self, demands: ExpertDemands) -> Result<()> {
+    fn finish_many(&mut self, demands: &ExpertDemands) -> Result<()> {
         self.bank.finish_ticket(&demands.ticket)?;
-        drop(demands);
         self.bank.collect_evicted()
     }
 }

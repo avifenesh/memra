@@ -106,7 +106,7 @@ fn lent(d: &mut SlruExpertDispatch<Heat, Reader>, id: &BankId) -> Vec<u8> {
             .as_slice()
             .to_vec(),
     };
-    d.finish(demand).unwrap();
+    d.finish(&demand).unwrap();
     bytes
 }
 
@@ -149,13 +149,13 @@ fn a_buffer_returns_only_after_its_lease_is_released() {
         d.bank().slru_policy().unwrap().resident(&ids[0]).is_none(),
         "the first record was not evicted"
     );
-    d.finish(second).unwrap();
+    d.finish(&second).unwrap();
     assert_eq!(
         returned.load(Ordering::SeqCst),
         0,
         "an evicted lease with an open ticket lost its buffer"
     );
-    d.finish(first).unwrap();
+    d.finish(&first).unwrap();
     assert_eq!(
         returned.load(Ordering::SeqCst),
         1,
