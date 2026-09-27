@@ -1,0 +1,47 @@
+box start 2026-09-27T13:23:29Z tree ce026510b369e5c276ca01d518bab934ad64d87b
+ 13:23:29 up 2 days,  3:51,  0 user,  load average: 1.62, 1.78, 2.08
+1.62 1.78 2.08 1/703 1068676
+name, driver_version, memory.total [MiB], power.limit [W], clocks.max.sm [MHz]
+NVIDIA RTX PRO 6000 Blackwell Workstation Edition, 580.65.06, 97887 MiB, 600.00 W, 3090 MHz
+
+==============NVSMI LOG==============
+
+Timestamp                                 : Sun Sep 27 13:23:30 2026
+Driver Version                            : 580.65.06
+CUDA Version                              : 13.1
+
+Attached GPUs                             : 1
+GPU 00000000:01:00.0
+    Performance State                     : P0
+    Clocks Event Reasons
+        Idle                              : Not Active
+        Applications Clocks Setting       : Not Active
+        SW Power Cap                      : Not Active
+        HW Slowdown                       : Not Active
+            HW Thermal Slowdown           : Not Active
+            HW Power Brake Slowdown       : Not Active
+        Sync Boost                        : Not Active
+        SW Thermal Slowdown               : Not Active
+        Display Clock Setting             : Not Active
+    Clocks Event Reasons Counters
+        SW Power Capping                  : 86522312867 us
+        Sync Boost                        : 0 us
+        SW Thermal Slowdown               : 27788453 us
+        HW Thermal Slowdown               : 0 us
+        HW Power Braking                  : 0 us
+    Sparse Operation Mode                 : N/A
+
+32
+CPU(s):                                  32
+Model name:                              AMD Ryzen 9 9950X 16-Core Processor
+Thread(s) per core:                      2
+Socket(s):                               1
+CPU(s) scaling MHz:                      27%
+MemTotal:       193090972 kB
+MemAvailable:   186124132 kB
+SwapTotal:       8388604 kB
+Filesystem      Size  Used Avail Use% Mounted on
+overlay         200G   98G  103G  49% /
+overlay         200G   98G  103G  49% /
+/root/artifacts/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf: OK
+cpu cap: taskset -c 0-11 (no systemd scope on this box)

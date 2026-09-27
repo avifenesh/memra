@@ -191,6 +191,10 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   `regtime` admissible `dr=flat`, `no_natural_slow`, `regpool` `not_run` (a valid half by section 3). Open: the
   owner's question (`DAY80.md` section 4a), then the flip and its qualification sitting; `induce-b` on a 9950X with at least 98 GiB
   `MemFree`; DAY71's default half on BOX15's machine, then the class line.
+  Day 86 (`DAY86.md`): the cell `slow86` on BOX43 after 12 h of sittings read `not_reproduced` (the host never
+  showed C12's signature in 1234 door runs; its three marked runs are an hourly host-wide stall that hit REF too);
+  whether I21 or I22 raises the state's rate stays open, and the next 9950X sitting that reads the signature runs
+  `slow86` on that host before release.
 
 ## C2. The slot cache door's promotion prerequisites (the door doc's pending items 1, 2, 3, 5, 6)
 

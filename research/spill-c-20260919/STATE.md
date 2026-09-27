@@ -1,4 +1,4 @@
-# Session C day 86 handoff (2026-09-27): integrable: I21 and I22 read on both classes, the tuned door matches REF on both (OWED C11); DAY86's slow86 waits for BOX43's 12 h (the lead runs it); owner questions open: DAY80 section 4a, C1(c), C10
+# Session C day 87 handoff (2026-09-27): integrable; DAY86's slow86 read `not_reproduced` on BOX43 (the question waits for a host in C12's state); C3's packet current through lane A day 70; owner questions open: DAY80 section 4a, C1(c), C10
 
 - Lane `lane/spill-c-20260919`, checkout `wt-spill-c`, tip pushed at every milestone (hooks on, the announced development mode on engine-source pushes); main `5228ff0cd` (#726) merged into the lane (`2e046ef8b`); no commit on main, no PR.
 - DAY64: the first card cell on BOX15 (a Ryzen 9 9950X host) recorded as it reads (`flat`, `flat`, `matches`) with its noise placed (the door's per-boot host-CPU bimodality); the admissibility clause and the rerun `i15b` registered (section 5); the rerun's first attempt on BOX16 void (nvcc segfaulted in a build, no cell ran; section 5a). The lead runs `day64b-box.sh` on BOX14 (the 285K class) after lane B's sitting, about 18:50Z.
@@ -28,4 +28,6 @@
 - DAY84 read: BOX41 (285K) `i21=flat`, BOX31 void (C12's slow state on a long-running 9950X), BOX42 (fresh 9950X) `i21=improves`; I21 stays; the door 2 ms behind REF gen-only on both classes.
 - DAY85 (OWED C11): the rc check (only `pro-single-day13/driver.sh`, a receipt; `rc-scan.py`); I22 (`4b378a064`) CPU-gated. Read on BOX43 (9950X) `i22=improves`, BOX41 (285K) `i22=flat`, the door `matches` REF on both classes. Queue v19 (the local check and split of I22) waits for the local card.
 - DAY86 (OWED C12 and C11): NEED TARGET CARD: `D86_BUILDS="i20=8efea3a54 i21=b555b4141 i22=4b378a064" bash /root/wt-c/research/spill-c-20260919/day86-box.sh` on a 9950X with at least 12 h of other sittings since boot (about 25 minutes).
+- DAY86 read: `not_reproduced` on BOX43 (12 h of sittings, no C12 signature in 1234 door runs; an hourly host stall at about half past). The next 9950X sitting that shows the signature runs slow86 on that host before release.
+- DAY87 (OWED C3): the packet read up to lane A day 70 and ruling 65 (`checked=60 missing=0 -> PASS`).
 - Next: read gap15, compact and the 5090 queue's cells as they land; the improvement DAY72 points to and the remedy DAY73 points to, each registered before code.
