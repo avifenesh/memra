@@ -1,0 +1,134 @@
+{
+ "schema": "m1-s20-arms-lock-v1",
+ "registered_utc": "2026-09-27",
+ "registration": "research/spill-f-20260919/M1-PREREG.md section H",
+ "artifact": {
+  "pin": "stepfun-ai/Step-3.7-Flash-GGUF@0b69336d2fd2adfdef9c66e425f7778196c31482",
+  "file": "Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+  "bytes": 46483327296,
+  "sha256": "b940497a9cec2f801f07e3a9783f2115fd8bf79cbd453225b4f73d86bcd11259",
+  "files": [
+   {
+    "path": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+    "bytes": 46483327296,
+    "sha256": "b940497a9cec2f801f07e3a9783f2115fd8bf79cbd453225b4f73d86bcd11259",
+    "shard": true
+   },
+   {
+    "path": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+    "bytes": 46999941600,
+    "sha256": "e7e0caaaf0057fabc8bf9b71cbe41322f9945a44df7240bb58e6b7c375e7ffec",
+    "shard": true
+   },
+   {
+    "path": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+    "bytes": 11510293728,
+    "sha256": "ccbd3df81b4f4cb8e73d899734944bcbdefcf436faec9203353419c6750c0590",
+    "shard": true
+   },
+   {
+    "path": "Step3.7-flash-mtp-Q8_0.gguf",
+    "bytes": 3707276416,
+    "sha256": "469a81667a6cd6d87a85d501d57155fd90cee5af7010fd289c5169881763fd57",
+    "shard": false
+   }
+  ],
+  "expert_bank_bytes": 101072240640,
+  "expert_slice_bytes": 2785280,
+  "overread_bytes_per_read": 4096,
+  "census": "research/spill-f-20260919/owed20/census.json"
+ },
+ "prompt": {
+  "file": "research/spill-f-20260919/m1-prereg/b3-prompt.txt",
+  "bytes": 314,
+  "sha256": "535012084be15404e0d5aee928b62fca38e33d5544c180dcefcd0b9d10c096f3",
+  "env": {
+   "MEMRA_PROMPT_FILE": "research/spill-f-20260919/m1-prereg/b3-prompt.txt",
+   "MEMRA_CHAT": "1"
+  }
+ },
+ "common_env": {
+  "MEMRA_SPILL_DISK": "1",
+  "MEMRA_SPILL_PINNED_FRAC": "0.000000001",
+  "MEMRA_MOE_CACHE": "1",
+  "MEMRA_MOE_RESIDENT": "0",
+  "MEMRA_MOE_SLOTS": "8",
+  "MEMRA_SPILL_STATS": "1",
+  "MEMRA_NGEN": "128",
+  "MEMRA_PP_STAGES": "2",
+  "MEMRA_PP_DEVICES": "0,1",
+  "MEMRA_PARALLEL": "off"
+ },
+ "unset_env": [
+  "MEMRA_SPILL_IO",
+  "MEMRA_SPILL_PREAD_DEPTH",
+  "MEMRA_MOE_MMAP_ADVICE",
+  "MEMRA_SPILL_WORKER_EXPERT_WINDOW",
+  "MEMRA_MOE_COLD_BYPASS"
+ ],
+ "baseline": "worker16",
+ "byte_oracle": "reference",
+ "arms": [
+  {
+   "name": "worker16",
+   "env": {
+    "MEMRA_SPILL_IO": "worker",
+    "MEMRA_SPILL_PREAD_DEPTH": "16"
+   }
+  },
+  {
+   "name": "mmap-random",
+   "env": {}
+  },
+  {
+   "name": "mmap-normal",
+   "env": {
+    "MEMRA_MOE_MMAP_ADVICE": "normal"
+   }
+  },
+  {
+   "name": "pread16",
+   "env": {
+    "MEMRA_SPILL_IO": "pread",
+    "MEMRA_SPILL_PREAD_DEPTH": "16"
+   }
+  },
+  {
+   "name": "worker2",
+   "env": {
+    "MEMRA_SPILL_IO": "worker"
+   }
+  },
+  {
+   "name": "direct16",
+   "env": {
+    "MEMRA_SPILL_IO": "direct",
+    "MEMRA_SPILL_PREAD_DEPTH": "16"
+   },
+   "admission": "refused until OWED 7's GPU gates pass (owed7/RESULTS.md): the ignored pinned-pool test, then B3 step 1 with fallbacks=0 and overread_bytes == 4096 x reads; the CPU half landed 2026-09-25"
+  }
+ ],
+ "order": {
+  "rounds": 10,
+  "odd_rounds": "arms list order",
+  "even_rounds": "arms list reversed"
+ },
+ "regimes": [
+  "storage-bound"
+ ],
+ "spec_self_consistency_arms": [
+  "worker16"
+ ],
+ "verdict": {
+  "winner_median_ratio_min": 1.05,
+  "loser_median_ratio_max": 0.95,
+  "sign_agreement_min_per_order": 4,
+  "rounds_per_order": 5,
+  "metric": "gen-only decode tok/s, X over worker16 within each round"
+ },
+ "amendments": [],
+ "expected_placement": {
+  "pinned": 0,
+  "mmapd": 36288
+ }
+}

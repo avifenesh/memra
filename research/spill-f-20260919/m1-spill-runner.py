@@ -468,7 +468,7 @@ def main(argv=None):
     r.add_argument("--artifact", required=True)
     r.add_argument("--proof", required=True)
     r.add_argument("--out", required=True)
-    r.add_argument("--rig", choices=["pro-single", "rtx5090"], default="pro-single")
+    r.add_argument("--rig", choices=["pro-single", "pro-pair", "rtx5090"], default="pro-single")
     r.add_argument("--lock-fd", type=int)
     r.add_argument("--rounds", type=int, default=10)
     r.add_argument("--arms")
