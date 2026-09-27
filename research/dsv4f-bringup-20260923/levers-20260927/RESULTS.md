@@ -177,6 +177,41 @@ two ordinary calls. wkv now projects with wq_a: nothing between them touches its
 
 Every pair row is above every fused row at c1.
 
+## Register-resident row kernels, and wq_b paired with the indexer's (adopted)
+
+Lane `lane/dsv4-small-regs-20260927`, stacked on the sibling pairs.
+
+**Register-resident row kernels.** The q-LoRA norm pack and the per-head RMS are one-block-per-row
+kernels on the decode chain. Both reloaded x for their scale pass and reduced through
+`block_sum_f32`'s seven-barrier tree. At 128 threads they now load every owned element (and
+weight) before the first add, keep them for the scale pass, and reduce through
+`dsv4_block_sum128_f32`. That tree pairs exactly as `block_sum_f32` does at 128 threads, the
+pattern `dsv4_rmsnorm_f32acc_regs` already uses.
+
+**wq_b paired with the indexer's.** On the 21 ratio-4 layers, wq_b and the indexer's wq_b read the
+same q-LoRA rows, so they now share one pair launch (the previous section's kernel).
+
+**Served** (second SE pair, `raw/se2-small-s2q/`), register kernels only against the sibling-pair
+tree, one boot per row P S S P P S, N=3:
+
+| cell | pairs | pairs + register kernels | delta |
+|---|---|---|---|
+| greedy c1 | 86.99 (86.44..87.18), decode 91.10 | 88.36 (87.59..88.44), decode 92.62 | +1.57% |
+| sampled c1 | 87.42 | 88.50 | +1.24% |
+| greedy c2 | 118.61 | 119.37 | +0.64% |
+| greedy c4 | 150.37 | 152.44 | +1.38% |
+
+**Long-gate replay**, P S S P: 10.92 to 10.99 ms per token against 11.10 to 11.22.
+
+Every gate keeps `PROGRAM_SHA256` `fbce1a0492d69635`, and every served text is identical across
+arms.
+
+The wq_b pair on top (`raw/se2-small2-s2r/`):
+- `PROGRAM_SHA256` unchanged;
+- the rows and DSpark gates pass;
+- long-gate replay S T T S: 10.86 to 10.99 against 10.91 to 11.01 ms per token, about -0.3%, the
+  size its 21 launches predict.
+
 ## Refuted: loading weights before the PDL wait
 
 The weights and block scales of the dense-fast FP8 GEMV, the BF16 dots and the HC split partial
