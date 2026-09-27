@@ -33,7 +33,8 @@ probe registry does not cover all of them.
 
 Native selection is **shadow-only**. An expanded plan stops before compilation
 unless `--probes` explicitly requests named development diagnostics. At the
-qualification checkpoint run tier 2 and the affected model's own gates. Explicit
+qualification checkpoint run the battery the change reaches (docs/TESTING.md: the
+scoped cells, or tier 2 where the full battery applies) and the affected model's own gates. Explicit
 probes prove only those probes. Missing models, missing goldens, self-SKIP and
 zero stream agreement fail. An invalid Git ref refuses instead of becoming an
 empty diff. A no-change response says that no validation ran.
