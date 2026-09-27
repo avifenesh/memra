@@ -1,6 +1,6 @@
 # Raw receipts (HTTP captures, logs, run outputs) and red-arm patches keep their bytes as captured.
-*.hdr -whitespace
-*.body -whitespace
+*.hdr -text -whitespace
+*.body -text -whitespace
 *.log -whitespace
 *.out -whitespace
 *.patch -whitespace

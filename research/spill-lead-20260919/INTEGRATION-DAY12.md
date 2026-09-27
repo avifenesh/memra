@@ -4522,6 +4522,62 @@ owner.
   admit-mem burst, spec-ctx-edge and the pause gate `ALL GREEN`; `tier-transfer-gate` conformance 13 PASS lines and six
   byte-exact roundtrips; all seven `kv-tier-gate` fault arms `FAULT-ARM PASS` with the 27B.
 
+## integ71 (`lane/spill-integ71-20260927`): lane B's lane since #730 (the admission and memory doors, the exact resume and the spec budget clamp, the batch-OOM recovery, the VMM KV allocator, the health gate's arms), every door default-off
+
+Lane B's tip `24bddc8cb` on main `caf5b7d28` (#826). The lane was 345 commits behind main with about 7,700 lines of
+engine, kv and server code (3,247 in `worker.rs`), so B merged main in its own lane first (`c2c32539e`, one textual
+conflict in `memra-server/src/lib.rs`'s module list, both `handoff_io` and `kv_vmm` kept; the two places in `worker.rs`
+where main's and the lane's hunks sit within 40 lines keep both: R1's retire-time capture settle beside the lane's
+retire receipts, and the fanout's scoped snapshot beside the fanout restore's errored flag), with every suite green
+there. The integ merge is then clean; `moe_cache.rs` is untouched, so the day-4 fixture pin holds. The lane adds 223 MB
+of raw receipts in 10,972 files (largest 20 MB). The lead adds one lane-level `research/spill-b-20260919/.gitattributes`
+(raw receipts and red-arm patches exempt from whitespace checks; HTTP `.hdr` and `.body` captures stored `-text`, since
+`core.autocrlf=input` had rewritten the lane's committed header captures from CRLF to LF, which no longer match their
+manifests' hashes). The doors, each default-off with its FLAGS row and decide-by date (2026-10-04 to 2026-10-10):
+`MEMRA_RESUME_EXACT` (the exact resume, DAY44), `MEMRA_SPEC_BUDGET_CLAMP` (DAY43), `MEMRA_BATCH_OOM_RECOVER` with
+`MEMRA_STEP_OOM_RETRIES` and the `MEMRA_STEP_OOM_FAULT` injection (O14, DAY49), `MEMRA_ADMIT_W_RELEASE` (O4, DAY45),
+`MEMRA_ADMIT_RECLAIM_OFFTICK` and `MEMRA_ADMIT_DEFER_BUDGET_MS`, `MEMRA_KV_ALLOCATOR=vmm` with `MEMRA_KV_VMM_GROW` and
+`MEMRA_KV_VMM_FAULT`, `MEMRA_RESUME_GRID_REWIND` and `MEMRA_AFFINITY`; `tools/health-fault-gate.sh`'s arms (a to h and j
+by default; i by name only, its verdict placement-dependent, DAY49 addendum E).
+
+**Lane, verbatim.** O14: `HFG (j) aimed-batch-oom-recovers: ... chunk_sessions=3 ... completed=3/3 ... -> PASS` four
+times on the target card, the serving boots `on` 9 of 9 `200` on both routes against `off` 8 of 9 and 5 of 9 `503`.
+O11: DAY44 E1 0 flips against cold on all 8 exact boots, E2 FAIL at 8 of 24 cells on TTFT (so `MEMRA_RESUME_EXACT`
+stays default-off, the overlap revision DAY50 is owed; stage 0 on both card classes: the short prime call is GPU-bound,
+arm O). O6 and O4: DAY46C P1 to P5 PASS on all four enforcing boots; with the W release the second wave admits 11 of 32
+against 1 of 32, 39 against 29 per boot, no OOM on either arm. O5: DAY39 GREEN on both classes. O7: arms g, h pass
+twice on each card.
+
+**Lead review.** The in-lane merge was the owner's reconciliation: main's L', design Q, the purge scrub, R1 and P2 in
+`worker.rs` and `tier_transfer.rs` meet no lane code path except the two adjacent hunks B named, both kept. A door's off state
+must be the program main runs: B's DAY44 keep arm matched the door-off binary, and the battery's doors-off cells below
+(continuation, rewind, prime-gate, run-spec, run-gen, and every serving gate) read it on the merged tree.
+
+**Ruling 66:** lane B's doors land default-off; their defaults are the owner's at their decide-by dates
+(`MEMRA_BATCH_OOM_RECOVER` 2026-10-10 among them). `MEMRA_RESUME_EXACT` stays off until DAY50's overlap passes E2.
+
+**Checks.**
+- CPU battery 15 of 15 on `5cd096607` and on the final head `be4f8f169` (`integ71-cpu-battery/`,
+  `integ71-cpu-battery-final/`: server lib 985, engine lib 596; tier 105 on the first).
+- GPU battery on BOX43 (a Ryzen 9 9950X with one RTX PRO 6000 WS; `integ71-pro-run1/`, 1,325 receipts mirrored and
+  checked), tree `e8af7cf53`, 04:00Z to 05:37Z:
+  - integ70's cells: serve-smoke 1 failed (the Q35 arm, #777, its summary line identical to integ69 and integ70);
+    engine cells `26 passed`; worker span cells `19 passed`; identity, fault default and plain, hit OFF and ON, admit-mem
+    burst, spec-ctx-edge and the pause gate `ALL GREEN`; `tier-transfer-gate` and all seven `kv-tier-gate` fault arms
+    PASS.
+  - B's cell 10, the same serving gates with `MEMRA_KV_ALLOCATOR=vmm`: every gate `ALL GREEN`, serve-smoke's one failure
+    the same #777 line; `[kv-vmm] door=ON` in every cell's logs (serve-smoke's from its `/tmp` logs, banked under
+    `vmm/serve-smoke/tmp-logs/`).
+  - B's cells: grid capture `5 passed` with no skip line; `A4 CONTINUATION GATE: PASS`; the rewind probe
+    `verdict rewind: EXACT` 4 of 4; prime-gate exit 0; run-spec K=1..8 `=== SELF-CONSISTENCY PASS ===` with 8 of 8 K
+    lines and no zero-acceptance warning on the 27B's and on the 9B's own MTP heads (cell 5's registered 35B draft is on
+    no rig, box or tiyuvta repo, so B substituted the same walker's two MTP models); run-gen on the 27B `MATCH`, no
+    `MISMATCH` (its first run on the 27B); the health gate `arms=g,h,j pass=6 documented=1 fail=0` with
+    `chunk_sessions=3`; arm j under VMM `pass=2 fail=0` with one `reap (batch-oom)` line per arm; the VMM grow series
+    `GROW-G1 PASS (grows=28 unequal=0 ... tokens_equal=true logits_equal=true ...)`; the DAY44 mini cell E1
+    `differ_vs_cold=[]` on both exact boots, E3 20 of 20, E4-FAULT and E5 PASS on all five; admit-mem burst with
+    `MEMRA_ADMIT_W_RELEASE=1` `ALL GREEN` (its first run through the gate).
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.

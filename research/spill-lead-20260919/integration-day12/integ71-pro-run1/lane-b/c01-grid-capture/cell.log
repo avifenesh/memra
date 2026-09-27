@@ -1,0 +1,15 @@
+warning: memra-engine@0.138.0: nvcc from MEMRA_NVCC: /usr/local/cuda/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/root/wt-integ71/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5m 50s
+     Running tests/grid_capture_gpu.rs (target/debug/deps/grid_capture_gpu-e42ef304f8e5636b)
+
+running 5 tests
+test gpu_model_boundary_capture_is_the_live_state ... ok
+test gpu_model_capture_equals_split_and_resumes_cold_exact ... ok
+test gpu_model_settle_then_resume_is_cold_exact ... ok
+test gpu_ring_capture_is_the_rows_before_the_capture_point ... ok
+test gpu_scan_capture_equals_the_prefix_scan_state ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.69s
+
