@@ -16,7 +16,7 @@ use memra_gguf::source::MimoMxfp4Native;
 use crate::Engine;
 use crate::dsv4_ffi::{
     memra_dsv4_act_quant_fp8, memra_dsv4_fp4_gemm, memra_dsv4_fp4_gemm_sel,
-    memra_dsv4_fp4_gemm_sel_g,
+    memra_dsv4_fp4_gemm_sel_g_arm,
 };
 use crate::mimo_moe_load::MiMoRoutedSource;
 
@@ -578,7 +578,9 @@ impl InterleavedExperts {
             } else {
                 // Gate/up consume one activation row per token (slot / 8).
                 // Down consumes the independently quantized row of each slot.
-                memra_dsv4_fp4_gemm_sel_g(
+                // The explicit warp arm retains each column's 128-leaf
+                // reduction tree while removing per-level block barriers.
+                memra_dsv4_fp4_gemm_sel_g_arm(
                     codes_ptr as *const c_void,
                     activation_scales_ptr as *const f32,
                     weight_ptr as *const c_void,
@@ -595,6 +597,7 @@ impl InterleavedExperts {
                     self.weight_stride as i64,
                     self.scale_stride as i64,
                     if per_slot { 0 } else { TOP_K as i32 },
+                    1,
                     stream.cu_stream() as *mut c_void,
                 )
             }
