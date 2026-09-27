@@ -216,7 +216,11 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   (keep 12 of 20); gapped turns resume from settled points faster than keep (plain 42 to 43 against 45 ms, spec 52 to
   54 against 99 to 107 ms); a next turn that arrives before or during a G=256 settle pays the re-prime (plain x2.3,
   spec x1.29). The ninth sitting (`pro-single-b-sitting9.sh`, about 12 h from 12:13Z, BOX33) and queue-m (item 8,
-  `rtx5090-day44/chain.sh`) run the registered cells; DAY41's and DAY41B's 5090 halves are queue-m items 4 and 6. The measurement arms' readings stay banked (DAY41 2.1 and 2.2); `MEMRA_RESUME_GRID_REWIND` stays a
+  `rtx5090-day44/chain.sh`) run the registered cells; DAY41's and DAY41B's 5090 halves are queue-m items 4 and 6.
+  Target card read (DAY44 2.1): E1 0 flips on all 8 `exact` boots (24 of 60 on every `keep` boot), E3 to E6 PASS; E2
+  FAIL at 8 of 24 cells, TTFT only: the zero-gap re-prime (plain RX) and an arrival waiting for its entry's settle
+  (spec RX G=256, plain RXg 122,880 G=256); spec RXg `exact` halves TTFT. Exact but slower there: the overlap revision
+  is owed, DAY50 (stage 0 then arm S or O by a stated rule), pre-registered, text only. The door stays default off. The measurement arms' readings stay banked (DAY41 2.1 and 2.2); `MEMRA_RESUME_GRID_REWIND` stays a
   measurement arm until DAY44 reads.
 
 ### O12. The admission reclaim flush off the tick (lead's ruling at integ62)

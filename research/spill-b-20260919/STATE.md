@@ -1,3 +1,6 @@
+# WP-B checkpoint 2026-09-27 (NEED TARGET CARD on BOX43, the fifteenth sitting, DAY46): DAY44 2.1 read (exact: E1 0
+flips everywhere; E2 FAIL 8 of 24, TTFT); DAY50 pre-registered (the overlap revision, stage 0 first); DAY46 coded
+(client, reader, runner, chain; `15a6ec634`); integrable at 15a6ec634 (told the lead); the DAY46 local runner started
 # WP-B checkpoint 2026-09-26 21:3xZ: O14 read on the target card in full (DAY49 2.3 gates, 2.4 serving shape: on 9/9 on
 both routes, off loses the chunk); BOX35 released; the ninth sitting still on BOX33; 5090 halves waiting for the card
 # WP-B checkpoint 2026-09-26 21:1xZ (NEED TARGET CARD, the DAY49D boots-only rerun on BOX35): DAY49 2.3 read (arm j
