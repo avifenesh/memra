@@ -1553,6 +1553,14 @@ impl RestoredDraftScratch {
     }
 }
 
+/// The budget clamp's truncation slot (WP-B day 43, DAY43.md 1.1): with `room` public tokens
+/// left in the request, a round emitting `n_acc + 1` tokens overshoots when `n_acc + 1 > room`;
+/// it is truncated at slot `room - 1` when that still commits a row (`base + room - 1 >= 1`).
+/// `None`: no truncation (the round fits, no room, or a first round with nothing to commit).
+pub fn budget_clamp_slot(room: usize, n_acc: usize, base: usize) -> Option<usize> {
+    (room >= 1 && n_acc + 1 > room && base + room > 1).then(|| room - 1)
+}
+
 pub struct SpecSession {
     prime_ready: Option<prime::PreparedMtp>,
     pub(crate) cache: Cache,
@@ -1590,6 +1598,18 @@ pub struct SpecSession {
     /// commit pass). Non-empty-suffix or sampled turns must flush first (spec_flush_pending);
     /// generate_spec_session_sampled does this at entry, and serve parks only flushed sessions.
     pub pending_tok: Option<u32>,
+    /// BUDGET CLAMP (`MEMRA_SPEC_BUDGET_CLAMP`, WP-B day 43): the request's remaining public
+    /// budget, set by the serve worker before a burst when the door is on; consumed one-shot by
+    /// the burst. `None` (every other caller, and the door unset) is today's program: the final
+    /// round commits every accepted draft, overshoot included.
+    pub budget_room: Option<usize>,
+    /// The burst's clamp firing, `(truncated slot, accepted drafts, room left)`, for the
+    /// worker's receipt line; written only when the clamp truncated a round.
+    pub budget_clamp_fired: Option<(usize, usize, usize)>,
+    /// EXACT RESUME (`MEMRA_RESUME_EXACT`, WP-B day 44): the absolute grid point the next MTP prime
+    /// walk captures its turn checkpoint at INSIDE the call (`grid_capture`), with no prime stop.
+    /// One-shot, consumed by `mtp_prime_start`; `None` is today's program.
+    pub grid_capture_at: Option<usize>,
     /// SESSION-AFFINITY TURN CHECKPOINT (lane/session-affinity, 2026-08-05): the state at this
     /// turn's PROMPT-END boundary, retained so a later turn can REWIND here. See
     /// [`SpecCheckpoint`]. Refreshed by every non-empty prime; None until the first one, and on
@@ -1637,6 +1657,99 @@ impl SpecSession {
     /// Context capacity of the session's caches (the server's ContextFull guard).
     pub fn cache_max_ctx(&self) -> usize {
         self.cache.max_ctx
+    }
+
+    fn scratch_layers_mut(&mut self) -> impl Iterator<Item = &mut KvLayer> {
+        std::iter::once(&mut self.scratch.kv)
+            .chain(self.scratch.extra.iter_mut().map(|p| &mut p.kv))
+    }
+
+    fn scratch_layers(&self) -> impl Iterator<Item = &KvLayer> {
+        std::iter::once(&self.scratch.kv).chain(self.scratch.extra.iter().map(|p| &p.kv))
+    }
+
+    /// WP-B day 37 (`MEMRA_KV_ALLOCATOR=vmm`): the on-demand VMM planes this session holds,
+    /// trunk cache and draft scratch together. The server compares it with the count its
+    /// construction scope allocated, so a plane this visitor cannot reach refuses the session.
+    pub fn kv_on_demand_planes(&self) -> usize {
+        self.cache.on_demand_planes()
+            + self
+                .scratch_layers()
+                .map(KvLayer::on_demand_planes)
+                .sum::<usize>()
+    }
+
+    /// Back rows `[0, rows)` of every on-demand plane of the session (trunk and scratch,
+    /// capped at their capacities). One `(label, event)` per grow; scratch labels are `d<i>`.
+    pub fn ensure_kv_rows(
+        &mut self,
+        rows: usize,
+    ) -> Result<Vec<(String, memra_kv::GrowEvent)>, Box<dyn std::error::Error>> {
+        let mut out = self.cache.ensure_kv_rows(rows)?;
+        let cap = self.scratch.cap;
+        for (i, layer) in self.scratch_layers_mut().enumerate() {
+            if layer.on_demand_planes() == 0 {
+                continue;
+            }
+            for (tag, ev) in layer.ensure_rows(rows.min(cap))? {
+                out.push((format!("d{tag}{i}"), ev));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Schedule the release of every on-demand extent wholly past row `rows` (each plane records
+    /// its own fence under its lock).
+    pub fn release_kv_beyond_rows(&mut self, rows: usize) -> usize {
+        let trunk = self.cache.release_kv_beyond_rows(rows);
+        trunk
+            + self
+                .scratch_layers_mut()
+                .map(|l| l.release_beyond_rows(rows))
+                .sum::<usize>()
+    }
+
+    /// Unmap every released tail whose event completed. Returns the bytes released.
+    pub fn reap_kv(&mut self) -> usize {
+        let mut released = self.cache.reap_kv();
+        for layer in self.scratch_layers_mut() {
+            released += layer.reap();
+        }
+        released
+    }
+
+    /// Bytes of the session's on-demand planes scheduled for release and not yet reaped.
+    pub fn kv_pending_release_bytes(&self) -> usize {
+        self.cache.kv_pending_release_bytes()
+            + self
+                .scratch_layers()
+                .map(KvLayer::pending_release_bytes)
+                .sum::<usize>()
+    }
+
+    /// Backed and reserved bytes of the session's on-demand planes.
+    pub fn kv_on_demand_bytes(&self) -> (usize, usize) {
+        let (m, r) = self.cache.kv_on_demand_bytes();
+        self.scratch_layers().fold((m, r), |(m, r), l| {
+            (
+                m + l.on_demand_physical_bytes(),
+                r + l.on_demand_reserved_bytes(),
+            )
+        })
+    }
+
+    /// Used and slack bytes of the session's on-demand planes, trunk and scratch.
+    pub fn kv_on_demand_used_and_slack(&self, rows: usize) -> (usize, usize) {
+        let (u, s) = self.cache.kv_on_demand_used_and_slack(rows);
+        self.scratch_layers().fold((u, s), |(u, s), l| {
+            let (lu, ls) = l.on_demand_used_and_slack(rows);
+            (u + lu, s + ls)
+        })
+    }
+
+    /// The trunk cache's position (rows committed).
+    pub fn kv_position(&self) -> usize {
+        self.cache.pos
     }
     /// Read access to the live trunk cache (lane/spec-prefix-cache): the worker slices
     /// full-attn KV rows `[0..capture.pos)` out of it when publishing a boundary capture —
@@ -2402,10 +2515,33 @@ impl MtpScratch {
             Some(_) => Some(e.htod_i32(&[0])?),
             None => None,
         };
+        // WP-B day 37: inside the server's on-demand scope (`memra_kv::with_on_demand_kv`) a
+        // flat scratch plane is an on-demand VMM plane backing the scope's initial rows, the
+        // trunk cache's rule; ring planes keep their bounded pooled program.
+        let on_demand = ring
+            .is_none()
+            .then(memra_kv::on_demand_initial_rows)
+            .flatten();
+        let alloc = |tok_bytes: usize| -> Result<memra_kv::KvPlane, Box<dyn std::error::Error>> {
+            let capacity = alloc_rows * tok_bytes;
+            let initial = on_demand.map(|rows| (rows.min(alloc_rows) * tok_bytes).min(capacity));
+            // Addendum C: on demand only where a whole granule stays unbacked.
+            match initial.filter(|&initial| {
+                memra_kv::KvDev::kv_vmm_granularity(e)
+                    .is_some_and(|g| memra_kv::on_demand_pays(capacity, initial, g))
+            }) {
+                Some(initial) => {
+                    let plane = memra_kv::KvDev::alloc_vmm_on_demand_u8(e, capacity, initial)?;
+                    memra_kv::note_on_demand_plane();
+                    Ok(plane)
+                }
+                None => Ok(e.alloc_u8(capacity)?.into()),
+            }
+        };
         Ok(MtpScratchPlane {
             kv: KvLayer {
-                k: e.alloc_u8(alloc_rows * k_tok_bytes)?.into(),
-                v: e.alloc_u8(alloc_rows * v_tok_bytes)?.into(),
+                k: alloc(k_tok_bytes)?,
+                v: alloc(v_tok_bytes)?,
                 kv_dim_k,
                 kv_dim_v,
                 k_tok_bytes,
@@ -9170,6 +9306,9 @@ impl HybridModel {
             uctr: 0,
             draft_ctx: None,
             pending_tok: None,
+            budget_room: None,
+            budget_clamp_fired: None,
+            grid_capture_at: None,
             turn_ckpt: None,
             telem: SpecTelemetryCounters::default(),
             capture_at: None,
@@ -9906,6 +10045,9 @@ impl HybridModel {
             uctr: 0,
             draft_ctx: None,
             pending_tok: None,
+            budget_room: None,
+            budget_clamp_fired: None,
+            grid_capture_at: None,
             // Stable-boundary capture from the split feed above (None on the legacy shape):
             // a restored session previously parked WITHOUT a checkpoint, so the next turn's
             // affinity probe declined ("no turn checkpoint retained") and the conversation
@@ -9983,6 +10125,64 @@ impl HybridModel {
         sess.next_pred = None;
         sess.pending_tok = None;
         Ok(Some(ckpt.pos))
+    }
+
+    /// EXACT RESUME SETTLE (WP-B day 44): prime `tokens` onto the session with the MTP walker's
+    /// trunk and draft fill only (no boundary token, no init feed, no draft preparation), and
+    /// commit them. Every committed row is then a prime-program row, so a later prime from the
+    /// session's end is cold-exact by the grid law when the session ends on the grid.
+    pub fn spec_prime_settle(
+        &self,
+        e: &Engine,
+        sess: &mut SpecSession,
+        tokens: &[u32],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if tokens.len() < crate::hybrid_forward::PRIME_MIN_T {
+            return Err("settle prime below PRIME_MIN_T".into());
+        }
+        if sess.pending_tok.is_some() {
+            return Err("settle on a session with a carried pending token".into());
+        }
+        let mut state = Some(self.mtp_prime_start(e, sess, tokens, 1, None, None)?);
+        if let Some(s) = state.as_mut() {
+            s.set_prime_only();
+        }
+        let mut walker = self.mtp_prime_walker(e, sess, &mut state, None);
+        crate::prime_walker::advance_prime(&mut walker, false, |_, _| {})?;
+        crate::prime_walker::finish_prime(walker)?;
+        Ok(())
+    }
+
+    /// `spec_rewind_to_checkpoint` that keeps the turn checkpoint on the session afterwards
+    /// (WP-B day 44, the exact resume): the restore only copies FROM the snapshot, so the same
+    /// checkpoint stays valid for a later rewind until the next prime walk captures a newer one.
+    pub fn spec_rewind_to_checkpoint_retaining(
+        &self,
+        e: &Engine,
+        sess: &mut SpecSession,
+    ) -> Result<Option<usize>, Box<dyn std::error::Error>> {
+        let Some(ckpt) = sess.turn_ckpt.as_ref() else {
+            return Ok(None);
+        };
+        if !sess.cache.can_rollback(&ckpt.snap, 0) || !sess.scratch.can_rewind_to(ckpt.pos) {
+            return Err(
+                "SWA ring rewind checkpoint has been lapped; full re-prime required".into(),
+            );
+        }
+        let pos = ckpt.pos;
+        assert!(
+            pos <= sess.committed.len(),
+            "checkpoint past committed ({pos} > {})",
+            sess.committed.len()
+        );
+        crate::pp::restore_cache_checkpoint(e, self, None, &mut sess.cache, &ckpt.snap)?;
+        debug_assert_eq!(sess.cache.pos, pos, "rollback landed off the checkpoint");
+        sess.scratch.set_len(e, pos)?;
+        sess.committed.truncate(pos);
+        sess.last_h = Some(e.clone_dtod(&ckpt.last_h)?);
+        sess.next_pred = None;
+        sess.pending_tok = None;
+        Ok(Some(pos))
     }
 
     /// Grow a parked speculative session to `target_cap` and rewind it to its retained turn
@@ -11467,6 +11667,10 @@ impl HybridModel {
         let mut ckpt_req: Option<usize> = None;
         // FAIL-SAFE bit threaded out of the session (see `SpecSession::capture_disabled`).
         let mut sess_capture_disabled = false;
+        // BUDGET CLAMP (WP-B day 43): the request's remaining budget, one-shot, and where the
+        // firing is reported.
+        let mut budget_room: Option<usize> = None;
+        let mut sess_clamp_slot: Option<&mut Option<(usize, usize, usize)>> = None;
         let (
             cache,
             scratch,
@@ -11508,7 +11712,13 @@ impl HybridModel {
                     ckpt_at,
                     capture_disabled,
                     prime_ready: _,
+                    budget_room: s_budget_room,
+                    budget_clamp_fired,
+                    grid_capture_at: _,
                 } = sr;
+                budget_room = s_budget_room.take();
+                *budget_clamp_fired = None;
+                sess_clamp_slot = Some(budget_clamp_fired);
                 sess_capture_disabled = *capture_disabled;
                 sess_capture = Some((capture_at.take(), boundary_captures));
                 ckpt_req = ckpt_at.take();
@@ -13930,6 +14140,29 @@ impl HybridModel {
                     (na, bo)
                 }
             };
+            // --- 3c. BUDGET CLAMP (MEMRA_SPEC_BUDGET_CLAMP, WP-B day 43, DAY43.md 1.1): a greedy,
+            // unconstrained session round that would commit accepted drafts past the request's
+            // budget is truncated at the budget exactly like the grammar truncation above: the
+            // bonus is the verify's own argmax at that column (the accepted draft there), and the
+            // round commits through the ordinary partial-accept path. The public stream is
+            // unchanged; the parked `committed` then equals it. `budget_room` None: today's.
+            let (n_acc, bonus) = match (
+                budget_room,
+                stream_active || sampled || constraint.is_some(),
+            ) {
+                (Some(room_total), false) => {
+                    match budget_clamp_slot(room_total.saturating_sub(out.len()), n_acc, base) {
+                        Some(na) => {
+                            if let Some(slot) = sess_clamp_slot.as_deref_mut() {
+                                *slot = Some((na, n_acc, room_total.saturating_sub(out.len())));
+                            }
+                            (na, draft[na])
+                        }
+                        None => (n_acc, bonus),
+                    }
+                }
+                _ => (n_acc, bonus),
+            };
             total_drafted += k_round;
             total_accepted += n_acc;
             if let Some(t) = sess_telem {
@@ -15698,5 +15931,50 @@ mod ctx_edge_659_census {
                 "break;"
             );
         }
+    }
+}
+
+/// WP-B day 43 (DAY43 1.1 and 1.3): the budget clamp's truncation rule, and its one site.
+#[cfg(test)]
+mod budget_clamp_tests {
+    use super::budget_clamp_slot;
+
+    #[test]
+    fn budget_clamp_truncates_only_the_round_that_overshoots_the_request() {
+        // The round fits: no truncation.
+        assert_eq!(budget_clamp_slot(4, 3, 1), None);
+        assert_eq!(budget_clamp_slot(10, 3, 0), None);
+        // It overshoots: truncated so exactly `room` tokens are emitted (na drafts + the bonus).
+        assert_eq!(budget_clamp_slot(3, 3, 1), Some(2));
+        assert_eq!(
+            budget_clamp_slot(1, 3, 1),
+            Some(0),
+            "a pending token commits the row"
+        );
+        assert_eq!(budget_clamp_slot(2, 5, 0), Some(1));
+        // No room, or a first round (no pending) with one token of room: nothing to commit.
+        assert_eq!(budget_clamp_slot(0, 3, 1), None);
+        assert_eq!(budget_clamp_slot(1, 3, 0), None);
+    }
+
+    #[test]
+    fn budget_clamp_is_read_once_after_the_grammar_truncation() {
+        let src = include_str!("spec.rs");
+        let live = &src[..src.find("mod budget_clamp_tests").unwrap()];
+        assert_eq!(
+            live.matches("budget_clamp_slot(").count(),
+            2,
+            "the definition and one call"
+        );
+        let grammar = live.find("--- 3b. GRAMMAR TRUNCATION").unwrap();
+        let clamp = live.find("--- 3c. BUDGET CLAMP").unwrap();
+        let commit = live.find("--- 4. COMMIT:").unwrap();
+        assert!(grammar < clamp && clamp < commit);
+        // Sampled, constrained and round-stream rounds never clamp; None is today's program.
+        let squash = |t: &str| t.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(squash(live).contains(
+            "match ( budget_room, stream_active || sampled || constraint.is_some(), ) {"
+        ));
+        assert!(live.contains("budget_room = s_budget_room.take();"));
     }
 }

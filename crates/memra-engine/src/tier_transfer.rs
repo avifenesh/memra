@@ -93,6 +93,59 @@ impl PinnedKind {
     }
 }
 
+/// Where on-demand KV grows run on a device (WP-B day 37, `MEMRA_KV_ALLOCATOR=vmm`), by card
+/// class, keyed exactly as [`PinnedKind::for_device`]: the stage-0 rule of
+/// `research/spill-b-20260919/DAY37.md` 1.5 per class that has its receipt. The RTX 5090 class
+/// reads `helper` (DAY37 2.1: `GROW-PLACEMENT extent=1 busy_p95_sum_us=11330.8 ... -> helper`).
+/// A class with no stage-0 receipt takes the helper arm, which never holds the owner thread
+/// across a driver call's tail. Returns the placement and the name of its source.
+pub fn kv_vmm_placement_for_device(name: &str) -> (memra_kv::VmmGrowPlacement, &'static str) {
+    use crate::parallel::HardwareTarget;
+    match HardwareTarget::from_device_name(name) {
+        Ok(HardwareTarget::Rtx5090) => (memra_kv::VmmGrowPlacement::Helper, "rtx5090-receipt"),
+        // DAY37 2.5: stage 0 on one RTX PRO 6000 Blackwell Workstation Edition read
+        // `busy_p95_sum_us=55.3 ... -> inline`. The receipt covers the full-power Workstation card
+        // only; the class's other variants (the Max-Q card, the Server Edition) keep the no-receipt
+        // default until their own stage 0.
+        Ok(HardwareTarget::RtxPro6000Blackwell)
+            if name.contains("Workstation") && !name.contains("Max-Q") =>
+        {
+            (memra_kv::VmmGrowPlacement::Inline, "pro6000-ws-receipt")
+        }
+        Ok(HardwareTarget::RtxPro6000Blackwell) | Err(_) => {
+            (memra_kv::VmmGrowPlacement::Helper, "no-receipt-default")
+        }
+    }
+}
+
+#[cfg(test)]
+mod kv_vmm_placement_tests {
+    use super::kv_vmm_placement_for_device as p;
+    use memra_kv::VmmGrowPlacement::{Helper, Inline};
+
+    /// Each class's stage-0 receipt selects its placement; a card without one takes the default.
+    #[test]
+    fn placement_follows_each_class_receipt() {
+        assert_eq!(
+            p("NVIDIA GeForce RTX 5090 Laptop GPU"),
+            (Helper, "rtx5090-receipt")
+        );
+        assert_eq!(
+            p("NVIDIA RTX PRO 6000 Blackwell Workstation Edition"),
+            (Inline, "pro6000-ws-receipt")
+        );
+        assert_eq!(
+            p("NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition"),
+            (Helper, "no-receipt-default")
+        );
+        assert_eq!(
+            p("NVIDIA RTX PRO 6000 Blackwell Server Edition"),
+            (Helper, "no-receipt-default")
+        );
+        assert_eq!(p("NVIDIA H100 80GB HBM3"), (Helper, "no-receipt-default"));
+    }
+}
+
 /// The engine-owned page-locked backing of a `CudaPinnedLease`: one `cuMemHostAlloc` with the
 /// arm's flag bits through the existing `result::malloc_host` FFI, freed with `result::free_host`
 /// after its tracking event is synchronized. It presents exactly the `HostSlice` contract cudarc's

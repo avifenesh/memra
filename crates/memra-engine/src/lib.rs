@@ -1000,12 +1000,14 @@ pub mod dsv4_topology;
 pub mod f16_ffi;
 pub mod fp8_ffi;
 pub mod glm5_tp_sampler;
+pub mod grid_capture;
 pub mod mmq_ffi;
 pub mod moe_cache;
 pub mod prime_graph;
 pub mod qwen_prime_graph;
 pub mod spill;
 mod spill_pread;
+pub mod step_guard;
 
 // Fatbins are EMBEDDED (crates-release lane, 2026-08-04): build.rs still writes them to
 // OUT_DIR, but the bytes ship inside the binary via include_bytes! and load through
@@ -34118,12 +34120,38 @@ impl Engine {
             && std::env::var("MEMRA_GDN_WGMMA").as_deref() != Ok("0")
     }
 
+    /// GRID CAPTURE (WP-B day 44, `grid_capture`): the conv ring at `rows` into the call, i.e.
+    /// the ring update of a call that ended there: rows `rows - (d_conv - 1) .. rows` of the
+    /// token-major conv input, through the same ring-update kernel (a copy).
+    pub fn ssm_conv_ring_capture(
+        &self,
+        qkv_tm: &cudarc::driver::CudaView<f32>,
+        conv_dim: usize,
+        rows: usize,
+        d_conv: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        assert!(rows >= d_conv - 1, "ring capture needs rows >= pad");
+        let n = conv_dim * (d_conv - 1);
+        let mut dst = self.uninit(n)?;
+        let f = self.func("ssm_conv_ring_update_f32");
+        let cfg = LaunchConfig::for_num_elems(n as u32);
+        let (cd, ti, dc) = (conv_dim as i32, rows as i32, d_conv as i32);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(qkv_tm).arg(&mut dst).arg(&cd).arg(&ti).arg(&dc);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(dst)
+    }
+
     /// task #18 conv-fuse: carried-ring conv + SiLU + GDN repack in ONE pass (the
     /// conv_out intermediate and its transposed re-read disappear — 11.8ms of the
     /// T=2048 prime). Ring update stays the separate follow-up launch (pad-aware).
     /// BIT-IDENTICAL values to ssm_conv1d_tm_state_pad + qkv_to_gdn_repack.
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::manual_div_ceil)] // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
+    #[allow(clippy::manual_div_ceil)]
+    // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
     pub fn ssm_conv1d_gdn_state_pad(
         &self,
         qkv_tm: &cudarc::driver::CudaView<f32>,
@@ -34689,7 +34717,41 @@ impl Engine {
         c: usize,
         hk: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.gdn_scan_chunked_capture(
+            q, k, v, g, beta, kb16_pre, qb16_pre, state_in, state_out, o, n_head, t, scale, c, hk,
+            None,
+        )
+    }
+
+    /// `gdn_scan_chunked` plus the in-call grid capture (WP-B day 44, `grid_capture`): with
+    /// `capture = Some((rows, slot))`, after the scan one extra state-pass launch over the first
+    /// `rows / c` chunks writes the f32 state at `rows` into `slot`. The state pass is sequential
+    /// over chunks and reads only prefix-indexed buffers, so that state is the one the full pass
+    /// carried through chunk `rows / c`. The Hopper fused K4+K5 arm leaves `slot` empty (no
+    /// capture; the caller then keeps its previous checkpoint). `None`: byte-identical to the
+    /// plain scan.
+    #[allow(clippy::too_many_arguments)]
+    pub fn gdn_scan_chunked_capture(
+        &self,
+        q: &CudaSlice<f32>,
+        k: &CudaSlice<f32>,
+        v: &CudaSlice<f32>,
+        g: &CudaSlice<f32>,
+        beta: &CudaSlice<f32>,
+        kb16_pre: Option<&CudaSlice<u8>>,
+        qb16_pre: Option<&CudaSlice<u8>>,
+        state_in: &CudaSlice<f32>,
+        state_out: &mut CudaSlice<f32>,
+        o: &mut CudaSlice<f32>,
+        n_head: usize,
+        t: usize,
+        scale: f32,
+        c: usize,
+        hk: usize,
+        capture: Option<(usize, &mut Option<CudaSlice<f32>>)>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         const D: usize = 128;
+        let capture = capture.filter(|(rows, _)| *rows > 0 && *rows < t && rows.is_multiple_of(c));
         const NSPLIT: u32 = 4;
         assert!(
             (1..=128).contains(&c),
@@ -34917,6 +34979,39 @@ impl Engine {
                     b.launch(cfg)?;
                 }
             }
+            // GRID CAPTURE (WP-B day 44): the same K4 over the prefix, after K5 consumed the
+            // full pass's Y and Ssnap (the rerun rewrites their first chunks with the same values).
+            if let Some((rows, slot)) = capture
+                && crate::qwen_prime_graph::current().is_none()
+            {
+                let mut st = self.uninit(state_out.len())?;
+                let f = self.func("gdn_chunk_state_mma");
+                let cfg = LaunchConfig {
+                    grid_dim: (h as u32, NSPLIT, 1),
+                    block_dim: (256, 1, 1),
+                    shared_mem_bytes: 0,
+                };
+                let (hki, ri) = (hk as i32, rows as i32);
+                let __s_b = self.gpu.stream();
+                let mut b = __s_b.launch_builder(&f);
+                b.arg(kb16_ref)
+                    .arg(&gcum)
+                    .arg(beta)
+                    .arg(&u)
+                    .arg(&wb16)
+                    .arg(&mut y16)
+                    .arg(&mut ssnap16)
+                    .arg(state_in)
+                    .arg(&mut st)
+                    .arg(&hi)
+                    .arg(&ri)
+                    .arg(&ci)
+                    .arg(&hki);
+                unsafe {
+                    b.launch(cfg)?;
+                }
+                *slot = Some(st);
+            }
             return Ok(());
         }
         {
@@ -34972,6 +35067,35 @@ impl Engine {
                 b.launch(cfg)?;
             }
         }
+        // GRID CAPTURE (WP-B day 44): the f32 K4 over the prefix, after K5.
+        if let Some((rows, slot)) = capture {
+            let mut st = self.uninit(state_out.len())?;
+            let f = self.func("gdn_chunk_state_f32");
+            let cfg = LaunchConfig {
+                grid_dim: (h as u32, NSPLIT, 1),
+                block_dim: (256, 1, 1),
+                shared_mem_bytes: 0,
+            };
+            let ri = rows as i32;
+            let __s_b = self.gpu.stream();
+            let mut b = __s_b.launch_builder(&f);
+            b.arg(k)
+                .arg(&gcum)
+                .arg(beta)
+                .arg(&u)
+                .arg(&w)
+                .arg(&mut y)
+                .arg(&mut ssnap)
+                .arg(state_in)
+                .arg(&mut st)
+                .arg(&hi)
+                .arg(&ri)
+                .arg(&ci);
+            unsafe {
+                b.launch(cfg)?;
+            }
+            *slot = Some(st);
+        }
         Ok(())
     }
 
@@ -35002,12 +35126,39 @@ impl Engine {
         scale: f32,
         hk: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.gdn_scan_prefill_capture(
+            q, k, v, g, beta, kb16_pre, qb16_pre, state_in, state_out, o, n_head, t, scale, hk,
+            None,
+        )
+    }
+
+    /// `gdn_scan_prefill` plus the in-call grid capture (WP-B day 44): only the chunked form
+    /// captures; the oracle and sequential forms leave the slot empty.
+    #[allow(clippy::too_many_arguments)]
+    pub fn gdn_scan_prefill_capture(
+        &self,
+        q: &CudaSlice<f32>,
+        k: &CudaSlice<f32>,
+        v: &CudaSlice<f32>,
+        g: &CudaSlice<f32>,
+        beta: &CudaSlice<f32>,
+        kb16_pre: Option<&CudaSlice<u8>>,
+        qb16_pre: Option<&CudaSlice<u8>>,
+        state_in: &CudaSlice<f32>,
+        state_out: &mut CudaSlice<f32>,
+        o: &mut CudaSlice<f32>,
+        n_head: usize,
+        t: usize,
+        scale: f32,
+        hk: usize,
+        capture: Option<(usize, &mut Option<CudaSlice<f32>>)>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         if std::env::var("MEMRA_GDN_DIFF").is_ok() && t >= 16 {
             assert!(hk == n_head, "GDN_DIFF oracle is broadcast-only");
             return self.gdn_scan_diff(q, k, v, g, beta, state_in, state_out, o, n_head, t, scale);
         }
         if Self::gdn_chunked_enabled() && t >= 16 {
-            self.gdn_scan_chunked(
+            self.gdn_scan_chunked_capture(
                 q,
                 k,
                 v,
@@ -35023,6 +35174,7 @@ impl Engine {
                 scale,
                 Self::gdn_chunk_size(),
                 hk,
+                capture,
             )
         } else {
             assert!(
@@ -35845,6 +35997,16 @@ mod target_dispatch_tests {
 impl memra_kv::KvDev for Engine {
     fn alloc_vmm_u8(&self, n: usize) -> Result<memra_kv::KvPlane, Box<dyn std::error::Error>> {
         memra_kv::KvPlane::vmm(self.stream(), n)
+    }
+    fn alloc_vmm_on_demand_u8(
+        &self,
+        capacity: usize,
+        initial: usize,
+    ) -> Result<memra_kv::KvPlane, Box<dyn std::error::Error>> {
+        memra_kv::KvPlane::vmm_on_demand(self.stream(), capacity, initial)
+    }
+    fn kv_vmm_granularity(&self) -> Option<usize> {
+        memra_kv::vmm_granularity_for(&self.stream()).ok()
     }
     fn zeros(&self, n: usize) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         Engine::zeros(self, n)

@@ -1,0 +1,8 @@
+*.log -whitespace
+*.csv -whitespace
+*.txt -whitespace
+*.patch -whitespace
+*.out -whitespace
+# HTTP captures keep their CRLF bytes as captured (core.autocrlf=input would rewrite them)
+*.hdr -text -whitespace
+*.body -text -whitespace

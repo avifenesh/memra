@@ -1,0 +1,846 @@
+1790495496156 [server] build: memra-0.138.0-3d74c2ab2268 (id: source-tree, git: 451ccd0c3fec)
+1790495496156 [server] starting; models config = [("q38", "/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+1790495496156 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+1790495496157 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+1790495496357 [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+1790495496361 [worker] Engine ready (device=0, MEMRA_FAST=true)
+1790495496361 [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+1790495496361 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+1790495496361 [worker] loading model "q38" <- /root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+1790495496397 [tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+1790495500448 [worker]   loaded "q38": 65 layers, eos=248046, stop=[248046]
+1790495500448 [worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+1790495500448 [route-contract] model="q38" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+1790495500448 [worker] q38: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+1790495500448 [admission] "q38": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+1790495500448 [prime-walk] model="q38" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+1790495501556 [fa-pool] grow #0 dev=0 o_len 0 -> 399360 ml_len 0 -> 1560 (retired kept, zero=false)
+1790495501569 [func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+1790495501570 [func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+1790495501570 [fa-pool] grow #1 dev=0 o_len 399360 -> 798720 ml_len 1560 -> 3120 (retired kept, zero=false)
+1790495501570 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+1790495501570 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+1790495501570 [func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+1790495501570 [func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+1790495501572 [spec] draft-session state high-water: 46MB (max of parked delta 46MB and capture-time pool peak 12MB; charged per spec admission and gating future captures)
+1790495501605 [fa-pool] grow #2 dev=0 o_len 798720 -> 1597440 ml_len 3120 -> 6240 (retired kept, zero=false)
+1790495502015 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":2483027968,"still_owned_bytes":17283255616,"pool_reserved_bytes":17414750208,"pool_cached_bytes":131494592,"driver_free_bytes":83930710016,"synchronization_errors":[]}
+1790495502015 [admit-cal] post-probe pool trim: released 2368MB cached back to the driver
+1790495502015 [admit-cal] boot calibration done: model="q38" route=mtp transient floor 2194MB (static was 1536MB; measured 2194MB; probe kv charge 127MB, draft-state 46MB, drafted 63 accepted 42; [dev0 peak-mapped 18976MB rest-mapped 16608MB charged 173MB -> 2194MB]; 1.6s)
+1790495502015 [admit-predict] shadow armed: budget_bytes=81760988880 budget_src=derived(effective_free_bytes=84062204608 - prefix_cache_budget_bytes=0 - admission_reserve_bytes=2301215728) exempt_tenants=0 enforce=false (logging only, nothing is rejected; enforcement is a separate flip)
+1790495502015 [admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+1790495502015 [kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+1790495502015 [server] worker ready; serving models: ["q38"]
+1790495502016 [server] listening on http://127.0.0.1:18526
+1790495502306 [meter] admit id=cmpl-192e59257360a139851872b522704543 tenant=default lane=interactive model="q38"
+1790495502306 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495502306 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2005MB prefill-workspace + 0MB fixed = 2263MB
+1790495502306 [admit-predict] id=cmpl-192e59257360a139851872b522704543 tenant="rx-6144-32-0" model="q38" verdict=admit reason=maxtok-fallback prompt=6144 predicted_completion=32 kv_hat=2248531472 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495502308 [spec-k] model="q38" tenant="rx-6144-32-0" K=3 source=cold-long prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495502308 [admission] fixed residual high-water: model="q38" 323MB (observed 582MB at ctx 8192 path=spec)
+1790495503362 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1054.256 max_chunk_ms=1054.256
+1790495503928 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=566.269 max_chunk_ms=566.269
+1790495503956 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.882 max_chunk_ms=27.882
+1790495503970 [spec] MEMRA_SPEC_BUDGET_CLAMP=1: the final round commits at the request budget (DAY43 measurement door)
+1790495503970 [ttft] id=cmpl-192e59257360a139851872b522704543 model="q38" path="/v1/completions" prompt_tokens=6144 outcome=first_sse_byte request_parse_ms=0.257 admission_ms=0.034 queue_wait_ms=0.021 tokenize_ms=0.002 prime_wait_ms=1.248 prime_ms=1662.599 decode_wait_ms=0.000 sse_handoff_ms=0.107 request_parse_end_ms=0.257 admission_end_ms=0.291 tokenize_start_ms=0.312 tokenize_end_ms=0.314 prime_start_ms=1.562 prime_end_ms=1664.161 first_decode_ms=1664.161 first_sse_byte_ms=1664.268 total_ms=1664.268
+1790495503988 [fa-pool] grow #3 dev=0 o_len 1597440 -> 3194880 ml_len 6240 -> 12480 (retired kept, zero=false)
+1790495504238 [spec] budget clamp: round truncated at 2 of 3 accepted (3 of the request's budget left; model q38)
+1790495504238 [spec-acc] ctx=6145 burst=16/42 cum=16/42=0.381
+1790495504240 [meter] admit id=cmpl-171f876fe443b77010d54d77f079054f tenant=default lane=interactive model="q38"
+1790495504252 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495504252 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2007MB prefill-workspace + 323MB fixed = 2588MB
+1790495504252 [admit-predict] id=cmpl-171f876fe443b77010d54d77f079054f tenant="rx-6144-32-0" model="q38" verdict=admit reason=global-p95 prompt=6240 predicted_completion=32 kv_hat=2576619368 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495504252 [worker] spec-reuse: 6176 committed tokens resumed [sampler=equivalent] (model q38)
+1790495504252 [spec-k] model="q38" tenant="rx-6144-32-0" K=2 source=cached-long prompt=6240 cached=6176 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495504407 [ttft] id=cmpl-171f876fe443b77010d54d77f079054f model="q38" path="/v1/completions" prompt_tokens=6240 outcome=first_sse_byte request_parse_ms=0.141 admission_ms=0.010 queue_wait_ms=11.994 tokenize_ms=0.001 prime_wait_ms=0.109 prime_ms=154.982 decode_wait_ms=0.000 sse_handoff_ms=0.050 request_parse_end_ms=0.141 admission_end_ms=0.151 tokenize_start_ms=12.145 tokenize_end_ms=12.146 prime_start_ms=12.255 prime_end_ms=167.237 first_decode_ms=167.237 first_sse_byte_ms=167.287 total_ms=167.287
+1790495504604 [spec] budget clamp: round truncated at 1 of 2 accepted (2 of the request's budget left; model q38)
+1790495504604 [spec-acc] ctx=64 burst=19/24 cum=19/24=0.792
+1790495504606 [meter] admit id=cmpl-f3555e3c910e060f65096aef89bc72b9 tenant=default lane=interactive model="q38"
+1790495504618 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495504618 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2009MB prefill-workspace + 323MB fixed = 2590MB
+1790495504618 [admit-predict] id=cmpl-f3555e3c910e060f65096aef89bc72b9 tenant="rx-6144-32-0" model="q38" verdict=admit reason=global-p95 prompt=6336 predicted_completion=32 kv_hat=2581614440 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495504618 [worker] spec-reuse: 6272 committed tokens resumed [sampler=equivalent] (model q38)
+1790495504618 [spec-k] model="q38" tenant="rx-6144-32-0" K=2 source=cached-long prompt=6336 cached=6272 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495504774 [ttft] id=cmpl-f3555e3c910e060f65096aef89bc72b9 model="q38" path="/v1/completions" prompt_tokens=6336 outcome=first_sse_byte request_parse_ms=0.125 admission_ms=0.007 queue_wait_ms=12.141 tokenize_ms=0.001 prime_wait_ms=0.097 prime_ms=155.176 decode_wait_ms=0.001 sse_handoff_ms=0.070 request_parse_end_ms=0.125 admission_end_ms=0.132 tokenize_start_ms=12.273 tokenize_end_ms=12.274 prime_start_ms=12.371 prime_end_ms=167.547 first_decode_ms=167.548 first_sse_byte_ms=167.618 total_ms=167.618
+1790495505038 [spec-acc] ctx=64 burst=15/32 cum=15/32=0.469
+1790495505040 [meter] admit id=cmpl-15a36c8c327bb650f546f7fe2a8878b8 tenant=default lane=interactive model="q38"
+1790495505052 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495505052 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2586MB
+1790495505052 [admit-predict] id=cmpl-15a36c8c327bb650f546f7fe2a8878b8 tenant="rxc-6144-32-0-1" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=32 kv_hat=2571624296 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495505052 [spec-k] model="q38" tenant="rxc-6144-32-0-1" K=3 source=cold-long prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495506112 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1060.192 max_chunk_ms=1060.192
+1790495506681 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=568.199 max_chunk_ms=568.199
+1790495506708 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.863 max_chunk_ms=27.863
+1790495506722 [ttft] id=cmpl-15a36c8c327bb650f546f7fe2a8878b8 model="q38" path="/v1/completions" prompt_tokens=6144 outcome=first_sse_byte request_parse_ms=0.224 admission_ms=0.016 queue_wait_ms=11.295 tokenize_ms=0.001 prime_wait_ms=0.481 prime_ms=1670.296 decode_wait_ms=0.000 sse_handoff_ms=0.055 request_parse_end_ms=0.224 admission_end_ms=0.240 tokenize_start_ms=11.535 tokenize_end_ms=11.536 prime_start_ms=12.017 prime_end_ms=1682.313 first_decode_ms=1682.313 first_sse_byte_ms=1682.368 total_ms=1682.368
+1790495506990 [spec] budget clamp: round truncated at 2 of 3 accepted (3 of the request's budget left; model q38)
+1790495506990 [spec-acc] ctx=6145 burst=16/42 cum=16/42=0.381
+1790495506992 [meter] admit id=cmpl-2505033d215c8fe56a01d249e0c1d274 tenant=default lane=interactive model="q38"
+1790495507004 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495507004 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2007MB prefill-workspace + 323MB fixed = 2588MB
+1790495507004 [admit-predict] id=cmpl-2505033d215c8fe56a01d249e0c1d274 tenant="rxc-6144-32-0-2" model="q38" verdict=admit reason=global-p95 prompt=6240 predicted_completion=32 kv_hat=2576619368 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495507005 [spec-k] model="q38" tenant="rxc-6144-32-0-2" K=3 source=cold-long prompt=6240 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495508069 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1063.933 max_chunk_ms=1063.933
+1790495508668 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=599.113 max_chunk_ms=599.113
+1790495508696 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.902 max_chunk_ms=27.902
+1790495508710 [ttft] id=cmpl-2505033d215c8fe56a01d249e0c1d274 model="q38" path="/v1/completions" prompt_tokens=6240 outcome=first_sse_byte request_parse_ms=0.135 admission_ms=0.009 queue_wait_ms=12.385 tokenize_ms=0.001 prime_wait_ms=0.473 prime_ms=1705.588 decode_wait_ms=0.001 sse_handoff_ms=0.046 request_parse_end_ms=0.135 admission_end_ms=0.144 tokenize_start_ms=12.529 tokenize_end_ms=12.530 prime_start_ms=13.003 prime_end_ms=1718.591 first_decode_ms=1718.592 first_sse_byte_ms=1718.638 total_ms=1718.638
+1790495508923 [spec] budget clamp: round truncated at 0 of 2 accepted (1 of the request's budget left; model q38)
+1790495508923 [spec-acc] ctx=6241 burst=19/33 cum=19/33=0.576
+1790495508925 [meter] admit id=cmpl-a3292319fce8972fb34e8027b078b5d2 tenant=default lane=interactive model="q38"
+1790495508937 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495508937 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2009MB prefill-workspace + 323MB fixed = 2590MB
+1790495508937 [admit-predict] id=cmpl-a3292319fce8972fb34e8027b078b5d2 tenant="rxc-6144-32-0-3" model="q38" verdict=admit reason=global-p95 prompt=6336 predicted_completion=32 kv_hat=2581614440 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495508938 [spec-k] model="q38" tenant="rxc-6144-32-0-3" K=3 source=cold-long prompt=6336 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495510004 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1066.544 max_chunk_ms=1066.544
+1790495510632 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=628.060 max_chunk_ms=628.060
+1790495510660 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.935 max_chunk_ms=27.935
+1790495510676 [ttft] id=cmpl-a3292319fce8972fb34e8027b078b5d2 model="q38" path="/v1/completions" prompt_tokens=6336 outcome=first_sse_byte request_parse_ms=0.127 admission_ms=0.012 queue_wait_ms=12.458 tokenize_ms=0.000 prime_wait_ms=0.482 prime_ms=1737.805 decode_wait_ms=0.000 sse_handoff_ms=0.070 request_parse_end_ms=0.127 admission_end_ms=0.139 tokenize_start_ms=12.597 tokenize_end_ms=12.597 prime_start_ms=13.079 prime_end_ms=1750.884 first_decode_ms=1750.884 first_sse_byte_ms=1750.954 total_ms=1750.954
+1790495510943 [spec-acc] ctx=6337 burst=16/42 cum=16/42=0.381
+1790495510945 [meter] admit id=cmpl-a4370967fde4b48ec3d23212a1a83f40 tenant=default lane=interactive model="q38"
+1790495510958 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495510958 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2586MB
+1790495510958 [admit-predict] id=cmpl-a4370967fde4b48ec3d23212a1a83f40 tenant="rx-6144-32-1" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=32 kv_hat=2571624296 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495510958 [spec-k] model="q38" tenant="rx-6144-32-1" K=3 source=cold-long prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495512026 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1068.009 max_chunk_ms=1068.009
+1790495512597 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=571.405 max_chunk_ms=571.405
+1790495512625 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.938 max_chunk_ms=27.938
+1790495512639 [ttft] id=cmpl-a4370967fde4b48ec3d23212a1a83f40 model="q38" path="/v1/completions" prompt_tokens=6144 outcome=first_sse_byte request_parse_ms=0.136 admission_ms=0.010 queue_wait_ms=12.460 tokenize_ms=0.001 prime_wait_ms=0.490 prime_ms=1681.390 decode_wait_ms=0.000 sse_handoff_ms=0.064 request_parse_end_ms=0.136 admission_end_ms=0.146 tokenize_start_ms=12.606 tokenize_end_ms=12.607 prime_start_ms=13.097 prime_end_ms=1694.487 first_decode_ms=1694.487 first_sse_byte_ms=1694.551 total_ms=1694.551
+1790495512943 [spec] budget clamp: round truncated at 1 of 3 accepted (2 of the request's budget left; model q38)
+1790495512943 [spec-acc] ctx=6145 burst=14/48 cum=14/48=0.292
+1790495512945 [meter] admit id=cmpl-43271437f484f3264514b0d67f8b05d1 tenant=default lane=interactive model="q38"
+1790495512957 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495512957 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2007MB prefill-workspace + 323MB fixed = 2588MB
+1790495512957 [admit-predict] id=cmpl-43271437f484f3264514b0d67f8b05d1 tenant="rx-6144-32-1" model="q38" verdict=admit reason=global-p95 prompt=6240 predicted_completion=32 kv_hat=2576619368 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495512957 [worker] spec-reuse: 6176 committed tokens resumed [sampler=equivalent] (model q38)
+1790495512957 [spec-k] model="q38" tenant="rx-6144-32-1" K=2 source=cached-long prompt=6240 cached=6176 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495513113 [ttft] id=cmpl-43271437f484f3264514b0d67f8b05d1 model="q38" path="/v1/completions" prompt_tokens=6240 outcome=first_sse_byte request_parse_ms=0.126 admission_ms=0.011 queue_wait_ms=11.960 tokenize_ms=0.001 prime_wait_ms=0.100 prime_ms=155.198 decode_wait_ms=0.000 sse_handoff_ms=0.045 request_parse_end_ms=0.126 admission_end_ms=0.137 tokenize_start_ms=12.097 tokenize_end_ms=12.098 prime_start_ms=12.198 prime_end_ms=167.396 first_decode_ms=167.396 first_sse_byte_ms=167.441 total_ms=167.441
+1790495513343 [spec] budget clamp: round truncated at 0 of 2 accepted (1 of the request's budget left; model q38)
+1790495513343 [spec-acc] ctx=64 burst=17/28 cum=17/28=0.607
+1790495513344 [meter] admit id=cmpl-26dd443e7eae2fba0fbbec67da5c0e0c tenant=default lane=interactive model="q38"
+1790495513357 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495513357 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2009MB prefill-workspace + 323MB fixed = 2590MB
+1790495513357 [admit-predict] id=cmpl-26dd443e7eae2fba0fbbec67da5c0e0c tenant="rx-6144-32-1" model="q38" verdict=admit reason=global-p95 prompt=6336 predicted_completion=32 kv_hat=2581614440 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495513357 [worker] spec-reuse: 6272 committed tokens resumed [sampler=equivalent] (model q38)
+1790495513357 [spec-k] model="q38" tenant="rx-6144-32-1" K=2 source=cached-long prompt=6336 cached=6272 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495513512 [ttft] id=cmpl-26dd443e7eae2fba0fbbec67da5c0e0c model="q38" path="/v1/completions" prompt_tokens=6336 outcome=first_sse_byte request_parse_ms=0.122 admission_ms=0.009 queue_wait_ms=12.361 tokenize_ms=0.001 prime_wait_ms=0.091 prime_ms=155.251 decode_wait_ms=0.000 sse_handoff_ms=0.046 request_parse_end_ms=0.122 admission_end_ms=0.131 tokenize_start_ms=12.492 tokenize_end_ms=12.493 prime_start_ms=12.584 prime_end_ms=167.835 first_decode_ms=167.835 first_sse_byte_ms=167.881 total_ms=167.881
+1790495513792 [spec-acc] ctx=64 burst=14/34 cum=14/34=0.412
+1790495513794 [meter] admit id=cmpl-f7f2960803a2f963d5fc7f4345ead1d4 tenant=default lane=interactive model="q38"
+1790495513806 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495513806 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2586MB
+1790495513806 [admit-predict] id=cmpl-f7f2960803a2f963d5fc7f4345ead1d4 tenant="rxc-6144-32-1-1" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=32 kv_hat=2571624296 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495513807 [spec-k] model="q38" tenant="rxc-6144-32-1-1" K=3 source=cold-long prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495514876 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1069.476 max_chunk_ms=1069.476
+1790495515449 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=572.569 max_chunk_ms=572.569
+1790495515477 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.924 max_chunk_ms=27.924
+1790495515491 [ttft] id=cmpl-f7f2960803a2f963d5fc7f4345ead1d4 model="q38" path="/v1/completions" prompt_tokens=6144 outcome=first_sse_byte request_parse_ms=0.128 admission_ms=0.008 queue_wait_ms=12.349 tokenize_ms=0.001 prime_wait_ms=0.476 prime_ms=1684.103 decode_wait_ms=0.000 sse_handoff_ms=0.141 request_parse_end_ms=0.128 admission_end_ms=0.136 tokenize_start_ms=12.485 tokenize_end_ms=12.486 prime_start_ms=12.962 prime_end_ms=1697.065 first_decode_ms=1697.065 first_sse_byte_ms=1697.206 total_ms=1697.206
+1790495515795 [spec] budget clamp: round truncated at 1 of 3 accepted (2 of the request's budget left; model q38)
+1790495515795 [spec-acc] ctx=6145 burst=14/48 cum=14/48=0.292
+1790495515797 [meter] admit id=cmpl-542703472020954f01225d6c160f5391 tenant=default lane=interactive model="q38"
+1790495515809 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495515809 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2007MB prefill-workspace + 323MB fixed = 2588MB
+1790495515809 [admit-predict] id=cmpl-542703472020954f01225d6c160f5391 tenant="rxc-6144-32-1-2" model="q38" verdict=admit reason=global-p95 prompt=6240 predicted_completion=32 kv_hat=2576619368 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495515809 [spec-k] model="q38" tenant="rxc-6144-32-1-2" K=3 source=cold-long prompt=6240 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495516881 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1071.473 max_chunk_ms=1071.473
+1790495517484 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=603.429 max_chunk_ms=603.429
+1790495517512 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.900 max_chunk_ms=27.900
+1790495517527 [ttft] id=cmpl-542703472020954f01225d6c160f5391 model="q38" path="/v1/completions" prompt_tokens=6240 outcome=first_sse_byte request_parse_ms=0.251 admission_ms=0.024 queue_wait_ms=12.375 tokenize_ms=0.001 prime_wait_ms=0.492 prime_ms=1717.448 decode_wait_ms=0.000 sse_handoff_ms=0.060 request_parse_end_ms=0.251 admission_end_ms=0.275 tokenize_start_ms=12.650 tokenize_end_ms=12.651 prime_start_ms=13.143 prime_end_ms=1730.591 first_decode_ms=1730.591 first_sse_byte_ms=1730.651 total_ms=1730.651
+1790495517758 [spec-acc] ctx=6241 burst=18/36 cum=18/36=0.500
+1790495517759 [meter] admit id=cmpl-f406e7b337e0dee3c674dc8602f8e056 tenant=default lane=interactive model="q38"
+1790495517772 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495517772 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2009MB prefill-workspace + 323MB fixed = 2590MB
+1790495517772 [admit-predict] id=cmpl-f406e7b337e0dee3c674dc8602f8e056 tenant="rxc-6144-32-1-3" model="q38" verdict=admit reason=global-p95 prompt=6336 predicted_completion=32 kv_hat=2581614440 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495517773 [spec-k] model="q38" tenant="rxc-6144-32-1-3" K=3 source=cold-long prompt=6336 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495518846 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1073.332 max_chunk_ms=1073.332
+1790495519477 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=631.369 max_chunk_ms=631.369
+1790495519505 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.950 max_chunk_ms=27.950
+1790495519521 [ttft] id=cmpl-f406e7b337e0dee3c674dc8602f8e056 model="q38" path="/v1/completions" prompt_tokens=6336 outcome=first_sse_byte request_parse_ms=0.143 admission_ms=0.010 queue_wait_ms=12.696 tokenize_ms=0.001 prime_wait_ms=0.484 prime_ms=1747.924 decode_wait_ms=0.000 sse_handoff_ms=0.056 request_parse_end_ms=0.143 admission_end_ms=0.153 tokenize_start_ms=12.849 tokenize_end_ms=12.850 prime_start_ms=13.334 prime_end_ms=1761.258 first_decode_ms=1761.258 first_sse_byte_ms=1761.314 total_ms=1761.314
+1790495519824 [spec-acc] ctx=6337 burst=14/48 cum=14/48=0.292
+1790495519826 [meter] admit id=cmpl-394ecce1d8f45713827341e6ff7ce0ea tenant=default lane=interactive model="q38"
+1790495519838 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495519838 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2586MB
+1790495519838 [admit-predict] id=cmpl-394ecce1d8f45713827341e6ff7ce0ea tenant="rx-6144-32-2" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=32 kv_hat=2571624296 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495519839 [spec-k] model="q38" tenant="rx-6144-32-2" K=3 source=cold-long prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495520914 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1074.695 max_chunk_ms=1074.695
+1790495521488 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=574.589 max_chunk_ms=574.589
+1790495521516 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.918 max_chunk_ms=27.918
+1790495521530 [ttft] id=cmpl-394ecce1d8f45713827341e6ff7ce0ea model="q38" path="/v1/completions" prompt_tokens=6144 outcome=first_sse_byte request_parse_ms=0.132 admission_ms=0.009 queue_wait_ms=12.344 tokenize_ms=0.000 prime_wait_ms=0.486 prime_ms=1691.231 decode_wait_ms=0.000 sse_handoff_ms=0.060 request_parse_end_ms=0.132 admission_end_ms=0.141 tokenize_start_ms=12.485 tokenize_end_ms=12.485 prime_start_ms=12.971 prime_end_ms=1704.202 first_decode_ms=1704.202 first_sse_byte_ms=1704.262 total_ms=1704.262
+1790495521725 [spec-acc] ctx=6145 burst=20/30 cum=20/30=0.667
+1790495521727 [meter] admit id=cmpl-760f21adec9e7b68983cbf1496a96948 tenant=default lane=interactive model="q38"
+1790495521739 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495521739 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2007MB prefill-workspace + 323MB fixed = 2588MB
+1790495521739 [admit-predict] id=cmpl-760f21adec9e7b68983cbf1496a96948 tenant="rx-6144-32-2" model="q38" verdict=admit reason=global-p95 prompt=6240 predicted_completion=32 kv_hat=2576619368 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495521739 [worker] spec-reuse: 6176 committed tokens resumed [sampler=equivalent] (model q38)
+1790495521739 [spec-k] model="q38" tenant="rx-6144-32-2" K=2 source=cached-long prompt=6240 cached=6176 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495521895 [ttft] id=cmpl-760f21adec9e7b68983cbf1496a96948 model="q38" path="/v1/completions" prompt_tokens=6240 outcome=first_sse_byte request_parse_ms=0.122 admission_ms=0.009 queue_wait_ms=11.971 tokenize_ms=0.000 prime_wait_ms=0.098 prime_ms=155.550 decode_wait_ms=0.001 sse_handoff_ms=0.064 request_parse_end_ms=0.122 admission_end_ms=0.131 tokenize_start_ms=12.102 tokenize_end_ms=12.102 prime_start_ms=12.200 prime_end_ms=167.750 first_decode_ms=167.751 first_sse_byte_ms=167.815 total_ms=167.815
+1790495522192 [spec] budget clamp: round truncated at 1 of 2 accepted (2 of the request's budget left; model q38)
+1790495522192 [spec-acc] ctx=64 burst=13/36 cum=13/36=0.361
+1790495522195 [meter] admit id=cmpl-5fe4601225c93969587ff8f6c4d45907 tenant=default lane=interactive model="q38"
+1790495522207 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495522207 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2009MB prefill-workspace + 323MB fixed = 2590MB
+1790495522207 [admit-predict] id=cmpl-5fe4601225c93969587ff8f6c4d45907 tenant="rx-6144-32-2" model="q38" verdict=admit reason=global-p95 prompt=6336 predicted_completion=32 kv_hat=2581614440 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495522207 [worker] spec-reuse: 6272 committed tokens resumed [sampler=equivalent] (model q38)
+1790495522207 [spec-k] model="q38" tenant="rx-6144-32-2" K=2 source=cached-long prompt=6336 cached=6272 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495522363 [ttft] id=cmpl-5fe4601225c93969587ff8f6c4d45907 model="q38" path="/v1/completions" prompt_tokens=6336 outcome=first_sse_byte request_parse_ms=0.122 admission_ms=0.011 queue_wait_ms=12.075 tokenize_ms=0.000 prime_wait_ms=0.108 prime_ms=155.697 decode_wait_ms=0.000 sse_handoff_ms=0.046 request_parse_end_ms=0.122 admission_end_ms=0.133 tokenize_start_ms=12.208 tokenize_end_ms=12.208 prime_start_ms=12.316 prime_end_ms=168.013 first_decode_ms=168.013 first_sse_byte_ms=168.059 total_ms=168.059
+1790495522610 [spec-acc] ctx=64 burst=16/30 cum=16/30=0.533
+1790495522611 [meter] admit id=cmpl-5852cb2e8f5f75284395210b96b5c8b2 tenant=default lane=interactive model="q38"
+1790495522624 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495522624 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2586MB
+1790495522624 [admit-predict] id=cmpl-5852cb2e8f5f75284395210b96b5c8b2 tenant="rxc-6144-32-2-1" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=32 kv_hat=2571624296 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495522624 [spec-k] model="q38" tenant="rxc-6144-32-2-1" K=3 source=cold-long prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495523700 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1075.886 max_chunk_ms=1075.886
+1790495524275 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=575.398 max_chunk_ms=575.398
+1790495524303 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.957 max_chunk_ms=27.957
+1790495524318 [ttft] id=cmpl-5852cb2e8f5f75284395210b96b5c8b2 model="q38" path="/v1/completions" prompt_tokens=6144 outcome=first_sse_byte request_parse_ms=0.118 admission_ms=0.009 queue_wait_ms=12.264 tokenize_ms=0.001 prime_wait_ms=0.479 prime_ms=1693.290 decode_wait_ms=0.000 sse_handoff_ms=0.063 request_parse_end_ms=0.118 admission_end_ms=0.127 tokenize_start_ms=12.391 tokenize_end_ms=12.392 prime_start_ms=12.871 prime_end_ms=1706.161 first_decode_ms=1706.161 first_sse_byte_ms=1706.224 total_ms=1706.224
+1790495524512 [spec-acc] ctx=6145 burst=20/30 cum=20/30=0.667
+1790495524514 [meter] admit id=cmpl-d5d98ab75275a9c34f10cb4a174fa34f tenant=default lane=interactive model="q38"
+1790495524526 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495524526 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2007MB prefill-workspace + 323MB fixed = 2588MB
+1790495524526 [admit-predict] id=cmpl-d5d98ab75275a9c34f10cb4a174fa34f tenant="rxc-6144-32-2-2" model="q38" verdict=admit reason=global-p95 prompt=6240 predicted_completion=32 kv_hat=2576619368 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495524527 [spec-k] model="q38" tenant="rxc-6144-32-2-2" K=3 source=cold-long prompt=6240 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495525604 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1076.810 max_chunk_ms=1076.810
+1790495526210 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=606.481 max_chunk_ms=606.481
+1790495526238 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.949 max_chunk_ms=27.949
+1790495526253 [ttft] id=cmpl-d5d98ab75275a9c34f10cb4a174fa34f model="q38" path="/v1/completions" prompt_tokens=6240 outcome=first_sse_byte request_parse_ms=0.154 admission_ms=0.010 queue_wait_ms=12.563 tokenize_ms=0.001 prime_wait_ms=0.488 prime_ms=1725.936 decode_wait_ms=0.000 sse_handoff_ms=0.111 request_parse_end_ms=0.154 admission_end_ms=0.164 tokenize_start_ms=12.727 tokenize_end_ms=12.728 prime_start_ms=13.216 prime_end_ms=1739.152 first_decode_ms=1739.152 first_sse_byte_ms=1739.263 total_ms=1739.263
+1790495526520 [spec] budget clamp: round truncated at 2 of 3 accepted (3 of the request's budget left; model q38)
+1790495526520 [spec-acc] ctx=6241 burst=16/42 cum=16/42=0.381
+1790495526522 [meter] admit id=cmpl-814a85ce1c42bb96c325b98e7eaa1563 tenant=default lane=interactive model="q38"
+1790495526534 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495526534 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2009MB prefill-workspace + 323MB fixed = 2590MB
+1790495526534 [admit-predict] id=cmpl-814a85ce1c42bb96c325b98e7eaa1563 tenant="rxc-6144-32-2-3" model="q38" verdict=admit reason=global-p95 prompt=6336 predicted_completion=32 kv_hat=2581614440 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495526535 [spec-k] model="q38" tenant="rxc-6144-32-2-3" K=3 source=cold-long prompt=6336 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495527614 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1079.081 max_chunk_ms=1079.081
+1790495528249 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=634.868 max_chunk_ms=634.868
+1790495528277 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.944 max_chunk_ms=27.944
+1790495528292 [ttft] id=cmpl-814a85ce1c42bb96c325b98e7eaa1563 model="q38" path="/v1/completions" prompt_tokens=6336 outcome=first_sse_byte request_parse_ms=0.134 admission_ms=0.013 queue_wait_ms=12.683 tokenize_ms=0.001 prime_wait_ms=0.495 prime_ms=1757.188 decode_wait_ms=0.000 sse_handoff_ms=0.067 request_parse_end_ms=0.134 admission_end_ms=0.147 tokenize_start_ms=12.830 tokenize_end_ms=12.831 prime_start_ms=13.326 prime_end_ms=1770.514 first_decode_ms=1770.514 first_sse_byte_ms=1770.581 total_ms=1770.581
+1790495528595 [spec] budget clamp: round truncated at 0 of 3 accepted (1 of the request's budget left; model q38)
+1790495528596 [spec-acc] ctx=6337 burst=14/48 cum=14/48=0.292
+1790495528597 [meter] admit id=cmpl-cfad82594963105fe7114ea53c6660d0 tenant=default lane=interactive model="q38"
+1790495528610 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495528610 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2586MB
+1790495528610 [admit-predict] id=cmpl-cfad82594963105fe7114ea53c6660d0 tenant="rx-6144-32-3" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=32 kv_hat=2571624296 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495528610 [spec-k] model="q38" tenant="rx-6144-32-3" K=3 source=cold-long prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495529690 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1079.740 max_chunk_ms=1079.740
+1790495530268 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=577.531 max_chunk_ms=577.531
+1790495530296 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.937 max_chunk_ms=27.937
+1790495530310 [ttft] id=cmpl-cfad82594963105fe7114ea53c6660d0 model="q38" path="/v1/completions" prompt_tokens=6144 outcome=first_sse_byte request_parse_ms=0.117 admission_ms=0.009 queue_wait_ms=12.482 tokenize_ms=0.001 prime_wait_ms=0.494 prime_ms=1699.313 decode_wait_ms=0.000 sse_handoff_ms=0.123 request_parse_end_ms=0.117 admission_end_ms=0.126 tokenize_start_ms=12.608 tokenize_end_ms=12.609 prime_start_ms=13.103 prime_end_ms=1712.416 first_decode_ms=1712.416 first_sse_byte_ms=1712.539 total_ms=1712.539
+1790495530559 [spec-acc] ctx=6145 burst=17/39 cum=17/39=0.436
+1790495530561 [meter] admit id=cmpl-d29623d871869c9d7675247cd895d0a9 tenant=default lane=interactive model="q38"
+1790495530573 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495530573 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2007MB prefill-workspace + 323MB fixed = 2588MB
+1790495530573 [admit-predict] id=cmpl-d29623d871869c9d7675247cd895d0a9 tenant="rx-6144-32-3" model="q38" verdict=admit reason=global-p95 prompt=6240 predicted_completion=32 kv_hat=2576619368 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495530573 [worker] spec-reuse: 6176 committed tokens resumed [sampler=equivalent] (model q38)
+1790495530573 [spec-k] model="q38" tenant="rx-6144-32-3" K=2 source=cached-long prompt=6240 cached=6176 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495530729 [ttft] id=cmpl-d29623d871869c9d7675247cd895d0a9 model="q38" path="/v1/completions" prompt_tokens=6240 outcome=first_sse_byte request_parse_ms=0.146 admission_ms=0.013 queue_wait_ms=12.245 tokenize_ms=0.001 prime_wait_ms=0.112 prime_ms=155.516 decode_wait_ms=0.000 sse_handoff_ms=0.048 request_parse_end_ms=0.146 admission_end_ms=0.159 tokenize_start_ms=12.404 tokenize_end_ms=12.405 prime_start_ms=12.517 prime_end_ms=168.033 first_decode_ms=168.033 first_sse_byte_ms=168.081 total_ms=168.081
+1790495531010 [spec-acc] ctx=64 burst=14/34 cum=14/34=0.412
+1790495531011 [meter] admit id=cmpl-1f35406c33e048c0e48cd96bf6ab9d39 tenant=default lane=interactive model="q38"
+1790495531024 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495531024 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2009MB prefill-workspace + 323MB fixed = 2590MB
+1790495531024 [admit-predict] id=cmpl-1f35406c33e048c0e48cd96bf6ab9d39 tenant="rx-6144-32-3" model="q38" verdict=admit reason=global-p95 prompt=6336 predicted_completion=32 kv_hat=2581614440 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495531024 [worker] spec-reuse: 6272 committed tokens resumed [sampler=equivalent] (model q38)
+1790495531024 [spec-k] model="q38" tenant="rx-6144-32-3" K=2 source=cached-long prompt=6336 cached=6272 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495531180 [ttft] id=cmpl-1f35406c33e048c0e48cd96bf6ab9d39 model="q38" path="/v1/completions" prompt_tokens=6336 outcome=first_sse_byte request_parse_ms=0.128 admission_ms=0.007 queue_wait_ms=12.328 tokenize_ms=0.001 prime_wait_ms=0.096 prime_ms=155.693 decode_wait_ms=0.000 sse_handoff_ms=0.054 request_parse_end_ms=0.128 admission_end_ms=0.135 tokenize_start_ms=12.463 tokenize_end_ms=12.464 prime_start_ms=12.560 prime_end_ms=168.253 first_decode_ms=168.253 first_sse_byte_ms=168.307 total_ms=168.307
+1790495531460 [spec] budget clamp: round truncated at 0 of 2 accepted (1 of the request's budget left; model q38)
+1790495531460 [spec-acc] ctx=64 burst=14/34 cum=14/34=0.412
+1790495531463 [meter] admit id=cmpl-e6fd11fea43c050d9c914feac8bff0bb tenant=default lane=interactive model="q38"
+1790495531474 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495531474 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2586MB
+1790495531474 [admit-predict] id=cmpl-e6fd11fea43c050d9c914feac8bff0bb tenant="rxc-6144-32-3-1" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=32 kv_hat=2571624296 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495531475 [spec-k] model="q38" tenant="rxc-6144-32-3-1" K=3 source=cold-long prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495532556 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1081.166 max_chunk_ms=1081.166
+1790495533134 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=578.318 max_chunk_ms=578.318
+1790495533162 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.969 max_chunk_ms=27.969
+1790495533177 [ttft] id=cmpl-e6fd11fea43c050d9c914feac8bff0bb model="q38" path="/v1/completions" prompt_tokens=6144 outcome=first_sse_byte request_parse_ms=0.231 admission_ms=0.018 queue_wait_ms=11.871 tokenize_ms=0.001 prime_wait_ms=0.482 prime_ms=1701.502 decode_wait_ms=0.000 sse_handoff_ms=0.072 request_parse_end_ms=0.231 admission_end_ms=0.249 tokenize_start_ms=12.120 tokenize_end_ms=12.121 prime_start_ms=12.603 prime_end_ms=1714.105 first_decode_ms=1714.105 first_sse_byte_ms=1714.177 total_ms=1714.177
+1790495533426 [spec-acc] ctx=6145 burst=17/39 cum=17/39=0.436
+1790495533428 [meter] admit id=cmpl-8df3cf3a90f2d6b45036ac3bb82c1ed8 tenant=default lane=interactive model="q38"
+1790495533440 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495533440 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2007MB prefill-workspace + 323MB fixed = 2588MB
+1790495533440 [admit-predict] id=cmpl-8df3cf3a90f2d6b45036ac3bb82c1ed8 tenant="rxc-6144-32-3-2" model="q38" verdict=admit reason=global-p95 prompt=6240 predicted_completion=32 kv_hat=2576619368 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495533441 [spec-k] model="q38" tenant="rxc-6144-32-3-2" K=3 source=cold-long prompt=6240 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495534524 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1082.930 max_chunk_ms=1082.930
+1790495535133 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=609.495 max_chunk_ms=609.495
+1790495535161 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.978 max_chunk_ms=27.978
+1790495535176 [ttft] id=cmpl-8df3cf3a90f2d6b45036ac3bb82c1ed8 model="q38" path="/v1/completions" prompt_tokens=6240 outcome=first_sse_byte request_parse_ms=0.134 admission_ms=0.013 queue_wait_ms=12.099 tokenize_ms=0.001 prime_wait_ms=0.489 prime_ms=1735.063 decode_wait_ms=0.000 sse_handoff_ms=0.061 request_parse_end_ms=0.134 admission_end_ms=0.147 tokenize_start_ms=12.246 tokenize_end_ms=12.247 prime_start_ms=12.736 prime_end_ms=1747.799 first_decode_ms=1747.799 first_sse_byte_ms=1747.860 total_ms=1747.860
+1790495535480 [spec-acc] ctx=6241 burst=14/48 cum=14/48=0.292
+1790495535482 [meter] admit id=cmpl-3dec90061a4ff57541e5beab6192afdc tenant=default lane=interactive model="q38"
+1790495535494 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495535494 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2009MB prefill-workspace + 323MB fixed = 2590MB
+1790495535494 [admit-predict] id=cmpl-3dec90061a4ff57541e5beab6192afdc tenant="rxc-6144-32-3-3" model="q38" verdict=admit reason=global-p95 prompt=6336 predicted_completion=32 kv_hat=2581614440 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495535494 [spec-k] model="q38" tenant="rxc-6144-32-3-3" K=3 source=cold-long prompt=6336 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495536579 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1084.517 max_chunk_ms=1084.517
+1790495537217 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=637.933 max_chunk_ms=637.933
+1790495537245 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.977 max_chunk_ms=27.977
+1790495537260 [ttft] id=cmpl-3dec90061a4ff57541e5beab6192afdc model="q38" path="/v1/completions" prompt_tokens=6336 outcome=first_sse_byte request_parse_ms=0.230 admission_ms=0.015 queue_wait_ms=12.297 tokenize_ms=0.001 prime_wait_ms=0.482 prime_ms=1765.707 decode_wait_ms=0.000 sse_handoff_ms=0.052 request_parse_end_ms=0.230 admission_end_ms=0.245 tokenize_start_ms=12.542 tokenize_end_ms=12.543 prime_start_ms=13.025 prime_end_ms=1778.732 first_decode_ms=1778.732 first_sse_byte_ms=1778.784 total_ms=1778.784
+1790495537583 [spec] budget clamp: round truncated at 0 of 2 accepted (1 of the request's budget left; model q38)
+1790495537583 [spec-acc] ctx=6337 burst=13/51 cum=13/51=0.255
+1790495537584 [meter] admit id=cmpl-132479a909df10a99792ada0b2237bb3 tenant=default lane=interactive model="q38"
+1790495537597 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495537597 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2586MB
+1790495537597 [admit-predict] id=cmpl-132479a909df10a99792ada0b2237bb3 tenant="rx-6144-32-4" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=32 kv_hat=2571624296 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495537597 [spec-k] model="q38" tenant="rx-6144-32-4" K=3 source=cold-long prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495538683 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1085.429 max_chunk_ms=1085.429
+1790495539263 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=580.617 max_chunk_ms=580.617
+1790495539291 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.933 max_chunk_ms=27.933
+1790495539305 [ttft] id=cmpl-132479a909df10a99792ada0b2237bb3 model="q38" path="/v1/completions" prompt_tokens=6144 outcome=first_sse_byte request_parse_ms=0.251 admission_ms=0.019 queue_wait_ms=12.519 tokenize_ms=0.001 prime_wait_ms=0.482 prime_ms=1708.023 decode_wait_ms=0.000 sse_handoff_ms=0.073 request_parse_end_ms=0.251 admission_end_ms=0.270 tokenize_start_ms=12.789 tokenize_end_ms=12.790 prime_start_ms=13.272 prime_end_ms=1721.295 first_decode_ms=1721.295 first_sse_byte_ms=1721.368 total_ms=1721.368
+1790495539609 [spec] budget clamp: round truncated at 0 of 3 accepted (1 of the request's budget left; model q38)
+1790495539609 [spec-acc] ctx=6145 burst=14/48 cum=14/48=0.292
+1790495539612 [meter] admit id=cmpl-7898efe86adc6b54305a3c2ab9ae88d0 tenant=default lane=interactive model="q38"
+1790495539624 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495539624 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2007MB prefill-workspace + 323MB fixed = 2588MB
+1790495539624 [admit-predict] id=cmpl-7898efe86adc6b54305a3c2ab9ae88d0 tenant="rx-6144-32-4" model="q38" verdict=admit reason=global-p95 prompt=6240 predicted_completion=32 kv_hat=2576619368 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495539624 [worker] spec-reuse: 6176 committed tokens resumed [sampler=equivalent] (model q38)
+1790495539624 [spec-k] model="q38" tenant="rx-6144-32-4" K=2 source=cached-long prompt=6240 cached=6176 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495539780 [ttft] id=cmpl-7898efe86adc6b54305a3c2ab9ae88d0 model="q38" path="/v1/completions" prompt_tokens=6240 outcome=first_sse_byte request_parse_ms=0.125 admission_ms=0.010 queue_wait_ms=12.340 tokenize_ms=0.001 prime_wait_ms=0.102 prime_ms=155.865 decode_wait_ms=0.000 sse_handoff_ms=0.057 request_parse_end_ms=0.125 admission_end_ms=0.135 tokenize_start_ms=12.475 tokenize_end_ms=12.476 prime_start_ms=12.578 prime_end_ms=168.443 first_decode_ms=168.443 first_sse_byte_ms=168.500 total_ms=168.500
+1790495540077 [spec-acc] ctx=64 burst=13/36 cum=13/36=0.361
+1790495540080 [meter] admit id=cmpl-f343704a47d9e259e36fdac0dd7a2355 tenant=default lane=interactive model="q38"
+1790495540091 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495540091 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2009MB prefill-workspace + 323MB fixed = 2590MB
+1790495540091 [admit-predict] id=cmpl-f343704a47d9e259e36fdac0dd7a2355 tenant="rx-6144-32-4" model="q38" verdict=admit reason=global-p95 prompt=6336 predicted_completion=32 kv_hat=2581614440 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495540091 [worker] spec-reuse: 6272 committed tokens resumed [sampler=equivalent] (model q38)
+1790495540091 [spec-k] model="q38" tenant="rx-6144-32-4" K=2 source=cached-long prompt=6336 cached=6272 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495540247 [ttft] id=cmpl-f343704a47d9e259e36fdac0dd7a2355 model="q38" path="/v1/completions" prompt_tokens=6336 outcome=first_sse_byte request_parse_ms=0.260 admission_ms=0.020 queue_wait_ms=11.723 tokenize_ms=0.001 prime_wait_ms=0.098 prime_ms=155.762 decode_wait_ms=0.000 sse_handoff_ms=0.050 request_parse_end_ms=0.260 admission_end_ms=0.280 tokenize_start_ms=12.003 tokenize_end_ms=12.004 prime_start_ms=12.102 prime_end_ms=167.864 first_decode_ms=167.864 first_sse_byte_ms=167.914 total_ms=167.914
+1790495540478 [spec] budget clamp: round truncated at 1 of 2 accepted (2 of the request's budget left; model q38)
+1790495540478 [spec-acc] ctx=64 burst=17/28 cum=17/28=0.607
+1790495540480 [meter] admit id=cmpl-4a9132fad00a14e07fe0f576e81633bc tenant=default lane=interactive model="q38"
+1790495540492 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495540492 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2586MB
+1790495540492 [admit-predict] id=cmpl-4a9132fad00a14e07fe0f576e81633bc tenant="rxc-6144-32-4-1" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=32 kv_hat=2571624296 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495540493 [spec-k] model="q38" tenant="rxc-6144-32-4-1" K=3 source=cold-long prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495541579 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1086.137 max_chunk_ms=1086.137
+1790495542160 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=580.707 max_chunk_ms=580.707
+1790495542188 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.913 max_chunk_ms=27.913
+1790495542202 [ttft] id=cmpl-4a9132fad00a14e07fe0f576e81633bc model="q38" path="/v1/completions" prompt_tokens=6144 outcome=first_sse_byte request_parse_ms=0.131 admission_ms=0.008 queue_wait_ms=12.124 tokenize_ms=0.001 prime_wait_ms=0.489 prime_ms=1708.926 decode_wait_ms=0.000 sse_handoff_ms=0.139 request_parse_end_ms=0.131 admission_end_ms=0.139 tokenize_start_ms=12.263 tokenize_end_ms=12.264 prime_start_ms=12.753 prime_end_ms=1721.679 first_decode_ms=1721.679 first_sse_byte_ms=1721.818 total_ms=1721.818
+1790495542507 [spec] budget clamp: round truncated at 0 of 3 accepted (1 of the request's budget left; model q38)
+1790495542507 [spec-acc] ctx=6145 burst=14/48 cum=14/48=0.292
+1790495542509 [meter] admit id=cmpl-00e0f5001440af130d33f3ff74fb7183 tenant=default lane=interactive model="q38"
+1790495542522 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495542522 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2007MB prefill-workspace + 323MB fixed = 2588MB
+1790495542522 [admit-predict] id=cmpl-00e0f5001440af130d33f3ff74fb7183 tenant="rxc-6144-32-4-2" model="q38" verdict=admit reason=global-p95 prompt=6240 predicted_completion=32 kv_hat=2576619368 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495542522 [spec-k] model="q38" tenant="rxc-6144-32-4-2" K=3 source=cold-long prompt=6240 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495543609 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1086.954 max_chunk_ms=1086.954
+1790495544221 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=611.388 max_chunk_ms=611.388
+1790495544249 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.916 max_chunk_ms=27.916
+1790495544263 [ttft] id=cmpl-00e0f5001440af130d33f3ff74fb7183 model="q38" path="/v1/completions" prompt_tokens=6240 outcome=first_sse_byte request_parse_ms=0.279 admission_ms=0.025 queue_wait_ms=12.610 tokenize_ms=0.001 prime_wait_ms=0.518 prime_ms=1741.048 decode_wait_ms=0.000 sse_handoff_ms=0.133 request_parse_end_ms=0.279 admission_end_ms=0.304 tokenize_start_ms=12.914 tokenize_end_ms=12.915 prime_start_ms=13.433 prime_end_ms=1754.481 first_decode_ms=1754.481 first_sse_byte_ms=1754.614 total_ms=1754.614
+1790495544585 [spec-acc] ctx=6241 burst=13/51 cum=13/51=0.255
+1790495544587 [meter] admit id=cmpl-6bd84c3ec02067b6515fff76f00c0e17 tenant=default lane=interactive model="q38"
+1790495544600 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495544600 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2009MB prefill-workspace + 323MB fixed = 2590MB
+1790495544600 [admit-predict] id=cmpl-6bd84c3ec02067b6515fff76f00c0e17 tenant="rxc-6144-32-4-3" model="q38" verdict=admit reason=global-p95 prompt=6336 predicted_completion=32 kv_hat=2581614440 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495544601 [spec-k] model="q38" tenant="rxc-6144-32-4-3" K=3 source=cold-long prompt=6336 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495545688 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1087.518 max_chunk_ms=1087.518
+1790495546328 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=639.752 max_chunk_ms=639.752
+1790495546356 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.952 max_chunk_ms=27.952
+1790495546371 [ttft] id=cmpl-6bd84c3ec02067b6515fff76f00c0e17 model="q38" path="/v1/completions" prompt_tokens=6336 outcome=first_sse_byte request_parse_ms=0.164 admission_ms=0.014 queue_wait_ms=12.943 tokenize_ms=0.000 prime_wait_ms=0.500 prime_ms=1770.548 decode_wait_ms=0.000 sse_handoff_ms=0.104 request_parse_end_ms=0.164 admission_end_ms=0.178 tokenize_start_ms=13.121 tokenize_end_ms=13.121 prime_start_ms=13.621 prime_end_ms=1784.169 first_decode_ms=1784.169 first_sse_byte_ms=1784.273 total_ms=1784.273
+1790495546621 [spec] budget clamp: round truncated at 1 of 3 accepted (2 of the request's budget left; model q38)
+1790495546621 [spec-acc] ctx=6337 burst=17/39 cum=17/39=0.436
+1790495546623 [meter] admit id=cmpl-6c99a80154633ce17e8a7afbd74f420f tenant=default lane=interactive model="q38"
+1790495546636 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495546636 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2586MB
+1790495546636 [admit-predict] id=cmpl-6c99a80154633ce17e8a7afbd74f420f tenant="rx-6144-256-0" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=32 kv_hat=2571624296 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495546636 [spec-k] model="q38" tenant="rx-6144-256-0" K=3 source=cold-long prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495547726 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1089.179 max_chunk_ms=1089.179
+1790495548307 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=581.789 max_chunk_ms=581.789
+1790495548335 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.952 max_chunk_ms=27.952
+1790495548349 [ttft] id=cmpl-6c99a80154633ce17e8a7afbd74f420f model="q38" path="/v1/completions" prompt_tokens=6144 outcome=first_sse_byte request_parse_ms=0.149 admission_ms=0.014 queue_wait_ms=12.607 tokenize_ms=0.001 prime_wait_ms=0.498 prime_ms=1712.970 decode_wait_ms=0.000 sse_handoff_ms=0.059 request_parse_end_ms=0.149 admission_end_ms=0.163 tokenize_start_ms=12.770 tokenize_end_ms=12.771 prime_start_ms=13.269 prime_end_ms=1726.239 first_decode_ms=1726.239 first_sse_byte_ms=1726.298 total_ms=1726.298
+1790495548654 [spec-acc] ctx=6145 burst=16/48 cum=16/48=0.333
+1790495548962 [spec-acc] ctx=6178 burst=15/51 cum=31/99=0.313
+1790495549234 [spec-acc] ctx=6210 burst=18/45 cum=49/144=0.340
+1790495549524 [spec-acc] ctx=6243 burst=18/48 cum=67/192=0.349
+1790495549833 [spec-acc] ctx=6277 burst=16/51 cum=83/243=0.342
+1790495550087 [spec-acc] ctx=6310 burst=19/42 cum=102/285=0.358
+1790495550360 [spec-acc] ctx=6343 burst=18/45 cum=120/330=0.364
+1790495550541 [spec] budget clamp: round truncated at 1 of 2 accepted (2 of the request's budget left; model q38)
+1790495550541 [spec-acc] ctx=6376 burst=14/30 cum=134/360=0.372
+1790495550544 [meter] admit id=cmpl-987885458f5e53a75fdb57f43d85926a tenant=default lane=interactive model="q38"
+1790495550556 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495550556 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2011MB prefill-workspace + 323MB fixed = 2593MB
+1790495550556 [admit-predict] id=cmpl-987885458f5e53a75fdb57f43d85926a tenant="rx-6144-256-0" model="q38" verdict=admit reason=global-p95 prompt=6464 predicted_completion=32 kv_hat=2588274536 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495550556 [worker] spec-reuse: 6400 committed tokens resumed [sampler=equivalent] (model q38)
+1790495550556 [spec-k] model="q38" tenant="rx-6144-256-0" K=2 source=cached-long prompt=6464 cached=6400 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495550712 [ttft] id=cmpl-987885458f5e53a75fdb57f43d85926a model="q38" path="/v1/completions" prompt_tokens=6464 outcome=first_sse_byte request_parse_ms=0.139 admission_ms=0.014 queue_wait_ms=11.621 tokenize_ms=0.001 prime_wait_ms=0.110 prime_ms=156.157 decode_wait_ms=0.000 sse_handoff_ms=0.066 request_parse_end_ms=0.139 admission_end_ms=0.153 tokenize_start_ms=11.774 tokenize_end_ms=11.775 prime_start_ms=11.885 prime_end_ms=168.042 first_decode_ms=168.042 first_sse_byte_ms=168.108 total_ms=168.108
+1790495550977 [spec-acc] ctx=64 burst=15/32 cum=15/32=0.469
+1790495551242 [spec-acc] ctx=96 burst=16/32 cum=31/64=0.484
+1790495551508 [spec-acc] ctx=128 burst=16/32 cum=47/96=0.490
+1790495551740 [spec-acc] ctx=160 burst=19/28 cum=66/124=0.532
+1790495551955 [spec-acc] ctx=193 burst=19/26 cum=85/150=0.567
+1790495552137 [spec-acc] ctx=225 burst=22/22 cum=107/172=0.622
+1790495552318 [spec-acc] ctx=258 burst=22/22 cum=129/194=0.665
+1790495552483 [spec] budget clamp: round truncated at 1 of 2 accepted (2 of the request's budget left; model q38)
+1790495552483 [spec-acc] ctx=291 burst=19/20 cum=148/214=0.692
+1790495552486 [meter] admit id=cmpl-dd65e0f66cc15a0c6abe5e4b1563e227 tenant=default lane=interactive model="q38"
+1790495552498 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495552498 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2018MB prefill-workspace + 323MB fixed = 2600MB
+1790495552498 [admit-predict] id=cmpl-dd65e0f66cc15a0c6abe5e4b1563e227 tenant="rx-6144-256-0" model="q38" verdict=admit reason=global-p95 prompt=6784 predicted_completion=256 kv_hat=2611992424 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495552498 [worker] spec-reuse: 6720 committed tokens resumed [sampler=equivalent] (model q38)
+1790495552498 [spec-k] model="q38" tenant="rx-6144-256-0" K=2 source=cached-long prompt=6784 cached=6720 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495552655 [ttft] id=cmpl-dd65e0f66cc15a0c6abe5e4b1563e227 model="q38" path="/v1/completions" prompt_tokens=6784 outcome=first_sse_byte request_parse_ms=0.140 admission_ms=0.013 queue_wait_ms=11.582 tokenize_ms=0.002 prime_wait_ms=0.109 prime_ms=156.813 decode_wait_ms=0.000 sse_handoff_ms=0.057 request_parse_end_ms=0.140 admission_end_ms=0.153 tokenize_start_ms=11.735 tokenize_end_ms=11.737 prime_start_ms=11.846 prime_end_ms=168.659 first_decode_ms=168.659 first_sse_byte_ms=168.716 total_ms=168.716
+1790495552853 [spec-acc] ctx=64 burst=20/24 cum=20/24=0.833
+1790495553034 [spec-acc] ctx=97 burst=22/22 cum=42/46=0.913
+1790495553233 [spec-acc] ctx=130 burst=21/24 cum=63/70=0.900
+1790495553415 [spec-acc] ctx=163 burst=21/22 cum=84/92=0.913
+1790495553613 [spec-acc] ctx=195 burst=22/24 cum=106/116=0.914
+1790495553812 [spec-acc] ctx=229 burst=21/24 cum=127/140=0.907
+1790495553993 [spec-acc] ctx=262 burst=22/22 cum=149/162=0.920
+1790495554142 [spec] budget clamp: round truncated at 0 of 2 accepted (1 of the request's budget left; model q38)
+1790495554142 [spec-acc] ctx=295 burst=16/18 cum=165/180=0.917
+1790495554145 [meter] admit id=cmpl-709c522f66223d3a0d37bf567ce6465f tenant=default lane=interactive model="q38"
+1790495554157 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495554157 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2586MB
+1790495554157 [admit-predict] id=cmpl-709c522f66223d3a0d37bf567ce6465f tenant="rxc-6144-256-0-1" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=256 kv_hat=2578691944 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495554157 [spec-k] model="q38" tenant="rxc-6144-256-0-1" K=3 source=cold-long prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495555247 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1089.589 max_chunk_ms=1089.589
+1790495555830 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=582.833 max_chunk_ms=582.833
+1790495555858 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.963 max_chunk_ms=27.963
+1790495555872 [ttft] id=cmpl-709c522f66223d3a0d37bf567ce6465f model="q38" path="/v1/completions" prompt_tokens=6144 outcome=first_sse_byte request_parse_ms=0.218 admission_ms=0.025 queue_wait_ms=11.764 tokenize_ms=0.001 prime_wait_ms=0.507 prime_ms=1714.517 decode_wait_ms=0.000 sse_handoff_ms=0.124 request_parse_end_ms=0.218 admission_end_ms=0.243 tokenize_start_ms=12.007 tokenize_end_ms=12.008 prime_start_ms=12.515 prime_end_ms=1727.032 first_decode_ms=1727.032 first_sse_byte_ms=1727.156 total_ms=1727.156
+1790495556176 [spec-acc] ctx=6145 burst=16/48 cum=16/48=0.333
+1790495556485 [spec-acc] ctx=6178 burst=15/51 cum=31/99=0.313
+1790495556757 [spec-acc] ctx=6210 burst=18/45 cum=49/144=0.340
+1790495557047 [spec-acc] ctx=6243 burst=18/48 cum=67/192=0.349
+1790495557356 [spec-acc] ctx=6277 burst=16/51 cum=83/243=0.342
+1790495557610 [spec-acc] ctx=6310 burst=19/42 cum=102/285=0.358
+1790495557883 [spec-acc] ctx=6343 burst=18/45 cum=120/330=0.364
+1790495558065 [spec] budget clamp: round truncated at 1 of 2 accepted (2 of the request's budget left; model q38)
+1790495558065 [spec-acc] ctx=6376 burst=14/30 cum=134/360=0.372
+1790495558067 [meter] admit id=cmpl-7d013e4e5cfe58a2ba518404ab4cea0b tenant=default lane=interactive model="q38"
+1790495558079 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495558079 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2011MB prefill-workspace + 323MB fixed = 2593MB
+1790495558079 [admit-predict] id=cmpl-7d013e4e5cfe58a2ba518404ab4cea0b tenant="rxc-6144-256-0-2" model="q38" verdict=admit reason=global-p95 prompt=6464 predicted_completion=256 kv_hat=2595342184 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495558080 [spec-k] model="q38" tenant="rxc-6144-256-0-2" K=3 source=cold-long prompt=6464 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495559170 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1090.440 max_chunk_ms=1090.440
+1790495559856 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=685.519 max_chunk_ms=685.519
+1790495559884 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.972 max_chunk_ms=27.972
+1790495559900 [ttft] id=cmpl-7d013e4e5cfe58a2ba518404ab4cea0b model="q38" path="/v1/completions" prompt_tokens=6464 outcome=first_sse_byte request_parse_ms=0.165 admission_ms=0.015 queue_wait_ms=12.828 tokenize_ms=0.001 prime_wait_ms=0.495 prime_ms=1820.215 decode_wait_ms=0.000 sse_handoff_ms=0.065 request_parse_end_ms=0.165 admission_end_ms=0.180 tokenize_start_ms=13.008 tokenize_end_ms=13.009 prime_start_ms=13.504 prime_end_ms=1833.719 first_decode_ms=1833.719 first_sse_byte_ms=1833.784 total_ms=1833.784
+1790495560150 [spec-acc] ctx=6465 burst=19/39 cum=19/39=0.487
+1790495560459 [spec-acc] ctx=6498 burst=16/51 cum=35/90=0.389
+1790495560713 [spec-acc] ctx=6531 burst=19/42 cum=54/132=0.409
+1790495560949 [spec-acc] ctx=6564 burst=21/39 cum=75/171=0.439
+1790495561166 [spec-acc] ctx=6598 burst=22/36 cum=97/207=0.469
+1790495561348 [spec-acc] ctx=6632 burst=23/30 cum=120/237=0.506
+1790495561492 [spec-acc] ctx=6665 burst=24/24 cum=144/261=0.552
+1790495561601 [spec] budget clamp: round truncated at 2 of 3 accepted (3 of the request's budget left; model q38)
+1790495561601 [spec-acc] ctx=6697 burst=17/18 cum=161/279=0.577
+1790495561603 [meter] admit id=cmpl-2eec45319004450d6efd84c7ea78fe16 tenant=default lane=interactive model="q38"
+1790495561616 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495561616 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2018MB prefill-workspace + 323MB fixed = 2600MB
+1790495561616 [admit-predict] id=cmpl-2eec45319004450d6efd84c7ea78fe16 tenant="rxc-6144-256-0-3" model="q38" verdict=admit reason=global-p95 prompt=6784 predicted_completion=256 kv_hat=2611992424 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495561616 [spec-k] model="q38" tenant="rxc-6144-256-0-3" K=3 source=cold-long prompt=6784 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495562706 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1089.928 max_chunk_ms=1089.928
+1790495563466 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=759.848 max_chunk_ms=759.848
+1790495563494 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.944 max_chunk_ms=27.944
+1790495563513 [ttft] id=cmpl-2eec45319004450d6efd84c7ea78fe16 model="q38" path="/v1/completions" prompt_tokens=6784 outcome=first_sse_byte request_parse_ms=0.139 admission_ms=0.012 queue_wait_ms=12.773 tokenize_ms=0.001 prime_wait_ms=0.484 prime_ms=1896.049 decode_wait_ms=0.000 sse_handoff_ms=0.068 request_parse_end_ms=0.139 admission_end_ms=0.151 tokenize_start_ms=12.924 tokenize_end_ms=12.925 prime_start_ms=13.409 prime_end_ms=1909.458 first_decode_ms=1909.458 first_sse_byte_ms=1909.526 total_ms=1909.526
+1790495563690 [spec-acc] ctx=6785 burst=22/27 cum=22/27=0.815
+1790495563873 [spec-acc] ctx=6817 burst=24/30 cum=46/57=0.807
+1790495564056 [spec-acc] ctx=6851 burst=23/30 cum=69/87=0.793
+1790495564202 [spec-acc] ctx=6884 burst=24/24 cum=93/111=0.838
+1790495564366 [spec-acc] ctx=6916 burst=26/27 cum=119/138=0.862
+1790495564549 [spec-acc] ctx=6951 burst=22/30 cum=141/168=0.839
+1790495564713 [spec-acc] ctx=6983 burst=23/27 cum=164/195=0.841
+1790495564842 [spec] budget clamp: round truncated at 0 of 3 accepted (1 of the request's budget left; model q38)
+1790495564842 [spec-acc] ctx=7015 burst=18/21 cum=182/216=0.843
+1790495564844 [meter] admit id=cmpl-8b0b1c9591f0d2e36e43756a1d2b7414 tenant=default lane=interactive model="q38"
+1790495564856 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495564856 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2586MB
+1790495564856 [admit-predict] id=cmpl-8b0b1c9591f0d2e36e43756a1d2b7414 tenant="rx-6144-256-1" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=256 kv_hat=2578691944 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495564857 [spec-k] model="q38" tenant="rx-6144-256-1" K=3 source=cold-long prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495565948 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1091.427 max_chunk_ms=1091.427
+1790495566531 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=582.679 max_chunk_ms=582.679
+1790495566559 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.979 max_chunk_ms=27.979
+1790495566573 [ttft] id=cmpl-8b0b1c9591f0d2e36e43756a1d2b7414 model="q38" path="/v1/completions" prompt_tokens=6144 outcome=first_sse_byte request_parse_ms=0.246 admission_ms=0.022 queue_wait_ms=12.603 tokenize_ms=0.001 prime_wait_ms=0.492 prime_ms=1716.119 decode_wait_ms=0.001 sse_handoff_ms=0.034 request_parse_end_ms=0.246 admission_end_ms=0.268 tokenize_start_ms=12.871 tokenize_end_ms=12.872 prime_start_ms=13.364 prime_end_ms=1729.483 first_decode_ms=1729.484 first_sse_byte_ms=1729.518 total_ms=1729.518
+1790495566768 [spec-acc] ctx=6145 burst=21/30 cum=21/30=0.700
+1790495566967 [spec-acc] ctx=6177 burst=23/33 cum=44/63=0.698
+1790495567256 [spec-acc] ctx=6211 burst=16/48 cum=60/111=0.541
+1790495567565 [spec-acc] ctx=6243 burst=16/51 cum=76/162=0.469
+1790495567801 [spec-acc] ctx=6276 burst=19/39 cum=95/201=0.473
+1790495568037 [spec-acc] ctx=6308 burst=20/39 cum=115/240=0.479
+1790495568309 [spec-acc] ctx=6341 burst=18/45 cum=133/285=0.467
+1790495568473 [spec] budget clamp: round truncated at 1 of 3 accepted (2 of the request's budget left; model q38)
+1790495568473 [spec-acc] ctx=6374 burst=17/27 cum=150/312=0.481
+1790495568475 [meter] admit id=cmpl-c1a53de9f91a46c928ea77d04f691411 tenant=default lane=interactive model="q38"
+1790495568487 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495568487 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2011MB prefill-workspace + 323MB fixed = 2593MB
+1790495568487 [admit-predict] id=cmpl-c1a53de9f91a46c928ea77d04f691411 tenant="rx-6144-256-1" model="q38" verdict=admit reason=global-p95 prompt=6464 predicted_completion=256 kv_hat=2595342184 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495568487 [worker] spec-reuse: 6400 committed tokens resumed [sampler=equivalent] (model q38)
+1790495568487 [spec-k] model="q38" tenant="rx-6144-256-1" K=2 source=cached-long prompt=6464 cached=6400 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495568644 [ttft] id=cmpl-c1a53de9f91a46c928ea77d04f691411 model="q38" path="/v1/completions" prompt_tokens=6464 outcome=first_sse_byte request_parse_ms=0.125 admission_ms=0.013 queue_wait_ms=12.190 tokenize_ms=0.001 prime_wait_ms=0.108 prime_ms=156.132 decode_wait_ms=0.000 sse_handoff_ms=0.048 request_parse_end_ms=0.125 admission_end_ms=0.138 tokenize_start_ms=12.328 tokenize_end_ms=12.329 prime_start_ms=12.437 prime_end_ms=168.569 first_decode_ms=168.569 first_sse_byte_ms=168.617 total_ms=168.617
+1790495568875 [spec-acc] ctx=64 burst=18/28 cum=18/28=0.643
+1790495569056 [spec-acc] ctx=97 burst=21/22 cum=39/50=0.780
+1790495569271 [spec-acc] ctx=129 burst=20/26 cum=59/76=0.776
+1790495569452 [spec-acc] ctx=162 burst=22/22 cum=81/98=0.827
+1790495569633 [spec-acc] ctx=195 burst=22/22 cum=103/120=0.858
+1790495569831 [spec-acc] ctx=228 burst=21/24 cum=124/144=0.861
+1790495570013 [spec-acc] ctx=261 burst=22/22 cum=146/166=0.880
+1790495570178 [spec] budget clamp: round truncated at 0 of 2 accepted (1 of the request's budget left; model q38)
+1790495570178 [spec-acc] ctx=294 burst=16/20 cum=162/186=0.871
+1790495570181 [meter] admit id=cmpl-811cb9336d04268b64ff59831a24fffc tenant=default lane=interactive model="q38"
+1790495570192 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495570192 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2018MB prefill-workspace + 323MB fixed = 2600MB
+1790495570192 [admit-predict] id=cmpl-811cb9336d04268b64ff59831a24fffc tenant="rx-6144-256-1" model="q38" verdict=admit reason=global-p95 prompt=6784 predicted_completion=256 kv_hat=2611992424 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495570192 [worker] spec-reuse: 6720 committed tokens resumed [sampler=equivalent] (model q38)
+1790495570192 [spec-k] model="q38" tenant="rx-6144-256-1" K=2 source=cached-long prompt=6784 cached=6720 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495570349 [ttft] id=cmpl-811cb9336d04268b64ff59831a24fffc model="q38" path="/v1/completions" prompt_tokens=6784 outcome=first_sse_byte request_parse_ms=0.140 admission_ms=0.011 queue_wait_ms=11.339 tokenize_ms=0.000 prime_wait_ms=0.108 prime_ms=156.821 decode_wait_ms=0.000 sse_handoff_ms=0.056 request_parse_end_ms=0.140 admission_end_ms=0.151 tokenize_start_ms=11.490 tokenize_end_ms=11.490 prime_start_ms=11.598 prime_end_ms=168.419 first_decode_ms=168.419 first_sse_byte_ms=168.475 total_ms=168.475
+1790495570580 [spec-acc] ctx=64 burst=18/28 cum=18/28=0.643
+1790495570863 [spec-acc] ctx=97 burst=15/34 cum=33/62=0.532
+1790495571044 [spec-acc] ctx=129 burst=21/22 cum=54/84=0.643
+1790495571225 [spec-acc] ctx=161 burst=22/22 cum=76/106=0.717
+1790495571407 [spec-acc] ctx=194 burst=21/22 cum=97/128=0.758
+1790495571588 [spec-acc] ctx=226 burst=22/22 cum=119/150=0.793
+1790495571770 [spec-acc] ctx=259 burst=22/22 cum=141/172=0.820
+1790495571935 [spec] budget clamp: round truncated at 0 of 2 accepted (1 of the request's budget left; model q38)
+1790495571935 [spec-acc] ctx=292 burst=18/20 cum=159/192=0.828
+1790495571938 [meter] admit id=cmpl-c9cc3555afd649e8654af06e1a3d42f5 tenant=default lane=interactive model="q38"
+1790495571949 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495571949 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2586MB
+1790495571949 [admit-predict] id=cmpl-c9cc3555afd649e8654af06e1a3d42f5 tenant="rxc-6144-256-1-1" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=256 kv_hat=2578691944 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495571950 [spec-k] model="q38" tenant="rxc-6144-256-1-1" K=3 source=cold-long prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495573041 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1091.334 max_chunk_ms=1091.334
+1790495573624 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=582.547 max_chunk_ms=582.547
+1790495573652 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.942 max_chunk_ms=27.942
+1790495573666 [ttft] id=cmpl-c9cc3555afd649e8654af06e1a3d42f5 model="q38" path="/v1/completions" prompt_tokens=6144 outcome=first_sse_byte request_parse_ms=0.232 admission_ms=0.015 queue_wait_ms=11.460 tokenize_ms=0.001 prime_wait_ms=0.510 prime_ms=1715.867 decode_wait_ms=0.000 sse_handoff_ms=0.062 request_parse_end_ms=0.232 admission_end_ms=0.247 tokenize_start_ms=11.707 tokenize_end_ms=11.708 prime_start_ms=12.218 prime_end_ms=1728.085 first_decode_ms=1728.085 first_sse_byte_ms=1728.147 total_ms=1728.147
+1790495573861 [spec-acc] ctx=6145 burst=21/30 cum=21/30=0.700
+1790495574059 [spec-acc] ctx=6177 burst=23/33 cum=44/63=0.698
+1790495574349 [spec-acc] ctx=6211 burst=16/48 cum=60/111=0.541
+1790495574658 [spec-acc] ctx=6243 burst=16/51 cum=76/162=0.469
+1790495574893 [spec-acc] ctx=6276 burst=19/39 cum=95/201=0.473
+1790495575129 [spec-acc] ctx=6308 burst=20/39 cum=115/240=0.479
+1790495575402 [spec-acc] ctx=6341 burst=18/45 cum=133/285=0.467
+1790495575565 [spec] budget clamp: round truncated at 1 of 3 accepted (2 of the request's budget left; model q38)
+1790495575565 [spec-acc] ctx=6374 burst=17/27 cum=150/312=0.481
+1790495575566 [meter] admit id=cmpl-909baa77731d358c0c989ff5c81e0498 tenant=default lane=interactive model="q38"
+1790495575580 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495575580 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2011MB prefill-workspace + 323MB fixed = 2593MB
+1790495575580 [admit-predict] id=cmpl-909baa77731d358c0c989ff5c81e0498 tenant="rxc-6144-256-1-2" model="q38" verdict=admit reason=global-p95 prompt=6464 predicted_completion=256 kv_hat=2595342184 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495575580 [spec-k] model="q38" tenant="rxc-6144-256-1-2" K=3 source=cold-long prompt=6464 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495576673 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1092.398 max_chunk_ms=1092.398
+1790495577360 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=686.938 max_chunk_ms=686.938
+1790495577388 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.892 max_chunk_ms=27.892
+1790495577404 [ttft] id=cmpl-909baa77731d358c0c989ff5c81e0498 model="q38" path="/v1/completions" prompt_tokens=6464 outcome=first_sse_byte request_parse_ms=0.141 admission_ms=0.015 queue_wait_ms=13.382 tokenize_ms=0.001 prime_wait_ms=0.494 prime_ms=1823.515 decode_wait_ms=0.000 sse_handoff_ms=0.057 request_parse_end_ms=0.141 admission_end_ms=0.156 tokenize_start_ms=13.538 tokenize_end_ms=13.539 prime_start_ms=14.033 prime_end_ms=1837.548 first_decode_ms=1837.548 first_sse_byte_ms=1837.605 total_ms=1837.605
+1790495577617 [spec-acc] ctx=6465 burst=21/33 cum=21/33=0.636
+1790495577780 [spec-acc] ctx=6498 burst=24/27 cum=45/60=0.750
+1790495577925 [spec-acc] ctx=6531 burst=24/24 cum=69/84=0.821
+1790495578088 [spec-acc] ctx=6563 burst=26/27 cum=95/111=0.856
+1790495578251 [spec-acc] ctx=6598 burst=23/27 cum=118/138=0.855
+1790495578450 [spec-acc] ctx=6630 burst=24/33 cum=142/171=0.830
+1790495578595 [spec-acc] ctx=6665 burst=24/24 cum=166/195=0.851
+1790495578704 [spec] budget clamp: round truncated at 2 of 3 accepted (3 of the request's budget left; model q38)
+1790495578704 [spec-acc] ctx=6697 burst=17/18 cum=183/213=0.859
+1790495578706 [meter] admit id=cmpl-f1d3c626f77ca5bb5549e728e865ce3b tenant=default lane=interactive model="q38"
+1790495578719 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495578719 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2018MB prefill-workspace + 323MB fixed = 2600MB
+1790495578719 [admit-predict] id=cmpl-f1d3c626f77ca5bb5549e728e865ce3b tenant="rxc-6144-256-1-3" model="q38" verdict=admit reason=global-p95 prompt=6784 predicted_completion=256 kv_hat=2611992424 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495578719 [spec-k] model="q38" tenant="rxc-6144-256-1-3" K=3 source=cold-long prompt=6784 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495579811 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1091.926 max_chunk_ms=1091.926
+1790495580572 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=760.692 max_chunk_ms=760.692
+1790495580600 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.987 max_chunk_ms=27.987
+1790495580618 [ttft] id=cmpl-f1d3c626f77ca5bb5549e728e865ce3b model="q38" path="/v1/completions" prompt_tokens=6784 outcome=first_sse_byte request_parse_ms=0.139 admission_ms=0.013 queue_wait_ms=12.917 tokenize_ms=0.002 prime_wait_ms=0.486 prime_ms=1898.936 decode_wait_ms=0.001 sse_handoff_ms=0.065 request_parse_end_ms=0.139 admission_end_ms=0.152 tokenize_start_ms=13.069 tokenize_end_ms=13.071 prime_start_ms=13.557 prime_end_ms=1912.493 first_decode_ms=1912.494 first_sse_byte_ms=1912.559 total_ms=1912.559
+1790495580869 [spec-acc] ctx=6785 burst=19/39 cum=19/39=0.487
+1790495581089 [spec-acc] ctx=6818 burst=20/36 cum=39/75=0.520
+1790495581290 [spec-acc] ctx=6850 burst=21/33 cum=60/108=0.556
+1790495581436 [spec-acc] ctx=6882 burst=24/24 cum=84/132=0.636
+1790495581582 [spec-acc] ctx=6914 burst=24/24 cum=108/156=0.692
+1790495581746 [spec-acc] ctx=6946 burst=26/27 cum=134/183=0.732
+1790495581911 [spec-acc] ctx=6981 burst=25/27 cum=159/210=0.757
+1790495582039 [spec] budget clamp: round truncated at 2 of 3 accepted (3 of the request's budget left; model q38)
+1790495582039 [spec-acc] ctx=7015 burst=18/21 cum=177/231=0.766
+1790495582041 [meter] admit id=cmpl-696476acac01b5cb485b84d147b2152b tenant=default lane=interactive model="q38"
+1790495582054 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495582054 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2586MB
+1790495582054 [admit-predict] id=cmpl-696476acac01b5cb485b84d147b2152b tenant="rx-6144-256-2" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=256 kv_hat=2578691944 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495582054 [spec-k] model="q38" tenant="rx-6144-256-2" K=3 source=cold-long prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495583147 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1092.554 max_chunk_ms=1092.554
+1790495583730 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=583.097 max_chunk_ms=583.097
+1790495583758 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.977 max_chunk_ms=27.977
+1790495583772 [ttft] id=cmpl-696476acac01b5cb485b84d147b2152b model="q38" path="/v1/completions" prompt_tokens=6144 outcome=first_sse_byte request_parse_ms=0.126 admission_ms=0.013 queue_wait_ms=12.833 tokenize_ms=0.002 prime_wait_ms=0.486 prime_ms=1717.663 decode_wait_ms=0.000 sse_handoff_ms=0.056 request_parse_end_ms=0.126 admission_end_ms=0.139 tokenize_start_ms=12.972 tokenize_end_ms=12.974 prime_start_ms=13.460 prime_end_ms=1731.123 first_decode_ms=1731.123 first_sse_byte_ms=1731.179 total_ms=1731.179
+1790495583985 [spec-acc] ctx=6145 burst=22/33 cum=22/33=0.667
+1790495584184 [spec-acc] ctx=6179 burst=22/33 cum=44/66=0.667
+1790495584457 [spec-acc] ctx=6212 burst=17/45 cum=61/111=0.550
+1790495584729 [spec-acc] ctx=6244 burst=17/45 cum=78/156=0.500
+1790495585001 [spec-acc] ctx=6276 burst=18/45 cum=96/201=0.478
+1790495585256 [spec-acc] ctx=6309 burst=19/42 cum=115/243=0.473
+1790495585473 [spec-acc] ctx=6342 burst=20/36 cum=135/279=0.484
+1790495585673 [spec] budget clamp: round truncated at 1 of 2 accepted (2 of the request's budget left; model q38)
+1790495585673 [spec-acc] ctx=6374 burst=15/33 cum=150/312=0.481
+1790495585676 [meter] admit id=cmpl-19065c780d49a50bd80e80af3c38852a tenant=default lane=interactive model="q38"
+1790495585688 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495585688 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2011MB prefill-workspace + 323MB fixed = 2593MB
+1790495585688 [admit-predict] id=cmpl-19065c780d49a50bd80e80af3c38852a tenant="rx-6144-256-2" model="q38" verdict=admit reason=global-p95 prompt=6464 predicted_completion=256 kv_hat=2595342184 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495585688 [worker] spec-reuse: 6400 committed tokens resumed [sampler=equivalent] (model q38)
+1790495585688 [spec-k] model="q38" tenant="rx-6144-256-2" K=2 source=cached-long prompt=6464 cached=6400 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495585844 [ttft] id=cmpl-19065c780d49a50bd80e80af3c38852a model="q38" path="/v1/completions" prompt_tokens=6464 outcome=first_sse_byte request_parse_ms=0.128 admission_ms=0.012 queue_wait_ms=11.974 tokenize_ms=0.001 prime_wait_ms=0.108 prime_ms=156.133 decode_wait_ms=0.000 sse_handoff_ms=0.056 request_parse_end_ms=0.128 admission_end_ms=0.140 tokenize_start_ms=12.114 tokenize_end_ms=12.115 prime_start_ms=12.223 prime_end_ms=168.356 first_decode_ms=168.356 first_sse_byte_ms=168.412 total_ms=168.412
+1790495586059 [spec-acc] ctx=64 burst=20/26 cum=20/26=0.769
+1790495586340 [spec-acc] ctx=98 burst=15/34 cum=35/60=0.583
+1790495586605 [spec-acc] ctx=130 burst=17/32 cum=52/92=0.565
+1790495586871 [spec-acc] ctx=163 burst=18/32 cum=70/124=0.565
+1790495587136 [spec-acc] ctx=197 burst=17/32 cum=87/156=0.558
+1790495587368 [spec-acc] ctx=230 burst=19/28 cum=106/184=0.576
+1790495587583 [spec-acc] ctx=263 burst=20/26 cum=126/210=0.600
+1790495587748 [spec-acc] ctx=296 burst=14/20 cum=140/230=0.609
+1790495587751 [meter] admit id=cmpl-a0d5dca37d0bd729d89bb303961a196b tenant=default lane=interactive model="q38"
+1790495587763 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495587763 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2018MB prefill-workspace + 323MB fixed = 2600MB
+1790495587763 [admit-predict] id=cmpl-a0d5dca37d0bd729d89bb303961a196b tenant="rx-6144-256-2" model="q38" verdict=admit reason=global-p95 prompt=6784 predicted_completion=256 kv_hat=2611992424 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495587763 [worker] spec-reuse: 6720 committed tokens resumed [sampler=equivalent] (model q38)
+1790495587763 [spec-k] model="q38" tenant="rx-6144-256-2" K=2 source=cached-long prompt=6784 cached=6720 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495587920 [ttft] id=cmpl-a0d5dca37d0bd729d89bb303961a196b model="q38" path="/v1/completions" prompt_tokens=6784 outcome=first_sse_byte request_parse_ms=0.127 admission_ms=0.012 queue_wait_ms=11.717 tokenize_ms=0.001 prime_wait_ms=0.102 prime_ms=156.852 decode_wait_ms=0.000 sse_handoff_ms=0.043 request_parse_end_ms=0.127 admission_end_ms=0.139 tokenize_start_ms=11.856 tokenize_end_ms=11.857 prime_start_ms=11.959 prime_end_ms=168.811 first_decode_ms=168.811 first_sse_byte_ms=168.854 total_ms=168.854
+1790495588151 [spec-acc] ctx=64 burst=19/28 cum=19/28=0.679
+1790495588433 [spec-acc] ctx=98 burst=17/34 cum=36/62=0.581
+1790495588649 [spec-acc] ctx=132 burst=19/26 cum=55/88=0.625
+1790495588898 [spec-acc] ctx=164 burst=18/30 cum=73/118=0.619
+1790495589147 [spec-acc] ctx=197 burst=18/30 cum=91/148=0.615
+1790495589412 [spec-acc] ctx=230 burst=17/32 cum=108/180=0.600
+1790495589661 [spec-acc] ctx=263 burst=18/30 cum=126/210=0.600
+1790495589894 [spec] budget clamp: round truncated at 0 of 1 accepted (1 of the request's budget left; model q38)
+1790495589894 [spec-acc] ctx=296 burst=10/28 cum=136/238=0.571
+1790495589897 [meter] admit id=cmpl-ebb192e3331c026b2f4252a5380d856e tenant=default lane=interactive model="q38"
+1790495589908 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495589908 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2586MB
+1790495589908 [admit-predict] id=cmpl-ebb192e3331c026b2f4252a5380d856e tenant="rxc-6144-256-2-1" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=256 kv_hat=2578691944 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495589909 [spec-k] model="q38" tenant="rxc-6144-256-2-1" K=3 source=cold-long prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495591001 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1091.807 max_chunk_ms=1091.807
+1790495591584 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=583.247 max_chunk_ms=583.247
+1790495591612 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.942 max_chunk_ms=27.942
+1790495591626 [ttft] id=cmpl-ebb192e3331c026b2f4252a5380d856e model="q38" path="/v1/completions" prompt_tokens=6144 outcome=first_sse_byte request_parse_ms=0.179 admission_ms=0.013 queue_wait_ms=11.880 tokenize_ms=0.002 prime_wait_ms=0.516 prime_ms=1717.074 decode_wait_ms=0.000 sse_handoff_ms=0.090 request_parse_end_ms=0.179 admission_end_ms=0.192 tokenize_start_ms=12.072 tokenize_end_ms=12.074 prime_start_ms=12.590 prime_end_ms=1729.664 first_decode_ms=1729.664 first_sse_byte_ms=1729.754 total_ms=1729.754
+1790495591839 [spec-acc] ctx=6145 burst=22/33 cum=22/33=0.667
+1790495592038 [spec-acc] ctx=6179 burst=22/33 cum=44/66=0.667
+1790495592310 [spec-acc] ctx=6212 burst=17/45 cum=61/111=0.550
+1790495592582 [spec-acc] ctx=6244 burst=17/45 cum=78/156=0.500
+1790495592855 [spec-acc] ctx=6276 burst=18/45 cum=96/201=0.478
+1790495593109 [spec-acc] ctx=6309 burst=19/42 cum=115/243=0.473
+1790495593326 [spec-acc] ctx=6342 burst=20/36 cum=135/279=0.484
+1790495593526 [spec] budget clamp: round truncated at 1 of 2 accepted (2 of the request's budget left; model q38)
+1790495593526 [spec-acc] ctx=6374 burst=15/33 cum=150/312=0.481
+1790495593528 [meter] admit id=cmpl-b0bfa0157eb3bdb036d48f944b3d2b2b tenant=default lane=interactive model="q38"
+1790495593541 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495593541 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2011MB prefill-workspace + 323MB fixed = 2593MB
+1790495593541 [admit-predict] id=cmpl-b0bfa0157eb3bdb036d48f944b3d2b2b tenant="rxc-6144-256-2-2" model="q38" verdict=admit reason=global-p95 prompt=6464 predicted_completion=256 kv_hat=2595342184 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495593541 [spec-k] model="q38" tenant="rxc-6144-256-2-2" K=3 source=cold-long prompt=6464 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495594633 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1091.925 max_chunk_ms=1091.925
+1790495595320 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=686.902 max_chunk_ms=686.902
+1790495595348 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.906 max_chunk_ms=27.906
+1790495595364 [ttft] id=cmpl-b0bfa0157eb3bdb036d48f944b3d2b2b model="q38" path="/v1/completions" prompt_tokens=6464 outcome=first_sse_byte request_parse_ms=0.256 admission_ms=0.024 queue_wait_ms=12.451 tokenize_ms=0.002 prime_wait_ms=0.490 prime_ms=1823.007 decode_wait_ms=0.000 sse_handoff_ms=0.060 request_parse_end_ms=0.256 admission_end_ms=0.280 tokenize_start_ms=12.731 tokenize_end_ms=12.733 prime_start_ms=13.223 prime_end_ms=1836.230 first_decode_ms=1836.230 first_sse_byte_ms=1836.290 total_ms=1836.290
+1790495595615 [spec-acc] ctx=6465 burst=20/39 cum=20/39=0.513
+1790495595942 [spec-acc] ctx=6499 burst=17/54 cum=37/93=0.398
+1790495596178 [spec-acc] ctx=6534 burst=20/39 cum=57/132=0.432
+1790495596414 [spec-acc] ctx=6567 burst=19/39 cum=76/171=0.444
+1790495596687 [spec-acc] ctx=6599 burst=17/45 cum=93/216=0.431
+1790495596868 [spec-acc] ctx=6631 burst=24/30 cum=117/246=0.476
+1790495597068 [spec-acc] ctx=6665 burst=23/33 cum=140/279=0.502
+1790495597250 [spec] budget clamp: round truncated at 0 of 1 accepted (1 of the request's budget left; model q38)
+1790495597250 [spec-acc] ctx=6699 burst=11/30 cum=151/309=0.489
+1790495597252 [meter] admit id=cmpl-e4472a70503b9b8b7f9a0cd76918b190 tenant=default lane=interactive model="q38"
+1790495597265 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495597265 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2018MB prefill-workspace + 323MB fixed = 2600MB
+1790495597265 [admit-predict] id=cmpl-e4472a70503b9b8b7f9a0cd76918b190 tenant="rxc-6144-256-2-3" model="q38" verdict=admit reason=global-p95 prompt=6784 predicted_completion=256 kv_hat=2611992424 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495597265 [spec-k] model="q38" tenant="rxc-6144-256-2-3" K=3 source=cold-long prompt=6784 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495598358 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1092.666 max_chunk_ms=1092.666
+1790495599119 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=760.671 max_chunk_ms=760.671
+1790495599146 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.912 max_chunk_ms=27.912
+1790495599165 [ttft] id=cmpl-e4472a70503b9b8b7f9a0cd76918b190 model="q38" path="/v1/completions" prompt_tokens=6784 outcome=first_sse_byte request_parse_ms=0.260 admission_ms=0.022 queue_wait_ms=12.433 tokenize_ms=0.001 prime_wait_ms=0.488 prime_ms=1899.599 decode_wait_ms=0.000 sse_handoff_ms=0.092 request_parse_end_ms=0.260 admission_end_ms=0.282 tokenize_start_ms=12.715 tokenize_end_ms=12.716 prime_start_ms=13.204 prime_end_ms=1912.803 first_decode_ms=1912.803 first_sse_byte_ms=1912.895 total_ms=1912.895
+1790495599435 [spec-acc] ctx=6785 burst=17/42 cum=17/42=0.405
+1790495599691 [spec-acc] ctx=6817 burst=19/42 cum=36/84=0.429
+1790495599930 [spec-acc] ctx=6850 burst=20/39 cum=56/123=0.455
+1790495600168 [spec-acc] ctx=6883 burst=22/39 cum=78/162=0.481
+1790495600406 [spec-acc] ctx=6918 burst=21/39 cum=99/201=0.493
+1790495600645 [spec-acc] ctx=6952 burst=21/39 cum=120/240=0.500
+1790495600846 [spec-acc] ctx=6986 burst=23/33 cum=143/273=0.524
+1790495600957 [spec] budget clamp: round truncated at 1 of 3 accepted (2 of the request's budget left; model q38)
+1790495600957 [spec-acc] ctx=7020 burst=14/18 cum=157/291=0.540
+1790495600959 [meter] admit id=cmpl-ceb8c6734765f9ffb94240bbd560ce6a tenant=default lane=interactive model="q38"
+1790495600972 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495600972 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2586MB
+1790495600972 [admit-predict] id=cmpl-ceb8c6734765f9ffb94240bbd560ce6a tenant="rx-6144-256-3" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=256 kv_hat=2578691944 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495600972 [spec-k] model="q38" tenant="rx-6144-256-3" K=3 source=cold-long prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495602065 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1092.742 max_chunk_ms=1092.742
+1790495602649 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=584.163 max_chunk_ms=584.163
+1790495602677 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.972 max_chunk_ms=27.972
+1790495602691 [ttft] id=cmpl-ceb8c6734765f9ffb94240bbd560ce6a model="q38" path="/v1/completions" prompt_tokens=6144 outcome=first_sse_byte request_parse_ms=0.248 admission_ms=0.025 queue_wait_ms=12.275 tokenize_ms=0.002 prime_wait_ms=0.502 prime_ms=1718.944 decode_wait_ms=0.000 sse_handoff_ms=0.094 request_parse_end_ms=0.248 admission_end_ms=0.273 tokenize_start_ms=12.548 tokenize_end_ms=12.550 prime_start_ms=13.052 prime_end_ms=1731.996 first_decode_ms=1731.996 first_sse_byte_ms=1732.090 total_ms=1732.090
+1790495602886 [spec-acc] ctx=6145 burst=21/30 cum=21/30=0.700
+1790495603177 [spec-acc] ctx=6177 burst=16/48 cum=37/78=0.474
+1790495603394 [spec-acc] ctx=6209 burst=21/36 cum=58/114=0.509
+1790495603648 [spec-acc] ctx=6242 burst=19/42 cum=77/156=0.494
+1790495603884 [spec-acc] ctx=6275 burst=19/39 cum=96/195=0.492
+1790495604102 [spec-acc] ctx=6307 burst=20/36 cum=116/231=0.502
+1790495604265 [spec-acc] ctx=6339 burst=23/27 cum=139/258=0.539
+1790495604465 [spec-acc] ctx=6371 burst=18/33 cum=157/291=0.540
+1790495604468 [meter] admit id=cmpl-70f5dd8589787a2cfbd7fca5518876b5 tenant=default lane=interactive model="q38"
+1790495604480 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495604480 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2011MB prefill-workspace + 323MB fixed = 2593MB
+1790495604480 [admit-predict] id=cmpl-70f5dd8589787a2cfbd7fca5518876b5 tenant="rx-6144-256-3" model="q38" verdict=admit reason=global-p95 prompt=6464 predicted_completion=256 kv_hat=2595342184 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495604480 [worker] spec-reuse: 6400 committed tokens resumed [sampler=equivalent] (model q38)
+1790495604480 [spec-k] model="q38" tenant="rx-6144-256-3" K=2 source=cached-long prompt=6464 cached=6400 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495604636 [ttft] id=cmpl-70f5dd8589787a2cfbd7fca5518876b5 model="q38" path="/v1/completions" prompt_tokens=6464 outcome=first_sse_byte request_parse_ms=0.268 admission_ms=0.024 queue_wait_ms=11.816 tokenize_ms=0.001 prime_wait_ms=0.114 prime_ms=156.163 decode_wait_ms=0.000 sse_handoff_ms=0.050 request_parse_end_ms=0.268 admission_end_ms=0.292 tokenize_start_ms=12.108 tokenize_end_ms=12.109 prime_start_ms=12.223 prime_end_ms=168.386 first_decode_ms=168.386 first_sse_byte_ms=168.436 total_ms=168.436
+1790495604867 [spec-acc] ctx=64 burst=17/28 cum=17/28=0.607
+1790495605082 [spec-acc] ctx=96 burst=21/26 cum=38/54=0.704
+1790495605314 [spec-acc] ctx=130 burst=19/28 cum=57/82=0.695
+1790495605546 [spec-acc] ctx=163 burst=19/28 cum=76/110=0.691
+1790495605777 [spec-acc] ctx=196 burst=18/28 cum=94/138=0.681
+1790495606042 [spec-acc] ctx=228 burst=17/32 cum=111/170=0.653
+1790495606258 [spec-acc] ctx=261 burst=20/26 cum=131/196=0.668
+1790495606440 [spec] budget clamp: round truncated at 1 of 2 accepted (2 of the request's budget left; model q38)
+1790495606440 [spec-acc] ctx=294 burst=15/22 cum=146/218=0.670
+1790495606443 [meter] admit id=cmpl-19ffad6efe4c0becda277e2ad652c19e tenant=default lane=interactive model="q38"
+1790495606454 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495606454 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2018MB prefill-workspace + 323MB fixed = 2600MB
+1790495606454 [admit-predict] id=cmpl-19ffad6efe4c0becda277e2ad652c19e tenant="rx-6144-256-3" model="q38" verdict=admit reason=global-p95 prompt=6784 predicted_completion=256 kv_hat=2611992424 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495606454 [worker] spec-reuse: 6720 committed tokens resumed [sampler=equivalent] (model q38)
+1790495606454 [spec-k] model="q38" tenant="rx-6144-256-3" K=2 source=cached-long prompt=6784 cached=6720 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495606611 [ttft] id=cmpl-19ffad6efe4c0becda277e2ad652c19e model="q38" path="/v1/completions" prompt_tokens=6784 outcome=first_sse_byte request_parse_ms=0.129 admission_ms=0.012 queue_wait_ms=11.678 tokenize_ms=0.001 prime_wait_ms=0.106 prime_ms=156.840 decode_wait_ms=0.000 sse_handoff_ms=0.050 request_parse_end_ms=0.129 admission_end_ms=0.141 tokenize_start_ms=11.819 tokenize_end_ms=11.820 prime_start_ms=11.926 prime_end_ms=168.766 first_decode_ms=168.766 first_sse_byte_ms=168.816 total_ms=168.816
+1790495606792 [spec-acc] ctx=64 burst=20/22 cum=20/22=0.909
+1790495606974 [spec-acc] ctx=96 burst=22/22 cum=42/44=0.955
+1790495607155 [spec-acc] ctx=129 burst=21/22 cum=63/66=0.955
+1790495607337 [spec-acc] ctx=161 burst=22/22 cum=85/88=0.966
+1790495607535 [spec-acc] ctx=194 burst=21/24 cum=106/112=0.946
+1790495607717 [spec-acc] ctx=227 burst=22/22 cum=128/134=0.955
+1790495607915 [spec-acc] ctx=260 burst=22/24 cum=150/158=0.949
+1790495608081 [spec] budget clamp: round truncated at 0 of 2 accepted (1 of the request's budget left; model q38)
+1790495608081 [spec-acc] ctx=294 burst=16/20 cum=166/178=0.933
+1790495608083 [meter] admit id=cmpl-d9d6809bd7e903155518087ca86a2bfe tenant=default lane=interactive model="q38"
+1790495608095 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495608095 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2586MB
+1790495608095 [admit-predict] id=cmpl-d9d6809bd7e903155518087ca86a2bfe tenant="rxc-6144-256-3-1" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=256 kv_hat=2578691944 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495608096 [spec-k] model="q38" tenant="rxc-6144-256-3-1" K=3 source=cold-long prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495609187 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1091.639 max_chunk_ms=1091.639
+1790495609770 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=583.002 max_chunk_ms=583.002
+1790495609798 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.977 max_chunk_ms=27.977
+1790495609812 [ttft] id=cmpl-d9d6809bd7e903155518087ca86a2bfe model="q38" path="/v1/completions" prompt_tokens=6144 outcome=first_sse_byte request_parse_ms=0.130 admission_ms=0.013 queue_wait_ms=11.751 tokenize_ms=0.002 prime_wait_ms=0.507 prime_ms=1716.662 decode_wait_ms=0.000 sse_handoff_ms=0.057 request_parse_end_ms=0.130 admission_end_ms=0.143 tokenize_start_ms=11.894 tokenize_end_ms=11.896 prime_start_ms=12.403 prime_end_ms=1729.065 first_decode_ms=1729.065 first_sse_byte_ms=1729.122 total_ms=1729.122
+1790495610007 [spec-acc] ctx=6145 burst=21/30 cum=21/30=0.700
+1790495610298 [spec-acc] ctx=6177 burst=16/48 cum=37/78=0.474
+1790495610515 [spec-acc] ctx=6209 burst=21/36 cum=58/114=0.509
+1790495610769 [spec-acc] ctx=6242 burst=19/42 cum=77/156=0.494
+1790495611005 [spec-acc] ctx=6275 burst=19/39 cum=96/195=0.492
+1790495611223 [spec-acc] ctx=6307 burst=20/36 cum=116/231=0.502
+1790495611386 [spec-acc] ctx=6339 burst=23/27 cum=139/258=0.539
+1790495611585 [spec-acc] ctx=6371 burst=18/33 cum=157/291=0.540
+1790495611587 [meter] admit id=cmpl-cf5deb51e7d68e6356fefbeb364d83c3 tenant=default lane=interactive model="q38"
+1790495611600 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495611600 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2011MB prefill-workspace + 323MB fixed = 2593MB
+1790495611600 [admit-predict] id=cmpl-cf5deb51e7d68e6356fefbeb364d83c3 tenant="rxc-6144-256-3-2" model="q38" verdict=admit reason=global-p95 prompt=6464 predicted_completion=256 kv_hat=2595342184 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495611600 [spec-k] model="q38" tenant="rxc-6144-256-3-2" K=3 source=cold-long prompt=6464 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495612693 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1092.433 max_chunk_ms=1092.433
+1790495613380 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=686.975 max_chunk_ms=686.975
+1790495613408 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.910 max_chunk_ms=27.910
+1790495613424 [ttft] id=cmpl-cf5deb51e7d68e6356fefbeb364d83c3 model="q38" path="/v1/completions" prompt_tokens=6464 outcome=first_sse_byte request_parse_ms=0.130 admission_ms=0.012 queue_wait_ms=12.517 tokenize_ms=0.002 prime_wait_ms=0.488 prime_ms=1823.606 decode_wait_ms=0.000 sse_handoff_ms=0.077 request_parse_end_ms=0.130 admission_end_ms=0.142 tokenize_start_ms=12.659 tokenize_end_ms=12.661 prime_start_ms=13.149 prime_end_ms=1836.755 first_decode_ms=1836.755 first_sse_byte_ms=1836.832 total_ms=1836.832
+1790495613674 [spec-acc] ctx=6465 burst=19/39 cum=19/39=0.487
+1790495613892 [spec-acc] ctx=6498 burst=20/36 cum=39/75=0.520
+1790495614092 [spec-acc] ctx=6530 burst=23/33 cum=62/108=0.574
+1790495614310 [spec-acc] ctx=6564 burst=22/36 cum=84/144=0.583
+1790495614547 [spec-acc] ctx=6598 burst=21/39 cum=105/183=0.574
+1790495614747 [spec-acc] ctx=6632 burst=21/33 cum=126/216=0.583
+1790495614965 [spec-acc] ctx=6664 burst=22/36 cum=148/252=0.587
+1790495615111 [spec-acc] ctx=6698 burst=14/24 cum=162/276=0.587
+1790495615113 [meter] admit id=cmpl-75f95de56fd32912da4eea632a9f3f7e tenant=default lane=interactive model="q38"
+1790495615126 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495615126 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2018MB prefill-workspace + 323MB fixed = 2600MB
+1790495615126 [admit-predict] id=cmpl-75f95de56fd32912da4eea632a9f3f7e tenant="rxc-6144-256-3-3" model="q38" verdict=admit reason=global-p95 prompt=6784 predicted_completion=256 kv_hat=2611992424 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495615126 [spec-k] model="q38" tenant="rxc-6144-256-3-3" K=3 source=cold-long prompt=6784 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495616219 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1092.308 max_chunk_ms=1092.308
+1790495616980 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=760.724 max_chunk_ms=760.724
+1790495617007 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.926 max_chunk_ms=27.926
+1790495617026 [ttft] id=cmpl-75f95de56fd32912da4eea632a9f3f7e model="q38" path="/v1/completions" prompt_tokens=6784 outcome=first_sse_byte request_parse_ms=0.192 admission_ms=0.017 queue_wait_ms=12.608 tokenize_ms=0.001 prime_wait_ms=0.499 prime_ms=1899.426 decode_wait_ms=0.000 sse_handoff_ms=0.125 request_parse_end_ms=0.192 admission_end_ms=0.209 tokenize_start_ms=12.817 tokenize_end_ms=12.818 prime_start_ms=13.317 prime_end_ms=1912.743 first_decode_ms=1912.743 first_sse_byte_ms=1912.868 total_ms=1912.868
+1790495617204 [spec-acc] ctx=6785 burst=24/27 cum=24/27=0.889
+1790495617368 [spec-acc] ctx=6819 burst=23/27 cum=47/54=0.870
+1790495617533 [spec-acc] ctx=6851 burst=26/27 cum=73/81=0.901
+1790495617697 [spec-acc] ctx=6886 burst=26/27 cum=99/108=0.917
+1790495617862 [spec-acc] ctx=6921 burst=24/27 cum=123/135=0.911
+1790495618027 [spec-acc] ctx=6954 burst=24/27 cum=147/162=0.907
+1790495618192 [spec-acc] ctx=6987 burst=23/27 cum=170/189=0.899
+1790495618302 [spec] budget clamp: round truncated at 0 of 3 accepted (1 of the request's budget left; model q38)
+1790495618302 [spec-acc] ctx=7019 burst=15/18 cum=185/207=0.894
+1790495618304 [meter] admit id=cmpl-99ef4bc881ff32ada6a97b6e78b60eb6 tenant=default lane=interactive model="q38"
+1790495618317 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495618317 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2586MB
+1790495618317 [admit-predict] id=cmpl-99ef4bc881ff32ada6a97b6e78b60eb6 tenant="rx-6144-256-4" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=256 kv_hat=2578691944 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495618317 [spec-k] model="q38" tenant="rx-6144-256-4" K=3 source=cold-long prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495619409 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1092.136 max_chunk_ms=1092.136
+1790495619993 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=583.235 max_chunk_ms=583.235
+1790495620021 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.987 max_chunk_ms=27.987
+1790495620035 [ttft] id=cmpl-99ef4bc881ff32ada6a97b6e78b60eb6 model="q38" path="/v1/completions" prompt_tokens=6144 outcome=first_sse_byte request_parse_ms=0.151 admission_ms=0.017 queue_wait_ms=12.890 tokenize_ms=0.001 prime_wait_ms=0.511 prime_ms=1717.415 decode_wait_ms=0.000 sse_handoff_ms=0.073 request_parse_end_ms=0.151 admission_end_ms=0.168 tokenize_start_ms=13.058 tokenize_end_ms=13.059 prime_start_ms=13.570 prime_end_ms=1730.985 first_decode_ms=1730.985 first_sse_byte_ms=1731.058 total_ms=1731.058
+1790495620284 [spec-acc] ctx=6145 burst=18/39 cum=18/39=0.462
+1790495620575 [spec-acc] ctx=6177 burst=16/48 cum=34/87=0.391
+1790495620830 [spec-acc] ctx=6209 burst=19/42 cum=53/129=0.411
+1790495621047 [spec-acc] ctx=6242 burst=22/36 cum=75/165=0.455
+1790495621284 [spec-acc] ctx=6276 burst=22/39 cum=97/204=0.475
+1790495621557 [spec-acc] ctx=6311 burst=18/45 cum=115/249=0.462
+1790495621811 [spec-acc] ctx=6344 burst=20/42 cum=135/291=0.464
+1790495621993 [spec-acc] ctx=6378 burst=12/30 cum=147/321=0.458
+1790495621996 [meter] admit id=cmpl-047dfc5af35065e0defb1d6cb52ca09a tenant=default lane=interactive model="q38"
+1790495622008 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495622008 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2011MB prefill-workspace + 323MB fixed = 2593MB
+1790495622008 [admit-predict] id=cmpl-047dfc5af35065e0defb1d6cb52ca09a tenant="rx-6144-256-4" model="q38" verdict=admit reason=global-p95 prompt=6464 predicted_completion=256 kv_hat=2595342184 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495622008 [worker] spec-reuse: 6400 committed tokens resumed [sampler=equivalent] (model q38)
+1790495622008 [spec-k] model="q38" tenant="rx-6144-256-4" K=2 source=cached-long prompt=6464 cached=6400 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495622164 [ttft] id=cmpl-047dfc5af35065e0defb1d6cb52ca09a model="q38" path="/v1/completions" prompt_tokens=6464 outcome=first_sse_byte request_parse_ms=0.141 admission_ms=0.014 queue_wait_ms=11.432 tokenize_ms=0.001 prime_wait_ms=0.119 prime_ms=156.238 decode_wait_ms=0.000 sse_handoff_ms=0.053 request_parse_end_ms=0.141 admission_end_ms=0.155 tokenize_start_ms=11.587 tokenize_end_ms=11.588 prime_start_ms=11.707 prime_end_ms=167.945 first_decode_ms=167.945 first_sse_byte_ms=167.998 total_ms=167.998
+1790495622412 [spec-acc] ctx=64 burst=17/30 cum=17/30=0.567
+1790495622627 [spec-acc] ctx=97 burst=19/26 cum=36/56=0.643
+1790495622842 [spec-acc] ctx=129 burst=19/26 cum=55/82=0.671
+1790495623040 [spec-acc] ctx=161 burst=22/24 cum=77/106=0.726
+1790495623238 [spec-acc] ctx=195 burst=21/24 cum=98/130=0.754
+1790495623470 [spec-acc] ctx=228 burst=18/28 cum=116/158=0.734
+1790495623685 [spec-acc] ctx=260 burst=20/26 cum=136/184=0.739
+1790495623884 [spec-acc] ctx=293 burst=15/24 cum=151/208=0.726
+1790495623886 [meter] admit id=cmpl-bf732999f9811d098f6b531acd8a7fca tenant=default lane=interactive model="q38"
+1790495623898 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495623898 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2018MB prefill-workspace + 323MB fixed = 2600MB
+1790495623898 [admit-predict] id=cmpl-bf732999f9811d098f6b531acd8a7fca tenant="rx-6144-256-4" model="q38" verdict=admit reason=global-p95 prompt=6784 predicted_completion=256 kv_hat=2611992424 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495623898 [worker] spec-reuse: 6720 committed tokens resumed [sampler=equivalent] (model q38)
+1790495623898 [spec-k] model="q38" tenant="rx-6144-256-4" K=2 source=cached-long prompt=6784 cached=6720 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495624055 [ttft] id=cmpl-bf732999f9811d098f6b531acd8a7fca model="q38" path="/v1/completions" prompt_tokens=6784 outcome=first_sse_byte request_parse_ms=0.133 admission_ms=0.010 queue_wait_ms=12.216 tokenize_ms=0.001 prime_wait_ms=0.110 prime_ms=156.910 decode_wait_ms=0.000 sse_handoff_ms=0.061 request_parse_end_ms=0.133 admission_end_ms=0.143 tokenize_start_ms=12.359 tokenize_end_ms=12.360 prime_start_ms=12.470 prime_end_ms=169.380 first_decode_ms=169.380 first_sse_byte_ms=169.441 total_ms=169.441
+1790495624237 [spec-acc] ctx=64 burst=20/22 cum=20/22=0.909
+1790495624469 [spec-acc] ctx=96 burst=20/28 cum=40/50=0.800
+1790495624685 [spec-acc] ctx=130 burst=20/26 cum=60/76=0.789
+1790495624867 [spec-acc] ctx=163 burst=21/22 cum=81/98=0.827
+1790495625133 [spec-acc] ctx=195 burst=18/32 cum=99/130=0.762
+1790495625382 [spec-acc] ctx=229 burst=18/30 cum=117/160=0.731
+1790495625598 [spec-acc] ctx=262 burst=20/26 cum=137/186=0.737
+1790495625780 [spec-acc] ctx=295 burst=14/22 cum=151/208=0.726
+1790495625783 [meter] admit id=cmpl-ac772c8e3d8160aaf55880279bcadaf1 tenant=default lane=interactive model="q38"
+1790495625795 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495625795 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2586MB
+1790495625795 [admit-predict] id=cmpl-ac772c8e3d8160aaf55880279bcadaf1 tenant="rxc-6144-256-4-1" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=256 kv_hat=2578691944 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495625795 [spec-k] model="q38" tenant="rxc-6144-256-4-1" K=3 source=cold-long prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495626886 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1090.935 max_chunk_ms=1090.935
+1790495627470 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=583.781 max_chunk_ms=583.781
+1790495627498 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.984 max_chunk_ms=27.984
+1790495627512 [ttft] id=cmpl-ac772c8e3d8160aaf55880279bcadaf1 model="q38" path="/v1/completions" prompt_tokens=6144 outcome=first_sse_byte request_parse_ms=0.131 admission_ms=0.017 queue_wait_ms=11.373 tokenize_ms=0.002 prime_wait_ms=0.535 prime_ms=1716.746 decode_wait_ms=0.000 sse_handoff_ms=0.045 request_parse_end_ms=0.131 admission_end_ms=0.148 tokenize_start_ms=11.521 tokenize_end_ms=11.523 prime_start_ms=12.058 prime_end_ms=1728.804 first_decode_ms=1728.804 first_sse_byte_ms=1728.849 total_ms=1728.849
+1790495627762 [spec-acc] ctx=6145 burst=18/39 cum=18/39=0.462
+1790495628054 [spec-acc] ctx=6177 burst=16/48 cum=34/87=0.391
+1790495628309 [spec-acc] ctx=6209 burst=19/42 cum=53/129=0.411
+1790495628527 [spec-acc] ctx=6242 burst=22/36 cum=75/165=0.455
+1790495628763 [spec-acc] ctx=6276 burst=22/39 cum=97/204=0.475
+1790495629037 [spec-acc] ctx=6311 burst=18/45 cum=115/249=0.462
+1790495629291 [spec-acc] ctx=6344 burst=20/42 cum=135/291=0.464
+1790495629473 [spec-acc] ctx=6378 burst=12/30 cum=147/321=0.458
+1790495629476 [meter] admit id=cmpl-18557593f9b039a1a8a1e4a5aab7407a tenant=default lane=interactive model="q38"
+1790495629488 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495629488 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2011MB prefill-workspace + 323MB fixed = 2593MB
+1790495629488 [admit-predict] id=cmpl-18557593f9b039a1a8a1e4a5aab7407a tenant="rxc-6144-256-4-2" model="q38" verdict=admit reason=global-p95 prompt=6464 predicted_completion=256 kv_hat=2595342184 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495629488 [spec-k] model="q38" tenant="rxc-6144-256-4-2" K=3 source=cold-long prompt=6464 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495630580 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1091.919 max_chunk_ms=1091.919
+1790495631267 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=686.902 max_chunk_ms=686.902
+1790495631295 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.945 max_chunk_ms=27.945
+1790495631312 [ttft] id=cmpl-18557593f9b039a1a8a1e4a5aab7407a model="q38" path="/v1/completions" prompt_tokens=6464 outcome=first_sse_byte request_parse_ms=0.132 admission_ms=0.015 queue_wait_ms=12.387 tokenize_ms=0.002 prime_wait_ms=0.513 prime_ms=1823.042 decode_wait_ms=0.000 sse_handoff_ms=0.053 request_parse_end_ms=0.132 admission_end_ms=0.147 tokenize_start_ms=12.534 tokenize_end_ms=12.536 prime_start_ms=13.049 prime_end_ms=1836.091 first_decode_ms=1836.091 first_sse_byte_ms=1836.144 total_ms=1836.144
+1790495631580 [spec-acc] ctx=6465 burst=19/42 cum=19/42=0.452
+1790495631762 [spec-acc] ctx=6499 burst=22/30 cum=41/72=0.569
+1790495631962 [spec-acc] ctx=6531 burst=23/33 cum=64/105=0.610
+1790495632143 [spec-acc] ctx=6565 burst=22/30 cum=86/135=0.637
+1790495632343 [spec-acc] ctx=6597 burst=24/33 cum=110/168=0.655
+1790495632543 [spec-acc] ctx=6632 burst=21/33 cum=131/201=0.652
+1790495632742 [spec-acc] ctx=6664 burst=22/33 cum=153/234=0.654
+1790495632925 [spec-acc] ctx=6697 burst=13/30 cum=166/264=0.629
+1790495632927 [meter] admit id=cmpl-148e0c4697483a7117f9b13b98ce2c09 tenant=default lane=interactive model="q38"
+1790495632940 [admission] per-session draft-state charge: model="q38" +49MB (measured capture high-water)
+1790495632940 [admission] request cost: model="q38" ctx=8192 path=spec = 31552 B/token x ctx + 2018MB prefill-workspace + 323MB fixed = 2600MB
+1790495632940 [admit-predict] id=cmpl-148e0c4697483a7117f9b13b98ce2c09 tenant="rxc-6144-256-4-3" model="q38" verdict=admit reason=global-p95 prompt=6784 predicted_completion=256 kv_hat=2611992424 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=81760988880 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790495632940 [spec-k] model="q38" tenant="rxc-6144-256-4-3" K=3 source=cold-long prompt=6784 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790495634032 [prime-yield] count=1 remaining=3 chunks=1 wall_ms=1091.868 max_chunk_ms=1091.868
+1790495634792 [prime-yield] count=2 remaining=2 chunks=1 wall_ms=760.483 max_chunk_ms=760.483
+1790495634820 [prime-yield] count=3 remaining=1 chunks=1 wall_ms=27.996 max_chunk_ms=27.996
+1790495634839 [ttft] id=cmpl-148e0c4697483a7117f9b13b98ce2c09 model="q38" path="/v1/completions" prompt_tokens=6784 outcome=first_sse_byte request_parse_ms=0.142 admission_ms=0.013 queue_wait_ms=12.640 tokenize_ms=0.002 prime_wait_ms=0.499 prime_ms=1898.709 decode_wait_ms=0.000 sse_handoff_ms=0.066 request_parse_end_ms=0.142 admission_end_ms=0.155 tokenize_start_ms=12.795 tokenize_end_ms=12.797 prime_start_ms=13.296 prime_end_ms=1912.005 first_decode_ms=1912.005 first_sse_byte_ms=1912.071 total_ms=1912.071
+1790495635017 [spec-acc] ctx=6785 burst=22/27 cum=22/27=0.815
+1790495635219 [spec-acc] ctx=6817 burst=23/33 cum=45/60=0.750
+1790495635402 [spec-acc] ctx=6851 burst=22/30 cum=67/90=0.744
+1790495635604 [spec-acc] ctx=6883 burst=22/33 cum=89/123=0.724
+1790495635842 [spec-acc] ctx=6916 burst=21/39 cum=110/162=0.679
+1790495636062 [spec-acc] ctx=6950 burst=20/36 cum=130/198=0.657
+1790495636282 [spec-acc] ctx=6982 burst=22/36 cum=152/234=0.650
+1790495636466 [spec-acc] ctx=7016 burst=14/30 cum=166/264=0.629
+1790495636482 [server] SIGTERM: draining (0 in flight, deadline 30s)
+1790495636482 [server] drain complete in 0.0s; exiting
+1790495636556 [server] GPU worker shutdown complete

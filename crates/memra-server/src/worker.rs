@@ -1626,6 +1626,10 @@ pub struct Request {
     /// reset the budget forever and bound nothing. `None` off the door and until the first
     /// memory defer.
     pub(crate) memory_defer_since: Option<Instant>,
+    /// WP-B day 42 (`MEMRA_ADMIT_RECLAIM_OFFTICK`): this arrival's off-tick reclaim plan, made at
+    /// its first reclaim pass (`research/spill-b-20260919/DAY42.md` 1.2); `None` otherwise and on
+    /// a park replay (a replayed arrival plans again).
+    pub(crate) reclaim_offtick: Option<ReclaimOffTick>,
     /// Optional provider-declared prompt ceiling. The HTTP layer copies this from the
     /// model metadata; the worker enforces it after rendering/tokenization, before cache
     /// lookup, admission accounting, or any GPU work.
@@ -2194,6 +2198,20 @@ pub struct Metrics {
     pub cuda_pool_reserved_bytes: u64,
     pub cuda_pool_used_bytes: u64,
     pub cuda_pool_cached_bytes: u64,
+    /// WP-B day 37 (`MEMRA_KV_ALLOCATOR=vmm`): on-demand K/V planes held by active and parked
+    /// sessions, backed and reserved; their owed growth (active only); the graveyard's pending
+    /// bytes; process counters. All 0 with the door off.
+    pub kv_vmm_mapped_bytes: u64,
+    pub kv_vmm_reserved_bytes: u64,
+    pub kv_vmm_owed_bytes: u64,
+    pub kv_vmm_graveyard_bytes: u64,
+    pub kv_vmm_grows_total: u64,
+    pub kv_vmm_mapper_grows_total: u64,
+    pub kv_vmm_grow_waits_total: u64,
+    pub kv_vmm_grow_failures_total: u64,
+    pub kv_vmm_released_bytes_total: u64,
+    /// DAY37 addendum E3: bytes failed reaps took out of the release path.
+    pub kv_vmm_quarantined_bytes_total: u64,
     /// LCP length histogram (lane/cache-metering): one sample per prefix-cache PROBE —
     /// on a hit, the served entry's token length; on a miss, best_lcp against the pool
     /// (already computed there for the split-learning signal, so the histogram adds no
@@ -2275,6 +2293,17 @@ struct ReuseEntry {
     /// Global park age used by admission and preemptive ceiling reclaim. Per-key vector order
     /// remains unchanged.
     parked_at: Instant,
+    /// EXACT RESUME (WP-B day 44): the entry's id in the settle queue (`next_parked_id`).
+    id: u64,
+    /// EXACT RESUME: the cache holds exactly `fed` under the prime program, on the grid (a settle
+    /// landed); a resume primes the tail from `fed.len()` with no restore.
+    settled: bool,
+}
+
+/// Monotonic ids for parked entries (the settle queue holds ids, never references).
+fn next_parked_id() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 /// A retired PLAIN session's PROMPT-END-class boundary state — the rewind target for
 /// plain-session affinity resume (lane/plain-affinity, 2026-08-09). The plain twin of
@@ -2316,6 +2345,15 @@ struct SpecReuseEntry {
     /// as llama serve's cache_prompt: the suffix's boundary tokenization may differ from a cold
     /// full-retok — committed tokens stay authoritative, spec==greedy exactness is untouched.
     committed_text: String,
+    /// EXACT RESUME (WP-B day 44): the entry's id in the settle queue.
+    id: u64,
+    /// EXACT RESUME: the session holds exactly `committed` under the prime program, on the grid (a
+    /// settle landed); a resume primes the tail with no rewind.
+    settled: bool,
+    /// The public stream's length (`spec_public_len`, WP-B day 41 addendum B3): `committed`
+    /// minus the final burst's accepted drafts past the budget. Read only by the armed
+    /// `MEMRA_RESUME_GRID_REWIND` exact probe, which always rewinds below it.
+    public_len: usize,
     /// SESSION AFFINITY (lane/session-affinity): the conversation this session belongs to, as
     /// the admitting request declared it — `Some(id)` from the explicit tier
     /// (`session_id`/`user`/`x-session-id`), else None. Nomination only; see `affinity`.
@@ -3183,6 +3221,301 @@ const FP_MIN_SEGMENTS: usize = 3;
 /// once with `MEMRA_AFFINITY=0`, and requires identical per-turn `text_sha`. Disabling the pool
 /// outright (`MEMRA_REUSE_POOL=0`) would be a different comparison: it also drops the
 /// token/text-prefix resumes, so a divergence could not be attributed to affinity.
+/// The plain pool's grid rewind (DAY41 1.1): restore the entry to its checkpoint in place (the
+/// affinity path's restore), truncate `fed` to it and carry the checkpoint's logits. `None` (the
+/// entry dropped, the request primes cold) when there is no checkpoint, the ring lapped it, the
+/// prompt does not reproduce the committed tokens through it, or the restore fails.
+fn grid_rewind_plain(
+    engine: &Engine,
+    lm: &LoadedModel,
+    mut e: ReuseEntry,
+    prompt: &[u32],
+    model: &str,
+) -> Option<ReuseEntry> {
+    let committed = e.fed.len();
+    let Some(ckpt) = e.ckpt.take() else {
+        eprintln!("[kv-reuse] grid-rewind: plain declined (no checkpoint); cold");
+        return None;
+    };
+    if !e.cache.can_rollback(&ckpt.snap, 0) {
+        eprintln!("[kv-reuse] grid-rewind: plain declined (ring lapped the checkpoint); cold");
+        return None;
+    }
+    let pos = ckpt.pos;
+    if pos > committed || prompt.len() <= pos || prompt[..pos] != e.fed[..pos] {
+        eprintln!(
+            "[kv-reuse] grid-rewind: plain declined (prompt diverges before checkpoint {pos}); cold"
+        );
+        return None;
+    }
+    if let Err(err) = memra_engine::pp::restore_cache_checkpoint(
+        engine,
+        &lm.model,
+        None,
+        &mut e.cache,
+        &ckpt.snap,
+    ) {
+        eprintln!("[kv-reuse] grid-rewind: plain declined (restore failed: {err}); cold");
+        return None;
+    }
+    e.fed.truncate(pos);
+    e.last_logits = ckpt.last_logits;
+    eprintln!(
+        "[kv-reuse] grid-rewind: plain extension of {committed} committed rows rewound to {pos} \
+         (re-priming {} rows; model {model})",
+        committed - pos
+    );
+    Some(e)
+}
+
+/// The spec pool's exact resume (MEMRA_RESUME_EXACT, DAY44 1.2 (b)): a settled entry resumes
+/// where it stands; an unsettled one rewinds to its turn checkpoint and keeps it (the carry
+/// until the walker captures a newer one). At least `PRIME_MIN_T` rows prime. `None`: cold.
+fn exact_resume_spec(
+    engine: &Engine,
+    lm: &LoadedModel,
+    mut entry: SpecReuseEntry,
+    prompt: &[u32],
+    model: &str,
+) -> Option<memra_engine::spec::SpecSession> {
+    let floor = memra_engine::hybrid_forward::PRIME_MIN_T;
+    let committed = entry.sess.committed.len();
+    if entry.settled {
+        if prompt.len() < committed + floor || prompt[..committed] != entry.sess.committed[..] {
+            eprintln!(
+                "[kv-reuse] exact: declined (the prompt extends the settled rows by fewer than \
+                 the prime floor); cold"
+            );
+            return None;
+        }
+        eprintln!(
+            "[kv-reuse] exact: spec resume from {committed} of {committed} committed rows \
+             (priming {} rows, settled; model {model})",
+            prompt.len() - committed
+        );
+        return Some(entry.sess);
+    }
+    let Some(pos) = entry.sess.rewind_pos() else {
+        eprintln!("[kv-reuse] exact: declined (no turn checkpoint); cold");
+        return None;
+    };
+    if !entry.sess.rewind_is_resident() {
+        eprintln!("[kv-reuse] exact: declined (ring lapped the checkpoint); cold");
+        return None;
+    }
+    if pos > committed || prompt.len() < pos + floor || prompt[..pos] != entry.sess.committed[..pos]
+    {
+        eprintln!(
+            "[kv-reuse] exact: declined (the prompt diverges before the checkpoint or extends \
+             it by fewer than the floor); cold"
+        );
+        return None;
+    }
+    match lm
+        .model
+        .spec_rewind_to_checkpoint_retaining(engine, &mut entry.sess)
+    {
+        Ok(Some(p)) => {
+            eprintln!(
+                "[kv-reuse] exact: spec resume from {p} of {committed} committed rows (priming \
+                 {} rows, checkpoint; model {model})",
+                prompt.len() - p
+            );
+            Some(entry.sess)
+        }
+        Ok(None) => {
+            eprintln!("[kv-reuse] exact: declined (no turn checkpoint); cold");
+            None
+        }
+        Err(err) => {
+            eprintln!("[kv-reuse] exact: declined (rewind failed: {err}); cold");
+            None
+        }
+    }
+}
+
+/// The plain pool's exact resume (MEMRA_RESUME_EXACT, DAY44 1.2 (b)). A settled entry's cache
+/// holds exactly its `fed` under the prime program on the grid, so the request resumes there. An
+/// unsettled entry restores its grid checkpoint (captured inside the prime call that contained
+/// it) and the tail past it primes in one call, cold-exact by the grid law; the checkpoint is
+/// returned as the new session's carry. Every resume primes at least `PRIME_MIN_T` rows, so no
+/// prompt row rides the tokenwise program. `None`: declined, the request primes cold.
+fn exact_resume_plain(
+    engine: &Engine,
+    lm: &LoadedModel,
+    mut e: ReuseEntry,
+    prompt: &[u32],
+    model: &str,
+) -> (Option<ReuseEntry>, Option<PlainCheckpoint>) {
+    let floor = memra_engine::hybrid_forward::PRIME_MIN_T;
+    let committed = e.fed.len();
+    let decline = |why: &str| {
+        eprintln!("[kv-reuse] exact: declined ({why}); cold");
+    };
+    if e.settled {
+        if prompt.len() < committed + floor {
+            decline("the prompt extends the settled rows by fewer than the prime floor");
+            return (None, None);
+        }
+        eprintln!(
+            "[kv-reuse] exact: plain resume from {committed} of {committed} committed rows \
+             (priming {} rows, settled; model {model})",
+            prompt.len() - committed
+        );
+        // DAY44 addendum C: the settle kept the checkpoint at `g`; the session carries it until
+        // its own call's in-call capture replaces it (case 9), so affinity keeps a rewind point.
+        let carry = e.ckpt.take();
+        return (Some(e), carry);
+    }
+    let Some(mut ckpt) = e.ckpt.take() else {
+        decline("no checkpoint");
+        return (None, None);
+    };
+    if !e.cache.can_rollback(&ckpt.snap, 0) {
+        decline("ring lapped the checkpoint");
+        return (None, None);
+    }
+    let pos = ckpt.pos;
+    if pos > committed || prompt.len() < pos + floor || prompt[..pos] != e.fed[..pos] {
+        decline("the prompt diverges before the checkpoint or extends it by fewer than the floor");
+        return (None, None);
+    }
+    if let Err(err) = memra_engine::pp::restore_cache_checkpoint(
+        engine,
+        &lm.model,
+        None,
+        &mut e.cache,
+        &ckpt.snap,
+    ) {
+        decline(&format!("restore failed: {err}"));
+        return (None, None);
+    }
+    e.fed.truncate(pos);
+    e.last_logits = std::mem::take(&mut ckpt.last_logits);
+    eprintln!(
+        "[kv-reuse] exact: plain resume from {pos} of {committed} committed rows (priming {} \
+         rows, checkpoint; model {model})",
+        prompt.len() - pos
+    );
+    (Some(e), Some(ckpt))
+}
+
+/// The spec pool's grid rewind (DAY41 1.1): `spec_rewind_to_checkpoint` (trunk cache, draft
+/// scratch, committed tokens), then the token suffix primes. `None` (cold) when the session keeps
+/// no turn checkpoint, the prompt does not reproduce the committed tokens through it, or the
+/// rewind fails.
+fn grid_rewind_spec(
+    engine: &Engine,
+    lm: &LoadedModel,
+    mut sess: memra_engine::spec::SpecSession,
+    prompt: &[u32],
+    model: &str,
+) -> Option<memra_engine::spec::SpecSession> {
+    let committed = sess.committed.len();
+    let Some(pos) = sess.rewind_pos() else {
+        eprintln!("[kv-reuse] grid-rewind: spec declined (no turn checkpoint); cold");
+        return None;
+    };
+    if !sess.rewind_is_resident() {
+        eprintln!("[kv-reuse] grid-rewind: spec declined (ring lapped the checkpoint); cold");
+        return None;
+    }
+    if pos > committed || prompt.len() <= pos || prompt[..pos] != sess.committed[..pos] {
+        eprintln!(
+            "[kv-reuse] grid-rewind: spec declined (prompt diverges before checkpoint {pos}); cold"
+        );
+        return None;
+    }
+    match lm.model.spec_rewind_to_checkpoint(engine, &mut sess) {
+        Ok(Some(p)) => {
+            eprintln!(
+                "[kv-reuse] grid-rewind: spec extension of {committed} committed rows rewound to {p} \
+                 (re-priming {} rows; model {model})",
+                committed - p
+            );
+            Some(sess)
+        }
+        Ok(None) => {
+            eprintln!("[kv-reuse] grid-rewind: spec declined (no turn checkpoint); cold");
+            None
+        }
+        Err(err) => {
+            eprintln!("[kv-reuse] grid-rewind: spec declined (rewind failed: {err}); cold");
+            None
+        }
+    }
+}
+
+/// MEMRA_RESUME_GRID_REWIND (default unset = OFF; WP-B day 41, O11, a measurement door): a pool
+/// resume that exactly extends a parked session's committed tokens rewinds it to the entry's grid
+/// checkpoint and re-primes from there, instead of resuming on the parked state (which holds the
+/// previous turn's DECODED rows, the near-tie residual `docs/SERVING.md` names). By the grid law a
+/// prime split on the grid is bit-identical to the monolithic prime, so the rewound resume is
+/// cold-identical. Armed, every session also arms its checkpoint (`plain_checkpoint_boundary`),
+/// not only a nominatable prompt. Unset, nothing reads it.
+/// MEMRA_SPEC_BUDGET_CLAMP (default unset, WP-B day 43, OWED O13): `1` makes the Qwen MTP
+/// session route truncate a round that would commit accepted drafts past the request's budget
+/// (`memra_engine::spec::budget_clamp_slot`), so a parked spec session equals the public stream
+/// and the pool's exact probe can resume it. The public stream is unchanged. Unset reads nothing.
+fn spec_budget_clamp_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| {
+        let on = std::env::var("MEMRA_SPEC_BUDGET_CLAMP").as_deref() == Ok("1");
+        if on {
+            eprintln!(
+                "[spec] MEMRA_SPEC_BUDGET_CLAMP=1: the final round commits at the request budget \
+                 (DAY43 measurement door)"
+            );
+        }
+        on
+    })
+}
+
+/// MEMRA_RESUME_EXACT (default unset, WP-B day 44, OWED O11 revised): the exact and fast resume.
+/// `1`: every resumable prime call captures its grid checkpoint inside the call with no stop
+/// (`memra_engine::grid_capture`), an exact-extension hit restores it and primes the prompt's tail
+/// in one call (cold-exact by the grid law), and an off-path settle re-primes a parked entry's
+/// reply rows with the prime program after an idle grace, so the next resume primes only the
+/// tail. It takes precedence over `MEMRA_RESUME_GRID_REWIND`. Unset reads nothing.
+fn resume_exact_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| {
+        let on = std::env::var("MEMRA_RESUME_EXACT").as_deref() == Ok("1");
+        if on {
+            eprintln!(
+                "[kv-reuse] MEMRA_RESUME_EXACT=1: in-call grid checkpoints, one-call exact \
+                 resumes, off-path settles (DAY44 door)"
+            );
+        }
+        on
+    })
+}
+
+/// MEMRA_RESUME_EXACT_FAULT (fault injection of the DAY44 fault boot): `settle-fail` makes every
+/// settle fail after its restore, so the entry is dropped and the next turn primes cold.
+fn resume_exact_fault_settle() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_RESUME_EXACT_FAULT").as_deref() == Ok("settle-fail"))
+}
+
+/// The settle's idle grace (DAY44 1.2 (c)): a zero-gap next turn finds no settle in flight.
+const EXACT_SETTLE_GRACE: Duration = Duration::from_millis(100);
+
+fn resume_grid_rewind_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| {
+        let on = std::env::var("MEMRA_RESUME_GRID_REWIND").as_deref() == Ok("1")
+            && std::env::var("MEMRA_RESUME_EXACT").as_deref() != Ok("1");
+        if on {
+            eprintln!(
+                "[kv-reuse] MEMRA_RESUME_GRID_REWIND=1: exact-extension resumes rewind to the \
+                 entry's grid checkpoint (DAY41 measurement door)"
+            );
+        }
+        on
+    })
+}
+
 fn affinity_enabled() -> bool {
     if memra_engine::pp::pp_host_bounce_active() {
         // Plain-affinity checkpoints call Cache::snapshot through the primary Engine. Hybrid
@@ -3489,6 +3822,53 @@ fn plain_checkpoint_boundary(prompt: &[u32], is_control: &dyn Fn(u32) -> bool) -
     // inside the checkpoint.
     let b = grid_align_boundary_within(n - PLAIN_CKPT_RAW_GUARD, n);
     if b > REUSE_MIN_PREFIX { Some(b) } else { None }
+}
+
+/// The checkpoint an armed `MEMRA_RESUME_GRID_REWIND` session arms (WP-B day 41 addendum B).
+/// Absolute prompt positions, on the grid; `seed` is the resumed depth (0 cold).
+///
+/// - `markers` (the request is named or nominatable): the affinity program's point, the grid
+///   floor of the last control token, never past it, when that floor lies past `seed`; otherwise
+///   (B2: the resumed depth already covers it) the guard window.
+/// - not `markers` (B1: no affinity resume can nominate the session): the guard window,
+///   interior control tokens ignored, since an exact extension resends the whole prompt.
+///
+/// Every boundary clears the fed-start floor (`b >= seed + PRIME_MIN_T`), so no row between the
+/// resumed depth and the checkpoint primes tokenwise, and the snapshot is a prime-produced
+/// state on the grid. `None`: no legal checkpoint (the next resume declines cold).
+fn grid_rewind_checkpoint_boundary(
+    prompt: &[u32],
+    seed: usize,
+    markers: bool,
+    is_control: &dyn Fn(u32) -> bool,
+) -> Option<usize> {
+    let n = prompt.len();
+    if n <= REUSE_MIN_PREFIX + PLAIN_CKPT_RAW_GUARD {
+        return None;
+    }
+    let floor = memra_engine::hybrid_forward::PRIME_MIN_T;
+    let legal = |b: usize| b > REUSE_MIN_PREFIX && b < n && b >= seed + floor;
+    if markers && let Some(last_marker) = prompt.iter().rposition(|&t| is_control(t)) {
+        let b = grid_align_boundary_within(last_marker, n);
+        if b > REUSE_MIN_PREFIX && b < n && b > seed {
+            return legal(b).then_some(b);
+        }
+    }
+    let b = grid_align_boundary_within(n - PLAIN_CKPT_RAW_GUARD, n);
+    legal(b).then_some(b)
+}
+
+/// The public stream length of a parked spec session (WP-B day 41 addendum B3): the request's
+/// prompt plus its public generated tokens when `committed` reproduces the generated tokens
+/// there; otherwise `committed.len()` (today's match key). Rows past it are the final burst's
+/// accepted drafts beyond the budget, which the next prompt never carries.
+fn spec_public_len(committed: &[u32], n_prompt: usize, generated: &[u32]) -> usize {
+    let end = n_prompt + generated.len();
+    if end <= committed.len() && committed[n_prompt..end] == *generated {
+        end
+    } else {
+        committed.len()
+    }
 }
 
 /// PRIME-GRID BOUNDARY ALIGNMENT (lane/spec-longctx-20260821 — the GATES-SMOKE B3/B1-fold
@@ -6557,6 +6937,156 @@ fn pending_prime_bytes(
         .fold(0usize, usize::saturating_add)
 }
 
+/// One still-priming session as the corrected pending-prime term reads it (WP-B day 39).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PrimeOwed {
+    rows: usize,
+    /// On the MTP spec route with its walker not yet started (its whole-prompt stack is owed).
+    unstarted_walker: bool,
+    /// The walker persists across ticks (`MEMRA_PRIME_YIELD` and the model supports the walk).
+    cooperative: bool,
+    /// Addendum B: the checkpoint snapshots this session's prime will still take, in bytes
+    /// (`Cache::snapshot` copies every recurrent layer's conv and ssm state).
+    snapshot_bytes: usize,
+}
+
+/// The corrected pending-prime term for one model (pure; DAY39 1.2 as revised by addendum B):
+/// the slab's owed growth for the largest call, once; that call's returned rows, once (the slab
+/// does not hold them); the cooperative unstarted walkers' stacks summed; the largest
+/// non-cooperative walker stack once; every owed checkpoint snapshot; the hyper shape per session
+/// as day 33 booked it.
+fn pending_prime_for_model(
+    owed: &[PrimeOwed],
+    shape: Option<&memra_engine::hybrid_forward::PrimeWorkspaceShape>,
+    hyper: Option<&memra_engine::hybrid_forward::HyperPrimeWorkspaceShape>,
+    slab_bytes: usize,
+) -> usize {
+    let hyper_bytes = hyper.map_or(0, |h| {
+        owed.iter()
+            .map(|o| h.admission_bytes(o.rows))
+            .fold(0usize, usize::saturating_add)
+    });
+    let snapshots = owed
+        .iter()
+        .map(|o| o.snapshot_bytes)
+        .fold(0usize, usize::saturating_add);
+    let Some(shape) = shape else {
+        return hyper_bytes.saturating_add(snapshots);
+    };
+    let call_rows = owed
+        .iter()
+        .map(|o| shape.call_rows(o.rows))
+        .max()
+        .unwrap_or(0);
+    let slab_growth = shape
+        .call_row_bytes
+        .saturating_mul(call_rows)
+        .saturating_sub(slab_bytes);
+    let returned = shape.prompt_row_bytes.saturating_mul(call_rows);
+    let stack = |o: &PrimeOwed| shape.prompt_row_bytes.saturating_mul(o.rows);
+    let stacks = owed
+        .iter()
+        .filter(|o| o.unstarted_walker && o.cooperative)
+        .map(stack)
+        .fold(0usize, usize::saturating_add);
+    let noncoop = owed
+        .iter()
+        .filter(|o| o.unstarted_walker && !o.cooperative)
+        .map(stack)
+        .max()
+        .unwrap_or(0);
+    slab_growth
+        .saturating_add(returned)
+        .saturating_add(stacks)
+        .saturating_add(noncoop)
+        .saturating_add(snapshots)
+        .saturating_add(hyper_bytes)
+}
+
+/// Bytes `Cache::snapshot` copies for `cache`: every recurrent layer's conv and ssm state (the
+/// recurrent part of `prefix_seed_bytes_at`). 0 for an attention-only cache.
+fn cache_snapshot_bytes(cache: &Cache) -> usize {
+    cache
+        .recur
+        .iter()
+        .flatten()
+        .map(|r| (r.conv_state.len() + r.ssm_state.len()) * 4)
+        .fold(0usize, usize::saturating_add)
+}
+
+/// The checkpoint snapshots a still-priming session's prime will still take (DAY39 addendum B):
+/// a plain session with its affinity checkpoint armed and not taken; a spec session whose turn
+/// checkpoint is armed (`ckpt_at` before its walker starts) or whose walker has not reached the
+/// checkpoint row. Prefix-seed captures are `pending_seed`'s.
+fn session_snapshot_bytes_owed(s: &Session) -> usize {
+    match s.spec.as_ref() {
+        Some(sp) => {
+            let owed = match s.mtp_prime.as_ref() {
+                Some(state) => state.owes_turn_checkpoint(),
+                None => sp.ckpt_at.is_some(),
+            };
+            if owed {
+                cache_snapshot_bytes(sp.cache_ref())
+            } else {
+                0
+            }
+        }
+        None => match s.cache.as_ref() {
+            // WP-B day 44: an owed in-call grid capture allocates a snapshot even while a carried
+            // checkpoint is held (both live until the capture replaces the carry).
+            Some(cache)
+                if (s.ckpt_at.is_some() && s.ckpt_snap.is_none()) || s.exact_at.is_some() =>
+            {
+                cache_snapshot_bytes(cache)
+            }
+            _ => 0,
+        },
+    }
+}
+
+/// The corrected pending-prime term (WP-B day 39, `research/spill-b-20260919/DAY39.md` 1.2 and
+/// addendum B), per model through `pending_prime_for_model`: the prime slab is retained,
+/// grow-only and shared by every prime call on the device, and the batched worker runs those calls
+/// one after another, so a burst owes one call's workspace (the slab part less the slab already
+/// resident, plus the call's returned rows), each cooperative walker's stack until that walker
+/// starts, and every checkpoint snapshot the primes will still take, not one whole workspace per
+/// session.
+fn pending_prime_bytes_v2(
+    active: &[Session],
+    admission_costs: &HashMap<String, AdmissionCostModel>,
+    slab_bytes: &dyn Fn(&str) -> usize,
+    cooperative: &dyn Fn(&str) -> bool,
+) -> usize {
+    let mut by_model: HashMap<&str, Vec<PrimeOwed>> = HashMap::new();
+    for s in active {
+        let rows = session_pending_prime_rows(s.prefill_done, s.prefill_queue.len());
+        if rows == 0 || !admission_costs.contains_key(&s.model) {
+            continue;
+        }
+        by_model
+            .entry(s.model.as_str())
+            .or_default()
+            .push(PrimeOwed {
+                rows,
+                unstarted_walker: s.spec.is_some() && s.mtp_prime.is_none(),
+                cooperative: cooperative(&s.model),
+                snapshot_bytes: session_snapshot_bytes_owed(s),
+            });
+    }
+    by_model
+        .into_iter()
+        .map(|(name, owed)| {
+            let model = &admission_costs[name];
+            pending_prime_for_model(
+                &owed,
+                model.prime.as_ref(),
+                model.prefill.as_ref(),
+                slab_bytes(name),
+            )
+        })
+        .fold(0usize, usize::saturating_add)
+}
+
 /// Prompt rows of the prefix entry a session will still publish at prime completion (memra#680,
 /// lane B day 35): its armed seed boundary while `seed_prefix` holds, with a live cache and no
 /// vision input, else 0. `maybe_prefix_seed` clears `seed_prefix` whether the insert lands, is
@@ -6651,6 +7181,261 @@ fn pending_seed_bytes(active: &[Session]) -> usize {
             }
         })
         .fold(0usize, usize::saturating_add)
+}
+
+/// WP-B day 37 (`MEMRA_KV_ALLOCATOR=vmm`, DAY37 1.3): the routes whose engine calls the tick-top
+/// ensure bounds. A model is covered when it runs on one device (no ppN stage ownership, no
+/// model-owned peer engines) and its plan has no SWA ring and no latent planes; every other
+/// model keeps pooled planes under the door.
+fn vmm_route_covered(engine: &Engine, lm: &LoadedModel) -> bool {
+    let n_trunk = (lm.model.cfg.n_layer - lm.model.cfg.nextn_predict_layers) as usize;
+    memra_engine::pp::pp_cuts(n_trunk).is_none()
+        && lm.model.owned_engines(engine).len() <= 1
+        && !lm.model.plan.layers.iter().any(|layer| {
+            matches!(
+                layer.state,
+                memra_gguf::model_plan::StatePlan::SlidingKvCache { .. }
+                    | memra_gguf::model_plan::StatePlan::LatentKvCache { .. }
+            )
+        })
+}
+
+/// The spec burst cadence (`MEMRA_SPEC_BURST`, default 32), the rows one spec burst targets.
+fn vmm_spec_burst_t() -> usize {
+    std::env::var("MEMRA_SPEC_BURST")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(32)
+}
+
+/// The construction scope's initial rows for a covered cache of `cap` rows, or `None` when the
+/// door is off or the model is not covered (DAY37 1.2 ensure point 1).
+fn vmm_scope(
+    engine: &Engine,
+    lm: &LoadedModel,
+    cap: usize,
+    prompt_rows: usize,
+    spec_k: usize,
+) -> Option<usize> {
+    if !crate::kv_vmm::armed() || !vmm_route_covered(engine, lm) {
+        return None;
+    }
+    // One tick of either route: the larger of a spec burst and a plain step.
+    let tick = crate::kv_vmm::tick_rows(true, vmm_spec_burst_t(), spec_k, serve_async_chain_k())
+        .max(crate::kv_vmm::tick_rows(false, 0, 0, serve_async_chain_k()));
+    Some(crate::kv_vmm::initial_rows(cap, prompt_rows, tick))
+}
+
+/// Build a cache under the on-demand scope (DAY37 1.2's runtime census): the on-demand planes
+/// the scope allocated must all be reachable by the cache's own ensure visitor, or the cache is
+/// refused before any engine call. `scope == None` is the pooled program, byte for byte.
+fn vmm_build_cache(
+    scope: Option<usize>,
+    build: impl FnOnce() -> Result<Cache, Box<dyn std::error::Error>>,
+) -> Result<Cache, Box<dyn std::error::Error>> {
+    let Some(initial) = scope else {
+        return build();
+    };
+    let (built, count) = memra_engine::cache::with_on_demand_kv(initial, build);
+    let cache = built?;
+    if cache.on_demand_planes() != count {
+        return Err(format!(
+            "vmm: on-demand plane not reachable by ensure (scope allocated {count}, cache reaches {})",
+            cache.on_demand_planes()
+        )
+        .into());
+    }
+    Ok(cache)
+}
+
+/// The spec-session twin of [`vmm_build_cache`]: trunk cache and draft scratch together.
+fn vmm_build_spec<T>(
+    scope: Option<usize>,
+    build: impl FnOnce() -> Result<T, Box<dyn std::error::Error>>,
+    planes: impl Fn(&T) -> usize,
+) -> Result<T, Box<dyn std::error::Error>> {
+    let Some(initial) = scope else {
+        return build();
+    };
+    let (built, count) = memra_engine::cache::with_on_demand_kv(initial, build);
+    let value = built?;
+    if planes(&value) != count {
+        return Err(format!(
+            "vmm: on-demand plane not reachable by ensure (scope allocated {count}, session reaches {})",
+            planes(&value)
+        )
+        .into());
+    }
+    Ok(value)
+}
+
+/// Back one session's on-demand planes through its bound (DAY37 1.2 ensure points 2 and 3):
+/// the spec session's trunk and scratch, and `s.cache`, each against its own position. Returns
+/// every grow as `(label, rows, event)`; a pooled session returns nothing.
+/// Every grow of one ensure: `(plane label, bound rows, event)`.
+type VmmGrows = Vec<(String, usize, memra_engine::cache::GrowEvent)>;
+
+fn vmm_ensure_session(s: &mut Session) -> Result<VmmGrows, Box<dyn std::error::Error>> {
+    let mut out = Vec::new();
+    let floor = s.vmm_floor_rows;
+    if let Some(sp) = s.spec.as_mut()
+        && sp.kv_on_demand_planes() > 0
+    {
+        let tick =
+            crate::kv_vmm::tick_rows(true, vmm_spec_burst_t(), s.spec_k, serve_async_chain_k());
+        let rows = crate::kv_vmm::bound_rows(sp.cache_max_ctx(), sp.kv_position(), floor, tick);
+        for (label, ev) in sp.ensure_kv_rows(rows)? {
+            out.push((label, rows, ev));
+        }
+    }
+    if let Some(c) = s.cache.as_mut()
+        && c.on_demand_planes() > 0
+    {
+        let tick = crate::kv_vmm::tick_rows(false, 0, 0, serve_async_chain_k());
+        let rows = crate::kv_vmm::bound_rows(c.max_ctx, c.pos, floor, tick);
+        for (label, ev) in c.ensure_kv_rows(rows)? {
+            out.push((label, rows, ev));
+        }
+    }
+    Ok(out)
+}
+
+/// Owed growth (DAY37 1.4): the reserved-but-unbacked bytes of every active session's on-demand
+/// planes. Pooled planes are allocated whole at admission, so the pooled gate already sees them;
+/// the armed gate reduces its readings by this so it sees the same future footprint.
+fn vmm_owed_bytes(active: &[Session]) -> usize {
+    active
+        .iter()
+        .map(|s| {
+            let (m1, r1) = s.spec.as_ref().map_or((0, 0), |sp| sp.kv_on_demand_bytes());
+            let (m2, r2) = s.cache.as_ref().map_or((0, 0), |c| c.kv_on_demand_bytes());
+            r1.saturating_sub(m1).saturating_add(r2.saturating_sub(m2))
+        })
+        .sum()
+}
+
+/// Backed and reserved bytes of every on-demand plane the worker holds: active sessions and the
+/// two parked pools (for `/metrics`).
+fn vmm_held_bytes(
+    active: &[Session],
+    reuse: &HashMap<PoolKey, Vec<ReuseEntry>>,
+    spec_reuse: &HashMap<PoolKey, Vec<SpecReuseEntry>>,
+) -> (usize, usize) {
+    let mut acc = (0usize, 0usize);
+    let mut add = |(m, r): (usize, usize)| {
+        acc.0 += m;
+        acc.1 += r;
+    };
+    for s in active {
+        if let Some(sp) = s.spec.as_ref() {
+            add(sp.kv_on_demand_bytes());
+        }
+        if let Some(c) = s.cache.as_ref() {
+            add(c.kv_on_demand_bytes());
+        }
+    }
+    for e in reuse.values().flatten() {
+        add(e.cache.kv_on_demand_bytes());
+    }
+    for e in spec_reuse.values().flatten() {
+        add(e.sess.kv_on_demand_bytes());
+    }
+    acc
+}
+
+/// The owner-tick reap (DAY37 addendum A): the graveyard, every parked session's released tails,
+/// and the active sessions' (addendum E2: a resumed plane's tail past its `want` is released while
+/// it runs; no consumer touches bytes past the live prefix) whose events completed. Returns (bytes
+/// released, bytes still pending): while anything is pending the run loop does not block
+/// indefinitely (addendum D), so releases land at idle. A failed reap is quarantined inside the
+/// plane and leaves nothing pending (addendum E3).
+fn vmm_reap_tick(
+    active: &mut [Session],
+    reuse: &mut HashMap<PoolKey, Vec<ReuseEntry>>,
+    spec_reuse: &mut HashMap<PoolKey, Vec<SpecReuseEntry>>,
+) -> (usize, usize) {
+    let (mut released, _, _) = memra_engine::cache::vmm_reap_graveyard();
+    for s in active.iter_mut() {
+        if let Some(sp) = s.spec.as_mut() {
+            released += sp.reap_kv();
+        }
+        if let Some(c) = s.cache.as_mut() {
+            released += c.reap_kv();
+        }
+    }
+    for e in reuse.values_mut().flatten() {
+        released += e.cache.reap_kv();
+    }
+    for e in spec_reuse.values_mut().flatten() {
+        released += e.sess.reap_kv();
+    }
+    (released, vmm_pending_bytes(reuse, spec_reuse))
+}
+
+/// Bytes scheduled for release and not yet reaped with nothing active (DAY37 addendum E2): the
+/// graveyard and both parked pools. The idle decision reads it right before it chooses between the
+/// indefinite block and the 2 ms poll, so a trim or a drop made by this tick's retires is seen.
+fn vmm_pending_bytes(
+    reuse: &HashMap<PoolKey, Vec<ReuseEntry>>,
+    spec_reuse: &HashMap<PoolKey, Vec<SpecReuseEntry>>,
+) -> usize {
+    memra_engine::cache::vmm_graveyard_bytes()
+        + reuse
+            .values()
+            .flatten()
+            .map(|e| e.cache.kv_pending_release_bytes())
+            .sum::<usize>()
+        + spec_reuse
+            .values()
+            .flatten()
+            .map(|e| e.sess.kv_pending_release_bytes())
+            .sum::<usize>()
+}
+
+/// The idle decision's read (DAY37 addendum E2 and E4): the tick-top reap ran before this tick's
+/// retires, so the releases their trims and drops scheduled are read here, right before the choice
+/// between the indefinite block and the 2 ms poll; the ensure-walls receipt prints its partial
+/// batch. Unarmed it does nothing.
+fn vmm_idle_refresh(
+    vmm_pending: &mut bool,
+    walls: &mut Vec<u64>,
+    reuse: &HashMap<PoolKey, Vec<ReuseEntry>>,
+    spec_reuse: &HashMap<PoolKey, Vec<SpecReuseEntry>>,
+) {
+    if crate::kv_vmm::armed() {
+        *vmm_pending = vmm_pending_bytes(reuse, spec_reuse) > 0;
+        vmm_flush_ensure_walls(walls);
+    }
+}
+
+/// Print the ensure-walls receipt's batch (DAY37 A3 (i)); addendum E4 also prints the partial
+/// batch when the worker goes idle, so the reading is every wall of the boot.
+fn vmm_flush_ensure_walls(walls: &mut Vec<u64>) {
+    if walls.is_empty() {
+        return;
+    }
+    let joined: Vec<String> = walls.iter().map(u64::to_string).collect();
+    eprintln!(
+        "[kv-vmm] ensure-walls n={} us={}",
+        walls.len(),
+        joined.join(",")
+    );
+    walls.clear();
+}
+
+/// The reclaim paths' reap (DAY37 addendum D): the step-OOM teardown and the admin trim drop the
+/// parked pools; under the door their on-demand planes sit in the graveyard, so the path waits on
+/// the graves' own fences and reaps before it trims the device pools back to the driver.
+fn vmm_reap_for(why: &str) {
+    if !crate::kv_vmm::armed() {
+        return;
+    }
+    match memra_engine::cache::vmm_reap_graveyard_blocking() {
+        Ok((released, pending, _)) => {
+            eprintln!("[kv-vmm] reap ({why}) released={released} pending_graves={pending}")
+        }
+        Err(err) => eprintln!("[kv-vmm] reap ({why}) failed (left pending): {err}"),
+    }
 }
 
 fn admission_required(cost: usize, reserve: usize) -> usize {
@@ -7508,30 +8293,57 @@ const STEP_OOM_FAULT_MSG: &str =
 /// answers 200); a value above `MEMRA_STEP_OOM_RETRIES` walks the same session into the
 /// bounded-retry honest error. Malformed values are OFF with a loud warning. NEVER set on
 /// a serving box.
-fn step_oom_fault_remaining() -> &'static std::sync::atomic::AtomicU32 {
-    static R: std::sync::OnceLock<std::sync::atomic::AtomicU32> = std::sync::OnceLock::new();
+/// Where the door may fire (WP-B day 49 addendum D). `Any`: the next step at any of the three
+/// injection points (a plain `<n>`, today's door). `BatchMulti`: only the plain dispatch's
+/// batched decode chunk, and only a chunk carrying at least two sessions (`batch:<n>`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StepOomFaultSite {
+    Any,
+    BatchMulti,
+}
+
+/// Parse the door's value: `<n>` or `batch:<n>`. `None` is malformed (the door stays OFF).
+fn parse_step_oom_fault(raw: &str) -> Option<(StepOomFaultSite, u32)> {
+    match raw.strip_prefix("batch:") {
+        Some(n) => n
+            .parse::<u32>()
+            .ok()
+            .map(|n| (StepOomFaultSite::BatchMulti, n)),
+        None => raw.parse::<u32>().ok().map(|n| (StepOomFaultSite::Any, n)),
+    }
+}
+
+fn step_oom_fault_state() -> &'static (StepOomFaultSite, std::sync::atomic::AtomicU32) {
+    static R: std::sync::OnceLock<(StepOomFaultSite, std::sync::atomic::AtomicU32)> =
+        std::sync::OnceLock::new();
     R.get_or_init(|| {
-        let n = match std::env::var("MEMRA_STEP_OOM_FAULT") {
-            Ok(raw) => match raw.parse::<u32>() {
-                Ok(n) => n,
-                Err(_) => {
+        let (site, n) = match std::env::var("MEMRA_STEP_OOM_FAULT") {
+            Ok(raw) => match parse_step_oom_fault(&raw) {
+                Some(v) => v,
+                None => {
                     eprintln!(
                         "[admit-oom] WARNING: MEMRA_STEP_OOM_FAULT={raw:?} is not an \
                          injection count; the door stays OFF"
                     );
-                    0
+                    (StepOomFaultSite::Any, 0)
                 }
             },
-            Err(_) => 0,
+            Err(_) => (StepOomFaultSite::Any, 0),
         };
         if n > 0 {
+            let (value, at) = match site {
+                StepOomFaultSite::Any => (n.to_string(), "session step(s)"),
+                StepOomFaultSite::BatchMulti => (
+                    format!("batch:{n}"),
+                    "batched decode chunk(s) of at least two sessions",
+                ),
+            };
             eprintln!(
-                "[admit-oom] WARN: MEMRA_STEP_OOM_FAULT={n} armed: the next {n} session \
-                 step(s) will report a SYNTHETIC CUDA OOM (diagnostic door, never a \
-                 serving configuration)"
+                "[admit-oom] WARN: MEMRA_STEP_OOM_FAULT={value} armed: the next {n} {at} will \
+                 report a SYNTHETIC CUDA OOM (diagnostic door, never a serving configuration)"
             );
         }
-        std::sync::atomic::AtomicU32::new(n)
+        (site, std::sync::atomic::AtomicU32::new(n))
     })
 }
 
@@ -7549,8 +8361,24 @@ fn step_oom_fault_consume(remaining: &std::sync::atomic::AtomicU32) -> bool {
     false
 }
 
+/// Whether an injection point may spend the budget: `batch_sessions` is `Some(k)` at the
+/// batched decode chunk (k sessions) and `None` at the spec and non-batching steps.
+fn step_oom_fault_site_admits(site: StepOomFaultSite, batch_sessions: Option<usize>) -> bool {
+    match site {
+        StepOomFaultSite::Any => true,
+        StepOomFaultSite::BatchMulti => batch_sessions.is_some_and(|k| k >= 2),
+    }
+}
+
 fn step_oom_fault_fire() -> bool {
-    step_oom_fault_consume(step_oom_fault_remaining())
+    let (site, remaining) = step_oom_fault_state();
+    step_oom_fault_site_admits(*site, None) && step_oom_fault_consume(remaining)
+}
+
+/// The batched decode chunk's injection point: `sessions` is the chunk's session count.
+fn step_oom_fault_fire_batch(sessions: usize) -> bool {
+    let (site, remaining) = step_oom_fault_state();
+    step_oom_fault_site_admits(*site, Some(sessions)) && step_oom_fault_consume(remaining)
 }
 
 /// Run one allocation retry only when the first failure released reclaimable state. The caller
@@ -14762,6 +15590,591 @@ fn host_demote_prefix_entry(engine: &Engine, host: &mut HostPrefixCache, mut dea
     // Otherwise `dead` drops here whatever happened: it was already evicted from the device tier.
 }
 
+/// MEMRA_ADMIT_RECLAIM_OFFTICK (default unset = OFF; WP-B day 42, O12): under
+/// `MEMRA_ADMIT_BY_MEMORY` and the host tier's contracts door, the admission reclaim flush drops
+/// its drop set at once and demotes its demote set off the tick, one landing at a time, and the
+/// arrival defers on the landings within the door's defer budget
+/// (`research/spill-b-20260919/DAY42.md` 1.2). Unset, today's on-tick flush runs.
+fn admit_reclaim_offtick_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| {
+        let on = std::env::var("MEMRA_ADMIT_RECLAIM_OFFTICK").as_deref() == Ok("1");
+        if on {
+            eprintln!(
+                "[admit-mem] MEMRA_ADMIT_RECLAIM_OFFTICK=1: the reclaim flush demotes off the tick \
+                 and the arrival waits on the landings (DAY42 door; needs MEMRA_ADMIT_BY_MEMORY=1 \
+                 and MEMRA_KV_HOST_CONTRACTS=1)"
+            );
+        }
+        on
+    })
+}
+
+/// An arrival waiting on the worker's off-tick reclaim (DAY42 addendum E): how many plans it
+/// has made. The demote set itself is the worker's queue, not the arrival's.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) struct ReclaimOffTick {
+    plans: usize,
+}
+
+/// The worker's off-tick demote queue (DAY42 addendum E): every entry an arrival's plan chose
+/// for demotion, oldest first, not yet submitted, with their bytes; and the bytes of the queue's
+/// demote in flight. No plan and no drop set includes a queued entry.
+#[derive(Debug, Default)]
+struct ReclaimQueue {
+    ids: std::collections::VecDeque<(u64, u64)>,
+    inflight_bytes: u64,
+    submitted: usize,
+}
+
+impl ReclaimQueue {
+    fn queued_bytes(&self) -> u64 {
+        self.ids
+            .iter()
+            .map(|&(_, b)| b)
+            .fold(0u64, u64::saturating_add)
+    }
+    fn contains(&self, id: u64) -> bool {
+        self.ids.iter().any(|&(i, _)| i == id)
+    }
+}
+
+/// The plan, pure over the evictable entries oldest first as `(id, bytes)`: today's demote rule
+/// (`evict_all_demoting` demotes while the bytes demoted so far are under the budget) picks the
+/// demote set, and every other evictable entry is the drop set today's flush also drops.
+fn reclaim_offtick_plan(oldest_first: &[(u64, u64)], budget: u64) -> (Vec<u64>, Vec<u64>) {
+    let (mut demote, mut drop, mut planned) = (Vec::new(), Vec::new(), 0u64);
+    for &(id, bytes) in oldest_first {
+        if planned < budget {
+            demote.push(id);
+            planned = planned.saturating_add(bytes);
+        } else {
+            drop.push(id);
+        }
+    }
+    (demote, drop)
+}
+
+/// One admission pass's step for an arrival with a plan (DAY42 1.2), pure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReclaimStep {
+    /// It fits: admit now; the plan's unsubmitted entries stay resident.
+    Admit,
+    /// The demote slot is free and the plan has entries: submit the next one.
+    Submit,
+    /// Short, a landing is in flight (the slot is held), inside the defer budget: wait.
+    Wait,
+    /// Short and past the defer budget while a landing is in flight: the typed refusal.
+    Refuse,
+    /// Short, the slot free and the plan empty: the ladder continues as today.
+    Exhausted,
+}
+
+fn reclaim_offtick_step(
+    fits: bool,
+    slot_busy: bool,
+    plan_left: usize,
+    waited_ms: u64,
+    defer_budget_ms: u64,
+) -> ReclaimStep {
+    if fits {
+        ReclaimStep::Admit
+    } else if slot_busy {
+        if defer_budget_ms > 0 && waited_ms >= defer_budget_ms {
+            ReclaimStep::Refuse
+        } else {
+            ReclaimStep::Wait
+        }
+    } else if plan_left > 0 {
+        ReclaimStep::Submit
+    } else {
+        ReclaimStep::Exhausted
+    }
+}
+
+/// Where an evictable entry with `id` sits, if it is still evictable.
+fn px_find_evictable(px: &PrefixCache, id: u64) -> Option<(PoolKey, usize)> {
+    px.lru
+        .values()
+        .find(|(key, i)| {
+            px.entries
+                .get(key)
+                .and_then(|row| row.get(*i))
+                .is_some_and(|e| e.id == id)
+        })
+        .cloned()
+}
+
+/// The off-tick flush's pass for one arrival (DAY42 1.2, addenda B and E): with Q the bytes the
+/// worker's queue will free (queued plus the queue's demote in flight), an arrival whose shortfall
+/// B exceeds Q plans over the evictable entries not already queued, with today's rule over B - Q:
+/// its demote set joins the queue, its drop set drops at once. Then, the slot free, the queue's next
+/// entry is submitted. Returns the entries removed from the device index this pass.
+fn reclaim_offtick_pass(
+    engine: &Engine,
+    px: &mut PrefixCache,
+    hpx: &mut HostPrefixCache,
+    queue: &mut ReclaimQueue,
+    req: &mut Request,
+    budget: u64,
+) -> usize {
+    let mut removed = 0usize;
+    let inflight = if hpx.demoting.is_some() {
+        queue.inflight_bytes
+    } else {
+        0
+    };
+    let coming = queue.queued_bytes().saturating_add(inflight);
+    let marker = req
+        .reclaim_offtick
+        .get_or_insert_with(ReclaimOffTick::default);
+    if budget > coming {
+        let oldest: Vec<(u64, u64)> = px
+            .lru
+            .values()
+            .filter_map(|(key, i)| px.entries.get(key).and_then(|row| row.get(*i)))
+            .filter(|e| !queue.contains(e.id))
+            .map(|e| (e.id, e.bytes as u64))
+            .collect();
+        let (demote, drop) = reclaim_offtick_plan(&oldest, budget - coming);
+        for id in &drop {
+            if let Some((key, i)) = px_find_evictable(px, *id)
+                && px.remove_at(&key, i).is_some()
+            {
+                removed += 1;
+            }
+        }
+        marker.plans += 1;
+        if !demote.is_empty() || !drop.is_empty() {
+            eprintln!(
+                "[admit-mem] reclaim off-tick: plan {} demote + {} drop ({:.0}MB demote budget, {:.0}MB \
+                 already coming) for {} (plan {})",
+                demote.len(),
+                drop.len(),
+                (budget - coming) as f64 / 1e6,
+                coming as f64 / 1e6,
+                req.request_id,
+                marker.plans
+            );
+        }
+        let bytes: std::collections::HashMap<u64, u64> = oldest.iter().copied().collect();
+        queue.ids.extend(
+            demote
+                .iter()
+                .map(|id| (*id, bytes.get(id).copied().unwrap_or(0))),
+        );
+    }
+    px.evictions += removed as u64;
+    removed + reclaim_queue_drain(engine, px, hpx, queue, &req.request_id)
+}
+
+/// Submit the worker queue's next demote while the tier's slot is free (DAY42 addendum E): the
+/// admission pass calls it, and so does the tick top after its settle calls, so the whole demote
+/// set reaches the host whether or not the arrival that queued it is still waiting. A queued entry
+/// that is no longer evictable (leased, hit or evicted meanwhile) is skipped; a refused submission
+/// dropped its entry (its bytes free now) and the next is tried. Returns the entries removed.
+/// MEMRA_BATCH_OOM_RECOVER (default unset, WP-B day 49, OWED O14): `1` retries a batched decode
+/// chunk once after one reclaim rung when its quoted CUDA OOM came before any session-state write
+/// (`memra_engine::step_guard`). Unset reads nothing.
+fn batch_oom_recover_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_BATCH_OOM_RECOVER").as_deref() == Ok("1"))
+}
+
+/// The batch OOM's reclaim rung (DAY49 1.5): the parked sessions of the three pools are dropped,
+/// the device prefix cache is evicted to half its bytes, the teardown fence runs and the model
+/// pools are trimmed back to the driver. Returns a receipt fragment.
+fn batch_oom_reclaim(
+    engine: &Engine,
+    loaded: &HashMap<String, LoadedModel>,
+    px: &mut PrefixCache,
+    hpx: &mut HostPrefixCache,
+    reuse: &mut HashMap<PoolKey, Vec<ReuseEntry>>,
+    spec_reuse: &mut HashMap<PoolKey, Vec<SpecReuseEntry>>,
+    dspark_reuse: &mut HashMap<PoolKey, Vec<DsparkReuseEntry>>,
+) -> String {
+    let parked = (
+        reuse.values().map(Vec::len).sum::<usize>(),
+        spec_reuse.values().map(Vec::len).sum::<usize>(),
+        dspark_reuse.values().map(Vec::len).sum::<usize>(),
+    );
+    reuse.clear();
+    spec_reuse.clear();
+    dspark_reuse.clear();
+    let before = px.total_bytes;
+    let (evicted_n, _) = px.evict_to_bytes(before / 2);
+    oom_teardown_fence(engine, loaded);
+    host_capture_settle_pending(engine, px, hpx, ContractWait::Block, "a batch OOM");
+    host_restore_settle_pending(px, hpx, ContractWait::Block, "a batch OOM");
+    // DAY49 addendum C: the third reclaim path reaps the VMM graveyard before its trim, as the
+    // step-OOM teardown and the admin trim do (a dropped cache's planes return only when reaped).
+    vmm_reap_for("batch-oom");
+    let reports = trim_model_device_pools(engine, loaded, "batch-oom");
+    let trimmed = reports.len();
+    format!(
+        "parked reuse={} spec={} dspark={} dropped, prefix cache {} entries {}MB -> {}MB, {trimmed} pools trimmed",
+        parked.0,
+        parked.1,
+        parked.2,
+        evicted_n,
+        before >> 20,
+        px.total_bytes >> 20
+    )
+}
+
+/// MEMRA_ADMIT_W_RELEASE (default unset, WP-B day 45, OWED O4): `1` releases each session's prefill
+/// workspace from both admission books when its prime completes. Unset reads nothing.
+fn admit_w_release_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_ADMIT_W_RELEASE").as_deref() == Ok("1"))
+}
+
+/// The prime-completion release (DAY45 1.1): every active session with `prefill_done` and its
+/// workspace still booked releases it from both books and from its own charges, once.
+fn release_primed_workspace(
+    active: &mut [Session],
+    book: &mut crate::admit_predict::AdmissionBook,
+) {
+    for s in active.iter_mut() {
+        if s.booked_w_bytes == 0 || !s.prefill_done {
+            continue;
+        }
+        let w = s.booked_w_bytes;
+        let (real, shadow) = release_split(w, s.booked_kv_bytes, s.shadow_kv_hat);
+        book.release(&s.model, real, shadow);
+        s.booked_kv_bytes -= real;
+        s.shadow_kv_hat -= shadow;
+        s.booked_w_bytes = 0;
+        eprintln!(
+            "[admit-book] w-release id={} model={} bytes={w} booked_real={} booked_shadow={}",
+            s.request_id,
+            s.model,
+            book.booked_total(),
+            book.shadow_booked_total()
+        );
+    }
+}
+
+/// The part of `w` each book releases: never more than the session carries in it (the shadow
+/// book is only booked while the predictive door is armed).
+fn release_split(w: u64, booked_real: u64, booked_shadow: u64) -> (u64, u64) {
+    (w.min(booked_real), w.min(booked_shadow))
+}
+
+/// One queued settle (WP-B day 44, DAY44 1.2 (c)): an entry id in a pool, never a reference.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SettleJob {
+    pool: ParkedPool,
+    key: PoolKey,
+    id: u64,
+}
+
+/// The exact resume's settle queue, newest first: the entry parked last is the one whose next
+/// turn is likeliest to come next. A job whose entry is gone (resumed, evicted, purged) is
+/// skipped when its turn comes (DAY44 1.3 cases 1, 4, 5).
+#[derive(Default)]
+struct SettleQueue {
+    jobs: VecDeque<SettleJob>,
+    /// DAY44 addendum C: the job whose settle waits for the memory reading, printed once.
+    waiting: Option<u64>,
+}
+
+impl SettleQueue {
+    /// Bounded: a busy worker that never idles keeps only the newest jobs (older entries are the
+    /// likeliest to have been resumed or evicted anyway).
+    const CAP: usize = 64;
+    fn push(&mut self, job: SettleJob) {
+        if !self.jobs.contains(&job) {
+            self.jobs.push_back(job);
+        }
+        while self.jobs.len() > Self::CAP {
+            self.jobs.pop_front();
+        }
+    }
+    fn is_empty(&self) -> bool {
+        self.jobs.is_empty()
+    }
+    fn pop(&mut self) -> Option<SettleJob> {
+        self.jobs.pop_back()
+    }
+    /// A tenant purge drops the tenant's jobs (the purge's own namespace predicate).
+    fn purge_tenant(&mut self, tenant: &str) {
+        let row = crate::auth::meter_key(&crate::auth::scope_namespace(tenant, "")).to_string();
+        self.jobs
+            .retain(|j| crate::auth::meter_key(&j.key.1) != row);
+    }
+}
+
+/// The settle point (DAY44 1.2 (c)): the last grid point with `PRIME_MIN_T` committed rows after
+/// it; `None` when it is not at least `PRIME_MIN_T` rows past the checkpoint.
+fn exact_settle_point(committed: usize, ckpt: usize) -> Option<usize> {
+    let floor = memra_engine::hybrid_forward::PRIME_MIN_T;
+    let s = grid_align_boundary_within(committed, committed);
+    (committed >= floor && s >= ckpt + floor && committed - s >= floor).then_some(s)
+}
+
+/// DAY44 1.3 case 6 and addendum C: a settle runs only when the memory reading covers what its
+/// call allocates. `need` is the memory door's pending term for one owed prime of the settle's rows
+/// plus the admission reserve; `reading` is effective free (driver free plus pool cached). No
+/// reading waits too.
+fn settle_reading_covers(need: usize, reading: Option<usize>) -> bool {
+    reading.is_some_and(|free| need <= free)
+}
+
+/// The rows a settle of this entry would prime (`from`, `to`), or `None` when it would not run.
+fn plain_settle_rows(e: &ReuseEntry) -> Option<(usize, usize)> {
+    if e.settled {
+        return None;
+    }
+    let from = e.ckpt.as_ref()?.pos;
+    exact_settle_point(e.fed.len(), from).map(|to| (from, to))
+}
+
+fn spec_settle_rows(e: &SpecReuseEntry) -> Option<(usize, usize)> {
+    if e.settled {
+        return None;
+    }
+    let from = e.sess.rewind_pos()?;
+    let public = e.public_len.min(e.sess.committed.len());
+    exact_settle_point(public, from).map(|to| (from, to))
+}
+
+/// Run the next settle job whose entry still exists (DAY44 1.2 (c)). The entry is moved out of its
+/// pool, restored to its checkpoint, its committed rows up to the settle point primed in one call,
+/// and put back settled; a failure drops it with its line (DAY44 1.3 case 7).
+fn settle_one(
+    engine: &Engine,
+    loaded: &HashMap<String, LoadedModel>,
+    reuse: &mut HashMap<PoolKey, Vec<ReuseEntry>>,
+    spec_reuse: &mut HashMap<PoolKey, Vec<SpecReuseEntry>>,
+    queue: &mut SettleQueue,
+    need_for: &dyn Fn(&str, usize, bool) -> usize,
+    reading: &dyn Fn() -> Option<usize>,
+) {
+    while let Some(job) = queue.pop() {
+        let Some(lm) = loaded.get(&job.key.0) else {
+            continue;
+        };
+        // DAY44 1.3 case 6 (addendum C): the gate reads before the entry moves. A settle the reading
+        // does not cover waits at the head of the queue for the next idle pass.
+        let rows = match job.pool {
+            ParkedPool::Plain => reuse
+                .get(&job.key)
+                .and_then(|pool| pool.iter().find(|e| e.id == job.id))
+                .and_then(plain_settle_rows),
+            ParkedPool::Spec => spec_reuse
+                .get(&job.key)
+                .and_then(|pool| pool.iter().find(|e| e.id == job.id))
+                .and_then(spec_settle_rows),
+            ParkedPool::Dspark => None,
+        };
+        if let Some((from, to)) = rows {
+            let need = need_for(&job.key.0, to - from, job.pool == ParkedPool::Spec);
+            let free = reading();
+            if !settle_reading_covers(need, free) {
+                if queue.waiting != Some(job.id) {
+                    eprintln!(
+                        "[kv-reuse] exact: settle {} waits (needs {:.0}MB, reading {})",
+                        job.id,
+                        need as f64 / 1e6,
+                        free.map_or("none".to_string(), |f| format!("{:.0}MB", f as f64 / 1e6))
+                    );
+                    queue.waiting = Some(job.id);
+                }
+                queue.jobs.push_back(job);
+                return;
+            }
+        }
+        queue.waiting = None;
+        match job.pool {
+            ParkedPool::Plain => {
+                let Some(i) = reuse
+                    .get(&job.key)
+                    .and_then(|pool| pool.iter().position(|e| e.id == job.id))
+                else {
+                    continue;
+                };
+                let mut e = reuse.get_mut(&job.key).expect("found above").remove(i);
+                let t0 = Instant::now();
+                match exact_settle_plain(engine, lm, &mut e) {
+                    Ok(Some((from, to))) => {
+                        eprintln!(
+                            "[kv-reuse] exact: settle {} {from} -> {to} ({} rows, {:.1} ms)",
+                            job.id,
+                            to - from,
+                            t0.elapsed().as_secs_f64() * 1e3
+                        );
+                        reuse.entry(job.key).or_default().insert(i, e);
+                    }
+                    Ok(None) => reuse.entry(job.key).or_default().insert(i, e),
+                    Err(err) => {
+                        eprintln!("[kv-reuse] exact: settle failed ({err}); entry dropped");
+                    }
+                }
+            }
+            ParkedPool::Spec => {
+                let Some(i) = spec_reuse
+                    .get(&job.key)
+                    .and_then(|pool| pool.iter().position(|e| e.id == job.id))
+                else {
+                    continue;
+                };
+                let mut e = spec_reuse.get_mut(&job.key).expect("found above").remove(i);
+                let t0 = Instant::now();
+                match exact_settle_spec(engine, lm, &mut e) {
+                    Ok(Some((from, to))) => {
+                        eprintln!(
+                            "[kv-reuse] exact: settle {} {from} -> {to} ({} rows, {:.1} ms)",
+                            job.id,
+                            to - from,
+                            t0.elapsed().as_secs_f64() * 1e3
+                        );
+                        spec_reuse.entry(job.key).or_default().insert(i, e);
+                    }
+                    Ok(None) => spec_reuse.entry(job.key).or_default().insert(i, e),
+                    Err(err) => {
+                        eprintln!("[kv-reuse] exact: settle failed ({err}); entry dropped");
+                    }
+                }
+            }
+            ParkedPool::Dspark => continue,
+        }
+        return;
+    }
+}
+
+/// The plain settle: restore the checkpoint, prime `fed[ckpt..S]` in one call. `Ok(None)` when
+/// there is nothing to settle (the entry is unchanged).
+fn exact_settle_plain(
+    engine: &Engine,
+    lm: &LoadedModel,
+    e: &mut ReuseEntry,
+) -> Result<Option<(usize, usize)>, String> {
+    if e.settled {
+        return Ok(None);
+    }
+    let Some(ckpt) = e.ckpt.as_ref() else {
+        return Ok(None);
+    };
+    let from = ckpt.pos;
+    let Some(to) = exact_settle_point(e.fed.len(), from) else {
+        return Ok(None);
+    };
+    if !e.cache.can_rollback(&ckpt.snap, 0) {
+        return Ok(None);
+    }
+    memra_engine::pp::restore_cache_checkpoint(engine, &lm.model, None, &mut e.cache, &ckpt.snap)
+        .map_err(|err| format!("restore failed: {err}"))?;
+    if resume_exact_fault_settle() {
+        return Err("fault injection (MEMRA_RESUME_EXACT_FAULT=settle-fail)".into());
+    }
+    let (logits, _, _) = lm
+        .model
+        .prime_cache(engine, &e.fed[from..to], &mut e.cache, 0)
+        .map_err(|err| format!("prime failed: {err}"))?;
+    e.fed.truncate(to);
+    e.last_logits = logits;
+    // DAY44 addendum C: the checkpoint at `g` stays beside the settled state. The settle does not
+    // touch rows `[0, g)` and the snapshot holds the recurrent state at `g`, so plain affinity (a
+    // client that rewrites its history) can still rewind there instead of priming cold.
+    e.settled = true;
+    Ok(Some((from, to)))
+}
+
+/// The spec settle: rewind to the turn checkpoint, prime the public stream's rows up to `S` with
+/// the MTP walker's trunk and draft fill only (`spec_prime_settle`: no boundary token, no init
+/// feed), so every committed row is a prime-program row.
+fn exact_settle_spec(
+    engine: &Engine,
+    lm: &LoadedModel,
+    e: &mut SpecReuseEntry,
+) -> Result<Option<(usize, usize)>, String> {
+    if e.settled {
+        return Ok(None);
+    }
+    let Some(from) = e.sess.rewind_pos() else {
+        return Ok(None);
+    };
+    let public = e.public_len.min(e.sess.committed.len());
+    let Some(to) = exact_settle_point(public, from) else {
+        return Ok(None);
+    };
+    if !e.sess.rewind_is_resident() {
+        return Ok(None);
+    }
+    let tokens = e.sess.committed[from..to].to_vec();
+    // DAY44 addendum C: the retaining rewind keeps the turn checkpoint at `g` (the prime-only walk
+    // takes none of its own), so spec affinity can still rewind a history rewrite there.
+    match lm
+        .model
+        .spec_rewind_to_checkpoint_retaining(engine, &mut e.sess)
+        .map_err(|err| format!("rewind failed: {err}"))?
+    {
+        Some(p) if p == from => {}
+        other => return Err(format!("rewind landed at {other:?}, expected {from}")),
+    }
+    if resume_exact_fault_settle() {
+        return Err("fault injection (MEMRA_RESUME_EXACT_FAULT=settle-fail)".into());
+    }
+    lm.model
+        .spec_prime_settle(engine, &mut e.sess, &tokens)
+        .map_err(|err| format!("prime failed: {err}"))?;
+    if e.sess.committed.len() != to {
+        return Err(format!(
+            "settle left {} committed rows, expected {to}",
+            e.sess.committed.len()
+        ));
+    }
+    let skip = lm
+        .tok
+        .bos_id()
+        .map(|b| e.sess.committed.first() == Some(&b))
+        .unwrap_or(false) as usize;
+    e.committed_text = lm.tok.decode_special(&e.sess.committed[skip..], true);
+    e.fingerprint =
+        conversation_fingerprint(&e.sess.committed, &|t| lm.tok.token_is_control(t), false);
+    e.public_len = to;
+    e.settled = true;
+    Ok(Some((from, to)))
+}
+
+fn reclaim_queue_drain(
+    engine: &Engine,
+    px: &mut PrefixCache,
+    hpx: &mut HostPrefixCache,
+    queue: &mut ReclaimQueue,
+    why: &str,
+) -> usize {
+    let mut removed = 0usize;
+    while hpx.demoting.is_none() {
+        let Some((id, _)) = queue.ids.pop_front() else {
+            break;
+        };
+        let Some((key, i)) = px_find_evictable(px, id) else {
+            continue;
+        };
+        let Some(dead) = px.remove_at(&key, i) else {
+            continue;
+        };
+        removed += 1;
+        let bytes = dead.bytes;
+        host_demote_prefix_entry(engine, hpx, dead);
+        if hpx.demoting.is_some() {
+            queue.submitted += 1;
+            queue.inflight_bytes = bytes as u64;
+            eprintln!(
+                "[admit-mem] reclaim off-tick: submitted {} ({:.0}MB; {} queued) for {}",
+                queue.submitted,
+                bytes as f64 / 1e6,
+                queue.ids.len(),
+                why
+            );
+        }
+    }
+    px.evictions += removed as u64;
+    removed
+}
+
 /// MEMORY-ADMISSION FLUSH (memra#365, door `MEMRA_ADMIT_BY_MEMORY`): the admission reclaim
 /// ladder's device-prefix flush, DEMOTING into the pinned host tier instead of dropping.
 ///
@@ -19570,11 +20983,19 @@ fn host_restore_park_probe(
         );
         false
     };
-    let mut cache =
-        match memra_engine::pp::new_cache_planned(engine, &lm.model.cfg, &lm.model.plan, ctx_cap) {
-            Ok(c) => c,
-            Err(err) => return refuse(format!("session cache alloc failed: {err}")),
-        };
+    let mut cache = match vmm_build_cache(
+        vmm_scope(
+            engine,
+            lm,
+            ctx_cap,
+            req.prepared_prompt.as_ref().map_or(0, Vec::len),
+            0,
+        ),
+        || memra_engine::pp::new_cache_planned(engine, &lm.model.cfg, &lm.model.plan, ctx_cap),
+    ) {
+        Ok(c) => c,
+        Err(err) => return refuse(format!("session cache alloc failed: {err}")),
+    };
     {
         let e = &px.entries[&pool_key][i];
         if let Err(err) = prefix_restore_validate(&cache, e, &pool_key, e.pos, Some(&lm.model)) {
@@ -23816,9 +25237,20 @@ struct Session {
     /// `AdmissionBook` at `active.push` and released at `active.remove`; a step-OOM
     /// park releases too (its KV drops) and the replay re-books at re-admission.
     booked_kv_bytes: u64,
+    /// WP-B day 38 addendum A: the session ended on a typed error. An errored session is never a
+    /// park point (a failed step may have advanced state that `fed` does not describe), and its
+    /// length stays out of the completion history, exactly as an abort's does.
+    errored: bool,
+    /// WP-B day 37 (`MEMRA_KV_ALLOCATOR=vmm`): the rows this request's prompt occupies, the
+    /// floor of the tick-top ensure bound for its on-demand K/V planes (`kv_vmm::bound_rows`).
+    /// Set at admission, including a resume, to that request's prompt rows.
+    vmm_floor_rows: usize,
     /// D2 gap G5: this session's SHADOW kv_hat (P-tenant-p95 book). 0 whenever
     /// `MEMRA_ADMIT_PREDICT_SHADOW` is off.
     shadow_kv_hat: u64,
+    /// WP-B day 45 (O4, `MEMRA_ADMIT_W_RELEASE`): the prefill-workspace term both books carry for
+    /// this session, still booked; 0 once released at prime completion (or never booked).
+    booked_w_bytes: u64,
     /// The predicted TOTAL completion tokens behind `shadow_kv_hat`; with
     /// `generated.len()` this gives the per-session remainder the would-reject
     /// Retry-After hint scans (D2 gap G6).
@@ -23847,6 +25279,9 @@ struct Session {
     /// The captured plain checkpoint, taken when prefill crosses `ckpt_at`. Moved into the parked
     /// `ReuseEntry` at retire. `None` until the boundary is crossed (or if capture failed silently).
     ckpt_snap: Option<PlainCheckpoint>,
+    /// EXACT RESUME (MEMRA_RESUME_EXACT, WP-B day 44): the grid point this session's prime
+    /// captures its checkpoint at, inside the call that contains it (`grid_capture`); taken once.
+    exact_at: Option<usize>,
     /// The LCP sample recorded for a cold prefix-cache miss at admission. Same-window
     /// fanout siblings rewrite this provisional miss into a hit after the leader primes.
     prefix_miss_lcp: Option<usize>,
@@ -25792,6 +27227,17 @@ pub fn run(
     let mut n_session_defers = 0u64;
     let mut n_vram_defers = 0u64;
     let mut n_step_oom_parks = 0u64;
+    // WP-B day 37 (DAY37 A3 (i)): the owner's wall at the tick-top ensure point, per tick with
+    // at least one on-demand session, printed 256 at a time. Log-only; empty with the door off.
+    let mut vmm_ensure_walls: Vec<u64> = Vec::new();
+    // WP-B day 37 addendum D: releases scheduled by retires and parks and not yet reaped. While
+    // any are, the idle block polls instead of waiting indefinitely, so they land at idle.
+    let mut vmm_pending = false;
+    // WP-B day 42 addendum E (MEMRA_ADMIT_RECLAIM_OFFTICK): the worker's off-tick demote queue.
+    let mut reclaim_queue = ReclaimQueue::default();
+    // WP-B day 44: the exact resume's settle queue and the last instant the worker had work.
+    let mut settle_queue = SettleQueue::default();
+    let mut last_work = Instant::now();
     // Served-path receipts (lane/dspark-sampled-wave-20260825): admission-time route
     // classification, published to /metrics for the deploy gate's sampled probe.
     let mut n_served_dspark = 0u64;
@@ -25870,6 +27316,37 @@ pub fn run(
     // same receipt the qualification env is derived from.
     let admit_memory_cfg = crate::admit_memory::MemoryAdmitConfig::from_env();
     eprintln!("{}", admit_memory_cfg.boot_line());
+    // ON-DEMAND KV PLANES (WP-B day 37, door MEMRA_KV_ALLOCATOR=vmm, decide-by 2026-10-04,
+    // research/spill-b-20260919/DAY37.md). Read once here; an unknown value, or the door armed on
+    // a device without VMM support, refuses the boot instead of serving pooled under an ON line.
+    let kv_vmm_cfg =
+        match crate::kv_vmm::KvVmmConfig::from_env(&engine.ctx().name().unwrap_or_default()) {
+            Ok(cfg) => cfg,
+            Err(why) => {
+                let _ = ready_tx.send(Err(why));
+                return;
+            }
+        };
+    let kv_vmm_granularity = if kv_vmm_cfg.armed {
+        match memra_engine::cache::vmm_granularity_for(&engine.stream()) {
+            Ok(g) => Some(g),
+            Err(err) => {
+                let _ = ready_tx.send(Err(format!("MEMRA_KV_ALLOCATOR=vmm: {err}")));
+                return;
+            }
+        }
+    } else {
+        None
+    };
+    if kv_vmm_cfg.armed {
+        memra_engine::cache::vmm_set_grow_placement(kv_vmm_cfg.placement);
+        memra_engine::cache::vmm_set_faults(kv_vmm_cfg.faults.clone());
+    }
+    eprintln!("{}", kv_vmm_cfg.boot_line(kv_vmm_granularity));
+    if let Err(why) = crate::kv_vmm::install(kv_vmm_cfg) {
+        let _ = ready_tx.send(Err(why));
+        return;
+    }
     let mut admission_book = crate::admit_predict::AdmissionBook::default();
     let mut completion_history = crate::admit_predict::CompletionHistory::default();
     // AGENT-PAUSE DEMOTION (MEMRA_KV_PAUSE_DEMOTE, lane/kv-pause-demote-20260831, Arc E):
@@ -25951,6 +27428,17 @@ pub fn run(
         // published snapshot demote releases its park (if the session did not resume it meanwhile);
         // a shape-2 entry whose demote ended unpublished goes back into the device index.
         host_pause_drain(&engine, &mut px, &mut hpx, &mut reuse);
+        // WP-B day 42 addendum E: the reclaim flush's demote queue drains here too, one landing at a
+        // time, whether or not the arrival that queued an entry still waits.
+        if !reclaim_queue.ids.is_empty() {
+            reclaim_queue_drain(
+                &engine,
+                &mut px,
+                &mut hpx,
+                &mut reclaim_queue,
+                "the tick top",
+            );
+        }
         // Cheap runtime peer validation stays on its copy-count cadence here, between scheduler
         // ticks on the CUDA owner thread. Idle-only rungs remain pending. A mismatch continues on
         // validated host bounce; only inability to arm that staging reaches the panic ladder.
@@ -25974,6 +27462,7 @@ pub fn run(
         //    nearest deadline, so the sweep fires even on a box with zero active sessions:
         //    exactly the tool-round-trip pause shape at low concurrency.
         if active.is_empty() && queue.is_empty() {
+            vmm_idle_refresh(&mut vmm_pending, &mut vmm_ensure_walls, &reuse, &spec_reuse);
             if pending_constraints.is_empty()
                 && pause_pending.is_empty()
                 && handoff_import.is_none()
@@ -25981,6 +27470,9 @@ pub fn run(
                 && hpx.promoting.is_none()
                 && hpx.capturing.is_none()
                 && hpx.restoring.is_none()
+                && !vmm_pending
+                && reclaim_queue.ids.is_empty()
+                && settle_queue.is_empty()
             {
                 // Do not let an already-arrived request sit behind an idle-only probe. Once the
                 // channel is observed empty, one pending expensive rung may run before the worker
@@ -26053,6 +27545,76 @@ pub fn run(
                 {
                     wait = wait.min(Duration::from_millis(2));
                 }
+                // WP-B day 37 addendum D: a pending on-demand KV release is tick work on an idle box
+                // too: keep the poll running so the tick-top reap lands it without a request.
+                if vmm_pending {
+                    wait = wait.min(Duration::from_millis(2));
+                }
+                // WP-B day 42 addendum E: a queued reclaim demote is tick work on an idle box too: the
+                // tick top submits it once the slot frees, so the loop keeps polling.
+                if !reclaim_queue.ids.is_empty() {
+                    wait = wait.min(Duration::from_millis(2));
+                }
+                // WP-B day 44: a queued settle is idle work: after the grace with no work, one
+                // settle runs per idle pass; before it, the wait ends at the grace.
+                if !settle_queue.is_empty() {
+                    let ready = last_work + EXACT_SETTLE_GRACE;
+                    let now = Instant::now();
+                    if now >= ready {
+                        // DAY44 1.3 case 6 (addendum C): a settle's need is the memory door's
+                        // pending term for one owed prime of its rows, plus the admission reserve.
+                        let need_for = |name: &str, rows: usize, spec: bool| -> usize {
+                            let Some(model) = admission_costs.get(name) else {
+                                return 0;
+                            };
+                            let owed = PrimeOwed {
+                                rows,
+                                unstarted_walker: spec,
+                                cooperative: memra_engine::prime_walker::prime_yield_enabled()
+                                    && loaded
+                                        .get(name)
+                                        .is_some_and(|lm| lm.model.mtp_prime_walk_supported()),
+                                snapshot_bytes: 0,
+                            };
+                            let slab = loaded
+                                .get(name)
+                                .map_or(0, |lm| lm.model.prime_slab_bytes(&engine));
+                            let workspace = pending_prime_for_model(
+                                &[owed],
+                                model.prime.as_ref(),
+                                model.prefill.as_ref(),
+                                slab,
+                            );
+                            workspace.saturating_add(admission_reserve(
+                                true,
+                                workspace,
+                                model.transient_floor,
+                                admit_reserve_override(),
+                            ))
+                        };
+                        let reading = || effective_free_bytes(&engine).map(|(free, _)| free);
+                        let before = settle_queue.jobs.len();
+                        settle_one(
+                            &engine,
+                            &loaded,
+                            &mut reuse,
+                            &mut spec_reuse,
+                            &mut settle_queue,
+                            &need_for,
+                            &reading,
+                        );
+                        // A settle that waits for the reading leaves the queue as it was: the next
+                        // pass reads again after the grace, not in a spin.
+                        if settle_queue.waiting.is_some() && settle_queue.jobs.len() == before {
+                            last_work = Instant::now();
+                            wait = wait.min(EXACT_SETTLE_GRACE);
+                        } else {
+                            wait = Duration::ZERO;
+                        }
+                    } else {
+                        wait = wait.min(ready - now);
+                    }
+                }
                 match rx.recv_timeout(wait) {
                     Ok(cmd) => handle_cmd(
                         cmd,
@@ -26068,6 +27630,10 @@ pub fn run(
                     Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break 'worker,
                 }
             }
+        }
+        // WP-B day 44: the settle grace counts from the last pass with work.
+        if !active.is_empty() || !queue.is_empty() {
+            last_work = Instant::now();
         }
         // BUSY PHASE: work is in flight, so the beat MUST advance every iteration. The
         // stamp is a bare atomic store (no mutex, no syscall) — unlike the metrics publish
@@ -26096,6 +27662,12 @@ pub fn run(
                 }
             }
         }
+        // WP-B day 45 (O4, `MEMRA_ADMIT_W_RELEASE`): the prime-completion seam, one site, after
+        // the command drain and before admission. A session whose prime completed releases its
+        // prefill workspace from both books, once.
+        if admit_w_release_on() {
+            release_primed_workspace(&mut active, &mut admission_book);
+        }
         resolve_constraint_compiles(&constraint_result_rx, &mut pending_constraints, &mut queue);
         expire_constraint_compiles(&mut pending_constraints, Instant::now());
 
@@ -26122,6 +27694,7 @@ pub fn run(
             // until it settles (publish or drop) first.
             host_capture_settle_pending(&engine, &mut px, &mut hpx, ContractWait::Block, "a trim");
             host_restore_settle_pending(&mut px, &mut hpx, ContractWait::Block, "a trim");
+            vmm_reap_for("admin-trim");
             report.devices = trim_model_device_pools(&engine, &loaded, "admin-trim");
             eprintln!(
                 "[trim] pools dropped: reuse={} spec={} dspark={} prefix={}",
@@ -26139,6 +27712,8 @@ pub fn run(
         // bytes straight back into host RAM. Worker-thread execution, same reason as
         // trim: the pools live in this scope and the sweep must not race a demote.
         for (tenant, tx) in pending_purges.drain(..) {
+            // WP-B day 44 (DAY44 1.3 case 5): the purged tenant's settle jobs go with it.
+            settle_queue.purge_tenant(&tenant);
             release_promoted_pin_for_tenant(&mut hpx, &mut px, &tenant);
             // WP-A day 21: the `Restoring` request settles first and the purged tenant's is dropped
             // (cache freed, pin released) before either index purges.
@@ -26951,8 +28526,30 @@ pub fn run(
                 // still allocate; a session mid-prime is counted twice for that chunk (live and
                 // booked), which only errs toward a defer. Unarmed the term is 0 and
                 // `less_pending(0, _)` is the identity, so the door-OFF gate is unchanged.
-                let pending_prime = if admit_memory_cfg.armed {
+                // WP-B day 39 (DAY39 1.2): the slab and one call once, the walker stacks per
+                // unstarted cooperative session. Day 33's per-session sum is kept beside it, printed
+                // on every admit/defer/refuse line as `pending_prime_v1=`.
+                let pending_prime_v1 = if admit_memory_cfg.armed {
                     pending_prime_bytes(&active, &admission_costs)
+                } else {
+                    0
+                };
+                let pending_prime = if admit_memory_cfg.armed {
+                    pending_prime_bytes_v2(
+                        &active,
+                        &admission_costs,
+                        &|name| {
+                            loaded
+                                .get(name)
+                                .map_or(0, |lm| lm.model.prime_slab_bytes(&engine))
+                        },
+                        &|name| {
+                            memra_engine::prime_walker::prime_yield_enabled()
+                                && loaded
+                                    .get(name)
+                                    .is_some_and(|lm| lm.model.mtp_prime_walk_supported())
+                        },
+                    )
                 } else {
                     0
                 };
@@ -26965,9 +28562,14 @@ pub fn run(
                 // evicts or demotes older unleased entries to fit a seed inside the cache's byte
                 // budget before it allocates, so the cache's device bytes can grow by at most
                 // `budget - total_bytes`. A warm, full cache replaces bytes; it does not add them.
+                let pending_seed_uncapped = if admit_memory_cfg.armed {
+                    pending_seed_bytes(&active)
+                } else {
+                    0
+                };
                 let pending_seed = if admit_memory_cfg.armed {
                     seed_booking_cap(
-                        pending_seed_bytes(&active),
+                        pending_seed_uncapped,
                         prefix_cache_budget_bytes(),
                         px.total_bytes,
                     )
@@ -26976,6 +28578,16 @@ pub fn run(
                 };
                 let primary_device = engine.ctx().ordinal();
                 let pending_booked = pending_prime.saturating_add(pending_seed);
+                // OWED GROWTH (WP-B day 37, MEMRA_KV_ALLOCATOR=vmm, DAY37 1.4): an admitted
+                // on-demand session backs only the rows it has reached, so the live reading does
+                // not see the rest of the context the pooled allocator would already hold. Armed,
+                // every reading is reduced by that owed growth too. Unarmed it is 0.
+                let vmm_owed = if crate::kv_vmm::armed() {
+                    vmm_owed_bytes(&active)
+                } else {
+                    0
+                };
+                let pending_booked = pending_booked.saturating_add(vmm_owed);
                 let book =
                     move |h: AdmissionHeadroom| h.less_pending(pending_booked, primary_device);
                 let measured_headroom =
@@ -27086,6 +28698,12 @@ pub fn run(
                                         admit_memory_cfg.defer_budget_ms,
                                     ),
                                 );
+                                // WP-B day 42 (MEMRA_ADMIT_RECLAIM_OFFTICK): with the contracts
+                                // door's off-tick route, the demote set leaves the tick and the
+                                // arrival waits on its landings; unset, today's flush.
+                                let offtick_arm = admit_reclaim_offtick_on()
+                                    && hpx.tier.is_some()
+                                    && (budget > 0 || req.reclaim_offtick.is_some());
                                 // WP-A day 20: a `Capturing` entry settles first (publish or
                                 // drop), so the reclaim's accounting never meets a half-written
                                 // entry; then the reclaim runs over the published set.
@@ -27102,10 +28720,22 @@ pub fn run(
                                     ContractWait::Block,
                                     "the admission reclaim",
                                 );
-                                evict_all_demoting(&engine, &mut px, &mut hpx, budget)
+                                if !offtick_arm {
+                                    evict_all_demoting(&engine, &mut px, &mut hpx, budget)
+                                } else {
+                                    let q = &mut reclaim_queue;
+                                    let n = reclaim_offtick_pass(
+                                        &engine, &mut px, &mut hpx, q, &mut req, budget,
+                                    );
+                                    (n, 0, 0)
+                                }
                             } else {
                                 (px.evict_all(), 0, 0)
                             };
+                        // The arrival waits on a landing while its plan is live (DAY42 1.2): the
+                        // parked-session ladder is not climbed for bytes already on their way.
+                        let reclaim_landing = req.reclaim_offtick.is_some()
+                            && (!reclaim_queue.ids.is_empty() || hpx.demoting.is_some());
                         if demoted_prefix > 0 {
                             eprintln!(
                                 "[admit-mem] reclaim demoted {demoted_prefix} of \
@@ -27139,7 +28769,7 @@ pub fn run(
                         let mut evicted_plain = 0usize;
                         let mut evicted_spec = 0usize;
                         let mut evicted_dspark = 0usize;
-                        while !headroom.sufficient(required) {
+                        while !reclaim_landing && !headroom.sufficient(required) {
                             match evict_oldest_parked(
                                 &mut reuse,
                                 &mut spec_reuse,
@@ -27575,12 +29205,37 @@ pub fn run(
                                     0
                                 },
                             };
-                            let verdict = crate::admit_memory::decide(
+                            let mut verdict = crate::admit_memory::decide(
                                 need,
                                 &tiers,
                                 waited_ms,
                                 admit_memory_cfg.defer_budget_ms,
                             );
+                            // WP-B day 42: an arrival whose off-tick reclaim is still landing
+                            // waits on it inside the door's budget, then gets the typed refusal.
+                            let mut defer_reason: Option<&'static str> = None;
+                            if req.reclaim_offtick.is_some() {
+                                let short_by = need.saturating_sub(device_free);
+                                match reclaim_offtick_step(
+                                    false,
+                                    hpx.demoting.is_some(),
+                                    reclaim_queue.ids.len(),
+                                    waited_ms,
+                                    admit_memory_cfg.defer_budget_ms,
+                                ) {
+                                    ReclaimStep::Wait | ReclaimStep::Submit => {
+                                        verdict =
+                                            crate::admit_memory::MemoryVerdict::Defer { short_by };
+                                        defer_reason = Some("reclaim-landing");
+                                    }
+                                    ReclaimStep::Refuse => {
+                                        verdict =
+                                            crate::admit_memory::MemoryVerdict::Refuse { short_by };
+                                        defer_reason = Some("reclaim-landing-timeout");
+                                    }
+                                    ReclaimStep::Admit | ReclaimStep::Exhausted => {}
+                                }
+                            }
                             let refusing = matches!(
                                 verdict,
                                 crate::admit_memory::MemoryVerdict::Refuse { .. }
@@ -27614,11 +29269,15 @@ pub fn run(
                                             estimate: est,
                                             tiers,
                                             pending_prime_bytes: pending_prime as u64,
+                                            pending_prime_v1_bytes: pending_prime_v1 as u64,
                                             pending_seed_bytes: pending_seed as u64,
+                                            pending_seed_uncapped_bytes: pending_seed_uncapped
+                                                as u64,
                                             inflight: admission_book.inflight(&req.model),
                                             cap: cap as u64,
                                             waited_ms,
                                             retry_after_s,
+                                            reason: defer_reason,
                                         }
                                     )
                                 );
@@ -27634,6 +29293,14 @@ pub fn run(
                         }
                         vram_defers += 1;
                         n_vram_defers += 1;
+                        // WP-B day 42: an arrival waiting on its off-tick reclaim's landing is parked
+                        // on the in-flight demote, so it joins the parked-only bounded wait (the
+                        // guard's `hpx.demoting.is_some()` arm) instead of spinning the owner.
+                        if req.reclaim_offtick.is_some()
+                            && (!reclaim_queue.ids.is_empty() || hpx.demoting.is_some())
+                        {
+                            parked_on_promote += 1;
+                        }
                         requeue.push_back(req); // waits (FIFO), never rejected
                         continue;
                     }
@@ -27671,11 +29338,14 @@ pub fn run(
                                     },
                                 },
                                 pending_prime_bytes: pending_prime as u64,
+                                pending_prime_v1_bytes: pending_prime_v1 as u64,
                                 pending_seed_bytes: pending_seed as u64,
+                                pending_seed_uncapped_bytes: pending_seed_uncapped as u64,
                                 inflight: admission_book.inflight(&req.model),
                                 cap: cap as u64,
                                 waited_ms: crate::admit_memory::waited_ms(req.memory_defer_since),
                                 retry_after_s: None,
+                                reason: None,
                             })
                         );
                     }
@@ -27982,6 +29652,36 @@ pub fn run(
                         )
                         .total();
                     }
+                    // WP-B day 37: the owed growth the gate reduced this admission's reading by.
+                    if crate::kv_vmm::armed() {
+                        let (m1, r1) = s.spec.as_ref().map_or((0, 0), |sp| sp.kv_on_demand_bytes());
+                        let (m2, r2) = s.cache.as_ref().map_or((0, 0), |c| c.kv_on_demand_bytes());
+                        eprintln!(
+                            "[kv-vmm] admit id={} owed_before={} session_mapped={} \
+                             session_reserved={} active={}",
+                            s.request_id,
+                            vmm_owed_bytes(&active),
+                            m1 + m2,
+                            r1 + r2,
+                            active.len()
+                        );
+                    }
+                    // WP-B day 45 (O4): the workspace term both books carry for this session.
+                    if admit_w_release_on() {
+                        let w_bytes = crate::admit_predict::RequestCharge::from_physical_cost(
+                            cost as u64,
+                            context_cap_bytes as u64,
+                            activation_bytes as u64,
+                            draft_state_bytes as u64,
+                            0,
+                        )
+                        .prefill_workspace_bytes;
+                        s.booked_w_bytes = w_bytes;
+                        eprintln!(
+                            "[admit-book] w-booked id={} model={} bytes={w_bytes}",
+                            s.request_id, s.model
+                        );
+                    }
                     admission_book.admit(&s.model, s.booked_kv_bytes, s.shadow_kv_hat);
                     active.push(s);
                 }
@@ -28048,6 +29748,126 @@ pub fn run(
                 finished.push(i);
             }
         }
+        // ON-DEMAND KV (WP-B day 37, MEMRA_KV_ALLOCATOR=vmm, DAY37 1.2 ensure point 2 and
+        // addendum A): the owner-tick reap, then every active on-demand session backed through
+        // its bound before the first engine call of this tick. A grow failure takes the reclaim
+        // retry (the graveyard's release events waited once, the prefix cache and one parked
+        // session evicted, the device pools trimmed back to the driver), then the step-OOM
+        // contract. Unarmed nothing here runs.
+        if crate::kv_vmm::armed() {
+            let (reaped, pending) = vmm_reap_tick(&mut active, &mut reuse, &mut spec_reuse);
+            vmm_pending = pending > 0;
+            if reaped > 0 {
+                eprintln!(
+                    "[kv-vmm] reap released={reaped} pending={}",
+                    memra_engine::cache::vmm_graveyard_bytes()
+                );
+            }
+            let ensure_t0 = Instant::now();
+            let mut ensured_sessions = 0usize;
+            for (i, s) in active.iter_mut().enumerate() {
+                if finished.contains(&i) {
+                    continue;
+                }
+                ensured_sessions += usize::from(
+                    s.spec
+                        .as_ref()
+                        .is_some_and(|sp| sp.kv_on_demand_planes() > 0)
+                        || s.cache.as_ref().is_some_and(|c| c.on_demand_planes() > 0),
+                );
+                let ensured = match vmm_ensure_session(s) {
+                    Ok(evs) => Ok(evs),
+                    Err(err) if is_cuda_oom(&err.to_string()) => {
+                        let _ = memra_engine::cache::vmm_reap_graveyard_blocking();
+                        let evicted_prefix = px.evict_all();
+                        let evicted_parked = evict_oldest_parked(
+                            &mut reuse,
+                            &mut spec_reuse,
+                            &mut dspark_reuse,
+                            &mut reuse_metrics,
+                        );
+                        let _ = memra_engine::cache::vmm_reap_graveyard_blocking();
+                        let _ = trim_model_device_pools(&engine, &loaded, "kv-vmm grow reclaim");
+                        eprintln!(
+                            "[kv-vmm] grow failed ({err}); reclaim-retry: evicted {evicted_prefix} \
+                             prefix entries and {} parked session(s); retrying once",
+                            usize::from(evicted_parked.is_some())
+                        );
+                        vmm_ensure_session(s)
+                    }
+                    Err(err) => Err(err),
+                };
+                match ensured {
+                    Ok(evs) => {
+                        for (label, rows, ev) in evs {
+                            eprintln!(
+                                "{}",
+                                crate::kv_vmm::grow_line(&s.request_id, &label, rows, &ev)
+                            );
+                        }
+                    }
+                    Err(err) => {
+                        let oom = is_cuda_oom(&err.to_string());
+                        if oom
+                            && step_oom_parkable(
+                                s.generated.len(),
+                                s.tokens_emitted,
+                                s.oom_retries,
+                                step_oom_retries(),
+                            )
+                        {
+                            s.oom_retries += 1;
+                            s.oom_teardown = true;
+                            eprintln!(
+                                "[kv-vmm] ensure failed: parked session back to queue (model {}, \
+                                 retry {}/{}): {err}",
+                                s.model,
+                                s.oom_retries,
+                                step_oom_retries()
+                            );
+                            match park_requeue(&loaded, s) {
+                                Some(req) => {
+                                    n_step_oom_parks += 1;
+                                    reserve_internal_admission(req.lane);
+                                    requeue_oom.push_back(req);
+                                }
+                                None => {
+                                    s.errored = true;
+                                    let _ = s.tx.send(Event::Error(EngineError::engine(format!(
+                                        "step error: {err}"
+                                    ))));
+                                }
+                            }
+                        } else {
+                            if oom {
+                                s.oom_teardown = true;
+                            }
+                            eprintln!(
+                                "[kv-vmm] ensure failed: not parked (model {}, retries {}/{}, \
+                                 generated {}, streamed {}): reporting honestly: {err}",
+                                s.model,
+                                s.oom_retries,
+                                step_oom_retries(),
+                                s.generated.len(),
+                                s.tokens_emitted
+                            );
+                            quarantine_request_fault(s, err.as_ref());
+                            s.errored = true;
+                            let _ = s.tx.send(Event::Error(EngineError::engine(format!(
+                                "step error: {err}"
+                            ))));
+                        }
+                        finished.push(i);
+                    }
+                }
+            }
+            if ensured_sessions > 0 {
+                vmm_ensure_walls.push(ensure_t0.elapsed().as_micros() as u64);
+                if vmm_ensure_walls.len() >= 256 {
+                    vmm_flush_ensure_walls(&mut vmm_ensure_walls);
+                }
+            }
+        }
         if !batching {
             #[allow(clippy::needless_range_loop)]
             // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
@@ -28062,6 +29882,20 @@ pub fn run(
                     (active[i].request_id.clone(), fault_route(&active[i]));
                 let step_result =
                     guard_request(&engine, &fault_id, &fault_route, "decode step", || {
+                        // MEMRA_STEP_OOM_FAULT's non-batching injection point (WP-B day 38
+                        // addenda A and D): the forged quoted OOM stands in for this step, before
+                        // any device work; the error arm below is production logic. It fires only
+                        // on a session past its prime (a step that decodes), so the forged failure
+                        // lands where an errored session could otherwise park.
+                        if active[i].prefill_done && step_oom_fault_fire() {
+                            eprintln!(
+                                "[admit-oom] MEMRA_STEP_OOM_FAULT fired: this non-batching step \
+                                 reports a synthetic CUDA OOM (model {}, generated {})",
+                                active[i].model,
+                                active[i].generated.len(),
+                            );
+                            return Err(STEP_OOM_FAULT_MSG.into());
+                        }
                         match step_session_async_chain(&engine, &loaded, &mut active[i]) {
                             Ok(Some(keep)) => Ok(keep),
                             Ok(None) => {
@@ -28085,6 +29919,7 @@ pub fn run(
                     Ok(false) => finished.push(i),
                     Err(err) => {
                         quarantine_request_fault(&mut active[i], err.as_ref());
+                        active[i].errored = true;
                         let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                             "step error: {err}"
                         ))));
@@ -28408,6 +30243,7 @@ pub fn run(
                                         "[spec-gate] glm5 demote flush FAILED (model {}): {err}",
                                         s.model
                                     );
+                                    s.errored = true;
                                     let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                                         "glm5 demote flush failed: {err}"
                                     ))));
@@ -28465,6 +30301,7 @@ pub fn run(
                             // engine's primed-session assertion. Retire with the quoted cause
                             // rather than hand back a session that cannot burst.
                             eprintln!("[spec-gate] demote flush FAILED (model {}): {err}", s.model);
+                            s.errored = true;
                             let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                                 "spec demote flush failed: {err}"
                             ))));
@@ -28581,7 +30418,8 @@ pub fn run(
                 // named. The step itself is SKIPPED (no device work on a card the gate is
                 // pretending is full); the match below (park-vs-honest-error, the
                 // teardown fence, park_requeue, the retry budget) is production logic,
-                // un-doctored. This is the ONLY injection point of the door.
+                // un-doctored. One of the door's three injection points: this spec-phase step, the
+                // batched decode chunk and the non-batching step (WP-B day 38 addendum A).
                 let (fault_id, fault_route) =
                     (active[i].request_id.clone(), fault_route(&active[i]));
                 let step_result =
@@ -28729,6 +30567,7 @@ pub fn run(
                             None => {
                                 // cannot rebuild the request (no prompt to replay) — the
                                 // pre-fix honest error, quoted.
+                                s.errored = true;
                                 let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                                     "step error: {err}"
                                 ))));
@@ -28753,6 +30592,7 @@ pub fn run(
                             );
                         }
                         quarantine_request_fault(&mut active[i], err.as_ref());
+                        active[i].errored = true;
                         let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                             "step error: {err}"
                         ))));
@@ -28863,6 +30703,7 @@ pub fn run(
                         });
                     if let Err(err) = probe {
                         active[i].aborted = true;
+                        active[i].errored = true;
                         let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                             "step error: {err}"
                         ))));
@@ -28939,6 +30780,8 @@ pub fn run(
                             // plain-affinity checkpoint capture needs the same per-session
                             // boundary stop the concat prime cannot honor — prime alone.
                             && s.ckpt_at.is_none()
+                            // WP-B day 44: an in-call grid capture needs the per-sequence prime.
+                            && s.exact_at.is_none()
                             // the grid-aligned seed boundary (memra#602) is the same class
                             // when it stops inside the prompt; a seed at the prompt end is not
                             // a stop and keeps the concat prime.
@@ -29059,6 +30902,7 @@ pub fn run(
                                 );
                                 for &(i, _) in &cand {
                                     active[i].aborted = true;
+                                    active[i].errored = true;
                                     let _ = active[i].tx.send(Event::Error(EngineError::engine(
                                         format!("prime batch: {err}"),
                                     )));
@@ -29208,6 +31052,7 @@ pub fn run(
                     }
                     Err(err) => {
                         quarantine_request_fault(s, err.as_ref());
+                        s.errored = true;
                         let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                             "prefill error: {err}"
                         ))));
@@ -29271,6 +31116,7 @@ pub fn run(
                     Ok(false) => finished.push(i),
                     Err(err) => {
                         quarantine_request_fault(&mut active[i], err.as_ref());
+                        active[i].errored = true;
                         let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                             "step error: {err}"
                         ))));
@@ -29323,6 +31169,7 @@ pub fn run(
                         );
                         if let Err(err) = staged {
                             quarantine_request_fault(&mut active[i], err.as_ref());
+                            active[i].errored = true;
                             let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                                 "constraint mask: {err}"
                             ))));
@@ -29390,45 +31237,115 @@ pub fn run(
                     .map(|&i| active[i].request_id.as_str())
                     .collect::<Vec<_>>()
                     .join(",");
-                let logits = guard_request(&engine, &batch_ids, "batch", "batched decode", || {
-                    // split-borrow: pull the caches out via split_at_mut-style indexing
-                    let mut caches: Vec<&mut Cache> = Vec::with_capacity(idxs.len());
-                    // SAFETY: idxs are unique indices into `active`; we take disjoint &mut.
-                    let base = active.as_mut_ptr();
-                    for &i in &idxs {
-                        let s = unsafe { &mut *base.add(i) };
-                        caches.push(s.cache.as_mut().unwrap());
+                // WP-B day 49 (O14, MEMRA_BATCH_OOM_RECOVER): a quoted CUDA OOM of a chunk that
+                // wrote no session state (the step guard: before the engine call, or the generic
+                // body before any state write) takes one reclaim rung and runs the same batched
+                // step once more; any other failure is the error arm below, as today.
+                let mut batch_attempt = 0usize;
+                let logits = loop {
+                    memra_engine::step_guard::arm();
+                    let attempt = guard_request(
+                        &engine,
+                        &batch_ids,
+                        "batch",
+                        "batched decode",
+                        || {
+                            // MEMRA_STEP_OOM_FAULT's plain-dispatch injection point (WP-B day 38
+                            // addendum A): the forged quoted OOM stands in for this chunk's step, before
+                            // any device work; the chunk's error arm below is production logic.
+                            if step_oom_fault_fire_batch(idxs.len()) {
+                                eprintln!(
+                                    "[admit-oom] MEMRA_STEP_OOM_FAULT fired: this batched decode chunk \
+                             reports a synthetic CUDA OOM ({} session(s))",
+                                    idxs.len()
+                                );
+                                return Err(STEP_OOM_FAULT_MSG.into());
+                            }
+                            // split-borrow: pull the caches out via split_at_mut-style indexing
+                            let mut caches: Vec<&mut Cache> = Vec::with_capacity(idxs.len());
+                            // SAFETY: idxs are unique indices into `active`; we take disjoint &mut.
+                            let base = active.as_mut_ptr();
+                            for &i in &idxs {
+                                let s = unsafe { &mut *base.add(i) };
+                                caches.push(s.cache.as_mut().unwrap());
+                            }
+                            // LEAN LOGITS (inc2 component 3): device-sampled rows skip the
+                            // [n_vocab] D2H — their last_logits comes back EMPTY and the row is
+                            // parked on-device (cache.last_logits_dev) for the retire-time pool
+                            // park below.
+                            // SAFETY: mask_ptrs point at Session.mask_dev fields — disjoint from
+                            // the caches taken above; nothing mutates them for this call's life.
+                            let masks: Vec<Option<(&CudaSlice<u32>, usize)>> = mask_ptrs
+                                .iter()
+                                .map(|m| m.map(|(p, w)| (unsafe { &*p }, w)))
+                                .collect();
+                            match wave_mid {
+                                Some(mid) => {
+                                    lm.model.decode_step_batch_sampled_lean_masked_scheduled(
+                                        &engine,
+                                        &toks,
+                                        &mut caches,
+                                        &samp,
+                                        &masks,
+                                        true,
+                                        mid,
+                                    )
+                                }
+                                None => lm.model.decode_step_batch_sampled_lean_masked(
+                                    &engine,
+                                    &toks,
+                                    &mut caches,
+                                    &samp,
+                                    &masks,
+                                    true,
+                                ),
+                            }
+                        },
+                    );
+                    let guard_state = memra_engine::step_guard::take();
+                    match attempt {
+                        Err(err)
+                            if batch_attempt == 0
+                                && batch_oom_recover_on()
+                                && is_cuda_oom(&err.to_string())
+                                && memra_engine::step_guard::recoverable(guard_state) =>
+                        {
+                            batch_attempt += 1;
+                            let reclaimed = batch_oom_reclaim(
+                                &engine,
+                                &loaded,
+                                &mut px,
+                                &mut hpx,
+                                &mut reuse,
+                                &mut spec_reuse,
+                                &mut dspark_reuse,
+                            );
+                            eprintln!(
+                                "[admit-oom] batch OOM: {} sessions untouched ({guard_state:?}); \
+                                 reclaimed {reclaimed}; retrying the same batched step once",
+                                idxs.len()
+                            );
+                        }
+                        Err(err) => {
+                            if batch_attempt > 0 {
+                                eprintln!(
+                                    "[admit-oom] batch OOM: retry failed ({err}); ended as today"
+                                );
+                            } else if batch_oom_recover_on() && is_cuda_oom(&err.to_string()) {
+                                eprintln!(
+                                    "[admit-oom] batch OOM: torn ({guard_state:?}); ended as today"
+                                );
+                            }
+                            break Err(err);
+                        }
+                        Ok(out) => {
+                            if batch_attempt > 0 {
+                                eprintln!("[admit-oom] batch OOM: retried (ok)");
+                            }
+                            break Ok(out);
+                        }
                     }
-                    // LEAN LOGITS (inc2 component 3): device-sampled rows skip the
-                    // [n_vocab] D2H — their last_logits comes back EMPTY and the row is
-                    // parked on-device (cache.last_logits_dev) for the retire-time pool
-                    // park below.
-                    // SAFETY: mask_ptrs point at Session.mask_dev fields — disjoint from
-                    // the caches taken above; nothing mutates them for this call's life.
-                    let masks: Vec<Option<(&CudaSlice<u32>, usize)>> = mask_ptrs
-                        .iter()
-                        .map(|m| m.map(|(p, w)| (unsafe { &*p }, w)))
-                        .collect();
-                    match wave_mid {
-                        Some(mid) => lm.model.decode_step_batch_sampled_lean_masked_scheduled(
-                            &engine,
-                            &toks,
-                            &mut caches,
-                            &samp,
-                            &masks,
-                            true,
-                            mid,
-                        ),
-                        None => lm.model.decode_step_batch_sampled_lean_masked(
-                            &engine,
-                            &toks,
-                            &mut caches,
-                            &samp,
-                            &masks,
-                            true,
-                        ),
-                    }
-                });
+                };
                 match logits {
                     Ok((rows, next_toks)) => {
                         for (k, &i) in idxs.iter().enumerate() {
@@ -29440,6 +31357,7 @@ pub fn run(
                     Err(err) => {
                         for &i in &idxs {
                             active[i].aborted = true;
+                            active[i].errored = true;
                             let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                                 "batch step: {err}"
                             ))));
@@ -29535,6 +31453,7 @@ pub fn run(
                         || s.capture.is_some()
                         || s.snapshot_at.is_some()
                         || s.ckpt_at.is_some()
+                        || s.exact_at.is_some()
                         || seed_boundary_inside_prompt(
                             s.seed_at,
                             s.fed.len() + s.prefill_queue.len(),
@@ -29618,6 +31537,7 @@ pub fn run(
                                 );
                                 for &i in &dcand {
                                     active[i].aborted = true;
+                                    active[i].errored = true;
                                     let _ = active[i].tx.send(Event::Error(EngineError::engine(
                                         format!("dark prime batch: {err}"),
                                     )));
@@ -29690,6 +31610,7 @@ pub fn run(
                         );
                     } else {
                         quarantine_request_fault(s, err.as_ref());
+                        s.errored = true;
                         let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                             "prefill error: {err}"
                         ))));
@@ -29791,7 +31712,45 @@ pub fn run(
             // length is a disconnect point, not a completion length (the D2 offline
             // history was built from completed rows only; aborts stay load-only).
             admission_book.retire(&s.model, s.booked_kv_bytes, s.shadow_kv_hat);
-            if !s.oom_teardown && !s.aborted {
+            // WP-B day 45 addendum B: a session that retires with its workspace still booked says why.
+            if s.booked_w_bytes > 0 {
+                eprintln!(
+                    "[admit-book] w-retire-unreleased id={} bytes={} reason={}",
+                    s.request_id,
+                    s.booked_w_bytes,
+                    if s.prefill_done {
+                        "same-tick"
+                    } else {
+                        "prime-incomplete"
+                    }
+                );
+            }
+            // WP-B day 37 (DAY37 A4): what an on-demand session backed against what it used.
+            if crate::kv_vmm::armed() {
+                let (sm, sr) = s.spec.as_ref().map_or((0, 0), |sp| sp.kv_on_demand_bytes());
+                let (cm, cr) = s.cache.as_ref().map_or((0, 0), |c| c.kv_on_demand_bytes());
+                let (su, ss) = s.spec.as_ref().map_or((0, 0), |sp| {
+                    sp.kv_on_demand_used_and_slack(crate::kv_vmm::SLACK)
+                });
+                let (cu, cs) = s.cache.as_ref().map_or((0, 0), |c| {
+                    c.kv_on_demand_used_and_slack(crate::kv_vmm::SLACK)
+                });
+                let planes = s.spec.as_ref().map_or(0, |sp| sp.kv_on_demand_planes())
+                    + s.cache.as_ref().map_or(0, |c| c.on_demand_planes());
+                if planes > 0 {
+                    eprintln!(
+                        "[kv-vmm] retire id={} planes={planes} mapped={} reserved={} used={} \
+                         slack_bytes={} booked={}",
+                        s.request_id,
+                        sm + cm,
+                        sr + cr,
+                        su + cu,
+                        ss + cs,
+                        s.booked_kv_bytes
+                    );
+                }
+            }
+            if !s.oom_teardown && !s.aborted && !s.errored {
                 completion_history.record(
                     crate::auth::meter_key(&s.cache_ns),
                     &s.model,
@@ -29853,7 +31812,7 @@ pub fn run(
                 oom_teardowns += 1;
                 continue;
             }
-            if s.prime_service.pending || !retire_may_park(s.aborted, s.oom_teardown) {
+            if s.prime_service.pending || !retire_may_park(s.aborted, s.oom_teardown, s.errored) {
                 continue;
             }
             // AGENT-PAUSE DEMOTE ARM (MEMRA_KV_PAUSE_DEMOTE, lane/kv-pause-demote-20260831,
@@ -29949,6 +31908,7 @@ pub fn run(
                         .map(|b| toks.first() == Some(&b))
                         .unwrap_or(false) as usize;
                     let committed_text = loaded[&s.model].tok.decode_special(&toks[skip..], true);
+                    let public_len = spec_public_len(toks, s.n_prompt, &s.generated);
                     // SESSION AFFINITY: identity of the conversation this session served, so a
                     // later turn that REWRITES history can still recognize and rewind it. The
                     // fingerprint chain is taken over the COMMITTED tokens (no live tail to
@@ -29966,10 +31926,36 @@ pub fn run(
                         reuse_pool_per_namespace(),
                         reuse_pool_global_cap(),
                     ) {
+                        // ON-DEMAND KV (WP-B day 37, DAY37 1.1 park trim): the parked session
+                        // keeps its virtual range and captured graphs; extents wholly past its
+                        // position plus the slack go back behind a fence each plane records.
+                        if crate::kv_vmm::armed() && sess.kv_on_demand_planes() > 0 {
+                            let keep = sess.kv_position() + crate::kv_vmm::SLACK;
+                            let n = sess.release_kv_beyond_rows(keep);
+                            if n > 0 {
+                                eprintln!(
+                                    "[kv-vmm] trim id={} pool=spec keep_rows={keep} released={n}",
+                                    s.request_id
+                                );
+                            }
+                        }
+                        let parked_id = next_parked_id();
+                        // EXACT RESUME (WP-B day 44): an entry with a turn checkpoint queues its
+                        // off-path settle.
+                        if resume_exact_on() && sess.rewind_pos().is_some() {
+                            settle_queue.push(SettleJob {
+                                pool: ParkedPool::Spec,
+                                key: pool_key.clone(),
+                                id: parked_id,
+                            });
+                        }
                         spec_reuse
                             .entry(pool_key)
                             .or_default()
                             .push(SpecReuseEntry {
+                                id: parked_id,
+                                settled: false,
+                                public_len,
                                 sess,
                                 committed_text,
                                 affinity: s.affinity,
@@ -30094,7 +32080,7 @@ pub fn run(
                             // here and grows back to the resuming request's own cap at
                             // the admit probe. Flag off: the ladder-cap cache parks
                             // whole, byte-identical to today.
-                            let (cache, cap) = if kv_park_compact_on() {
+                            let (mut cache, cap) = if kv_park_compact_on() {
                                 compact_parked_plain_cache(
                                     &engine,
                                     &loaded[&s.model],
@@ -30105,6 +32091,28 @@ pub fn run(
                             } else {
                                 (cache, cap)
                             };
+                            // ON-DEMAND KV (WP-B day 37, DAY37 1.1 park trim): the plain twin of
+                            // the spec park's trim above.
+                            if crate::kv_vmm::armed() && cache.on_demand_planes() > 0 {
+                                let keep = cache.pos + crate::kv_vmm::SLACK;
+                                let n = cache.release_kv_beyond_rows(keep);
+                                if n > 0 {
+                                    eprintln!(
+                                        "[kv-vmm] trim id={} pool=plain keep_rows={keep} released={n}",
+                                        s.request_id
+                                    );
+                                }
+                            }
+                            let parked_id = next_parked_id();
+                            // EXACT RESUME (WP-B day 44): an entry with a grid checkpoint queues
+                            // its off-path settle.
+                            if resume_exact_on() && ckpt.is_some() {
+                                settle_queue.push(SettleJob {
+                                    pool: ParkedPool::Plain,
+                                    key: pool_key.clone(),
+                                    id: parked_id,
+                                });
+                            }
                             reuse.entry(pool_key).or_default().push(ReuseEntry {
                                 fed: s.fed,
                                 cache,
@@ -30114,6 +32122,8 @@ pub fn run(
                                 affinity,
                                 fingerprint,
                                 parked_at: Instant::now(),
+                                id: parked_id,
+                                settled: false,
                             });
                         }
                     }
@@ -30168,6 +32178,7 @@ pub fn run(
             oom_teardown_fence(&engine, &loaded);
             host_capture_settle_pending(&engine, &mut px, &mut hpx, ContractWait::Block, "a trim");
             host_restore_settle_pending(&mut px, &mut hpx, ContractWait::Block, "a trim");
+            vmm_reap_for("oom-teardown");
             let reports = trim_model_device_pools(&engine, &loaded, "oom-teardown");
             let trimmed_total = reports.iter().fold(0usize, |total, report| {
                 total.saturating_add(report.reclaimed_bytes)
@@ -30512,6 +32523,21 @@ pub fn run(
             m.cuda_pool_reserved_bytes = pool_reserved as u64;
             m.cuda_pool_used_bytes = pool_used as u64;
             m.cuda_pool_cached_bytes = engine.pool_cached_bytes() as u64;
+            if crate::kv_vmm::armed() {
+                let (mapped, reserved) = vmm_held_bytes(&active, &reuse, &spec_reuse);
+                m.kv_vmm_mapped_bytes = mapped as u64;
+                m.kv_vmm_reserved_bytes = reserved as u64;
+                m.kv_vmm_owed_bytes = vmm_owed_bytes(&active) as u64;
+                m.kv_vmm_graveyard_bytes = memra_engine::cache::vmm_graveyard_bytes() as u64;
+                let (grows, mapper, waits, failures, released) =
+                    memra_engine::cache::vmm_counters();
+                m.kv_vmm_grows_total = grows;
+                m.kv_vmm_mapper_grows_total = mapper;
+                m.kv_vmm_grow_waits_total = waits;
+                m.kv_vmm_grow_failures_total = failures;
+                m.kv_vmm_released_bytes_total = released;
+                m.kv_vmm_quarantined_bytes_total = memra_engine::cache::vmm_quarantined_bytes();
+            }
             m.lcp_hist = px.lcp_hist;
             m.ns_tokens = ns_tokens.clone();
             m.lane_admitted = lane_admitted;
@@ -31761,6 +33787,7 @@ fn park_prefill_oom(
             requeue_oom.push_back(req);
         }
         None => {
+            s.errored = true;
             let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                 "prefill error: {err}"
             ))));
@@ -31860,6 +33887,7 @@ fn park_requeue(loaded: &HashMap<String, LoadedModel>, s: &Session) -> Option<Bo
         // logged, and the latch rides along so re-admission cannot log a second row.
         admit_predict_logged: s.admit_predict_logged,
         memory_defer_since: s.memory_defer_since,
+        reclaim_offtick: None,
         max_prompt_tokens: p.max_prompt_tokens,
         cache_ns: s.cache_ns.clone(),
         affinity: s.affinity.clone(),
@@ -32137,6 +34165,9 @@ fn admit(
     // prompt (and whose cache has room) resumes — only the suffix gets primed. The sampler's
     // penalty history is replayed on host (cheap) so sampling matches a cold run exactly.
     let mut reused: Option<ReuseEntry> = None;
+    // EXACT RESUME (WP-B day 44): the checkpoint a resume restored from, carried as the new
+    // session's checkpoint until its own prime captures a newer one (DAY44 1.3 case 9).
+    let mut exact_carry: Option<PlainCheckpoint> = None;
     // DEFAULT-ON (2026-07-05): the identity gate now exists at the engine level — session-gate
     // (bins) pins 3-turn continuation-prime output == fresh-greedy oracle on both models, and the
     // continuation path the reuse pool takes (prime_cache with cache.pos>0 / decode_step) is
@@ -32165,12 +34196,14 @@ fn admit(
             let snap = e.cache.snapshot(engine)?;
             let mut grown_cache = alloc_with_single_reclaim_retry(
                 || {
-                    memra_engine::pp::new_cache_planned(
-                        engine,
-                        &lm.model.cfg,
-                        &lm.model.plan,
-                        ctx_cap,
-                    )
+                    vmm_build_cache(vmm_scope(engine, lm, ctx_cap, prompt.len(), 0), || {
+                        memra_engine::pp::new_cache_planned(
+                            engine,
+                            &lm.model.cfg,
+                            &lm.model.plan,
+                            ctx_cap,
+                        )
+                    })
                 },
                 |err| {
                     let evicted_prefix = px.evict_all();
@@ -32220,6 +34253,21 @@ fn admit(
                 reused = None;
             }
         }
+    }
+    // GRID REWIND (MEMRA_RESUME_GRID_REWIND, WP-B day 41): the exact-extension hit resumes from the
+    // entry's grid checkpoint, not from its decoded rows; no usable checkpoint drops the entry and
+    // the request primes cold. Unset, nothing here runs.
+    // EXACT RESUME (MEMRA_RESUME_EXACT, WP-B day 44): a settled entry resumes where it stands; an
+    // unsettled one restores its grid checkpoint; either way the tail primes in one call.
+    if resume_exact_on()
+        && let Some(e) = reused.take()
+    {
+        (reused, exact_carry) = exact_resume_plain(engine, lm, e, &prompt, &req.model);
+    }
+    if resume_grid_rewind_on()
+        && let Some(e) = reused.take()
+    {
+        reused = grid_rewind_plain(engine, lm, e, &prompt, &req.model);
     }
     if reused.is_some() {
         reuse_metrics.continuation_hits += 1;
@@ -32306,12 +34354,14 @@ fn admit(
             let restored: Result<(), Box<dyn std::error::Error>> = if target_cap > old_cap {
                 match alloc_with_single_reclaim_retry(
                     || {
-                        memra_engine::pp::new_cache_planned(
-                            engine,
-                            &lm.model.cfg,
-                            &lm.model.plan,
-                            target_cap,
-                        )
+                        vmm_build_cache(vmm_scope(engine, lm, target_cap, prompt.len(), 0), || {
+                            memra_engine::pp::new_cache_planned(
+                                engine,
+                                &lm.model.cfg,
+                                &lm.model.plan,
+                                target_cap,
+                            )
+                        })
                     },
                     |err| {
                         let evicted_prefix = px.evict_all();
@@ -32735,18 +34785,22 @@ fn admit(
                     affinity: None,
                     fingerprint: Vec::new(),
                     parked_at: Instant::now(),
+                    id: next_parked_id(),
+                    settled: false,
                 })
             } else {
                 let e = &px.entries[&pool_key][i];
                 // `pp::new_cache`, not `Cache::new` — stage-owned KV under an open ppN door
                 // (see the session-cache site below for the full reason). `prefix_restore`
                 // then copies plane-by-plane into whatever device each layer landed on.
-                match memra_engine::pp::new_cache_planned(
-                    engine,
-                    &lm.model.cfg,
-                    &lm.model.plan,
-                    ctx_cap,
-                ) {
+                match vmm_build_cache(vmm_scope(engine, lm, ctx_cap, prompt.len(), 0), || {
+                    memra_engine::pp::new_cache_planned(
+                        engine,
+                        &lm.model.cfg,
+                        &lm.model.plan,
+                        ctx_cap,
+                    )
+                }) {
                     Ok(mut c) => {
                         match prefix_restore(engine, &mut c, e, &pool_key, Some(&lm.model)) {
                             // A prefix-cache restore is a transient carrier consumed straight into a
@@ -32763,6 +34817,8 @@ fn admit(
                                     affinity: None,
                                     fingerprint: Vec::new(),
                                     parked_at: Instant::now(),
+                                    id: next_parked_id(),
+                                    settled: false,
                                 }
                             }),
                             Err(err) => Err(format!("restore failed: {err}")),
@@ -32897,11 +34953,16 @@ fn admit(
                     let restored = {
                         let e = &px.entries[&pool_key][i];
                         trace_prefix_entry_state(engine, e, lcp, "source", "immediate-partial");
-                        match memra_engine::pp::new_cache_planned(
-                            engine,
-                            &lm.model.cfg,
-                            &lm.model.plan,
-                            ctx_cap,
+                        match vmm_build_cache(
+                            vmm_scope(engine, lm, ctx_cap, prompt.len(), 0),
+                            || {
+                                memra_engine::pp::new_cache_planned(
+                                    engine,
+                                    &lm.model.cfg,
+                                    &lm.model.plan,
+                                    ctx_cap,
+                                )
+                            },
                         ) {
                             Ok(mut c) => match prefix_restore_at(
                                 engine,
@@ -32930,6 +34991,8 @@ fn admit(
                                         affinity: None,
                                         fingerprint: Vec::new(),
                                         parked_at: Instant::now(),
+                                        id: next_parked_id(),
+                                        settled: false,
                                     })
                                 }
                                 Err(err) => Err(format!("partial restore failed: {err}")),
@@ -33300,6 +35363,8 @@ fn admit(
                             affinity: None,
                             fingerprint: Vec::new(),
                             parked_at: Instant::now(),
+                            id: next_parked_id(),
+                            settled: false,
                         });
                     }
                     Err((None, why)) => {
@@ -33764,10 +35829,19 @@ fn admit(
         } else {
             let mut probe = None;
             if let Some(pool) = spec_reuse.get(&pool_key) {
+                // DAY41 addendum B3: armed, the exact key is the public stream (the final
+                // burst's overshoot rows are not required); the hit always rewinds below it.
+                let exact_key = |e: &SpecReuseEntry| -> usize {
+                    if resume_grid_rewind_on() || resume_exact_on() {
+                        e.public_len.min(e.sess.committed.len())
+                    } else {
+                        e.sess.committed.len()
+                    }
+                };
                 if let Some(index) = pool.iter().rposition(|e| {
                     e.sess.cache_max_ctx() >= ctx_cap
-                        && prompt.len() >= e.sess.committed.len()
-                        && prompt.starts_with(&e.sess.committed)
+                        && prompt.len() >= exact_key(e)
+                        && prompt.starts_with(&e.sess.committed[..exact_key(e)])
                         && spec_resume_sampler_admits(&req_sampler, e, &mut sampler_refused)
                 }) {
                     probe = Some(SpecResumeProbe::Exact(index));
@@ -33878,6 +35952,39 @@ fn admit(
             }
 
             match probe {
+                // GRID REWIND (MEMRA_RESUME_GRID_REWIND, WP-B day 41): an exact or text hit
+                // resumes from the session's turn checkpoint and primes the token suffix; no
+                // usable checkpoint primes cold. Unset, both arms are today's.
+                // EXACT RESUME (MEMRA_RESUME_EXACT, WP-B day 44): a settled entry resumes where it
+                // stands, an unsettled one rewinds to its turn checkpoint keeping it as the carry;
+                // either way the tail primes in one walk. A text hit is declined (cold).
+                Some(SpecResumeProbe::Exact(index)) if resume_exact_on() => {
+                    let entry = spec_reuse
+                        .get_mut(&pool_key)
+                        .expect("spec exact candidate pool vanished")
+                        .remove(index);
+                    exact_resume_spec(engine, lm, entry, &prompt, &req.model)
+                }
+                Some(SpecResumeProbe::Text { .. }) if resume_exact_on() => {
+                    eprintln!("[kv-reuse] exact: declined (a text-prefix hit); cold");
+                    None
+                }
+                Some(SpecResumeProbe::Exact(index)) if resume_grid_rewind_on() => {
+                    let sess = spec_reuse
+                        .get_mut(&pool_key)
+                        .expect("spec exact candidate pool vanished")
+                        .remove(index)
+                        .sess;
+                    grid_rewind_spec(engine, lm, sess, &prompt, &req.model)
+                }
+                Some(SpecResumeProbe::Text { index, .. }) if resume_grid_rewind_on() => {
+                    let sess = spec_reuse
+                        .get_mut(&pool_key)
+                        .expect("spec text candidate pool vanished")
+                        .remove(index)
+                        .sess;
+                    grid_rewind_spec(engine, lm, sess, &prompt, &req.model)
+                }
                 Some(SpecResumeProbe::Exact(index)) => Some(
                     spec_reuse
                         .get_mut(&pool_key)
@@ -33908,11 +36015,41 @@ fn admit(
                     let rewound = if target_cap > old_cap {
                         alloc_with_single_reclaim_retry(
                             || {
-                                lm.model.spec_grow_and_rewind_to_checkpoint(
+                                // WP-B day 37: a covered grow rebuilds the trunk cache and the
+                                // draft scratch under the on-demand scope; every on-demand plane
+                                // the scope allocated must be reachable by the session's ensure.
+                                let scope = vmm_scope(
                                     engine,
-                                    &mut entry.sess,
+                                    lm,
                                     target_cap,
-                                )
+                                    prompt.len(),
+                                    spec_k_decision.k,
+                                );
+                                let Some(initial) = scope else {
+                                    return lm.model.spec_grow_and_rewind_to_checkpoint(
+                                        engine,
+                                        &mut entry.sess,
+                                        target_cap,
+                                    );
+                                };
+                                let (grown, count) =
+                                    memra_engine::cache::with_on_demand_kv(initial, || {
+                                        lm.model.spec_grow_and_rewind_to_checkpoint(
+                                            engine,
+                                            &mut entry.sess,
+                                            target_cap,
+                                        )
+                                    });
+                                let grown = grown?;
+                                if count > 0 && entry.sess.kv_on_demand_planes() != count {
+                                    return Err(format!(
+                                        "vmm: on-demand plane not reachable by ensure (scope \
+                                         allocated {count}, session reaches {})",
+                                        entry.sess.kv_on_demand_planes()
+                                    )
+                                    .into());
+                                }
+                                Ok(grown)
                             },
                             |err| {
                                 if !is_cuda_oom(&err.to_string()) {
@@ -34096,7 +36233,16 @@ fn admit(
                         req.model
                     );
                 }
-                match lm.model.new_session(engine, ctx_cap) {
+                // WP-B day 37: under `MEMRA_KV_ALLOCATOR=vmm` a covered model's session is built
+                // with on-demand planes (`vmm_build_spec`); unarmed it is this call unchanged.
+                let vmm_new_session = |cap: usize| {
+                    vmm_build_spec(
+                        vmm_scope(engine, lm, cap, prompt.len(), spec_k_decision.k),
+                        || lm.model.new_session(engine, cap),
+                        |sess: &memra_engine::spec::SpecSession| sess.kv_on_demand_planes(),
+                    )
+                };
+                match vmm_new_session(ctx_cap) {
                     Ok(sess) => Some(sess),
                     Err(first_err) => {
                         let evicted = spec_reuse
@@ -34116,7 +36262,7 @@ fn admit(
                             );
                         }
                         let retried = if evicted > 0 {
-                            lm.model.new_session(engine, ctx_cap).ok()
+                            vmm_new_session(ctx_cap).ok()
                         } else {
                             None
                         };
@@ -34134,7 +36280,7 @@ fn admit(
                                         .unwrap_or(ctx_cap / 2)
                                         .clamp(need, ctx_cap);
                                     loop {
-                                        let landed = match lm.model.new_session(engine, ask) {
+                                        let landed = match vmm_new_session(ask) {
                                             Ok(s) => {
                                                 // transient reserve (see SPEC_SHRINK_RESERVE):
                                                 // a fit that leaves no headroom panics later on
@@ -34714,12 +36860,14 @@ fn admit(
             (None, Some(c)) => Some(c),
             (None, None) => match alloc_with_single_reclaim_retry(
                 || {
-                    memra_engine::pp::new_cache_planned(
-                        engine,
-                        &lm.model.cfg,
-                        &lm.model.plan,
-                        ctx_cap,
-                    )
+                    vmm_build_cache(vmm_scope(engine, lm, ctx_cap, prompt.len(), 0), || {
+                        memra_engine::pp::new_cache_planned(
+                            engine,
+                            &lm.model.cfg,
+                            &lm.model.plan,
+                            ctx_cap,
+                        )
+                    })
                 },
                 |err| {
                     // Headroom discipline: prefix entries always yield before a session errors.
@@ -34945,16 +37093,42 @@ fn admit(
     //     prefix cannot be captured by a prime-stop; that turn simply re-primes next time).
     // The boundary is derived from the prompt's own turn markers (`plain_checkpoint_boundary`),
     // never a hardcoded offset; the exact diff at resume still decides on bytes.
-    let ckpt_at = if affinity_enabled()
+    // EXACT RESUME (MEMRA_RESUME_EXACT, WP-B day 44): the checkpoint is captured INSIDE the
+    // prime call that contains it (`exact_at`), never a stop, at the last grid point with the
+    // prime floor after it and past the resumed depth; no `ckpt_at` stop is armed.
+    let exact_at = (resume_exact_on()
+        && affinity_enabled()
+        && spec.is_none()
+        && vision_state.is_none()
+        && !eager_only_model(lm)
+        && !confidence_trace_enabled())
+    .then(|| {
+        grid_rewind_checkpoint_boundary(&prompt, seed_fed.len(), false, &|t| {
+            lm.tok.token_is_control(t)
+        })
+    })
+    .flatten();
+    let ckpt_at = if !resume_exact_on()
+        && affinity_enabled()
         && spec.is_none()
         && vision_state.is_none()
         && !eager_only_model(lm)
         && !confidence_trace_enabled()
         && (req.affinity.is_some()
-            || plain_ckpt_nominatable(&prompt, &|t| lm.tok.token_is_control(t)))
+            || plain_ckpt_nominatable(&prompt, &|t| lm.tok.token_is_control(t))
+            || resume_grid_rewind_on())
     {
-        plain_checkpoint_boundary(&prompt, &|t| lm.tok.token_is_control(t))
-            .filter(|&b| b > seed_fed.len())
+        if resume_grid_rewind_on() {
+            // DAY41 addendum B (B1, B2): the armed arm's own boundary rule.
+            let markers = req.affinity.is_some()
+                || plain_ckpt_nominatable(&prompt, &|t| lm.tok.token_is_control(t));
+            grid_rewind_checkpoint_boundary(&prompt, seed_fed.len(), markers, &|t| {
+                lm.tok.token_is_control(t)
+            })
+        } else {
+            plain_checkpoint_boundary(&prompt, &|t| lm.tok.token_is_control(t))
+                .filter(|&b| b > seed_fed.len())
+        }
     } else {
         None
     };
@@ -35052,6 +37226,9 @@ fn admit(
         // Booked by the worker loop at active.push (the admission charge is computed
         // there); zero until then so a test-constructed Session books nothing.
         booked_kv_bytes: 0,
+        booked_w_bytes: 0,
+        vmm_floor_rows: n_prompt,
+        errored: false,
         shadow_kv_hat: 0,
         shadow_pred_total: 0,
         decoded_bytes: Vec::new(),
@@ -35061,7 +37238,8 @@ fn admit(
         n_cached,
         snapshot_at,
         ckpt_at,
-        ckpt_snap: None,
+        exact_at,
+        ckpt_snap: exact_carry,
         prefix_miss_lcp,
         seed_prefix,
         seed_at,
@@ -35138,6 +37316,41 @@ fn admit(
                 eprintln!(
                     "[prefix-cache] restore fence failed ({err}); source stays leased, publication skipped"
                 );
+            }
+        }
+    }
+    // ON-DEMAND KV (WP-B day 37, DAY37 1.2 ensure point 3): the admitted session, fresh or
+    // adopted from a pool, is backed through this request's bound before it leaves admission. A
+    // failure waits on the graveyard's release events once and retries; a second failure refuses
+    // the request as the pooled allocator's `cache alloc failed` does.
+    if crate::kv_vmm::armed() {
+        let ensured = match vmm_ensure_session(&mut s) {
+            Ok(evs) => Ok(evs),
+            Err(err) if is_cuda_oom(&err.to_string()) => {
+                let _ = memra_engine::cache::vmm_reap_graveyard_blocking();
+                eprintln!(
+                    "[kv-vmm] admission ensure failed ({err}); graveyard reaped, retrying once"
+                );
+                vmm_ensure_session(&mut s)
+            }
+            Err(err) => Err(err),
+        };
+        match ensured {
+            Ok(evs) => {
+                for (label, rows, ev) in evs {
+                    eprintln!(
+                        "{}",
+                        crate::kv_vmm::grow_line(&s.request_id, &label, rows, &ev)
+                    );
+                }
+            }
+            Err(err) => {
+                return Err((
+                    s.tx,
+                    EngineError::engine(format!(
+                        "cache alloc failed: vmm ensure at admission: {err}"
+                    )),
+                ));
             }
         }
     }
@@ -35379,6 +37592,8 @@ fn prefix_fanout_eligible(s: &Session, eager_only: &std::collections::HashSet<St
         // a checkpoint-capturing session needs its own boundary-stopped prime — fanout
         // primes the shared prefix monolithically and cannot honor the per-session stop.
         && s.ckpt_at.is_none()
+        // WP-B day 44: an in-call grid capture needs the session's own per-sequence prime.
+        && s.exact_at.is_none()
         && s.cache.as_ref().is_some_and(|c| c.pos == 0 && !c.has_swa_ring())
         && !eager_only.contains(&s.model)
         && s.prefill_queue.len() >= PREFIX_CACHE_MIN_TOKENS
@@ -35513,6 +37728,7 @@ fn dedup_interactive_prefixes(
                 loaded.get(&key.0).map(|l| &l.model),
             );
             if let Err(err) = restored {
+                active[i].errored = true;
                 let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                     "prefix fanout restore failed: {err}"
                 ))));
@@ -35846,6 +38062,15 @@ fn prefill_tick(
                 let tx = s.tx.clone();
                 Box::new(move || tx.is_closed())
             });
+            // EXACT RESUME (MEMRA_RESUME_EXACT, WP-B day 44): this call captures the session's grid
+            // checkpoint inside it when the point lies in it (no stop); the guard disarms on
+            // every path, error included.
+            let exact_here = s.exact_at.filter(|&g| fed_len <= g && g <= fed_len + take);
+            let _exact_guard = exact_here.and_then(|g| {
+                s.cache.as_ref().map(|c| {
+                    memra_engine::grid_capture::arm(g, memra_engine::grid_capture::needed_layers(c))
+                })
+            });
             let (l, _h, x) = lm.model.prime_cache_overlaid(
                 engine,
                 &chunk,
@@ -35853,6 +38078,29 @@ fn prefill_tick(
                 s.prefill_queue.len(),
                 ov_window.as_ref(),
             )?;
+            if let Some(g) = exact_here {
+                s.exact_at = None;
+                let cache = s.cache.as_ref().unwrap();
+                match memra_engine::grid_capture::take().map(|cap| cap.into_snapshot(cache)) {
+                    Some(Ok(snap)) => {
+                        s.ckpt_snap = Some(PlainCheckpoint {
+                            snap,
+                            pos: g,
+                            last_logits: Vec::new(),
+                        });
+                    }
+                    Some(Err(why)) => eprintln!(
+                        "[kv-reuse] exact: capture refused at {g} ({why}); the previous \
+                         checkpoint stays (model {})",
+                        s.model
+                    ),
+                    None => eprintln!(
+                        "[kv-reuse] exact: capture missed at {g} (call {fed_len}+{take}); the \
+                         previous checkpoint stays (model {})",
+                        s.model
+                    ),
+                }
+            }
             (l, x)
         };
         s.last_logits = l;
@@ -36114,6 +38362,7 @@ fn advance_sample_emit(
         (None, Some(c)) => {
             let mut row = s.last_logits.clone();
             if let Err(err) = c.mask_logits(&mut row) {
+                s.errored = true;
                 let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                     "constraint mask: {err}"
                 ))));
@@ -36146,6 +38395,7 @@ fn advance_sample_emit(
     if let Some(c) = s.constraint.as_mut()
         && let Err(err) = c.consume(next)
     {
+        s.errored = true;
         let _ = s.tx.send(Event::Error(EngineError::engine(format!(
             "constraint advance: {err}"
         ))));
@@ -36211,6 +38461,7 @@ fn advance_token_emit(
     if let Some(c) = s.constraint.as_mut()
         && let Err(err) = c.consume(tok)
     {
+        s.errored = true;
         let _ = s.tx.send(Event::Error(EngineError::engine(format!(
             "constraint advance: {err}"
         ))));
@@ -36890,14 +39141,40 @@ fn step_session(
         // undercounts the conversation's segments. Empty-suffix continuation bursts remain
         // zero-prime, and MEMRA_AFFINITY=0 preserves the monolithic control arm.
         let cold = spec.committed.is_empty();
-        let boundary = if !suffix.is_empty()
+        // EXACT RESUME (MEMRA_RESUME_EXACT, WP-B day 44): the turn checkpoint is captured inside
+        // the MTP walker's trunk call that contains it, at the last grid point with the prime
+        // floor after it; no stop, no split. The resume point this suffix primes from is on the
+        // grid (a cold prime, a settled entry or a restored checkpoint), so the suffix-relative
+        // boundary is on the absolute grid.
+        if resume_exact_on()
+            && !suffix.is_empty()
+            && affinity_enabled()
+            && cooperative_prime
+            && s.mtp_prime.is_none()
+        {
+            spec.grid_capture_at =
+                grid_rewind_checkpoint_boundary(&suffix, 0, false, &|t| lm.tok.token_is_control(t))
+                    .map(|b| spec.committed.len() + b);
+        }
+        let boundary = if !resume_exact_on()
+            && !suffix.is_empty()
             && affinity_enabled()
             && (cold
                 && (s.affinity.is_some()
-                    || plain_ckpt_nominatable(&suffix, &|t| lm.tok.token_is_control(t)))
+                    || plain_ckpt_nominatable(&suffix, &|t| lm.tok.token_is_control(t))
+                    || resume_grid_rewind_on())
                 || !cold)
         {
-            plain_checkpoint_boundary(&suffix, &|t| lm.tok.token_is_control(t))
+            if cold && resume_grid_rewind_on() {
+                // DAY41 addendum B (B1): a cold spec session arms the armed arm's rule.
+                let markers = s.affinity.is_some()
+                    || plain_ckpt_nominatable(&suffix, &|t| lm.tok.token_is_control(t));
+                grid_rewind_checkpoint_boundary(&suffix, 0, markers, &|t| {
+                    lm.tok.token_is_control(t)
+                })
+            } else {
+                plain_checkpoint_boundary(&suffix, &|t| lm.tok.token_is_control(t))
+            }
         } else {
             None
         };
@@ -36968,6 +39245,11 @@ fn step_session(
         // the delta is this burst's contribution, merged per-model for /metrics and summed
         // per-request for usage.spec.
         let telem_before = spec.telemetry();
+        // BUDGET CLAMP (MEMRA_SPEC_BUDGET_CLAMP, WP-B day 43): the request's remaining public
+        // budget, not the burst's cadence target; unset leaves the engine's field None.
+        if spec_budget_clamp_on() {
+            spec.budget_room = Some(request_room);
+        }
         // SSE CADENCE (lane/sse-cadence, 2026-08-05): publish at ROUND cadence, not burst
         // cadence. Every committed id in the request-owned budget gets its own Event::Token;
         // UTF-8 fragments may make an individual event's text empty, but ids are never coalesced.
@@ -37069,6 +39351,13 @@ fn step_session(
             if !burst.is_empty() {
                 trace.mark_first_decode();
             }
+        }
+        if let Some((na, n_acc, room)) = spec.budget_clamp_fired.take() {
+            eprintln!(
+                "[spec] budget clamp: round truncated at {na} of {n_acc} accepted ({room} of the \
+                 request's budget left; model {})",
+                s.model
+            );
         }
         let telem_delta = spec.telemetry().delta_since(&telem_before);
         spec_metrics.record(&s.model, telem_delta);
@@ -38437,8 +40726,8 @@ fn prime_cancelled_abort(s: &mut Session, err: &(dyn std::error::Error + 'static
     true
 }
 
-fn retire_may_park(aborted: bool, oom_teardown: bool) -> bool {
-    !aborted && !oom_teardown
+fn retire_may_park(aborted: bool, oom_teardown: bool, errored: bool) -> bool {
+    !aborted && !oom_teardown && !errored
 }
 
 /// Model-owned topology is shared by admission, recovery, calibration and admin trim.
@@ -38865,8 +41154,47 @@ fn run_boot_calibration(
 mod abort_park_tests {
     #[test]
     fn aborted_sessions_never_publish_reusable_kv() {
-        assert!(super::retire_may_park(false, false));
-        assert!(!super::retire_may_park(true, false));
+        assert!(super::retire_may_park(false, false, false));
+        assert!(!super::retire_may_park(true, false, false));
+    }
+
+    /// WP-B day 38 addendum A: a session that ended on a typed error is never a park point.
+    #[test]
+    fn errored_sessions_never_publish_reusable_kv() {
+        assert!(!super::retire_may_park(false, false, true));
+        assert!(!super::retire_may_park(true, true, true));
+    }
+
+    /// Every typed-error send that ends a session in the tick loop's session arms (and in the
+    /// session helpers it calls) marks the session errored first (comment-stripped census).
+    #[test]
+    fn every_session_ending_error_marks_the_session_errored() {
+        let worker = include_str!("worker.rs");
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let lines: Vec<&str> = live.lines().collect();
+        let mut unmarked = Vec::new();
+        for (i, l) in lines.iter().enumerate() {
+            let t = l.trim_start();
+            let session_send = t.starts_with("let _ = s.tx.send(Event::Error(")
+                || t.starts_with("let _ = active[i].tx.send(Event::Error(");
+            if !session_send {
+                continue;
+            }
+            let prev = lines[..i]
+                .iter()
+                .rev()
+                .map(|p| p.trim())
+                .find(|p| !p.is_empty() && !p.starts_with("//"))
+                .unwrap_or("");
+            let marked = prev.ends_with(".errored = true;") || prev.ends_with(".aborted = true;");
+            if !marked {
+                unmarked.push(i + 1);
+            }
+        }
+        assert!(
+            unmarked.is_empty(),
+            "unmarked session error sends at lines {unmarked:?}"
+        );
     }
 
     #[test]
@@ -38875,8 +41203,8 @@ mod abort_park_tests {
         // needs). A pool-park would keep the VRAM alive and starve the requeued retry —
         // and the pending-carry flush would run a GPU pass on a card that just proved
         // full (lane/step37-vram-admission-20260830).
-        assert!(!super::retire_may_park(false, true));
-        assert!(!super::retire_may_park(true, true));
+        assert!(!super::retire_may_park(false, true, false));
+        assert!(!super::retire_may_park(true, true, false));
     }
 }
 
@@ -39574,6 +41902,7 @@ mod tests {
             request_id: String::new(),
             admit_predict_logged: false,
             memory_defer_since: None,
+            reclaim_offtick: None,
             ttft: None,
             images: Vec::new(),
             gemma_images: Vec::new(),
@@ -40027,6 +42356,7 @@ mod tests {
             request_id: String::new(),
             admit_predict_logged: false,
             memory_defer_since: None,
+            reclaim_offtick: None,
             images: Vec::new(),
             gemma_images: Vec::new(),
             glm5_images: Vec::new(),
@@ -46377,8 +48707,8 @@ mod tests {
         // terminal completions (parks re-admit; aborts are load, not completions).
         assert_eq!(prod.matches("completion_history.record(").count(), 1);
         assert!(
-            prod.contains("if !s.oom_teardown && !s.aborted {"),
-            "history excludes parks and aborts"
+            prod.contains("if !s.oom_teardown && !s.aborted && !s.errored {"),
+            "history excludes parks, aborts and errored sessions"
         );
 
         // G2 metrics: the /metrics gauges derive from the one book, never a twin counter.
@@ -49381,7 +51711,8 @@ mod tests {
         assert!(top[poll..poll + 200].contains("ContractWait::Poll,"));
         assert!(top[poll..poll + 200].contains("\"the tick top\","));
         assert!(demote_poll < pin && pin < memo && memo < poll);
-        assert!(worker[loop_at..loop_at + 4500].contains("&& hpx.promoting.is_none()"));
+        // The idle guard sits at the loop head; the window grew with the head (lane B's idle refresh, integ62).
+        assert!(worker[loop_at..loop_at + 6000].contains("&& hpx.promoting.is_none()"));
         // The admission loop: the probe runs after every defer gate and before `admit(`, with the
         // request still in hand, and a parked request goes on the requeue.
         let admission = worker[run..]
@@ -50407,7 +52738,8 @@ mod tests {
             .find("host_demote_settle_pending(&mut hpx, ContractWait::Poll, \"the tick top\")")
             .unwrap();
         assert!(poll < 700, "the poll is the loop body's first statement");
-        assert!(worker[loop_at..loop_at + 4500].contains("&& hpx.demoting.is_none()"));
+        // The idle guard sits at the loop head; the window grew with the head (lane B's idle refresh, integ62).
+        assert!(worker[loop_at..loop_at + 6000].contains("&& hpx.demoting.is_none()"));
         // (Day 20 extended the cap to the `Capturing` entry; the statement is one `if`.)
         assert!(worker[loop_at..loop_at + 9000].contains(
             "if hpx.demoting.is_some()\n                    || hpx.promoting.is_some()\n                    || hpx.capturing.is_some()\n                    || hpx.restoring.is_some()\n                {"
@@ -56845,13 +59177,732 @@ mod tests {
         let worker = squash(include_str!("worker.rs"));
         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
         assert!(live.contains(
-            "let pending_seed = if admit_memory_cfg.armed { seed_booking_cap( pending_seed_bytes(&active), prefix_cache_budget_bytes(), px.total_bytes, ) } else { 0 };"
+            "let pending_seed_uncapped = if admit_memory_cfg.armed { pending_seed_bytes(&active) } else { 0 }; let pending_seed = if admit_memory_cfg.armed { seed_booking_cap( pending_seed_uncapped, prefix_cache_budget_bytes(), px.total_bytes, ) } else { 0 };"
         ));
         assert!(live.contains("let pending_booked = pending_prime.saturating_add(pending_seed);"));
         assert!(live.contains(
             "move |h: AdmissionHeadroom| h.less_pending(pending_booked, primary_device);"
         ));
         assert_eq!(live.matches("pending_seed_bytes(&active)").count(), 1);
+    }
+
+    /// WP-B day 37 (DAY37 1.2 ensure point 2): the tick-top ensure runs after the disconnect
+    /// sweep and before the first engine call of the tick, only with the door armed, and its
+    /// retry is the one reclaim retry.
+    #[test]
+    fn vmm_tick_top_ensure_precedes_every_phase_and_is_armed_only() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let sweep = live
+            .find("if s.tx.is_closed() { abort_log(s); finished.push(i); } }")
+            .expect("the disconnect sweep");
+        let ensure = live
+            .find("if crate::kv_vmm::armed() { let (reaped, pending) = vmm_reap_tick(&mut active, &mut reuse, &mut spec_reuse);")
+            .expect("the tick-top ensure");
+        let first_phase = sweep + live[sweep..].find("if !batching {").expect("the phases");
+        assert!(sweep < ensure && ensure < first_phase);
+        assert_eq!(live.matches("vmm_ensure_session(s)").count(), 2);
+        assert_eq!(
+            live.matches("vmm_reap_tick(&mut active, &mut reuse, &mut spec_reuse)")
+                .count(),
+            1
+        );
+    }
+
+    /// WP-B day 37 (DAY37 1.2 ensure points 1 and 3, 1.3): every session-cache construction in
+    /// the admission paths goes through the on-demand scope, the spec sessions through one
+    /// closure; the only direct constructions left are the park compaction's fed-length cache
+    /// and the boot calibration probe, both pooled by design. The admitted session is ensured
+    /// before it leaves admission. A new construction site fails this census until classified.
+    #[test]
+    fn vmm_every_admission_cache_is_built_under_the_scope() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        assert_eq!(
+            live.matches("memra_engine::pp::new_cache_planned(").count(),
+            7
+        );
+        // Six wrapped sites plus the helper's own definition.
+        assert_eq!(live.matches("vmm_build_cache(").count(), 7);
+        // Eight sites (six caches, the spec closure, the spec grow) plus the definition.
+        assert_eq!(live.matches("vmm_scope(").count(), 9);
+        let compact = live
+            .find("fn compact_parked_plain_cache(")
+            .expect("the park compaction");
+        let compact_end = compact + live[compact..].find("\n}").unwrap_or(live.len() - compact);
+        assert!(live[compact..compact_end].contains(
+            "memra_engine::pp::new_cache_planned(engine, &lm.model.cfg, &lm.model.plan, target)?"
+        ));
+        assert_eq!(live.matches("lm.model.new_session(engine, ").count(), 2);
+        assert!(live.contains("|| lm.model.new_session(engine, cap),"));
+        assert!(live.contains("let mut sess = lm.model.new_session(engine, probe_ctx)?;"));
+        assert_eq!(live.matches("vmm ensure at admission").count(), 1);
+    }
+
+    /// WP-B day 37 (DAY37 1.4): the owed growth joins the one booked reduction, computed only with
+    /// the door armed, and both park sites trim through a recorded event.
+    #[test]
+    fn vmm_owed_growth_joins_the_booked_reduction_and_both_parks_trim() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        assert!(live.contains(
+            "let vmm_owed = if crate::kv_vmm::armed() { vmm_owed_bytes(&active) } else { 0 }; let pending_booked = pending_booked.saturating_add(vmm_owed);"
+        ));
+        assert!(live.contains("let pending_booked = pending_prime.saturating_add(pending_seed);"));
+        assert_eq!(live.matches("pool=spec keep_rows={keep}").count(), 1);
+        assert_eq!(live.matches("pool=plain keep_rows={keep}").count(), 1);
+        // Each plane records its own fence under its lock (DAY37 section 2's review): the worker
+        // records no event for a trim.
+        assert!(!live.contains("release_kv_beyond_rows(keep, &"));
+        assert_eq!(super::vmm_owed_bytes(&[]), 0);
+    }
+
+    /// WP-B day 37 addendum D: pending releases keep the idle block polling, and every reclaim
+    /// path reaps the graveyard before its pool trim (day 49 addendum C adds the batch-OOM one).
+    #[test]
+    fn vmm_pending_releases_keep_the_idle_wait_polling_and_the_reclaims_reap() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        assert!(live.contains(
+            "&& hpx.restoring.is_none() && !vmm_pending && reclaim_queue.ids.is_empty() && settle_queue.is_empty() {"
+        ));
+        assert!(live.contains("if vmm_pending { wait = wait.min(Duration::from_millis(2)); }"));
+        assert!(live.contains("let (reaped, pending) = vmm_reap_tick(&mut active, &mut reuse, &mut spec_reuse); vmm_pending = pending > 0;"));
+        // Addendum E2 and E4: the idle decision re-reads the pending bytes (this tick's retires
+        // trimmed and dropped after the tick-top reap) before it chooses the block, and flushes
+        // the ensure-walls batch.
+        let refresh = "if active.is_empty() && queue.is_empty() { vmm_idle_refresh(&mut vmm_pending, &mut vmm_ensure_walls, &reuse, &spec_reuse); if pending_constraints.is_empty()";
+        let at = live
+            .find(refresh)
+            .expect("the idle decision refreshes the pending flag first");
+        assert!(
+            at < live
+                .find(
+                    "&& hpx.restoring.is_none() && !vmm_pending && reclaim_queue.ids.is_empty() && settle_queue.is_empty() {"
+                )
+                .unwrap()
+        );
+        assert_eq!(live.matches("vmm_idle_refresh(&mut").count(), 1);
+        assert!(live.contains("if crate::kv_vmm::armed() { *vmm_pending = vmm_pending_bytes(reuse, spec_reuse) > 0; vmm_flush_ensure_walls(walls); }"));
+        assert_eq!(
+            live.matches("vmm_pending = pending > 0;").count(),
+            1,
+            "the tick top's read"
+        );
+        // The tick-top reap covers the active sessions' planes too.
+        assert!(live.contains("for s in active.iter_mut() { if let Some(sp) = s.spec.as_mut() { released += sp.reap_kv(); } if let Some(c) = s.cache.as_mut() { released += c.reap_kv(); } }"));
+        assert!(live.contains(
+            "vmm_reap_for(\"oom-teardown\"); let reports = trim_model_device_pools(&engine, &loaded, \"oom-teardown\");"
+        ));
+        assert!(live.contains(
+            "vmm_reap_for(\"admin-trim\"); report.devices = trim_model_device_pools(&engine, &loaded, \"admin-trim\");"
+        ));
+        assert!(live.contains(
+            "vmm_reap_for(\"batch-oom\"); let reports = trim_model_device_pools(engine, loaded, \"batch-oom\");"
+        ));
+        // Every pool trim on a reclaim path follows its reap.
+        assert_eq!(
+            live.matches("vmm_reap_for(\"").count(),
+            3,
+            "the three reclaim paths"
+        );
+    }
+
+    /// WP-B day 42 addendum E: the worker queue's helpers, and the idle wait keeps polling while
+    /// entries are queued (the tick top submits them), so a queue never strands on an idle box.
+    #[test]
+    fn reclaim_queue_counts_its_bytes_and_keeps_the_idle_wait_polling() {
+        let mut q = super::ReclaimQueue::default();
+        assert_eq!(q.queued_bytes(), 0);
+        q.ids.extend([(7, 400), (9, 300)]);
+        assert_eq!(q.queued_bytes(), 700);
+        assert!(q.contains(9) && !q.contains(8));
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        assert!(live.contains(
+            "&& !vmm_pending && reclaim_queue.ids.is_empty() && settle_queue.is_empty() {"
+        ));
+        assert!(live.contains(
+            "if !reclaim_queue.ids.is_empty() { wait = wait.min(Duration::from_millis(2)); }"
+        ));
+    }
+
+    /// WP-B day 42 (DAY42 1.3): the off-tick flush's plan keeps today's demote rule and drop set.
+    #[test]
+    fn reclaim_offtick_plan_keeps_todays_demote_rule_and_drop_set() {
+        let e = [(1, 300), (2, 300), (3, 300), (4, 300)];
+        // Demote while the bytes planned so far are under the budget (today's rule overshoots by
+        // at most one entry), everything else drops.
+        assert_eq!(
+            super::reclaim_offtick_plan(&e, 500),
+            (vec![1, 2], vec![3, 4])
+        );
+        assert_eq!(
+            super::reclaim_offtick_plan(&e, 600),
+            (vec![1, 2], vec![3, 4])
+        );
+        assert_eq!(
+            super::reclaim_offtick_plan(&e, 601),
+            (vec![1, 2, 3], vec![4])
+        );
+        assert_eq!(
+            super::reclaim_offtick_plan(&e, 0),
+            (vec![], vec![1, 2, 3, 4])
+        );
+        assert_eq!(
+            super::reclaim_offtick_plan(&e, 1 << 40),
+            (vec![1, 2, 3, 4], vec![])
+        );
+        assert_eq!(super::reclaim_offtick_plan(&[], 500), (vec![], vec![]));
+    }
+
+    /// DAY42 1.3: one pass's step over every arm, the budget's edge and a slot held by another
+    /// route's demote.
+    #[test]
+    fn reclaim_offtick_step_waits_on_the_landing_inside_the_budget() {
+        use super::ReclaimStep::*;
+        use super::reclaim_offtick_step as step;
+        assert_eq!(
+            step(true, true, 3, 99_999, 8_000),
+            Admit,
+            "a fit admits whatever else holds"
+        );
+        assert_eq!(step(false, false, 2, 0, 8_000), Submit);
+        assert_eq!(
+            step(false, true, 2, 7_999, 8_000),
+            Wait,
+            "a slot held by any route: wait"
+        );
+        assert_eq!(
+            step(false, true, 0, 7_999, 8_000),
+            Wait,
+            "the last landing still in flight"
+        );
+        assert_eq!(
+            step(false, true, 2, 8_000, 8_000),
+            Refuse,
+            "the budget's edge refuses"
+        );
+        assert_eq!(
+            step(false, true, 2, 1 << 40, 0),
+            Wait,
+            "a zero budget keeps the unbounded wait"
+        );
+        assert_eq!(
+            step(false, false, 0, 0, 8_000),
+            Exhausted,
+            "an empty plan climbs the ladder"
+        );
+    }
+
+    /// DAY42 1.3: the arm is read only at the reclaim site with both doors; the pass submits one
+    /// demote per free slot; the waiting arrival skips the parked-session ladder and joins the
+    /// parked-only wait; the defer site names the reason.
+    #[test]
+    fn reclaim_offtick_is_armed_only_at_the_reclaim_site() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let call = format!("admit_reclaim_offtick_on{}", "()");
+        assert_eq!(
+            live.matches(call.as_str()).count(),
+            2,
+            "the definition and the reclaim site"
+        );
+        assert!(live.contains(
+            "let offtick_arm = admit_reclaim_offtick_on() && hpx.tier.is_some() && (budget > 0 || req.reclaim_offtick.is_some());"
+        ));
+        // The site sits inside the armed branch, so unarmed it is today's `px.evict_all()`.
+        assert!(live.contains(
+            "if !offtick_arm { evict_all_demoting(&engine, &mut px, &mut hpx, budget) } else { let q = &mut reclaim_queue; let n = reclaim_offtick_pass( &engine, &mut px, &mut hpx, q, &mut req, budget, ); (n, 0, 0) }"
+        ));
+        let site = live
+            .find("reclaim_offtick_pass( &engine, &mut px, &mut hpx, q, &mut req, budget, )")
+            .unwrap();
+        let armed = live[..site].rfind("if admit_memory_cfg.armed {").unwrap();
+        assert!(site - armed < 3000);
+        // Addendum E: an arrival plans only for the bytes the worker's queue will not already free,
+        // over entries not queued; the queue drains at the pass and at the tick top.
+        assert!(live.contains("if budget > coming {"));
+        assert!(live.contains(".filter(|e| !queue.contains(e.id))"));
+        assert!(live.contains(
+            "if !reclaim_queue.ids.is_empty() { reclaim_queue_drain( &engine, &mut px, &mut hpx, &mut reclaim_queue, \"the tick top\", ); }"
+        ));
+        let drain = live.find("reclaim_queue_drain( &engine, &mut px, &mut hpx, &mut reclaim_queue, \"the tick top\", )").unwrap();
+        let pause = live
+            .find("host_pause_drain(&engine, &mut px, &mut hpx, &mut reuse);")
+            .unwrap();
+        assert!(
+            pause < drain && drain - pause < 400,
+            "the drain follows the tick top's settles"
+        );
+        // One submission per free slot: the pass loops only while the slot is free.
+        assert!(live.contains("while hpx.demoting.is_none() { let Some((id, _)) = queue.ids.pop_front() else { break; };"));
+        assert!(live.contains("host_demote_prefix_entry(engine, hpx, dead);"));
+        // The waiting arrival does not climb the parked-session ladder, and it parks.
+        assert!(live.contains("while !reclaim_landing && !headroom.sufficient(required) {"));
+        assert!(live.contains(
+            "{ parked_on_promote += 1; } requeue.push_back(req); // waits (FIFO), never rejected"
+        ));
+        assert!(live.contains("defer_reason = Some(\"reclaim-landing\");"));
+        assert!(live.contains("defer_reason = Some(\"reclaim-landing-timeout\");"));
+    }
+
+    /// WP-B day 41 (DAY41 1.5): the grid-rewind door is read at the two arming sites and the two
+    /// pools' exact and text hits, and nowhere else; each pool's rewind is the path's own restore.
+    #[test]
+    fn grid_rewind_door_reaches_the_two_pools_and_the_two_arming_sites_only() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let call = format!("resume_grid_rewind_on{}", "()");
+        // The definition, plain arming (the gate and addendum B's rule), spec arming (the gate
+        // and addendum B's cold rule), the plain hit, the spec exact key (addendum B3) and the
+        // spec exact and text hits.
+        assert_eq!(live.matches(call.as_str()).count(), 9);
+        assert!(live.contains("if resume_grid_rewind_on() { // DAY41 addendum B (B1, B2): the armed arm's own boundary rule. let markers = req.affinity.is_some() || plain_ckpt_nominatable(&prompt, &|t| lm.tok.token_is_control(t)); grid_rewind_checkpoint_boundary(&prompt, seed_fed.len(), markers, &|t| { lm.tok.token_is_control(t) }) } else { plain_checkpoint_boundary(&prompt, &|t| lm.tok.token_is_control(t)) .filter(|&b| b > seed_fed.len()) }"));
+        assert!(live.contains("if cold && resume_grid_rewind_on() {"));
+        assert!(live.contains("grid_rewind_checkpoint_boundary(&suffix, 0, markers, &|t| {"));
+        // B3: unset, the exact key is the whole committed stream (today's probe).
+        assert!(live.contains("if resume_grid_rewind_on() || resume_exact_on() { e.public_len.min(e.sess.committed.len()) } else { e.sess.committed.len() }"));
+        assert!(live.contains("&& prompt.starts_with(&e.sess.committed[..exact_key(e)])"));
+        assert!(live.contains("let public_len = spec_public_len(toks, s.n_prompt, &s.generated);"));
+        assert!(live.contains("|| plain_ckpt_nominatable(&prompt, &|t| lm.tok.token_is_control(t)) || resume_grid_rewind_on())"));
+        assert!(live.contains("|| plain_ckpt_nominatable(&suffix, &|t| lm.tok.token_is_control(t)) || resume_grid_rewind_on())"));
+        assert!(live.contains(
+            "if resume_grid_rewind_on() && let Some(e) = reused.take() { reused = grid_rewind_plain(engine, lm, e, &prompt, &req.model); }"
+        ));
+        assert!(live.contains("Some(SpecResumeProbe::Exact(index)) if resume_grid_rewind_on() =>"));
+        assert!(
+            live.contains(
+                "Some(SpecResumeProbe::Text { index, .. }) if resume_grid_rewind_on() =>"
+            )
+        );
+        // The rewind precedes the hit count, so a declined rewind is not a hit.
+        let rewind = live.find("reused = grid_rewind_plain(").unwrap();
+        let hit = live[rewind..]
+            .find("reuse_metrics.continuation_hits += 1;")
+            .unwrap();
+        assert!(hit < 200, "the hit count follows the rewind directly");
+        // Each rewind is its pool's own restore.
+        assert!(live.contains("if let Err(err) = memra_engine::pp::restore_cache_checkpoint( engine, &lm.model, None, &mut e.cache, &ckpt.snap, )"));
+        assert!(live.contains("match lm.model.spec_rewind_to_checkpoint(engine, &mut sess) {"));
+    }
+
+    /// WP-B day 49 (DAY49 1.5): the batch-OOM door is read at the batched chunk only; the retry is
+    /// bounded to one and gated on a quoted CUDA OOM and the step guard's recoverable states.
+    #[test]
+    fn batch_oom_recover_door_reaches_the_batched_chunk_only() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let call = format!("batch_oom_recover_on{}", "()");
+        assert_eq!(
+            live.matches(call.as_str()).count(),
+            3,
+            "definition, the retry arm, the torn line"
+        );
+        assert!(live.contains("if batch_attempt == 0 && batch_oom_recover_on() && is_cuda_oom(&err.to_string()) && memra_engine::step_guard::recoverable(guard_state) =>"));
+        assert_eq!(live.matches("memra_engine::step_guard::arm();").count(), 1);
+        assert!(live.contains("let guard_state = memra_engine::step_guard::take();"));
+        assert!(live.contains("batch_attempt += 1;"));
+        // The fault door's batched injection point stays inside the retried call.
+        let arm = live.find("memra_engine::step_guard::arm();").unwrap();
+        let fault = live[arm..]
+            .find("MEMRA_STEP_OOM_FAULT fired: this batched decode chunk")
+            .unwrap();
+        assert!(
+            fault < 800,
+            "the injection is the first statement of the retried call"
+        );
+    }
+
+    /// WP-B day 45 (DAY45 1.3): the W-release door is read at the admit seam and the one release
+    /// site; the release is exact and happens once.
+    #[test]
+    fn w_release_door_reaches_the_admit_seam_and_one_site() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let call = format!("admit_w_release_on{}", "()");
+        assert_eq!(
+            live.matches(call.as_str()).count(),
+            3,
+            "definition, admit seam, release site"
+        );
+        assert!(live.contains(
+            "if admit_w_release_on() { release_primed_workspace(&mut active, &mut admission_book); }"
+        ));
+        assert_eq!(live.matches("release_primed_workspace(&mut").count(), 1);
+        assert!(live.contains("if s.booked_w_bytes == 0 || !s.prefill_done { continue; }"));
+        assert!(live.contains("s.booked_w_bytes = 0;"));
+        // Addendum B: the retire receipt reads the per-session field, which only the door sets.
+        assert!(live.contains("if s.booked_w_bytes > 0 { eprintln!( \"[admit-book] w-retire-unreleased id={} bytes={} reason={}\","));
+        // Never more than a book carries.
+        assert_eq!(super::release_split(2_000, 5_000, 0), (2_000, 0));
+        assert_eq!(super::release_split(2_000, 1_000, 3_000), (1_000, 2_000));
+    }
+
+    /// WP-B day 44 (DAY44 1.5): the exact-resume door is read at the two arming sites (plain
+    /// `exact_at` with the `ckpt_at` stop disarmed; spec `grid_capture_at` with the boundary stop
+    /// disarmed), the two exact hits, the two park enqueues, and nowhere else.
+    #[test]
+    fn exact_resume_door_reaches_its_sites_only() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let call = format!("resume_exact_on{}", "()");
+        // The definition, 2 park enqueues, the plain hit, the spec exact key, the spec exact and
+        // text arms, the plain arming pair, the spec arming pair.
+        assert_eq!(live.matches(call.as_str()).count(), 11);
+        assert!(live.contains("let exact_at = (resume_exact_on() && affinity_enabled()"));
+        assert!(live.contains("let ckpt_at = if !resume_exact_on() && affinity_enabled()"));
+        assert!(live.contains("let boundary = if !resume_exact_on() && !suffix.is_empty()"));
+        assert!(live.contains(
+            "if resume_exact_on() && let Some(e) = reused.take() { (reused, exact_carry) = exact_resume_plain(engine, lm, e, &prompt, &req.model); }"
+        ));
+        assert!(live.contains("Some(SpecResumeProbe::Exact(index)) if resume_exact_on() =>"));
+        assert!(
+            live.contains("if resume_exact_on() && ckpt.is_some() { settle_queue.push(SettleJob {")
+        );
+        assert!(live.contains(
+            "if resume_exact_on() && sess.rewind_pos().is_some() { settle_queue.push(SettleJob {"
+        ));
+        // The exact door takes precedence over the grid rewind door.
+        assert!(live.contains(
+            "std::env::var(\"MEMRA_RESUME_GRID_REWIND\").as_deref() == Ok(\"1\") && std::env::var(\"MEMRA_RESUME_EXACT\").as_deref() != Ok(\"1\");"
+        ));
+        // The capture rides the prefill tick's own prime call, disarmed on every path.
+        assert!(live.contains(
+            "let exact_here = s.exact_at.filter(|&g| fed_len <= g && g <= fed_len + take);"
+        ));
+        assert!(live.contains(
+            "memra_engine::grid_capture::arm(g, memra_engine::grid_capture::needed_layers(c))"
+        ));
+        // A capturing session primes alone (no batch, fanout or concat path).
+        assert!(live.contains("&& s.ckpt_at.is_none() // WP-B day 44: an in-call grid capture needs the per-sequence prime. && s.exact_at.is_none()"));
+        assert!(live.contains(
+            "|| s.ckpt_at.is_some() || s.exact_at.is_some() || seed_boundary_inside_prompt("
+        ));
+        // The settle runs only on an idle worker, after the grace, and the idle block's
+        // indefinite wait requires an empty settle queue.
+        assert!(live.contains("&& reclaim_queue.ids.is_empty() && settle_queue.is_empty() {"));
+        assert!(live.contains("let ready = last_work + EXACT_SETTLE_GRACE;"));
+        assert!(live.contains("settle_queue.purge_tenant(&tenant);"));
+    }
+
+    /// WP-B day 44 (DAY44 1.2 (c), 1.3): the settle point and the settle queue.
+    /// DAY44 addendum C: the settle keeps the checkpoint affinity nominates on both routes, and a
+    /// settle runs only when the memory reading covers its workspace (case 6), waiting otherwise.
+    #[test]
+    fn settle_keeps_the_affinity_checkpoint_and_waits_for_the_reading() {
+        // The gate's decision: waits while short or unread, runs once the reading covers the need.
+        assert!(!super::settle_reading_covers(10, Some(9)));
+        assert!(!super::settle_reading_covers(10, None));
+        assert!(super::settle_reading_covers(10, Some(10)));
+        assert!(super::settle_reading_covers(0, Some(0)));
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let body = |start: &str| -> &str {
+            let at = live.find(start).expect(start);
+            let end = live[at + 1..]
+                .find("\nfn ")
+                .map_or(live.len(), |n| at + 1 + n);
+            let _ = end;
+            &live[at..(at + 6000).min(live.len())]
+        };
+        // Plain: the settle leaves the checkpoint in place; the settled resume carries it.
+        let plain = body("fn exact_settle_plain(");
+        let plain = &plain[..plain.find("fn exact_settle_spec(").unwrap_or(plain.len())];
+        assert!(
+            !plain.contains("e.ckpt = None;"),
+            "the plain settle keeps the checkpoint at g"
+        );
+        assert!(live.contains("let carry = e.ckpt.take(); return (Some(e), carry);"));
+        // Spec: the retaining rewind.
+        let spec = body("fn exact_settle_spec(");
+        assert!(spec.contains("spec_rewind_to_checkpoint_retaining(engine, &mut e.sess)"));
+        assert!(
+            !spec[..spec.find("fn reclaim_queue_drain(").unwrap_or(spec.len())]
+                .contains(".spec_rewind_to_checkpoint(engine")
+        );
+        // The gate reads before any entry moves out of its pool.
+        let one = body("fn settle_one(");
+        let gate = one
+            .find("if !settle_reading_covers(need, free) {")
+            .expect("the gate");
+        let first_move = one.find(".remove(i);").expect("the move");
+        assert!(gate < first_move, "the gate reads before the entry moves");
+        // The spec prime-only walk takes no prompt-end checkpoint.
+        let prime = squash(include_str!("../../memra-engine/src/spec/prime.rs"));
+        assert!(prime.contains("if s.ckpt_rel.is_none() && !s.grid_requested && !s.prime_only {"));
+    }
+
+    #[test]
+    fn exact_settle_point_and_queue_follow_day44() {
+        use super::{ParkedPool, SettleJob, SettleQueue, exact_settle_point};
+        let grain = memra_engine::Engine::gdn_chunk_size();
+        assert_eq!(grain, 32);
+        // A 6,144-token prompt, checkpoint 6112, a 32-token reply: committed 6176 settles at 6144.
+        assert_eq!(exact_settle_point(6176, 6112), Some(6144));
+        // 6,144 plus 256: committed 6400 settles at 6368 (32 rows after it).
+        assert_eq!(exact_settle_point(6400, 6112), Some(6368));
+        // Nothing past the checkpoint by the floor: no settle.
+        assert_eq!(exact_settle_point(6140, 6112), None);
+        assert_eq!(
+            exact_settle_point(6160, 6112),
+            Some(6144),
+            "32 rows past the checkpoint"
+        );
+        let job = |id: u64, ns: &str| SettleJob {
+            pool: ParkedPool::Plain,
+            key: ("m".into(), ns.into()),
+            id,
+        };
+        let mut q = SettleQueue::default();
+        q.push(job(1, "a"));
+        q.push(job(1, "a"));
+        q.push(job(2, "b"));
+        assert_eq!(q.pop(), Some(job(2, "b")), "newest first");
+        assert_eq!(q.pop(), Some(job(1, "a")), "one job per entry");
+        assert!(q.is_empty());
+        for id in 0..100 {
+            q.push(job(id, "c"));
+        }
+        assert_eq!(q.jobs.len(), SettleQueue::CAP);
+        assert_eq!(q.pop(), Some(job(99, "c")), "the newest kept");
+    }
+
+    /// WP-B day 43 (DAY43 1.3): the budget-clamp door is read once, where the qwen spec arm hands
+    /// the session its request budget; the firing is reported with the model.
+    #[test]
+    fn spec_budget_clamp_door_is_read_at_the_qwen_spec_burst_only() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let call = format!("spec_budget_clamp_on{}", "()");
+        assert_eq!(
+            live.matches(call.as_str()).count(),
+            2,
+            "the definition and one read"
+        );
+        assert!(
+            live.contains("if spec_budget_clamp_on() { spec.budget_room = Some(request_room); }")
+        );
+        assert_eq!(
+            live.matches("budget_room").count(),
+            1,
+            "only the qwen arm sets it"
+        );
+        let set = live.find("spec.budget_room = Some(request_room);").unwrap();
+        let burst = live[set..]
+            .find("generate_spec_session_sampled_prime_split(")
+            .unwrap();
+        assert!(burst < 4000, "the budget is set right before the burst");
+        assert!(live.contains("if let Some((na, n_acc, room)) = spec.budget_clamp_fired.take() {"));
+    }
+
+    /// WP-B day 41 addendum B (B1, B2): the armed arm's checkpoint boundary.
+    #[test]
+    fn grid_rewind_checkpoint_boundary_follows_addendum_b() {
+        use super::{grid_rewind_checkpoint_boundary as rule, plain_checkpoint_boundary};
+        let grain = memra_engine::Engine::gdn_chunk_size();
+        let floor = memra_engine::hybrid_forward::PRIME_MIN_T;
+        const M: u32 = 7;
+        let is_m = |t: u32| t == M;
+        let plain = |n: usize| (0..n).map(|i| 100 + (i as u32 % 50)).collect::<Vec<u32>>();
+        let n = 40 * grain;
+        let guard = super::grid_align_boundary_within(n - super::PLAIN_CKPT_RAW_GUARD, n);
+        // A markerless prompt: the guard window, with or without markers searched.
+        let p = plain(n);
+        assert_eq!(rule(&p, 0, false, &is_m), Some(guard));
+        assert_eq!(rule(&p, 0, true, &is_m), Some(guard));
+        assert_eq!(
+            rule(&p, 0, true, &is_m),
+            plain_checkpoint_boundary(&p, &is_m)
+        );
+        // B1: an interior control token in an unnominatable prompt is ignored.
+        let mut q = plain(n);
+        q[10 * grain + 3] = M;
+        assert_eq!(rule(&q, 0, false, &is_m), Some(guard));
+        // A nominatable prompt keeps the affinity point, cold: today's boundary.
+        assert_eq!(rule(&q, 0, true, &is_m), Some(10 * grain));
+        assert_eq!(
+            rule(&q, 0, true, &is_m),
+            plain_checkpoint_boundary(&q, &is_m)
+        );
+        // B2: resumed past the last control token, the tail's guard window.
+        assert_eq!(rule(&q, 10 * grain, true, &is_m), Some(guard));
+        assert_eq!(rule(&q, 20 * grain, false, &is_m), Some(guard));
+        // A control token at or past the resumed depth: its grid floor, never past it.
+        assert_eq!(rule(&q, 5 * grain, true, &is_m), Some(10 * grain));
+        // The fed-start floor: a boundary fewer than PRIME_MIN_T rows past the resumed depth is
+        // no checkpoint at all, never a tokenwise one.
+        assert_eq!(rule(&q, guard - floor + 1, false, &is_m), None);
+        assert_eq!(rule(&q, guard - floor, false, &is_m), Some(guard));
+        assert_eq!(
+            rule(&q, 10 * grain - floor + 1, true, &is_m),
+            None,
+            "the marker floor, not a later point"
+        );
+        // Too short for any checkpoint.
+        assert_eq!(
+            rule(
+                &plain(super::REUSE_MIN_PREFIX + super::PLAIN_CKPT_RAW_GUARD),
+                0,
+                false,
+                &is_m
+            ),
+            None
+        );
+    }
+
+    /// WP-B day 41 addendum B3: the public stream of an overshooting park.
+    #[test]
+    fn spec_public_len_drops_the_final_bursts_overshoot() {
+        use super::spec_public_len;
+        let prompt: Vec<u32> = (0..64).collect();
+        let generated: Vec<u32> = (1000..1032).collect();
+        let mut committed = prompt.clone();
+        committed.extend_from_slice(&generated);
+        assert_eq!(
+            spec_public_len(&committed, 64, &generated),
+            96,
+            "no overshoot"
+        );
+        committed.extend_from_slice(&[5000, 5001, 5002]);
+        assert_eq!(
+            spec_public_len(&committed, 64, &generated),
+            96,
+            "three overshoot rows"
+        );
+        // Committed does not reproduce the generated tokens: today's key.
+        let mut other = committed.clone();
+        other[70] = 9;
+        assert_eq!(spec_public_len(&other, 64, &generated), other.len());
+        // A generated list longer than committed: today's key.
+        assert_eq!(spec_public_len(&committed[..80], 64, &generated), 80);
+    }
+
+    /// WP-B day 39 (DAY39 1.6): the corrected pending-prime term, one model.
+    #[test]
+    fn corrected_pending_prime_books_one_call_once_and_unstarted_walker_stacks() {
+        let shape = memra_engine::hybrid_forward::PrimeWorkspaceShape {
+            call_row_bytes: 400_000,
+            prompt_row_bytes: 20_480,
+            n_layers: 64,
+        };
+        let o = |rows, unstarted_walker, cooperative| super::PrimeOwed {
+            rows,
+            unstarted_walker,
+            cooperative,
+            snapshot_bytes: 0,
+        };
+        let slab = |rows: usize| 400_000 * shape.call_rows(rows);
+        let returned = |rows: usize| 20_480 * shape.call_rows(rows);
+        // Nothing owed: 0.
+        assert_eq!(
+            super::pending_prime_for_model(&[], Some(&shape), None, 0),
+            0
+        );
+        // N plain sessions: one call, once, not N: the slab rows plus the call's returned rows.
+        let plain = vec![o(1_300, false, false); 64];
+        assert_eq!(
+            super::pending_prime_for_model(&plain, Some(&shape), None, 0),
+            slab(1_300) + returned(1_300)
+        );
+        // Addendum B: the resident slab covers only the slab rows; the returned rows stay owed.
+        assert_eq!(
+            super::pending_prime_for_model(&plain, Some(&shape), None, slab(1_300)),
+            returned(1_300)
+        );
+        assert_eq!(
+            super::pending_prime_for_model(&plain, Some(&shape), None, 1 << 40),
+            returned(1_300)
+        );
+        assert_eq!(
+            super::pending_prime_for_model(&plain, Some(&shape), None, slab(1_300) - 7),
+            7 + returned(1_300)
+        );
+        // Cooperative unstarted walkers: each whole-prompt stack; a started walker books none.
+        let coop = vec![
+            o(1_300, true, true),
+            o(1_300, true, true),
+            o(1_300, false, true),
+        ];
+        assert_eq!(
+            super::pending_prime_for_model(&coop, Some(&shape), None, 0),
+            slab(1_300) + returned(1_300) + 2 * 20_480 * 1_300
+        );
+        // Non-cooperative walkers: only the largest stack (it lives for one call).
+        let noncoop = vec![o(1_000, true, false), o(2_000, true, false)];
+        assert_eq!(
+            super::pending_prime_for_model(&noncoop, Some(&shape), None, 0),
+            slab(2_000) + returned(2_000) + 20_480 * 2_000
+        );
+        // Addendum B: every owed checkpoint snapshot is booked, once per session that owes one.
+        let snap = 156_900_000;
+        let mut ckpt = vec![o(1_300, false, false); 51];
+        for x in ckpt.iter_mut().take(50) {
+            x.snapshot_bytes = snap;
+        }
+        assert_eq!(
+            super::pending_prime_for_model(&ckpt, Some(&shape), None, 1 << 40),
+            returned(1_300) + 50 * snap
+        );
+        // A model without a prime shape still books its owed snapshots.
+        assert_eq!(
+            super::pending_prime_for_model(&ckpt, None, None, 0),
+            50 * snap
+        );
+    }
+
+    /// DAY39 addendum B: the snapshot a session still owes, from its own state.
+    #[test]
+    fn owed_checkpoint_snapshots_follow_the_session_state() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        // Plain: armed and untaken owes one; a taken checkpoint owes none.
+        assert!(live.contains(
+            "Some(cache) if (s.ckpt_at.is_some() && s.ckpt_snap.is_none()) || s.exact_at.is_some() => { cache_snapshot_bytes(cache) }"
+        ));
+        // Spec: the session's armed `ckpt_at` before the walker, the walker's own row after it.
+        assert!(live.contains(
+            "let owed = match s.mtp_prime.as_ref() { Some(state) => state.owes_turn_checkpoint(), None => sp.ckpt_at.is_some(), };"
+        ));
+        // The snapshot bytes are what `Cache::snapshot` copies: conv and ssm of every recurrent
+        // layer, the same arithmetic as the seed entry's recurrent part.
+        assert!(live.contains(".map(|r| (r.conv_state.len() + r.ssm_state.len()) * 4)"));
+        assert!(live.contains("snapshot_bytes: session_snapshot_bytes_owed(s),"));
+    }
+
+    /// The corrected term is computed only with the door armed and replaces day 33's in the one
+    /// booked reduction; day 33's value rides the lines as `pending_prime_v1`.
+    #[test]
+    fn corrected_pending_prime_is_armed_only_and_prints_v1_beside_it() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        assert!(live.contains(
+            "let pending_prime_v1 = if admit_memory_cfg.armed { pending_prime_bytes(&active, &admission_costs) } else { 0 };"
+        ));
+        assert!(
+            live.contains(
+                "let pending_prime = if admit_memory_cfg.armed { pending_prime_bytes_v2("
+            )
+        );
+        assert_eq!(
+            live.matches("pending_prime_v1_bytes: pending_prime_v1 as u64,")
+                .count(),
+            2
+        );
     }
 
     /// memra#680: a session owes prime workspace only while it is still priming.
@@ -56981,12 +60032,25 @@ mod tests {
         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
         let live_sq = squash(live);
         let pred = format!("step_oom_parkable{}", "(");
-        // 1. Exactly one definition, the step guard's call, and the memra#680 prefill-OOM
-        //    predicate's call in live code.
+        // 1. Exactly one definition, the step guard's call, the memra#680 prefill-OOM
+        //    predicate's call, and the WP-B day 37 on-demand ensure guard (MEMRA_KV_ALLOCATOR=vmm)
+        //    in live code.
         assert_eq!(
             live.matches(pred.as_str()).count(),
-            3,
-            "expected the predicate's definition, the step guard and the prefill-OOM predicate"
+            4,
+            "expected the predicate's definition, the step guard, the prefill-OOM predicate and \
+             the on-demand ensure guard"
+        );
+        // 1a. The on-demand ensure guard feeds BOTH markers too.
+        assert!(
+            live_sq.contains(
+                format!(
+                    "if oom && {pred} s.generated.len(), s.tokens_emitted, s.oom_retries, \
+                     step_oom_retries(), )"
+                )
+                .as_str()
+            ),
+            "the on-demand ensure park must gate on the predicate fed BOTH markers"
         );
         // 1b. The prefill-OOM predicate feeds BOTH markers too, and both prefill arms feed it
         //     the session's own markers.
@@ -57084,6 +60148,28 @@ mod tests {
         assert!(!super::step_oom_fault_consume(&off));
     }
 
+    /// DAY49 addendum D: `batch:<n>` aims the door at a batched chunk of at least two sessions;
+    /// a plain `<n>` fires anywhere, as before; anything else is malformed (OFF).
+    #[test]
+    fn step_oom_fault_site_value_parses_and_aims() {
+        use super::StepOomFaultSite::{Any, BatchMulti};
+        assert_eq!(super::parse_step_oom_fault("1"), Some((Any, 1)));
+        assert_eq!(super::parse_step_oom_fault("0"), Some((Any, 0)));
+        assert_eq!(
+            super::parse_step_oom_fault("batch:2"),
+            Some((BatchMulti, 2))
+        );
+        for bad in ["", "batch:", "batch:x", "spec:1", "-1", "batch:-1", " 1"] {
+            assert_eq!(super::parse_step_oom_fault(bad), None, "{bad:?}");
+        }
+        assert!(super::step_oom_fault_site_admits(Any, None));
+        assert!(super::step_oom_fault_site_admits(Any, Some(1)));
+        assert!(!super::step_oom_fault_site_admits(BatchMulti, None));
+        assert!(!super::step_oom_fault_site_admits(BatchMulti, Some(1)));
+        assert!(super::step_oom_fault_site_admits(BatchMulti, Some(2)));
+        assert!(super::step_oom_fault_site_admits(BatchMulti, Some(8)));
+    }
+
     /// The door's SCOPE contract (battery-20260831 tenancy-gates T2): injection only in
     /// the step path, exactly one injection point, sitting in front of the production
     /// step dispatch so the forged error flows into the SAME `match step_result` the real
@@ -57104,30 +60190,64 @@ mod tests {
             &s[at..end]
         }
         let worker = strip(include_str!("worker.rs"));
-        // One definition, one call site: the door cannot grow a second seam silently.
-        // Needles are assembled so this test's own literals never self-match.
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        // One definition and exactly three call sites (the spec phase's step dispatch, and since
+        // WP-B day 38 addendum A the batched decode chunk and the non-batching step): the door
+        // cannot grow a fourth seam silently. Needles are assembled so this test never self-matches.
         let call = format!("step_oom_fault_fire{}", "()");
         assert_eq!(
-            worker.matches(call.as_str()).count(),
-            2,
-            "expected exactly one fault-door call beside its definition"
+            live.matches(call.as_str()).count(),
+            3,
+            "expected the fault door's definition and its spec and non-batching call sites"
         );
-        let at = worker
-            .find(format!("if {call}").as_str())
-            .expect("the injection sits at the step dispatch");
-        let body = window(&worker, at, 4000);
-        assert!(
-            body.contains("Err(STEP_OOM_FAULT_MSG.into())"),
-            "the injection must forge the quoted CUDA OOM constant"
+        // DAY49 addendum D: the batched chunk's site passes its session count (the `batch:` site).
+        let batch_call = format!("step_oom_fault_fire_batch{}", "(idxs.len())");
+        assert_eq!(live.matches(batch_call.as_str()).count(), 1);
+        assert_eq!(
+            live.matches("fn step_oom_fault_fire_batch(sessions: usize) -> bool")
+                .count(),
+            1
         );
-        assert!(
-            body.contains("step_dspark_spec(") && body.contains("step_session("),
-            "the injection must gate the production step dispatch, not a copy of it"
+        // Addendum D: the non-batching site fires only on a session past its prime.
+        let gated = format!("if active[i].prefill_done && {call}");
+        let mut sites: Vec<usize> = live
+            .match_indices(format!("if {call}").as_str())
+            .map(|(at, _)| at)
+            .collect();
+        assert_eq!(sites.len(), 1, "the spec site fires on any step it reaches");
+        assert_eq!(live.matches(gated.as_str()).count(), 1);
+        sites.extend(live.match_indices(gated.as_str()).map(|(at, _)| at));
+        sites.extend(
+            live.match_indices(format!("if {batch_call}").as_str())
+                .map(|(at, _)| at),
         );
-        assert!(
-            body.contains("match step_result"),
-            "the forged error must reach the same match the real step errors take"
-        );
+        assert_eq!(sites.len(), 3);
+        for &at in &sites {
+            let body = window(live, at, 4000);
+            assert!(
+                body.contains("Err(STEP_OOM_FAULT_MSG.into())"),
+                "every injection must forge the quoted CUDA OOM constant"
+            );
+        }
+        // Each site gates a production dispatch whose result reaches the production match.
+        let spec = sites
+            .iter()
+            .map(|&at| window(live, at, 4000))
+            .find(|b| b.contains("step_dspark_spec("))
+            .expect("the spec-phase site gates the spec dispatch");
+        assert!(spec.contains("step_session(") && spec.contains("match step_result"));
+        let nonbatch = sites
+            .iter()
+            .map(|&at| window(live, at, 4000))
+            .find(|b| b.contains("step_session_async_chain("))
+            .expect("the non-batching site gates the non-batching step");
+        assert!(nonbatch.contains("match step_result"));
+        let batch = sites
+            .iter()
+            .map(|&at| window(live, at, 6500))
+            .find(|b| b.contains("decode_step_batch_sampled_lean_masked"))
+            .expect("the batched site gates the batched decode chunk");
+        assert!(batch.contains("\"batch step: {err}\""));
     }
 
     #[test]
@@ -57207,6 +60327,7 @@ mod tests {
             request_id: String::new(),
             admit_predict_logged: false,
             memory_defer_since: None,
+            reclaim_offtick: None,
             images: Vec::new(),
             gemma_images: Vec::new(),
             glm5_images: Vec::new(),

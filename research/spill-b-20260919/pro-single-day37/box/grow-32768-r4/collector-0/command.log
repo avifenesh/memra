@@ -1,0 +1,24 @@
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[fa-pool] grow #0 dev=0 o_len 0 -> 6144 ml_len 0 -> 24 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 6144 -> 36864 ml_len 24 -> 144 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 36864 -> 73728 ml_len 144 -> 288 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 73728 -> 147456 ml_len 288 -> 576 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 147456 -> 294912 ml_len 576 -> 1152 (retired kept, zero=false)
+[fa-pool] grow #5 dev=0 o_len 294912 -> 589824 ml_len 1152 -> 2304 (retired kept, zero=false)
+[fa-pool] grow #6 dev=0 o_len 589824 -> 1179648 ml_len 2304 -> 4608 (retired kept, zero=false)
+grow pooled prompt committed=4096
+grow pooled prompt committed=8192
+grow pooled prompt committed=12288
+[fa-pool] grow #7 dev=0 o_len 1179648 -> 2359296 ml_len 4608 -> 9216 (retired kept, zero=false)
+grow pooled prompt committed=16384
+grow pooled prompt committed=20480
+grow pooled prompt committed=24576
+grow pooled prompt committed=28672
+grow ondemand prompt committed=4096
+grow ondemand prompt committed=8192
+grow ondemand prompt committed=12288
+grow ondemand prompt committed=16384
+grow ondemand prompt committed=20480
+grow ondemand prompt committed=24576
+grow ondemand prompt committed=28672
+GROW-G1 PASS (grows=28 unequal=0 planes=34 planes_crossed=34 min_crossings_per_plane=12 rule>=5 drift=0 tokens_equal=true logits_equal=true prefix_state_equal=true final_state_equal=true) committed=32768 generated=128

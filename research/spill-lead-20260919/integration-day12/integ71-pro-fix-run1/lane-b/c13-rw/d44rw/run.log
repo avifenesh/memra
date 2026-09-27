@@ -1,0 +1,9 @@
+2026-09-27T08:00:55Z boot rw-plain-O1-keep start arm=keep route=plain shape=RW6 bin=911e6186512dc196 env=[MEMRA_TTFT_TRACE=1 MEMRA_SERVE_SPEC=0 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RW --lengths 6144 --turn-gap-ms 1000]
+2026-09-27T08:04:30Z boot rw-plain-O1-keep rc=0 DAY44 BOOT rows=60 ok=60 exact_resumes=0 settles=0 declined=0 door_line=0 oom=0
+2026-09-27T08:04:35Z boot rw-plain-O1-exact start arm=exact route=plain shape=RW6 bin=911e6186512dc196 env=[MEMRA_TTFT_TRACE=1 MEMRA_RESUME_EXACT=1 MEMRA_SERVE_SPEC=0 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RW --lengths 6144 --turn-gap-ms 1000]
+2026-09-27T08:08:08Z boot rw-plain-O1-exact rc=0 DAY44 BOOT rows=60 ok=60 exact_resumes=10 settles=56 declined=0 door_line=1 oom=0
+2026-09-27T08:08:13Z boot rw-spec-O1-keep start arm=keep route=spec shape=RW6 bin=911e6186512dc196 env=[MEMRA_TTFT_TRACE=1 MEMRA_SPEC_BUDGET_CLAMP=1 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RW --lengths 6144 --turn-gap-ms 1000]
+2026-09-27T08:11:05Z boot rw-spec-O1-keep rc=0 DAY44 BOOT rows=60 ok=60 exact_resumes=0 settles=0 declined=0 door_line=0 oom=0
+2026-09-27T08:11:11Z boot rw-spec-O1-exact start arm=exact route=spec shape=RW6 bin=911e6186512dc196 env=[MEMRA_TTFT_TRACE=1 MEMRA_RESUME_EXACT=1 MEMRA_SPEC_BUDGET_CLAMP=1 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RW --lengths 6144 --turn-gap-ms 1000]
+2026-09-27T08:14:05Z boot rw-spec-O1-exact rc=0 DAY44 BOOT rows=60 ok=60 exact_resumes=10 settles=60 declined=0 door_line=1 oom=0
+2026-09-27T08:14:10Z boots done: rw-plain-O1-keep:keep:plain:RW6 rw-plain-O1-exact:exact:plain:RW6 rw-spec-O1-keep:keep:spec:RW6 rw-spec-O1-exact:exact:spec:RW6

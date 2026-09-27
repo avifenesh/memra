@@ -1,0 +1,14 @@
+DAY37 A2 card=rtx5090 receipt=grow-32768/receipt/GROW.txt GROW-G1 PASS (grows=28 unequal=0 planes=34 planes_crossed=34 min_crossings_per_plane=12 rule>=5 drift=0 tokens_equal=true logits_equal=true prefix_state_equal=true final_state_equal=true) committed=32768 generated=128
+DAY37 A1-GATE card=rtx5090 cell=admit-mem-burst pooled=[rc=0 ALL GREEN] vmm=[rc=0 ALL GREEN] ok_lines=0/0 door_on/off pooled=0 door_off_lines=1/? vmm=1 door_off_lines=0/? -> FAIL
+DAY37 A1-GATE card=rtx5090 cell=fault-default pooled=[rc=0 ALL GREEN] vmm=[rc=0 ALL GREEN] ok_lines=160/160 door_on/off pooled=0 door_off_lines=14/? vmm=14 door_off_lines=0/? -> FAIL
+DAY37 A1-GATE card=rtx5090 cell=fault-plain pooled=[rc=0 ALL GREEN] vmm=[rc=0 ALL GREEN] ok_lines=160/160 door_on/off pooled=0 door_off_lines=14/? vmm=14 door_off_lines=0/? -> FAIL
+DAY37 A1-GATE card=rtx5090 cell=hit-off pooled=[rc=0 ALL GREEN (qwen)] vmm=[rc=0 ALL GREEN (qwen)] ok_lines=61/61 door_on/off pooled=0 door_off_lines=2/? vmm=2 door_off_lines=0/? -> FAIL
+DAY37 A1-GATE card=rtx5090 cell=hit-on pooled=[rc=0 ALL GREEN (qwen)] vmm=[rc=0 ALL GREEN (qwen)] ok_lines=68/68 door_on/off pooled=0 door_off_lines=2/? vmm=2 door_off_lines=0/? -> FAIL
+DAY37 A1-GATE card=rtx5090 cell=identity-default-on pooled=[rc=0 ALL GREEN (teeth=0)] vmm=[rc=0 ALL GREEN (teeth=0)] ok_lines=12/12 door_on/off pooled=0 door_off_lines=2/? vmm=2 door_off_lines=0/? -> FAIL
+DAY37 A1-GATE card=rtx5090 cell=serve-smoke pooled=[rc=0 serve-smoke: 0 failed] vmm=[rc=0 serve-smoke: 0 failed] ok_lines=31/31 door_on/off pooled=0 door_off_lines=1/? vmm=1 door_off_lines=0/? -> FAIL
+DAY37 A1-GATE card=rtx5090 cell=spec-ctx-edge pooled=[rc=0 ALL GREEN] vmm=[rc=0 ALL GREEN] ok_lines=0/0 door_on/off pooled=0 door_off_lines=3/? vmm=3 door_off_lines=0/? -> FAIL
+DAY37 A1-GATE card=rtx5090 cell=twin-off pooled=[rc=2 no-verdict] vmm=[rc= no-verdict] ok_lines=0/0 door_on/off pooled=0 door_off_lines=2/? vmm=?/? -> FAIL
+DAY37 A1-GATE card=rtx5090 cell=twin-on pooled=[rc=2 no-verdict] vmm=[rc= no-verdict] ok_lines=0/0 door_on/off pooled=0 door_off_lines=2/? vmm=?/? -> FAIL
+DAY37 A1-GATE card=rtx5090 cell=twin27-off pooled=[rc= no-verdict] vmm=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] ok_lines=0/0 door_on/off pooled=?/? vmm=2 door_off_lines=0/? -> FAIL
+DAY37 A1-GATE card=rtx5090 cell=twin27-on pooled=[rc= no-verdict] vmm=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] ok_lines=0/0 door_on/off pooled=?/? vmm=2 door_off_lines=0/? -> FAIL
+DAY37 A4 card=rtx5090 retires=0 within_bound=0 worst_over_bound_bytes=0 rule mapped-used<=planes*granule+slack -> FAIL

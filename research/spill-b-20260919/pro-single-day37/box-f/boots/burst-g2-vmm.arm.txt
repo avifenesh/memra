@@ -1,0 +1,5 @@
+arm=vmm
+kind=g2
+bin_sha256=7e586b8cdb06ef5bfe75d7b2d031914a5b0036aa5fa1047f420bf1a08bba1528
+arm_env= MEMRA_KV_ALLOCATOR=vmm
+kind_env=CLIENT=day33-client.py PARSER=day31-parse.py MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=8192 CLIENT_ARGS=--chars 5000 --skip-long --burst 64
