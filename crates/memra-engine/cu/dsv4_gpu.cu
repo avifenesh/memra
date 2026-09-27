@@ -8183,20 +8183,14 @@ __device__ __forceinline__ int dsv4_sa_slots(int slots, const int* replay_pos, i
     return replay_pos ? win + (ratio ? min((*replay_pos + 1) / ratio, topk) : 0) : slots;
 }
 
-// ROWS (memra #710 B-row): query p is request p of a multi-request replay step, reading its own
-// kv store kvt.p[p] and position replay_pos[p], its scores at scores_all + p * scores_row.
+// ROWS (memra #710 B-row): query p is request p of a multi-request replay step; the rows kernel
+// passes its own kv store, position and scores base, so the body indexes its scores without p.
 template <bool ROWS>
-static __global__ void __launch_bounds__(64) dsv4_sink_scores_st_f32acc_kernel(
+__device__ __forceinline__ void dsv4_sink_scores_st_body(
     const float* __restrict__ q_all, const float* __restrict__ kv,
     const int* __restrict__ idxs_all, float* __restrict__ scores_all, int heads, int hd,
     int slots, int idx_stride, float scale, const int* replay_pos, int replay_win,
-    int replay_ratio, int replay_topk, const __grid_constant__ Dsv4RowPtrs kvt, long scores_row) {
-    MEMRA_PDL_CHAIN_ENTRY();
-    if (ROWS) {
-        kv = kvt.p[blockIdx.z];
-        replay_pos += blockIdx.z;
-        scores_all += blockIdx.z * scores_row;
-    }
+    int replay_ratio, int replay_topk) {
     slots = dsv4_sa_slots(slots, replay_pos, replay_win, replay_ratio, replay_topk);
     const int k0 = blockIdx.x * DSV4_SA_KT;
     if (k0 >= slots) return;
@@ -8246,22 +8240,39 @@ static __global__ void __launch_bounds__(64) dsv4_sink_scores_st_f32acc_kernel(
     scores_all[((long)sp * heads + h0 + hl) * slots + slot] = score;
 }
 
+static __global__ void __launch_bounds__(64) dsv4_sink_scores_st_f32acc_kernel(
+    const float* __restrict__ q_all, const float* __restrict__ kv,
+    const int* __restrict__ idxs_all, float* __restrict__ scores_all, int heads, int hd,
+    int slots, int idx_stride, float scale, const int* replay_pos, int replay_win,
+    int replay_ratio, int replay_topk) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    dsv4_sink_scores_st_body<false>(q_all, kv, idxs_all, scores_all, heads, hd, slots, idx_stride,
+                                    scale, replay_pos, replay_win, replay_ratio, replay_topk);
+}
+
+// Request z of a multi-request replay step reads its own kv store kvt.p[z] and position
+// replay_pos[z]; its scores go to scores_all + z * scores_row.
+static __global__ void __launch_bounds__(64) dsv4_sink_scores_st_rows_kernel(
+    const float* __restrict__ q_all, const int* __restrict__ idxs_all,
+    float* __restrict__ scores_all, int heads, int hd, int slots, int idx_stride, float scale,
+    const int* replay_pos, int replay_win, int replay_ratio, int replay_topk,
+    const __grid_constant__ Dsv4RowPtrs kvt, long scores_row) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    const int z = blockIdx.z;
+    dsv4_sink_scores_st_body<true>(q_all, kvt.p[z], idxs_all, scores_all + z * scores_row, heads,
+                                   hd, slots, idx_stride, scale, replay_pos + z, replay_win,
+                                   replay_ratio, replay_topk);
+}
+
 // A warp is two heads by 16 columns. The max runs on the 16 lanes of a head; den runs on the
 // lane of column 0 while the tile's kv rows are in flight, and reaches the other 15 lanes by
 // shuffle. Every CTA of a head tile computes the same m, ev and den from the same scores.
 template <bool ROWS>
-static __global__ void __launch_bounds__(256) dsv4_sink_softout_st_f32acc_kernel(
+__device__ __forceinline__ void dsv4_sink_softout_st_body(
     const float* __restrict__ kv, const int* __restrict__ idxs_all,
     const float* __restrict__ scores_all, const float* __restrict__ sink,
     float* __restrict__ o_all, int heads, int hd, int slots, int idx_stride,
-    const int* replay_pos, int replay_win, int replay_ratio, int replay_topk,
-    const __grid_constant__ Dsv4RowPtrs kvt, long scores_row) {
-    MEMRA_PDL_CHAIN_ENTRY();
-    if (ROWS) {
-        kv = kvt.p[blockIdx.z];
-        replay_pos += blockIdx.z;
-        scores_all += blockIdx.z * scores_row;
-    }
+    const int* replay_pos, int replay_win, int replay_ratio, int replay_topk) {
     slots = dsv4_sa_slots(slots, replay_pos, replay_win, replay_ratio, replay_topk);
     const int x0 = blockIdx.x * DSV4_SA_XB;
     const int p = blockIdx.z;
@@ -8316,6 +8327,30 @@ static __global__ void __launch_bounds__(256) dsv4_sink_softout_st_f32acc_kernel
     o_all[((long)p * heads + h) * hd + x0 + xl] = acc / d;
 }
 
+static __global__ void __launch_bounds__(256) dsv4_sink_softout_st_f32acc_kernel(
+    const float* __restrict__ kv, const int* __restrict__ idxs_all,
+    const float* __restrict__ scores_all, const float* __restrict__ sink,
+    float* __restrict__ o_all, int heads, int hd, int slots, int idx_stride,
+    const int* replay_pos, int replay_win, int replay_ratio, int replay_topk) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    dsv4_sink_softout_st_body<false>(kv, idxs_all, scores_all, sink, o_all, heads, hd, slots,
+                                     idx_stride, replay_pos, replay_win, replay_ratio,
+                                     replay_topk);
+}
+
+// Request z of a multi-request replay step, as dsv4_sink_scores_st_rows_kernel.
+static __global__ void __launch_bounds__(256) dsv4_sink_softout_st_rows_kernel(
+    const int* __restrict__ idxs_all, const float* __restrict__ scores_all,
+    const float* __restrict__ sink, float* __restrict__ o_all, int heads, int hd, int slots,
+    int idx_stride, const int* replay_pos, int replay_win, int replay_ratio, int replay_topk,
+    const __grid_constant__ Dsv4RowPtrs kvt, long scores_row) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    const int z = blockIdx.z;
+    dsv4_sink_softout_st_body<true>(kvt.p[z], idxs_all, scores_all + z * scores_row, sink, o_all,
+                                    heads, hd, slots, idx_stride, replay_pos + z, replay_win,
+                                    replay_ratio, replay_topk);
+}
+
 extern "C" int memra_dsv4_sink_attn_st_admits(int heads, int hd) {
     return heads > 0 && heads % DSV4_SA_HB == 0 && hd > 0 && hd % DSV4_SA_XB == 0 && hd <= 512;
 }
@@ -8336,12 +8371,12 @@ extern "C" int memra_dsv4_sink_attn_st_f32acc(const float* q, const float* kv, c
         + DSV4_SA_KT * sizeof(int);
     dim3 g1((unsigned)((slots + DSV4_SA_KT - 1) / DSV4_SA_KT), (unsigned)(heads / DSV4_SA_HT),
         (unsigned)nq);
-    memra_chain_launch(dsv4_sink_scores_st_f32acc_kernel<false>,g1, 64, smem, stream)(q, kv, idxs, scores, heads, hd,
-        slots, idx_stride, scale, replay_pos, replay_win, replay_ratio, replay_topk, Dsv4RowPtrs{}, 0L);
+    memra_chain_launch(dsv4_sink_scores_st_f32acc_kernel,g1, 64, smem, stream)(q, kv, idxs, scores, heads, hd,
+        slots, idx_stride, scale, replay_pos, replay_win, replay_ratio, replay_topk);
     DSV4_ERR();
     dim3 g2((unsigned)(hd / DSV4_SA_XB), (unsigned)(heads / DSV4_SA_HB), (unsigned)nq);
-    memra_chain_launch(dsv4_sink_softout_st_f32acc_kernel<false>,g2, 256, 0, stream)(kv, idxs, scores, sink, o, heads,
-        hd, slots, idx_stride, replay_pos, replay_win, replay_ratio, replay_topk, Dsv4RowPtrs{}, 0L);
+    memra_chain_launch(dsv4_sink_softout_st_f32acc_kernel,g2, 256, 0, stream)(kv, idxs, scores, sink, o, heads,
+        hd, slots, idx_stride, replay_pos, replay_win, replay_ratio, replay_topk);
     DSV4_ERR();
     return 0;
 }
@@ -8367,13 +8402,12 @@ extern "C" int memra_dsv4_sink_attn_st_rows(const float* q, float* const* kv, co
         + DSV4_SA_KT * sizeof(int);
     dim3 g1((unsigned)((slots_max + DSV4_SA_KT - 1) / DSV4_SA_KT), (unsigned)(heads / DSV4_SA_HT),
         (unsigned)n_rows);
-    memra_chain_launch(dsv4_sink_scores_st_f32acc_kernel<true>, g1, 64, smem, stream)(q, t.p[0],
-        idxs, scores, heads, hd, slots_max, idx_stride, scale, pos, win, ratio, topk, t,
-        scores_row);
+    memra_chain_launch(dsv4_sink_scores_st_rows_kernel, g1, 64, smem, stream)(q, idxs, scores,
+        heads, hd, slots_max, idx_stride, scale, pos, win, ratio, topk, t, scores_row);
     DSV4_ERR();
     dim3 g2((unsigned)(hd / DSV4_SA_XB), (unsigned)(heads / DSV4_SA_HB), (unsigned)n_rows);
-    memra_chain_launch(dsv4_sink_softout_st_f32acc_kernel<true>, g2, 256, 0, stream)(t.p[0], idxs,
-        scores, sink, o, heads, hd, slots_max, idx_stride, pos, win, ratio, topk, t, scores_row);
+    memra_chain_launch(dsv4_sink_softout_st_rows_kernel, g2, 256, 0, stream)(idxs, scores, sink, o,
+        heads, hd, slots_max, idx_stride, pos, win, ratio, topk, t, scores_row);
     DSV4_ERR();
     return 0;
 }
