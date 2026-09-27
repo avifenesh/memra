@@ -114,3 +114,17 @@ device, pageable is faster on this card in all 10 visits of each order (pinned t
 and 1.073 to 1.120x the time); BOX27's PRO 6000 had pinned ahead at every size (`../box27/RESULTS.md`
 B6). A per-rig difference in the small-copy path; expert slices (about 860 KB) and KV frames sit far
 above that range.
+
+## Scratch loss, 2026-09-27 (recorded at 19:33Z)
+
+Between the 19:20Z poll (the handoff 8 GiB cell's `waits.jsonl` read, 8 rounds done) and the next
+one seconds later, the whole local scratch `~/spill-f-5090` disappeared, and the queue and its
+driver ended, most likely when they next tried to create a file under the missing path. Nothing in
+the user journal, the shell histories, or the other session that names the path shows a command
+that removed it; the cause is unknown. Kept, because mirrored earlier: every regime above, the G2
+cell, the OWED 17, 18 and 26 cells under `../owed17/5090`, `../owed18/5090`, `../owed26/5090`, and
+the private store (BOX27, BOX36, proofs, the OWED 20 heads). Lost: the handoff 8 GiB cell's rounds 1
+to 8 (never mirrored), the post-deletion pool-cell step (it had not started), the diagnostic
+attribution samples, the queue logs after the last mirror, and the frozen binaries (their hashes
+stay in each `build*/` record). The handoff 8 GiB cell reruns from round 1 on a rebuild of the
+recorded commit, and every later cell is mirrored as soon as it ends.
