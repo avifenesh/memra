@@ -69,5 +69,33 @@ N and W show none of them in eight boots. They were lane-phase splits in the coa
 **Earlier rounds.** `raw/lanes16-v6n/` (before the fixes) and `raw/lanes16-fix-v6s/` (hoist fix,
 old coalescer) show the same c8 gain at 8 and 16 lanes, and slow cells scattered across arms.
 
+## The naked default, on main with the shared-expert owner (`raw/lanes16-clear-v6v/`)
+
+The lane's head, rebased on main `286c0c54c`, boots `16 serving lane(s) (default on the plain
+TP/EP program ...)` and `B-row steps up to 16 rows` with no environment set.
+- One more change: the fused step clears only its own rows of the contribution plane. A 16-row
+  workspace cleared 16 rows' planes per layer before it.
+- The long gate hash is `fbce1a0492d69635`.
+- The TP/EP rows gate with the 16-row wide phase passes.
+- Served, cells-pdl, one boot per row, order M L L M:
+
+| cell | main (4 lanes) | lane (16 lanes) |
+|---|---|---|
+| greedy c1 | 95.11 / 95.18 | 94.90 / 94.97 |
+| sampled c1 | 96.05 / 96.07 | 95.81 / 95.80 |
+| greedy c2 | 128.15 / 128.47 | 127.57 / 127.63 |
+| greedy c4 | 162.22 / 162.65 | 162.93 / 163.70 |
+
+c1 and c2 read 0.2% and 0.5% lower in both lane rows. The earlier build without the sized clear
+read c2 1.0% lower (`raw/lanes16-default-v6u/`). One naked cells-c24 row on the lane:
+
+| cell | agg tok/s | served | TTFT p50 |
+|---|---|---|---|
+| greedy c4 | 158.57 | 8/8 | 335 ms |
+| greedy c8 | 200.16 | 16/16 | 620 ms |
+| greedy c16 | 201.37 | 16/16 | 1.39 s |
+| greedy c24 | 200.71 | 24/24 | 1.75 s |
+| sampled c8 | 193.37 | 16/16 | 598 ms |
+
 Verdict: 16 lanes with the one-workspace coalescer are the TP/EP default. c8 +22%, c16 +27%, c24
 every request at +25% or more, and c4 and c1 unchanged.
