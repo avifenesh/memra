@@ -17,12 +17,13 @@ Serving dispatch is unchanged; target-GPU bit parity and speed are gates.
 For a later 1..128-token chunk, each query reads earlier K/V from a snapshot
 of the ring before append and current-chunk K/V from the appended ring. This
 keeps the decoder's learned-sink softmax and reduction order per query. The
-component has no KV transaction or text-forward dispatch yet. Global
-attention and long-prompt throughput remain separate gates.
+experimental two-card text component now owns that snapshot, uses absolute
+RoPE positions, and calls ordinary per-position global Q8/NVFP4 attention.
+Complete-model equality and long-prompt throughput remain separate gates.
 
 | Symbol | Purpose | Types | Architecture | Door | Binding |
 | --- | --- | --- | --- | --- | --- |
-| `memra_mimo_swa_ring_continuing_chunk_f32` | Attend one later chunk against old and appended local ring generations | F32 Q/K/V/sink/output | sm_120a | Explicit MiMo component, no serving door | `decode_local_continuing_chunk` GPU parity gate |
+| `memra_mimo_swa_ring_continuing_chunk_f32` | Attend one later chunk against old and appended local ring generations | F32 Q/K/V/sink/output | sm_120a | Explicit MiMo component, no serving door | `MiMoCompressedKv::attend_appended_continuing_chunk` |
 
 ## Qwen FA2 attention experiment, 2026-09-09
 

@@ -1,7 +1,7 @@
 //! MiMo text forward with model-owned compressed KV.
-//! Prepared modal chunks may enter a fresh sequence. The bounded first chunk
-//! shares decode's packed attention arithmetic. There is no raw-modal decoder,
-//! payload-keyed KV reuse, or serving dispatch.
+//! Prepared modal chunks may enter a continuing sequence. Bounded first and
+//! later chunks share decode's packed attention arithmetic. There is no raw
+//! modal decoder, payload-keyed KV lookup, or serving dispatch.
 
 use std::error::Error;
 
@@ -23,9 +23,9 @@ const STAGE_CUT: usize = 24;
 const MAX_FIRST_BATCH_CHUNK: usize = 128;
 const CONTEXT_WIDTH: usize = 64 * 128;
 
-fn first_batch_rows(tokens: usize) -> Result<usize, &'static str> {
+fn bounded_batch_rows(tokens: usize) -> Result<usize, &'static str> {
     if !(1..=MAX_FIRST_BATCH_CHUNK).contains(&tokens) {
-        return Err("MiMo first batch chunk must contain 1..=128 tokens");
+        return Err("MiMo batch chunk must contain 1..=128 tokens");
     }
     Ok(tokens)
 }
@@ -37,7 +37,7 @@ fn normalized_rows(
     rows: usize,
     epsilon: f32,
 ) -> Result<CudaSlice<f32>, Fail> {
-    if first_batch_rows(rows).is_err()
+    if bounded_batch_rows(rows).is_err()
         || input.len() != rows * HIDDEN
         || weight.len() != HIDDEN
         || input.ordinal() != engine.stream().context().ordinal()
@@ -175,13 +175,14 @@ fn check_chunk_admission(
     stages: [usize; 2],
 ) -> Result<(), &'static str> {
     check_step(position, kv_position, max_tokens, failed)?;
-    if position != 0
-        || tokens == 0
-        || tokens > max_tokens
+    if tokens == 0
+        || position
+            .checked_add(tokens)
+            .is_none_or(|end| end > max_tokens)
         || elements != tokens * HIDDEN
         || stages[0] != stages[1]
     {
-        return Err("MiMo embedding chunk must fit a fresh stage-0 text sequence");
+        return Err("MiMo embedding chunk must fit the stage-0 text sequence");
     }
     Ok(())
 }
@@ -285,7 +286,7 @@ impl<'a> MiMoCompressedTextForward<'a> {
     }
 
     /// Consume one source-ordered, stage-0 prepared embedding chunk on a
-    /// fresh sequence. Each row executes the pinned 48-layer token path and
+    /// continuing sequence. Each row executes the pinned 48-layer token path and
     /// commits its model-owned KV. Return final logits and the hidden row
     /// needed by the separate MTP3 drafter. This is serial diagnostic prefill.
     pub fn consume_embedding_chunk(
@@ -310,7 +311,7 @@ impl<'a> MiMoCompressedTextForward<'a> {
         }
         let position = self.position;
         let (logits, hidden) = self.chunk_row::<true>(chunk, tokens - 1)?;
-        self.has_modal_payload = chunk.requires_payload_identity();
+        self.has_modal_payload |= chunk.requires_payload_identity();
         Ok(MiMoTextStep {
             position,
             logits,
@@ -318,16 +319,16 @@ impl<'a> MiMoCompressedTextForward<'a> {
         })
     }
 
-    /// Execute one fresh source-ordered chunk with bounded row groups and
-    /// resident MoE. Only the first 1..=128 positions are admitted. Each
-    /// layer stores Q8_0 K / NVFP4 V or local F32 rows before attending with
-    /// the same per-position numeric program as continuing decode.
+    /// Execute one source-ordered 1..=128 row chunk with resident MoE.
+    /// Each layer stores Q8_0 K / NVFP4 V or local F32 rows before attending
+    /// with the same per-position numeric program as continuing decode.
     /// This is an explicit component entry, not a serving dispatch.
     pub fn consume_embedding_chunk_batched(
         &mut self,
         chunk: &MiMoGpuEmbeddingChunk,
     ) -> Result<MiMoTextStep, Fail> {
-        let tokens = first_batch_rows(chunk.token_count())?;
+        let tokens = bounded_batch_rows(chunk.token_count())?;
+        let start = self.position;
         check_chunk_admission(
             self.position,
             self.kv.position(),
@@ -342,7 +343,7 @@ impl<'a> MiMoCompressedTextForward<'a> {
         )?;
         self.kv.begin_prefill_batch(tokens)?;
         self.failed = true;
-        let positions = (0..tokens)
+        let positions = (start..start + tokens)
             .map(|position| position as i32)
             .collect::<Vec<_>>();
         let position_ids = [
@@ -421,7 +422,12 @@ impl<'a> MiMoCompressedTextForward<'a> {
                 1.0,
             )?;
             self.kv.append_prefill_layer(index, &qkv.key, &qkv.value)?;
-            let context = self.kv.attend_appended_first_chunk(index, &qkv.query)?;
+            let context = if start == 0 {
+                self.kv.attend_appended_first_chunk(index, &qkv.query)?
+            } else {
+                self.kv
+                    .attend_appended_continuing_chunk(index, &qkv.query)?
+            };
             drop((qkv, projections, norm));
             let attention_output =
                 attention_output_rows(engine, &row.attention.output, &context, tokens)?;
@@ -489,7 +495,7 @@ impl<'a> MiMoCompressedTextForward<'a> {
             hidden = after_mlp;
         }
         self.kv.finish_prefill_batch()?;
-        if self.kv.position() != tokens {
+        if self.kv.position() != start + tokens {
             return Err("MiMo batch text KV cursor did not commit all rows".into());
         }
         let last = self.engines[1];
@@ -517,11 +523,11 @@ impl<'a> MiMoCompressedTextForward<'a> {
         let mut logits_gpu = last.uninit(VOCAB)?;
         last.matvec_bf16_rows_into(data, &final_norm, &mut logits_gpu, HIDDEN, VOCAB, 1)?;
         let (logits, final_hidden) = read_text_output::<true>(last, &final_hidden, &logits_gpu)?;
-        self.position = tokens;
+        self.position = start + tokens;
         self.failed = false;
-        self.has_modal_payload = chunk.requires_payload_identity();
+        self.has_modal_payload |= chunk.requires_payload_identity();
         Ok(MiMoTextStep {
-            position: tokens - 1,
+            position: start + tokens - 1,
             logits,
             hidden_before_norm: final_hidden.ok_or("MiMo batch text hidden capture was omitted")?,
         })
@@ -721,9 +727,10 @@ mod tests {
     use memra_gguf::model_plan::AttentionPlan;
 
     #[test]
-    fn modal_chunk_refuses_nonfresh_or_cross_stage_kv_admission() {
+    fn modal_chunk_checks_capacity_and_cross_stage_kv_admission() {
         assert!(check_chunk_admission(0, 0, 4, false, 4, 4 * HIDDEN, [0, 0]).is_ok());
-        assert!(check_chunk_admission(1, 1, 4, false, 3, 3 * HIDDEN, [0, 0]).is_err());
+        assert!(check_chunk_admission(1, 1, 4, false, 3, 3 * HIDDEN, [0, 0]).is_ok());
+        assert!(check_chunk_admission(1, 1, 4, false, 4, 4 * HIDDEN, [0, 0]).is_err());
         assert!(check_chunk_admission(0, 1, 4, false, 4, 4 * HIDDEN, [0, 0]).is_err());
         assert!(check_chunk_admission(0, 0, 4, true, 4, 4 * HIDDEN, [0, 0]).is_err());
         assert!(check_chunk_admission(0, 0, 4, false, 5, 5 * HIDDEN, [0, 0]).is_err());
@@ -733,14 +740,15 @@ mod tests {
     }
 
     #[test]
-    fn first_batch_chunk_has_explicit_qkv_and_fresh_sequence_bound() {
-        assert_eq!(first_batch_rows(1).unwrap(), 1);
-        assert_eq!(first_batch_rows(20).unwrap(), 20);
-        assert_eq!(first_batch_rows(128).unwrap(), 128);
-        assert!(first_batch_rows(0).is_err());
-        assert!(first_batch_rows(129).is_err());
+    fn batch_chunk_has_explicit_qkv_and_nonzero_start_bound() {
+        assert_eq!(bounded_batch_rows(1).unwrap(), 1);
+        assert_eq!(bounded_batch_rows(20).unwrap(), 20);
+        assert_eq!(bounded_batch_rows(128).unwrap(), 128);
+        assert!(bounded_batch_rows(0).is_err());
+        assert!(bounded_batch_rows(129).is_err());
         assert!(check_chunk_admission(0, 0, 128, false, 128, 128 * HIDDEN, [0, 0]).is_ok());
-        assert!(check_chunk_admission(1, 1, 128, false, 20, 20 * HIDDEN, [0, 0]).is_err());
+        assert!(check_chunk_admission(1, 1, 128, false, 20, 20 * HIDDEN, [0, 0]).is_ok());
+        assert!(check_chunk_admission(120, 120, 128, false, 9, 9 * HIDDEN, [0, 0]).is_err());
     }
 
     #[test]
@@ -1108,6 +1116,109 @@ mod tests {
             }
             println!("mimo_fused_gate_up_128_exact\t{label}\t{} bits", got.len());
         }
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "requires pinned MiMo source and a dedicated two-card GPU lane"]
+    fn second_batch_chunk_reuses_native_kv_and_matches_serial_bits() -> Result<(), Fail> {
+        use std::path::Path;
+        use std::sync::Arc;
+
+        use memra_gguf::source::SafetensorsSource;
+
+        const FOUR_GIB: usize = 4 * 1024 * 1024 * 1024;
+        const FIRST: usize = 128;
+        const SECOND: usize = 9;
+        const CONTEXT: usize = FIRST + SECOND + 1;
+        let root = std::env::var("MIMO_PINNED_SOURCE_ROOT")?;
+        let source = Arc::new(SafetensorsSource::open(Path::new(&root))?);
+        let cards = [Engine::new(0)?, Engine::new(1)?];
+        let engines = [&cards[0], &cards[1]];
+        let text = MiMoTextWeights::load(engines, source)?;
+        let first_ids = (42..42 + FIRST as u32).collect::<Vec<_>>();
+        let second_ids = (42 + FIRST as u32..42 + (FIRST + SECOND) as u32).collect::<Vec<_>>();
+        let first_chunk = text.modal_embedding_gpu_chunk(&cards[0], &first_ids, &[], &[], &[])?;
+        let second_chunk = text.modal_embedding_gpu_chunk(&cards[0], &second_ids, &[], &[], &[])?;
+        let (first, second, continuation) = {
+            let mut batch = text.compressed_text_forward(engines, CONTEXT, [FOUR_GIB; 2])?;
+            let first = batch.consume_embedding_chunk_batched(&first_chunk)?;
+            if first.position != FIRST - 1
+                || batch.position() != FIRST
+                || batch.kv.position() != FIRST
+            {
+                return Err("MiMo first chunk did not commit a reusable KV cursor".into());
+            }
+            let second = batch.consume_embedding_chunk_batched(&second_chunk)?;
+            if second.position != FIRST + SECOND - 1
+                || batch.position() != FIRST + SECOND
+                || batch.kv.position() != FIRST + SECOND
+            {
+                return Err("MiMo continuing chunk did not commit its KV cursor".into());
+            }
+            let continuation = batch.token(220)?;
+            if batch.position() != CONTEXT || batch.kv.position() != CONTEXT {
+                return Err("MiMo continuing chunk did not hand off to one-token decode".into());
+            }
+            (first, second, continuation)
+        };
+        let mut serial = text.compressed_text_forward(engines, CONTEXT, [FOUR_GIB; 2])?;
+        let mut serial_first = None;
+        let mut serial_second = None;
+        for (index, &token) in first_ids.iter().chain(&second_ids).enumerate() {
+            let step = serial.token_with_hidden(token)?;
+            if index == FIRST - 1 {
+                serial_first = Some(step);
+            } else if index == FIRST + SECOND - 1 {
+                serial_second = Some(step);
+            }
+        }
+        let serial_continuation = serial.token(220)?;
+        if serial.position() != CONTEXT {
+            return Err("MiMo serial second-chunk control cursor drifted".into());
+        }
+        let serial_first = serial_first.ok_or("MiMo serial first-chunk control is missing")?;
+        let serial_second = serial_second.ok_or("MiMo serial second-chunk control is missing")?;
+        for (label, got, want) in [
+            (
+                "first_logits",
+                first.logits.as_slice(),
+                serial_first.logits.as_slice(),
+            ),
+            (
+                "first_hidden",
+                first.hidden_before_norm.as_slice(),
+                serial_first.hidden_before_norm.as_slice(),
+            ),
+            (
+                "second_logits",
+                second.logits.as_slice(),
+                serial_second.logits.as_slice(),
+            ),
+            (
+                "second_hidden",
+                second.hidden_before_norm.as_slice(),
+                serial_second.hidden_before_norm.as_slice(),
+            ),
+            (
+                "continuation",
+                continuation.as_slice(),
+                serial_continuation.as_slice(),
+            ),
+        ] {
+            if got.len() != want.len()
+                || got
+                    .iter()
+                    .zip(want)
+                    .any(|(got, want)| got.to_bits() != want.to_bits())
+            {
+                return Err(format!("MiMo continuing batch {label} differs from serial").into());
+            }
+            println!("mimo_continuing_batch_exact\t{label}\t{} bits", got.len());
+        }
+        println!(
+            "mimo_continuing_batch_receipt\tfirst_cached=0\tfirst_new={FIRST}\tsecond_cached={FIRST}\tsecond_new={SECOND}\tcursor={CONTEXT}"
+        );
         Ok(())
     }
 

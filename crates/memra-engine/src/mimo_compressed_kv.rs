@@ -1,9 +1,11 @@
 //! Model-owned MiMo text KV storage and one-token attention component.
 //! Global layers keep Q8_0 K and GGUF NVFP4 V; local layers keep a 128-token
-//! f32 ring. This has no text-forward dispatch, modality path, or serving door.
+//! f32 ring. The explicit compressed-text component owns this KV; it has no
+//! customer serving door.
 
 use core::ffi::c_void;
 use std::error::Error;
+use std::mem::size_of;
 
 use cudarc::driver::{CudaSlice, DevicePtr, DevicePtrMut};
 use memra_gguf::config::ModelConfig;
@@ -74,7 +76,6 @@ unsafe extern "C" {
         window: i32,
         stream: *mut c_void,
     ) -> i32;
-    #[cfg(test)]
     fn memra_mimo_swa_ring_continuing_chunk_f32(
         q: *const f32,
         old_k: *const f32,
@@ -257,6 +258,12 @@ impl BatchState {
     }
 }
 
+struct LocalRingSnapshot {
+    layer: usize,
+    key: CudaSlice<f32>,
+    value: CudaSlice<f32>,
+}
+
 /// Split a token-major batch into contiguous writes to the 128-row local
 /// ring. A 256-row batch may wrap twice; later writes deliberately replace
 /// the same slots, leaving exactly the latest 128 rows.
@@ -284,6 +291,7 @@ pub struct MiMoCompressedKv<'a> {
     dummy_q5: [CudaSlice<u8>; 2],
     cursor: Cursor,
     batch: Option<BatchState>,
+    local_snapshot: Option<LocalRingSnapshot>,
     max_tokens: usize,
     min_free_after: [usize; 2],
     budget: MiMoCompressedKvBudget,
@@ -448,7 +456,6 @@ fn decode_local_first_chunk(
     Ok(output)
 }
 
-#[cfg(test)]
 struct ContinuingLocalRing<'a> {
     old_key: &'a CudaSlice<f32>,
     old_value: &'a CudaSlice<f32>,
@@ -458,7 +465,6 @@ struct ContinuingLocalRing<'a> {
     start: usize,
 }
 
-#[cfg(test)]
 fn decode_local_continuing_chunk(
     engine: &Engine,
     queries: &CudaSlice<f32>,
@@ -625,6 +631,7 @@ impl<'a> MiMoCompressedKv<'a> {
                 failed: false,
             },
             batch: None,
+            local_snapshot: None,
             max_tokens,
             min_free_after,
             budget,
@@ -644,7 +651,7 @@ impl<'a> MiMoCompressedKv<'a> {
     /// does not compute attention or logits. The cache remains poisoned until
     /// all 48 layers have appended and `finish_prefill_batch` succeeds.
     pub fn begin_prefill_batch(&mut self, rows: usize) -> Result<(), Fail> {
-        if self.batch.is_some() {
+        if self.batch.is_some() || self.local_snapshot.is_some() {
             return Err("MiMo KV already has an unfinished prefill batch".into());
         }
         let batch = BatchState::begin(self.cursor, rows, self.max_tokens)?;
@@ -676,6 +683,9 @@ impl<'a> MiMoCompressedKv<'a> {
         {
             return Err("MiMo KV prefill cursor changed during batch append".into());
         }
+        if self.local_snapshot.is_some() {
+            return Err("MiMo KV previous local-ring snapshot was not attended".into());
+        }
         let cache = self
             .caches
             .get(layer)
@@ -699,6 +709,8 @@ impl<'a> MiMoCompressedKv<'a> {
         let end = batch.start + batch.rows;
         let extra = if geometry.window == 0 {
             batch.rows * (GLOBAL_K_BYTES + DUMMY_Q5_BYTES + GLOBAL_V_BYTES)
+        } else if batch.start > 0 {
+            (LOCAL_K_ELEMENTS + LOCAL_V_ELEMENTS) * size_of::<f32>()
         } else {
             0
         };
@@ -706,6 +718,7 @@ impl<'a> MiMoCompressedKv<'a> {
         staged[stage] = extra;
         require_memory(self.engines, self.min_free_after, staged)?;
         engine.gpu.ctx.bind_to_thread()?;
+        let mut snapshot = None;
         match &mut self.caches[layer] {
             LayerCache::Global {
                 key: keys,
@@ -748,6 +761,17 @@ impl<'a> MiMoCompressedKv<'a> {
                 value: values,
                 tokens,
             } => {
+                if batch.start > 0 {
+                    let mut old_key = engine.uninit(LOCAL_K_ELEMENTS)?;
+                    let mut old_value = engine.uninit(LOCAL_V_ELEMENTS)?;
+                    engine.stream().memcpy_dtod(keys, &mut old_key)?;
+                    engine.stream().memcpy_dtod(values, &mut old_value)?;
+                    snapshot = Some(LocalRingSnapshot {
+                        layer,
+                        key: old_key,
+                        value: old_value,
+                    });
+                }
                 for (source_row, ring_row, count) in local_ring_segments(batch.start, batch.rows) {
                     let key_source = source_row * key_width;
                     let key_ring = ring_row * key_width;
@@ -765,6 +789,7 @@ impl<'a> MiMoCompressedKv<'a> {
                 *tokens = end;
             }
         }
+        self.local_snapshot = snapshot;
         self.batch
             .as_mut()
             .ok_or("MiMo KV prefill state disappeared")?
@@ -839,6 +864,83 @@ impl<'a> MiMoCompressedKv<'a> {
         Ok(output)
     }
 
+    /// Attend a nonzero-start 1..=128 row batch after the layer append.
+    /// Local attention consumes the pre-append ring snapshot once; global
+    /// attention keeps the ordinary packed per-position decoder for now.
+    pub(crate) fn attend_appended_continuing_chunk(
+        &mut self,
+        layer: usize,
+        query_rows: &CudaSlice<f32>,
+    ) -> Result<CudaSlice<f32>, Fail> {
+        let batch = self.batch.ok_or("MiMo KV has no active prefill batch")?;
+        let cache = self
+            .caches
+            .get(layer)
+            .ok_or("MiMo continuing attention layer is out of range")?;
+        if batch.start == 0
+            || batch.rows > SWA
+            || batch.next_layer != layer + 1
+            || cache.tokens() != batch.start + batch.rows
+        {
+            return Err("MiMo continuing attention requires the appended layer".into());
+        }
+        let stage = stage_for_layer(layer)?;
+        let engine = self.engines[stage];
+        engine.gpu.ctx.bind_to_thread()?;
+        if query_rows.len() != batch.rows * HEADS * QK
+            || query_rows.ordinal() != engine.stream().context().ordinal()
+        {
+            return Err("MiMo continuing query shape or GPU changed".into());
+        }
+        let snapshot = self.local_snapshot.take();
+        if let LayerCache::Local { key, value, .. } = cache {
+            let snapshot = snapshot.ok_or("MiMo continuing local ring snapshot is missing")?;
+            if snapshot.layer != layer {
+                return Err("MiMo continuing local ring snapshot layer drifted".into());
+            }
+            return decode_local_continuing_chunk(
+                engine,
+                query_rows,
+                ContinuingLocalRing {
+                    old_key: &snapshot.key,
+                    old_value: &snapshot.value,
+                    key,
+                    value,
+                    sink: self.weights.layers[layer]
+                        .attention
+                        .sink
+                        .as_ref()
+                        .ok_or("MiMo continuing local sink is missing")?,
+                    start: batch.start,
+                },
+                batch.rows,
+            );
+        }
+        if snapshot.is_some() {
+            return Err("MiMo global layer retained a local-ring snapshot".into());
+        }
+        let LayerCache::Global { key, value, .. } = cache else {
+            return Err("MiMo continuing cache type changed after admission".into());
+        };
+        let mut output = engine.uninit(batch.rows * HEADS * VALUE)?;
+        for offset in 0..batch.rows {
+            let mut query = engine.uninit(HEADS * QK)?;
+            engine.dtod_copy_view(
+                &query_rows.slice(offset * HEADS * QK..(offset + 1) * HEADS * QK),
+                &mut query,
+            )?;
+            let context = engine.mimo_global_q8_nvfp4_decode(
+                &query,
+                key,
+                value,
+                batch.start + offset + 1,
+                &mut self.workspaces[stage],
+            )?;
+            engine.dtod_copy_into(&context, &mut output, offset * HEADS * VALUE)?;
+        }
+        Ok(output)
+    }
+
     /// Complete the layer-major append only after every layer and both GPU
     /// streams have committed. Any failure leaves the sequence poisoned.
     pub fn finish_prefill_batch(&mut self) -> Result<(), Fail> {
@@ -847,6 +949,7 @@ impl<'a> MiMoCompressedKv<'a> {
         if !self.cursor.failed
             || self.cursor.position != batch.start
             || batch.next_layer != LAYERS
+            || self.local_snapshot.is_some()
             || self.caches.iter().any(|cache| cache.tokens() != end)
         {
             return Err("MiMo KV prefill batch is incomplete or drifted".into());
