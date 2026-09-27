@@ -1707,6 +1707,14 @@ pub struct Request {
     /// None for internally-constructed requests (tests, embeddings/rerank capture routes),
     /// which the gate skips.
     pub wire_deadline: Option<std::time::Instant>,
+    /// memra#522: when this request entered the worker's admission queue, the hybrid-lane
+    /// queue-wait histogram's start (`crate::hybrid_telemetry`). Stamped by the HTTP handler
+    /// at submission, the same convention `wire_deadline` uses. Every internally-constructed
+    /// request (tests, a step-OOM park replay in `park_requeue`) restamps this to
+    /// `Instant::now()` at its own construction, so the metric always measures "time waiting
+    /// for THIS admission attempt", never a cross-retry cumulative wait: the same choice
+    /// `route_telemetry::RouteTicket` makes for the dedicated-route queue-wait histogram.
+    pub(crate) queued_at: Instant,
     /// The waiting slot a dedicated route's admission took for this request (memra#501). A
     /// route-bound request holds this INSTEAD of a lane `ADMISSION_RESERVATIONS` slot; the route
     /// drops it at dequeue, and a request dropped anywhere earlier (a failed send, a dead
@@ -25303,6 +25311,11 @@ struct Session {
     tx: EventSender,
     ttft: Option<Arc<crate::ttft::Trace>>,
     t0: Instant,
+    /// memra#522: this request's `Request::queued_at`, carried forward so the single
+    /// admission call site (the scheduler loop's `Ok(mut s) =>` arm) can record the
+    /// hybrid-lane queue-wait histogram from `t0 - queued_at` without re-reading a
+    /// consumed `Request`.
+    queued_at: Instant,
 }
 
 impl Session {
@@ -29542,6 +29555,13 @@ pub fn run(
                     // `active`; its queue reservation must no longer count against waiting
                     // capacity. The HTTP in-flight gauge continues to cover the live stream.
                     release_admission_reservation(lane);
+                    // memra#522: the hybrid-lane queue-wait histogram, recorded exactly once
+                    // per admitted request (route_telemetry::RouteTicket's own contract for
+                    // the dedicated-route twin of this metric).
+                    crate::hybrid_telemetry::record_queue_wait(
+                        &s.model,
+                        s.t0.saturating_duration_since(s.queued_at),
+                    );
                     // FAIL-SAFE (lane/step37-vram-admission-20260830): a step-OOM park REPLAY
                     // must not re-enter the draft-capture path — the capture appetite is part
                     // of what drove the card to the OOM. The replay serves eager; exhausted
@@ -31783,6 +31803,11 @@ pub fn run(
                     &s.model,
                     u32::try_from(s.generated.len()).unwrap_or(u32::MAX),
                 );
+                // memra#522: hybrid-lane E2E histogram, success-only: the same terminal
+                // predicate that gates the completion history above, so a park replay,
+                // client abort, or OOM teardown never widens the latency a client-facing
+                // SLO reads (memra#896's contract for the dedicated route's own E2E).
+                crate::hybrid_telemetry::record_e2e(&s.model, s.t0.elapsed());
             }
             retired_interactive |= s.lane == crate::lanes::Lane::Interactive;
             retire_prefix_pin(&mut px, &mut s.prefix_pin);
@@ -33924,6 +33949,10 @@ fn park_requeue(loaded: &HashMap<String, LoadedModel>, s: &Session) -> Option<Bo
         constraint_ready: None,
         oom_retries: s.oom_retries,
         wire_deadline: s.wire_deadline,
+        // memra#522: a park replay is a NEW admission attempt for the queue-wait
+        // histogram's purpose: it measures the wait for THIS admission, not a cross-retry
+        // cumulative wait (see `Request::queued_at`'s doc comment).
+        queued_at: Instant::now(),
         route_ticket: None,
         spec_k_replay: Some(s.spec_k),
         prepared_prompt: None,
@@ -37274,6 +37303,7 @@ fn admit(
         tx: req.tx,
         ttft: req.ttft,
         t0: Instant::now(),
+        queued_at: req.queued_at,
     };
     if memra_engine::glm5_tp_sampler::requested() {
         use memra_engine::glm5_tp_sampler::{Glm5TpDeviceSampler, Glm5TpSampleConfig};
@@ -37464,6 +37494,22 @@ fn send_token_event(s: &mut Session, id: u32, text: String) -> bool {
     }
     s.tokens_emitted += 1;
     true
+}
+
+/// Record one committed token into the session's public generation, and, on the FIRST such
+/// token, the hybrid-lane TTFT histogram (memra#522, `crate::hybrid_telemetry`): admission
+/// (`s.t0`) to this session's first committed token, composing with the queue-wait histogram
+/// the same way the dedicated route's queue-wait + round decomposition already does. Every
+/// decode path (plain, spec, gspec, dspark, glm5, step) funnels its committed tokens through
+/// this one function, so it is the single choke point that needs the check, regardless of
+/// which path a given session takes. `s.generated` starts empty for every freshly admitted
+/// session (see `admit`'s `Session` literal), so `is_empty()` here is exactly "this session's
+/// first token", not an artifact of resume/continuation state from an earlier turn.
+fn push_generated(s: &mut Session, tok: u32) {
+    if s.generated.is_empty() {
+        crate::hybrid_telemetry::record_ttft(&s.model, s.t0.elapsed());
+    }
+    s.generated.push(tok);
 }
 
 /// Number of tokens from an engine-committed speculative burst that belong to this request.
@@ -38404,7 +38450,7 @@ fn advance_sample_emit(
         return (false, None);
     }
     s.sampler.accept(next);
-    s.generated.push(next);
+    push_generated(s, next);
     if let Some(trace) = s.ttft.as_ref() {
         trace.mark_first_decode();
     }
@@ -38470,7 +38516,7 @@ fn advance_token_emit(
         return (false, ());
     }
     s.sampler.accept(tok);
-    s.generated.push(tok);
+    push_generated(s, tok);
     if let Some(trace) = s.ttft.as_ref() {
         trace.mark_first_decode();
     }
@@ -39432,7 +39478,7 @@ fn step_session(
         }
         for &tok in public_burst {
             s.sampler.accept(tok);
-            s.generated.push(tok);
+            push_generated(s, tok);
             s.fed.push(tok);
             if s.params.eos.contains(&tok) {
                 stop = Some(StopReason::Eos);
@@ -39639,7 +39685,7 @@ fn step_session(
         return Ok(false);
     }
     s.sampler.accept(next);
-    s.generated.push(next);
+    push_generated(s, next);
     if let Some(trace) = s.ttft.as_ref() {
         trace.mark_first_decode();
     }
@@ -39961,7 +40007,7 @@ fn step_gemma_spec(
     );
     for &tok in public_burst {
         s.sampler.accept(tok);
-        s.generated.push(tok);
+        push_generated(s, tok);
         s.fed.push(tok);
         if s.params.eos.contains(&tok) {
             stop = Some(StopReason::Eos);
@@ -40282,7 +40328,7 @@ fn step_dspark_spec(
     };
     for &tok in public_burst {
         s.sampler.accept(tok);
-        s.generated.push(tok);
+        push_generated(s, tok);
         s.fed.push(tok);
         if s.params.eos.contains(&tok) {
             stop = Some(StopReason::Eos);
@@ -40629,7 +40675,7 @@ fn step_glm5_spec(
     glm5_prof_rounds_flush(s, false);
     for &tok in public_burst {
         s.sampler.accept(tok);
-        s.generated.push(tok);
+        push_generated(s, tok);
         s.fed.push(tok);
         if s.params.eos.contains(&tok) {
             stop = Some(StopReason::Eos);
@@ -41938,6 +41984,7 @@ mod tests {
             capture: None,
             vision_memory: None,
             wire_deadline: None,
+            queued_at: std::time::Instant::now(),
             route_ticket: None,
             tx,
         }
@@ -42391,6 +42438,7 @@ mod tests {
             capture: None,
             vision_memory: None,
             wire_deadline: None,
+            queued_at: std::time::Instant::now(),
             route_ticket: None,
             ttft: None,
             tx: bad_tx,
@@ -48887,6 +48935,76 @@ mod tests {
                 "every handler submission stamps the wire deadline"
             );
         }
+    }
+
+    /// memra#522 follow-up to PR #896's dedicated-route histograms: the hybrid lane's
+    /// queue-wait/TTFT/E2E samples all funnel through single, named choke points, proven
+    /// at the source level the same way `first_token_deadline_gate_wiring` above proves
+    /// the deadline gate has exactly one production call site. A full `Session` cannot be
+    /// unit-built outside `admit()` (it needs a live `Engine`, loaded models, and the
+    /// prefix/host caches), so this is a structural test, not a runtime one: the codebase's
+    /// own convention where runtime construction is impractical (see `route_telemetry`'s
+    /// day58 tests, which parse their own source the same way).
+    #[test]
+    fn hybrid_lane_histograms_use_the_single_choke_points() {
+        let src = include_str!("worker.rs");
+        let code: String = src
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let prod = &code[..code.find("\nmod tests").expect("tests module exists")];
+
+        // TTFT: every committed token, on every decode path, goes through `push_generated`.
+        // No production call site bypasses it with a raw `s.generated.push(`.
+        assert!(
+            prod.matches("push_generated(s,").count() >= 7,
+            "every decode path must commit tokens through push_generated"
+        );
+        assert_eq!(
+            prod.matches("s.generated.push(").count(),
+            1,
+            "the only raw s.generated.push must be push_generated's own body"
+        );
+        let ttft_at = prod
+            .find("crate::hybrid_telemetry::record_ttft(")
+            .expect("ttft recording site exists");
+        let ttft_before = &prod[ttft_at.saturating_sub(200)..ttft_at];
+        assert!(
+            ttft_before.contains("s.generated.is_empty()"),
+            "ttft records exactly once, on the first committed token"
+        );
+
+        // Queue-wait: recorded once, at the single admission call site, before the request
+        // is treated as served (mirrors route_telemetry::RouteTicket's own contract).
+        assert_eq!(
+            prod.matches("crate::hybrid_telemetry::record_queue_wait(")
+                .count(),
+            1,
+            "queue-wait records at exactly one call site"
+        );
+        let qw_at = prod
+            .find("crate::hybrid_telemetry::record_queue_wait(")
+            .unwrap();
+        let qw_before = &prod[qw_at.saturating_sub(400)..qw_at];
+        assert!(
+            qw_before.contains("Ok(mut s) => {"),
+            "queue-wait records only on a successful admission"
+        );
+
+        // E2E: success-only, gated on the exact terminal predicate the completion history
+        // itself uses (memra#896's success-only contract, carried to the hybrid lane).
+        assert_eq!(
+            prod.matches("crate::hybrid_telemetry::record_e2e(").count(),
+            1,
+            "e2e records at exactly one call site"
+        );
+        let e2e_at = prod.find("crate::hybrid_telemetry::record_e2e(").unwrap();
+        let e2e_before = &prod[e2e_at.saturating_sub(400)..e2e_at];
+        assert!(
+            e2e_before.contains("if !s.oom_teardown && !s.aborted && !s.errored {"),
+            "e2e must sit behind the same success gate as the completion history record"
+        );
     }
 
     /// TOOTH for the H11 depth freeze (the measured 3.1x lever, canonflip-20260813):
@@ -60416,6 +60534,7 @@ mod tests {
             capture: None,
             vision_memory: None,
             wire_deadline: None,
+            queued_at: std::time::Instant::now(),
             route_ticket: None,
             ttft: None,
             tx,

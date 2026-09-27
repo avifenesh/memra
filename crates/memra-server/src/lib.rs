@@ -105,6 +105,7 @@ mod dsv4_serve;
 mod embed_api;
 mod handoff_io;
 mod histogram;
+mod hybrid_telemetry;
 /// In-memory reference implementation of `metering::JobStore` (memra#550,
 /// `docs/decisions/COMPLETE-RESULT-PATH-V1.md`): the bounded, TTL'd buffer a background
 /// (`background: true`) job's output would live in between the worker finishing and the
@@ -6914,6 +6915,7 @@ enum RouteHist {
 fn render_prometheus_metrics(
     m: &worker::Metrics,
     routes: &[route_telemetry::RouteLoadSnapshot],
+    hybrid: &[hybrid_telemetry::HybridSnapshot],
     metrics_scope: &MetricsScope,
 ) -> String {
     let mut out = String::new();
@@ -7001,6 +7003,30 @@ fn render_prometheus_metrics(
                 };
                 out.push_str(&h.render_prometheus(name, &labels));
             }
+        }
+    }
+    if metrics_scope.operator() && !hybrid.is_empty() {
+        // memra#522: the batched central worker's hybrid lane (every model without a
+        // dedicated route). Same per-model cardinality bound and operator scope as the
+        // route block above; distinct metric names so a scraper never conflates a
+        // dedicated route's own book with the shared scheduler's per-model one.
+        out.push_str("# TYPE memra_hybrid_queue_wait_seconds histogram\n");
+        out.push_str("# TYPE memra_hybrid_ttft_seconds histogram\n");
+        out.push_str("# TYPE memra_hybrid_e2e_seconds histogram\n");
+        for h in hybrid {
+            let labels = format!("model=\"{}\"", h.model);
+            out.push_str(
+                &h.queue_wait_hist
+                    .render_prometheus("memra_hybrid_queue_wait_seconds", &labels),
+            );
+            out.push_str(
+                &h.ttft_hist
+                    .render_prometheus("memra_hybrid_ttft_seconds", &labels),
+            );
+            out.push_str(
+                &h.e2e_hist
+                    .render_prometheus("memra_hybrid_e2e_seconds", &labels),
+            );
         }
     }
     out
@@ -7297,7 +7323,11 @@ async fn get_metrics(State(st): State<AppState>, headers: HeaderMap) -> Response
         // memra#522: content negotiation only, never a change to the JSON path above. The
         // `body` map is built and then discarded on this arm, so the JSON response for a
         // caller that does not ask for `text/plain` stays byte-for-byte what it was.
-        let text = render_prometheus_metrics(&m, &routes, &metrics_scope);
+        // The hybrid-lane per-model histograms (the batched central worker's own book,
+        // memra#522 follow-up to #896's dedicated-route histograms) are read here only:
+        // like `routes`, they never enter the JSON body.
+        let hybrid = hybrid_telemetry::all();
+        let text = render_prometheus_metrics(&m, &routes, &hybrid, &metrics_scope);
         return (
             [(
                 axum::http::header::CONTENT_TYPE,
@@ -8420,6 +8450,9 @@ fn build_request_with_trace(
         step_images: Vec::new(),
         vision_memory: None,
         wire_deadline: None, // stamped by the handler at submission (with request_id)
+        // memra#522: the hybrid-lane queue-wait histogram's start. Every raw-prompt
+        // request enters the worker's admission queue right after this builder returns.
+        queued_at: std::time::Instant::now(),
         route_ticket: None,
         ttft,
         tx,
@@ -8927,6 +8960,9 @@ fn build_chat_request_with_trace(
             capture: None, // set only by the embeddings/rerank routes
             vision_memory: None,
             wire_deadline: None, // stamped by the handler at submission (with request_id)
+            // memra#522: the hybrid-lane queue-wait histogram's start, same convention as
+            // the raw-prompt builder above.
+            queued_at: std::time::Instant::now(),
             route_ticket: None,
             ttft,
             tx,
@@ -19514,8 +19550,12 @@ default_reasoning_effort = "always"
                 route.snapshot()
             })
             .collect::<Vec<_>>();
-        let text =
-            render_prometheus_metrics(&worker::Metrics::default(), &routes, &MetricsScope::All);
+        let text = render_prometheus_metrics(
+            &worker::Metrics::default(),
+            &routes,
+            &[],
+            &MetricsScope::All,
+        );
         let families = [
             ("memra_route_requests_total", "counter"),
             ("memra_route_tokens_out_total", "counter"),
@@ -19585,6 +19625,80 @@ default_reasoning_effort = "always"
                 );
             }
         }
+    }
+
+    /// memra#522 follow-up to PR #896: the HYBRID lane's own queue-wait/TTFT/E2E
+    /// histograms move for a request served through the real completions handler on a
+    /// model with NO dedicated route (the fake worker's default "m", exactly what
+    /// `route_telemetry::lookup` returns `None` for), and show up in the Prometheus text
+    /// exposition under `memra_hybrid_*`, labeled by model rather than by route.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: the admission counters guard serializes this test against its route-reading peers
+    async fn a_fake_hybrid_request_moves_its_histograms_and_the_prometheus_exposition() {
+        let _counters = admission_counters_guard();
+        let mut st = fake_worker_state_with_steps(3, std::time::Duration::ZERO);
+        // A model-specific name, never shared with another test (`hybrid_telemetry`, like
+        // `route_telemetry`, is a process-global registry that never resets between tests
+        // in the same binary run).
+        st.models = Arc::new(vec!["t522-fake-hybrid".into()]);
+        assert!(
+            route_telemetry::lookup("t522-fake-hybrid").is_none(),
+            "no route is registered for this model: this test is specifically about the \
+             hybrid lane, the batched central worker's own book"
+        );
+        let resp = completions(
+            State(st.clone()),
+            HeaderMap::new(),
+            None,
+            Json(
+                serde_json::from_value(json!({"model": "t522-fake-hybrid", "prompt": "t"}))
+                    .unwrap(),
+            ),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let snap = hybrid_telemetry::all()
+            .into_iter()
+            .find(|s| s.model == "t522-fake-hybrid")
+            .expect("the hybrid lane registered a book for this model");
+        assert_eq!(
+            snap.queue_wait_hist.count, 1,
+            "the served request records one queue-wait sample"
+        );
+        assert_eq!(
+            snap.ttft_hist.count, 1,
+            "the served request records one ttft sample"
+        );
+        assert_eq!(
+            snap.e2e_hist.count, 1,
+            "the served request records one E2E sample"
+        );
+
+        // The dedicated-route histograms stay untouched: this request never crossed a route.
+        assert!(route_telemetry::lookup("t522-fake-hybrid").is_none());
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::ACCEPT,
+            "text/plain;version=0.0.4".parse().unwrap(),
+        );
+        let prom_resp = get_metrics(State(st.clone()), headers).await;
+        assert_eq!(prom_resp.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(prom_resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let text = String::from_utf8(bytes.to_vec()).unwrap();
+        assert!(text.contains("memra_hybrid_queue_wait_seconds_count{model=\"t522-fake-hybrid\"}"));
+        assert!(text.contains("memra_hybrid_ttft_seconds_count{model=\"t522-fake-hybrid\"}"));
+        assert!(text.contains("memra_hybrid_e2e_seconds_count{model=\"t522-fake-hybrid\"} 1"));
+        assert!(text.contains("le=\"+Inf\""));
+
+        // Unchanged JSON body: the hybrid histograms never enter it, same contract as the
+        // route histograms (memra#896).
+        let json_resp = get_metrics(State(st.clone()), HeaderMap::new()).await;
+        let json_body = body_value(json_resp).await;
+        assert!(json_body.get("hybrid").is_none());
     }
 
     /// A fake DSv4-shaped route whose worker runs the route's real memory door
@@ -22465,6 +22579,17 @@ temperature = 0.6
                 if let (Some(l), Some(ticket)) = (&route, req.route_ticket.as_ref()) {
                     l.record_wait(ticket.waited());
                 }
+                // memra#522 hybrid-lane twin: a model with NO dedicated route is exactly the
+                // batched central worker's hybrid lane. Mirror `admit`'s queue-wait record
+                // (arrival `req.queued_at` to this admission instant) and stamp `admit_at`
+                // for the ttft/e2e mirrors below (the fake worker's stand-in for `Session::t0`).
+                let admit_at = std::time::Instant::now();
+                if route.is_none() {
+                    hybrid_telemetry::record_queue_wait(
+                        &req.model,
+                        admit_at.saturating_duration_since(req.queued_at),
+                    );
+                }
                 worker::release_request_reservation(&mut req);
                 if let Some(run) = route_run.as_mut() {
                     run.admit();
@@ -22494,6 +22619,11 @@ temperature = 0.6
                 for step in 0..steps {
                     h.beat_busy();
                     let text = if steps == 1 { "ok" } else { "x" };
+                    // memra#522 hybrid-lane twin: mirror `push_generated`'s first-token TTFT
+                    // record, admission (`admit_at`) to this session's first committed token.
+                    if route.is_none() && step == 0 {
+                        hybrid_telemetry::record_ttft(&req.model, admit_at.elapsed());
+                    }
                     let _ = req.tx.send(Event::Token {
                         id: step as u32 + 1,
                         text: text.into(),
@@ -22510,6 +22640,13 @@ temperature = 0.6
                         n_cached: 0,
                         rounds: steps,
                     });
+                } else {
+                    // memra#522 hybrid-lane twin: mirror the retire loop's success-only E2E
+                    // record. This fake worker models only the success path (it never fails
+                    // or aborts a request), which is exactly why the RED ARM for "a failure
+                    // never reaches record_e2e" is proved at the primitive/module level in
+                    // `hybrid_telemetry`'s own tests rather than by faking a failure here.
+                    hybrid_telemetry::record_e2e(&req.model, admit_at.elapsed());
                 }
                 let _ = req.tx.send(Event::Done {
                     stop_reason: "Eos".into(),
