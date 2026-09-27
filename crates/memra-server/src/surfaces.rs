@@ -82,6 +82,20 @@ pub(crate) fn authenticate_candidates(
 /// wait -> admission peek. Every rejection settles its receipt through `ledger_rejected`
 /// (same status/error-code rows the chat surface writes) and returns the OpenAI-shaped
 /// response for the surface to reshape.
+///
+/// `background` (memra#550, `docs/decisions/COMPLETE-RESULT-PATH-V1.md`): true only for a
+/// `/v1/responses` request the caller is submitting for background delivery
+/// (`responses_api::handle_background_submit`). `/v1/messages` always passes `false`.
+/// Admission budget/capacity checks run exactly as they do for a synchronous request; what
+/// `background` changes is the two places that otherwise treat this as a 90s-bounded
+/// blocking call: the non-stream deadline-feasibility gate (`nonstream_deadline_gate`,
+/// which already skips itself for `stream: true`: a background job is not streaming
+/// either, but the reason to skip is the same one, no total-wall-clock bound applies) and
+/// `plan.request.wire_deadline`, left `None` so the worker's own first-token deadline gate
+/// (`worker.rs`'s `first_token_deadline_gate_on` check, which already no-ops on `None`)
+/// does not fail a background job that legitimately queues behind a backlog past 90s.
+/// revuto caught this on the route-wiring PR: without it, exactly the >90s generations
+/// background mode exists to serve were refused before ever reaching the new routes.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn admit_translated(
     st: &AppState,
@@ -92,6 +106,7 @@ pub(crate) async fn admit_translated(
     route: &'static str,
     ttft: Option<std::sync::Arc<crate::ttft::Trace>>,
     body_admission: Option<&crate::BodyAdmissionGuard>,
+    background: bool,
 ) -> Result<Admission, Response> {
     let cache_ns = match crate::tenant_namespace(tenant, &req.cache_salt) {
         Ok(ns) => ns,
@@ -100,7 +115,11 @@ pub(crate) async fn admit_translated(
     // Request deadline (lane/deadline-billing): the ONE `parse_timeout_ms` body every
     // surface validates through; the translators pass the field through untouched so a
     // wrong type or range refuses HERE with the same named 400 as the chat surface.
-    let deadline = match crate::parse_timeout_ms(req.timeout_ms.as_ref(), req.stream) {
+    // A background submission validates against the STREAMING range/default: it carries
+    // no total-wall-clock meaning here (see the function doc), the same way a stream's
+    // declared `timeout_ms` never bounds more than time-to-first-token.
+    let deadline_stream_like = req.stream || background;
+    let deadline = match crate::parse_timeout_ms(req.timeout_ms.as_ref(), deadline_stream_like) {
         Ok(ms) => crate::RequestDeadline::starting_now(ms),
         Err(msg) => return Err(crate::bad_request(&msg, Some("timeout_ms"))),
     };
@@ -167,7 +186,15 @@ pub(crate) async fn admit_translated(
     };
     plan.request.cache_ns = cache_ns;
     plan.request.request_id = env.id.clone();
-    plan.request.wire_deadline = Some(deadline.at.into_std());
+    // `None` for a background job: no HTTP-side component enforces this deadline for a
+    // background submission (the spawned task in `responses_api::run_background_job` has
+    // no wall-clock bound by design), and leaving it `Some` would let the worker's own
+    // first-token gate fail a job that legitimately queues behind a backlog past 90s.
+    plan.request.wire_deadline = if background {
+        None
+    } else {
+        Some(deadline.at.into_std())
+    };
     if let Err((message, param)) = crate::apply_model_request_limits(
         &mut plan.request,
         md.models.get(&model),
@@ -184,7 +211,7 @@ pub(crate) async fn admit_translated(
     // surfaces while its own comment claimed otherwise.
     if let Err(msg) = crate::nonstream_deadline_gate(
         &plan.request,
-        stream,
+        stream || background,
         deadline,
         declared_max_tokens,
         st.budget_tokenizers

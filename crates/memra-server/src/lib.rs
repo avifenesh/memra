@@ -22816,6 +22816,64 @@ temperature = 0.6
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 
+    /// revuto's finding on the first version of this lane: admission still ran the
+    /// synchronous non-stream deadline-feasibility gate against a `background: true`
+    /// submission, so exactly the >90 s generations background delivery exists to serve
+    /// were refused before ever reaching the new routes. `max_output_tokens: 200000` against
+    /// the 60 tok/s decode floor estimates ~3333 s, which does not fit the default 90 s
+    /// deadline even at the gate's 150% margin: infeasible under the OLD code path.
+    #[tokio::test]
+    async fn background_bypasses_the_nonstream_deadline_feasibility_gate() {
+        let _l = drain_lock();
+        let _env_lock = background_env_lock();
+        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
+
+        let st = fake_worker_state();
+        let resp = responses_api::responses(
+            State(st),
+            axum::http::HeaderMap::new(),
+            None,
+            axum::body::Bytes::from(
+                json!({
+                    "model": "m", "input": "hi", "background": true,
+                    "max_output_tokens": 200_000,
+                })
+                .to_string(),
+            ),
+        )
+        .await;
+        let status = resp.status();
+        let body = body_value(resp).await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "a background submission must not be refused by the synchronous \
+             deadline-feasibility gate: {body}"
+        );
+        assert_eq!(body["status"], "queued");
+    }
+
+    /// The control half of the test above: the SAME shape, without `background: true`,
+    /// must still be refused by the gate. The fix is background-specific, not a global
+    /// weakening of the feasibility check.
+    #[tokio::test]
+    async fn nonstream_deadline_gate_still_refuses_the_same_shape_without_background() {
+        let _l = drain_lock();
+        let st = fake_worker_state();
+        let resp = responses_api::responses(
+            State(st),
+            axum::http::HeaderMap::new(),
+            None,
+            axum::body::Bytes::from(
+                json!({"model": "m", "input": "hi", "max_output_tokens": 200_000}).to_string(),
+            ),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let body = body_value(resp).await;
+        assert_eq!(body["error"]["code"], "nonstream_deadline_infeasible");
+    }
+
     fn fake_worker_state() -> AppState {
         fake_worker_state_with_steps(1, std::time::Duration::ZERO)
     }

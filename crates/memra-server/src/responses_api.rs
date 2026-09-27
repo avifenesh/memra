@@ -713,6 +713,7 @@ async fn responses_with_admission(
         body_admission
             .as_ref()
             .map(|Extension(admission)| admission),
+        background_requested,
     )
     .await;
     let admission = match admitted {
@@ -1027,6 +1028,43 @@ async fn handle_background_submit(
 /// ledger with the new `cancelled` outcome instead of a deadline one. Exactly one terminal
 /// `JobStore::put` happens on every path out of this function, matching the exactly-one
 /// terminal ledger row the `Receipt` calls below already guarantee.
+///
+/// Write a job's terminal state, falling back to a small `Failed` record if the primary
+/// write is refused. `InMemoryJobStore::put` re-checks its byte cap on every update, so a
+/// large `Completed`/`Incomplete`/`Cancelled` body can be refused even though the tiny
+/// `Queued` placeholder that minted the id fit under the same cap. Swallowing that error
+/// (the first version of this lane did) leaves the job stuck `InProgress` forever: the
+/// receipt has already billed the caller, `GET` answers `in_progress` forever, and the TTL
+/// sweep never evicts it because `finished_at` is stamped only by a successful terminal
+/// write. The fallback record is small enough to always fit, so it keeps the "exactly one
+/// terminal `JobStore` row" guarantee even when the real output could not be buffered.
+fn finalize_terminal_job(
+    store: &dyn crate::metering::JobStore,
+    id: &str,
+    record: crate::metering::JobRecord,
+) {
+    if store.put(id, record).is_err() {
+        let _ = store.put(
+            id,
+            crate::metering::JobRecord {
+                status: crate::metering::JobStatus::Failed,
+                output: None,
+                error: Some(
+                    "background job output could not be buffered (store capacity); the \
+                     result may already be billed but is not retrievable"
+                        .to_string(),
+                ),
+            },
+        );
+    }
+}
+
+/// Every terminal write here goes through [`finalize_terminal_job`] rather than a bare
+/// `put`, so a refused write (revuto's finding on the first version of this lane:
+/// `InMemoryJobStore::put` re-checks the byte cap on every update, so a large completed or
+/// cancelled body can be refused even though the `Queued` placeholder fit) cannot leave the
+/// job stuck `InProgress` forever: already billed, `GET` answering `in_progress` forever,
+/// never TTL-evicted because `finished_at` is only stamped on a SUCCESSFUL terminal put.
 #[allow(clippy::too_many_arguments)]
 async fn run_background_job(
     st: AppState,
@@ -1084,7 +1122,8 @@ async fn run_background_job(
                     Value::Null,
                     Value::Null,
                 );
-                let _ = st.job_store.put(
+                finalize_terminal_job(
+                    &*st.job_store,
                     &id,
                     JobRecord { status: JobStatus::Cancelled, output: Some(body), error: None },
                 );
@@ -1096,7 +1135,8 @@ async fn run_background_job(
                     if let Some(r) = receipt.as_mut() {
                         let _ = r.reject(500, "worker_channel_closed");
                     }
-                    let _ = st.job_store.put(
+                    finalize_terminal_job(
+                        &*st.job_store,
                         &id,
                         JobRecord {
                             status: JobStatus::Failed,
@@ -1119,7 +1159,8 @@ async fn run_background_job(
                                 "[ledger] ERROR: background job {id} prompt receipt failed: {err}"
                             );
                             let _ = r.reject(500, "request_ledger_unavailable");
-                            let _ = st.job_store.put(
+                            finalize_terminal_job(
+                                &*st.job_store,
                                 &id,
                                 JobRecord {
                                     status: JobStatus::Failed,
@@ -1141,7 +1182,8 @@ async fn run_background_job(
                                      failed: {err}"
                                 );
                                 let _ = r.reject(500, "request_ledger_unavailable");
-                                let _ = st.job_store.put(
+                                finalize_terminal_job(
+                                    &*st.job_store,
                                     &id,
                                     JobRecord {
                                         status: JobStatus::Failed,
@@ -1175,7 +1217,8 @@ async fn run_background_job(
                                 crate::engine_error_code(err.class),
                             );
                         }
-                        let _ = st.job_store.put(
+                        finalize_terminal_job(
+                            &*st.job_store,
                             &id,
                             JobRecord {
                                 status: JobStatus::Failed,
@@ -1194,7 +1237,8 @@ async fn run_background_job(
                                 "deadline_exceeded",
                             );
                         }
-                        let _ = st.job_store.put(
+                        finalize_terminal_job(
+                            &*st.job_store,
                             &id,
                             JobRecord {
                                 status: JobStatus::Failed,
@@ -1261,7 +1305,8 @@ async fn run_background_job(
                             Value::Null,
                             incomplete,
                         );
-                        let _ = st.job_store.put(
+                        finalize_terminal_job(
+                            &*st.job_store,
                             &id,
                             JobRecord { status: job_status, output: Some(body), error: None },
                         );
