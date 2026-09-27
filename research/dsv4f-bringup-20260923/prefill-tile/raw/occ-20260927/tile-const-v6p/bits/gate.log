@@ -1,0 +1,33 @@
+
+running 4 tests
+test prefill_dense_tile_is_the_gemv_loop_bit_for_bit ... DSV4_DENSE_TILE EXACT cases=106 shapes=9 widths=[33, 48, 64, 100, 256, 512] red_arm=1
+ok
+test prefill_dense_tile_timing ... TIMING dense m=512 n=1024 k=4096 rep=0 tile_ms=0.254 gemv_ms=0.589 speedup=2.32 tile_tflops=16.9
+TIMING dense m=512 n=1024 k=4096 rep=1 tile_ms=0.251 gemv_ms=0.578 speedup=2.30 tile_tflops=17.1
+TIMING dense m=512 n=32768 k=1024 rep=0 tile_ms=2.883 gemv_ms=8.674 speedup=3.01 tile_tflops=11.9
+TIMING dense m=512 n=32768 k=1024 rep=1 tile_ms=2.883 gemv_ms=8.676 speedup=3.01 tile_tflops=11.9
+TIMING dense m=512 n=4096 k=8192 rep=0 tile_ms=1.737 gemv_ms=2.792 speedup=1.61 tile_tflops=19.8
+TIMING dense m=512 n=4096 k=8192 rep=1 tile_ms=1.664 gemv_ms=2.653 speedup=1.59 tile_tflops=20.7
+TIMING dense m=512 n=512 k=4096 rep=0 tile_ms=0.128 gemv_ms=0.428 speedup=3.35 tile_tflops=16.8
+TIMING dense m=512 n=512 k=4096 rep=1 tile_ms=0.128 gemv_ms=0.433 speedup=3.39 tile_tflops=16.8
+TIMING dense m=512 n=2048 k=4096 rep=0 tile_ms=0.494 gemv_ms=1.050 speedup=2.13 tile_tflops=17.4
+TIMING dense m=512 n=2048 k=4096 rep=1 tile_ms=0.485 gemv_ms=1.049 speedup=2.16 tile_tflops=17.7
+ok
+test prefill_dots_tile_is_the_mrow_loop_bit_for_bit ... DSV4_DOTS_TILE EXACT cases=40
+ok
+test prefill_dots_tile_timing ... TIMING dots s=512 n=1024 k=4096 bf16=true rep=0 tile_ms=0.342 loop_ms=0.755 speedup=2.21
+TIMING dots s=512 n=1024 k=4096 bf16=true rep=1 tile_ms=0.339 loop_ms=0.755 speedup=2.22
+TIMING dots s=512 n=1024 k=4096 bf16=false rep=0 tile_ms=0.375 loop_ms=0.776 speedup=2.07
+TIMING dots s=512 n=1024 k=4096 bf16=false rep=1 tile_ms=0.374 loop_ms=0.779 speedup=2.08
+TIMING dots s=512 n=512 k=4096 bf16=true rep=0 tile_ms=0.179 loop_ms=0.591 speedup=3.30
+TIMING dots s=512 n=512 k=4096 bf16=true rep=1 tile_ms=0.178 loop_ms=0.591 speedup=3.32
+TIMING dots s=512 n=512 k=4096 bf16=false rep=0 tile_ms=0.195 loop_ms=0.592 speedup=3.04
+TIMING dots s=512 n=512 k=4096 bf16=false rep=1 tile_ms=0.195 loop_ms=0.592 speedup=3.04
+TIMING dots s=512 n=256 k=4096 bf16=true rep=0 tile_ms=0.099 loop_ms=0.591 speedup=5.96
+TIMING dots s=512 n=256 k=4096 bf16=true rep=1 tile_ms=0.099 loop_ms=0.591 speedup=5.97
+TIMING dots s=512 n=256 k=4096 bf16=false rep=0 tile_ms=0.110 loop_ms=0.607 speedup=5.53
+TIMING dots s=512 n=256 k=4096 bf16=false rep=1 tile_ms=0.109 loop_ms=0.604 speedup=5.53
+ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.67s
+

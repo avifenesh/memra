@@ -120,6 +120,12 @@ row, cells `raw/occ-20260927/cells-ttft.txt`, c1 greedy, 64 generated tokens):
 | greedy 32k TTFT p50 | 73,927 .. 73,935 ms | 60,965 .. 60,971 ms | **-17.5%** |
 | decode p50 at 8k | 74.56 .. 74.94 tok/s | 74.79 .. 75.02 tok/s | flat |
 
+The merged head folds the sweep knobs into constants and deletes the arms that lost: the table
+decode, the chunk passes, and the `-D` overrides (`tile-const-v6p/`). It compiles to the same 128
+registers, and the tile bit test is EXACT again. Its tile time is 244.0 .. 244.9 ms against the
+gated build's 244.0 .. 245.8 (order T T2 T2 T), and the long gate hash is still
+`fbce1a0492d69635`.
+
 Every request's text is identical in all six rows. Thermal: median power 260 .. 263 W (main)
 and 294 .. 299 W (lane) while the cards work, SM clock median 2392 .. 2422 MHz, max 54 C.
 
