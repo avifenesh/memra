@@ -19,5 +19,5 @@ for try in $(seq 1 60); do
   echo "$(date -u +%FT%TZ) ab-promote-cell rc=$rc" | tee -a "$R/progress.log"; break
 done
 python3 research/spill-a-20260919/day64-reading.py "$R" > "$R/reading-day64.log" 2>&1
-echo "$(date -u +%FT%TZ) reading rc=$? $(tail -1 "$R/reading-day64.log")" | tee -a "$R/progress.log"
+step_rc=$?; echo "$(date -u +%FT%TZ) reading rc=$step_rc $(tail -1 "$R/reading-day64.log")" | tee -a "$R/progress.log"
 echo "$(date -u +%FT%TZ) driver-done" | tee -a "$R/progress.log"

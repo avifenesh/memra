@@ -1,0 +1,46 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-spill-a-i69/crates/memra-engine)
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-spill-a-i69/crates/memra-server)
+warning: method `purge_scrub` is never used
+    --> crates/memra-server/src/worker.rs:9693:8
+     |
+9059 | impl HostPrefixCache {
+     | -------------------- method in this implementation
+...
+9693 |     fn purge_scrub(&self) {
+     |        ^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `scrub` is never used
+    --> crates/memra-server/src/worker.rs:9780:8
+     |
+9767 | impl HostStaging {
+     | ---------------- method in this implementation
+...
+9780 |     fn scrub(&mut self) -> (usize, u64) {
+     |        ^^^^^
+
+warning: `memra-server` (lib test) generated 2 warnings
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 17.49s
+     Running unittests src/lib.rs (/home/avifenesh/projects/wt-spill-a/target/debug/deps/memra_server-b7880578d97a1c04)
+
+running 1 test
+test worker::tests::day69_the_purge_ends_with_the_pool_drain_and_the_staging_zero ... FAILED
+
+failures:
+
+---- worker::tests::day69_the_purge_ends_with_the_pool_drain_and_the_staging_zero stdout ----
+
+thread 'worker::tests::day69_the_purge_ends_with_the_pool_drain_and_the_staging_zero' (4152191) panicked at crates/memra-server/src/worker.rs:55299:55:
+the purge scrubs
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::day69_the_purge_ends_with_the_pool_drain_and_the_staging_zero
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 969 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-server --lib`

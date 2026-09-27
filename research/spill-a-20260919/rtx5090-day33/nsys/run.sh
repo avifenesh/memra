@@ -27,7 +27,7 @@ for tag in d33t d32; do
   for _ in $(seq 1 30); do curl -s --max-time 2 "http://127.0.0.1:$PORT/v1/models" >/dev/null 2>&1 && { ready=1; break; }; kill -0 $NPID 2>/dev/null || break; sleep 2; done
   if [ $ready = 1 ]; then
     python3 research/spill-a-20260919/stall_cell.py --port $PORT --mode promote --n 2 --server-log $OUT/$tag-server.log --out $OUT/$tag-stall --tag nsys-$tag > $OUT/$tag-stall.log 2>&1
-    echo "$(date -u +%FT%TZ) $tag stall rc=$?" >> $OUT/run.log
+    step_rc=$?; echo "$(date -u +%FT%TZ) $tag stall rc=$step_rc" >> $OUT/run.log
   else
     echo "$(date -u +%FT%TZ) $tag NOT READY within 60 s; stopped" >> $OUT/run.log
   fi

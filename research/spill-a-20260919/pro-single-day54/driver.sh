@@ -28,5 +28,5 @@ cell pause-cell 3600 $D/pause.sh @COLLECTOR_LOCK_FD@
 cell census-cell 7200 $D/census.sh @COLLECTOR_LOCK_FD@
 bash $D/hitgate.sh >> "$R/progress.log" 2>&1
 python3 research/spill-a-20260919/day54-reading.py "$R" > "$R/reading-day54.log" 2>&1
-echo "$(date -u +%FT%TZ) reading rc=$? $(tail -1 "$R/reading-day54.log")" | tee -a "$R/progress.log"
+step_rc=$?; echo "$(date -u +%FT%TZ) reading rc=$step_rc $(tail -1 "$R/reading-day54.log")" | tee -a "$R/progress.log"
 echo "$(date -u +%FT%TZ) driver-done" | tee -a "$R/progress.log"

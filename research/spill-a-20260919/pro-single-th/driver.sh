@@ -28,5 +28,5 @@ cell ab-chain-cell 10800 $D/ab.sh @COLLECTOR_LOCK_FD@ chain
 cell ab-promote-cell 10800 $D/ab.sh @COLLECTOR_LOCK_FD@ promote
 cell hump-cell 3600 $D/hump.sh @COLLECTOR_LOCK_FD@
 python3 research/spill-a-20260919/th-reading.py "$R" > "$R/reading-th.log" 2>&1
-echo "$(date -u +%FT%TZ) reading rc=$? $(tail -1 "$R/reading-th.log")" | tee -a "$R/progress.log"
+step_rc=$?; echo "$(date -u +%FT%TZ) reading rc=$step_rc $(tail -1 "$R/reading-th.log")" | tee -a "$R/progress.log"
 echo "$(date -u +%FT%TZ) driver-done" | tee -a "$R/progress.log"

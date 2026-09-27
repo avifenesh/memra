@@ -1,0 +1,103 @@
+diff --git a/crates/memra-engine/src/tier_transfer.rs b/crates/memra-engine/src/tier_transfer.rs
+index 29159282f..a18e889ec 100644
+--- a/crates/memra-engine/src/tier_transfer.rs
++++ b/crates/memra-engine/src/tier_transfer.rs
+@@ -5665,6 +5665,98 @@ mod tests {
+         assert_eq!(gov.borrow().used().pinned, 0);
+     }
+ 
++    /// WP-A day 70 (`DAY70.md` section 1, the placement, on L' as merged in integ69): short-prefix
++    /// residents at one budget of LENGTH, the pool full of other-class idle backings, the staging
++    /// set's charge, then a short demote. L' charges each lease its class (alloc_host_kind's
++    /// `request.bytes.pinned = class as u64`, pinned by DAY63's census) on the server's 3-budget
++    /// pinned ledger; main charges the length on a 2-budget ledger with no pool.
++    #[test]
++    fn day70_place_the_class_charge_refuses_a_demote_main_admits() {
++        use memra_tier::tier::governor::Governor;
++        const MIB: usize = 1 << 20;
++        let budget = 64 * MIB;
++        let ledger = |pinned: usize| -> SharedBudget {
++            let cap = TierBudget {
++                version: 1,
++                device: vec![0],
++                peer: vec![0],
++                replicas: vec![0],
++                pinned: pinned as u64,
++                pageable: 0,
++                staging: 0,
++                loaders: 4,
++                inflight: 4,
++                nvme: 0,
++            };
++            Rc::new(RefCell::new(
++                Governor::new(cap, TierBudget::zero(1), 4, 0, Arc::new(|| 0)).unwrap(),
++            ))
++        };
++        let charge = |gov: &SharedBudget, bytes: usize| {
++            let mut r = request();
++            r.bytes.pinned = bytes as u64;
++            gov.borrow_mut().reserve(&r)
++        };
++        let plane = 600 * 1024; // a short prefix's K or V plane: class 1 MiB
++        assert_eq!(lease_class(plane), MIB);
++        let residents = budget / plane; // 109 planes: 63.9 MiB of length, at one budget
++        let staging = 8 * MIB;
++        let demote = 16; // a short entry's planes
++        // L' as merged: the 3-budget ledger, the pool capped at one budget.
++        let gov = ledger(3 * budget);
++        let pool: LeasePool<StandIn> = LeasePool::new(gov.clone());
++        pool.cap.set(budget as u64);
++        let freed = Rc::new(Cell::new(0));
++        for _ in 0..16 {
++            // earlier long entries' 4 MiB-class backings, idle: `take` matches the exact class only
++            pool.put(
++                StandIn {
++                    class: 4 * MIB,
++                    bytes: Vec::new(),
++                    freed: freed.clone(),
++                },
++                pool.epoch(),
++            );
++        }
++        assert_eq!(pool.idle_bytes.get(), budget as u64, "the pool full");
++        let held: Vec<_> = (0..residents)
++            .map(|_| charge(&gov, lease_class(plane)).unwrap())
++            .collect();
++        let _staging = charge(&gov, staging).unwrap();
++        let mut refused = None;
++        for i in 0..demote {
++            if let Err(e) = charge(&gov, lease_class(plane)) {
++                refused = Some((i, e));
++                break;
++            }
++        }
++        eprintln!(
++            "DAY70 PLACE L': residents {residents} x {plane} B = {} B of length charged {} B; pool idle {} B; \
++             staging {staging} B; ledger {} of {} B; the demote's lease refused at {:?}",
++            residents * plane,
++            residents * MIB,
++            pool.idle_bytes.get(),
++            gov.borrow().used().pinned,
++            3 * budget,
++            refused
++        );
++        assert_eq!(refused.map(|(_, e)| e), Some(Error::Capacity), "L' refuses the demote");
++        drop(held);
++        // Main: the length charge on the 2-budget ledger, no pool.
++        let gov = ledger(2 * budget);
++        let held: Vec<_> = (0..residents).map(|_| charge(&gov, plane).unwrap()).collect();
++        let _staging = charge(&gov, staging).unwrap();
++        let admitted: Vec<_> = (0..demote).map(|_| charge(&gov, plane)).collect();
++        eprintln!(
++            "DAY70 PLACE main: every demote lease admitted: {}; ledger {} of {} B",
++            admitted.iter().all(|a| a.is_ok()),
++            gov.borrow().used().pinned,
++            2 * budget
++        );
++        assert!(admitted.iter().all(|a| a.is_ok()), "main admits the same sequence");
++        drop(held);
++    }
++
+     /// WP-A day 69 (`DAY69.md` design P, cell (b), CPU census): the allocation records the pool's
+     /// epoch and the drop hands it to `put`; `put` parks only in the current epoch; `drain`
+     /// advances the epoch before it frees and `close` is the drain with the pool closed.
