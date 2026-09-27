@@ -1,0 +1,12 @@
+# DAY89 local GPU check (the development host's RTX 5090 under its lock): the door at p88 (run-gen-p88 = 0155bc69f) and at I24 (run-gen-i24 = 1fd4b24c0), 32 tokens each, order p88, i24, i24, p88; raw logs in check/
+d45296c7db2ac2b5720889e35bd4e9c39b6c5f98319e7fe86b33699d9eabe426  /home/avifenesh/projects/wt-spill-c/target/c-bins/run-gen-p88
+47696bf77978482c87a5797f3efe5c79ab342da6e6b9e6f9ba0c1054ada7b2b4  /home/avifenesh/projects/wt-spill-c/target/c-bins/run-gen-i23
+d298553f1b26da560fbe50c48736791a460a8ef0e1acfc6aa4c74dec05d9628e  /home/avifenesh/projects/wt-spill-c/target/c-bins/run-gen-i24
+p88-a rc=0 MATCH generated 32 tokens in 0.360s window: 32 decode steps in 0.311s trace=4bdc2610c3534e42 lines=22077
+i24-a rc=0 MATCH generated 32 tokens in 0.368s window: 32 decode steps in 0.319s trace=4bdc2610c3534e42 lines=22077
+i24-b rc=0 MATCH generated 32 tokens in 0.359s window: 32 decode steps in 0.313s trace=4bdc2610c3534e42 lines=22077
+p88-b rc=0 MATCH generated 32 tokens in 0.400s window: 32 decode steps in 0.322s trace=4bdc2610c3534e42 lines=22077
+i24-a: the same tape and the same host demand sequence as p88-a
+i24-b: the same tape and the same host demand sequence as p88-a
+p88-b: the same tape and the same host demand sequence as p88-a
+DAY89 GPU CHECK PASS

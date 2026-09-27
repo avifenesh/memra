@@ -147,3 +147,30 @@ following; GitHub CI runs the rest.
   `d298553f...`, beside `run-gen-p88`.
 - **Queue v21** (`rtx5090-queue-v21-20260927.sh`): dry-checked under stubs (`day89-cpu/dry-check-queue.log`: 64 runs in
   the registered order, both readers run), and launched at 21:16Z. It waits for the card, which lane B's server holds.
+
+## 4. Queue v21 read as registered (2026-09-27, 21:41Z to 22:01Z; `rtx5090-day89/`)
+
+v21 held the card after lanes B and F had it: 21:16Z to 21:41Z waiting, then 64 runs. Binaries: `run-gen-p88`
+`d45296c7...`, `run-gen-i23` `47696bf7...`, `run-gen-i24` `d298553f...`.
+
+**The check** (`check/reading.log`): `DAY89 GPU CHECK PASS`. Every run is `MATCH`, and I24 reads p88's tape and host
+demand sequence (`4bdc2610c3534e42`, 22077 lines) in both orders.
+
+**The split** (`split24/reading.log`): `DAY83 SPLIT CHECKS rig=rtx5090 runs=60 integrity=ok`. Verbatim:
+- `DAY89 SPLIT rig=rtx5090 p88s generate N=10 door-only leaves summed=323.7 us per token`
+- `DAY89 SPLIT rig=rtx5090 i23s generate N=10 door-only leaves summed=292.3 us per token`
+- `DAY89 SPLIT rig=rtx5090 i24s generate N=10 door-only leaves summed=281.2 us per token`
+- `DAY89 CHANGE rig=rtx5090 generate i23s minus p88s: -31.3 us per token`
+- `DAY89 CHANGE rig=rtx5090 generate i24s minus i23s: -11.1 us per token`
+- `DAY89 SIZING rig=rtx5090 generate door-only change p88s->i24s=-42.4 us per token, threshold -155 -> short`
+- `DAY89 BESIDE rig=rtx5090 generate pf_retire without the stage clock (us per token, medians): p88d=58.2 i23d=51.1
+  i24d=46.3`
+- The window: -15.7 (I23) and -3.3 (I24), -19.1 together.
+
+**Read as registered: the cuts are short.** Together they remove 42.4 us per generated token against the 155 the rule
+asks, so the next candidates register before any card (`DAY91.md`).
+- **I23** takes 31.3: the reserve (`bank_stage_charge` -22.6) and the release inside the acknowledgement (`bank_ack`
+  -7.2).
+- **I24** takes 11.1: `bank_publish_policy` -4.4, `retire_outer` -3.2, `dispatch_inner` -1.7, `bank_host_use` -1.2.
+- **Without the stage clock**, the prefetch path's retire falls from 58.2 to 46.3 us per token (-20 percent). The
+  stage clock's own settle and brackets add about 22 us to it (`p88s` 80.5 against `p88d` 58.2).

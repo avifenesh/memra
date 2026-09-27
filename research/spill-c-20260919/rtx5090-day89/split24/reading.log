@@ -1,0 +1,56 @@
+DAY83 SPLIT CHECKS rig=rtx5090 runs=60 integrity=ok
+DAY83 SPLIT p88s generate N=10 tickets=2443.0 prefetched_blocks=6007.0 dispatch_misses=440.0 (us per generated token, medians)
+DAY83 SPLIT p88s generate leaves: outer=45.7 dispatch_inner=39.3 own_trace=15.6 bank_stage_lookup=2.4 bank_stage_cache=40.9 bank_stage_charge=38.5 stage_rest=13.5 bank_publish_output=2.7 bank_publish_policy=21.1 publish_rest=5.0 pf_resident=11.0 bank_host_use=3.4 bank_retire_only=0.9 bank_ack=28.1 bank_collect=1.2 retire_outer=54.4
+DAY83 SPLIT p88s generate beside: pf_demand=194.3 pf_resident=11.0 pf_retire=80.5 pf_stage=500.1 own_inner_demand=163.8 bank_stage=95.5 bank_publish=28.7 bank_retire=32.3 eng_demand=31.8
+DAY83 SPLIT i23s generate N=10 tickets=2443.0 prefetched_blocks=6007.0 dispatch_misses=440.0 (us per generated token, medians)
+DAY83 SPLIT i23s generate leaves: outer=46.2 dispatch_inner=39.5 own_trace=16.2 bank_stage_lookup=3.0 bank_stage_cache=36.9 bank_stage_charge=15.8 stage_rest=13.1 bank_publish_output=2.8 bank_publish_policy=21.2 publish_rest=5.0 pf_resident=11.1 bank_host_use=3.4 bank_retire_only=0.9 bank_ack=20.9 bank_collect=1.3 retire_outer=55.0
+DAY83 SPLIT i23s generate beside: pf_demand=174.5 pf_resident=11.1 pf_retire=75.0 pf_stage=501.6 own_inner_demand=138.8 bank_stage=68.7 bank_publish=28.9 bank_retire=25.3 eng_demand=28.3
+DAY83 SPLIT i24s generate N=10 tickets=2443.0 prefetched_blocks=6007.0 dispatch_misses=440.0 (us per generated token, medians)
+DAY83 SPLIT i24s generate leaves: outer=46.5 dispatch_inner=37.9 own_trace=16.4 bank_stage_lookup=2.6 bank_stage_cache=38.4 bank_stage_charge=15.8 stage_rest=12.3 bank_publish_output=2.7 bank_publish_policy=16.7 publish_rest=4.0 pf_resident=11.0 bank_host_use=2.1 bank_retire_only=0.9 bank_ack=20.7 bank_collect=1.3 retire_outer=51.8
+DAY83 SPLIT i24s generate beside: pf_demand=167.0 pf_resident=11.0 pf_retire=70.5 pf_stage=502.0 own_inner_demand=130.5 bank_stage=69.3 bank_publish=23.5 bank_retire=23.7 eng_demand=27.4
+DAY83 SPLIT p88d generate N=10 tickets=None prefetched_blocks=6007.0 dispatch_misses=None (us per generated token, medians)
+DAY83 SPLIT p88d generate leaves: outer=- dispatch_inner=- own_trace=- bank_stage_lookup=- bank_stage_cache=- bank_stage_charge=- stage_rest=- bank_publish_output=- bank_publish_policy=- publish_rest=- pf_resident=11.0 bank_host_use=- bank_retire_only=- bank_ack=- bank_collect=- retire_outer=-
+DAY83 SPLIT p88d generate beside: pf_demand=174.2 pf_resident=11.0 pf_retire=58.2 pf_stage=500.9 own_inner_demand=- bank_stage=- bank_publish=- bank_retire=- eng_demand=-
+DAY83 SPLIT i23d generate N=10 tickets=None prefetched_blocks=6007.0 dispatch_misses=None (us per generated token, medians)
+DAY83 SPLIT i23d generate leaves: outer=- dispatch_inner=- own_trace=- bank_stage_lookup=- bank_stage_cache=- bank_stage_charge=- stage_rest=- bank_publish_output=- bank_publish_policy=- publish_rest=- pf_resident=11.0 bank_host_use=- bank_retire_only=- bank_ack=- bank_collect=- retire_outer=-
+DAY83 SPLIT i23d generate beside: pf_demand=145.3 pf_resident=11.0 pf_retire=51.1 pf_stage=498.4 own_inner_demand=- bank_stage=- bank_publish=- bank_retire=- eng_demand=-
+DAY83 SPLIT i24d generate N=10 tickets=None prefetched_blocks=6007.0 dispatch_misses=None (us per generated token, medians)
+DAY83 SPLIT i24d generate leaves: outer=- dispatch_inner=- own_trace=- bank_stage_lookup=- bank_stage_cache=- bank_stage_charge=- stage_rest=- bank_publish_output=- bank_publish_policy=- publish_rest=- pf_resident=11.3 bank_host_use=- bank_retire_only=- bank_ack=- bank_collect=- retire_outer=-
+DAY83 SPLIT i24d generate beside: pf_demand=149.0 pf_resident=11.3 pf_retire=46.3 pf_stage=503.9 own_inner_demand=- bank_stage=- bank_publish=- bank_retire=- eng_demand=-
+DAY83 SPLIT p88s window N=10 tickets=1065.0 prefetched_blocks=2835.0 dispatch_misses=120.0 (us per generated token, medians)
+DAY83 SPLIT p88s window leaves: outer=21.6 dispatch_inner=20.4 own_trace=6.8 bank_stage_lookup=1.1 bank_stage_cache=19.7 bank_stage_charge=18.8 stage_rest=6.2 bank_publish_output=1.1 bank_publish_policy=9.3 publish_rest=2.2 pf_resident=6.4 bank_host_use=1.5 bank_retire_only=0.4 bank_ack=12.8 bank_collect=0.6 retire_outer=22.4
+DAY83 SPLIT p88s window beside: pf_demand=96.4 pf_resident=6.4 pf_retire=35.9 pf_stage=243.6 own_inner_demand=78.6 bank_stage=45.7 bank_publish=12.6 bank_retire=14.7 eng_demand=10.5
+DAY83 SPLIT i23s window N=10 tickets=1065.0 prefetched_blocks=2835.0 dispatch_misses=120.0 (us per generated token, medians)
+DAY83 SPLIT i23s window leaves: outer=21.7 dispatch_inner=21.1 own_trace=7.1 bank_stage_lookup=1.3 bank_stage_cache=16.7 bank_stage_charge=6.9 stage_rest=6.0 bank_publish_output=1.1 bank_publish_policy=10.4 publish_rest=2.2 pf_resident=6.4 bank_host_use=1.6 bank_retire_only=0.4 bank_ack=9.4 bank_collect=0.6 retire_outer=22.5
+DAY83 SPLIT i23s window beside: pf_demand=85.5 pf_resident=6.4 pf_retire=33.6 pf_stage=242.3 own_inner_demand=65.6 bank_stage=30.9 bank_publish=13.6 bank_retire=11.4 eng_demand=9.3
+DAY83 SPLIT i24s window N=10 tickets=1065.0 prefetched_blocks=2835.0 dispatch_misses=120.0 (us per generated token, medians)
+DAY83 SPLIT i24s window leaves: outer=22.1 dispatch_inner=20.9 own_trace=7.1 bank_stage_lookup=1.3 bank_stage_cache=18.2 bank_stage_charge=7.0 stage_rest=5.8 bank_publish_output=1.1 bank_publish_policy=8.1 publish_rest=1.7 pf_resident=6.5 bank_host_use=1.0 bank_retire_only=0.4 bank_ack=9.4 bank_collect=0.6 retire_outer=20.8
+DAY83 SPLIT i24s window beside: pf_demand=85.0 pf_resident=6.5 pf_retire=30.8 pf_stage=244.3 own_inner_demand=64.7 bank_stage=32.8 bank_publish=10.9 bank_retire=10.8 eng_demand=9.4
+DAY83 SPLIT p88d window N=10 tickets=None prefetched_blocks=2835.0 dispatch_misses=None (us per generated token, medians)
+DAY83 SPLIT p88d window leaves: outer=- dispatch_inner=- own_trace=- bank_stage_lookup=- bank_stage_cache=- bank_stage_charge=- stage_rest=- bank_publish_output=- bank_publish_policy=- publish_rest=- pf_resident=6.4 bank_host_use=- bank_retire_only=- bank_ack=- bank_collect=- retire_outer=-
+DAY83 SPLIT p88d window beside: pf_demand=86.8 pf_resident=6.4 pf_retire=27.9 pf_stage=242.7 own_inner_demand=- bank_stage=- bank_publish=- bank_retire=- eng_demand=-
+DAY83 SPLIT i23d window N=10 tickets=None prefetched_blocks=2835.0 dispatch_misses=None (us per generated token, medians)
+DAY83 SPLIT i23d window leaves: outer=- dispatch_inner=- own_trace=- bank_stage_lookup=- bank_stage_cache=- bank_stage_charge=- stage_rest=- bank_publish_output=- bank_publish_policy=- publish_rest=- pf_resident=6.5 bank_host_use=- bank_retire_only=- bank_ack=- bank_collect=- retire_outer=-
+DAY83 SPLIT i23d window beside: pf_demand=72.6 pf_resident=6.5 pf_retire=24.8 pf_stage=244.8 own_inner_demand=- bank_stage=- bank_publish=- bank_retire=- eng_demand=-
+DAY83 SPLIT i24d window N=10 tickets=None prefetched_blocks=2835.0 dispatch_misses=None (us per generated token, medians)
+DAY83 SPLIT i24d window leaves: outer=- dispatch_inner=- own_trace=- bank_stage_lookup=- bank_stage_cache=- bank_stage_charge=- stage_rest=- bank_publish_output=- bank_publish_policy=- publish_rest=- pf_resident=6.4 bank_host_use=- bank_retire_only=- bank_ack=- bank_collect=- retire_outer=-
+DAY83 SPLIT i24d window beside: pf_demand=72.4 pf_resident=6.4 pf_retire=21.9 pf_stage=248.4 own_inner_demand=- bank_stage=- bank_publish=- bank_retire=- eng_demand=-
+DAY84 CHANGE rig=rtx5090 generate (i23s minus p88s, us per token, deciding nothing): outer=+0.5 dispatch_inner=+0.3 own_trace=+0.6 bank_stage_lookup=+0.5 bank_stage_cache=-4.0 bank_stage_charge=-22.6 stage_rest=-0.4 bank_publish_output=+0.1 bank_publish_policy=+0.1 publish_rest=+0.0 pf_resident=+0.1 bank_host_use=-0.1 bank_retire_only=-0.0 bank_ack=-7.2 bank_collect=+0.0 retire_outer=+0.6 pf_demand=-19.8 pf_retire=-5.5 pf_stage=+1.5
+DAY84 CHANGE rig=rtx5090 window (i23s minus p88s, us per token, deciding nothing): outer=+0.1 dispatch_inner=+0.7 own_trace=+0.3 bank_stage_lookup=+0.2 bank_stage_cache=-3.0 bank_stage_charge=-11.8 stage_rest=-0.2 bank_publish_output=+0.0 bank_publish_policy=+1.1 publish_rest=+0.0 pf_resident=-0.0 bank_host_use=+0.0 bank_retire_only=+0.0 bank_ack=-3.4 bank_collect=+0.1 retire_outer=+0.1 pf_demand=-10.9 pf_retire=-2.3 pf_stage=-1.3
+DAY84 CHANGE rig=rtx5090 generate (i24s minus i23s, us per token, deciding nothing): outer=+0.3 dispatch_inner=-1.7 own_trace=+0.2 bank_stage_lookup=-0.3 bank_stage_cache=+1.5 bank_stage_charge=+0.0 stage_rest=-0.9 bank_publish_output=-0.1 bank_publish_policy=-4.4 publish_rest=-1.0 pf_resident=-0.1 bank_host_use=-1.2 bank_retire_only=+0.0 bank_ack=-0.3 bank_collect=+0.0 retire_outer=-3.2 pf_demand=-7.5 pf_retire=-4.5 pf_stage=+0.3
+DAY84 CHANGE rig=rtx5090 window (i24s minus i23s, us per token, deciding nothing): outer=+0.4 dispatch_inner=-0.2 own_trace=+0.1 bank_stage_lookup=-0.0 bank_stage_cache=+1.5 bank_stage_charge=+0.1 stage_rest=-0.2 bank_publish_output=-0.0 bank_publish_policy=-2.3 publish_rest=-0.4 pf_resident=+0.1 bank_host_use=-0.6 bank_retire_only=+0.0 bank_ack=-0.0 bank_collect=-0.0 retire_outer=-1.8 pf_demand=-0.5 pf_retire=-2.8 pf_stage=+2.0
+DAY89 SPLIT rig=rtx5090 p88s generate N=10 door-only leaves summed=323.7 us per token
+DAY89 SPLIT rig=rtx5090 i23s generate N=10 door-only leaves summed=292.3 us per token
+DAY89 SPLIT rig=rtx5090 i24s generate N=10 door-only leaves summed=281.2 us per token
+DAY89 CHANGE rig=rtx5090 generate i23s minus p88s: -31.3 us per token
+DAY89 CHANGE rig=rtx5090 generate i24s minus i23s: -11.1 us per token
+DAY89 CHANGE rig=rtx5090 generate i24s minus p88s: -42.4 us per token
+DAY89 SIZING rig=rtx5090 generate door-only change p88s->i24s=-42.4 us per token, threshold -155 -> short
+DAY89 BESIDE rig=rtx5090 generate pf_retire without the stage clock (us per token, medians): p88d=58.2 i23d=51.1 i24d=46.3
+DAY89 SPLIT rig=rtx5090 p88s window N=10 door-only leaves summed=151.1 us per token
+DAY89 SPLIT rig=rtx5090 i23s window N=10 door-only leaves summed=135.3 us per token
+DAY89 SPLIT rig=rtx5090 i24s window N=10 door-only leaves summed=132.0 us per token
+DAY89 CHANGE rig=rtx5090 window i23s minus p88s: -15.7 us per token
+DAY89 CHANGE rig=rtx5090 window i24s minus i23s: -3.3 us per token
+DAY89 CHANGE rig=rtx5090 window i24s minus p88s: -19.1 us per token
+DAY89 BESIDE rig=rtx5090 window pf_retire without the stage clock (us per token, medians): p88d=27.9 i23d=24.8 i24d=21.9

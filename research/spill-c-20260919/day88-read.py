@@ -3,11 +3,13 @@
 registered before this script): each cell's integrity and admissibility, the registered readings (DAY61 section 2's
 rule, gen-only primary, the window beside), the startup walls beside them, and the phase's verdict.
 
-usage: day88-read.py <root holding promo/, promo-res/, promo-spec/> [--rig NAME] [--only promo-res]
+usage: day88-read.py <root holding promo/, promo-res/, promo-spec/> [--rig NAME] [--only promo-res] [--6a]
 
 Section 6a (the addendum, registered before any rerun): `promo-res` has no steady window by construction (no slot
 cache), so its admissibility is the gen-only IQR alone and its reading gen-only; `--only promo-res` reads a rerun of
-that cell on its own, with its own verdict line.
+that cell on its own, with its own verdict line. `--6a` (DAY91 section 2, registered before the I24 sitting) applies
+section 6a inside the full read: `promo-res` gen-only there too. Without it the full read reproduces the first
+sitting as it read (both keys).
 """
 import datetime
 import hashlib
@@ -245,8 +247,8 @@ def main():
             blocks.append("naked regresses against q22")
         if step[("legacy", "gen_s")] == "loses":
             blocks.append("naked loses to legacy")
-    # promo-res (as the first sitting read it: both keys)
-    blocks += read_resident(root, rig, ("gen_s", "window_s"))
+    # promo-res: as the first sitting read it (both keys), or under section 6a with --6a (gen-only)
+    blocks += read_resident(root, rig, ("gen_s",) if "--6a" in sys.argv else ("gen_s", "window_s"))
     # promo-spec
     ev = root / "promo-spec" / "ev"
     spec = {}
