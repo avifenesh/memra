@@ -86,6 +86,20 @@ Clauses:
 A server test pins the demand arithmetic: the ladder's maximum across rung edges, the rows rule, the plan's geometries
 (a sliding window caps its `t_kv`; MLA and GatedDeltaNet contribute nothing) and the byte figures of 1.3.
 
-### 1.5 Price
+### 1.5 Addendum A (2026-09-27, the runners as built, before either cell)
+
+- **The target card's cell runs through the lane's hold runner, not the collector.** The collector
+  (`tools/tier-battery.py`) takes the box lock non-blocking. A chain that waits for the lock and then starts the
+  collector loses the lock to any blocking taker woken by the release, which is the starvation DAY48 addendum D placed.
+  So `pro-single-day51/chain.sh` holds `/tmp/memra-gpu.lock` (`rig-hold.sh`), checks the card idle under the hold,
+  and runs `run-day28-cell.sh after` with `LOCK=none` and the hold's fd closed. The cell script, its client and parser,
+  the model, the shape and the clauses are 1.4's. The collector's `command.capture.json` is not produced; the cell's own
+  files are the receipts, as on the local card.
+- **The local cell** (`rtx5090-day51/run.sh`) builds the tree's release server under the CPU quota, then runs the same
+  way on `/tmp/memra-5090.lock`, with a 4 h bound on the hold and a 16 GB host floor.
+- **The target card as the twenty-first sitting** (`pro-single-b-sitting21.sh`, `S51 = 11ee6ed77`, receipts
+  `b-day51`): the 27B (sha256 `1facf36c...1e024a`) staged at `/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf`.
+
+### 1.6 Price
 
 Code and CPU tests about half an agent-day; the two cells about 10 minutes each plus builds.
