@@ -1,3 +1,7 @@
+# WP-B checkpoint 2026-09-27 01:3xZ: the fifteenth sitting (DAY46) queued on BOX43 behind integ70's battery; DAY50 stage 0
+built (`5d94e26ae`, the sixteenth sitting ready, the 5090 half running); DAY47 2.4 and DAY49 2.5 read (the 5090 halves);
+the lane goes into integ71: merge main in a separate worktree once integ70's sha lands (keep both behaviors), then fmt,
+clippy, the engine, kv, server and tier suites under the cap, and report the sha
 # WP-B checkpoint 2026-09-27 (NEED TARGET CARD on BOX43, the fifteenth sitting, DAY46): DAY44 2.1 read (exact: E1 0
 flips everywhere; E2 FAIL 8 of 24, TTFT); DAY50 pre-registered (the overlap revision, stage 0 first); DAY46 coded
 (client, reader, runner, chain; `15a6ec634`); integrable at 15a6ec634 (told the lead); the DAY46 local runner started
