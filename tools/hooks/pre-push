@@ -131,6 +131,8 @@ elif ! flags_out=$(tools/check-flags.sh 2>&1); then
     echo "pre-push: REFUSED — the MEMRA_* flags census is red (names listed above)." >&2
     echo "    Add a row for each name to docs/FLAGS.md and commit it WITH the read that" >&2
     echo "    introduced it; one prefix row (e.g. MEMRA_TCOL_*) covers a whole family." >&2
+    echo "    A row-shape violation (memra#127) keeps the current contract in the row and" >&2
+    echo "    moves the history to docs/FLAGS-HISTORY.md, linked from the row." >&2
     echo "    This is the check that reddened main three times on 2026-08-23 AFTER landing," >&2
     echo "    so every lane behind those commits paid for it — that is what this arm stops." >&2
     echo "    The census reads the WORKTREE: an uncommitted FLAGS row passes here and reds" >&2

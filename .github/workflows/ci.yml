@@ -126,7 +126,9 @@ jobs:
       # The flags census is a gate, so its own coverage needs a gate. v0.94.0 found
       # MEMRA_ALLOW_UNKNOWN_PRETOKENIZER invisible to check-flags on two independent counts
       # (crate outside runtime_dirs, const-indirected read); nothing ran the fix's tests, so
-      # nothing would notice the hole reopening.
+      # nothing would notice the hole reopening. check-flags.sh also runs the row-shape
+      # census (tools/flags-row-shape.py, memra#127: row length, default cell, one decide-by,
+      # FLAGS-HISTORY.md links), and this self-test carries one red arm per rule.
       - name: Flags census self-test
         run: |
           command -v rg >/dev/null || sudo apt-get install -y -q ripgrep
