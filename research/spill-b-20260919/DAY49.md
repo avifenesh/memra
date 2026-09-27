@@ -136,6 +136,14 @@ batched fire held a single session. The revision aims the fault. No clause of 1.
   the fault). Green and red read as addendum C registered them.
 - **Order:** the code and its CPU gates, then the 5090 (queue-l's items first), then the target card (BOX35, held).
 
+### 1.9 Addendum E (2026-09-27, the gate's default arm list, after 2.1 to 2.5)
+
+Arm i's verdict depends on where its unaimed fault lands. On the 27B that is a solo spec step (2.1, twice); on the 9B on
+the 5090 it is a 3-session batched chunk (2.5). A gate arm whose verdict depends on placement does not belong in the
+default list that local-ci and the integ batteries run. `tools/health-fault-gate.sh`'s default becomes
+`a,b,c,d,e,f,g,h,j`. Arm i stays runnable by name, and its receipts stay as they read. Arm j (addendum D) is the aimed
+form of the same check and passed four times on the target card (2.3). No clause changes.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.

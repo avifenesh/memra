@@ -5,7 +5,7 @@
 #   arm = keep | exact | offprev | fault   route = plain | spec   shape = RX | RXg (1,000 ms turn gap) | RX6 | RXg6
 #   The spec route runs every arm with MEMRA_SPEC_BUDGET_CLAMP=1; every boot with MEMRA_TTFT_TRACE=1.
 # env: WT, RIG_LOCK (/tmp/memra-5090.lock), BIN, PREV_BIN, MODEL, MODEL_KEY, BOOT_CTX (65536; empty = the checkpoint's),
-#      LENGTHS (6144,30720), NO_SCOPE.
+#      LENGTHS (6144,30720), NO_SCOPE, EXTERNAL_LOCK (1: the caller holds the rig lock).
 set -uo pipefail
 R=${1:?receipt root}; shift
 WT=${WT:-$HOME/projects/wt-spill-b}
@@ -16,14 +16,18 @@ LENGTHS=${LENGTHS:-6144,30720}
 cd "$WT" || exit 1
 mkdir -p "$R/boots"
 log() { echo "$(date -u +%FT%TZ) $*" >> "$R/run.log"; }
+# EXTERNAL_LOCK=1 (the integ battery, 2026-09-27): the caller already holds the rig lock on an inherited FD, so this
+# runner neither waits for the lock nor lets run-day26-cell.sh take it (LOCK=none); the compute-app and memory checks stay.
+EXTERNAL_LOCK=${EXTERNAL_LOCK:-0}
 idle() {
-  flock -n "$RIG_LOCK" true || return 1
+  [ "$EXTERNAL_LOCK" = 1 ] || flock -n "$RIG_LOCK" true || return 1
   [ -z "$(nvidia-smi --query-compute-apps=pid --format=csv,noheader)" ] || return 1
   [ "$(free -g | awk '/^Mem:/{print $7}')" -ge 24 ] || return 1
 }
 BOOT_CTX=${BOOT_CTX-65536}
 if [ -n "$BOOT_CTX" ]; then export MEMRA_CTX=$BOOT_CTX; else unset MEMRA_CTX; fi
-export LOCK=$RIG_LOCK RIGDIR="$R/boots" N=5 CLIENT=day44-client.py PARSER=day44-parse.py MEMRA_TIMEOUT_MS_MAX=3600000
+LOCK_FOR_CELL=$RIG_LOCK; [ "$EXTERNAL_LOCK" = 1 ] && LOCK_FOR_CELL=none
+export LOCK=$LOCK_FOR_CELL RIGDIR="$R/boots" N=5 CLIENT=day44-client.py PARSER=day44-parse.py MEMRA_TIMEOUT_MS_MAX=3600000
 for spec in "$@"; do
   IFS=: read -r name arm route shape <<< "$spec"
   uenv=(-u MEMRA_RESUME_GRID_REWIND -u MEMRA_RESUME_EXACT -u MEMRA_RESUME_EXACT_FAULT -u MEMRA_SPEC_BUDGET_CLAMP
@@ -61,7 +65,8 @@ for spec in "$@"; do
     "$(sha256sum "$B" | cut -d' ' -f1)" "${aenv[*]}" "$args" > "$R/boots/$name.arm.txt"
   env "${uenv[@]}" "${aenv[@]}" CLIENT_ARGS="$args" bash research/spill-b-20260919/run-day26-cell.sh "$name" AB "$B" \
     > "$R/boots/$name.launch.log" 2>&1
-  log "boot $name rc=$? $(tail -1 "$R/boots/$name/REPORT.txt" 2>/dev/null | cut -c1-160)"
+  rc=$?
+  log "boot $name rc=$rc $(tail -1 "$R/boots/$name/REPORT.txt" 2>/dev/null | cut -c1-160)"
   sleep "${YIELD_S:-5}" # the lane yields the card between cells when YIELD_S is set (lead, 2026-09-26)
 done
 log "boots done: $*"
