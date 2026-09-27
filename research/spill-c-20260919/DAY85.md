@@ -165,3 +165,19 @@ BOX41 sitting read the same +2 ms against a 1 ms term as `loses`); on the 9950X 
 So the gen-only gap is now one to two ticks of the printed resolution on both classes, from 9 to 10 ms at I15. The
 door's own clock: `pf_demand` 0.059 to 0.067 ms per window token (0.125 to 0.131 at I21, 0.150 at I20), `prefetch_ns`
 0.344 to 0.349 (0.513 at I20).
+
+## 3b. The local check and the in-situ split landed (queue v19, 2026-09-26 23:42Z to 23:49Z; `rtx5090-day85/`)
+
+After two hours behind other lanes' work on the card, queue v19 ran as registered (run-gen-i22 `e4d8e6d2...` from
+`4b378a064`, pinned to P-cores 0-7): `check/reading.log`: `DAY85 GPU CHECK PASS` (every run `MATCH`, I22's tape and host
+demand sequence are I21's in both orders). `split22/reading.log`: `DAY83 SPLIT CHECKS rig=rtx5090 runs=20
+integrity=ok`, then, verbatim: `DAY84 CHANGE rig=rtx5090 generate (i22s minus i21s, us per token, deciding nothing):
+outer=-0.1 dispatch_inner=-53.0 own_trace=+0.6 bank_stage_lookup=-6.6 bank_stage_cache=-64.0 bank_stage_charge=+0.3
+stage_rest=+0.0 bank_publish_output=-0.1 bank_publish_policy=-63.3 publish_rest=-0.0 pf_resident=-4.7
+bank_host_use=+0.1 bank_retire_only=-0.0 bank_ack=+2.7 bank_collect=-0.0 retire_outer=+0.6 pf_demand=-173.9
+pf_retire=+4.5 pf_stage=+9.0`.
+
+Read, deciding nothing: the four reads I22 moved lost 187 us per generated token together and, unlike I21's, the cost
+did not reappear in another leaf (the largest rise is `bank_ack` +2.7). At I22 the door-only leaves on this host sum to
+about 346 us per token (673 at I20), led by `retire_outer` 57.4 (the engine's retire walk and its event queries),
+`outer` 47.4, `bank_stage_charge` 43.2, `dispatch_inner` 42.3 and `bank_stage_cache` 39.8: no single leaf dominates now.
