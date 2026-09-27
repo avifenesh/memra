@@ -75,3 +75,40 @@ the other) produced different greedy bytes on a synthetic near-tie prompt, while
 solo on the spec route and solo on the plain route agree. The gate therefore pins the route, and the
 divergence is memra#641 with its raw receipts; it is recorded in the lane README, not decided
 here.
+
+## Addendum 2026-09-23: the saved-prime service interval (memra#521, PR #654)
+
+Question: with the walker yielding by default, a saved-prime chunk whose wall C is far above the
+decode SLO S (`MEMRA_SLO_P99_MS`, default 50 ms) still takes the worker for C on every advance, and
+two or more pending primes take turns back to back, so streaming decoders starve through the prime.
+
+Decided: one worker-wide recovery interval. A saved-prime chunk of cost C > S, while a decode peer is
+ready, opens an interval of C - S in which no saved prime advances; each peer keeps its committed
+spec round or plain decode step per tick; the least recently served prime has the first claim when it
+closes. The contract and its bounds are the `MEMRA_PRIME_YIELD` row in `docs/FLAGS.md`.
+
+Measured (`research/prime-service-20260923/`, `tools/prime-fairness-gate.py --shape service`, main
+`5f1b0eda4` against `e5167f577`, six boots per arm interleaved in both orders, one RTX PRO 6000
+Blackwell Server Edition with confidential computing on; two 4,096-token decoders streaming when a
+131k and then a 32k cold prime arrive, greedy, bars declared before the run):
+
+```
+PRIME-SERVICE: base=base cand=cand reps=6 bytes=yes rate=8.73/52.15 ev/s long_ttft=28.09/46.92s second_ttft=14.12/27.20s itl_p99=190/384ms engaged=yes -> PASS
+```
+
+- What it buys: the decoders' rate inside the 131k window 8.73 to 52.15 ev/s and inside the 32k window
+  3.98 to 53.13 ev/s; their p99 gap inside the windows 1134 to 480 ms and 1258 to 572 ms; a cold 2k
+  peer's TTFT 0.85 to 0.28 s and its E2E 14.26 to 2.99 s; `tick_max_ms` 1280 to 855.
+- What it costs: the 131k prime's TTFT 28.09 to 46.92 s (+67%), the 32k prime's 14.12 to 27.20 s
+  (+93%), inside the declared bar of 2.0x base + 5 s. The whole-run decoder ITL p99 rises 190 to
+  384 ms: on main the decoders emit most tokens after both primes finish, with short gaps, and on the
+  candidate they emit through the windows, where each chunk still costs one gap. TPOT and decoder E2E
+  move by at most 2.2%.
+- Bytes: every request one sha across all 12 boots.
+
+Rejected: leaving the per-advance program alone for chunks above S (main's 8.73 ev/s in the 131k
+window is the measured cost of that), and the per-prime interval of the first #654 revision (each
+prime held only its own C - S window, so with m pending primes one was nearly always outside its
+window and the primes still ran up to m chunks per interval). The interval is service sharing, not an
+ITL or TTFT guarantee, and the long prime pays for it. There is no RTX 5090 row: the local card was
+not granted to this lane.

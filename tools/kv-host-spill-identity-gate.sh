@@ -30,8 +30,10 @@
 #
 # MEMRA_HOSTGATE_TEETH=1 is the FORCED-TINY RED ARM (the verdict must invert): the ON boot
 # takes MEMRA_KV_HOST_MB=1 (a 1 MiB tier no real entry fits), and the gate then REQUIRES
-# the opposite behavior: a named "skip demote" refusal, ZERO promotions, r3 cold
-# (cached_tokens == 0) yet still byte-identical to the OFF boot. A binary whose host tier
+# the opposite behavior: a named refusal, ZERO promotions, r3 cold
+# (cached_tokens == 0) yet still byte-identical to the OFF boot. Below a 100% tenant share,
+# the pre-copy share check refuses first; at 100%, the whole-budget insert refuses.
+# A binary whose host tier
 # does nothing passes teeth and FAILS the default arm, which is what gives the default arm
 # its teeth.
 #
@@ -83,6 +85,17 @@ SERVER_PID=""
 CACHE_MB=${MEMRA_HOSTGATE_CACHE_MB:-1024}
 HOST_MB=${MEMRA_HOSTGATE_HOST_MB:-8192}
 TEETH=${MEMRA_HOSTGATE_TEETH:-0}
+# Match parse_kv_host_tenant_pct: only an optional '+' and ASCII digits in 1..=100
+# are accepted; other values use 50. Strip leading zeroes before Python conversion
+# so even an oversized input gets the server's bounded fallback.
+TENANT_PCT=$(python3 -c '
+import os, re
+raw = os.environ.get("MEMRA_KV_HOST_TENANT_PCT", "")
+digits = raw.removeprefix("+")
+digits = digits.lstrip("0") or "0"
+valid = re.fullmatch(r"\+?[0-9]+", raw) is not None and len(digits) <= 3
+pct = int(digits) if valid else 50
+print(pct if 1 <= pct <= 100 else 50)')
 
 boot() { # $1 extra-env-string  $2 log
     memra_port_guard kv-host-spill-identity-gate "$PORT" MEMRA_GATE_PORT || return 1
@@ -231,8 +244,14 @@ fi
 
 if [ "$TEETH" = 1 ]; then
     # RED ARM: the tiny tier must refuse BY NAME, promote nothing, and change no bytes.
-    chk "teeth: demote refused by name (entry > 1 MiB host budget)" \
-        grep -q "\[prefix-host\] skip demote: entry" "$EV/host-on-server.log"
+    if [ "$TENANT_PCT" -ge 100 ]; then
+        chk "teeth: demote refused by name (entry > 1 MiB host budget, share check disarmed)" \
+            grep -q "\[prefix-host\] skip demote: entry" "$EV/host-on-server.log"
+    else
+        chk "teeth: demote refused before the D2H copy (image > tenant share)" \
+            grep -q "\[prefix-host\] demote evaporated at the tenant share cap before the D2H copy: .*the image alone exceeds the share" \
+            "$EV/host-on-server.log"
+    fi
     chk "teeth: no promote happened" \
         absent "\[prefix-host\] promote:" "$EV/host-on-server.log"
     chk "teeth: metrics agree (0 demotions, 0 promotions)" jqpy "$EV/host-on-metrics.json" \

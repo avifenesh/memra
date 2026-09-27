@@ -1,0 +1,5 @@
+[2026-09-23T00:12:41Z] waiting for vm-queue (#556 campaign)
+[2026-09-23T00:18:11Z] vm-queue exited: [2026-09-23T00:18:10Z] #556 campaign rc=0 banked under /data/work/memra-native-20260923/pr556-8a3adc6e71/src/research/release-qualification; commit it on the PR branch, then:   python3 tools/release_qualification.py verify --head HEAD  [2026-09-23T00:18:10Z] queue done 
+[2026-09-23T00:18:18Z] service A/B start
+[2026-09-23T00:36:59Z] service A/B rc=0 PRIME-SERVICE: base=base cand=cand reps=6 bytes=yes rate=8.73/52.15 ev/s long_ttft=28.09/46.92s second_ttft=14.12/27.20s itl_p99=190/384ms engaged=yes -> PASS
+[2026-09-23T00:36:59Z] queue2 done

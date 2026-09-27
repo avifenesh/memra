@@ -42,9 +42,39 @@ Verdict line:
   long_ttft=OFF/ON s yields=Y -> PASS|FAIL
 Exit 0 = PASS; 1 = a clause failed; 2 = REFUSED (lock, port, boot, an unserved seed).
 
+Service shape (`--shape service`, the saved-prime service interval of memra#521): the A/B of two
+binaries (or two settings) on a decode-heavy cell. `--arm LABEL=BIN[:YIELD]` twice replaces `--bin`
+and `--yield-values`; the first arm is the base, the second the candidate, YIELD `unset` leaves
+`MEMRA_PRIME_YIELD` out of the environment (the shipped default). The cell: `--decoders` (2) cold
+`--peer`-token prompts with `--decoder-tokens` (4096) outputs start at t=0; at +`--lead` (3) s the
+`--long` cold prime starts; at +`--second-at` (10) s a second `--second-long` (32768) cold prime; at
++2 s more one cold `--peer`-token peer with `--max-tokens` outputs. `MEMRA_MAX_SESSIONS` admits all
+of them. Every streamed event is timestamped. Reported per arm, p50/p95/p99 over all boots: the
+decoders' event gaps (ITL) and token rate inside each prime's window (prime start to its first
+event, cut at the decoder's own end), the decoders' TPOT, every request's TTFT and E2E. Clauses,
+declared before the cell runs:
+  S1 bytes:      every request's greedy text identical across every boot of both arms.
+  S2 completion: every request finishes on every boot.
+  S3 engaged:    every boot of both arms logs `[prime-walk] supported=true yield_door=true` and
+                 at least one `[prime-yield]` (skipped for an arm run with YIELD `0`).
+  S4 service:    the candidate's median decoder token rate inside the long prime's window is at
+                 least `--rate-bar` (2.0) times the base's.
+  S5 cost:       each prime's median TTFT on the candidate is at most `--cost-bar` (2.0) times the
+                 base's plus `--cost-slack` (5) s (the structural bound: C-S plus one tick per chunk).
+  S6 window:     every decoder is still decoding when the long prime starts on every boot, or the
+                 service clause would measure nothing (REFUSED otherwise).
+Raw per boot: cell JSON with every request's event times, server log, `nvidia-smi` 250 ms telemetry
+CSV. The receipt carries the sha256 of every binary and of the model file, and both boot orders.
+Verdict line:
+  PRIME-SERVICE: base=LABEL cand=LABEL reps=R bytes=yes|NO rate=B/C tok/s long_ttft=B/C s
+  second_ttft=B/C s itl_p99=B/C ms -> PASS|FAIL
+
 usage: prime-fairness-gate.py --model GGUF --bin memra-server --out NEW_DIR [--port N]
            [--long 131072] [--peer 2048] [--seed-tokens 4096] [--max-tokens 32] [--min-tokens 16]
            [--yield-values 0,1] [--reps 1] [--peer-ttft-bar 8] [--tick-bar-ms 6000]
+       prime-fairness-gate.py --shape service --model GGUF --arm base=BIN_A --arm cand=BIN_B
+           --out NEW_DIR [--reps 6] [--decoders 2] [--decoder-tokens 4096] [--second-long 32768]
+           [--rate-bar 2.0] [--cost-bar 2.0] [--cost-slack 5] [--telemetry-gpu UUID]
 Lock: the canonical rig lock (`MEMRA_GPU_LOCK`, else `/tmp/memra-gpu.lock` or `/tmp/memra-5090.lock`)
 held for the whole gate; under local-ci (`MEMRA_CI_LOCK_HELD=1`) the run's own hold is honored.
 """
@@ -120,9 +150,9 @@ def pct(xs: list[float], q: float) -> float:
 
 
 class Server:
-    def __init__(self, binary: str, model: str, port: int, log: Path, yield_value: str):
+    def __init__(self, binary: str, model: str, port: int, log: Path, yield_value: str, sessions: int = 4):
         self.binary, self.model, self.port, self.log = binary, model, port, log
-        self.yield_value = yield_value
+        self.yield_value, self.sessions = yield_value, sessions
         self.proc: subprocess.Popen | None = None
 
     def boot(self) -> None:
@@ -132,10 +162,9 @@ class Server:
                 "MEMRA_COMPAT": "openai",
                 "MEMRA_MODELS": f"gate={self.model}",
                 "MEMRA_ADDR": f"127.0.0.1:{self.port}",
-                "MEMRA_MAX_SESSIONS": "4",
+                "MEMRA_MAX_SESSIONS": str(self.sessions),
                 "MEMRA_TIMEOUT_MS_MAX": "600000",
                 "MEMRA_TICK_TRACE": "1",
-                "MEMRA_PRIME_YIELD": self.yield_value,
                 # Pin the peers' route. The spec gate demotes to plain decode by concurrency
                 # (LOW=2 HIGH=4 by default), and the two arms admit the peers at different
                 # active counts, so without the pin a peer takes K=3 on one arm and K=0 on the
@@ -145,6 +174,8 @@ class Server:
                 "MEMRA_SPEC_GATE_HIGH": "65",
             }
         )
+        if self.yield_value != "unset":
+            env["MEMRA_PRIME_YIELD"] = self.yield_value
         self.logf = open(self.log, "w")
         self.proc = subprocess.Popen([self.binary], env=env, stdout=self.logf, stderr=subprocess.STDOUT)
         deadline = time.time() + 900
@@ -216,8 +247,11 @@ class Server:
             "first_token_s": None,
             "total_s": None,
             "usage": None,
+            "start": None,
+            "events": [],
         }
         t0 = time.monotonic()
+        out["start"] = t0
         try:
             with urllib.request.urlopen(req, timeout=900) as r:
                 out["status"] = r.status
@@ -244,6 +278,7 @@ class Server:
                         if piece is None:
                             piece = (ch.get("delta") or {}).get("content")
                         if piece:
+                            out["events"].append(time.monotonic() - t0)
                             if out["first_token_s"] is None:
                                 out["first_token_s"] = time.monotonic() - t0
                             out["text"] += piece
@@ -328,6 +363,241 @@ def run_cell(srv: Server, a, prompts: dict) -> dict:
     }
 
 
+def run_service_cell(srv: Server, a, prompts: dict) -> dict:
+    """Decoders first, then the long prime, a second prime and a cold peer; every event timed."""
+    results: dict[str, dict] = {}
+    lock = threading.Lock()
+
+    def go(name, prompt, salt, max_tokens):
+        r = srv.complete(prompt, salt, max_tokens)
+        with lock:
+            results[name] = r
+
+    plan = [(f"decoder-{k}", prompts[f"decoder-{k}"], f"decoder-{k}", a.decoder_tokens, 0.0) for k in range(a.decoders)]
+    plan += [
+        ("long", prompts["long"], "long", a.max_tokens, a.lead),
+        ("second", prompts["second"], "second", a.max_tokens, a.lead + a.second_at),
+        ("peer", prompts["peer"], "peer", a.max_tokens, a.lead + a.second_at + 2.0),
+    ]
+    t_cell = time.monotonic()
+    threads = []
+    for name, prompt, salt, max_tokens, at in plan:
+        delay = t_cell + at - time.monotonic()
+        if delay > 0:
+            time.sleep(delay)
+        t = threading.Thread(target=go, args=(name, prompt, salt, max_tokens))
+        t.start()
+        threads.append(t)
+    for t in threads:
+        t.join()
+    time.sleep(1.0)
+    health = srv.health() or {}
+    for r in results.values():
+        r["start"] -= t_cell
+    return {
+        "cell_s": time.monotonic() - t_cell,
+        "requests": results,
+        "tick_max_ms": (health.get("worker") or {}).get("tick_max_ms"),
+        "generation": (health.get("worker") or {}).get("generation"),
+    }
+
+
+def service_prompts(srv: Server, a) -> dict:
+    probe = SENTENCE * 64
+    per_sentence = (srv.count_tokens(probe) - 1) / 64.0
+    if per_sentence <= 0:
+        refuse("tokenizer calibration returned no tokens")
+    prompts = {f"decoder-{k}": text_for(a.peer, per_sentence, 5230 + k) for k in range(a.decoders)}
+    prompts.update(
+        long=text_for(a.long, per_sentence, 521),
+        second=text_for(a.second_long, per_sentence, 5220),
+        peer=text_for(a.peer, per_sentence, 5221),
+    )
+    counts = {k: srv.count_tokens(v) for k, v in prompts.items()}
+    if counts["long"] < a.long * 0.9 or counts["second"] < a.second_long * 0.9:
+        refuse(f"prime prompts calibrated to {counts['long']}/{counts['second']} tokens, below 90% of target")
+    return {"prompts": prompts, "tokens": counts, "tokens_per_sentence": per_sentence}
+
+
+def decoder_window(dec: dict, prime: dict) -> dict:
+    """The decoder's service inside one prime's window: from the prime's start to its first event,
+    cut at the decoder's own last event. Times are cell-relative."""
+    lo = prime["start"]
+    hi = prime["start"] + (prime["ttft_s"] if prime["ttft_s"] is not None else prime["total_s"])
+    ev = [dec["start"] + t for t in dec["events"]]
+    hi = min(hi, ev[-1]) if ev else lo
+    inside = [t for t in ev if lo <= t <= hi]
+    gaps = [(b - a) * 1000.0 for a, b in zip(inside, inside[1:])]
+    span = hi - lo
+    return {"span_s": span, "events": len(inside), "rate": len(inside) / span if span > 0 else 0.0, "gaps_ms": gaps}
+
+
+class Telemetry:
+    """`nvidia-smi` at 250 ms for one boot, raw CSV; absent tool or GPU is recorded, never fatal."""
+
+    def __init__(self, path: Path, gpu: str | None):
+        cmd = [
+            "nvidia-smi",
+            "--query-gpu=timestamp,index,uuid,utilization.gpu,memory.used,power.draw,temperature.gpu,clocks.sm,clocks_event_reasons.active",
+            "--format=csv",
+            "-lms",
+            "250",
+            "-f",
+            str(path),
+        ]
+        if gpu:
+            cmd[1:1] = ["-i", gpu]
+        try:
+            self.proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError as e:
+            path.write_text(f"telemetry unavailable: {e!r}\n")
+            self.proc = None
+
+    def stop(self) -> None:
+        if self.proc and self.proc.poll() is None:
+            self.proc.terminate()
+            try:
+                self.proc.wait(10)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+
+
+def sha256_file(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 24), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def service_main(a, out: Path, arms: list[tuple[str, str, str]]) -> int:
+    names = [f"decoder-{k}" for k in range(a.decoders)] + ["long", "second", "peer"]
+    hashes = {"model": sha256_file(a.model), **{f"bin:{label}": sha256_file(b) for label, b, _ in arms}}
+    (out / "hashes.json").write_text(json.dumps(hashes, indent=2))
+    lock_fd = take_lock()
+    runs: list[dict] = []
+    try:
+        for rep in range(a.reps):
+            order = arms if rep % 2 == 0 else list(reversed(arms))
+            for label, binary, yv in order:
+                tag = f"rep{rep}-{label}"
+                srv = Server(binary, a.model, a.port, out / f"{tag}-server.log", yv, sessions=len(names))
+                tel = Telemetry(out / f"{tag}-telemetry.csv", a.telemetry_gpu)
+                try:
+                    srv.boot()
+                    prompts = service_prompts(srv, a)
+                    cell = run_service_cell(srv, a, prompts["prompts"])
+                    cell["prompt_tokens"] = prompts["tokens"]
+                finally:
+                    srv.stop()
+                    tel.stop()
+                cell.update(arm=label, bin=binary, yield_value=yv, rep=rep, order=[x[0] for x in order])
+                cell["log"] = log_facts(out / f"{tag}-server.log")
+                (out / f"{tag}-cell.json").write_text(json.dumps(cell, indent=2))
+                reqs = cell["requests"]
+                short = [n for n in names if (reqs[n].get("usage") or {}).get("completion_tokens", 0) < a.min_tokens]
+                if short:
+                    refuse(f"{tag}: {short} generated fewer than {a.min_tokens} tokens; the byte clause would be vacuous")
+                if len({reqs[n]["sha"] for n in names}) != len(names):
+                    refuse(f"{tag}: the {len(names)} prompts did not produce distinct outputs")
+                late = [
+                    n for n in names[: a.decoders]
+                    if not reqs[n]["events"] or reqs[n]["start"] + reqs[n]["events"][-1] <= reqs["long"]["start"]
+                ]
+                if late:
+                    refuse(f"{tag}: {late} stopped decoding before the long prime started (S6)")
+                win = decoder_window(reqs[names[0]], reqs["long"])
+                print(
+                    f"  {tag}: long ttft={reqs['long']['ttft_s']:.2f}s second ttft={reqs['second']['ttft_s']:.2f}s "
+                    f"peer ttft={reqs['peer']['ttft_s']:.2f}s decoder rate in long window={win['rate']:.2f} ev/s "
+                    f"tick_max_ms={cell['tick_max_ms']} yields={cell['log']['yield_lines']}",
+                    flush=True,
+                )
+                runs.append(cell)
+    finally:
+        if lock_fd is not None:
+            os.close(lock_fd)
+
+    (base, _, base_y), (cand, _, cand_y) = arms
+    by = {label: [c for c in runs if c["arm"] == label] for label, _, _ in arms}
+    shas = {n: sorted({c["requests"][n]["sha"] for c in runs}) for n in names}
+    bytes_ok = all(len(v) == 1 for v in shas.values())
+    complete_ok = all(c["requests"][n]["finish"] is not None and not c["requests"][n]["error"] for c in runs for n in names)
+    engaged_ok = all(
+        c["log"]["supported"] and c["log"]["yield_door_on"] and c["log"]["yield_lines"] > 0
+        for c in runs if c["yield_value"] != "0"
+    ) and not any(c["log"]["worker_panic"] for c in runs)
+
+    def stats(xs: list[float]) -> dict:
+        return {"n": len(xs), "p50": pct(xs, 0.5), "p95": pct(xs, 0.95), "p99": pct(xs, 0.99)}
+
+    summary: dict[str, dict] = {}
+    for label in by:
+        cells = by[label]
+        arm: dict[str, dict] = {}
+        for prime in ("long", "second"):
+            wins = [decoder_window(c["requests"][d], c["requests"][prime]) for c in cells for d in names[: a.decoders]]
+            arm[f"decoder_rate_in_{prime}"] = stats([w["rate"] for w in wins])
+            arm[f"decoder_itl_ms_in_{prime}"] = stats([g for w in wins for g in w["gaps_ms"]])
+        itl = []
+        tpot = []
+        for c in cells:
+            for d in names[: a.decoders]:
+                r = c["requests"][d]
+                itl += [(b - x) * 1000.0 for x, b in zip(r["events"], r["events"][1:])]
+                toks = (r.get("usage") or {}).get("completion_tokens", 0)
+                if toks > 1 and r["ttft_s"] is not None:
+                    tpot.append((r["total_s"] - r["ttft_s"]) * 1000.0 / (toks - 1))
+        arm["decoder_itl_ms"] = stats(itl)
+        arm["decoder_tpot_ms"] = stats(tpot)
+        for n in names:
+            arm[f"{n}_ttft_s"] = stats([c["requests"][n]["ttft_s"] or float("inf") for c in cells])
+            arm[f"{n}_e2e_s"] = stats([c["requests"][n]["total_s"] for c in cells])
+        arm["tick_max_ms"] = stats([float(c["tick_max_ms"] or 0) for c in cells])
+        arm["yield_lines"] = sum(c["log"]["yield_lines"] for c in cells)
+        summary[label] = arm
+
+    rate_b = summary[base]["decoder_rate_in_long"]["p50"]
+    rate_c = summary[cand]["decoder_rate_in_long"]["p50"]
+    service_ok = rate_c >= a.rate_bar * rate_b
+    cost = {}
+    for prime in ("long", "second"):
+        tb, tc = summary[base][f"{prime}_ttft_s"]["p50"], summary[cand][f"{prime}_ttft_s"]["p50"]
+        cost[prime] = {"base": tb, "cand": tc, "bar": a.cost_bar * tb + a.cost_slack, "ok": tc <= a.cost_bar * tb + a.cost_slack}
+    cost_ok = all(v["ok"] for v in cost.values())
+    ok = bytes_ok and complete_ok and engaged_ok and service_ok and cost_ok
+    receipt = {
+        "shape": "service",
+        "model": a.model,
+        "arms": [{"label": l, "bin": b, "yield": y} for l, b, y in arms],
+        "hashes": hashes,
+        "reps": a.reps,
+        "orders": [c["order"] for c in runs[:: len(arms)]],
+        "cell": {
+            "long": a.long, "second_long": a.second_long, "peer": a.peer, "decoders": a.decoders,
+            "decoder_tokens": a.decoder_tokens, "max_tokens": a.max_tokens, "lead_s": a.lead,
+            "second_at_s": a.second_at, "sessions": len(names),
+        },
+        "declared": {"rate_bar": a.rate_bar, "cost_bar": a.cost_bar, "cost_slack_s": a.cost_slack, "min_tokens": a.min_tokens},
+        "prompt_tokens": runs[0].get("prompt_tokens"),
+        "shas": shas,
+        "summary": summary,
+        "cost": cost,
+        "verdicts": {"bytes": bytes_ok, "completion": complete_ok, "engaged": engaged_ok, "service": service_ok, "cost": cost_ok},
+        "verdict": "PASS" if ok else "FAIL",
+    }
+    (out / "receipt.json").write_text(json.dumps(receipt, indent=2))
+    print(
+        f"PRIME-SERVICE: base={base} cand={cand} reps={a.reps} bytes={'yes' if bytes_ok else 'NO'} "
+        f"rate={rate_b:.2f}/{rate_c:.2f} ev/s long_ttft={cost['long']['base']:.2f}/{cost['long']['cand']:.2f}s "
+        f"second_ttft={cost['second']['base']:.2f}/{cost['second']['cand']:.2f}s "
+        f"itl_p99={summary[base]['decoder_itl_ms']['p99']:.0f}/{summary[cand]['decoder_itl_ms']['p99']:.0f}ms "
+        f"engaged={'yes' if engaged_ok else 'NO'} -> {'PASS' if ok else 'FAIL'}",
+        flush=True,
+    )
+    return 0 if ok else 1
+
+
 def log_facts(path: Path) -> dict:
     text = path.read_text(errors="replace")
     walk = [l for l in text.splitlines() if "[prime-walk]" in l]
@@ -346,7 +616,7 @@ def log_facts(path: Path) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", required=True)
-    ap.add_argument("--bin", required=True)
+    ap.add_argument("--bin")
     ap.add_argument("--out", required=True)
     ap.add_argument("--port", type=int, default=18521)
     ap.add_argument("--long", type=int, default=131072)
@@ -358,13 +628,41 @@ def main() -> int:
     ap.add_argument("--reps", type=int, default=1)
     ap.add_argument("--peer-ttft-bar", type=float, default=8.0)
     ap.add_argument("--tick-bar-ms", type=int, default=6000)
+    ap.add_argument("--shape", choices=("incident", "service"), default="incident")
+    ap.add_argument("--arm", action="append", default=[], help="LABEL=BIN[:YIELD], twice; YIELD unset omits MEMRA_PRIME_YIELD")
+    ap.add_argument("--decoders", type=int, default=2)
+    ap.add_argument("--decoder-tokens", type=int, default=4096)
+    ap.add_argument("--second-long", type=int, default=32768)
+    ap.add_argument("--lead", type=float, default=3.0)
+    ap.add_argument("--second-at", type=float, default=10.0)
+    ap.add_argument("--rate-bar", type=float, default=2.0)
+    ap.add_argument("--cost-bar", type=float, default=2.0)
+    ap.add_argument("--cost-slack", type=float, default=5.0)
+    ap.add_argument("--telemetry-gpu", help="nvidia-smi -i value for the 250 ms telemetry (default: every GPU)")
     a = ap.parse_args()
     out = Path(a.out)
     if out.exists():
         refuse(f"{out} exists; --out must be a NEW directory")
+    arms_spec: list[tuple[str, str, str]] = []
+    for spec in a.arm:
+        label, sep, rest = spec.partition("=")
+        binary, _, yv = rest.partition(":")
+        if not sep or not label or not binary or not os.path.isfile(binary):
+            refuse(f"--arm {spec!r}: expected LABEL=BIN[:YIELD] with an existing BIN")
+        arms_spec.append((label, binary, yv or "unset"))
+    if a.arm and (len(arms_spec) != 2 or arms_spec[0][0] == arms_spec[1][0]):
+        refuse("--arm needs exactly two arms with distinct labels")
+    if a.shape == "service" and not a.arm:
+        refuse("--shape service compares two arms; pass --arm twice")
+    if a.shape == "incident" and a.arm:
+        refuse("the incident shape compares --yield-values on one --bin")
     out.mkdir(parents=True)
     if not port_free(a.port):
         refuse(f"port {a.port} busy")
+    if a.shape == "service":
+        return service_main(a, out, arms_spec)
+    if not a.bin:
+        refuse("--bin is required for the incident shape")
     lock_fd = take_lock()
     arms = a.yield_values.split(",")
     if len(arms) != 2:

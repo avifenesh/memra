@@ -131,6 +131,9 @@ impl Glm5TrunkPrime {
     pub(crate) fn remaining(&self) -> usize {
         self.ranges.len() - self.cursor
     }
+    pub(crate) fn next_rows(&self) -> Option<usize> {
+        self.ranges.get(self.cursor).map(|(start, end)| end - start)
+    }
     pub(crate) fn advance(
         &mut self,
         m: &HybridModel,

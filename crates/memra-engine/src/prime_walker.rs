@@ -22,6 +22,14 @@ pub struct PrimeChunk {
 pub trait PrimeWalker {
     type Output;
 
+    /// Inspect the next frozen operation without advancing or changing its shape.
+    /// Implementations that expose this must describe the same phase/rows their
+    /// next successful advance returns. None means unavailable or exhausted;
+    /// observers must not infer a chunk from a queued prompt or a cache lookup.
+    fn next_chunk(&self) -> Option<PrimeChunk> {
+        None
+    }
+
     fn advance_chunk(&mut self) -> Result<PrimeChunk, PrimeError>;
     fn remaining_chunks(&self) -> usize;
     fn finish(self) -> Result<Self::Output, PrimeError>;
@@ -42,8 +50,38 @@ pub struct PrimeProgress {
 /// `research/prefill-fairness-20260908/` (three independent 5090 positives on the MTP route),
 /// `research/prime-fairness-default-20260922/` (the decision cell on the 5090 and a PRO 6000).
 pub fn prime_yield_enabled() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| std::env::var("MEMRA_PRIME_YIELD").as_deref() != Ok("0"))
+    prime_yield_mode().enabled()
+}
+
+/// Preserve whether ON was requested, so an unsupported serving route can keep
+/// its existing path under the implicit default without accepting a forced feature.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PrimeYieldMode {
+    ImplicitOn,
+    ExplicitOn,
+    Off,
+}
+
+impl PrimeYieldMode {
+    fn from_value(value: Option<&std::ffi::OsStr>) -> Self {
+        match value {
+            None => Self::ImplicitOn,
+            Some(value) if value == "0" => Self::Off,
+            // Match the existing switch: only literal 0 disables it.
+            Some(_) => Self::ExplicitOn,
+        }
+    }
+
+    pub fn enabled(self) -> bool {
+        self != Self::Off
+    }
+}
+
+pub fn prime_yield_mode() -> PrimeYieldMode {
+    static MODE: std::sync::OnceLock<PrimeYieldMode> = std::sync::OnceLock::new();
+    *MODE.get_or_init(|| {
+        PrimeYieldMode::from_value(std::env::var_os("MEMRA_PRIME_YIELD").as_deref())
+    })
 }
 
 /// Shared observer used by synchronous engine callers and cooperative serving adapters.
@@ -107,6 +145,30 @@ pub fn finish_prime<W: PrimeWalker>(walker: W) -> Result<W::Output, PrimeError> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mode_preserves_existing_switch_values_and_explicitness() {
+        use std::ffi::OsStr;
+        for (value, mode) in [
+            (None, PrimeYieldMode::ImplicitOn),
+            (Some("0"), PrimeYieldMode::Off),
+            (Some("1"), PrimeYieldMode::ExplicitOn),
+            (Some(""), PrimeYieldMode::ExplicitOn),
+            (Some("other"), PrimeYieldMode::ExplicitOn),
+        ] {
+            let actual = PrimeYieldMode::from_value(value.map(OsStr::new));
+            assert_eq!(actual, mode);
+            assert_eq!(actual.enabled(), value != Some("0"));
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            assert_eq!(
+                PrimeYieldMode::from_value(Some(OsStr::from_bytes(b"\xff"))),
+                PrimeYieldMode::ExplicitOn
+            );
+        }
+    }
 
     struct Fake {
         ranges: Vec<std::ops::Range<usize>>,
