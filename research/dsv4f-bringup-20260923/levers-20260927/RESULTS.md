@@ -277,6 +277,22 @@ boots ran c4 at 157.6 and 153.0. Slow-c4 boots have been seen on main on both pa
 is kept, and the rebased rows below add c4 rows. Thermal: median power 267 .. 271 W while the
 cards work, SM clock median 2400 MHz, max 50 C.
 
+**Rebased on main `c566d2096`** (with the Sinkhorn warp and the prefill tile), same pair
+(`raw/se2-shared-owner-rebased-s2y/`):
+- The fused partition fixtures pass, and so do the dense-fast gate's eight gated cases.
+- The long gate hash is `fbce1a0492d69635`.
+- The TP/EP rows gate, the KV split gate and the DSpark TP/EP gate pass.
+- Long gate, order M S S M: 10.65 .. 10.77 ms/token against 10.17 .. 10.27, **-4.7%**.
+- Served cells-pdl, order M S S M, N=2:
+
+| cell | main agg tok/s | lane agg tok/s | delta |
+|---|---|---|---|
+| greedy c1 | 91.18 / 90.92 (decode 95.3 / 95.1) | 94.66 / 94.14 (decode 99.1 / 98.9) | **+3.7%** |
+| sampled c1 | 91.41 / 91.31 | 94.73 / 93.97 | +3.3% |
+| greedy c2 | 122.53 / 122.22 | 124.71 / 125.35 | +2.0% |
+| greedy c4 | 153.85 / 155.82 | 157.81 / 158.67 | +2.2% |
+| greedy c2, 2k prompt | 24.63 / 26.04 | 25.63 / 25.48 | flat |
+
 ## Refuted: loading weights before the PDL wait
 
 The weights and block scales of the dense-fast FP8 GEMV, the BF16 dots and the HC split partial
