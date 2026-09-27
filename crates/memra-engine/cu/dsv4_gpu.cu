@@ -4528,6 +4528,68 @@ extern "C" int memra_dsv4_gemv_fp8_m(const void* w_codes, const float* sc_f32, i
     return 0;
 }
 
+// Two FP8 dense matrices over the same x rows in one launch (memra #710: the shared expert's gate
+// and up, the attention's q-LoRA down and kv projections). When both take the dense-fast
+// transport, one pair kernel whose blocks run each matrix's own dense-fast body; otherwise the
+// two ordinary calls, which pick their own paths.
+extern "C" int memra_dsv4_gemv_fp8_m_pair(const void* wa, const float* sca, int sc_cols_a,
+                                          float* ya, int na, int ystride_a, const void* wb,
+                                          const float* scb, int sc_cols_b, float* yb, int nb,
+                                          int ystride_b, const void* x_bf16, int m, int k,
+                                          int xstride, void* stream_v) {
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    if (k % 8 != 0) return 40011;
+    if (m < 1) return 40020;
+    if (sc_cols_a <= 0 || sc_cols_b <= 0) return 40012;
+    if (xstride <= 0) xstride = k;
+    if (ystride_a <= 0) ystride_a = na;
+    if (ystride_b <= 0) ystride_b = nb;
+    if (xstride % 8 != 0) return 40011;
+    const bool fast = m <= 8 && dsv4_dense_exact_tail_enabled && !dsv4_dense_exact_tail_suppressed &&
+        dsv4_dense_fast_enabled &&
+        dsv4_dense_exact_tail_fp8_admits(wa, sca, sc_cols_a, x_bf16, ya, 1, na, k) &&
+        dsv4_dense_exact_tail_fp8_admits(wb, scb, sc_cols_b, x_bf16, yb, 1, nb, k);
+    if (!fast) {
+        int rc = memra_dsv4_gemv_fp8_m(wa, sca, sc_cols_a, x_bf16, ya, m, na, k, xstride, ystride_a,
+                                       stream_v);
+        if (rc != 0) return rc;
+        return memra_dsv4_gemv_fp8_m(wb, scb, sc_cols_b, x_bf16, yb, m, nb, k, xstride, ystride_b,
+                                     stream_v);
+    }
+    if (dsv4_dense_fast_observer) {
+        int rc = dsv4_dense_fast_observer(0, wa, sca, sc_cols_a, x_bf16, na, k, stream_v);
+        if (rc) return rc;
+        rc = dsv4_dense_fast_observer(0, wb, scb, sc_cols_b, x_bf16, nb, k, stream_v);
+        if (rc) return rc;
+    }
+    if (m >= 2) {
+        dsv4_dense_census_note(DSV4_DENSE_ENTRY_GEMV_FP8, m, na, k);
+        dsv4_dense_census_note(DSV4_DENSE_ENTRY_GEMV_FP8, m, nb, k);
+    }
+    const int nblk_a = (int)((na + 1LL) / 2), nblk_b = (int)((nb + 1LL) / 2);
+    const unsigned grid = (unsigned)(nblk_a + nblk_b);
+    switch (m) {
+#define DSV4_FP8_PAIR_CASE(MM)                                                              \
+    case MM:                                                                                \
+        memra_chain_launch(dsv4_dense_fast_fp8_kernel_pair<2, MM>, grid, 256, 0, stream)(     \
+            (const uint8_t*)wa, sca, sc_cols_a, ya, na, ystride_a, (const uint8_t*)wb, scb,   \
+            sc_cols_b, yb, nb, ystride_b, nblk_a, (const uint16_t*)x_bf16, k, xstride);      \
+        break;
+        DSV4_FP8_PAIR_CASE(1)
+        DSV4_FP8_PAIR_CASE(2)
+        DSV4_FP8_PAIR_CASE(3)
+        DSV4_FP8_PAIR_CASE(4)
+        DSV4_FP8_PAIR_CASE(5)
+        DSV4_FP8_PAIR_CASE(6)
+        DSV4_FP8_PAIR_CASE(7)
+        DSV4_FP8_PAIR_CASE(8)
+#undef DSV4_FP8_PAIR_CASE
+    }
+    DSV4_ERR();
+    if (m == 1) dsv4_dense_fast_enqueues[0] += 2;
+    return 0;
+}
+
 // Plain t=1 grouped output-projection twin. Each group owns one contiguous slice of
 // the activation and output planes, while the weight rows remain contiguous across groups.
 // The arithmetic body is the same dsv4_gemv_fp8_m_kernel<1> body above; only the row/group
@@ -4850,6 +4912,56 @@ extern "C" int memra_dsv4_dots_f32acc_mrow(const float* x, const void* w, int w_
             return 40020;
     }
     DSV4_ERR();
+    return 0;
+}
+
+// Two dots of one storage class over the same x rows in one launch (memra #710, the compressor's
+// kv and gate projections): when both take the dense-fast transport, one pair kernel whose blocks
+// run each matrix's own dense-fast body; otherwise the two ordinary calls.
+extern "C" int memra_dsv4_dots_f32acc_mrow_pair(const float* x, const void* wa, float* ya, int na,
+                                                const void* wb, float* yb, int nb, int w_is_bf16,
+                                                int s, int k, void* stream_v) {
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    if (k % 8 != 0) return 40012;
+    if (s < 1) return 40020;
+    const bool fast = s <= 8 && dsv4_dense_exact_tail_enabled && !dsv4_dense_exact_tail_suppressed &&
+        dsv4_dense_fast_enabled &&
+        dsv4_dense_exact_tail_dots_admits(x, wa, w_is_bf16, ya, 1, na, k) &&
+        dsv4_dense_exact_tail_dots_admits(x, wb, w_is_bf16, yb, 1, nb, k);
+    if (!fast) {
+        int rc = memra_dsv4_dots_f32acc_mrow(x, wa, w_is_bf16, ya, s, k, na, stream_v);
+        if (rc != 0) return rc;
+        return memra_dsv4_dots_f32acc_mrow(x, wb, w_is_bf16, yb, s, k, nb, stream_v);
+    }
+    if (dsv4_dense_fast_observer) {
+        int rc = dsv4_dense_fast_observer(w_is_bf16 ? 2 : 1, wa, nullptr, 0, x, na, k, stream_v);
+        if (rc) return rc;
+        rc = dsv4_dense_fast_observer(w_is_bf16 ? 2 : 1, wb, nullptr, 0, x, nb, k, stream_v);
+        if (rc) return rc;
+    }
+    if (s >= 2) {
+        dsv4_dense_census_note(DSV4_DENSE_ENTRY_DOTS_F32ACC, s, na, k);
+        dsv4_dense_census_note(DSV4_DENSE_ENTRY_DOTS_F32ACC, s, nb, k);
+    }
+    const unsigned grid = (unsigned)(na + nb);
+    switch (s) {
+#define DSV4_DOTS_PAIR_CASE(MM)                                                            \
+    case MM:                                                                               \
+        memra_chain_launch(dsv4_dense_fast_dots_kernel_pair<MM>, grid, 128, 0, stream)(     \
+            x, wa, ya, na, wb, yb, nb, w_is_bf16, k);                                      \
+        break;
+        DSV4_DOTS_PAIR_CASE(1)
+        DSV4_DOTS_PAIR_CASE(2)
+        DSV4_DOTS_PAIR_CASE(3)
+        DSV4_DOTS_PAIR_CASE(4)
+        DSV4_DOTS_PAIR_CASE(5)
+        DSV4_DOTS_PAIR_CASE(6)
+        DSV4_DOTS_PAIR_CASE(7)
+        DSV4_DOTS_PAIR_CASE(8)
+#undef DSV4_DOTS_PAIR_CASE
+    }
+    DSV4_ERR();
+    if (s == 1) dsv4_dense_fast_enqueues[1] += 2;
     return 0;
 }
 

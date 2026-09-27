@@ -1286,6 +1286,44 @@ unsafe extern "C" {
         ystride: i32,
         stream: *mut c_void,
     ) -> i32;
+    /// Two FP8 dense matrices over the same x rows in one launch when both take the dense-fast
+    /// transport, else the two ordinary `memra_dsv4_gemv_fp8_m` calls (memra #710).
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_gemv_fp8_m_pair(
+        wa: *const c_void,
+        sca: *const f32,
+        sc_cols_a: i32,
+        ya: *mut f32,
+        na: i32,
+        ystride_a: i32,
+        wb: *const c_void,
+        scb: *const f32,
+        sc_cols_b: i32,
+        yb: *mut f32,
+        nb: i32,
+        ystride_b: i32,
+        x_bf16: *const c_void,
+        m: i32,
+        k: i32,
+        xstride: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// Two dots of one storage class over the same x rows in one launch when both take the
+    /// dense-fast transport, else the two ordinary `memra_dsv4_dots_f32acc_mrow` calls.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_dots_f32acc_mrow_pair(
+        x: *const f32,
+        wa: *const c_void,
+        ya: *mut f32,
+        na: i32,
+        wb: *const c_void,
+        yb: *mut f32,
+        nb: i32,
+        w_is_bf16: i32,
+        s: i32,
+        k: i32,
+        stream: *mut c_void,
+    ) -> i32;
     /// Gate seam for the prefill dense tile (memra #472): `0` forces the per-32-row GEMV loop at
     /// m > 32 so one process can compare the two; returns the previous setting.
     pub fn memra_dsv4_gemm_fp8_tile_set_for_gate(on: i32) -> i32;

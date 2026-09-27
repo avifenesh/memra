@@ -16111,7 +16111,67 @@ impl Dsv4Gpu {
         }
     }
 
-    /// f32 cvt + batched GEMV (the m=T twin of `gemm_dev`).
+    /// Two dense matrices over the same x rows (memra #710): FP8 pairs in one launch when both
+    /// take the dense-fast transport, anything else as the two ordinary calls. Each output keeps
+    /// the bits of its own call.
+    #[allow(clippy::too_many_arguments)]
+    fn gemv_m_dev_pair(
+        st: &Stage,
+        wa: DW,
+        ya: *mut f32,
+        na: usize,
+        wb: DW,
+        yb: *mut f32,
+        nb: usize,
+        x_ptr: *const c_void,
+        m: usize,
+        kdim: usize,
+    ) -> Res<()> {
+        let stream = st.gpu.stream();
+        match (wa, wb) {
+            (
+                DW::Fp8 {
+                    codes: ca,
+                    scales: sa,
+                    sc_cols: cola,
+                },
+                DW::Fp8 {
+                    codes: cb,
+                    scales: sb,
+                    sc_cols: colb,
+                },
+            ) => unsafe {
+                ck(
+                    "gemv_fp8_m pair dev",
+                    k::memra_dsv4_gemv_fp8_m_pair(
+                        ca,
+                        sa,
+                        cola,
+                        ya,
+                        na as i32,
+                        0,
+                        cb,
+                        sb,
+                        colb,
+                        yb,
+                        nb as i32,
+                        0,
+                        x_ptr,
+                        m as i32,
+                        kdim as i32,
+                        0,
+                        sp(&stream),
+                    ),
+                )
+            },
+            (wa, wb) => {
+                Self::gemv_m_dev(st, wa, x_ptr, ya, m, na, kdim, 0, 0)?;
+                Self::gemv_m_dev(st, wb, x_ptr, yb, m, nb, kdim, 0, 0)
+            }
+        }
+    }
+
+    /// f32 cvt + batched GEMV (the m=T twin of `gemm_dev`).    /// f32 cvt + batched GEMV (the m=T twin of `gemm_dev`).
     #[allow(clippy::too_many_arguments)]
     fn gemm_m_dev(
         st: &Stage,
@@ -16150,6 +16210,48 @@ impl Dsv4Gpu {
 
     /// Island dots, batched rows, weight row hoisted. Same arm selection as `dots_dev`.
     #[allow(clippy::too_many_arguments)]
+    /// Two dots of one storage class over the same x rows (memra #710): one launch on the
+    /// f32-accumulation arm when both take the dense-fast transport, else the two ordinary calls.
+    #[allow(clippy::too_many_arguments)]
+    fn dots_m_dev_pair(
+        &self,
+        st: &Stage,
+        x: *const f32,
+        wa: *const c_void,
+        ya: *mut f32,
+        na: usize,
+        wb: *const c_void,
+        yb: *mut f32,
+        nb: usize,
+        w_is_bf16: i32,
+        s: usize,
+        kdim: usize,
+    ) -> Res<()> {
+        if !self.dots_f32 {
+            self.dots_m_dev(st, x, wa, w_is_bf16, s, kdim, na, ya)?;
+            return self.dots_m_dev(st, x, wb, w_is_bf16, s, kdim, nb, yb);
+        }
+        let stream = st.gpu.stream();
+        unsafe {
+            ck(
+                "dots_f32acc_mrow pair",
+                k::memra_dsv4_dots_f32acc_mrow_pair(
+                    x,
+                    wa,
+                    ya,
+                    na as i32,
+                    wb,
+                    yb,
+                    nb as i32,
+                    w_is_bf16,
+                    s as i32,
+                    kdim as i32,
+                    sp(&stream),
+                ),
+            )
+        }
+    }
+
     fn dots_m_dev(
         &self,
         st: &Stage,
@@ -16596,6 +16698,21 @@ impl Dsv4Gpu {
                     .map_err(e("hoisted compressor rows"))?;
                 }
             }
+        } else if cmp.wkv.flag() == cmp.wgate.flag() {
+            // kv and gate projections of the same x rows in one launch (memra #710).
+            self.dots_m_dev_pair(
+                st,
+                x_ptr,
+                cmp.wkv.ptr(&stream),
+                kv_rows,
+                latent,
+                cmp.wgate.ptr(&stream),
+                sc_rows,
+                latent,
+                cmp.wkv.flag(),
+                t,
+                hidden,
+            )?;
         } else {
             self.dots_m_dev(
                 st,
@@ -17264,17 +17381,20 @@ impl Dsv4Gpu {
             host_math,
         )?;
 
-        // q path (weights read once for all t rows)
-        Self::gemv_m_dev(
+        // q path (weights read once for all t rows). The shared K==V latent rows read the same
+        // x rows, so wq_a and wkv go in one launch (memra #710); nothing between here and the kv
+        // path below touches vws.kv.
+        Self::gemv_m_dev_pair(
             st,
             dwsel(self.dense_fp8, &stream, &layer.wq_a, &layer.wq_a_fp8),
-            vws.x_b.device_ptr(&stream).0 as *const c_void,
             vws.qr.device_ptr_mut(&stream).0 as *mut f32,
-            t,
             q_lora,
+            dwsel(self.dense_fp8, &stream, &layer.wkv, &layer.wkv_fp8),
+            vws.kv.device_ptr_mut(&stream).0 as *mut f32,
+            hd,
+            vws.x_b.device_ptr(&stream).0 as *const c_void,
+            t,
             hidden,
-            0,
-            0,
         )?;
         if t == 1 && !host_math && self.small_component_claim(st.dev, 1) {
             self.small_component_norm(st, &vws.qr, &layer.q_norm, q_lora, eps)?;
@@ -17377,18 +17497,8 @@ impl Dsv4Gpu {
             }
         }
 
-        // shared K==V latent rows + window QAT, then the TRANSIENT ring write
-        Self::gemv_m_dev(
-            st,
-            dwsel(self.dense_fp8, &stream, &layer.wkv, &layer.wkv_fp8),
-            vws.x_b.device_ptr(&stream).0 as *const c_void,
-            vws.kv.device_ptr_mut(&stream).0 as *mut f32,
-            t,
-            hd,
-            hidden,
-            0,
-            0,
-        )?;
+        // shared K==V latent rows (projected with wq_a above) + window QAT, then the TRANSIENT
+        // ring write
         unsafe {
             ck(
                 "rmsnorm kv batch",
@@ -17526,6 +17636,25 @@ impl Dsv4Gpu {
             }
             plan.push((layer.cmp.as_ref().expect("ratio!=0 has compressor"), 2));
             for (cmp, slot) in plan {
+                if cmp.wkv.flag() == cmp.wgate.flag() {
+                    // kv and gate projections in one launch (memra #710).
+                    let ya = vws.cmp_hoist[slot].device_ptr_mut(&stream).0 as *mut f32;
+                    let yb = vws.cmp_hoist[slot + 1].device_ptr_mut(&stream).0 as *mut f32;
+                    self.dots_m_dev_pair(
+                        st,
+                        dpf!(vws.x, &stream),
+                        cmp.wkv.ptr(&stream),
+                        ya,
+                        cmp.latent,
+                        cmp.wgate.ptr(&stream),
+                        yb,
+                        cmp.latent,
+                        cmp.wkv.flag(),
+                        t,
+                        hidden,
+                    )?;
+                    continue;
+                }
                 for (w, out) in [(&cmp.wkv, slot), (&cmp.wgate, slot + 1)] {
                     self.dots_m_dev(
                         st,
@@ -18792,7 +18921,8 @@ impl Dsv4Gpu {
             }
         }
         let sh_inter = vws.sg1.len() / vws.tmax;
-        Self::gemv_m_dev(
+        // The shared expert's gate and up in one launch (memra #710).
+        Self::gemv_m_dev_pair(
             st,
             dwsel(
                 self.dense_fp8,
@@ -18800,29 +18930,19 @@ impl Dsv4Gpu {
                 &layer.shared_w[0],
                 &layer.shared_fp8[0],
             ),
-            vws.xb.device_ptr(&stream).0 as *const c_void,
             vws.sg1.device_ptr_mut(&stream).0 as *mut f32,
-            t,
             sh_inter,
-            hidden,
-            0,
-            0,
-        )?;
-        Self::gemv_m_dev(
-            st,
             dwsel(
                 self.dense_fp8,
                 &stream,
                 &layer.shared_w[2],
                 &layer.shared_fp8[2],
             ),
-            vws.xb.device_ptr(&stream).0 as *const c_void,
             vws.sg3.device_ptr_mut(&stream).0 as *mut f32,
-            t,
             sh_inter,
+            vws.xb.device_ptr(&stream).0 as *const c_void,
+            t,
             hidden,
-            0,
-            0,
         )?;
         unsafe {
             ck(

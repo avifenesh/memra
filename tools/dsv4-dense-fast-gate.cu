@@ -93,6 +93,41 @@ static void run_case(Case& c, bool timing, bool real) {
     w.immutable();x.immutable();sc.immutable();equal(a.output(c.n),b.output(c.n));
     printf("PASS rank=%d kind=%d n=%d k=%d real=%d bits=1 guards=1 immutable=1 retained_graphs=1\n",c.rank,c.kind,c.n,c.k,real);fflush(stdout);
 }
+// memra #710: two matrices over the same x rows in one pair launch give each matrix the bits of
+// its own launch, and the capture holds one pair kernel. kind 0 = FP8, 2 = BF16 dots.
+static void pair_case(int rank,int kind,int na,int nb,int k,int m){
+    ck(cudaSetDevice(rank));Stream s;
+    Case a=synthetic(rank,kind,na,k),b=synthetic(rank,kind,nb,k);
+    const size_t item=kind==0?1:2;  // b: a's rows reversed, element by element
+    {auto w=b.w;const size_t count=w.size()/item;
+        for(size_t i=0;i<count;++i)memcpy(b.w.data()+i*item,w.data()+(count-1-i)*item,item);}
+    const size_t xitem=kind==0?2:4;std::vector<uint8_t> xs(size_t(m)*k*xitem);
+    for(int r=0;r<m;++r)for(int i=0;i<k;++i)memcpy(xs.data()+(size_t(r)*k+i)*xitem,a.x.data()+size_t((i+7*r)%k)*xitem,xitem);
+    Guard<uint8_t> wa(a.w.size(),s.value),wb(b.w.size(),s.value),x(xs.size(),s.value);
+    Guard<float> sa(std::max(size_t(1),a.sc.size()),s.value),sb(std::max(size_t(1),b.sc.size()),s.value);
+    Guard<float> ya1(size_t(m)*na,s.value),yb1(size_t(m)*nb,s.value),ya2(size_t(m)*na,s.value),yb2(size_t(m)*nb,s.value);
+    wa.upload(a.w);wb.upload(b.w);x.upload(xs);
+    sa.upload(a.sc.empty()?std::vector<float>{1.0f}:a.sc);sb.upload(b.sc.empty()?std::vector<float>{1.0f}:b.sc);
+    api(memra_dsv4_dense_fast_set_for_gate(1));
+    if(kind==0){
+        api(memra_dsv4_gemv_fp8_m(wa.data(),sa.data(),a.sc_cols,x.data(),ya1.data(),m,na,k,0,0,s.value));
+        api(memra_dsv4_gemv_fp8_m(wb.data(),sb.data(),b.sc_cols,x.data(),yb1.data(),m,nb,k,0,0,s.value));
+    }else{
+        api(memra_dsv4_dots_f32acc_mrow((float*)x.data(),wa.data(),1,ya1.data(),m,k,na,s.value));
+        api(memra_dsv4_dots_f32acc_mrow((float*)x.data(),wb.data(),1,yb1.data(),m,k,nb,s.value));
+    }
+    auto pair=[&]{api(kind==0?
+        memra_dsv4_gemv_fp8_m_pair(wa.data(),sa.data(),a.sc_cols,ya2.data(),na,0,wb.data(),sb.data(),b.sc_cols,yb2.data(),nb,0,x.data(),m,k,0,s.value):
+        memra_dsv4_dots_f32acc_mrow_pair((float*)x.data(),wa.data(),ya2.data(),na,wb.data(),yb2.data(),nb,1,m,k,s.value));};
+    pair();ck(cudaStreamSynchronize(s.value));
+    equal(ya1.output(size_t(m)*na),ya2.output(size_t(m)*na));equal(yb1.output(size_t(m)*nb),yb2.output(size_t(m)*nb));
+    cudaGraph_t g{};ck(cudaStreamBeginCapture(s.value,cudaStreamCaptureModeThreadLocal));pair();ck(cudaStreamEndCapture(s.value,&g));
+    size_t count=0;ck(cudaGraphGetNodes(g,nullptr,&count));insist(count==1,"one pair kernel node");
+    cudaGraphNode_t node{};ck(cudaGraphGetNodes(g,&node,&count));cudaKernelNodeParams params{};ck(cudaGraphKernelNodeGetParams(node,&params));
+    const char* name=nullptr;ck(cudaFuncGetName(&name,params.func));insist(strstr(name,"_pair")!=nullptr,"the pair kernel ran");
+    ck(cudaGraphDestroy(g));
+    printf("PASS pair rank=%d kind=%d na=%d nb=%d k=%d m=%d bits=1 one_launch=1 symbol=%s\n",rank,kind,na,nb,k,m,name);fflush(stdout);
+}
 int main(int argc,char** argv){try{
     api(memra_dsv4_hc_dot_split_set_for_gate(0));
     insist(memra_dsv4_hc_dot_split_slices_for_gate()==0,"HC split control override");
@@ -111,5 +146,10 @@ int main(int argc,char** argv){try{
     // Tail and K boundaries cover partial two-row tiles and unroll remainders.
     for(int rank=0;rank<2;++rank){ck(cudaSetDevice(rank));tree_case();
         for(int kind=0;kind<3;++kind)for(int k:{8,1016,1024,1032,2048,4096}){auto c=synthetic(rank,kind,3,k);run_case(c,false,false);}}
+    // The pairs the TP/EP step launches: shared-expert gate and up, wq_a and wkv, the compressor's
+    // kv and gate dots, at the one-token, B-row and verify widths.
+    for(int rank=0;rank<2;++rank)for(int m:{1,2,4,6}){
+        pair_case(rank,0,2048,2048,4096,m);pair_case(rank,0,1024,512,4096,m);
+        pair_case(rank,2,1024,1024,4096,m);pair_case(rank,2,256,256,4096,m);}
     puts("PASS dense_fast_components");return 0;
 }catch(const std::exception& e){fprintf(stderr,"FAIL %s\n",e.what());return 1;}}
