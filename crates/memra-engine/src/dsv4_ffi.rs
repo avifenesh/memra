@@ -1622,7 +1622,7 @@ unsafe extern "C" {
     pub fn memra_dsv4_gemm_fp8_tile_set_for_gate(on: i32) -> i32;
     /// Launches of the prefill dense tile since process start (engagement receipt).
     pub fn memra_dsv4_gemm_fp8_tile_launches() -> u64;
-    /// The grouped output projection over `m` rows of 2 to 8 on the dense-fast transport (memra
+    /// The grouped output projection over `m` rows of 2 to 16 on the dense-fast transport (memra
     /// #710 B-row). The weight row is flat, `rows_per_group` rows per group; row `t` of group
     /// `g` reads `x + t * xstride + g * x_group_stride` and writes `y + t * ystride + g *
     /// rows_per_group`. Returns 1, launching nothing, when the transport does not admit it.

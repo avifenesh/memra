@@ -4298,6 +4298,7 @@ extern "C" int memra_dsv4_build_idx_redirect_m(
 // precisely so the gated arms' generated code cannot move.
 // =====================================================================================
 
+#define DSV4_DENSE_FAST_M_MAX 16  // widest M-row launch on the dense-fast transport (memra #710 B-row)
 #define DSV4_TMAX 32  // DSpark uses <=6; bounded prefill prices widths through 32
 #include "dsv4_dense_tile.cuh"
 #include "dsv4_dense_census.cuh"
@@ -4882,12 +4883,12 @@ extern "C" int memra_dsv4_gemv_fp8_m(const void* w_codes, const float* sc_f32, i
     if (xstride <= 0) xstride = k;
     if (ystride <= 0) ystride = n;
     if (xstride % 8 != 0) return 40011;
-    // Rows 2..8 (B-row decode, verify rounds; never inside a wider launch's row recursion)
+    // Rows 2..16 (B-row decode, verify rounds; never inside a wider launch's row recursion)
     // on the dense-fast transport: per row the same leaf order and reduction tree as
     // dsv4_gemv_fp8_m_kernel<M> below, with two barriers per row instead of seven
     // (memra #710). The engagement counter stays the one-token count.
-    if (m >= 2 && m <= 8 && dsv4_dense_exact_tail_enabled && !dsv4_dense_exact_tail_suppressed &&
-        dsv4_dense_fast_enabled &&
+    if (m >= 2 && m <= DSV4_DENSE_FAST_M_MAX && dsv4_dense_exact_tail_enabled &&
+        !dsv4_dense_exact_tail_suppressed && dsv4_dense_fast_enabled &&
         dsv4_dense_exact_tail_fp8_admits(w_codes, sc_f32, sc_cols, x_bf16, y, 1, n, k)) {
         dsv4_dense_census_note(DSV4_DENSE_ENTRY_GEMV_FP8, m, n, k);
         switch (m) {
@@ -4898,6 +4899,14 @@ extern "C" int memra_dsv4_gemv_fp8_m(const void* w_codes, const float* sc_f32, i
             DSV4_DENSE_FAST_FP8_M_CASE(6)
             DSV4_DENSE_FAST_FP8_M_CASE(7)
             DSV4_DENSE_FAST_FP8_M_CASE(8)
+            DSV4_DENSE_FAST_FP8_M_CASE(9)
+            DSV4_DENSE_FAST_FP8_M_CASE(10)
+            DSV4_DENSE_FAST_FP8_M_CASE(11)
+            DSV4_DENSE_FAST_FP8_M_CASE(12)
+            DSV4_DENSE_FAST_FP8_M_CASE(13)
+            DSV4_DENSE_FAST_FP8_M_CASE(14)
+            DSV4_DENSE_FAST_FP8_M_CASE(15)
+            DSV4_DENSE_FAST_FP8_M_CASE(16)
         }
         DSV4_ERR();
         return 0;
@@ -5003,7 +5012,8 @@ extern "C" int memra_dsv4_gemv_fp8_m_pair(const void* wa, const float* sca, int 
     if (ystride_a <= 0) ystride_a = na;
     if (ystride_b <= 0) ystride_b = nb;
     if (xstride % 8 != 0) return 40011;
-    const bool fast = m <= 8 && dsv4_dense_exact_tail_enabled && !dsv4_dense_exact_tail_suppressed &&
+    const bool fast = m <= DSV4_DENSE_FAST_M_MAX && dsv4_dense_exact_tail_enabled &&
+        !dsv4_dense_exact_tail_suppressed &&
         dsv4_dense_fast_enabled &&
         dsv4_dense_exact_tail_fp8_admits(wa, sca, sc_cols_a, x_bf16, ya, 1, na, k) &&
         dsv4_dense_exact_tail_fp8_admits(wb, scb, sc_cols_b, x_bf16, yb, 1, nb, k);
@@ -5041,6 +5051,14 @@ extern "C" int memra_dsv4_gemv_fp8_m_pair(const void* wa, const float* sca, int 
         DSV4_FP8_PAIR_CASE(6)
         DSV4_FP8_PAIR_CASE(7)
         DSV4_FP8_PAIR_CASE(8)
+        DSV4_FP8_PAIR_CASE(9)
+        DSV4_FP8_PAIR_CASE(10)
+        DSV4_FP8_PAIR_CASE(11)
+        DSV4_FP8_PAIR_CASE(12)
+        DSV4_FP8_PAIR_CASE(13)
+        DSV4_FP8_PAIR_CASE(14)
+        DSV4_FP8_PAIR_CASE(15)
+        DSV4_FP8_PAIR_CASE(16)
 #undef DSV4_FP8_PAIR_CASE
     }
     DSV4_ERR();
@@ -5084,7 +5102,8 @@ __global__ void dsv4_dense_fast_fp8_kernel_pair_gated(
 
 static bool dsv4_dense_fast_gated_admits(const void* w, const float* sc, int sc_cols,
                                          const void* x, float* y, int m, int n, int k) {
-    return m >= 1 && m <= 8 && k % 8 == 0 && sc_cols > 0 && dsv4_dense_exact_tail_enabled &&
+    return m >= 1 && m <= DSV4_DENSE_FAST_M_MAX && k % 8 == 0 && sc_cols > 0 &&
+           dsv4_dense_exact_tail_enabled &&
            !dsv4_dense_exact_tail_suppressed && dsv4_dense_fast_enabled &&
            dsv4_dense_exact_tail_fp8_admits(w, sc, sc_cols, x, y, 1, n, k);
 }
@@ -5119,6 +5138,14 @@ extern "C" int memra_dsv4_gemv_fp8_m_gated(const void* w_codes, const float* sc_
         DSV4_FP8_GATED_CASE(6)
         DSV4_FP8_GATED_CASE(7)
         DSV4_FP8_GATED_CASE(8)
+        DSV4_FP8_GATED_CASE(9)
+        DSV4_FP8_GATED_CASE(10)
+        DSV4_FP8_GATED_CASE(11)
+        DSV4_FP8_GATED_CASE(12)
+        DSV4_FP8_GATED_CASE(13)
+        DSV4_FP8_GATED_CASE(14)
+        DSV4_FP8_GATED_CASE(15)
+        DSV4_FP8_GATED_CASE(16)
 #undef DSV4_FP8_GATED_CASE
     }
     DSV4_ERR();
@@ -5163,6 +5190,14 @@ extern "C" int memra_dsv4_gemv_fp8_m_pair_gated(const void* wa, const float* sca
         DSV4_FP8_PAIR_GATED_CASE(6)
         DSV4_FP8_PAIR_GATED_CASE(7)
         DSV4_FP8_PAIR_GATED_CASE(8)
+        DSV4_FP8_PAIR_GATED_CASE(9)
+        DSV4_FP8_PAIR_GATED_CASE(10)
+        DSV4_FP8_PAIR_GATED_CASE(11)
+        DSV4_FP8_PAIR_GATED_CASE(12)
+        DSV4_FP8_PAIR_GATED_CASE(13)
+        DSV4_FP8_PAIR_GATED_CASE(14)
+        DSV4_FP8_PAIR_GATED_CASE(15)
+        DSV4_FP8_PAIR_GATED_CASE(16)
 #undef DSV4_FP8_PAIR_GATED_CASE
     }
     DSV4_ERR();
@@ -5268,7 +5303,7 @@ extern "C" int memra_dsv4_gemv_fp8_grouped_m1(
     return 0;
 }
 
-// The grouped output projection over m = 2..8 rows (memra #710 B-row): the per-group M-row
+// The grouped output projection over m = 2..16 rows (memra #710 B-row): the per-group M-row
 // launches' dense-fast body in one launch. Token row t of group g reads x + t * xstride +
 // g * x_group_stride and writes y + t * ystride + g * rows_per_group; the flat weight row and
 // its scale row are the ones the group's own launch addresses from its offset slices, so each
@@ -5286,7 +5321,8 @@ extern "C" int memra_dsv4_gemv_fp8_grouped_m(
         int groups, int rows_per_group, int k, int x_group_stride, int m, int xstride,
         int ystride, void* stream_v) {
     cudaStream_t stream = (cudaStream_t)stream_v;
-    if (groups <= 0 || rows_per_group <= 0 || k <= 0 || k % 8 != 0 || m < 2 || m > 8 ||
+    if (groups <= 0 || rows_per_group <= 0 || k <= 0 || k % 8 != 0 || m < 2 ||
+        m > DSV4_DENSE_FAST_M_MAX ||
         sc_cols < (k / 128 + (k % 128 != 0)) || x_group_stride < k ||
         xstride < groups * x_group_stride || ystride < groups * rows_per_group ||
         rows_per_group % 128 != 0 || x_group_stride % 8 != 0 || xstride % 8 != 0) {
@@ -5320,6 +5356,14 @@ extern "C" int memra_dsv4_gemv_fp8_grouped_m(
         DSV4_DENSE_FAST_FP8_GROUPED_M_CASE(6)
         DSV4_DENSE_FAST_FP8_GROUPED_M_CASE(7)
         DSV4_DENSE_FAST_FP8_GROUPED_M_CASE(8)
+        DSV4_DENSE_FAST_FP8_GROUPED_M_CASE(9)
+        DSV4_DENSE_FAST_FP8_GROUPED_M_CASE(10)
+        DSV4_DENSE_FAST_FP8_GROUPED_M_CASE(11)
+        DSV4_DENSE_FAST_FP8_GROUPED_M_CASE(12)
+        DSV4_DENSE_FAST_FP8_GROUPED_M_CASE(13)
+        DSV4_DENSE_FAST_FP8_GROUPED_M_CASE(14)
+        DSV4_DENSE_FAST_FP8_GROUPED_M_CASE(15)
+        DSV4_DENSE_FAST_FP8_GROUPED_M_CASE(16)
     }
     DSV4_ERR();
     return 0;
@@ -5517,9 +5561,10 @@ extern "C" int memra_dsv4_dots_f32acc_mrow(const float* x, const void* w, int w_
     cudaStream_t stream = (cudaStream_t)stream_v;
     if (k % 8 != 0) return 40012;
     if (s < 1) return 40020;
-    // Rows 2..8 on the dense-fast transport, as memra_dsv4_gemv_fp8_m does (memra #710):
+    // Rows 2..16 on the dense-fast transport, as memra_dsv4_gemv_fp8_m does (memra #710):
     // per row the same leaf order and tree as dsv4_dots_f32acc_mrow_kernel<M> below.
-    if (s >= 2 && s <= 8 && dsv4_dense_exact_tail_enabled && !dsv4_dense_exact_tail_suppressed &&
+    if (s >= 2 && s <= DSV4_DENSE_FAST_M_MAX && dsv4_dense_exact_tail_enabled &&
+        !dsv4_dense_exact_tail_suppressed &&
         dsv4_dense_fast_enabled &&
         dsv4_dense_exact_tail_dots_admits(x, w, w_is_bf16, y, 1, n, k)) {
         dsv4_dense_census_note(DSV4_DENSE_ENTRY_DOTS_F32ACC, s, n, k);
@@ -5531,6 +5576,14 @@ extern "C" int memra_dsv4_dots_f32acc_mrow(const float* x, const void* w, int w_
             DSV4_DENSE_FAST_DOTS_M_CASE(6)
             DSV4_DENSE_FAST_DOTS_M_CASE(7)
             DSV4_DENSE_FAST_DOTS_M_CASE(8)
+            DSV4_DENSE_FAST_DOTS_M_CASE(9)
+            DSV4_DENSE_FAST_DOTS_M_CASE(10)
+            DSV4_DENSE_FAST_DOTS_M_CASE(11)
+            DSV4_DENSE_FAST_DOTS_M_CASE(12)
+            DSV4_DENSE_FAST_DOTS_M_CASE(13)
+            DSV4_DENSE_FAST_DOTS_M_CASE(14)
+            DSV4_DENSE_FAST_DOTS_M_CASE(15)
+            DSV4_DENSE_FAST_DOTS_M_CASE(16)
         }
         DSV4_ERR();
         return 0;
@@ -5610,7 +5663,8 @@ extern "C" int memra_dsv4_dots_f32acc_mrow_pair(const float* x, const void* wa, 
     cudaStream_t stream = (cudaStream_t)stream_v;
     if (k % 8 != 0) return 40012;
     if (s < 1) return 40020;
-    const bool fast = s <= 8 && dsv4_dense_exact_tail_enabled && !dsv4_dense_exact_tail_suppressed &&
+    const bool fast = s <= DSV4_DENSE_FAST_M_MAX && dsv4_dense_exact_tail_enabled &&
+        !dsv4_dense_exact_tail_suppressed &&
         dsv4_dense_fast_enabled &&
         dsv4_dense_exact_tail_dots_admits(x, wa, w_is_bf16, ya, 1, na, k) &&
         dsv4_dense_exact_tail_dots_admits(x, wb, w_is_bf16, yb, 1, nb, k);
@@ -5644,6 +5698,14 @@ extern "C" int memra_dsv4_dots_f32acc_mrow_pair(const float* x, const void* wa, 
         DSV4_DOTS_PAIR_CASE(6)
         DSV4_DOTS_PAIR_CASE(7)
         DSV4_DOTS_PAIR_CASE(8)
+        DSV4_DOTS_PAIR_CASE(9)
+        DSV4_DOTS_PAIR_CASE(10)
+        DSV4_DOTS_PAIR_CASE(11)
+        DSV4_DOTS_PAIR_CASE(12)
+        DSV4_DOTS_PAIR_CASE(13)
+        DSV4_DOTS_PAIR_CASE(14)
+        DSV4_DOTS_PAIR_CASE(15)
+        DSV4_DOTS_PAIR_CASE(16)
 #undef DSV4_DOTS_PAIR_CASE
     }
     DSV4_ERR();
