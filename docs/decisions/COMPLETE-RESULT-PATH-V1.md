@@ -65,13 +65,21 @@ complete output without holding one HTTP connection open for the entire run.
    states, so the chat dialects gain the capability without inventing a second envelope
    family.
 5. **Cancel.** `POST /v1/responses/{id}/cancel` (chat dialects: `POST
-   /v1/jobs/{id}/cancel`) drops the worker's event channel exactly like the existing
-   deadline-drop path already does (`drop(rx)` at `lib.rs:11351`), then settles the
-   receipt with whatever was produced through the SAME `complete_deadline_partial` /
-   `settle_unbilled` calls already in place (`lib.rs:11356`-`11394`). The billing rule
-   does not change: zero tokens produced bills zero, some tokens produced bills what was
-   delivered once collected. A new named outcome, `cancelled`, distinguishes an explicit
-   client cancel from a deadline miss in the census, mirroring the existing
+   /v1/jobs/{id}/cancel`) drops the worker's event channel. On the chat/completions
+   dialect this reuses the drop-and-deliver sequence that already exists for a deadline
+   miss in `blocking_response_with_receipt` (`drop(rx)` at `lib.rs:11351`, then
+   `complete_deadline_partial` / `settle_unbilled` at `lib.rs:11356`-`11394`): zero tokens
+   produced bills zero, some tokens produced bills what was delivered. On `/v1/responses`
+   this is **not** a reuse: that surface's own non-streaming deadline path
+   (`responses_api.rs:705`-`753`) always drops `rx` and settles `deadline_exceeded`
+   unconditionally today, discarding any partial output by deliberate design
+   (`responses_api.rs:708`-`715`, "revisit if a caller asks for partials here
+   specifically"). Restoring `background` on `/v1/responses` and then wanting a cancel
+   that bills a partial on that same surface is exactly a caller asking for that; it
+   requires porting the chat dialect's partial-delivery/billing behavior onto
+   `/v1/responses`, which is new work this document is naming, not code already in
+   place. A new named outcome, `cancelled`, distinguishes an explicit client cancel from
+   a deadline miss in the census on both dialects, mirroring the existing
    `deadline_exceeded` / `deadline_partial` split (`docs/SERVING.md:1109`-`1116`).
 6. **Terminal usage.** Satisfied by the existing receipt discipline, not a new webhook.
    `complete`, `complete_deadline_partial`, and `settle_unbilled` already settle exactly
@@ -140,10 +148,13 @@ rather than hardwiring storage into the handler:
 ## Owed (why issue #550 stays open)
 
 1. Implementation: the `JobStore` trait plus its in-memory reference implementation, the
-   `GET`/`POST` routes on both dialects, cancel wiring that reuses the existing
-   `drop(rx)` path, and splitting the `background` gate in `translate()`
-   (`responses_api.rs:152`-`153`) so it restores this one field while
-   `previous_response_id`, `store`, and `conversation` keep refusing.
+   `GET`/`POST` routes on both dialects, and splitting the `background` gate in
+   `translate()` (`responses_api.rs:152`-`153`) so it restores this one field while
+   `previous_response_id`, `store`, and `conversation` keep refusing. Cancel wiring
+   splits by dialect: chat/completions reuses the existing `drop(rx)` +
+   `complete_deadline_partial` sequence (`lib.rs:11351`-`11394`); `/v1/responses` needs
+   the partial-delivery/billing behavior that surface deliberately does not have today
+   (`responses_api.rs:705`-`715`) ported onto it, which is new engine work, not reuse.
 2. A default-OFF flag (for example `MEMRA_BACKGROUND_RESPONSES`) with its
    `docs/FLAGS.md` row (default, both arms, rollback seam, receipt pointer, decide-by
    date) once the code exists. Not created by this document.
