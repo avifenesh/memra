@@ -11,6 +11,11 @@ checked-in mimo-pcm-mel-voiced-2048.logmel.f32 is one deterministic example.
 --stages-dir includes conv1_pre_gelu.bf16 as frame-major BF16 [frames, 1024]
 ([9, 1024] for the checked-in mel) alongside the existing post-GELU conv1
 and later source stages.
+--conv-linear-control reruns that same pinned encoder and checkpoint with
+conv1 and conv2 computed by BF16 im2col plus F.linear. The receipt records
+both paths' code IDs and stage hashes. With --stages-dir, control tensors go
+in its conv_linear_control subdirectory. This is a numeric diagnostic, not
+a source-quality or production path.
 
   python crates/memra-reference/src/fixtures/mimo-v26-audio-publisher-oracle.py \
     SOURCE_ROOT --mel-f32 crates/memra-reference/src/fixtures/mimo-pcm-mel-voiced-2048.logmel.f32 \
@@ -24,7 +29,7 @@ uses only the named card on a dedicated two-card box.
 
 import argparse
 import ast
-from contextlib import redirect_stdout
+from contextlib import contextmanager, redirect_stdout
 import copy
 import hashlib
 import importlib.util
@@ -263,6 +268,108 @@ def copy_encoder_weights(encoder, path, expected, torch):
                 target.copy_(tensor)
 
 
+def conv1d_bf16_linear(input_tensor, conv, torch):
+    from torch.nn import functional as F
+
+    if (
+        input_tensor.ndim != 3
+        or input_tensor.shape[0] != 1
+        or not 0 < input_tensor.shape[2] <= MAX_MEL_FRAMES
+        or input_tensor.shape[1] != conv.in_channels
+        or input_tensor.dtype != torch.bfloat16
+        or conv.weight.dtype != torch.bfloat16
+        or conv.bias is None
+        or conv.bias.dtype != torch.bfloat16
+        or input_tensor.device != conv.weight.device
+        or input_tensor.device != conv.bias.device
+        or conv.groups != 1
+        or conv.dilation != (1,)
+        or conv.padding_mode != "zeros"
+    ):
+        raise ValueError("linear control requires bounded BF16 Conv1d geometry")
+    kernel = conv.kernel_size[0]
+    stride = conv.stride[0]
+    padding = conv.padding[0]
+    padded = F.pad(input_tensor, (padding, padding))
+    windows = padded.unfold(2, kernel, stride)
+    rows = windows.permute(0, 2, 1, 3).reshape(-1, conv.in_channels * kernel)
+    output = F.linear(rows, conv.weight.reshape(conv.out_channels, -1), conv.bias)
+    return (
+        output.reshape(1, windows.shape[2], conv.out_channels)
+        .transpose(1, 2)
+        .contiguous()
+    )
+
+
+@contextmanager
+def use_conv_linear_control(encoder, codec, torch):
+    conv1 = encoder.conv1
+    conv2 = encoder.conv2
+    expected = (
+        (conv1, MEL_BINS, codec["d_model"], 1),
+        (conv2, codec["d_model"], codec["d_model"], codec["stride_size"]),
+    )
+    for conv, in_channels, out_channels, stride in expected:
+        if (
+            conv.in_channels != in_channels
+            or conv.out_channels != out_channels
+            or conv.kernel_size != (codec["kernel_size"],)
+            or conv.stride != (stride,)
+            or conv.padding != (1,)
+        ):
+            raise ValueError("publisher conv geometry changed from pinned linear control")
+    original_conv1 = conv1.__dict__.get("forward")
+    original_conv2 = conv2.__dict__.get("forward")
+    try:
+        conv1.forward = lambda tensor: conv1d_bf16_linear(tensor, conv1, torch)
+        conv2.forward = lambda tensor: conv1d_bf16_linear(tensor, conv2, torch)
+        yield
+    finally:
+        if original_conv1 is None:
+            del conv1.forward
+        else:
+            conv1.forward = original_conv1
+        if original_conv2 is None:
+            del conv2.forward
+        else:
+            conv2.forward = original_conv2
+
+
+def stage_receipt(stage_bytes, codec):
+    return {
+        name: {
+            "sha256": hashlib.sha256(values).hexdigest(),
+            "shape": [len(values) // (2 * codec["d_model"]), codec["d_model"]],
+            "dtype": "BF16",
+        }
+        for name, values in stage_bytes.items()
+    }
+
+
+def compare_bf16_stages(publisher_bytes, control_bytes):
+    if len(publisher_bytes) != len(control_bytes) or len(publisher_bytes) % 2:
+        raise ValueError("publisher and linear control stage extents differ")
+    equal = 0
+    squared_error = 0.0
+    squared_publisher = 0.0
+    for (publisher_bits,), (control_bits,) in zip(
+        struct.iter_unpack("<H", publisher_bytes),
+        struct.iter_unpack("<H", control_bytes),
+    ):
+        equal += publisher_bits == control_bits
+        publisher_value = struct.unpack("<f", struct.pack("<I", publisher_bits << 16))[0]
+        control_value = struct.unpack("<f", struct.pack("<I", control_bits << 16))[0]
+        if not math.isfinite(publisher_value) or not math.isfinite(control_value):
+            raise ValueError("non-finite BF16 source stage in linear control comparison")
+        squared_error += (publisher_value - control_value) ** 2
+        squared_publisher += publisher_value ** 2
+    return {
+        "matching_bf16_values": equal,
+        "total_bf16_values": len(publisher_bytes) // 2,
+        "relative_l2": math.sqrt(squared_error / squared_publisher) if squared_publisher else None,
+    }
+
+
 def run_publisher(source, encoder, mel, frames, codec, torch, device, capture_stages=False):
     features = torch.tensor(mel, dtype=torch.float32, device=device).reshape(frames, MEL_BINS)
     lengths = torch.tensor([frames], dtype=torch.long, device=device)
@@ -382,9 +489,17 @@ def main():
     parser.add_argument("--features-out", type=Path, help="write pre-RVQ BF16 feature rows after a full run")
     parser.add_argument("--device", choices=("cpu", "cuda:0", "cuda:1"), default="cpu")
     parser.add_argument("--stages-dir", type=Path, help="write bounded publisher BF16 stage tensors")
+    parser.add_argument(
+        "--conv-linear-control",
+        action="store_true",
+        help="rerun conv1 and conv2 with BF16 im2col plus F.linear and compare source outputs",
+    )
     args = parser.parse_args()
-    if args.check_source and (args.out or args.features_out or args.stages_dir or args.device != "cpu"):
-        parser.error("--out and --features-out require a full checkpoint run")
+    if args.check_source and (
+        args.out or args.features_out or args.stages_dir or args.conv_linear_control
+        or args.device != "cpu"
+    ):
+        parser.error("--check-source cannot be combined with full-run options")
 
     alignment, codec, selected, source_path = check_source(args.source_root)
     mel, frames, mel_sha256 = read_mel(args.mel_f32)
@@ -436,14 +551,24 @@ def main():
     encoder = build_encoder(source, codec, torch, expected, args.device)
     copy_encoder_weights(encoder, weights_path, expected, torch)
     depth_major, token_major, grouped, pre_rvq_bytes, margins, second_codes, stage_bytes = run_publisher(
-        source, encoder, mel, frames, codec, torch, args.device, args.stages_dir is not None
+        source, encoder, mel, frames, codec, torch, args.device,
+        args.stages_dir is not None or args.conv_linear_control,
     )
+    control = None
+    if args.conv_linear_control:
+        with use_conv_linear_control(encoder, codec, torch):
+            control = run_publisher(source, encoder, mel, frames, codec, torch, args.device, True)
     if args.features_out:
         args.features_out.write_bytes(pre_rvq_bytes)
     if args.stages_dir:
         args.stages_dir.mkdir(parents=True, exist_ok=True)
         for name, values in stage_bytes.items():
             (args.stages_dir / f"{name}.bf16").write_bytes(values)
+        if control is not None:
+            control_dir = args.stages_dir / "conv_linear_control"
+            control_dir.mkdir(parents=True, exist_ok=True)
+            for name, values in control[6].items():
+                (control_dir / f"{name}.bf16").write_bytes(values)
     receipt.update({
         "status": "publisher_cpu_codes_generated",
         "memra_code_id_parity": "unchecked",
@@ -467,10 +592,7 @@ def main():
         "pre_rvq_features_sha256": hashlib.sha256(pre_rvq_bytes).hexdigest(),
         "rvq_top_two_score_margin_depth_major": margins,
         "rvq_second_code_depth_major": second_codes,
-        "stages": {name: {"sha256": hashlib.sha256(values).hexdigest(),
-                          "shape": [len(values) // (2 * codec["d_model"]), codec["d_model"]],
-                          "dtype": "BF16"}
-                   for name, values in stage_bytes.items()},
+        "stages": stage_receipt(stage_bytes, codec),
         "code_ids_sha256": hashlib.sha256(
             json.dumps(depth_major, separators=(",", ":")).encode("utf-8")
         ).hexdigest(),
@@ -491,6 +613,76 @@ def main():
             "mkl_num_threads": os.environ["MKL_NUM_THREADS"],
         },
     })
+    if control is not None:
+        (
+            control_depth, control_tokens, control_grouped, control_features,
+            control_margins, control_second, control_stages,
+        ) = control
+        baseline_stages = receipt["stages"]
+        linear_stages = stage_receipt(control_stages, codec)
+        if linear_stages.keys() != baseline_stages.keys():
+            raise ValueError("linear control stage census differs from publisher")
+        mismatches = [
+            {
+                "depth": depth,
+                "token": token,
+                "publisher": code,
+                "linear_control": control_depth[depth][token],
+            }
+            for depth, row in enumerate(depth_major)
+            for token, code in enumerate(row)
+            if code != control_depth[depth][token]
+        ]
+        receipt["conv_linear_control"] = {
+            "method": "BF16 im2col + torch.nn.functional.linear for conv1 and conv2",
+            "conv1_geometry": {
+                "in_channels": encoder.conv1.in_channels,
+                "out_channels": encoder.conv1.out_channels,
+                "kernel_size": list(encoder.conv1.kernel_size),
+                "stride": list(encoder.conv1.stride),
+                "padding": list(encoder.conv1.padding),
+            },
+            "conv2_geometry": {
+                "in_channels": encoder.conv2.in_channels,
+                "out_channels": encoder.conv2.out_channels,
+                "kernel_size": list(encoder.conv2.kernel_size),
+                "stride": list(encoder.conv2.stride),
+                "padding": list(encoder.conv2.padding),
+            },
+            "depth_major": control_depth,
+            "token_major": control_tokens,
+            "grouped_patch_input": control_grouped,
+            "code_ids_sha256": hashlib.sha256(
+                json.dumps(control_depth, separators=(",", ":")).encode("utf-8")
+            ).hexdigest(),
+            "rvq_top_two_score_margin_depth_major": control_margins,
+            "rvq_second_code_depth_major": control_second,
+            "source_output_code_ids_changed": bool(mismatches),
+            "code_id_mismatches": mismatches,
+            "pre_rvq_features_sha256": hashlib.sha256(control_features).hexdigest(),
+            "pre_rvq_features_changed": control_features != pre_rvq_bytes,
+            "stages": linear_stages,
+            "stage_changed": {
+                name: baseline_stages[name]["sha256"] != linear_stages[name]["sha256"]
+                for name in baseline_stages
+            },
+            "stage_comparison": {
+                name: compare_bf16_stages(stage_bytes[name], control_stages[name])
+                for name in baseline_stages
+            },
+            "numeric_environment": {
+                **receipt["environment"],
+                "cuda_runtime": torch.version.cuda,
+                "cudnn_version": torch.backends.cudnn.version(),
+                "cudnn_enabled": torch.backends.cudnn.enabled,
+                "cudnn_benchmark": torch.backends.cudnn.benchmark,
+                "cudnn_deterministic": torch.backends.cudnn.deterministic,
+                "cudnn_allow_tf32": torch.backends.cudnn.allow_tf32,
+                "matmul_allow_tf32": torch.backends.cuda.matmul.allow_tf32,
+                "float32_matmul_precision": torch.get_float32_matmul_precision(),
+                "deterministic_algorithms": torch.are_deterministic_algorithms_enabled(),
+            },
+        }
     serialized = json.dumps(receipt, indent=2, sort_keys=True) + "\n"
     if args.out:
         args.out.write_text(serialized)
