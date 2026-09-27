@@ -523,6 +523,8 @@ fn main() {
             "cu/mimo_vision_attn.cu",
             // Source axial height/width RoPE for BF16 Q/K vision projections.
             "cu/mimo_vision_rope.cu",
+            // Pinned MiMo ViT block BF16 boundaries and fused-QKV split.
+            "cu/mimo_vision_block.cu",
             // Source-inspection split attention over q8_0 K and NVFP4 V.
             "cu/mimo_mixed_attn.cu",
             // Model-owned local attention over a fixed 128-token KV ring.
