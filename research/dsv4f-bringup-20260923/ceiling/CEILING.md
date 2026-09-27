@@ -105,6 +105,32 @@ Source: `../levers-20260927/`.
   c1 77.48 to 85.16 tok/s (decode p50 89.32), +9.91%, bit-identical.
 - **Refuted: weight loads ahead of the PDL wait** (-1.8%).
 - **Refuted: a deeper MoE stream ring** (+1.6% and +2.3% ms per token).
+- **Adopted: the shared expert on the rank with fewer routed slots.** The other rank skips it and
+  the expert join carries its rows (second SE pair). Rebased on main, greedy c1 goes from 91.18
+  to 94.66 tok/s (decode 99.1), +3.7%, and the long gate from 10.65 .. 10.77 to 10.17 .. 10.27
+  ms/token. Bit-identical.
+- **Adopted, merged earlier the same day:**
+  - sibling projections in one launch;
+  - register-resident row kernels;
+  - the HC finish's Sinkhorn projection on a fifth warp, c1 +2.0% (`../hc-finish/`);
+  - the prefill tile's register diet, TTFT -18.9% at 8k (`../prefill-tile/`).
+- **Refuted:**
+  - the h mirror published once per slot (-0.7%);
+  - register-held mirror groups (+1.8% ms per token; the gate/up kernel goes from 47 to 57
+    registers);
+  - an L2 weight prefetch before the PDL wait (flat).
+
+The step census after the Sinkhorn warp (`../levers-20260927/`, replay with PDL off, first SE
+pair) is 11.21 ms captured, 10.42 ms of kernels per rank and 2,118 launches per step:
+- dense FP8 GEMV, single and pair: 2.96 ms;
+- the fused MoE pair: 1.98 ms;
+- dots: 1.05 ms;
+- joins: 1.15 ms;
+- HC finish: 0.40 ms;
+- sink attention: 0.56 ms;
+- 1,235 launches under 3 us: 1.44 ms together.
+
+With PDL on the same replay is 10.70 ms.
 
 The plain step after the fused pair, with PDL off: 11.3 ms of kernels per step. That breaks
 down as:
