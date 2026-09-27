@@ -43,7 +43,11 @@ pub static NVFP4_PACK: ModelPack = ModelPack {
     config_layout: ConfigLayout::Flat,
     tokenizer_sources: &[TokenizerSource::TokenizerJson],
     template: TemplateContract::ArtifactRequired,
-    support: Some(NativeSupport::NativeQualified),
+    // NativeReference, not NativeQualified: the 2026-08-30 four-card qualification receipts
+    // (external oracle, MTP identity, sampled serving) are not tracked in this repository, and
+    // the tracked record of the minted artifact lists CheckpointParity and Serve pending. The
+    // state moves up only with a tracked record in docs/support-records.toml (memra#551).
+    support: Some(NativeSupport::NativeReference),
     gates: &[
         Gate::Config,
         Gate::TokenizerTemplate,
@@ -65,7 +69,9 @@ pub static NVFP4_PACK: ModelPack = ModelPack {
     matches_config: |config| matches!(config.arch, Arch::Hy3),
     plan_builder,
     tensor_schema: nvfp4_tensor_schema,
-    tiny_plan: None,
+    // Same ModelPlan builder as the canonical pack, so the same tiny plan; the hosted
+    // verify-tiny test runs it under this profile's own family name.
+    tiny_plan: Some(tiny_plan),
 };
 
 fn plan_builder(config: &ModelConfig) -> Result<ModelPlan, PlanCompileError> {
@@ -209,7 +215,7 @@ mod tests {
 
     #[test]
     fn nvfp4_profile_quantizes_every_routed_expert_including_mtp() {
-        assert_eq!(NVFP4_PACK.support, Some(NativeSupport::NativeQualified));
+        assert_eq!(NVFP4_PACK.support, Some(NativeSupport::NativeReference));
         assert_eq!(
             NVFP4_PACK.checkpoint_parity,
             Some(CheckpointParityGate {

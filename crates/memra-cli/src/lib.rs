@@ -2502,7 +2502,12 @@ mod tests {
             std::fs::read(root.join("reference-oracle.tsv")).unwrap(),
             oracle
         );
-        for pack in model_packs::PACKS {
+        // Onboarding profiles are packs with their own family name and support state, so they
+        // get their own tiny run; tools/check-support-states.py relies on this loop covering both.
+        for pack in model_packs::PACKS
+            .iter()
+            .chain(model_packs::ONBOARDING_PROFILES)
+        {
             if pack.family == "qwen3" {
                 continue;
             }

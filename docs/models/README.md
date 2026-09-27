@@ -19,8 +19,8 @@ support matrix remains [docs/MODELS.md](../MODELS.md); measurements remain
 - [Gemma 4 E4B](gemma4-e4b.md)
 - [Step 3.7 Flash 196B-A11B](step37-flash.md)
 - [DeepSeek V4 Flash](deepseek-v4-flash.md) — experimental
-- [GLM-5.3 Flash](glm53-flash.md) — NativeReference
-- [Hy3](hy3.md) — NativeReference canonical plan; NativeQualified for the exact NVFP4 artifact
+- [GLM-5.3 Flash](glm53-flash.md): NativeReference <!-- support: glm5_next-reference -->
+- [Hy3](hy3.md): NativeReference for the canonical plan and the NVFP4 profile <!-- support: hy3-bf16-reference,hy3_nvfp4-modelopt-w4a16 -->
 
 Support is checkpoint-, quantization-, drafter-, and hardware-specific. A card is a route into
 the authoritative docs, not a promise about adjacent checkpoints.
