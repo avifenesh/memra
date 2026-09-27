@@ -1477,4 +1477,6 @@ mod day77;
 mod day79;
 mod day84;
 mod day85;
+// Day 90 (WP-C, `research/spill-c-20260919/DAY90.md` I24): the proxy and bank trace fixture.
+mod day90;
 mod slru_oracle;
