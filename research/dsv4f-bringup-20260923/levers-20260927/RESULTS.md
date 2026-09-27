@@ -533,3 +533,34 @@ M W W M M W, the bits the same (`fbce1a0492d69635`, `raw/se2-moe-wide-s2zd/`, co
 One served row per arm agrees: greedy c1 91.00 against 90.30. The bench times each launch alone.
 In the chain, the wider CTAs leave half the SMs idle at one row (96 CTAs of 512 threads against
 192 of 256), and that costs more than the mirrors it saves. Not merged.
+
+## The attention's per-head RMS with RoPE, and the latent row's norm, RoPE and QAT, each in one launch (adopted)
+
+Lane `lane/dsv4-attn-small-fuse-20260927`, measured against main `286c0c54c` on the first SE pair
+(`raw/se-attn-fuse-v6w/`).
+
+**What changed.** Two fused kernels replace five launches per layer on the f32-chain arm, which
+is the served one:
+- `dsv4_headrms_rope_f32acc_kernel` replaces `headrms_f32acc` then `rope` on q. It runs the
+  headrms register form over each (position, head) row, then rotates the row's last rd dims.
+- `dsv4_kv_norm_rope_quant_f32acc_kernel` replaces `rmsnorm_f32acc`, `rope` and `act_quant` on
+  the shared K==V latent row. It runs the register rmsnorm in place, rotates the last rd dims,
+  then does the FP8 round trip of the prefix in 64-groups. The group max is exact in any order.
+
+Every value is those kernels' op in their order.
+
+**Correctness.**
+- The long gate hash is `fbce1a0492d69635`.
+- The TP/EP rows gate and the KV split gate pass.
+- The DSpark TP/EP gate passes, with the pair's shas `62b368f1` and `d404da5f`.
+
+**Long gate,** order M A A M M A: 10.03 .. 10.18 ms/token against 9.96 .. 10.09, about -0.7%.
+
+**Served,** cells-pdl M A A M, N=2:
+
+| cell | main | lane |
+|---|---|---|
+| greedy c1 | 95.02 / 95.17 (decode 99.9) | 95.88 / 95.89 (decode 100.9 / 101.1), **+0.8%** |
+| sampled c1 | 96.04 / 96.11 | 96.86 / 96.81 |
+| greedy c2 | 127.96 / 128.49 | 128.92 / 128.55 |
+| greedy c4 | 162.02 / 162.97 | 163.11 / 162.92 |
