@@ -90,7 +90,7 @@ def wait_idle(log, label):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     ap.add_argument("--regime", choices=["capped", "bounded", "g2", "handoff", "anonpeak", "f17", "gpucell", "diag",
-                                              "owed26cells", "owed26serve", "spec"], required=True)
+                                              "owed26cells", "owed26serve", "spec", "poolcells"], required=True)
     ap.add_argument("--memory-max", type=int, required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--rounds", default="1-10")
@@ -113,7 +113,13 @@ def main():
                         "-p", f"MemoryMax={a.memory_max}", "-p", "MemorySwapMax=0",
                         sys.executable, str(ROOT / "tools/tier-battery.py"), "--rig", "rtx5090", "--timeout", "10800",
                         "--external-lock", "--out", str(target), "--execute", sys.executable]
-                if a.regime in ("owed26cells", "owed26serve"):
+                if a.regime == "poolcells":
+                    # The pool's GPU cells on a frozen lib test binary (after the OWED 17 deletion).
+                    argv = ["flock", "-n", "-E", "75", LOCK, "systemd-run", "--user", "--scope", "-q",
+                            "-p", "CPUQuota=1200%", "-p", f"MemoryMax={a.memory_max}",
+                            "/home/avifenesh/spill-f-5090/bin-del/lib-tests", "--ignored", "spill_pread::tests",
+                            "--test-threads", "1", "--nocapture"]
+                elif a.regime in ("owed26cells", "owed26serve"):
                     # Section G: the red/green GPU cells, then the serving-shape check, under the lock.
                     tail = (["bash", str(HERE / "owed26/run-cells2.sh"), str(target), TESTS26 + "/red2-lib-tests",
                              TESTS26 + "/green2-lib-tests"] if a.regime == "owed26cells" else
@@ -173,7 +179,7 @@ def main():
                 with (out / f"round-{k:02d}.driver-attempt{attempt}.log").open("xb") as dl:
                     rc = subprocess.run(argv, stdout=dl, stderr=subprocess.STDOUT, cwd=ROOT).returncode
                 text = (out / f"round-{k:02d}.driver-attempt{attempt}.log").read_text(errors="replace")
-                lost = (rc == 75 if a.regime in ("gpucell", "diag", "owed26cells", "owed26serve") else
+                lost = (rc == 75 if a.regime in ("gpucell", "diag", "owed26cells", "owed26serve", "poolcells") else
                         rc != 0 and "Resource temporarily unavailable" in text and not (target / "visits").exists())
                 log.write(json.dumps({"utc": now(), "event": "cell", "round": k, "attempt": attempt, "rc": rc,
                                       "seconds": round(time.monotonic() - t0, 1), "lost_lock_race": lost,
@@ -198,7 +204,8 @@ def main():
                 log.flush()
                 print(f"M1-5090 regime={a.regime} STOPPED at round {k} rc={rc}", flush=True)
                 return 2
-            if a.smoke or a.regime in ("g2", "anonpeak", "gpucell", "diag", "owed26cells", "owed26serve", "spec"):
+            if a.smoke or a.regime in ("g2", "anonpeak", "gpucell", "diag", "owed26cells", "owed26serve", "spec",
+                                        "poolcells"):
                 break
     return 0
 
