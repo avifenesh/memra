@@ -3247,7 +3247,11 @@ fn canonical_config_intake_preserves_explicit_bound_head_policy() {
     }
     for value in ["null", "1", "\"true\"", "[]"] {
         let raw = QWEN.replacen('{', &format!("{{\"tie_word_embeddings\":{value},"), 1);
-        assert!(HfConfig::try_parse(&raw).is_err());
+        assert_eq!(
+            HfConfig::try_parse(&raw).unwrap().tie_word_embeddings,
+            None,
+            "{value} must not declare a tied head"
+        );
     }
 }
 

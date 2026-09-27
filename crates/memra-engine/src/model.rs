@@ -10,7 +10,7 @@ use crate::{
 use cudarc::driver::CudaSlice;
 use memra_gguf::bound_disk::{BoundDiskView, ExpertDiskView};
 use memra_gguf::config::ModelConfig;
-use memra_gguf::source::{GgufSource, TensorSource};
+use memra_gguf::source::{DiskExtent, GgufSource, TensorSource};
 use memra_gguf::{GgmlType, GgufFile, dequant};
 use std::collections::HashMap;
 
