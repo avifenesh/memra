@@ -38,3 +38,22 @@ lane's checkout; it prints `DAY87 PACKET LINES checked=N missing=0 -> PASS` only
 edit is committed only after that PASS, and the command goes into appendix A.
 
 **Cross-box rule, restated.** Each box's rows stay its own; no row of one machine is subtracted from another's.
+
+## 2. The read-in, as done
+
+`python3 research/spill-c-20260919/day87-packet-lines.py 359e850d0` into `day87-cpu/packet-lines.log`: `DAY87 PACKET
+LINES tree=359e850d0 checked=60 missing=0 -> PASS` (35 whole receipt lines, 2 leading parts of a receipt line, 23
+substrings of lane A's and the lead's records). A second pass read every backticked or quoted span the day-87 additions
+carry against the checker's list: every verdict, clause, reading and price line among them is one of the 60 (the
+section 6 figures are parts of those lines). The packet changed where section 1 said: the status paragraph's day-87
+line; section 2's bullet "Since A days 49 to 70" (rulings 58, 59, 60, 62, 64 and 65 quoted, W's 5090 half and its
+revert, the four adopted forms named); section 3's day-87 row (integ70's GPU battery on BOX43 and integ69 run 4's
+purge cells); section 4's nine target rows (items 7 and 8, P and P2's refuted forms, P2 on L' with its repeated unit
+step, item 10's price, B1, W, R2 and R1, L and L', F and T-H); section 5 item 2's day-87 lines (cell (i) on the current
+tree, not met again, and A's candidate for the owner) and a new item 8 (the purge and the ledger defects under L',
+placed, fixed as designs P and Q, and the review's two latent hazards); item 7's day-87 paragraph; section 6's two
+day-87 lines; appendix A's day-87 command. It recommends nothing.
+
+Beside it, stated plainly: item 7's owed list is what the rulings and A's records name; it is not this lane's
+reading of what the door needs. `OWED.md` C3 is current through lane A day 70 and ruling 65; it stays open for any
+later receipt bearing on the door before 2026-10-05 (the RTX 5090 halves A day 68 registered are the next).

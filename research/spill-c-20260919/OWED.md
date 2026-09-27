@@ -218,7 +218,9 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   missing=0 -> PASS`). Stays open until the review: every later receipt bearing on the door is read in before
   2026-10-05. Day 62 (`DAY62.md`): current through lane A day 41 and ruling 54 (`DAY62 PACKET LINES checked=63
   missing=0 -> PASS`). Day 69 (`DAY69.md`): current through lane A day 48 and ruling 57 (`DAY69 PACKET LINES checked=32
-  missing=0 -> PASS`). At 2026-09-24 21:10Z lane A's days 37 to 41 were in flight on its branch (DAY38's G'' and G''' sittings,
+  missing=0 -> PASS`). Day 87 (`DAY87.md`): current through lane A day 70 and rulings 58 to 65 (`DAY87 PACKET LINES
+  tree=359e850d0 checked=60 missing=0 -> PASS`), with the two defects the integ69 review found under L' as the
+  packet's section 5 item 8. At 2026-09-24 21:10Z lane A's days 37 to 41 were in flight on its branch (DAY38's G'' and G''' sittings,
   DAY39's design T, DAY40's span-receipt survey, DAY41's design K red arms); they are read in when they land. Item 3's
   open question (which slice moved the demote's landing) answered from this lane's day 54 and read in verbatim.
 
