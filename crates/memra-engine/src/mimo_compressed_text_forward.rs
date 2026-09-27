@@ -1,6 +1,7 @@
-//! One-token MiMo text forward with model-owned compressed KV.
-//! Prepared modal chunks may enter a fresh sequence; there is no raw-modal
-//! decoder, batched prefill, payload-keyed KV reuse, or serving dispatch.
+//! MiMo text forward with model-owned compressed KV.
+//! Prepared modal chunks may enter a fresh sequence. The bounded first chunk
+//! shares decode's packed attention arithmetic. There is no raw-modal decoder,
+//! payload-keyed KV reuse, or serving dispatch.
 
 use std::error::Error;
 
@@ -20,6 +21,7 @@ const VOCAB: usize = 152_576;
 const LAYERS: usize = 48;
 const STAGE_CUT: usize = 24;
 const MAX_FIRST_BATCH_CHUNK: usize = 128;
+const CONTEXT_WIDTH: usize = 64 * 128;
 
 fn first_batch_rows(tokens: usize) -> Result<usize, &'static str> {
     if !(1..=MAX_FIRST_BATCH_CHUNK).contains(&tokens) {
@@ -48,17 +50,101 @@ fn normalized_rows(
     Ok(output)
 }
 
+/// Keep FP8 block projections in the one-token numeric class. At 16 rows
+/// Engine::matmul switches to a different prefill weight and reduction path.
+fn matmul_numeric_rows(
+    engine: &Engine,
+    weight: &GpuTensor,
+    input: &CudaSlice<f32>,
+    rows: usize,
+) -> Result<CudaSlice<f32>, Fail> {
+    const ROW_GROUP: usize = 8;
+    let input_width = weight.in_features();
+    let output_width = weight.out_features();
+    if rows == 0
+        || input.len() != rows * input_width
+        || input.ordinal() != engine.stream().context().ordinal()
+        || weight.ordinal() != input.ordinal()
+    {
+        return Err("MiMo numeric row group shape or GPU changed".into());
+    }
+    if rows <= ROW_GROUP {
+        return engine.matmul(weight, input, rows);
+    }
+    let mut output = engine.uninit(rows * output_width)?;
+    for start in (0..rows).step_by(ROW_GROUP) {
+        let count = (rows - start).min(ROW_GROUP);
+        let mut group = engine.uninit(count * input_width)?;
+        engine.dtod_copy_view(
+            &input.slice(start * input_width..(start + count) * input_width),
+            &mut group,
+        )?;
+        let projection = engine.matmul(weight, &group, count)?;
+        engine.dtod_copy_into(&projection, &mut output, start * output_width)?;
+    }
+    Ok(output)
+}
+
+/// Select MiMo's BF16-resident, F32-accumulating per-row program explicitly.
+/// The model uses this on both the continuing token and first chunk, without
+/// relying on a process-wide BF16 dispatch flag.
+fn attention_output_rows(
+    engine: &Engine,
+    weight: &GpuTensor,
+    context: &CudaSlice<f32>,
+    rows: usize,
+) -> Result<CudaSlice<f32>, Fail> {
+    const ROW_GROUP: usize = 8;
+    let GpuTensor::FloatBf16 { data, ne } = weight else {
+        return Err("MiMo attention output lost BF16 source residency".into());
+    };
+    if rows == 0
+        || ne.as_slice() != [CONTEXT_WIDTH as u64, HIDDEN as u64]
+        || data.len() != CONTEXT_WIDTH * HIDDEN * 2
+        || context.len() != rows * CONTEXT_WIDTH
+        || context.ordinal() != engine.stream().context().ordinal()
+        || data.ordinal() != context.ordinal()
+    {
+        return Err("MiMo attention output shape or GPU changed".into());
+    }
+    if rows <= ROW_GROUP {
+        let mut output = engine.uninit(rows * HIDDEN)?;
+        engine.matvec_bf16_rows_into(data, context, &mut output, CONTEXT_WIDTH, HIDDEN, rows)?;
+        return Ok(output);
+    }
+    let mut output = engine.uninit(rows * HIDDEN)?;
+    for start in (0..rows).step_by(ROW_GROUP) {
+        let count = (rows - start).min(ROW_GROUP);
+        let mut group = engine.uninit(count * CONTEXT_WIDTH)?;
+        engine.dtod_copy_view(
+            &context.slice(start * CONTEXT_WIDTH..(start + count) * CONTEXT_WIDTH),
+            &mut group,
+        )?;
+        let mut projection = engine.uninit(count * HIDDEN)?;
+        engine.matvec_bf16_rows_into(
+            data,
+            &group,
+            &mut projection,
+            CONTEXT_WIDTH,
+            HIDDEN,
+            count,
+        )?;
+        engine.dtod_copy_into(&projection, &mut output, start * HIDDEN)?;
+    }
+    Ok(output)
+}
+
 fn dense_rows(
     engine: &Engine,
     input: &CudaSlice<f32>,
     weights: &MiMoDenseWeights,
     rows: usize,
 ) -> Result<CudaSlice<f32>, Fail> {
-    let gate = engine.matmul(&weights.gate, input, rows)?;
-    let up = engine.matmul(&weights.up, input, rows)?;
+    let gate = matmul_numeric_rows(engine, &weights.gate, input, rows)?;
+    let up = matmul_numeric_rows(engine, &weights.up, input, rows)?;
     let mut activated = engine.uninit(rows * 16_384)?;
     engine.silu_mul(&gate, &up, &mut activated, rows * 16_384)?;
-    engine.matmul(&weights.down, &activated, rows)
+    matmul_numeric_rows(engine, &weights.down, &activated, rows)
 }
 
 fn check_step(
@@ -210,14 +296,11 @@ impl<'a> MiMoCompressedTextForward<'a> {
         })
     }
 
-    /// Execute one fresh source-ordered chunk with row-batched projections,
-    /// attention, and resident MoE. Only the first 1..=128 positions are
-    /// admitted: the current chunk attention has no preceding cache input.
-    /// Each layer stores Q8_0 K / NVFP4 V or local F32 rows for later decode.
-    ///
-    /// The fresh chunk attends with pre-quantized F32 K/V, so this is a
-    /// separately qualified arithmetic path. It is never selected by the
-    /// ordinary serial `consume_embedding_chunk` or customer serving.
+    /// Execute one fresh source-ordered chunk with bounded row groups and
+    /// resident MoE. Only the first 1..=128 positions are admitted. Each
+    /// layer stores Q8_0 K / NVFP4 V or local F32 rows before attending with
+    /// the same per-position numeric program as continuing decode.
+    /// This is an explicit component entry, not a serving dispatch.
     pub fn consume_embedding_chunk_batched(
         &mut self,
         chunk: &MiMoGpuEmbeddingChunk,
@@ -283,7 +366,7 @@ impl<'a> MiMoCompressedTextForward<'a> {
                 .attention
                 .qkv
                 .iter()
-                .map(|shard| engine.matmul(shard, &norm, tokens))
+                .map(|shard| matmul_numeric_rows(engine, shard, &norm, tokens))
                 .collect::<Result<Vec<_>, _>>()?;
             let mut qkv = engine.mimo_gather_qkv(
                 [
@@ -315,17 +398,11 @@ impl<'a> MiMoCompressedTextForward<'a> {
                 attention.rope.base,
                 1.0,
             )?;
-            let context = engine.mimo_text_chunk_attention(
-                &plan.attention,
-                &qkv.query,
-                &qkv.key,
-                &qkv.value,
-                row.attention.sink.as_ref(),
-                tokens,
-            )?;
             self.kv.append_prefill_layer(index, &qkv.key, &qkv.value)?;
+            let context = self.kv.attend_appended_first_chunk(index, &qkv.query)?;
             drop((qkv, projections, norm));
-            let attention_output = engine.matmul(&row.attention.output, &context, tokens)?;
+            let attention_output =
+                attention_output_rows(engine, &row.attention.output, &context, tokens)?;
             let mut after_attention = engine.uninit(tokens * HIDDEN)?;
             engine.add(
                 &hidden,
@@ -535,7 +612,7 @@ impl<'a> MiMoCompressedTextForward<'a> {
             // append_and_attend synchronizes attention before these async
             // projection and RoPE inputs are released.
             drop((qkv, gpu_position, projections, norm));
-            let attention = engine.matmul(&row.attention.output, &context, 1)?;
+            let attention = attention_output_rows(engine, &row.attention.output, &context, 1)?;
             let mut after_attention = engine.uninit(HIDDEN)?;
             engine.add(&hidden, &attention, &mut after_attention, HIDDEN)?;
             let mlp_input = normalized(
@@ -776,6 +853,93 @@ mod tests {
             argmax(&first.logits),
             argmax(&serial_step.logits),
         );
+        for (label, batch, control) in [
+            (
+                "last",
+                first.logits.as_slice(),
+                serial_step.logits.as_slice(),
+            ),
+            (
+                "hidden",
+                first.hidden_before_norm.as_slice(),
+                serial_step.hidden_before_norm.as_slice(),
+            ),
+            (
+                "continuation",
+                first_next.as_slice(),
+                serial_next.as_slice(),
+            ),
+        ] {
+            if batch.len() != control.len()
+                || batch
+                    .iter()
+                    .zip(control)
+                    .any(|(got, want)| got.to_bits() != want.to_bits())
+            {
+                return Err(format!("MiMo first batch {label} differs from serial decode").into());
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "requires pinned MiMo source and a dedicated two-card GPU lane"]
+    fn first_batch_128_matches_continuing_text_bits() -> Result<(), Fail> {
+        use std::path::Path;
+        use std::sync::Arc;
+
+        use memra_gguf::source::SafetensorsSource;
+
+        const FOUR_GIB: usize = 4 * 1024 * 1024 * 1024;
+        const TOKENS: usize = 128;
+        let root = std::env::var("MIMO_PINNED_SOURCE_ROOT")?;
+        let source = Arc::new(SafetensorsSource::open(Path::new(&root))?);
+        let cards = [Engine::new(0)?, Engine::new(1)?];
+        let engines = [&cards[0], &cards[1]];
+        let text = MiMoTextWeights::load(engines, source)?;
+        let ids = (42..42 + TOKENS as u32).collect::<Vec<_>>();
+        let prepared = text.modal_embedding_gpu_chunk(&cards[0], &ids, &[], &[], &[])?;
+        let (batch, batch_next) = {
+            let mut sequence = text.compressed_text_forward(engines, TOKENS + 1, [FOUR_GIB; 2])?;
+            let step = sequence.consume_embedding_chunk_batched(&prepared)?;
+            let next = sequence.token(220)?;
+            if sequence.position() != TOKENS + 1 || step.position != TOKENS - 1 {
+                return Err("MiMo 128-row batch cursor drifted".into());
+            }
+            (step, next)
+        };
+        let (serial, serial_next) = {
+            let mut sequence = text.compressed_text_forward(engines, TOKENS + 1, [FOUR_GIB; 2])?;
+            let step = sequence.consume_embedding_chunk(&prepared)?;
+            let next = sequence.token(220)?;
+            if sequence.position() != TOKENS + 1 || step.position != TOKENS - 1 {
+                return Err("MiMo 128-row serial cursor drifted".into());
+            }
+            (step, next)
+        };
+        for (label, got, want) in [
+            ("last", batch.logits.as_slice(), serial.logits.as_slice()),
+            (
+                "hidden",
+                batch.hidden_before_norm.as_slice(),
+                serial.hidden_before_norm.as_slice(),
+            ),
+            (
+                "continuation",
+                batch_next.as_slice(),
+                serial_next.as_slice(),
+            ),
+        ] {
+            if got.len() != want.len()
+                || got
+                    .iter()
+                    .zip(want)
+                    .any(|(got, want)| got.to_bits() != want.to_bits())
+            {
+                return Err(format!("MiMo 128-row {label} differs from serial decode").into());
+            }
+            println!("mimo_packed_128_exact\t{label}\t{} bits", got.len());
+        }
         Ok(())
     }
 

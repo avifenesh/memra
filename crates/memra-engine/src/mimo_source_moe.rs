@@ -931,7 +931,9 @@ impl GroupedMiMoMoeLayer {
             ],
         )?;
         engine.gpu.ctx.bind_to_thread()?;
-        let logits = engine.linear(x, &self.matrix, tokens, HIDDEN, EXPERTS)?;
+        // Match the one-token router's reduction order. A wide cuBLASLt
+        // router GEMM perturbs route weights even when expert IDs agree.
+        let logits = engine.linear_decode_exact(x, &self.matrix, tokens, HIDDEN, EXPERTS)?;
         let (ids_gpu, weights_gpu) = engine.moe_router_sigmoid_topk(
             &logits,
             tokens,

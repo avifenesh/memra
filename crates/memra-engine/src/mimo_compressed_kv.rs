@@ -601,6 +601,68 @@ impl<'a> MiMoCompressedKv<'a> {
         Ok(())
     }
 
+    /// Attend a fresh 1..=128 row chunk against the layer cache just appended.
+    /// Each query uses the same packed global or F32 local kernel as ordinary
+    /// decode at that sequence position. The layer cursor stays poisoned
+    /// until all layers append and the outer batch commits.
+    pub(crate) fn attend_appended_first_chunk(
+        &mut self,
+        layer: usize,
+        query_rows: &CudaSlice<f32>,
+    ) -> Result<CudaSlice<f32>, Fail> {
+        let batch = self.batch.ok_or("MiMo KV has no active prefill batch")?;
+        let cache = self
+            .caches
+            .get(layer)
+            .ok_or("MiMo first-chunk attention layer is out of range")?;
+        if batch.start != 0
+            || batch.rows > SWA
+            || batch.next_layer != layer + 1
+            || cache.tokens() != batch.rows
+        {
+            return Err("MiMo first-chunk attention requires the appended fresh layer".into());
+        }
+        let stage = stage_for_layer(layer)?;
+        let engine = self.engines[stage];
+        engine.gpu.ctx.bind_to_thread()?;
+        if query_rows.len() != batch.rows * HEADS * QK
+            || query_rows.ordinal() != engine.stream().context().ordinal()
+        {
+            return Err("MiMo first-chunk query shape or GPU changed".into());
+        }
+        let mut output = engine.uninit(batch.rows * HEADS * VALUE)?;
+        for position in 0..batch.rows {
+            let mut query = engine.uninit(HEADS * QK)?;
+            engine.dtod_copy_view(
+                &query_rows.slice(position * HEADS * QK..(position + 1) * HEADS * QK),
+                &mut query,
+            )?;
+            let context = match cache {
+                LayerCache::Global { key, value, .. } => engine.mimo_global_q8_nvfp4_decode(
+                    &query,
+                    key,
+                    value,
+                    position + 1,
+                    &mut self.workspaces[stage],
+                )?,
+                LayerCache::Local { key, value, .. } => decode_local(
+                    engine,
+                    &query,
+                    key,
+                    value,
+                    self.weights.layers[layer]
+                        .attention
+                        .sink
+                        .as_ref()
+                        .ok_or("MiMo first-chunk local sink is missing")?,
+                    position,
+                )?,
+            };
+            engine.dtod_copy_into(&context, &mut output, position * HEADS * VALUE)?;
+        }
+        Ok(output)
+    }
+
     /// Complete the layer-major append only after every layer and both GPU
     /// streams have committed. Any failure leaves the sequence poisoned.
     pub fn finish_prefill_batch(&mut self) -> Result<(), Fail> {
