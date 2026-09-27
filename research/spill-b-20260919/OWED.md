@@ -247,7 +247,8 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   the decode TPOT beside a second-stream prime) comes before the design is final. Price revised to 4 to 6 agent-days.
   The door stays default off. integ71 (DAY44 addendum C): the settle keeps the affinity checkpoint and waits for the
   memory reading; the RW cell (DAY44 2.2) resumes every rewritten later turn, through affinity or the exact path, and
-  matches cold on both routes. R1 read FAIL on its wording and is revised (addendum D); the RW cell reruns on the lane tip. The measurement arms' readings stay banked (DAY41 2.1 and 2.2); `MEMRA_RESUME_GRID_REWIND` stays a
+  matches cold on both routes. R1 reads FAIL as registered and stays a blocker on the flip, beside E2; addendum D's
+  revision (count the exact path too) is pending the owner, not adopted. The measurement arms' readings stay banked (DAY41 2.1 and 2.2); `MEMRA_RESUME_GRID_REWIND` stays a
   measurement arm until DAY44 reads.
 
 ### O12. The admission reclaim flush off the tick (lead's ruling at integ62)

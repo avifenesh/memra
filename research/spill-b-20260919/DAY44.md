@@ -231,19 +231,25 @@ second.
   - Arms `keep` and `exact` on both routes, at 6,144 on both cards.
 - **Cells to rerun:** the integ battery's DAY44 mini cell (the E lines), and the RW cell on both routes.
 
-### 1.13 Addendum D (2026-09-27, after 2.2, the RW cell's R1 reading, before the reader change)
+### 1.13 Addendum D (2026-09-27, after 2.2, the RW cell's R1 reading): PENDING THE OWNER, NOT ADOPTED
+
+**Status (the lead, 2026-09-27):** this addendum rewrites R1 after its result, so under the standing rule that no gate
+is relaxed after a result it goes to the owner, as T-H' did. R1 stays FAIL as registered, beside E2, as a blocker on
+flipping `MEMRA_RESUME_EXACT` until the owner rules. The reader prints the registered R1 line and, beside it, this
+addendum's proposed line (`DAY44 R1-D (proposed, pending the owner)`).
+
 
 2.2 places R1's FAIL on its wording, not on the server. R1 as registered counted only affinity rewinds. On `exact`, a
 later RW turn at G = 32 resumes through the exact-extension path instead. The settle point `S` is the grid point at the
 prompt end (6,144 and then 6,240), and the rewrite diverges at that same row, so the rewritten prompt extends the
 settled rows exactly. That resume starts later (6,144 against affinity's 6,112), and it is exact (R2).
-- **R1 revised:** on every boot, every RW turn 2 and 3 resumes, either through affinity (its `rewound to` line) or
+- **R1 as proposed (R1-D):** on every boot, every RW turn 2 and 3 resumes, either through affinity (its `rewound to` line) or
   through the exact path (its `exact: ... resume ... settled` line), and none primes cold (`cached_tokens > 0` on the
   row). Per boot the counts must add up to the later turns: `affinity_rewinds + exact_resumes >= rw_later_turns`, and
   `cold_later_turns = 0`.
 - **R1a (a reading):** the affinity rewinds alone, by G. The G = 256 turns, whose settle point lies past the rewrite's
   divergence, are the ones that exercise affinity after a settle.
-- R2 and R3 are unchanged. The RW cell reruns on the lane tip under the revised reader.
+- R2 and R3 are unchanged. A rerun of the RW cell reads both R1 lines; the registered one stays the gate.
 
 ## 2. Results
 
@@ -347,5 +353,9 @@ DAY44 R2 card=pro6000 boot=rw-spec-O1-keep rw_later_turns=20 differ_vs_cold=[] -
   - `affinity_declined=0` on every boot.
 - **What it means:** revuto's finding 1 is fixed on both routes. After a settle, a history rewrite resumes from the
   checkpoint at `g` or from the settled rows, is exact against cold, and never primes cold. R1's registered wording was
-  narrower than its intent and missed the second path. Addendum D revises the reader, and the cell reruns on the lane
-  tip.
+  narrower than its intent and missed the second path. The lane proposes a revision (addendum D). It is pending the
+  owner and not adopted: R1 stays FAIL as registered, beside E2, as a blocker on flipping `MEMRA_RESUME_EXACT`.
+- The receipts were copied into this lane (`integ71-c13-rw/`, a byte mirror of the lead's cell directory). The reader
+  ran on the copy (`integ71-c13-rw/read-lane.log`): the registered R1 reads FAIL on both exact boots, as the lead's
+  run printed, and R1-D (proposed) reads PASS on all four boots (exact boots: 10 affinity rewinds, 10 exact resumes,
+  0 cold).
