@@ -6778,18 +6778,24 @@ fn parse_accept(value: &str) -> Vec<AcceptRange> {
 
 /// memra#522: `Accept: text/plain` (or `application/openmetrics-text`, the OpenMetrics
 /// exposition media type) asks for the Prometheus exposition instead of the default JSON
-/// body, but ONLY when the client actually prefers it over JSON. A naive substring check on
-/// the raw header flips axios's default `Accept: application/json, text/plain, */*` (and
-/// any other "JSON first, text/plain as fallback" header) to Prometheus and breaks every
-/// existing JSON consumer (revuto, PR #896 review round 1). That is why the header is
-/// parsed into weighted media ranges instead of matched as a substring.
+/// body, but ONLY when the client actually prefers it over JSON.
 ///
-/// Rule, deliberately simple rather than a full RFC 9110 content-negotiation
-/// implementation: if any range names `application/json` (or `application/*` / `*/*`) with
-/// `q > 0`, JSON wins and this returns `false`. Existing scrapers that list `text/plain` as
-/// a fallback keep getting JSON, unchanged. Otherwise, a `text/plain` or
-/// `application/openmetrics-text` range with `q > 0` asks for Prometheus. Absent or
-/// unparsable `Accept` keeps today's JSON response byte-for-byte.
+/// Two review rounds narrowed this (revuto, PR #896). Round 1: a raw substring match on the
+/// whole header flipped axios's default `Accept: application/json, text/plain, */*` to
+/// Prometheus, breaking every JSON consumer that sends it. Round 2: "any `application/json`
+/// / `application/*` / `*/*` with `q > 0` means JSON" over-corrected the other way. A real
+/// Prometheus scrape's default header
+/// (`application/openmetrics-text;version=1.0.0,application/openmetrics-text;version=0.0.1;q=0.75,text/plain;version=0.0.4;q=0.5,*/*;q=0.1`)
+/// carries a low-weight trailing `*/*`, which that rule counted as a JSON preference and
+/// broke the scrape.
+///
+/// The rule now compares the best EXPLICIT `q` on each side, ignoring wildcards
+/// entirely (a wildcard is not a preference for either format): the highest `q` among
+/// `text/plain` / `application/openmetrics-text` ranges vs. the highest `q` among
+/// `application/json` ranges. Prometheus wins only when its side is strictly greater;
+/// ties, a wildcard-only header, and an absent or unparsable `Accept` all default to JSON,
+/// so today's JSON response stays byte-for-byte for every consumer that does not name
+/// `text/plain` or `application/openmetrics-text` explicitly.
 fn wants_prometheus(headers: &HeaderMap) -> bool {
     let Some(raw) = headers
         .get(axum::http::header::ACCEPT)
@@ -6797,24 +6803,16 @@ fn wants_prometheus(headers: &HeaderMap) -> bool {
     else {
         return false;
     };
-    let ranges = parse_accept(raw);
-    let json_acceptable = ranges.iter().any(|r| {
-        r.q > 0.0
-            && matches!(
-                r.media.as_str(),
-                "application/json" | "application/*" | "*/*"
-            )
-    });
-    if json_acceptable {
-        return false;
-    }
-    ranges.iter().any(|r| {
-        r.q > 0.0
-            && matches!(
-                r.media.as_str(),
-                "text/plain" | "application/openmetrics-text"
-            )
-    })
+    let best_q = |medias: &[&str]| -> f32 {
+        parse_accept(raw)
+            .iter()
+            .filter(|r| medias.contains(&r.media.as_str()))
+            .map(|r| r.q)
+            .fold(0.0f32, f32::max)
+    };
+    let text_q = best_q(&["text/plain", "application/openmetrics-text"]);
+    let json_q = best_q(&["application/json"]);
+    text_q > json_q
 }
 
 /// Render the Prometheus text exposition (memra#522) from the same authorized snapshot the
@@ -19225,6 +19223,31 @@ default_reasoning_effort = "always"
                 .to_str()
                 .unwrap()
                 .contains("json")
+        );
+
+        // memra#522 revuto round 2: a real Prometheus scraper's OWN default Accept header
+        // (a low-weight trailing */* after the explicit openmetrics-text/text-plain
+        // ranges) must still select Prometheus text, or the thing this PR sets out to do
+        // does not work against a real scraper.
+        let mut prom_scrape_headers = HeaderMap::new();
+        prom_scrape_headers.insert(
+            axum::http::header::ACCEPT,
+            "application/openmetrics-text;version=1.0.0,application/openmetrics-text;\
+             version=0.0.1;q=0.75,text/plain;version=0.0.4;q=0.5,*/*;q=0.1"
+                .parse()
+                .unwrap(),
+        );
+        let prom_scrape_resp = get_metrics(State(st.clone()), prom_scrape_headers).await;
+        assert!(
+            prom_scrape_resp
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with("text/plain"),
+            "Prometheus's own default scrape Accept header must select the exposition, \
+             not JSON"
         );
     }
 
