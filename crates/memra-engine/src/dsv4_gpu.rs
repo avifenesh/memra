@@ -17506,30 +17506,48 @@ impl Dsv4Gpu {
             )?;
         }
         unsafe {
-            ck(
-                "headrms batch",
-                self.headrms_arm(
-                    dpm!(vws.q, &stream),
-                    (t * heads) as i32,
-                    hd as i32,
-                    eps,
-                    sp(&stream),
-                ),
-            )?;
-            ck(
-                "rope q batch",
-                k::memra_dsv4_rope(
-                    dpm!(vws.q, &stream),
-                    t as i32,
-                    heads as i32,
-                    hd as i32,
-                    rd as i32,
-                    fc_dev,
-                    vws.pos_dev.device_ptr(&stream).0 as *const i32,
-                    0,
-                    sp(&stream),
-                ),
-            )?;
+            if self.chains_f32 && hd <= 512 {
+                // Per-head RMS and RoPE in one launch (memra #710), the pair's bits.
+                ck(
+                    "headrms rope q batch",
+                    k::memra_dsv4_headrms_rope_f32acc(
+                        dpm!(vws.q, &stream),
+                        t as i32,
+                        heads as i32,
+                        hd as i32,
+                        eps,
+                        rd as i32,
+                        fc_dev,
+                        vws.pos_dev.device_ptr(&stream).0 as *const i32,
+                        sp(&stream),
+                    ),
+                )?;
+            } else {
+                ck(
+                    "headrms batch",
+                    self.headrms_arm(
+                        dpm!(vws.q, &stream),
+                        (t * heads) as i32,
+                        hd as i32,
+                        eps,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "rope q batch",
+                    k::memra_dsv4_rope(
+                        dpm!(vws.q, &stream),
+                        t as i32,
+                        heads as i32,
+                        hd as i32,
+                        rd as i32,
+                        fc_dev,
+                        vws.pos_dev.device_ptr(&stream).0 as *const i32,
+                        0,
+                        sp(&stream),
+                    ),
+                )?;
+            }
             // rope is the last writer of q, so this is the one point where the f32acc
             // scorers' [hd][heads] operand can be staged. One launch per (layer, chunk).
             if !sink_st {
@@ -17550,44 +17568,64 @@ impl Dsv4Gpu {
         // shared K==V latent rows (projected with wq_a above) + window QAT, then the TRANSIENT
         // ring write
         unsafe {
-            ck(
-                "rmsnorm kv batch",
-                self.rmsnorm_arm(
-                    dpf!(vws.kv, &stream),
-                    dpf!(layer.kv_norm, &stream),
-                    dpm!(vws.kv, &stream),
-                    t as i32,
-                    hd as i32,
-                    eps,
-                    sp(&stream),
-                ),
-            )?;
-            ck(
-                "rope kv batch",
-                k::memra_dsv4_rope(
-                    dpm!(vws.kv, &stream),
-                    t as i32,
-                    1,
-                    hd as i32,
-                    rd as i32,
-                    fc_dev,
-                    vws.pos_dev.device_ptr(&stream).0 as *const i32,
-                    0,
-                    sp(&stream),
-                ),
-            )?;
-            ck(
-                "act_quant kv batch",
-                k::memra_dsv4_act_quant(
-                    dpm!(vws.kv, &stream),
-                    t as i32,
-                    hd as i64,
-                    (hd - rd) as i32,
-                    64,
-                    clamp_only,
-                    sp(&stream),
-                ),
-            )?;
+            if self.chains_f32 && hd <= 1024 && (hd - rd).is_multiple_of(64) {
+                // Norm, RoPE and window QAT in one launch (memra #710), the three launches' bits.
+                ck(
+                    "kv norm rope quant batch",
+                    k::memra_dsv4_kv_norm_rope_quant_f32acc(
+                        dpm!(vws.kv, &stream),
+                        dpf!(layer.kv_norm, &stream),
+                        t as i32,
+                        hd as i32,
+                        eps,
+                        rd as i32,
+                        fc_dev,
+                        vws.pos_dev.device_ptr(&stream).0 as *const i32,
+                        64,
+                        clamp_only,
+                        sp(&stream),
+                    ),
+                )?;
+            } else {
+                ck(
+                    "rmsnorm kv batch",
+                    self.rmsnorm_arm(
+                        dpf!(vws.kv, &stream),
+                        dpf!(layer.kv_norm, &stream),
+                        dpm!(vws.kv, &stream),
+                        t as i32,
+                        hd as i32,
+                        eps,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "rope kv batch",
+                    k::memra_dsv4_rope(
+                        dpm!(vws.kv, &stream),
+                        t as i32,
+                        1,
+                        hd as i32,
+                        rd as i32,
+                        fc_dev,
+                        vws.pos_dev.device_ptr(&stream).0 as *const i32,
+                        0,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "act_quant kv batch",
+                    k::memra_dsv4_act_quant(
+                        dpm!(vws.kv, &stream),
+                        t as i32,
+                        hd as i64,
+                        (hd - rd) as i32,
+                        64,
+                        clamp_only,
+                        sp(&stream),
+                    ),
+                )?;
+            }
         }
         // indexer q and weights projections, batched over every row (memra #667 lever 2:
         // weights once per step, whatever the row groups)
