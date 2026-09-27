@@ -192,3 +192,35 @@ GPU. Both registrations said "the 5090 half follows"; this file fixes how, befor
   - If it repeats outside the bound with no builds, it is placed as its own finding, not R1's, and registered then.
 - Item 16's `REGIME NOT REPRODUCED` and S4's and V's `NOT RUN` stand as they read (section 8), and section 9's chain
   runs as queued.
+
+## 11. The owner's ruling on local CI, and P2's and T-H''s 5090 halves registered (before they run)
+
+- **Owner ruling, 2026-09-27** (relayed by the lead): "we should stop overcomplicating our local CI, we are making all
+  our progress too slow. we should do deeper measurement where it is relevant."
+  - From now on, a push runs only the affected crates' tests and clippy. GitHub CI on the integ PR runs the rest.
+  - This lane's time goes to the measurements that decide its open items: the 5090 halves of R1, L', P2 and T-H', and
+    F2's registration and cell.
+- **P2's 5090 half, on its target sitting's own pair:** p2 `064f9fa0d`, base `dba7c0a0c`, gpp `358749c9f`.
+  - The scripts are `pro-single-p2l2/`'s `build.sh`, `ab.sh`, `hump.sh`, `gates.sh` and `hitgate.sh`, plus the unit
+    step as DAY67 section 4 accepted it: `unit-rerun.sh` on `a2419d3e1`, the p2 program with the two test-only cell
+    fixes, in its own scratch tree.
+  - They are derived by `rtx5090-derive.py` with section 1's replacements. For this half and T-H''s, the CPU cap is the
+    lead's `nice -n 19`, 600% and `MemoryMax=12G`.
+  - The cells are DAY52's, in P2L2's order, run by `rtx5090-half-sv.sh` in its two holds:
+    - hold A: demote, free, promote and chain, 20 boots each; the hump (xgpp xp2 xp2 xgpp); the gates;
+    - `hitgate.sh` on its own flock between the holds;
+    - hold B: the unit step.
+  - `day52-reading.py` reads it with DAY67 section 1's bounds.
+- **T-H''s 5090 half, on its sitting's pair:** th `67af1b71e`, base `80f734c77`.
+  - The scripts are `pro-single-th2/`'s `build.sh`, `ab.sh`, `gates.sh` and `hump.sh`, derived the same way, run in
+    one hold by `rtx5090-half.sh`: the 11 gates, the demote, chain and promote cells (20 boots each), and the hump.
+  - `th2-reading.py` reads it with DAY65 section 6's bounds.
+  - The 5090 host has 24 logical CPUs, so the helper again runs 8 threads.
+- **What a result decides:** as section 2 says.
+- **The chain's order changes to the lead's priorities.** The running chain (section 9) is stopped after R1's timed
+  cell, which is left to finish in its hold, and replaced by `rtx5090-chain-day68c.sh`:
+  1. R1's reading, once its cell ends;
+  2. P2's and T-H''s builds, outside every hold and after R1's cell has released the card;
+  3. P2's half;
+  4. T-H''s half;
+  5. then section 9's item 16 with the warm-up doubled, S4 and V.
