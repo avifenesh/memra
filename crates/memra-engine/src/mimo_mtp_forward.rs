@@ -38,8 +38,10 @@ const SHARD_ROWS: usize = Q_ROWS + K_ROWS + V_ROWS;
 const QKV_ROWS: usize = SHARDS * SHARD_ROWS;
 const OUTPUT_WIDTH: usize = QUERY_HEADS * VALUE;
 
-/// F32 KV bounds this diagnostic path to 256 positions per draft depth.
-pub const MAX_MTP3_CONTEXT_TOKENS: usize = 256;
+/// Logical cursor bound for the diagnostic draft path. Each depth stores
+/// only its latest 128 F32 K/V rows; this is not a long-context serving gate.
+pub const MAX_MTP3_CONTEXT_TOKENS: usize = 1_048_576;
+const MTP_SWA: usize = 128;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum QkvPart {
@@ -234,7 +236,7 @@ fn validate_position(
     cached: Option<usize>,
 ) -> Result<(), &'static str> {
     if expected >= MAX_MTP3_CONTEXT_TOKENS {
-        return Err("MiMo MTP3 draft reached its 256-token context cap");
+        return Err("MiMo MTP3 draft reached its logical context cap");
     }
     if supplied != expected || cached != (expected > 0).then_some(expected) {
         return Err("MiMo MTP3 draft position or KV cursor drifted");
@@ -266,6 +268,7 @@ fn draft_embedding_token(token: u32) -> u32 {
 }
 
 struct KvState {
+    /// Fixed 128-row ring; `tokens` counts all completed positions.
     key: CudaSlice<f32>,
     value: CudaSlice<f32>,
     tokens: usize,
@@ -279,8 +282,8 @@ struct DepthState {
 fn append_kv(
     engine: &Engine,
     state: &mut DepthState,
-    key: CudaSlice<f32>,
-    value: CudaSlice<f32>,
+    key: &CudaSlice<f32>,
+    value: &CudaSlice<f32>,
 ) -> Result<(), Fail> {
     validate_position(
         state.position,
@@ -297,30 +300,66 @@ fn append_kv(
     {
         return Err("MiMo MTP3 projected KV shape or device changed".into());
     }
-    let (keys, values) = if let Some(prior) = &state.kv {
-        if prior.key.len() != state.position * key_width
-            || prior.value.len() != state.position * value_width
-            || prior.key.ordinal() != device
-            || prior.value.ordinal() != device
-        {
-            return Err("MiMo MTP3 retained KV shape or device changed".into());
-        }
-        let mut keys = engine.uninit((state.position + 1) * key_width)?;
-        let mut values = engine.uninit((state.position + 1) * value_width)?;
-        engine.dtod_copy_into(&prior.key, &mut keys, 0)?;
-        engine.dtod_copy_into(&key, &mut keys, state.position * key_width)?;
-        engine.dtod_copy_into(&prior.value, &mut values, 0)?;
-        engine.dtod_copy_into(&value, &mut values, state.position * value_width)?;
-        (keys, values)
-    } else {
-        (key, value)
-    };
-    state.kv = Some(KvState {
-        key: keys,
-        value: values,
-        tokens: state.position + 1,
-    });
+    if state.kv.is_none() {
+        state.kv = Some(KvState {
+            key: engine.uninit(MTP_SWA * key_width)?,
+            value: engine.uninit(MTP_SWA * value_width)?,
+            tokens: 0,
+        });
+    }
+    let cache = state.kv.as_mut().ok_or("MiMo MTP3 lost its KV ring")?;
+    if cache.key.len() != MTP_SWA * key_width
+        || cache.value.len() != MTP_SWA * value_width
+        || cache.key.ordinal() != device
+        || cache.value.ordinal() != device
+        || cache.tokens != state.position
+    {
+        return Err("MiMo MTP3 retained KV ring shape or cursor changed".into());
+    }
+    let slot = state.position % MTP_SWA;
+    engine.dtod_copy_into(key, &mut cache.key, slot * key_width)?;
+    engine.dtod_copy_into(value, &mut cache.value, slot * value_width)?;
+    cache.tokens = state.position + 1;
     Ok(())
+}
+
+fn recent_slots(completed: usize) -> Result<Vec<i32>, &'static str> {
+    if !(1..=MAX_MTP3_CONTEXT_TOKENS).contains(&completed) {
+        return Err("MiMo MTP3 recent KV cursor is outside its logical cap");
+    }
+    let count = completed.min(MTP_SWA);
+    Ok((completed - count..completed)
+        .map(|position| (position % MTP_SWA) as i32)
+        .collect())
+}
+
+fn recent_kv(
+    engine: &Engine,
+    state: &DepthState,
+) -> Result<(CudaSlice<f32>, CudaSlice<f32>, usize), Fail> {
+    let cache = state
+        .kv
+        .as_ref()
+        .ok_or("MiMo MTP3 has no appended KV ring")?;
+    let device = engine.stream().context().ordinal();
+    let key_width = KV_HEADS * QK;
+    let value_width = KV_HEADS * VALUE;
+    if cache.tokens != state.position + 1
+        || cache.key.len() != MTP_SWA * key_width
+        || cache.value.len() != MTP_SWA * value_width
+        || cache.key.ordinal() != device
+        || cache.value.ordinal() != device
+    {
+        return Err("MiMo MTP3 recent KV ring shape or cursor changed".into());
+    }
+    let slots = recent_slots(cache.tokens)?;
+    let count = slots.len();
+    let indices = engine.htod_i32(&slots)?;
+    let mut keys = engine.uninit(count * key_width)?;
+    let mut values = engine.uninit(count * value_width)?;
+    engine.gather_rows(&cache.key, &indices, &mut keys, key_width, count)?;
+    engine.gather_rows(&cache.value, &indices, &mut values, value_width, count)?;
+    Ok((keys, values, count))
 }
 
 struct Qkv {
@@ -560,19 +599,17 @@ impl MiMoMtp3Forward<'_> {
         append_kv(
             self.draft_engine,
             &mut self.states[depth],
-            qkv.key,
-            qkv.value,
+            &qkv.key,
+            &qkv.value,
         )?;
-        let cache = self.states[depth]
-            .kv
-            .as_ref()
-            .ok_or("MiMo MTP3 lost its appended KV")?;
+        let (recent_key, recent_value, recent_count) =
+            recent_kv(self.draft_engine, &self.states[depth])?;
         let context = self.draft_engine.mimo_sink_decode(
             &qkv.query,
-            &cache.key,
-            &cache.value,
+            &recent_key,
+            &recent_value,
             Some(vector(layer, MtpTensor::AttentionSink, QUERY_HEADS)?),
-            position + 1,
+            recent_count,
             &self.text.plan.layers[1].attention,
         )?;
         let attn_output = self.draft_engine.matmul(
@@ -738,6 +775,14 @@ mod tests {
     fn each_draft_depth_requires_ordered_bounded_kv_positions() {
         assert!(validate_position(0, 0, None).is_ok());
         assert!(validate_position(1, 1, Some(1)).is_ok());
+        assert!(
+            validate_position(
+                MAX_MTP3_CONTEXT_TOKENS - 1,
+                MAX_MTP3_CONTEXT_TOKENS - 1,
+                Some(MAX_MTP3_CONTEXT_TOKENS - 1)
+            )
+            .is_ok()
+        );
         assert!(validate_position(1, 0, Some(1)).is_err());
         assert!(validate_position(1, 1, None).is_err());
         assert!(
@@ -748,6 +793,101 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn fixed_ring_preserves_chronological_window_across_wraps() {
+        assert_eq!(
+            MTP_SWA * (KV_HEADS * QK + KV_HEADS * VALUE) * size_of::<f32>(),
+            1_310_720
+        );
+        assert_eq!(recent_slots(1).unwrap(), [0]);
+        assert_eq!(recent_slots(128).unwrap(), (0..128).collect::<Vec<_>>());
+        assert_eq!(recent_slots(129).unwrap()[..3], [1, 2, 3]);
+        assert_eq!(recent_slots(129).unwrap()[127], 0);
+        assert_eq!(recent_slots(256).unwrap(), (0..128).collect::<Vec<_>>());
+        assert_eq!(
+            recent_slots(MAX_MTP3_CONTEXT_TOKENS).unwrap(),
+            (0..128).collect::<Vec<_>>()
+        );
+        assert!(recent_slots(0).is_err());
+        assert!(recent_slots(MAX_MTP3_CONTEXT_TOKENS + 1).is_err());
+
+        let mut ring = [None; MTP_SWA];
+        for position in 0..260 {
+            ring[position % MTP_SWA] = Some(position);
+            let slots = recent_slots(position + 1).unwrap();
+            let values = slots
+                .iter()
+                .map(|&slot| ring[slot as usize].unwrap())
+                .collect::<Vec<_>>();
+            let start = (position + 1).saturating_sub(MTP_SWA);
+            assert_eq!(values, (start..=position).collect::<Vec<_>>());
+        }
+    }
+
+    #[test]
+    #[ignore = "requires a dedicated two-card MiMo GPU component lane"]
+    fn f32_ring_snapshot_matches_contiguous_swa_attention() -> Result<(), Fail> {
+        let gpu: usize = std::env::var("MEMRA_MIMO_COMPONENT_GPU")
+            .unwrap_or_else(|_| "0".into())
+            .parse()?;
+        let engine = Engine::new(gpu)?;
+        let (_, plan) = pinned();
+        let attention = &plan.layers[1].attention;
+        let mut state = DepthState {
+            kv: None,
+            position: 0,
+        };
+        let mut full_key = Vec::new();
+        let mut full_value = Vec::new();
+        let sink = engine.htod(&vec![0.125f32; QUERY_HEADS])?;
+        for position in 0..256 {
+            let key = (0..KV_HEADS * QK)
+                .map(|index| ((index * 13 + position * 7) % 83) as f32 / 53.0 - 0.75)
+                .collect::<Vec<_>>();
+            let value = (0..KV_HEADS * VALUE)
+                .map(|index| (((index * 17 + position * 11) % 79) as f32 / 47.0 - 0.5) * 0.707)
+                .collect::<Vec<_>>();
+            full_key.extend_from_slice(&key);
+            full_value.extend_from_slice(&value);
+            let query = (0..QUERY_HEADS * QK)
+                .map(|index| ((index * 19 + position * 3) % 71) as f32 / 41.0 - 0.625)
+                .collect::<Vec<_>>();
+            let gpu_key = engine.htod(&key)?;
+            let gpu_value = engine.htod(&value)?;
+            let gpu_query = engine.htod(&query)?;
+            append_kv(&engine, &mut state, &gpu_key, &gpu_value)?;
+            let (recent_key, recent_value, count) = recent_kv(&engine, &state)?;
+            let ring_output = engine.mimo_sink_decode(
+                &gpu_query,
+                &recent_key,
+                &recent_value,
+                Some(&sink),
+                count,
+                attention,
+            )?;
+            if [0, 1, 127, 128, 255].contains(&position) {
+                let full_output = engine.mimo_sink_decode(
+                    &gpu_query,
+                    &engine.htod(&full_key)?,
+                    &engine.htod(&full_value)?,
+                    Some(&sink),
+                    position + 1,
+                    attention,
+                )?;
+                let ring = engine.dtoh(&ring_output)?;
+                let contiguous = engine.dtoh(&full_output)?;
+                assert!(
+                    ring.iter()
+                        .zip(contiguous.iter())
+                        .all(|(left, right)| left.to_bits() == right.to_bits()),
+                    "MiMo MTP3 ring attention changed at position {position}"
+                );
+            }
+            state.position += 1;
+        }
+        Ok(())
     }
 
     #[test]
