@@ -21,6 +21,34 @@ const LAYERS: usize = 48;
 const STAGE_CUT: usize = 24;
 const MAX_FIRST_BATCH_CHUNK: usize = 128;
 
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+fn trace_stage(
+    output: &mut Vec<(usize, &'static str, Vec<f32>)>,
+    target: Option<usize>,
+    start: usize,
+    rows: usize,
+    layer: usize,
+    name: &'static str,
+    engine: &Engine,
+    tensor: &CudaSlice<f32>,
+) -> Result<(), Fail> {
+    if layer >= 2 || !target.is_some_and(|target| (start..start + rows).contains(&target)) {
+        return Ok(());
+    }
+    if !tensor.len().is_multiple_of(rows) {
+        return Err("MiMo stage trace row shape is invalid".into());
+    }
+    let width = tensor.len() / rows;
+    let local = target.unwrap() - start;
+    output.push((
+        layer,
+        name,
+        engine.dtoh_view(&tensor.slice(local * width..(local + 1) * width))?,
+    ));
+    Ok(())
+}
+
 fn first_batch_rows(tokens: usize) -> Result<usize, &'static str> {
     if !(1..=MAX_FIRST_BATCH_CHUNK).contains(&tokens) {
         return Err("MiMo first batch chunk must contain 1..=128 tokens");
@@ -115,6 +143,8 @@ pub struct MiMoCompressedTextForward<'a> {
     trace_position: Option<usize>,
     #[cfg(test)]
     trace_rows: Vec<(usize, Vec<f32>)>,
+    #[cfg(test)]
+    trace_stages: Vec<(usize, &'static str, Vec<f32>)>,
 }
 
 impl MiMoTextWeights {
@@ -151,6 +181,8 @@ impl<'a> MiMoCompressedTextForward<'a> {
             trace_position: None,
             #[cfg(test)]
             trace_rows: Vec::new(),
+            #[cfg(test)]
+            trace_stages: Vec::new(),
         })
     }
 
@@ -287,6 +319,17 @@ impl<'a> MiMoCompressedTextForward<'a> {
                 tokens,
                 plan.pre_attention_norm.epsilon,
             )?;
+            #[cfg(test)]
+            trace_stage(
+                &mut self.trace_stages,
+                self.trace_position,
+                0,
+                tokens,
+                index,
+                "attention_norm",
+                engine,
+                &norm,
+            )?;
             let projections = row
                 .attention
                 .qkv
@@ -323,6 +366,23 @@ impl<'a> MiMoCompressedTextForward<'a> {
                 attention.rope.base,
                 1.0,
             )?;
+            #[cfg(test)]
+            for (name, tensor) in [
+                ("query", &qkv.query),
+                ("key", &qkv.key),
+                ("value", &qkv.value),
+            ] {
+                trace_stage(
+                    &mut self.trace_stages,
+                    self.trace_position,
+                    0,
+                    tokens,
+                    index,
+                    name,
+                    engine,
+                    tensor,
+                )?;
+            }
             let context = engine.mimo_text_chunk_attention(
                 &plan.attention,
                 &qkv.query,
@@ -331,9 +391,31 @@ impl<'a> MiMoCompressedTextForward<'a> {
                 row.attention.sink.as_ref(),
                 tokens,
             )?;
+            #[cfg(test)]
+            trace_stage(
+                &mut self.trace_stages,
+                self.trace_position,
+                0,
+                tokens,
+                index,
+                "context",
+                engine,
+                &context,
+            )?;
             self.kv.append_prefill_layer(index, &qkv.key, &qkv.value)?;
             drop((qkv, projections, norm));
             let attention_output = engine.matmul(&row.attention.output, &context, tokens)?;
+            #[cfg(test)]
+            trace_stage(
+                &mut self.trace_stages,
+                self.trace_position,
+                0,
+                tokens,
+                index,
+                "attention_output",
+                engine,
+                &attention_output,
+            )?;
             let mut after_attention = engine.uninit(tokens * HIDDEN)?;
             engine.add(
                 &hidden,
@@ -341,12 +423,34 @@ impl<'a> MiMoCompressedTextForward<'a> {
                 &mut after_attention,
                 tokens * HIDDEN,
             )?;
+            #[cfg(test)]
+            trace_stage(
+                &mut self.trace_stages,
+                self.trace_position,
+                0,
+                tokens,
+                index,
+                "after_attention",
+                engine,
+                &after_attention,
+            )?;
             let mlp_input = normalized_rows(
                 engine,
                 &after_attention,
                 &row.mlp_norm,
                 tokens,
                 plan.pre_mlp_norm.epsilon,
+            )?;
+            #[cfg(test)]
+            trace_stage(
+                &mut self.trace_stages,
+                self.trace_position,
+                0,
+                tokens,
+                index,
+                "mlp_input",
+                engine,
+                &mlp_input,
             )?;
             let mlp = match &plan.mlp {
                 MlpPlan::Dense(_) if index == 0 => dense_rows(
@@ -373,6 +477,17 @@ impl<'a> MiMoCompressedTextForward<'a> {
                 }
                 _ => return Err(format!("MiMo batch layer {index} MLP changed").into()),
             };
+            #[cfg(test)]
+            trace_stage(
+                &mut self.trace_stages,
+                self.trace_position,
+                0,
+                tokens,
+                index,
+                "mlp",
+                engine,
+                &mlp,
+            )?;
             let mut after_mlp = engine.uninit(tokens * HIDDEN)?;
             engine.add(&after_attention, &mlp, &mut after_mlp, tokens * HIDDEN)?;
             hidden = after_mlp;
@@ -504,6 +619,17 @@ impl<'a> MiMoCompressedTextForward<'a> {
                 &row.attention_norm,
                 plan.pre_attention_norm.epsilon,
             )?;
+            #[cfg(test)]
+            trace_stage(
+                &mut self.trace_stages,
+                self.trace_position,
+                self.position,
+                1,
+                index,
+                "attention_norm",
+                engine,
+                &norm,
+            )?;
             let projections = row
                 .attention
                 .qkv
@@ -543,20 +669,81 @@ impl<'a> MiMoCompressedTextForward<'a> {
                 attention.rope.base,
                 1.0,
             )?;
+            #[cfg(test)]
+            for (name, tensor) in [
+                ("query", &qkv.query),
+                ("key", &qkv.key),
+                ("value", &qkv.value),
+            ] {
+                trace_stage(
+                    &mut self.trace_stages,
+                    self.trace_position,
+                    self.position,
+                    1,
+                    index,
+                    name,
+                    engine,
+                    tensor,
+                )?;
+            }
             let context = self
                 .kv
                 .append_and_attend(index, &qkv.query, &qkv.key, &qkv.value)?;
+            #[cfg(test)]
+            trace_stage(
+                &mut self.trace_stages,
+                self.trace_position,
+                self.position,
+                1,
+                index,
+                "context",
+                engine,
+                &context,
+            )?;
             // append_and_attend synchronizes attention before these async
             // projection and RoPE inputs are released.
             drop((qkv, gpu_position, projections, norm));
             let attention = engine.matmul(&row.attention.output, &context, 1)?;
+            #[cfg(test)]
+            trace_stage(
+                &mut self.trace_stages,
+                self.trace_position,
+                self.position,
+                1,
+                index,
+                "attention_output",
+                engine,
+                &attention,
+            )?;
             let mut after_attention = engine.uninit(HIDDEN)?;
             engine.add(&hidden, &attention, &mut after_attention, HIDDEN)?;
+            #[cfg(test)]
+            trace_stage(
+                &mut self.trace_stages,
+                self.trace_position,
+                self.position,
+                1,
+                index,
+                "after_attention",
+                engine,
+                &after_attention,
+            )?;
             let mlp_input = normalized(
                 engine,
                 &after_attention,
                 &row.mlp_norm,
                 plan.pre_mlp_norm.epsilon,
+            )?;
+            #[cfg(test)]
+            trace_stage(
+                &mut self.trace_stages,
+                self.trace_position,
+                self.position,
+                1,
+                index,
+                "mlp_input",
+                engine,
+                &mlp_input,
             )?;
             let mlp = match &plan.mlp {
                 MlpPlan::Dense(_) if index == 0 => dense_token(
@@ -581,6 +768,17 @@ impl<'a> MiMoCompressedTextForward<'a> {
                 }
                 _ => return Err(format!("MiMo layer {index} MLP changed").into()),
             };
+            #[cfg(test)]
+            trace_stage(
+                &mut self.trace_stages,
+                self.trace_position,
+                self.position,
+                1,
+                index,
+                "mlp",
+                engine,
+                &mlp,
+            )?;
             let mut after_mlp = engine.uninit(HIDDEN)?;
             engine.add(&after_attention, &mlp, &mut after_mlp, HIDDEN)?;
             hidden = after_mlp;
@@ -819,18 +1017,47 @@ mod tests {
         let prepared =
             text.modal_embedding_gpu_chunk(&cards[0], &tokens, &image, &video, &audio)?;
 
-        let (batched, batched_rows) = {
+        let (batched, batched_rows, batched_stages) = {
             let mut sequence = text.compressed_text_forward(engines, 4, [FOUR_GIB; 2])?;
             sequence.trace_position = Some(3);
             let step = sequence.consume_embedding_chunk_batched(&prepared)?;
-            (step, sequence.trace_rows)
+            (step, sequence.trace_rows, sequence.trace_stages)
         };
-        let (serial, serial_rows) = {
+        let (serial, serial_rows, serial_stages) = {
             let mut sequence = text.compressed_text_forward(engines, 4, [FOUR_GIB; 2])?;
             sequence.trace_position = Some(3);
             let step = sequence.consume_embedding_chunk(&prepared)?;
-            (step, sequence.trace_rows)
+            (step, sequence.trace_rows, sequence.trace_stages)
         };
+        if batched_stages.len() != 18 || serial_stages.len() != 18 {
+            return Err("MiMo stage diagnostic did not capture both layers".into());
+        }
+        for ((batch_layer, batch_name, batch), (serial_layer, serial_name, control)) in
+            batched_stages.iter().zip(&serial_stages)
+        {
+            if batch_layer != serial_layer
+                || batch_name != serial_name
+                || batch.len() != control.len()
+            {
+                return Err("MiMo stage diagnostic rows are misaligned".into());
+            }
+            let mut diff_squared = 0.0f64;
+            let mut base_squared = 0.0f64;
+            let mut max_abs = 0.0f32;
+            let mut matching_bits = 0usize;
+            for (&got, &want) in batch.iter().zip(control) {
+                let delta = (got - want).abs();
+                max_abs = max_abs.max(delta);
+                diff_squared += f64::from(delta).powi(2);
+                base_squared += f64::from(want).powi(2);
+                matching_bits += usize::from(got.to_bits() == want.to_bits());
+            }
+            println!(
+                "mimo_batch_stage\tlayer={batch_layer}\tstage={batch_name}\trel_l2={:.9e}\tmax_abs={max_abs:.9e}\tmatching_bits={matching_bits}\telements={}",
+                (diff_squared / base_squared).sqrt(),
+                batch.len(),
+            );
+        }
         if batched_rows.len() != LAYERS || serial_rows.len() != LAYERS {
             return Err("MiMo layerwise diagnostic did not capture all layers".into());
         }
