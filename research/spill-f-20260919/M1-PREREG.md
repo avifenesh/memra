@@ -744,3 +744,21 @@ regime is the touched balloon, regime (iii), already measured on BOX27: the scor
 the OWED 26 correction). No VM or bare-metal rental and no Step storage sitting. The market
 amendment stays as the reason. The Step pin and tensor census (`owed20/census.json`) stay as a
 record; nothing more is owed on them. OWED 20 closes on these receipts.
+
+Section E, finding and the pipelined direct arm (2026-09-27, registered before any code). The 5090
+1 GiB pairs (`owed18/5090/handoff-1g`) are flat because direct export is trimodal (about 1.4 s in
+rounds 1 to 4 and 6, 3.65 s in rounds 5 and 7, 4.9 to 6.2 s in rounds 8 to 10), almost all of it
+the write phase (1.03 s, 3.28 s, 5.8 s), while buffered's fsync ranges 0.23 to 2.8 s. The direct
+writer issues one synchronous 4 MiB write at a time after the serializer (queue depth 1, no
+overlap), so device latency on the contended shared volume lands on the export directly; on the PRO
+6000 the same design shows as the write loser (1.215 at both sizes).
+
+Arm `direct` v2, same door value, same bytes: the serializer fills one 4096-aligned 4 MiB buffer
+while a dedicated writer thread writes the previous one (a ring of four buffers, so up to three
+writes are in flight at ascending offsets); the tail, truncate, `fdatasync` and rename are
+unchanged. Correctness first: the existing unit cells (byte-identical files at every length around
+4 KiB and 4 MiB boundaries, both readers read both files, truncation) run unchanged against v2,
+plus one cell that forces a write error mid-stream and requires the export to fail with the file
+removed. Then the 5090 paired cells as in section E (1 GiB with tenant 100%, ten pairs; 8 GiB, ten
+pairs) with v2, and the PRO 6000 pair when a card is available; the default decision uses the v2
+rows. The v1 rows stay as recorded.
