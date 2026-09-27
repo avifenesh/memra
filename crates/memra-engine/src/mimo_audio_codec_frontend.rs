@@ -241,6 +241,31 @@ fn run_conv(
 }
 
 impl MiMoAudioCodecEncoderWeights {
+    #[cfg(test)]
+    pub(crate) fn encode_prepared_mel_conv1(
+        &self,
+        engine: &Engine,
+        mel: &CudaSlice<f32>,
+        mel_frames: usize,
+    ) -> Result<CudaSlice<f32>, Fail> {
+        if self.device_ordinal != engine.stream().context().ordinal() {
+            return Err("MiMo codec first convolution weight GPU changed".into());
+        }
+        let first = self.conv1_bf16()?;
+        run_conv(
+            engine,
+            mel,
+            first.weight(),
+            first.bias(),
+            ConvSpec {
+                frames: mel_frames,
+                in_channels: MEL_CHANNELS,
+                out_channels: HIDDEN,
+                stride: first.stride(),
+            },
+        )
+    }
+
     /// From one frame-major `[mel_frames,128]` f32 mel plane, execute the two
     /// pinned BF16 convolutions and erf GELUs. The input is cast to BF16 before
     /// conv1. The result is `[ceil(mel_frames/2),1024]` frame-major f32
