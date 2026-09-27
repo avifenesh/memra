@@ -62,6 +62,10 @@ aggregate tok/s, main against fused, N=3:
 | c4 | 130.48 | 146.44, +12.2% |
 | DSpark c1 | 88.99 | 95.63, +7.5% |
 
+Since 2026-09-27 the HC finish runs its Sinkhorn projection on a fifth warp, beside the collapse
+and the RMSNorm (`research/dsv4f-bringup-20260923/hc-finish/`). Greedy c1 goes from 89.17 to
+91.01 tok/s (+2.0%, decode 96.1) on the SE pair, N=2. Same bits.
+
 Concurrency: the plain TP/EP route serves four lanes whose steps share one captured B-row
 graph step (memra #710). Aggregate on the Workstation pair:
 
