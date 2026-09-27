@@ -546,6 +546,21 @@ impl MiMoVisionMerger {
 }
 
 impl MiMoVisionWeights {
+    /// Run the pinned patch projector, all 28 vision blocks, and the merger
+    /// on source-prepared Conv3D pixel rows. The output is BF16-valued
+    /// `[patches/4,4096]` modal embeddings. Raw image/video processing and
+    /// text request intake remain separate.
+    pub fn forward_patchified_vision(
+        &self,
+        engine: &Engine,
+        config: &ModelConfig,
+        grids: &[MiMoVisionGrid],
+        pixels: &CudaSlice<f32>,
+    ) -> Result<CudaSlice<f32>, Fail> {
+        let encoded = self.forward_patchified_blocks(engine, config, grids, pixels)?;
+        self.forward_encoded_merger(engine, config, grids, &encoded)
+    }
+
     /// Project source-prepared `[patches, 3, 2, 16, 16]` pixel rows and run
     /// all 28 ViT blocks. The patch projector currently admits at most 256
     /// patches per call. The result is before the merger.
