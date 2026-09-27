@@ -181,5 +181,27 @@ if have("offprev"):
         say(f"DAY44 E6 card={card} keep={keep} rows={len(tags)} differ={differ[:6]} -> "
             f"{'PASS' if tags and not differ else 'FAIL'}")
 
+# ---- DAY44 addendum C: R1 to R3 on the RW (history rewrite) boots ------------------------------------------------
+AFF = re.compile(r"\[worker\] (plain|spec)-affinity: rewound to (\d+) of (\d+) prompt tokens")
+for n in names:
+    if not have(n):
+        continue
+    r = rows(n)
+    rw = sorted(t for t, x in r.items() if x["shape"] == "RW" and not x["cold"] and x["turn"] >= 2)
+    if not rw:
+        continue
+    t = log(n)
+    aff = AFF.findall(t)
+    declined = len(re.findall(r"-affinity: declined", t))
+    settles = SETTLE.findall(t)
+    differ = [tg for tg in rw if r[tg]["content_sha256"] is None
+              or r[tg]["content_sha256"] != r.get(tg + "-cold", {}).get("content_sha256")]
+    say(f"DAY44 R1 card={card} boot={n} rw_later_turns={len(rw)} affinity_rewinds={len(aff)} "
+        f"affinity_declined={declined} -> {'PASS' if len(aff) >= len(rw) else 'FAIL'}")
+    say(f"DAY44 R2 card={card} boot={n} rw_later_turns={len(rw)} differ_vs_cold={differ[:6]} -> "
+        f"{'PASS' if not differ else 'FAIL'}")
+    say(f"DAY44 R3 READING card={card} boot={n} settles={len(settles)} "
+        f"settle_waits={len(re.findall(r'exact: settle \d+ waits', t))}")
+
 with open(os.path.join(root, "SUMMARY.txt"), "w") as fh:
     fh.write("\n".join(out) + "\n")
