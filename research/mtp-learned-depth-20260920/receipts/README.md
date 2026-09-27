@@ -37,6 +37,9 @@ and `verify_archive_exceptions.py` reproduce that finding without changing
 the archive bytes.
 
 Current main applies the raw-byte prefilter consistently in checkout,
-commit, and ref scans. Those five decoded-only strings do not require
-public-boundary allowlist entries under that policy. This publication keeps
-the historical review record and uses current main's scanner for admission.
+commit, and ref scans. Two of the five compressed archives still match
+`provider_name_aws` in raw bytes. They retain exact-hash, single-rule
+public-boundary entries backed by the zero-match expanded-member review.
+The other three decoded-only findings need no current allowlist entry.
+This publication keeps the historical review record and uses current
+main's scanner for admission.

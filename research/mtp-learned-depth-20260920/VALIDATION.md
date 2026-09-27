@@ -27,7 +27,9 @@ the full audit first and reconcile their segment totals with the overall metrics
 
 The banked public-boundary log records 53 tests against the publication-time
 scanner, including two checks for pinned binary paths. Current main instead
-uses one raw-byte prefilter for checkout, commit, and ref scans. The five
-historical decoded-only archive findings need no current allowlist entries.
-The original policy patterns and archive bytes are unchanged. The historical
-test output remains in `receipts/metadata/boundary-regression-tests.log`.
+uses one raw-byte prefilter for checkout, commit, and ref scans. Two of the
+five historical compressed-archive findings still match in raw bytes and
+retain exact-hash, single-rule allowlist entries. The other three need no
+current entry. The original policy patterns and archive bytes are unchanged.
+The historical test output remains in
+`receipts/metadata/boundary-regression-tests.log`.
