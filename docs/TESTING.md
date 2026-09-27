@@ -6,10 +6,11 @@ path, and `run-gen` argmax plus `run-spec` K=1..8 on each family whose numeric p
 reaches. The full battery (tier 2 on a non-serving 2x RTX PRO 6000 pair) gates `.cu` kernel,
 FFI and dispatch changes, numeric paths several families share, compiler/build defaults,
 tolerance or gate-coverage changes, unknown impact, and tags (owner, 2026-09-27; the rule
-lives in CLAUDE.md). Fast-gate accelerates development between those checkpoints. A fast-gate green is a
+lives in AGENTS.md). Fast-gate accelerates development between those checkpoints. A fast-gate green is a
 *keep going* signal, never model or serving qualification.
 
-CPU-only tooling can merge on relevant CPU contract, failure-injection and
+Documentation changes use text and link checks. CPU-only tooling can merge on
+relevant CPU contract, failure-injection and
 integration checks. Tools that transport native artifacts also need real build
 and artifact-integrity evidence. This class must leave native math, generated
 native programs, compiler/build defaults, model artifacts/defaults, qualification

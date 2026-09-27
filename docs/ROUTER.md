@@ -13,7 +13,7 @@ content, only addresses; read the target before acting. Paths are relative to th
 ## Models
 
 - Is model X supported, which path/quant/drafter -> docs/MODELS.md (support matrix; support = model+quant+drafter, never a format) plus docs/models/ (one card per model)
-- Support states -> CLAUDE.md, "Model onboarding" section: NativeReference (plan runs in the reference executor, bring-up evidence only), NativeQualified (required checkpoint and serving gates pass, minimum production-admission state), NativeTuned (qualified plus current binary-bound rewrite receipts); per-pack records -> docs/support-records.toml <!-- support: none; not NativeQualified NativeReference NativeTuned -->
+- Support states -> AGENTS.md, "Model onboarding" section: NativeReference (plan runs in the reference executor, bring-up evidence only), NativeQualified (required checkpoint and serving gates pass, minimum production-admission state), NativeTuned (qualified plus current binary-bound rewrite receipts); per-pack records -> docs/support-records.toml <!-- support: none; not NativeQualified NativeReference NativeTuned -->
 - Bringing up a new model, artifact to gates green -> docs/ONBOARDING.md (ordered phase checklist, fail-closed contracts)
 
 ## Speculative decode
@@ -36,7 +36,7 @@ content, only addresses; read the target before acting. Paths are relative to th
 ## Decisions and laws
 
 - Why was X chosen or rejected, with the settling measurement -> docs/decisions/ (index docs/decisions/README.md: SAFETENSORS-DECISION, FORMAT-DECISION, QUANT-GEMM-DECISION, RIG-NATIVE-DECODE, PHASE1-HYBRID, BEST-OF-ALL-WORLDS, VISION-LANE, PUBLIC-BOUNDARY-DETECTION, ORNITH-PAIR-OWNER)
-- Project laws (branch isolation, public boundary, flags doctrine, evidence discipline, release rules) -> CLAUDE.md
+- Project laws (branch isolation, public boundary, flags doctrine, evidence discipline, release rules) -> AGENTS.md
 
 ## Cross-cutting lessons (curated corpus, sibling repo, read-only)
 

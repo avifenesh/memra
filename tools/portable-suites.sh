@@ -28,7 +28,7 @@
 # CPU only, GPU-less by construction: memra-tier has no CUDA dependency, memra-kv links cudarc
 # with dynamic-loading and no test opens the driver, memra-cli depends on gguf/reference/
 # tokenizer. A green here is EXECUTION of CPU suites, not hardware qualification: it promotes no
-# model, numeric program, default or support state (CLAUDE.md, the three support states).
+# model, numeric program, default or support state (AGENTS.md, the three support states).
 set -euo pipefail
 
 here=$(cd -- "$(dirname -- "$0")/.." && pwd)

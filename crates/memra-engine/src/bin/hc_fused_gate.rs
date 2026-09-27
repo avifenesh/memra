@@ -52,7 +52,7 @@
 //! arms at every tested t.
 //!
 //! Run under the fleet GPU lock: `MEMRA_GPU_LOCK=/tmp/memra-gpu.lock` (box1 / any 2x RTX
-//! PRO 6000 pair / B200 pods — see CLAUDE.md "Lock names are a correctness surface").
+//! PRO 6000 pair / B200 pods — see AGENTS.md "Lock names are a correctness surface").
 //!
 //! Usage: hc-fused-gate [device]   exit 0 on PASS (bit-identical unfused / fused(=1) /
 //! fused(=2) at every tested t), prints per-arm N=5 timings (us) to stdout as both a table

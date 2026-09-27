@@ -85,7 +85,7 @@ acquire_gpu_lock() {
     # Inner gates that flock per server boot (spec-on-cache-hit-gate) must not contend the
     # lock this run already holds — that contention is the receipted self-deadlock (their
     # flock -w 300 times out against our own hold -> "server died during boot", empty log).
-    # Redirect them to a distinct inner file. This is NOT a third rig lock name (CLAUDE.md
+    # Redirect them to a distinct inner file. This is NOT a third rig lock name (AGENTS.md
     # lock-names law): it grants no rig-wide exclusion and is only ever exported INSIDE an
     # exclusive hold of the canonical lock; standalone gate runs keep the canonical default.
     # A caller's explicit private MEMRA_GPU_LOCK (the lanes' green pattern) is respected.

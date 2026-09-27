@@ -94,7 +94,7 @@ fi
 # The census was never wrong. It ran too late — the only local caller was tools/local-ci.sh,
 # where it is a WARNING (line 126) behind a cargo build and a GPU, so a docs- or research-only
 # lane pushing straight to main never posed the question at all. This is the earliest point that
-# intercepts the real path: every push runs this hook, and CLAUDE.md already forbids --no-verify.
+# intercepts the real path: every push runs this hook, and AGENTS.md already forbids --no-verify.
 #
 # UNCONDITIONAL, no changed-file scoping. It costs 0.55 s on this tree (632 reads), so scoping
 # would buy nothing and would be wrong twice: a docs-only commit that DELETES a FLAGS row breaks

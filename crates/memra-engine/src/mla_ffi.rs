@@ -96,7 +96,7 @@ pub static MLA_B200_DECODE_ARM_DISPATCHES: std::sync::atomic::AtomicU64 =
 /// Owner order 2026-09-02: "hardly improve the decode on these cards, before the full 1M."
 /// This is a genuinely separate door from `MEMRA_MLA_DECODE_SPLIT` (glm5-decode-diet lever 4,
 /// rig-generic, target ~1024 blocks, PRO6000-tuned) rather than a rename of it, per the
-/// per-hardware-arm-selection law in CLAUDE.md: B200 SXM carries more SMs per device than the
+/// per-hardware-arm-selection law in AGENTS.md: B200 SXM carries more SMs per device than the
 /// PRO6000 pair that door was tuned on, and this arm ALSO covers `attn_gathered`, which the
 /// generic split door never touched (no independent-output split existed for it before this
 /// lane; see `memra_mla_attn_gathered_split_kernel` in cu/mla_attn.cu).
