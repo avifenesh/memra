@@ -90,9 +90,14 @@ fn run() -> Result<(), Fail> {
     let mut args = std::env::args().skip(1);
     let root = args
         .next()
-        .ok_or("usage: mimo_first_chunk_ab_probe <pinned-source-dir>")?;
+        .ok_or("usage: mimo_first_chunk_ab_probe <pinned-source-dir> [--s5-v]")?;
+    let s5_v = match args.next().as_deref() {
+        None => false,
+        Some("--s5-v") => true,
+        _ => return Err("MiMo first-chunk AB has an unknown option".into()),
+    };
     if args.next().is_some() {
-        return Err("usage: mimo_first_chunk_ab_probe <pinned-source-dir>".into());
+        return Err("MiMo first-chunk AB has an extra option".into());
     }
     let source = Arc::new(SafetensorsSource::open(Path::new(&root))?);
     let cards = [Engine::new(0)?, Engine::new(1)?];
@@ -110,7 +115,14 @@ fn run() -> Result<(), Fail> {
     for &id in &token_ids {
         token_hasher.update(id.to_le_bytes());
     }
-    println!("format\tmemra-mimo-first-chunk-offline-ab-v1");
+    println!(
+        "format\t{}",
+        if s5_v {
+            "memra-mimo-first-chunk-s5-offline-ab-v1"
+        } else {
+            "memra-mimo-first-chunk-offline-ab-v1"
+        }
+    );
     println!("source\tXiaomiMiMo/MiMo-V2.6-Flash-RL@3b38d063180c3e4aed9691fdc735f3d10b266ee4");
     println!("shape\tfresh_text_tokens={TOKENS}\tmax_context={CONTEXT}\tcontinuation_token=220");
     println!("token_ids_sha256\t{:x}", token_hasher.finalize());
@@ -131,7 +143,11 @@ fn run() -> Result<(), Fail> {
     let mut samples = Vec::with_capacity(order.len());
     for (index, arm) in order.into_iter().enumerate() {
         let start = Instant::now();
-        let mut sequence = text.compressed_text_forward(engines, CONTEXT, [FOUR_GIB; 2])?;
+        let mut sequence = if s5_v {
+            text.compressed_text_forward_s5_g16(engines, CONTEXT, [FOUR_GIB; 2])?
+        } else {
+            text.compressed_text_forward(engines, CONTEXT, [FOUR_GIB; 2])?
+        };
         let allocation_ms = start.elapsed().as_secs_f64() * 1e3;
         let start = Instant::now();
         let step = match arm {
