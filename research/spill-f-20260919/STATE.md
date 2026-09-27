@@ -45,4 +45,3 @@
   cells since 20:42Z. Remaining: f17 rounds 2 to 10, then handoff-8g. After f17: pool with
   `m1-b3-pool.py ~/spill-f-5090/receipts/f17 --bypass-check --fallback-unclean`; after handoff-8g:
   `m1-handoff-pairs.py`; then the two doors' decisions (section F and E rules, both rigs).
-

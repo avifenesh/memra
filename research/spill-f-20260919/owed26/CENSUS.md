@@ -32,4 +32,3 @@ What it changes in the record:
   worker path) show the same mechanism in some of their runs (1 of 100, 1 of 47 and 20 of 26 totals
   lines). Which of their rows back the depth-2 local-safe default in `per-expert-quant/README.md`
   is not established here; they are flagged for the owning lane, not relabelled.
-
