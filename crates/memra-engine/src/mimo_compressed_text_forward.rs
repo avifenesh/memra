@@ -198,6 +198,7 @@ pub struct MiMoCompressedTextForward<'a> {
     failed: bool,
     has_modal_payload: bool,
     experimental_weight_reuse: bool,
+    experimental_gate_up_fusion: bool,
 }
 
 impl MiMoTextWeights {
@@ -231,6 +232,7 @@ impl<'a> MiMoCompressedTextForward<'a> {
             failed: false,
             has_modal_payload: false,
             experimental_weight_reuse: false,
+            experimental_gate_up_fusion: false,
         })
     }
 
@@ -241,6 +243,14 @@ impl<'a> MiMoCompressedTextForward<'a> {
             return Err("MiMo expert reuse must be selected before the first token".into());
         }
         self.experimental_weight_reuse = true;
+        Ok(())
+    }
+
+    /// Select the experimental fused gate/up arm for this fresh batch.
+    /// This also uses the four-slot weight-reuse down projection.
+    pub fn enable_experimental_gate_up_fusion(&mut self) -> Result<(), Fail> {
+        self.enable_experimental_weight_reuse()?;
+        self.experimental_gate_up_fusion = true;
         Ok(())
     }
 
@@ -442,7 +452,16 @@ impl<'a> MiMoCompressedTextForward<'a> {
                     let routed = self.weights.routed[index]
                         .as_ref()
                         .ok_or("MiMo batch routed weights missing")?;
-                    let batch = if self.experimental_weight_reuse {
+                    let batch = if self.experimental_gate_up_fusion {
+                        routed.batch_bound_experimental_gate_up_reuse(
+                            engine,
+                            &mlp_input,
+                            tokens,
+                            moe,
+                            &self.weights.config,
+                            &self.weights.plan,
+                        )?
+                    } else if self.experimental_weight_reuse {
                         routed.batch_bound_experimental_weight_reuse(
                             engine,
                             &mlp_input,
@@ -875,6 +894,35 @@ mod tests {
                 return Err(format!("MiMo modal expert reuse {label} differs from batch").into());
             }
         }
+        let (fused, fused_next) = {
+            let mut sequence = text.compressed_text_forward(engines, 5, [FOUR_GIB; 2])?;
+            sequence.enable_experimental_gate_up_fusion()?;
+            let step = sequence.consume_embedding_chunk_batched(&prepared)?;
+            let next = sequence.token(220)?;
+            (step, next)
+        };
+        for (label, got, want) in [
+            ("last", fused.logits.as_slice(), reused.logits.as_slice()),
+            (
+                "hidden",
+                fused.hidden_before_norm.as_slice(),
+                reused.hidden_before_norm.as_slice(),
+            ),
+            (
+                "continuation",
+                fused_next.as_slice(),
+                reused_next.as_slice(),
+            ),
+        ] {
+            if got.len() != want.len()
+                || got
+                    .iter()
+                    .zip(want)
+                    .any(|(got, want)| got.to_bits() != want.to_bits())
+            {
+                return Err(format!("MiMo modal fused gate/up {label} differs from reuse").into());
+            }
+        }
         let mut serial = text.compressed_text_forward(engines, 5, [FOUR_GIB; 2])?;
         let serial_step = serial.consume_embedding_chunk(&prepared)?;
         let serial_next = serial.token(220)?;
@@ -970,6 +1018,16 @@ mod tests {
             }
             (step, next)
         };
+        let (fused, fused_next) = {
+            let mut sequence = text.compressed_text_forward(engines, TOKENS + 1, [FOUR_GIB; 2])?;
+            sequence.enable_experimental_gate_up_fusion()?;
+            let step = sequence.consume_embedding_chunk_batched(&prepared)?;
+            let next = sequence.token(220)?;
+            if sequence.position() != TOKENS + 1 || step.position != TOKENS - 1 {
+                return Err("MiMo 128-row fused gate/up cursor drifted".into());
+            }
+            (step, next)
+        };
         let (serial, serial_next) = {
             let mut sequence = text.compressed_text_forward(engines, TOKENS + 1, [FOUR_GIB; 2])?;
             let step = sequence.consume_embedding_chunk(&prepared)?;
@@ -1024,6 +1082,31 @@ mod tests {
                 return Err(format!("MiMo 128-row expert reuse {label} differs from batch").into());
             }
             println!("mimo_expert_reuse_128_exact\t{label}\t{} bits", got.len());
+        }
+        for (label, got, want) in [
+            ("last", fused.logits.as_slice(), reused.logits.as_slice()),
+            (
+                "hidden",
+                fused.hidden_before_norm.as_slice(),
+                reused.hidden_before_norm.as_slice(),
+            ),
+            (
+                "continuation",
+                fused_next.as_slice(),
+                reused_next.as_slice(),
+            ),
+        ] {
+            if got.len() != want.len()
+                || got
+                    .iter()
+                    .zip(want)
+                    .any(|(got, want)| got.to_bits() != want.to_bits())
+            {
+                return Err(
+                    format!("MiMo 128-row fused gate/up {label} differs from reuse").into(),
+                );
+            }
+            println!("mimo_fused_gate_up_128_exact\t{label}\t{} bits", got.len());
         }
         Ok(())
     }

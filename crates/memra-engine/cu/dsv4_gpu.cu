@@ -2107,6 +2107,178 @@ extern "C" int memra_dsv4_fp4_gemm_sel_mimo_reuse(
     return 0;
 }
 
+// Selected MiMo MXFP4 gate/up twin. The two projections read the same four
+// activation rows and initialize one decode table per CTA. Their weight bytes,
+// E8M0 scales, per-slot ascending-K sums, and 128-leaf reductions stay separate.
+// Interleaving the independent sums cannot change either projection's add order.
+__device__ __forceinline__ void dsv4_fp4_group_sub_reuse_gate_up(
+    const uint8_t* wrow_gate, const uint8_t* wrow_up,
+    const uint8_t* const arow[DSV4_MIMO_REUSE_SLOTS],
+    const int slot[DSV4_MIMO_REUSE_SLOTS], int k0,
+    const float* e4m3_tab, const float2* pair_tab,
+    float sub_gate[DSV4_MIMO_REUSE_SLOTS],
+    float sub_up[DSV4_MIMO_REUSE_SLOTS]) {
+#pragma unroll
+    for (int chunk = 0; chunk < 2; ++chunk) {
+        uint2 gate_vec = *(const uint2*)(wrow_gate + (k0 >> 1) + chunk * 8);
+        uint2 up_vec = *(const uint2*)(wrow_up + (k0 >> 1) + chunk * 8);
+        unsigned gate_words[2] = {gate_vec.x, gate_vec.y};
+        unsigned up_words[2] = {up_vec.x, up_vec.y};
+        unsigned aw[DSV4_MIMO_REUSE_SLOTS][4];
+#pragma unroll
+        for (int s = 0; s < DSV4_MIMO_REUSE_SLOTS; ++s) {
+            if (slot[s] >= 0) {
+                uint4 av = *(const uint4*)(arow[s] + k0 + chunk * 16);
+                aw[s][0] = av.x;
+                aw[s][1] = av.y;
+                aw[s][2] = av.z;
+                aw[s][3] = av.w;
+            }
+        }
+#pragma unroll
+        for (int b = 0; b < 8; ++b) {
+            unsigned gate_byte = (gate_words[b >> 2] >> ((b & 3) * 8)) & 0xFF;
+            unsigned up_byte = (up_words[b >> 2] >> ((b & 3) * 8)) & 0xFF;
+            float2 gate_pair = pair_tab[gate_byte];
+            float2 up_pair = pair_tab[up_byte];
+#pragma unroll
+            for (int s = 0; s < DSV4_MIMO_REUSE_SLOTS; ++s) {
+                if (slot[s] >= 0) {
+                    unsigned a0 = (aw[s][(2 * b) >> 2] >> (((2 * b) & 3) * 8)) & 0xFF;
+                    unsigned a1 = (aw[s][(2 * b + 1) >> 2] >> (((2 * b + 1) & 3) * 8)) & 0xFF;
+                    float x0 = e4m3_tab[a0];
+                    float x1 = e4m3_tab[a1];
+                    sub_gate[s] += x0 * gate_pair.x;
+                    sub_gate[s] += x1 * gate_pair.y;
+                    sub_up[s] += x0 * up_pair.x;
+                    sub_up[s] += x1 * up_pair.y;
+                }
+            }
+        }
+    }
+}
+
+__global__ void dsv4_fp4_gemm_sel_mimo_gate_up_reuse_kernel(
+    const uint8_t* __restrict__ a, const float* __restrict__ as_,
+    const uint8_t* __restrict__ w_base, const uint8_t* __restrict__ sc_base,
+    const int* __restrict__ groups, float* __restrict__ out_gate,
+    float* __restrict__ out_up, int n, int kdim, long wstride, long sstride) {
+    const int col0 = blockIdx.x * DSV4_FP4_SEL_CPB;
+    const int* group = groups + (long)blockIdx.y * DSV4_MIMO_REUSE_WORDS;
+    const int eid = group[0];
+    int slot[DSV4_MIMO_REUSE_SLOTS];
+    const uint8_t* arow[DSV4_MIMO_REUSE_SLOTS];
+    const float* asrow[DSV4_MIMO_REUSE_SLOTS];
+#pragma unroll
+    for (int s = 0; s < DSV4_MIMO_REUSE_SLOTS; ++s) {
+        slot[s] = group[s + 1];
+        if (slot[s] >= 0) {
+            long arow_i = (long)(slot[s] / 8);
+            arow[s] = a + arow_i * kdim;
+            asrow[s] = as_ + arow_i * (kdim / 128);
+        } else {
+            arow[s] = a;
+            asrow[s] = as_;
+        }
+    }
+    extern __shared__ float selected_smem[];
+    float* e4m3_tab = selected_smem;
+    float2* pair_tab = (float2*)(selected_smem + 256);
+    float* red = selected_smem + 256 + 512;
+    dsv4_fp4_tables(e4m3_tab, pair_tab);
+    const uint8_t* wb_gate = w_base + (long)eid * 3 * wstride;
+    const uint8_t* wb_up = w_base + ((long)eid * 3 + 2) * wstride;
+    const uint8_t* sb_gate = sc_base + (long)eid * 3 * sstride;
+    const uint8_t* sb_up = sc_base + ((long)eid * 3 + 2) * sstride;
+    float part_gate[DSV4_MIMO_REUSE_SLOTS][DSV4_FP4_SEL_CPB] = {};
+    float part_up[DSV4_MIMO_REUSE_SLOTS][DSV4_FP4_SEL_CPB] = {};
+    for (int j = threadIdx.x; j < kdim / 32; j += blockDim.x) {
+        int k0 = j * 32;
+#pragma unroll
+        for (int c = 0; c < DSV4_FP4_SEL_CPB; ++c) {
+            int col = col0 + c;
+            if (col >= n) break;
+            const uint8_t* wrow_gate = wb_gate + (long)col * (kdim / 2);
+            const uint8_t* wrow_up = wb_up + (long)col * (kdim / 2);
+            const uint8_t* srow_gate = sb_gate + (long)col * (kdim / 32);
+            const uint8_t* srow_up = sb_up + (long)col * (kdim / 32);
+            float sub_gate[DSV4_MIMO_REUSE_SLOTS] = {};
+            float sub_up[DSV4_MIMO_REUSE_SLOTS] = {};
+            dsv4_fp4_group_sub_reuse_gate_up(
+                wrow_gate, wrow_up, arow, slot, k0, e4m3_tab, pair_tab, sub_gate, sub_up);
+            float ws_gate = (srow_gate[j] == 0xFF)
+                ? nanf("") : exp2f((float)srow_gate[j] - 127.0f);
+            float ws_up = (srow_up[j] == 0xFF)
+                ? nanf("") : exp2f((float)srow_up[j] - 127.0f);
+#pragma unroll
+            for (int s = 0; s < DSV4_MIMO_REUSE_SLOTS; ++s) {
+                if (slot[s] >= 0) {
+                    float as = asrow[s][k0 / 128];
+                    float sc_gate = ws_gate * as;
+                    float sc_up = ws_up * as;
+                    part_gate[s][c] += sub_gate[s] * sc_gate;
+                    part_up[s][c] += sub_up[s] * sc_up;
+                }
+            }
+        }
+    }
+    const int tid = threadIdx.x;
+#pragma unroll
+    for (int s = 0; s < DSV4_MIMO_REUSE_SLOTS; ++s)
+#pragma unroll
+        for (int c = 0; c < DSV4_FP4_SEL_CPB; ++c) {
+            int i = (s * DSV4_FP4_SEL_CPB + c) * 128 + tid;
+            red[i] = part_gate[s][c];
+            red[DSV4_MIMO_REUSE_SLOTS * DSV4_FP4_SEL_CPB * 128 + i] = part_up[s][c];
+        }
+    __syncthreads();
+    if (tid < 32) {
+#pragma unroll
+        for (int s = 0; s < DSV4_MIMO_REUSE_SLOTS; ++s) {
+            if (slot[s] < 0) continue;
+#pragma unroll
+            for (int c = 0; c < DSV4_FP4_SEL_CPB; ++c) {
+#pragma unroll
+                for (int p = 0; p < 2; ++p) {
+                    float* r = red + ((p * DSV4_MIMO_REUSE_SLOTS + s)
+                                     * DSV4_FP4_SEL_CPB + c) * 128;
+                    float v = (r[tid] + r[tid + 64]) + (r[tid + 32] + r[tid + 96]);
+#pragma unroll
+                    for (int off = 16; off > 0; off >>= 1) {
+                        const float other = __shfl_down_sync(0xffffffffu, v, off);
+                        if (tid < off) v += other;
+                    }
+                    if (tid == 0 && col0 + c < n) {
+                        float* out = p == 0 ? out_gate : out_up;
+                        out[(long)slot[s] * n + col0 + c] = v;
+                    }
+                }
+            }
+        }
+    }
+}
+
+extern "C" int memra_dsv4_fp4_gemm_sel_mimo_gate_up_reuse(
+    const void* a_codes, const float* a_scales,
+    const void* w_base, const void* sc_base, const int* groups,
+    float* out_gate, float* out_up, int slots, int group_count,
+    int n, int kdim, long wstride, long sstride, void* stream_v) {
+    if (!a_codes || !a_scales || !w_base || !sc_base || !groups || !out_gate || !out_up
+        || slots < 16 || slots > 2048 || slots % 8 || group_count < 1 || group_count > slots
+        || n < 1 || n > 4096 || kdim < 128 || kdim > 4096 || kdim % 128
+        || wstride != (long)n * kdim / 2 || sstride != (long)n * kdim / 32) return 40028;
+    dim3 grid((unsigned)((n + DSV4_FP4_SEL_CPB - 1) / DSV4_FP4_SEL_CPB),
+              (unsigned)group_count);
+    dsv4_fp4_gemm_sel_mimo_gate_up_reuse_kernel<<<grid, 128,
+        DSV4_FP4_SMEM(2 * 128 * DSV4_FP4_SEL_CPB * DSV4_MIMO_REUSE_SLOTS),
+        (cudaStream_t)stream_v>>>(
+            (const uint8_t*)a_codes, a_scales, (const uint8_t*)w_base,
+            (const uint8_t*)sc_base, groups, out_gate, out_up, n,
+            kdim, wstride, sstride);
+    DSV4_ERR();
+    return 0;
+}
+
 // The native Rust model passes its own arm, allowing an isolated one-load gate
 // to alternate arms without changing the process environment or global state.
 extern "C" int memra_dsv4_fp4_gemm_sel_g_arm(const void* a_codes, const float* a_scales,
