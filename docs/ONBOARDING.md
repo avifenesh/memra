@@ -1,5 +1,8 @@
 # Architecture onboarding
 
+Use this procedure only for work admitted under the [project scope](../README.md#project-status).
+Routine bring-ups are paused.
+
 This is the single maintained path from an artifact in hand to gates green. For new upstream
 models, start from the official safetensors checkpoint together with its config,
 tokenizer/template, quantization metadata, and every indexed or auxiliary tensor file. That set is

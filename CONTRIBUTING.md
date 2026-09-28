@@ -1,5 +1,8 @@
 # Contributing to memra
 
+Contributions follow the [current project scope](README.md#project-status): budgeted
+research questions and maintenance for existing commitments.
+
 Issues welcome anytime. PRs welcome **only when they carry proof**, per the rules below: CI is compile-only (no GPU runners on either target arch), so a human reviewer is the only gate between claim and merged code. Unproven PRs (no gates run, no numbers, "should be faster", AI-generated diffs with no on-device verification) will be closed, not debated. This is not gatekeeping: every accepted kernel becomes load-bearing in a correctness contract (see [Testing](docs/TESTING.md)), and reverting a bad merge costs far more than rejecting an unproven one.
 
 By submitting a contribution, you agree to license it under
