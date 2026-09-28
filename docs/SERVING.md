@@ -2717,7 +2717,11 @@ f32 special case is gone: chunk 0 quantizes its K/V into the cache first and att
 for every row means the chunk size cannot decide where a precision edge falls, so **chunked
 prefill is byte-identical across `MEMRA_PRIME_CHUNK` values with no door and no grain knob**
 (chunkinv gate, naked env, both pinned prompts EXACT at chunks 2048/64/32).
-`MEMRA_PRIME_CHUNK` is again a pure memory/transient knob. Rollback seam:
+`MEMRA_PRIME_CHUNK` is again a pure memory/transient knob, with one scoped exception: on the
+170-SM sm_120a target, `MEMRA_PRIME_CHUNK=1024` selects the FA2 prime attention class for the
+Qwen 24 Q / 4 KV / d256 full-attention layers (memra #902, docs/KERNELS.md), so on that card and
+model chunk 1024 is its own numerical class and other chunk values stay on the existing one.
+Rollback seam:
 `MEMRA_PRIME_F32CHUNK0=1` restores the legacy f32 first-chunk arithmetic (and is the gate
 canary's injection). The interim `MEMRA_PRIME_INVARIANT`/`MEMRA_PRIME_GRAIN` pin-the-boundary
 door was superseded by this fix and removed at v0.71 per the flags doctrine (the research

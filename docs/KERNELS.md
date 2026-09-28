@@ -1,16 +1,18 @@
 # Kernel inventory
 
-## Qwen FA2 attention experiment, 2026-09-09
+## Qwen FA2 prime attention, 2026-09-09 (the default since memra #902, 2026-09-28)
 
 Both entries carry the same numerical body: BF16 MMA, FP32 direct PV accumulation,
 a BF16-rounded MMA denominator and log2-domain online softmax over 32-key tiles.
-The door is qualified only for the Qwen 24 Q / 4 KV / d256 causal prefill at
-t=16..1039 on the 170-SM sm_120a target with `MEMRA_PRIME_CHUNK=1024`.
+They are the prime attention for the Qwen 24 Q / 4 KV / d256 causal prefill at
+t=16..1039 on the 170-SM sm_120a target with `MEMRA_PRIME_CHUNK=1024`, with no
+environment door. Any other architecture, SM count or chunk keeps the existing kernel.
+Receipt: darklanes `research/qwen-fa2-quality-20260928/`.
 
 | Symbol | Purpose | Types | Architecture | Door | Binding |
 | --- | --- | --- | --- | --- | --- |
-| `fa_prefill_qw_fa2` | Six query heads share three rotating BF16 KV staging planes; FP32 direct PV and online softmax | BF16 KV, f32 Q/O | sm_120a, 170 SM | `MEMRA_PRIME_ATTN_FA2`, default OFF, decide-by 2026-09-23 | `Engine::fa_prefill_view_ws` |
-| `fa_prefill_qw_fa2_prime_table` | Same numerical body with true causal depth from replay table slot 7 | BF16 KV, f32 Q/O | sm_120a, 170 SM | Same door; the carried graph reuse key includes the attention class | `Engine::fa_prefill_view_ws`, `qwen_prime_graph::run` |
+| `fa_prefill_qw_fa2` | Six query heads share three rotating BF16 KV staging planes; FP32 direct PV and online softmax | BF16 KV, f32 Q/O | sm_120a, 170 SM | none: `Engine::prime_attn_fa2_enabled` (arch, SM count, chunk 1024) | `Engine::fa_prefill_view_ws` |
+| `fa_prefill_qw_fa2_prime_table` | Same numerical body with true causal depth from replay table slot 7 | BF16 KV, f32 Q/O | sm_120a, 170 SM | Same predicate; the carried graph reuse key includes the attention class | `Engine::fa_prefill_view_ws`, `qwen_prime_graph::run` |
 
 ## Host-tier D2D receipt kernels, 2026-09-22 (memra#536 Move 2 slice 3, WP-A day 22)
 

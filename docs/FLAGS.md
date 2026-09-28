@@ -28,7 +28,6 @@ raises `MEMRA_MAX_SESSIONS` from 4 to 32 and arms this door, gated on the binary
 
 | Flag | Contract |
 | --- | --- |
-| `MEMRA_PRIME_ATTN_FA2` | **OFF (default), decide-by: 2026-09-23.** Strict `1` selects Memra-owned GQA-packed FA2-class quantized-KV prefill on the 170-SM sm_120a target, 24 Q / 4 KV / d256, causal t=16..1039, including short restored suffixes and widened 1024-row tails. The door also requires the qualified prime geometry, `MEMRA_PRIME_CHUNK=1024`: a wider deployment chunk would leave full chunks on the legacy class and hand only the folded tail to FA2, mixing numerical classes inside one prime and breaking cold/restored identity. Any other build architecture, SM count or chunk setting fails closed to the existing kernel with no environment read on the non-120a build. BF16 MMA, FP32 direct PV accumulation and BF16-rounded softmax denominator change numerical order. Other shapes use the existing kernel; decode is unchanged. Graphs key the numerical class and resolve true depth through the replay table. Rollback: unset or `0`. Receipt: `research/qwen-prefill-attn-20260909/FA2.md` and `fa2-receipt.json`. Corrected same-binary ON K1-8, 0/24 margin flips, four-turn cold/restore, boundary, eval, decode and cache gates pass. N=3 cold TTFT 8k/32k/131k improves 0.60%/3.43%/9.19%. Initial t<128/tail fallback defect is fixed by preserving the class through t=16..1039. Default remains OFF; proposed enablement is owner-batched. |
 
 ## Streaming-audio surface, 2026-09-11
 
@@ -1670,6 +1669,37 @@ refuse. Git history is the archive.
 Matching darklanes ledger line: `agent-knowledge/gpu/verdicts-ledger.md`
 `glm5-b200-vrows-pack-plus-0-70-ord-neutral` (already amended 2026-09-27; the darklanes-side PR for
 this issue adds the deletion verdict).
+
+## Removed doors, 2026-09-28 (the Qwen FA2 prime attention is the program on sm_120a)
+
+memra #902, darklanes lane `research/qwen-fa2-quality-20260928/`. `MEMRA_PRIME_ATTN_FA2=1` routed
+the Qwen3.8-27B 24 Q / 4 KV / d256 full-attention prime through `fa_prefill_qw_fa2` (GQA-packed,
+BF16 MMA, FP32 direct PV, BF16-rounded softmax denominator) on the 170-SM sm_120a target at
+`MEMRA_PRIME_CHUNK=1024`. It was default OFF, decide-by 2026-09-23, with a 24-position quality
+receipt. Owner, 2026-09-28: "run one wider quality cell on a rented 5090 before deciding", flip
+if the flip rate is at noise and sampled quality holds, delete if not.
+
+Teacher-forced, one binary, one loaded model per window, four arms (ref, a bit-identical twin,
+fa2, and `MEMRA_PRIME_F32CHUNK0=1` as the noise floor of an accepted reorder), 16384 positions:
+
+| context | positions | fa2 flips (rate, CP UB95) | cal flips (rate, CP UB95) | fa2 NLL delta [block-bootstrap CI95] |
+|---|---|---|---|---|
+| 8k | 8192 | 126 (1.54%, 1.83%) | 114 (1.39%, 1.67%) | -0.000405 [-0.001245, +0.000423] |
+| 32k | 4096 | 59 (1.44%, 1.85%) | 61 (1.49%, 1.91%) | +0.000690 [-0.000510, +0.001930] |
+| 131k | 4096 | 48 (1.17%, 1.55%) | 52 (1.27%, 1.66%) | -0.000151 [-0.001275, +0.000977] |
+| pooled | 16384 | 233 (1.42%, 1.62%) | 227 (1.39%, 1.58%) | -0.000068 [-0.000670, +0.000523] |
+
+No fa2 flip sits on a reference margin above 0.5 logit (largest 0.119 / 0.346 / 0.263 at
+131k / 32k / 8k). Vendor-default sampled A/B (no decode fields, interleaved boots):
+SAMPLED_TBD. Cold TTFT side receipt: TTFT_TBD.
+
+The environment read is deleted; `Engine::prime_attn_fa2_enabled` keeps the architecture, SM
+count and chunk-1024 conditions, so every other build, card and chunk stays on the existing
+kernel. Deleted with it: the in-process toggle bins `qwen-fa2-margin-gate` and
+`qwen-fa2-layer-probe`, which only flipped this read. The carried-graph `attention_fa2` key stays.
+No committed golden or gate runs Qwen at chunk 1024 on sm_120a (fast-gate and accept-gate prime
+at 2048 or the 4096 default; chunk-invariance runs Qwen3.5-9B at 2048/64/32), so none moved.
+Rollback is `git revert`; the legacy class stays reachable at any other `MEMRA_PRIME_CHUNK`.
 
 ## Removed doors, 2026-09-26 (the two DSpark drafter chain doors: flat and negative on TP/EP)
 
