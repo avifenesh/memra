@@ -88,3 +88,15 @@ MemAvailable, about 60 minutes (two builds and 92 runs). Receipts go to `c-day94
 
 NEED TARGET CARD: `D94_BUILDS="i24=1fd4b24c0 i25=ee41ede8f" bash /root/wt-c/research/spill-c-20260919/day94-box.sh` on
 the 285K class.
+
+## 3. The lead's scheduling and two rulings, registered before the card (2026-09-27)
+
+- **Where.** BOX46, the same 285K machine every 285K half ran on (chain `c21-box46.sh`, after lane A's F2, about
+  01:20Z). Tree `836b3a96c`, receipts `c-day94`, mirror `pro-single-day94/`.
+- **The program.** The lead: "Keep I25 as registered. The cell locates the gap (placement against program), so an
+  I26 addendum would only move the question." The cell runs `i25` and `i24` as section 1 says; I26's record is its
+  fixture and queue v23.
+- **The E-core reading stays a hypothesis** until this cell reads.
+- **If the verdict is `pinning_closes`,** every earlier 285K verdict ran under `taskset -c 0-11`. Each record gets a
+  banner naming that placement and pointing here; its readings are not rewritten. The records are `DAY64.md` to
+  `DAY91.md`, the 285K halves.
