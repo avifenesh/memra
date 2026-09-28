@@ -192,6 +192,17 @@ pub fn apply_chat_template_str(
     messages: &[(&str, &str)],
     add_generation_prompt: bool,
 ) -> String {
+    if template.is_some_and(template_is_mimo_v26) {
+        let turns: Vec<Turn> = messages
+            .iter()
+            .map(|(role, content)| Turn {
+                role: (*role).to_string(),
+                content: (*content).to_string(),
+                ..Default::default()
+            })
+            .collect();
+        return apply_mimo_v26_template(&turns, add_generation_prompt, &[], ThinkMode::Default);
+    }
     // Tencent Hy3 (`hy_v3`): a completely different special-token dialect (no ChatML).
     // Detected by its `hy_User` token literal; rendered by the dedicated arm below.
     // Legacy path = the template's own default ("no_think") — byte-identical to history.
@@ -311,6 +322,83 @@ pub fn apply_chat_template_str(
         }
     }
 
+    out
+}
+
+/// The exact text template extracted from XiaomiMiMo/MiMo-V2.6-Flash-RL at
+/// 3b38d063180c3e4aed9691fdc735f3d10b266ee4. Other revisions must qualify their
+/// own rendering before using this arm.
+fn template_is_mimo_v26(template: &str) -> bool {
+    template
+        == include_str!("../../../research/mimo-chat-template-cpu-20260927/source-template.jinja")
+}
+
+/// Text-only path through the pinned source's render_content, render_tools,
+/// render_tool_calls and render_assistant_message macros. `tools_json` must use the
+/// source's tojson(ensure_ascii=False) spelling, as the server's pyjson_str does.
+fn apply_mimo_v26_template(
+    turns: &[Turn],
+    add_generation_prompt: bool,
+    tools_json: &[String],
+    think: ThinkMode,
+) -> String {
+    let mut out = String::new();
+    if !tools_json.is_empty() {
+        out.push_str("<|im_start|>system\n");
+        out.push_str("You are provided with the following tools:\n\n<tools>");
+        for tool in tools_json {
+            out.push('\n');
+            out.push_str(tool);
+        }
+        out.push_str("\n</tools><|im_end|>");
+    }
+    for turn in turns {
+        out.push_str("<|im_start|>");
+        out.push_str(&turn.role);
+        out.push('\n');
+        if turn.role == "assistant" {
+            out.push_str("<think>");
+            out.push_str(turn.reasoning.as_deref().unwrap_or(""));
+            out.push_str("</think>");
+        }
+        out.push_str(&turn.content);
+        if turn.role == "assistant" {
+            for call in &turn.tool_calls {
+                out.push_str("<tool_call><function=");
+                out.push_str(&call.name);
+                out.push('>');
+                if !call.args.is_empty() {
+                    for (name, value) in &call.args {
+                        out.push_str("<parameter=");
+                        out.push_str(name);
+                        out.push('>');
+                        if let Val::Str(value) = value {
+                            out.push_str(value);
+                        } else {
+                            py_json(value, &mut out);
+                        }
+                        out.push_str("</parameter>");
+                    }
+                } else {
+                    for (name, value) in &call.params {
+                        out.push_str("<parameter=");
+                        out.push_str(name);
+                        out.push('>');
+                        out.push_str(value);
+                        out.push_str("</parameter>");
+                    }
+                }
+                out.push_str("</function></tool_call>");
+            }
+        }
+        out.push_str("<|im_end|>");
+    }
+    if add_generation_prompt {
+        out.push_str("<|im_start|>assistant\n");
+        if think == ThinkMode::NoThink {
+            out.push_str("<think></think>");
+        }
+    }
     out
 }
 
@@ -462,6 +550,23 @@ pub fn apply_chat_template_tools_ex(
     reasoning_effort: Option<&str>,
     dsv4_encoding: Option<Dsv4Encoding>,
 ) -> Result<String, String> {
+    if template.is_some_and(template_is_mimo_v26) {
+        if reasoning_effort.is_some() {
+            return Err("MiMo template has no reasoning_effort parameter".into());
+        }
+        if !tools_struct.is_empty() && tools_json.is_empty() {
+            return Err("MiMo tool definitions need tools_json".into());
+        }
+        if turns.iter().any(|turn| !turn.tools.is_empty()) {
+            return Err("MiMo per-message tool declarations are not qualified".into());
+        }
+        return Ok(apply_mimo_v26_template(
+            turns,
+            add_generation_prompt,
+            tools_json,
+            think,
+        ));
+    }
     let has_tool_features = !tools_json.is_empty()
         || turns
             .iter()
