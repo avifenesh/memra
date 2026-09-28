@@ -1,0 +1,44 @@
+queue rc=0
+2026-09-27T22:32:13Z queue v22 start at ee41ede8f8
+2026-09-27T22:32:13Z lock held; runs start (P-cores 0-7)
+2026-09-27T22:32:18Z runs done; lock released
+2026-09-27T22:32:18Z check reader rc=0
+2026-09-27T22:32:19Z split reader rc=0
+2026-09-27T22:32:19Z queue v22 done
+== calls: 45 lines; per binary and flags:
+     10 run-gen-i24 --experts-via-tier --expert-bank-host-bytes=17179869184 --moe-dispatch-clock --expert-bank-stages
+      1 run-gen-i25 --experts-via-tier --expert-bank-host-bytes=17179869184
+      2 run-gen-i25 --experts-via-tier --expert-bank-host-bytes=17179869184 --expert-bank-trace
+     10 run-gen-i25 --experts-via-tier --expert-bank-host-bytes=17179869184 --moe-dispatch-clock --expert-bank-stages
+     10 run-gen-i25 --experts-via-tier --expert-bank-host-bytes=17179869184 --moe-dispatch-clock --expert-bank-stages --expert-bank-trace
+      2 run-gen-p88 --experts-via-tier --expert-bank-host-bytes=17179869184
+     10 run-gen-p88 --experts-via-tier --expert-bank-host-bytes=17179869184 --moe-dispatch-clock --expert-bank-stages
+== order (marks):
+p88-a i25t-a i25t-b p88-b i25u-a o1-p88s-r1 o1-i24s-r1 o1-i25s-r1 o1-i25t-r1 o1-p88s-r2 o1-i24s-r2 o1-i25s-r2 o1-i25t-r2 o1-p88s-r3 o1-i24s-r3 o1-i25s-r3 o1-i25t-r3 o1-p88s-r4 o1-i24s-r4 o1-i25s-r4 o1-i25t-r4 o1-p88s-r5 o1-i24s-r5 o1-i25s-r5 o1-i25t-r5 o2-i25t-r1 o2-i25s-r1 o2-i24s-r1 o2-p88s-r1 o2-i25t-r2 o2-i25s-r2 o2-i24s-r2 o2-p88s-r2 o2-i25t-r3 o2-i25s-r3 o2-i24s-r3 o2-p88s-r3 o2-i25t-r4 o2-i25s-r4 o2-i24s-r4 o2-p88s-r4 o2-i25t-r5 o2-i25s-r5 o2-i24s-r5 o2-p88s-r5 
+== check reading
+# DAY92 local GPU check (the development host's RTX 5090 under its lock): the door at p88 (run-gen-p88 = 0155bc69f) and at I25 (run-gen-i25 = ee41ede8f) with --expert-bank-trace, 32 tokens each, order
+ee887714c177097c08a3a66e39818279a88daf0166ce0aae14262c643d9cef0e  /home/avifenesh/projects/wt-spill-c/target/c92-dry/bins/run-gen-p88
+c113bfcf8c4892f901e901a402221f46707bf4d09a350e54dce00bdb6c469852  /home/avifenesh/projects/wt-spill-c/target/c92-dry/bins/run-gen-i24
+d8228a1661a0c489d3ce62c4caf87d11f9f0c1a2408061af7eab9132fbefd954  /home/avifenesh/projects/wt-spill-c/target/c92-dry/bins/run-gen-i25
+p88-a rc=0 MATCH generated 32 tokens in 0.363s window: 32 decode steps in 0.315s trace=4bdc2610c3534e42 lines=22077
+i25t-a rc=0 MATCH generated 32 tokens in 0.363s window: 32 decode steps in 0.315s trace=4bdc2610c3534e42 lines=22077
+i25t-b rc=0 MATCH generated 32 tokens in 0.363s window: 32 decode steps in 0.315s trace=4bdc2610c3534e42 lines=22077
+p88-b rc=0 MATCH generated 32 tokens in 0.363s window: 32 decode steps in 0.315s trace=4bdc2610c3534e42 lines=22077
+i25t-a: the same tape and the same host demand sequence as p88-a
+i25t-b: the same tape and the same host demand sequence as p88-a
+p88-b: the same tape and the same host demand sequence as p88-a
+DAY89 GPU CHECK PASS
+DAY92 UNTRACED i25u-a rc=0 MATCH the same tape as p88-a trace_lines=0 -> PASS
+== split reading
+DAY83 SPLIT CHECKS rig=rtx5090 runs=40 integrity=ok
+DAY84 CHANGE rig=rtx5090 generate (i25s minus i24s, us per token, deciding nothing): outer=+0.0 dispatch_inner=+0.0 own_trace=+0.0 bank_stage_lookup=+0.0 bank_stage_cache=+0.0 bank_stage_charge=+0.0 stage_rest=+0.0 bank_
+DAY84 CHANGE rig=rtx5090 window (i25s minus i24s, us per token, deciding nothing): outer=+0.0 dispatch_inner=+0.0 own_trace=+0.0 bank_stage_lookup=+0.0 bank_stage_cache=+0.0 bank_stage_charge=+0.0 stage_rest=+0.0 bank_pu
+DAY92 CHANGE rig=rtx5090 generate i24s minus p88s: +0.0 us per token
+DAY92 CHANGE rig=rtx5090 generate i25s minus i24s: +0.0 us per token
+DAY92 CHANGE rig=rtx5090 generate i25s minus p88s: +0.0 us per token
+DAY92 SIZING rig=rtx5090 generate door-only change p88s->i25s=+0.0 us per token, threshold -155 -> short
+DAY92 CHANGE rig=rtx5090 generate i25t minus i25s: +0.0 us per token
+DAY92 CHANGE rig=rtx5090 window i24s minus p88s: +0.0 us per token
+DAY92 CHANGE rig=rtx5090 window i25s minus i24s: +0.0 us per token
+DAY92 CHANGE rig=rtx5090 window i25s minus p88s: +0.0 us per token
+DAY92 CHANGE rig=rtx5090 window i25t minus i25s: +0.0 us per token

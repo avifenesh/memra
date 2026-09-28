@@ -242,43 +242,102 @@ pub fn host_bank_ceiling(meminfo: &str) -> Option<u64> {
     kib.checked_mul(1024)?.checked_div(4)?.checked_mul(3)
 }
 
-/// Gate-only budgets for the `--experts-via-tier` door. Both come from the gate
-/// binary's argv (`--expert-bank-host-bytes=N`, `--expert-bank-gpu-bytes=N`), never
-/// from an environment variable. `gpu_bytes == None` leaves native slot sizing
-/// (`MEMRA_MOE_SLOTS` / auto) exactly as it is.
+/// The door's budgets, from the gate binary's argv (`--expert-bank-host-bytes=N`,
+/// `--expert-bank-gpu-bytes=N`), never from an environment variable. `gpu_bytes == None` leaves
+/// native slot sizing (`MEMRA_MOE_SLOTS` / auto) exactly as it is.
 ///
 /// `stage_clock` is not a budget: `--expert-bank-stages` installs the door's log-only stage
 /// clock (`research/spill-c-20260919/DAY40.md`), an explanatory diagnostic that reads
-/// `Instant` and two timing events per GPU miss and changes no decision. It shares the
-/// door's decide-by (`MOE-SLOT-CACHE-DOOR.md`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// `Instant` and two timing events per GPU miss and changes no decision.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ExpertBankBudget {
-    pub host_bytes: u64,
+    /// Day 88 (`research/spill-c-20260919/DAY88.md`): `None`, the default, holds the whole bank
+    /// (every record of the catalog, the shape every card cell measured); `Some(N)` plans N bytes.
+    pub host_bytes: Option<u64>,
     pub gpu_bytes: Option<u64>,
     pub stage_clock: bool,
-    /// DAY76 (`research/spill-c-20260919/DAY76.md`, a diagnostic door, decide-by 2026-10-10):
-    /// `--expert-bank-pool-chunk-bytes=N` makes the pinned host pool out of allocations of at
-    /// most N bytes; `None` keeps the one allocation.
-    pub pool_chunk_bytes: Option<u64>,
-    /// DAY78 (`research/spill-c-20260919/DAY78.md`, a diagnostic door, decide-by 2026-10-10):
-    /// `--expert-bank-pool-pageable` makes the host pool from heap memory, not `cuMemHostAlloc`.
-    pub pool_pageable: bool,
-    /// DAY80 (`research/spill-c-20260919/DAY80.md`, a diagnostic door, decide-by 2026-10-10):
-    /// `--expert-bank-pool-registered` makes the host pool from private anonymous memory pinned
-    /// with `cuMemHostRegister`, which compaction skips instead of isolating.
-    pub pool_registered: bool,
+    /// Day 88: `--expert-bank-pool-allocated` makes the host pool with `cuMemHostAlloc`, the pool
+    /// before the promotion (the rollback seam, decide-by 2026-10-11 in the door document). The
+    /// default pool is private anonymous memory registered with `cuMemHostRegister` (DAY80), which
+    /// compaction skips instead of isolating.
+    pub pool_allocated: bool,
+    /// Day 92 (I25a, `research/spill-c-20260919/DAY92.md`): `--expert-bank-trace` writes the complete host demand
+    /// trace (`[expert-host-slru] key=...`, one line per demanded record) that the gates' and cells' integrity checks
+    /// read. A diagnostic the gate sets: without it the door traces nothing and changes no decision.
+    pub trace: bool,
 }
-impl Default for ExpertBankBudget {
-    fn default() -> Self {
-        Self {
-            host_bytes: 256 * 1024 * 1024,
-            gpu_bytes: None,
-            stage_clock: false,
-            pool_chunk_bytes: None,
-            pool_pageable: false,
-            pool_registered: false,
-        }
+
+/// Day 88 (`research/spill-c-20260919/DAY88.md`, phase 1 of the door's promotion): how the gate
+/// binary asks for the MoE slot cache door.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExpertBankMode {
+    /// No `--experts-via-tier`: the door installs by default where it applies (a qualified
+    /// artifact whose experts go to the slot cache, the requested bank under the host ceiling);
+    /// elsewhere the program is today's and one line says why.
+    Default,
+    /// `--experts-via-tier`: the gate's assertion; a door that does not install refuses.
+    Required,
+}
+
+/// Day 88: the gate binary's parsed door request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ExpertBankCli {
+    pub mode: ExpertBankMode,
+    pub budget: ExpertBankBudget,
+    /// Whether a budget, pool or clock flag was given: each needs a door that installs, so with
+    /// the door off it is a usage error, never a silent no-op.
+    pub door_flags: bool,
+}
+
+/// Day 88 (`research/spill-c-20260919/DAY88.md` section 2.1): an opened artifact the door is
+/// qualified on, authenticated once before the model loads (`Engine::qualify_expert_door`): its
+/// SHA-256, the opened file's device and inode (the installer accepts it only for that same open
+/// file), the host ceiling read then, and the whole bank's bytes the installer's catalog must equal.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QualifiedArtifact {
+    pub(crate) digest: [u8; 32],
+    pub(crate) dev: u64,
+    pub(crate) ino: u64,
+    pub(crate) ceiling: u64,
+    pub(crate) whole_bank: u64,
+    /// Whether the requested host bank (the whole bank unless `--expert-bank-host-bytes`) fits
+    /// under that ceiling; the door is off on a qualified artifact that does not fit.
+    pub(crate) fits: bool,
+}
+impl QualifiedArtifact {
+    /// The artifact's SHA-256, lowercase hex.
+    pub fn sha256_hex(&self) -> String {
+        self.digest.iter().map(|b| format!("{b:02x}")).collect()
     }
+}
+
+/// Day 88: whether the door applies to an artifact, decided before the model loads, or why not.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Qualification {
+    Qualified(QualifiedArtifact),
+    Off(String),
+}
+
+/// Day 88: `MEMRA_EXPERTS_VIA_TIER` against the parsed request. `Ok(true)` when the rollback is
+/// asked for (`=0`: the legacy SLRU slot cache from pinned copies); `=0` together with
+/// `--experts-via-tier` or with a door flag is a usage error. Any other value, or none, is the
+/// default (`Ok(false)`).
+pub fn expert_bank_rollback(
+    cli: &ExpertBankCli,
+    env: Option<&str>,
+) -> std::result::Result<bool, String> {
+    if env != Some("0") {
+        return Ok(false);
+    }
+    if cli.mode == ExpertBankMode::Required {
+        return Err("--experts-via-tier with MEMRA_EXPERTS_VIA_TIER=0 names two programs".into());
+    }
+    if cli.door_flags {
+        return Err(
+            "expert bank flags need the door, and MEMRA_EXPERTS_VIA_TIER=0 turns it off".into(),
+        );
+    }
+    Ok(true)
 }
 
 /// The only installer error the gate binaries map to the refusal token contract
@@ -300,28 +359,27 @@ pub fn refusal_reason<'a>(err: &'a (dyn std::error::Error + 'static)) -> Option<
         .map(|refusal| refusal.0.as_str())
 }
 
-/// Parse the door and its budgets from argv. `Ok(None)` when the door is absent;
-/// a budget flag without `--experts-via-tier`, a malformed or repeated value, a bare
-/// flag, or a key that merely starts with a flag name is a usage error (a failure, not
-/// a refusal). Keys match exactly: `--expert-bank-host-bytes-x=1` is not the host flag.
+/// Parse the door and its budgets from argv. Day 88: the door is the default, so the budgets need
+/// no `--experts-via-tier` (which asks the door to install or refuse); a malformed or repeated
+/// value, a bare flag, a retired flag, or a key that merely starts with a flag name is a usage
+/// error (a failure, not a refusal). Keys match exactly: `--expert-bank-host-bytes-x=1` is not the
+/// host flag.
 pub fn expert_bank_cli<I: IntoIterator<Item = String>>(
     args: I,
-) -> std::result::Result<Option<ExpertBankBudget>, String> {
+) -> std::result::Result<ExpertBankCli, String> {
     const DOOR: &str = "--experts-via-tier";
     const HOST: &str = "--expert-bank-host-bytes";
     const GPU: &str = "--expert-bank-gpu-bytes";
     const STAGES: &str = "--expert-bank-stages";
-    const CHUNK: &str = "--expert-bank-pool-chunk-bytes";
-    const PAGEABLE: &str = "--expert-bank-pool-pageable";
-    const REGISTERED: &str = "--expert-bank-pool-registered";
+    const ALLOCATED: &str = "--expert-bank-pool-allocated";
+    const TRACE: &str = "--expert-bank-trace";
     const FAMILY: &str = "--expert-bank-";
     let mut door = false;
     let mut stages = false;
-    let mut pageable = false;
-    let mut registered = false;
+    let mut allocated = false;
+    let mut trace = false;
     let mut host = None;
     let mut gpu = None;
-    let mut chunk = None;
     for arg in args {
         let (key, value) = match arg.split_once('=') {
             Some((key, value)) => (key, Some(value)),
@@ -335,39 +393,25 @@ pub fn expert_bank_cli<I: IntoIterator<Item = String>>(
                 door = true;
                 continue;
             }
-            STAGES => {
+            STAGES | ALLOCATED | TRACE => {
                 if value.is_some() {
-                    return Err(format!("{STAGES} takes no value"));
+                    return Err(format!("{key} takes no value"));
                 }
-                if std::mem::replace(&mut stages, true) {
-                    return Err(format!("{STAGES} given more than once"));
-                }
-                continue;
-            }
-            PAGEABLE => {
-                if value.is_some() {
-                    return Err(format!("{PAGEABLE} takes no value"));
-                }
-                if std::mem::replace(&mut pageable, true) {
-                    return Err(format!("{PAGEABLE} given more than once"));
-                }
-                continue;
-            }
-            REGISTERED => {
-                if value.is_some() {
-                    return Err(format!("{REGISTERED} takes no value"));
-                }
-                if std::mem::replace(&mut registered, true) {
-                    return Err(format!("{REGISTERED} given more than once"));
+                let flag = match key {
+                    STAGES => &mut stages,
+                    TRACE => &mut trace,
+                    _ => &mut allocated,
+                };
+                if std::mem::replace(flag, true) {
+                    return Err(format!("{key} given more than once"));
                 }
                 continue;
             }
             HOST => &mut host,
             GPU => &mut gpu,
-            CHUNK => &mut chunk,
             _ if key.starts_with(FAMILY) || key.starts_with(DOOR) => {
                 return Err(format!(
-                    "unknown expert bank flag {key:?}; expected {DOOR}, {HOST}=<bytes>, {GPU}=<bytes>, {CHUNK}=<bytes>, {PAGEABLE}, {REGISTERED} or {STAGES}"
+                    "unknown expert bank flag {key:?}; expected {DOOR}, {HOST}=<bytes>, {GPU}=<bytes>, {ALLOCATED}, {STAGES} or {TRACE}"
                 ));
             }
             _ => continue,
@@ -380,31 +424,21 @@ pub fn expert_bank_cli<I: IntoIterator<Item = String>>(
             return Err(format!("{key} given more than once"));
         }
     }
-    if pageable && registered {
-        return Err(format!("{PAGEABLE} and {REGISTERED} name two pool kinds"));
-    }
-    if chunk == Some(0) {
-        return Err(format!("{CHUNK} expects a positive byte count"));
-    }
-    if !door {
-        if host.is_some() || gpu.is_some() || chunk.is_some() || pageable || registered {
-            return Err(format!("expert bank budgets require {DOOR}"));
-        }
-        if stages {
-            return Err(format!("{STAGES} requires {DOOR}"));
-        }
-        return Ok(None);
-    }
-    let mut budget = ExpertBankBudget::default();
-    if let Some(bytes) = host {
-        budget.host_bytes = bytes;
-    }
-    budget.gpu_bytes = gpu;
-    budget.stage_clock = stages;
-    budget.pool_chunk_bytes = chunk;
-    budget.pool_pageable = pageable;
-    budget.pool_registered = registered;
-    Ok(Some(budget))
+    Ok(ExpertBankCli {
+        mode: if door {
+            ExpertBankMode::Required
+        } else {
+            ExpertBankMode::Default
+        },
+        door_flags: host.is_some() || gpu.is_some() || stages || allocated || trace,
+        budget: ExpertBankBudget {
+            host_bytes: host,
+            gpu_bytes: gpu,
+            stage_clock: stages,
+            pool_allocated: allocated,
+            trace,
+        },
+    })
 }
 
 /// Tail pad `MoeSlotCache` allocates after every slot: wide expert dots may issue an

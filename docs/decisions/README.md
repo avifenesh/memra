@@ -23,6 +23,7 @@ half — "we tried X and it lost by Y% on Z" cannot be reconstructed from the co
 | [DSV4-TPEP-DEFAULT.md](DSV4-TPEP-DEFAULT.md) | DSv4-Flash on two cards loads TP/EP (expert-ID EP plus exact attention TP2, plain steps on full-token replay) by default, PP-2 the rollback; its plain-concurrency and context costs and the lanes that close them |
 | [BATCH-OOM-RECOVER-DEFAULT.md](BATCH-OOM-RECOVER-DEFAULT.md) | the batched decode chunk's OOM recovery ON by default on the RTX PRO 6000 Blackwell class from the target card's gates and serving shape, `=0` the rollback seam; the RTX 5090 keeps it off until its serving boots read |
 | [COMPLETE-RESULT-PATH-V1.md](COMPLETE-RESULT-PATH-V1.md) | the async/background delivery contract for non-streaming requests that outlast the 90 s synchronous deadline: a per-request opt-in, not a conversation-store restore; design frozen, implementation and box verification still owed |
+| [MOE-SPILL-DOOR-DEFAULT.md](MOE-SPILL-DOOR-DEFAULT.md) | the MoE slot cache door, its registered host pool and the in-token prefetch as the default expert-spill program of the gate binaries on both cards, for an artifact the door is qualified on; the legacy slot cache, the `cuMemHostAlloc` pool and prefetch off the rollbacks |
 
 Adding one: a decision that changes a default, a format, a target or an arm belongs here, with
 the measurement that settled it. Superseded records get a banner naming what replaced them —

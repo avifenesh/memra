@@ -1,0 +1,22 @@
+== promo rc=0
+== promo calls: 60
+     10 run-gen-i22 env=[MEMRA_MOE_RESIDENT=0 MEMRA_MOE_SLOTS=9986 ] --experts-via-tier --expert-bank-host-bytes=17179869184
+     10 run-gen-i24 env=[MEMRA_EXPERTS_VIA_TIER=0 MEMRA_MOE_PREFETCH=0 MEMRA_MOE_RESIDENT=0 MEMRA_MOE_SLOTS=9986 ]
+     10 run-gen-i24 env=[MEMRA_EXPERTS_VIA_TIER=0 MEMRA_MOE_RESIDENT=0 MEMRA_MOE_SLOTS=9986 ]
+     10 run-gen-i24 env=[MEMRA_MOE_PREFETCH=0 MEMRA_MOE_RESIDENT=0 MEMRA_MOE_SLOTS=9986 ]
+     10 run-gen-i24 env=[MEMRA_MOE_RESIDENT=0 MEMRA_MOE_SLOTS=9986 ]
+     10 run-gen-i24 env=[MEMRA_MOE_RESIDENT=0 MEMRA_MOE_SLOTS=9986 ] --expert-bank-pool-allocated
+== promo order: o1-naked-r1 o1-q22-r1 o1-legacy-r1 o1-alloc-r1 o1-nopf-r1 o1-legnopf-r1 o1-naked-r2 o1-q22-r2 o1-legacy-r2 o1-alloc-r2 o1-nopf-r2 o1-legnopf-r2 o1-naked-r3 o1-q22-r3 o1-legacy-r3 o1-alloc-r3 o1-nopf-r3 o1-legnopf-r3 o1-naked-r4 o1-q22-r4 o1-legacy-r4 o1-alloc-r4 o1-nopf-r4 o1-legnopf-r4 o1-naked-r5 o1-q22-r5 o1-legacy-r5 o1-alloc-r5 o1-nopf-r5 o1-legnopf-r5 o2-legnopf-r1 o2-nopf-r1 o2-alloc-r1 o2-
+== promo exits:      60 0 
+== promo-res rc=0
+== promo-res calls: 20
+     10 run-gen-i24 env=[]
+     10 run-gen-i24 env=[MEMRA_EXPERTS_VIA_TIER=0 ]
+== promo-res order: o1-naked-r1 o1-legacy-r1 o1-naked-r2 o1-legacy-r2 o1-naked-r3 o1-legacy-r3 o1-naked-r4 o1-legacy-r4 o1-naked-r5 o1-legacy-r5 o2-legacy-r1 o2-naked-r1 o2-legacy-r2 o2-naked-r2 o2-legacy-r3 o2-naked-r3 o2-legacy-r4 o2-naked-r4 o2-legacy-r5 o2-naked-r5
+== promo-res exits:      20 0 
+== promo-spec rc=0
+== promo-spec calls: 2
+      1 run-spec-i24 env=[MEMRA_EXPERTS_VIA_TIER=0 MEMRA_MOE_RESIDENT=0 MEMRA_MOE_SLOTS=9986 ]
+      1 run-spec-i24 env=[MEMRA_MOE_RESIDENT=0 MEMRA_MOE_SLOTS=9986 ]
+== promo-spec order: spec-naked spec-legacy
+== promo-spec exits:       2 0 

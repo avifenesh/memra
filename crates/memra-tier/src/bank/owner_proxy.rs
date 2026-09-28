@@ -18,12 +18,24 @@ use std::thread::{self, ThreadId};
 static NEXT_OWNER: AtomicU64 = AtomicU64::new(1);
 thread_local! {
     static OWNERS: RefCell<BTreeMap<u64, Entry>> = const { RefCell::new(BTreeMap::new()) };
+    /// Day 92 (I25b, `research/spill-c-20260919/DAY92.md`): this thread's id, read by the owner check without
+    /// cloning the thread handle on every registry entry.
+    static CURRENT: ThreadId = thread::current().id();
 }
-/// What a pending lease number holds: one record's demand, or (day 64, I15) one grouped demand.
+/// Day 92 (I25b): the calling thread's id, the value `thread::current().id()` gives.
+fn current_thread() -> ThreadId {
+    CURRENT.with(|id| *id)
+}
+/// What a pending lease number holds: one record's demand, or (day 64, I15) one grouped demand. Day 90 (I24,
+/// `research/spill-c-20260919/DAY90.md`): each beside the identity its token was minted from, the value `demand` and
+/// `demand_many` computed and checked; a pending entry's demands never change, so a token is checked against it
+/// without walking the leases again.
 enum Leased {
-    One(ExpertDemand),
-    Many(ExpertDemands),
+    One(ExpertDemand, SingleIdentity),
+    Many(ExpertDemands, GroupIdentity),
 }
+type SingleIdentity = (ExpertDispatchId, Digest, Epochs);
+type GroupIdentity = ([ExpertDispatchId; MAX_GROUP], u8, Digest, Epochs);
 struct Entry {
     bank: Option<Box<dyn ExpertDispatchBank>>,
     pending: BTreeMap<u64, Leased>,
@@ -129,8 +141,8 @@ fn group_identity(
         demands.ticket.epochs,
     ))
 }
-fn require_group(demands: &ExpertDemands, token: &ExpertGroupToken) -> Result<()> {
-    if group_identity(demands)? != (token.records, token.count, token.artifact, token.epochs) {
+fn require_group(identity: &GroupIdentity, token: &ExpertGroupToken) -> Result<()> {
+    if *identity != (token.records, token.count, token.artifact, token.epochs) {
         return Err(Error::ForeignLease);
     }
     Ok(())
@@ -154,8 +166,8 @@ fn identity(demand: &ExpertDemand) -> Result<(ExpertDispatchId, Digest, Epochs)>
 }
 /// A token that does not name the pending lease's identity is foreign, whatever its
 /// owner and lease numbers say.
-fn require(demand: &ExpertDemand, token: &ExpertLeaseToken) -> Result<()> {
-    if identity(demand)? != (token.record, token.artifact, token.epochs) {
+fn require(identity: &SingleIdentity, token: &ExpertLeaseToken) -> Result<()> {
+    if *identity != (token.record, token.artifact, token.epochs) {
         return Err(Error::ForeignLease);
     }
     Ok(())
@@ -181,7 +193,7 @@ impl ExpertBankOwner {
         });
         Ok(Self {
             proxy: ExpertBankProxy {
-                owner: thread::current().id(),
+                owner: current_thread(),
                 id,
             },
             _owner_only: PhantomData,
@@ -213,7 +225,7 @@ impl Drop for ExpertBankOwner {
 }
 impl ExpertBankProxy {
     fn access<T>(&self, f: impl FnOnce(&mut Entry) -> Result<T>) -> Result<T> {
-        if self.owner != thread::current().id() {
+        if self.owner != current_thread() {
             return Err(Error::WrongOwner);
         }
         OWNERS.with(|owners| {
@@ -263,14 +275,15 @@ impl ExpertBankProxy {
                     // The bank published a lease for a record other than the one demanded.
                     // Retire it through the bank before refusing, so no host use leaks; the
                     // demand never becomes a token.
-                    e.bank.as_mut().ok_or(Error::NotFound)?.finish(demand)?;
+                    e.bank.as_mut().ok_or(Error::NotFound)?.finish(&demand)?;
                     return Err(match outcome {
                         Ok(_) => Error::ProgramMismatch,
                         Err(err) => err,
                     });
                 }
             };
-            e.pending.insert(lease, Leased::One(demand));
+            e.pending
+                .insert(lease, Leased::One(demand, (record, artifact, epochs)));
             e.next_lease = next;
             Ok(ExpertLeaseToken {
                 owner: self.id,
@@ -288,11 +301,12 @@ impl ExpertBankProxy {
             return Err(Error::ForeignLease);
         }
         self.access(|e| {
-            let Leased::One(demand) = e.pending.get(&token.lease).ok_or(Error::UnknownTicket)?
+            let Leased::One(demand, identity) =
+                e.pending.get(&token.lease).ok_or(Error::UnknownTicket)?
             else {
                 return Err(Error::ForeignLease);
             };
-            require(demand, token)?;
+            require(identity, token)?;
             // A heap `Vec` (no buffer source) or a pooled buffer (day 47): the same bytes lent
             // the same way; the borrow ends before this returns.
             lend(&demand.lease, f)
@@ -305,17 +319,14 @@ impl ExpertBankProxy {
             return Err(Error::ForeignLease);
         }
         self.access(|e| {
-            let Leased::One(demand) = e.pending.get(&token.lease).ok_or(Error::UnknownTicket)?
+            let Leased::One(demand, identity) =
+                e.pending.get(&token.lease).ok_or(Error::UnknownTicket)?
             else {
                 return Err(Error::ForeignLease);
             };
-            require(demand, token)?;
-            // Retain the original alias if finish fails partway through retirement.
-            let submitted = ExpertDemand {
-                ticket: demand.ticket,
-                lease: demand.lease.clone(),
-            };
-            e.bank.as_mut().ok_or(Error::NotFound)?.finish(submitted)?;
+            require(identity, token)?;
+            // Day 90 (I24): the registry's own demand, by reference; it stays for a retry if the finish fails.
+            e.bank.as_mut().ok_or(Error::NotFound)?.finish(demand)?;
             e.pending.remove(&token.lease);
             Ok(())
         })
@@ -356,16 +367,19 @@ impl ExpertBankProxy {
                     e.bank
                         .as_mut()
                         .ok_or(Error::NotFound)?
-                        .finish_many(demands)?;
+                        .finish_many(&demands)?;
                     return Err(match outcome {
                         Ok(_) => Error::ProgramMismatch,
                         Err(err) => err,
                     });
                 }
             };
-            e.pending.insert(lease, Leased::Many(demands));
-            e.next_lease = next;
             let (records, count, artifact, epochs) = identity;
+            e.pending.insert(
+                lease,
+                Leased::Many(demands, (records, count, artifact, epochs)),
+            );
+            e.next_lease = next;
             Ok(ExpertGroupToken {
                 owner: self.id,
                 lease,
@@ -387,11 +401,12 @@ impl ExpertBankProxy {
             return Err(Error::ForeignLease);
         }
         self.access(|e| {
-            let Leased::Many(demands) = e.pending.get(&token.lease).ok_or(Error::UnknownTicket)?
+            let Leased::Many(demands, identity) =
+                e.pending.get(&token.lease).ok_or(Error::UnknownTicket)?
             else {
                 return Err(Error::ForeignLease);
             };
-            require_group(demands, token)?;
+            require_group(identity, token)?;
             lend(demands.leases.get(index).ok_or(Error::NotFound)?, f)
         })
     }
@@ -408,11 +423,12 @@ impl ExpertBankProxy {
             return Err(Error::ForeignLease);
         }
         self.access(|e| {
-            let Leased::Many(demands) = e.pending.get(&token.lease).ok_or(Error::UnknownTicket)?
+            let Leased::Many(demands, identity) =
+                e.pending.get(&token.lease).ok_or(Error::UnknownTicket)?
             else {
                 return Err(Error::ForeignLease);
             };
-            require_group(demands, token)?;
+            require_group(identity, token)?;
             for (index, lease) in demands.leases.iter().enumerate() {
                 if let Err(err) = lend(lease, |bytes| f(index, bytes))? {
                     return Ok(Err(err));
@@ -427,19 +443,17 @@ impl ExpertBankProxy {
             return Err(Error::ForeignLease);
         }
         self.access(|e| {
-            let Leased::Many(demands) = e.pending.get(&token.lease).ok_or(Error::UnknownTicket)?
+            let Leased::Many(demands, identity) =
+                e.pending.get(&token.lease).ok_or(Error::UnknownTicket)?
             else {
                 return Err(Error::ForeignLease);
             };
-            require_group(demands, token)?;
-            let submitted = ExpertDemands {
-                ticket: demands.ticket,
-                leases: demands.leases.clone(),
-            };
+            require_group(identity, token)?;
+            // Day 90 (I24): the registry's own demands, by reference, as `finish`.
             e.bank
                 .as_mut()
                 .ok_or(Error::NotFound)?
-                .finish_many(submitted)?;
+                .finish_many(demands)?;
             e.pending.remove(&token.lease);
             Ok(())
         })
@@ -539,9 +553,8 @@ mod tests {
                 lease,
             })
         }
-        fn finish(&mut self, demand: ExpertDemand) -> Result<()> {
+        fn finish(&mut self, _demand: &ExpertDemand) -> Result<()> {
             self.finished.set(self.finished.get() + 1);
-            drop(demand);
             Ok(())
         }
     }

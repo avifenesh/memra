@@ -1,0 +1,18 @@
+== run 1 calls
+STUB day88-box-build.sh D/root/wt-c-build D/root/spill-receipts/c-day88b p88=2
+STUB day40-run-cell.sh promo-res 3600 script=D/root/wt-c/research/spill-c-20260919/day88-cell.sh
+STUB tier-battery --rig pro-single --validate D/root/spill-receipts/c-day88b/promo-res
+STUB day88-read.py D/root/spill-receipts/c-day88b --rig pro-single --only promo-res
+== run 1 driver lines
+cpu cap: systemd scope CPUQuota=1200%
+promo-res rc=0 2026-09-27T19:26:49Z
+promo-res validate rc=0
+reader rc=0
+box done 2026-09-27T19:26:49Z
+== run 2 calls
+STUB day88-read.py D/root/spill-receipts/c-day88b --rig pro-single --only promo-res
+== run 2 driver lines
+cpu cap: systemd scope CPUQuota=1200%
+promo-res already done
+reader rc=0
+box done 2026-09-27T19:26:51Z

@@ -1003,12 +1003,22 @@ fn moe_grouped_prefill_enabled() -> bool {
 
 /// Deterministic in-token expert prefetch. `MEMRA_MOE_PREFETCH=1` overlaps memory-source H2D on the
 /// copy stream; selecting the opt-in worker spill backend enables the same known-next hook for disk.
-fn moe_prefetch_enabled() -> bool {
-    static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *E.get_or_init(|| {
-        std::env::var("MEMRA_MOE_PREFETCH").as_deref() == Ok("1")
-            || crate::spill_pread::worker_enabled()
-    })
+/// Day 88 (`research/spill-c-20260919/DAY88.md` section 2.5): one meaning on both slot cache
+/// programs (the door's owner-routed grouped prefetch and the legacy's copy-stream prefetch).
+/// Unset, it is the process's default (on for an artifact the door is qualified on, off for every
+/// other, as before); `=1` on and `=0` off for any artifact; any other value (the CPU experts'
+/// predictor depth) leaves this prefetch off, as before. Read once per process.
+pub(crate) fn moe_prefetch_enabled(e: &Engine) -> bool {
+    static E: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    let set = E.get_or_init(|| std::env::var("MEMRA_MOE_PREFETCH").ok());
+    moe_prefetch_decision(set.as_deref(), e.moe_prefetch_default())
+        || crate::spill_pread::worker_enabled()
+}
+
+/// Day 88: the prefetch's decision table: `MEMRA_MOE_PREFETCH` set wins (`1` on, any other value
+/// off), unset is the process's default.
+pub(crate) fn moe_prefetch_decision(env: Option<&str>, default: bool) -> bool {
+    env.map_or(default, |value| value == "1")
 }
 
 /// Best-effort OS page-cache prefetch distance for mmap-backed expert ranges. Independent of the
@@ -14751,11 +14761,11 @@ impl HybridModel {
                     }
                 } else if cache_dispatch
                     && !cpu_hybrid
-                    && (moe_prefetch_enabled() || e.expert_bank_prefetch())
+                    && moe_prefetch_enabled(e)
                     && j + 1 < sel.len()
                 {
                     // DAY50: under the MoE slot cache door the prefetch takes its lease through
-                    // the owner; without the door `expert_bank_prefetch` is false.
+                    // the owner. Day 88: the same condition on both programs.
                     let next = sel[j + 1] as usize;
                     Self::moe_prefetch_expert(e, il, next, m, max_block, &keep)?;
                 }

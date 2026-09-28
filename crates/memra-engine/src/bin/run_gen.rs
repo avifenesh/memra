@@ -134,13 +134,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "usage: run-gen <model.gguf|hf_dir|hf:owner/repo[:file]> [tok ids...] | --prompt \"text\"",
     );
     let path = memra_gguf::hf::resolve_arg(&path)?;
-    // --experts-via-tier [--expert-bank-host-bytes=N] [--expert-bank-gpu-bytes=N]: the gate
-    // door and its typed budgets, parsed once here and handed to the installer (no env read).
+    // Day 88 (research/spill-c-20260919/DAY88.md): the MoE slot cache door is the default for a
+    // qualified artifact; its budgets, `--experts-via-tier` (install or refuse) and the rollback
+    // `MEMRA_EXPERTS_VIA_TIER=0` are read once here and handed to the door's plan.
     let expert_bank = memra_engine::banked_residency::expert_bank_cli(std::env::args())?;
+    let expert_bank_rollback = memra_engine::banked_residency::expert_bank_rollback(
+        &expert_bank,
+        std::env::var("MEMRA_EXPERTS_VIA_TIER").ok().as_deref(),
+    )?;
     let e = Engine::new(0)?;
-    // DAY44: under the door the expert banks load as views of the artifact's mapping; the door
-    // never stages from them, so no pinned copy is made.
-    e.set_expert_host_mapped(expert_bank.is_some());
     // DAY68 (`research/spill-c-20260919/DAY68.md`): --cpu-probe-phases (log only): a short compute chain at the
     // start and at each stage-line point, all outside the timed spans.
     let cpu_probe_phases = std::env::args().any(|a| a == "--cpu-probe-phases");
@@ -160,7 +162,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // DIRECTORY path = safetensors HF checkpoint (MiniMax-M3 first-load path) OR a memra repack
     // dir (Hy3 Q4_K transcode: manifest.json + tensors/ + experts/). GGUF stays the dense norm.
     if std::path::Path::new(&path).is_dir() {
-        if expert_bank.is_some() {
+        if expert_bank.mode == memra_engine::banked_residency::ExpertBankMode::Required
+            || expert_bank.door_flags
+        {
             return Err("experts-via-tier requires the approved GGUF artifact".into());
         }
         let dir = std::path::Path::new(&path);
@@ -1065,22 +1069,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     let g = GgufFile::open(&path)?;
-    let model = HybridModel::load_without_mtp(&e, &g)?;
-    let expert_bank_owner = match expert_bank {
-        Some(budget) => Some(match e.install_expert_bank_gate(&model, &g, budget) {
-            Ok(gate) => gate,
-            Err(err) => {
-                // Refusal token contract: only the typed budget or catalog refusal is REFUSED / exit 2;
-                // any other installer error stays a failure (`Error:` / exit 1).
-                if let Some(reason) = memra_engine::banked_residency::refusal_reason(err.as_ref()) {
-                    eprintln!("REFUSED: {reason}");
-                    std::process::exit(2);
-                }
-                return Err(err);
-            }
-        }),
-        None => None,
+    // Refusal token contract: only the typed budget or catalog refusal is REFUSED / exit 2; any
+    // other door error stays a failure (`Error:` / exit 1).
+    let refused = |err: Box<dyn std::error::Error>| -> Box<dyn std::error::Error> {
+        if let Some(reason) = memra_engine::banked_residency::refusal_reason(err.as_ref()) {
+            eprintln!("REFUSED: {reason}");
+            std::process::exit(2);
+        }
+        err
     };
+    // DAY44 and day 88: the door's plan before load (the qualification, the mapped-bank load
+    // option, the prefetch default), its install after load.
+    let qualified = e
+        .plan_expert_door(&g, &expert_bank, expert_bank_rollback, false)
+        .map_err(refused)?;
+    let model = HybridModel::load_without_mtp(&e, &g)?;
+    let expert_bank_owner = e
+        .install_expert_door(&model, &g, &expert_bank, qualified.as_ref())
+        .map_err(refused)?;
     println!(
         "loaded {} ({} trunk layers; optional MTP skipped)",
         g.arch().unwrap_or("?"),

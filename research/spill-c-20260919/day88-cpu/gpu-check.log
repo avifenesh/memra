@@ -1,0 +1,9 @@
+# DAY88 local GPU check (the development host's RTX 5090 under its lock): run-gen-p88 (0155bc69f) by default, run-gen-i22 (4b378a064) as qualified, order p88 i22 i22 p88, then p88 with MEMRA_EXPERTS_VIA_TIER=0; raw logs in gpu-check/
+d45296c7db2ac2b5720889e35bd4e9c39b6c5f98319e7fe86b33699d9eabe426  /home/avifenesh/projects/wt-spill-c/target/c-bins/run-gen-p88
+e4d8e6d22440dff199c0dbae788306fa8aa8ee364c8ee61aee8c4b34af58af8e  /home/avifenesh/projects/wt-spill-c/target/c-bins/run-gen-i22
+p88-a rc=0 MATCH generated 32 tokens in 0.382s window: 32 decode steps in 0.320s wall=31.904s trace=4bdc2610c3534e42 lines=22077 qualified installed registered pf_on
+i22-a rc=0 MATCH generated 32 tokens in 0.404s window: 32 decode steps in 0.331s wall=29.566s trace=4bdc2610c3534e42 lines=22077 installed
+i22-b rc=0 MATCH generated 32 tokens in 0.369s window: 32 decode steps in 0.322s wall=20.006s trace=4bdc2610c3534e42 lines=22077 installed
+p88-b rc=0 MATCH generated 32 tokens in 0.366s window: 32 decode steps in 0.321s wall=16.644s trace=4bdc2610c3534e42 lines=22077 qualified installed registered pf_on
+leg rc=0 MATCH generated 32 tokens in 0.374s window: 32 decode steps in 0.319s wall=13.933s trace=- lines=0 pf_on off_rollback
+DAY88 GPU CHECK PASS

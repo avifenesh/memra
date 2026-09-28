@@ -1,0 +1,46 @@
+queue rc=0
+2026-09-27T21:16:20Z queue v21 start at 1fd4b24c04
+2026-09-27T21:16:20Z lock held; runs start (P-cores 0-7)
+2026-09-27T21:16:27Z runs done; lock released
+2026-09-27T21:16:27Z check reader rc=0
+2026-09-27T21:16:29Z split reader rc=0
+2026-09-27T21:16:29Z queue v21 done
+== calls: 64 lines; per binary and clocks:
+     10 run-gen-i23 --experts-via-tier --expert-bank-host-bytes=17179869184 --moe-dispatch-clock
+     10 run-gen-i23 --experts-via-tier --expert-bank-host-bytes=17179869184 --moe-dispatch-clock --expert-bank-stages
+      2 run-gen-i24 --experts-via-tier --expert-bank-host-bytes=17179869184
+     10 run-gen-i24 --experts-via-tier --expert-bank-host-bytes=17179869184 --moe-dispatch-clock
+     10 run-gen-i24 --experts-via-tier --expert-bank-host-bytes=17179869184 --moe-dispatch-clock --expert-bank-stages
+      2 run-gen-p88 --experts-via-tier --expert-bank-host-bytes=17179869184
+     10 run-gen-p88 --experts-via-tier --expert-bank-host-bytes=17179869184 --moe-dispatch-clock
+     10 run-gen-p88 --experts-via-tier --expert-bank-host-bytes=17179869184 --moe-dispatch-clock --expert-bank-stages
+== order (marks):
+p88-a i24-a i24-b p88-b o1-p88s-r1 o1-i23s-r1 o1-i24s-r1 o1-p88d-r1 o1-i23d-r1 o1-i24d-r1 o1-p88s-r2 o1-i23s-r2 o1-i24s-r2 o1-p88d-r2 o1-i23d-r2 o1-i24d-r2 o1-p88s-r3 o1-i23s-r3 o1-i24s-r3 o1-p88d-r3 o1-i23d-r3 o1-i24d-r3 o1-p88s-r4 o1-i23s-r4 o1-i24s-r4 o1-p88d-r4 o1-i23d-r4 o1-i24d-r4 o1-p88s-r5 o1-i23s-r5 o1-i24s-r5 o1-p88d-r5 o1-i23d-r5 o1-i24d-r5 o2-i24d-r1 o2-i23d-r1 o2-p88d-r1 o2-i24s-r1 o2-i23s-r1 o2-p88s-r1 o2-i24d-r2 o2-i23d-r2 o2-p88d-r2 o2-i24s-r2 o2-i23s-r2 o2-p88s-r2 o2-i24d-r3 o2-i23d-r3 o2-p88d-r3 o2-i24s-r3 o2-i23s-r3 o2-p88s-r3 o2-i24d-r4 o2-i23d-r4 o2-p88d-r4 o2-i24s-r4 o2-i23s-r4 o2-p88s-r4 o2-i24d-r5 o2-i23d-r5 o2-p88d-r5 o2-i24s-r5 o2-i23s-r5 o2-p88s-r5 
+== check reading
+# DAY89 local GPU check (the development host's RTX 5090 under its lock): the door at p88 (run-gen-p88 = 0155bc69f) and at I24 (run-gen-i24 = 1fd4b24c0), 32 tokens each, order p88, i24, i24, p88; raw 
+870b9b551a1919f0ebe71656de02d670f3d806cb6d5999b9a5702f49c66ed225  /home/avifenesh/projects/wt-spill-c/target/c89-dry/bins/run-gen-p88
+cc05cebf4def9fe39b3258e4a9ebc0e44242deb3e9a399245d1cd9d377b36b16  /home/avifenesh/projects/wt-spill-c/target/c89-dry/bins/run-gen-i23
+b0388ecee057a48a04cac81000cabb9115e502f44e80d878ed43848c42afadce  /home/avifenesh/projects/wt-spill-c/target/c89-dry/bins/run-gen-i24
+p88-a rc=0 MATCH generated 32 tokens in 0.363s window: 32 decode steps in 0.315s trace=4bdc2610c3534e42 lines=22077
+i24-a rc=0 MATCH generated 32 tokens in 0.363s window: 32 decode steps in 0.315s trace=4bdc2610c3534e42 lines=22077
+i24-b rc=0 MATCH generated 32 tokens in 0.363s window: 32 decode steps in 0.315s trace=4bdc2610c3534e42 lines=22077
+p88-b rc=0 MATCH generated 32 tokens in 0.363s window: 32 decode steps in 0.315s trace=4bdc2610c3534e42 lines=22077
+i24-a: the same tape and the same host demand sequence as p88-a
+i24-b: the same tape and the same host demand sequence as p88-a
+p88-b: the same tape and the same host demand sequence as p88-a
+DAY89 GPU CHECK PASS
+== split reading
+DAY83 SPLIT CHECKS rig=rtx5090 runs=60 integrity=ok
+DAY84 CHANGE rig=rtx5090 generate (i23s minus p88s, us per token, deciding nothing): outer=+0.0 dispatch_inner=+0.0 own_trace=+0.0 bank_stage_lookup=+0.0 bank_stage_cache=+0.0 bank_stage_charge=+0.0 stage_rest=+0.0 bank_
+DAY84 CHANGE rig=rtx5090 window (i23s minus p88s, us per token, deciding nothing): outer=+0.0 dispatch_inner=+0.0 own_trace=+0.0 bank_stage_lookup=+0.0 bank_stage_cache=+0.0 bank_stage_charge=+0.0 stage_rest=+0.0 bank_pu
+DAY84 CHANGE rig=rtx5090 generate (i24s minus i23s, us per token, deciding nothing): outer=+0.0 dispatch_inner=+0.0 own_trace=+0.0 bank_stage_lookup=+0.0 bank_stage_cache=+0.0 bank_stage_charge=+0.0 stage_rest=+0.0 bank_
+DAY84 CHANGE rig=rtx5090 window (i24s minus i23s, us per token, deciding nothing): outer=+0.0 dispatch_inner=+0.0 own_trace=+0.0 bank_stage_lookup=+0.0 bank_stage_cache=+0.0 bank_stage_charge=+0.0 stage_rest=+0.0 bank_pu
+DAY89 CHANGE rig=rtx5090 generate i23s minus p88s: +0.0 us per token
+DAY89 CHANGE rig=rtx5090 generate i24s minus i23s: +0.0 us per token
+DAY89 CHANGE rig=rtx5090 generate i24s minus p88s: +0.0 us per token
+DAY89 SIZING rig=rtx5090 generate door-only change p88s->i24s=+0.0 us per token, threshold -155 -> short
+DAY89 BESIDE rig=rtx5090 generate pf_retire without the stage clock (us per token, medians): p88d=83.1 i23d=83.1 i24d=83.1
+DAY89 CHANGE rig=rtx5090 window i23s minus p88s: +0.0 us per token
+DAY89 CHANGE rig=rtx5090 window i24s minus i23s: +0.0 us per token
+DAY89 CHANGE rig=rtx5090 window i24s minus p88s: +0.0 us per token
+DAY89 BESIDE rig=rtx5090 window pf_retire without the stage clock (us per token, medians): p88d=36.5 i23d=36.5 i24d=36.5

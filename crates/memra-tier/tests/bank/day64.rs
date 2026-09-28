@@ -192,7 +192,7 @@ impl ExpertDispatchBank for Reversed {
     fn demand(&mut self, id: ExpertDispatchId, bytes: usize) -> Result<ExpertDemand> {
         self.0.demand(id, bytes)
     }
-    fn finish(&mut self, demand: ExpertDemand) -> Result<()> {
+    fn finish(&mut self, demand: &ExpertDemand) -> Result<()> {
         self.0.finish(demand)
     }
     fn demand_many(&mut self, blocks: &[(ExpertDispatchId, usize)]) -> Result<ExpertDemands> {
@@ -200,7 +200,7 @@ impl ExpertDispatchBank for Reversed {
         d.leases.reverse();
         Ok(d)
     }
-    fn finish_many(&mut self, demands: ExpertDemands) -> Result<()> {
+    fn finish_many(&mut self, demands: &ExpertDemands) -> Result<()> {
         self.0.finish_many(demands)
     }
 }

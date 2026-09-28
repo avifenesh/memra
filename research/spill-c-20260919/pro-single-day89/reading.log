@@ -1,0 +1,24 @@
+DAY88 promo host demand sequences: door ['4bdc2610c3534e42'] nopf ['0e220d04f52d13e9']
+DAY88 PROMO CHECKS rig=pro-single runs=60 integrity=ok
+DAY88 PROMO ADMISSIBILITY rig=pro-single ceiling=0.005 max_iqr_gen=0.0013 max_iqr_window=0.0013 failing=[] -> admissible
+DAY88 PROMO gen-only decode medians (N=10 each): naked=0.314 q22=0.313 legacy=0.311 alloc=0.314 nopf=0.380 legnopf=0.379
+DAY88 PROMO naked_vs_q22 gen-only decode: pooled=+0.0010 o1=+0.0000 o2=+0.0010 noise=0.0012 -> flat
+DAY88 PROMO naked_vs_legacy gen-only decode: pooled=+0.0030 o1=+0.0030 o2=+0.0030 noise=0.0010 -> loses
+DAY88 PROMO alloc_vs_naked gen-only decode (the pool's rollback, recorded): pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0002 -> flat
+DAY88 PROMO naked_vs_nopf gen-only decode (the door's prefetch, recorded): pooled=-0.0660 o1=-0.0660 o2=-0.0660 noise=0.0013 -> improves
+DAY88 PROMO legacy_vs_legnopf gen-only decode (the legacy's prefetch, recorded): pooled=-0.0680 o1=-0.0680 o2=-0.0680 noise=0.0010 -> improves
+DAY88 PROMO steady window medians (N=10 each): naked=0.286 q22=0.286 legacy=0.286 alloc=0.286 nopf=0.320 legnopf=0.319
+DAY88 PROMO naked_vs_q22 steady window: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0013 -> flat
+DAY88 PROMO naked_vs_legacy steady window: pooled=+0.0000 o1=+0.0010 o2=+0.0000 noise=0.0010 -> matches
+DAY88 PROMO alloc_vs_naked steady window (the pool's rollback, recorded): pooled=+0.0005 o1=+0.0000 o2=+0.0000 noise=0.0010 -> flat
+DAY88 PROMO naked_vs_nopf steady window (the door's prefetch, recorded): pooled=-0.0340 o1=-0.0330 o2=-0.0330 noise=0.0012 -> improves
+DAY88 PROMO legacy_vs_legnopf steady window (the legacy's prefetch, recorded): pooled=-0.0330 o1=-0.0330 o2=-0.0330 noise=0.0003 -> improves
+DAY88 PROMO to_prefill_s medians (process start to the prefill MATCH line, beside): naked=10.40 q22=9.77 legacy=8.72 alloc=9.76 nopf=10.40 legnopf=8.84
+DAY88 PROMO-RES CHECKS rig=pro-single runs=20 integrity=ok
+DAY88 PROMO-RES ADMISSIBILITY rig=pro-single ceiling=0.005 max_iqr_gen=0.0010 failing=[] -> admissible
+DAY88 PROMO-RES gen-only decode medians (N=10 each): naked=0.152 legacy=0.152
+DAY88 PROMO-RES naked_vs_legacy gen-only decode: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0010 -> flat
+DAY88 PROMO-RES to_prefill_s medians (beside): naked=6.21 legacy=8.86
+DAY88 PROMO-SPEC spec-naked rc=0 self_consistency=PASS installed=True off_rollback=False
+DAY88 PROMO-SPEC spec-legacy rc=0 self_consistency=PASS installed=False off_rollback=True
+DAY88 VERDICT rig=pro-single -> phase1_does_not_land (naked loses to legacy)

@@ -1,0 +1,15 @@
+# DAY92 I25a and I25b gates (DAY92 section 3, the affected crates): 2026-09-27T22:29:32Z, tree 4dc9cc341b plus the I25 diff
+## cargo test -p memra-tier (day10's trace parse and I24's fixture with I25b)
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.77s
+test result: ok. 98 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 14.22s
+test result: ok. 106 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.04s
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 53 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.79s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+## cargo test -p memra-engine --lib banked_native (an_untraced_door_demands_as_the_traced_one included)
+test result: ok. 22 passed; 0 failed; 1 ignored; 0 measured; 636 filtered out; finished in 15.83s
+## cargo clippy -p memra-tier --all-targets -- -D warnings: rc=0
+## cargo clippy -p memra-engine --lib --tests -- -D warnings: rc=0
+## cargo fmt --all -- --check: rc=0

@@ -2,7 +2,10 @@
 //! artifact conversion, external source, or alternative numeric executor.
 use crate::{
     Engine,
-    banked_residency::{ExpertBankBudget, ExpertBankRefusal, gpu_bank_budget, host_bank_budget},
+    banked_residency::{
+        ExpertBankBudget, ExpertBankRefusal, Qualification, QualifiedArtifact, gpu_bank_budget,
+        host_bank_budget,
+    },
     hybrid::{Ffn, HybridModel, MoeWeights},
 };
 use memra_gguf::{
@@ -31,6 +34,274 @@ use std::{
 };
 
 const APPROVED_SHA: &str = "df27a780435b7b45c2597536112ea3cb091f8544c3d0c3318d9f4258b31f7adf";
+
+/// Day 88 (`research/spill-c-20260919/DAY88.md` section 2.1): an artifact the door is qualified on,
+/// by identity: its SHA-256 and byte length, and the whole bank's bytes (every record the catalog
+/// retains) for the trunk alone (`run-gen`, the MTP head not loaded) and with its one MTP head
+/// (`run-spec`), as the installer's `host_bank_plan` lines read them on the cells. An artifact
+/// joins only with its own census, gates and receipts (C2 item 3).
+struct QualifiedEntry {
+    sha: &'static str,
+    len: u64,
+    bank_trunk: u64,
+    bank_with_mtp: u64,
+}
+const QUALIFIED: &[QualifiedEntry] = &[QualifiedEntry {
+    // Qwen3.6-35B-A3B-UD-IQ4_XS: DAY51, DAY59, DAY84 and DAY85's cells.
+    sha: APPROVED_SHA,
+    len: 18_209_036_576,
+    bank_trunk: 15_219_032_064,
+    bank_with_mtp: 15_600_713_728,
+}];
+
+/// Day 88: whether a PP stage split is configured (`MEMRA_PP_STAGES` of 2 or more): the owner
+/// registry is per thread, so the door does not apply (C2 item 1).
+fn pp_split_configured() -> bool {
+    std::env::var("MEMRA_PP_STAGES")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .is_some_and(|n| n >= 2)
+}
+
+/// Day 88: what `qualify_file` reads besides the file (each from the process in production, fixed
+/// in the unit tests below).
+struct QualifyInputs<'a> {
+    shards: usize,
+    cache_on: bool,
+    pp_split: bool,
+    entries: &'a [QualifiedEntry],
+    meminfo: &'a str,
+    with_mtp: bool,
+    host_bytes: Option<u64>,
+}
+
+/// Day 88: `Engine::qualify_expert_door`'s decision over an opened file. Only a file whose byte
+/// length is an entry's is hashed.
+fn qualify_file(
+    file: &Arc<File>,
+    inputs: QualifyInputs<'_>,
+) -> std::result::Result<Qualification, Box<dyn std::error::Error>> {
+    use std::os::unix::fs::MetadataExt as _;
+    let off = |why: &str| Ok(Qualification::Off(why.to_owned()));
+    if !inputs.cache_on {
+        return off("the MoE slot cache is off (MEMRA_MOE_CACHE=0)");
+    }
+    if inputs.shards != 1 {
+        return off("a sharded artifact");
+    }
+    if inputs.pp_split {
+        return off("a PP stage split (MEMRA_PP_STAGES)");
+    }
+    let meta = file.metadata()?;
+    let Some(entry) = inputs.entries.iter().find(|entry| entry.len == meta.len()) else {
+        return off("not a qualified artifact");
+    };
+    let digest = artifact_digest(file)?;
+    if hex(&digest) != entry.sha {
+        return off("not a qualified artifact (its digest)");
+    }
+    let whole_bank = if inputs.with_mtp {
+        entry.bank_with_mtp
+    } else {
+        entry.bank_trunk
+    };
+    let Some(ceiling) = crate::banked_residency::host_bank_ceiling(inputs.meminfo) else {
+        return off("host memory unknown (/proc/meminfo carries no MemAvailable)");
+    };
+    let requested = inputs.host_bytes.unwrap_or(whole_bank);
+    Ok(Qualification::Qualified(QualifiedArtifact {
+        digest,
+        dev: meta.dev(),
+        ino: meta.ino(),
+        ceiling,
+        whole_bank,
+        fits: requested <= ceiling,
+    }))
+}
+
+impl Engine {
+    /// Day 88 (DAY88.md section 2.1): decide, before the model loads, whether the door applies to
+    /// `gguf`, and authenticate it if so. Only a file whose byte length is a qualified entry's is
+    /// hashed (the installer's own SHA-256 over the opened inode), so no other artifact pays for it.
+    /// `with_mtp` names the catalog the binary will load (`run-spec` loads the MTP head, `run-gen`
+    /// does not). `host_bytes` is the requested host budget (`None`: the whole bank), checked against
+    /// the host ceiling (three quarters of `MemAvailable`, read now and carried to the installer).
+    pub fn qualify_expert_door(
+        &self,
+        gguf: &GgufFile,
+        with_mtp: bool,
+        host_bytes: Option<u64>,
+    ) -> std::result::Result<Qualification, Box<dyn std::error::Error>> {
+        let meminfo = std::fs::read_to_string("/proc/meminfo").unwrap_or_default();
+        qualify_file(
+            gguf.opened_file(),
+            QualifyInputs {
+                shards: gguf.n_shards(),
+                cache_on: Engine::moe_cache_enabled(),
+                pp_split: pp_split_configured(),
+                entries: QUALIFIED,
+                meminfo: &meminfo,
+                with_mtp,
+                host_bytes,
+            },
+        )
+    }
+
+    /// Day 88 (DAY88.md sections 2.1 to 2.5): the gate binaries' door decision, before the model
+    /// loads. Sets this process's prefetch default (on for a qualified artifact, whichever program
+    /// then runs) and the door's mapped-bank load option (only when the door will install), prints one
+    /// `[experts-via-tier]` line and one `[moe-prefetch]` line, and returns the artifact the installer
+    /// takes, or `None` for today's program. With `--experts-via-tier` a door that does not apply is
+    /// an error (a typed refusal for the host ceiling, the installer's old message for an artifact
+    /// that is not qualified); with a door flag it is a usage error; otherwise the legacy runs.
+    pub fn plan_expert_door(
+        &self,
+        gguf: &GgufFile,
+        cli: &crate::banked_residency::ExpertBankCli,
+        rollback: bool,
+        with_mtp: bool,
+    ) -> std::result::Result<Option<QualifiedArtifact>, Box<dyn std::error::Error>> {
+        use crate::banked_residency::ExpertBankMode;
+        let qualification = self.qualify_expert_door(gguf, with_mtp, cli.budget.host_bytes)?;
+        let qualified = match &qualification {
+            Qualification::Qualified(artifact) => Some(artifact.clone()),
+            Qualification::Off(_) => None,
+        };
+        self.set_moe_prefetch_default(qualified.is_some());
+        let env = std::env::var("MEMRA_MOE_PREFETCH").ok();
+        let effective =
+            crate::hybrid_forward::moe_prefetch_decision(env.as_deref(), qualified.is_some());
+        eprintln!(
+            "[moe-prefetch] default={} effective={}{}",
+            if qualified.is_some() {
+                "on (a qualified artifact)"
+            } else {
+                "off"
+            },
+            if effective { "on" } else { "off" },
+            env.map(|v| format!(" (MEMRA_MOE_PREFETCH={v})"))
+                .unwrap_or_default()
+        );
+        self.set_expert_host_mapped(false);
+        let why = if rollback {
+            "MEMRA_EXPERTS_VIA_TIER=0 (the legacy slot cache)".to_owned()
+        } else {
+            match qualification {
+                Qualification::Qualified(artifact) if artifact.fits => {
+                    eprintln!(
+                        "[experts-via-tier] qualified sha256={}",
+                        artifact.sha256_hex()
+                    );
+                    self.set_expert_host_mapped(true);
+                    return Ok(Some(artifact));
+                }
+                Qualification::Qualified(artifact) => {
+                    let why = format!(
+                        "the host bank ({} bytes) exceeds the host ceiling ({} bytes)",
+                        cli.budget.host_bytes.unwrap_or(artifact.whole_bank),
+                        artifact.ceiling
+                    );
+                    if cli.mode == ExpertBankMode::Required {
+                        return Err(ExpertBankRefusal(format!(
+                            "experts-via-tier host bank budget exceeds the machine ceiling: {why}"
+                        ))
+                        .into());
+                    }
+                    why
+                }
+                Qualification::Off(why) => {
+                    if cli.mode == ExpertBankMode::Required {
+                        return Err(if why.starts_with("not a qualified artifact") {
+                            "experts-via-tier artifact SHA256 mismatch".into()
+                        } else {
+                            format!("experts-via-tier: {why}").into()
+                        });
+                    }
+                    why
+                }
+            }
+        };
+        if cli.door_flags {
+            return Err(format!("expert bank flags need the door, which is off: {why}").into());
+        }
+        eprintln!("[experts-via-tier] off: {why}");
+        Ok(None)
+    }
+
+    /// Day 88: the gate binaries' install, after the model loads, for the artifact `plan_expert_door`
+    /// returned: the door installs unless the experts are resident on the device (nothing to hold) or
+    /// the model routes none. With `--experts-via-tier` either is the installer's refusal as before;
+    /// with a door flag a usage error.
+    pub fn install_expert_door<'a>(
+        &'a self,
+        model: &HybridModel,
+        gguf: &GgufFile,
+        cli: &crate::banked_residency::ExpertBankCli,
+        qualified: Option<&QualifiedArtifact>,
+    ) -> std::result::Result<Option<BankedExpertGate<'a>>, Box<dyn std::error::Error>> {
+        use crate::banked_residency::ExpertBankMode;
+        let Some(qualified) = qualified else {
+            return Ok(None);
+        };
+        let why = match model.moe_experts_resident() {
+            Some(false) => {
+                return self
+                    .install_expert_bank_gate(model, gguf, cli.budget, qualified)
+                    .map(Some);
+            }
+            Some(true) => "the experts are resident",
+            None => "the model routes no experts",
+        };
+        if cli.mode == ExpertBankMode::Required {
+            return Err(
+            "experts-via-tier refuses resident or parallel expert bypasses; use the cache baseline"
+                .into(),
+        );
+        }
+        if cli.door_flags {
+            return Err(format!("expert bank flags need the door, which is off: {why}").into());
+        }
+        eprintln!("[experts-via-tier] off: {why}");
+        Ok(None)
+    }
+}
+
+/// The SHA-256 of an opened file, read positioned in 4 MiB pieces (the installer's lock).
+fn artifact_digest(file: &File) -> std::io::Result<Digest> {
+    let mut h = Sha256::new();
+    let mut buf = vec![0u8; 4 * 1024 * 1024];
+    let len = file.metadata()?.len();
+    let mut offset = 0;
+    while offset < len {
+        let n = buf.len().min((len - offset) as usize);
+        file.read_exact_at(&mut buf[..n], offset)?;
+        h.update(&buf[..n]);
+        offset += n as u64;
+    }
+    Ok(h.finalize().into())
+}
+
+impl HybridModel {
+    /// Day 88: whether the loaded model's MoE experts are resident on the device (the door then has
+    /// nothing to hold): every MoE block with a device copy. `None` for a model without MoE blocks.
+    pub fn moe_experts_resident(&self) -> Option<bool> {
+        let mut any = None;
+        let trunk = self.layers.iter().map(|layer| &layer.ffn);
+        let heads = self.mtp.iter().map(|head| &head.ffn);
+        for ffn in trunk.chain(heads) {
+            if let Ffn::Moe(moe) = ffn {
+                let resident = moe.dev_exps.is_some();
+                // A mix of resident and cached MoE blocks is read as not resident: the door then
+                // installs and refuses the resident blocks by name, as it always has.
+                if any.is_some_and(|seen| seen != resident) {
+                    return Some(false);
+                }
+                any = Some(resident);
+            }
+        }
+        any
+    }
+}
 struct FileReader {
     file: Arc<File>,
     ranges: BTreeMap<TensorId, (u64, u64)>,
@@ -113,7 +384,7 @@ struct PoolState {
     free: Vec<Vec<usize>>,
     touched: Vec<Vec<bool>>,
 }
-// SAFETY: every allocation (pinned, or DAY78 heap) never moves and is freed only in `Drop`, after
+// SAFETY: the one allocation (registered or `cuMemHostAlloc` pinned memory) never moves and is freed only in `Drop`, after
 // every `PooledBuffer` (each holds an `Arc` of the pool) is gone. Each buffer range is taken and
 // returned under `state`'s mutex, so at most one `PooledBuffer` ever reaches a given range, and
 // the pool itself exposes no byte access.
@@ -122,37 +393,23 @@ unsafe impl Sync for PinnedPool {}
 /// Buffers per class beyond the planned slots: the leases I1 keeps open, the fill's queued and
 /// in-worker records, and one.
 const POOL_HEADROOM: usize = crate::moe_cache::BANKED_INFLIGHT + 1 + 64 + 8 + 1;
-/// DAY78: the alignment of a pageable pool's allocations (one page).
-const PAGEABLE_ALIGN: usize = 4096;
-/// Where the pool's allocations come from: `cuMemHostAlloc` (the default), heap memory (DAY78), or
-/// private anonymous mappings pinned with `cuMemHostRegister` (DAY80).
+/// The page the registered pool writes once per page before registering it.
+const PAGE: usize = 4096;
+/// Where the pool's allocation comes from. Day 88 (`research/spill-c-20260919/DAY88.md`): the
+/// default is `Registered`, a private anonymous mapping pinned with `cuMemHostRegister` (DAY80,
+/// which compaction skips instead of isolating); `Allocated` is `cuMemHostAlloc`, the pool before
+/// the promotion (`--expert-bank-pool-allocated`, the rollback seam).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PoolKind {
     Allocated,
-    Pageable,
     Registered,
 }
 /// Buffers per class the fill never takes, so a demand's read always finds one.
 const FILL_RESERVE: usize = crate::moe_cache::BANKED_INFLIGHT + 2;
-/// DAY76: a class of `count` buffers of `capacity` bytes spread over allocations of at most
-/// `chunk` bytes, whole buffers each (one buffer per allocation when a buffer exceeds `chunk`):
-/// the buffers per allocation and each allocation's buffer count, in order.
-fn pool_chunks(capacity: usize, count: usize, chunk: usize) -> (usize, Vec<usize>) {
-    let per_chunk = (chunk / capacity.max(1)).max(1);
-    let mut buffers = Vec::with_capacity(count.div_ceil(per_chunk));
-    let mut left = count;
-    while left > 0 {
-        let here = left.min(per_chunk);
-        buffers.push(here);
-        left -= here;
-    }
-    (per_chunk, buffers)
-}
 impl PinnedPool {
     fn new(
         context: Arc<cudarc::driver::CudaContext>,
         classes: &[(u64, usize)],
-        chunk_bytes: Option<u64>,
         kind: PoolKind,
     ) -> std::result::Result<Arc<Self>, Box<dyn std::error::Error>> {
         let mut sizes = Vec::with_capacity(classes.len());
@@ -189,7 +446,7 @@ impl PinnedPool {
                 }
                 let base = ptr.cast::<u8>();
                 // Every page written once, so each is a private page of this mapping.
-                for offset in (0..len).step_by(PAGEABLE_ALIGN) {
+                for offset in (0..len).step_by(PAGE) {
                     // SAFETY: inside the mapping just made.
                     unsafe { base.add(offset).write_volatile(0) };
                 }
@@ -209,16 +466,6 @@ impl PinnedPool {
                 }
                 return Ok(base);
             }
-            if kind == PoolKind::Pageable {
-                let layout = std::alloc::Layout::from_size_align(len.max(1), PAGEABLE_ALIGN)?;
-                // SAFETY: a nonzero-size layout; the returned range is owned by this pool and freed
-                // with the same layout in `Drop`.
-                let ptr = unsafe { std::alloc::alloc_zeroed(layout) };
-                if ptr.is_null() {
-                    return Err("pageable pool allocation failed".into());
-                }
-                return Ok(ptr);
-            }
             // SAFETY: documented FFI (`cuMemHostAlloc`); the returned range is owned by this pool.
             let ptr = unsafe {
                 cudarc::driver::result::malloc_host(
@@ -230,40 +477,18 @@ impl PinnedPool {
         };
         let mut allocations = Vec::new();
         let mut layout = Vec::with_capacity(classes.len());
-        match chunk_bytes {
-            None => {
-                let base = alloc(total)?;
-                allocations.push((base, total.max(1)));
-                let mut start = 0usize;
-                for (&capacity, &count) in sizes.iter().zip(&counts) {
-                    // SAFETY: `start` is this class's offset inside the one allocation of `total`.
-                    let first = unsafe { base.add(start) };
-                    layout.push(PoolClass {
-                        capacity,
-                        per_chunk: count.max(1),
-                        chunks: vec![first],
-                    });
-                    start += capacity * count;
-                }
-            }
-            Some(chunk) => {
-                let chunk = usize::try_from(chunk)?;
-                for (&capacity, &count) in sizes.iter().zip(&counts) {
-                    let (per_chunk, buffers) = pool_chunks(capacity, count, chunk);
-                    let mut chunks = Vec::with_capacity(buffers.len());
-                    for here in buffers {
-                        let len = capacity.checked_mul(here).ok_or(Error::Overflow)?;
-                        let ptr = alloc(len)?;
-                        allocations.push((ptr, len.max(1)));
-                        chunks.push(ptr);
-                    }
-                    layout.push(PoolClass {
-                        capacity,
-                        per_chunk,
-                        chunks,
-                    });
-                }
-            }
+        let base = alloc(total)?;
+        allocations.push((base, total.max(1)));
+        let mut start = 0usize;
+        for (&capacity, &count) in sizes.iter().zip(&counts) {
+            // SAFETY: `start` is this class's offset inside the one allocation of `total`.
+            let first = unsafe { base.add(start) };
+            layout.push(PoolClass {
+                capacity,
+                per_chunk: count.max(1),
+                chunks: vec![first],
+            });
+            start += capacity * count;
         }
         let state = PoolState {
             free: counts.iter().map(|&n| (0..n).rev().collect()).collect(),
@@ -326,16 +551,6 @@ impl Drop for PinnedPool {
                     let _ = cudarc::driver::sys::cuMemHostUnregister(ptr.cast());
                     libc::munmap(ptr.cast(), len);
                 }
-                continue;
-            }
-            if self.kind == PoolKind::Pageable {
-                // SAFETY: allocated in `new` with this layout; no `PooledBuffer` is alive here.
-                unsafe {
-                    std::alloc::dealloc(
-                        ptr,
-                        std::alloc::Layout::from_size_align_unchecked(len, PAGEABLE_ALIGN),
-                    )
-                };
                 continue;
             }
             // SAFETY: every `PooledBuffer` holds an `Arc` of this pool, so none is alive here.
@@ -548,7 +763,6 @@ impl Drop for BankedExpertGate<'_> {
         if let Some(fill) = &self.fill {
             fill.stop.store(true, Ordering::Relaxed);
         }
-        self.engine.set_expert_bank_prefetch(false);
         // DAY46: finish every in-flight lease (one stream drain) before the registry closes;
         // `close` refuses while any lease is open.
         let retired = self
@@ -649,6 +863,7 @@ impl Engine {
         model: &HybridModel,
         gguf: &GgufFile,
         budget: ExpertBankBudget,
+        qualified: &QualifiedArtifact,
     ) -> std::result::Result<BankedExpertGate<'_>, Box<dyn std::error::Error>> {
         if gguf.n_shards() != 1 || !Engine::moe_cache_enabled() || !model.mtp_extra.is_empty() {
             return Err(
@@ -657,26 +872,26 @@ impl Engine {
             );
         }
         let stage_clock = budget.stage_clock;
+        // Day 92 (I25a): read before `budget` names the governor below.
+        let traced = budget.trace;
         let clock = |started: Instant| stage_clock.then(|| elapsed_ns(started));
         let install_started = Instant::now();
-        // Authenticate the already-open inode, not a pathname reopened after load.
+        // Day 88: the already-open inode was authenticated before the model loaded
+        // (`qualify_artifact`, the same SHA-256 over the same open file); the token is accepted
+        // only for that file, so nothing reopened by pathname can stand in for it.
         let file = gguf.opened_file().clone();
-        let mut h = Sha256::new();
-        let mut buf = vec![0u8; 4 * 1024 * 1024];
-        let len = file.metadata()?.len();
-        let mut offset = 0;
-        while offset < len {
-            let n = buf.len().min((len - offset) as usize);
-            file.read_exact_at(&mut buf[..n], offset)?;
-            h.update(&buf[..n]);
-            offset += n as u64;
+        {
+            use std::os::unix::fs::MetadataExt as _;
+            let meta = file.metadata()?;
+            if (meta.dev(), meta.ino()) != (qualified.dev, qualified.ino) {
+                return Err(
+                    "experts-via-tier artifact is not the file qualified before load".into(),
+                );
+            }
         }
-        let artifact: Digest = h.finalize().into();
-        let sha_ns = clock(install_started);
+        let artifact: Digest = qualified.digest;
         let actual = hex(&artifact);
-        if actual != APPROVED_SHA {
-            return Err("experts-via-tier artifact SHA256 mismatch".into());
-        }
+        let sha_ns = clock(install_started);
         // The catalog comes from the compiled plan and the artifact's tensor contract; the
         // loaded HostExps only supply the bytes and the router mask for each named bank.
         let catalog_started = Instant::now();
@@ -808,14 +1023,11 @@ impl Engine {
         // Gate-only CLI budgets. Without a GPU budget, native slot sizing (MEMRA_MOE_SLOTS or
         // auto) is untouched; with one, the exact count is fixed here, before any allocation,
         // and a MEMRA_MOE_SLOTS request alongside it is a conflict, never a silent loser.
-        let host_bytes = budget.host_bytes;
-        let pool_chunk_bytes = budget.pool_chunk_bytes;
-        let pool_kind = if budget.pool_registered {
-            PoolKind::Registered
-        } else if budget.pool_pageable {
-            PoolKind::Pageable
-        } else {
+        // Day 88: the registered pool by default, `--expert-bank-pool-allocated` the rollback.
+        let pool_kind = if budget.pool_allocated {
             PoolKind::Allocated
+        } else {
+            PoolKind::Registered
         };
         // Day 43: the host tier is planned per record size under the budget, refused above
         // three quarters of the host's MemAvailable read now (never an environment variable).
@@ -824,13 +1036,22 @@ impl Engine {
             .filter_map(|(_, record)| record.as_ref())
             .map(|record| record.layout.storage_bytes())
             .collect::<std::result::Result<Vec<u64>, _>>()?;
-        let meminfo = std::fs::read_to_string("/proc/meminfo").unwrap_or_default();
-        let ceiling = crate::banked_residency::host_bank_ceiling(&meminfo).ok_or_else(|| {
-            ExpertBankRefusal(
-                "experts-via-tier host memory unknown: /proc/meminfo carries no MemAvailable"
-                    .to_owned(),
-            )
-        })?;
+        // Day 88: the ceiling is the one `qualify_artifact` read before the model loaded, so the
+        // decision to install and this plan cannot disagree; `None` holds the whole bank, which
+        // must be the qualified entry's.
+        let ceiling = qualified.ceiling;
+        let whole_bank = record_sizes
+            .iter()
+            .try_fold(0u64, |n, &size| n.checked_add(size))
+            .ok_or(Error::Overflow)?;
+        if whole_bank != qualified.whole_bank {
+            return Err(ExpertBankRefusal(format!(
+                "experts-via-tier catalog bank is {whole_bank} bytes, the qualified entry's {}",
+                qualified.whole_bank
+            ))
+            .into());
+        }
+        let host_bytes = budget.host_bytes.unwrap_or(whole_bank);
         let plan = host_bank_budget(host_bytes, &record_sizes, ceiling)?;
         let slots = plan.records_held;
         eprintln!(
@@ -871,6 +1092,8 @@ impl Engine {
             .checked_mul(open_leases as u64)
             .ok_or(Error::Overflow)?;
         capacity.inflight = open_leases as u64;
+        // Day 93 (I26): the capacities the hits' queue charge is judged against, read before the governor takes them.
+        let (pageable_capacity, inflight_capacity) = (capacity.pageable, capacity.inflight);
         let budget: SharedBudget = Rc::new(RefCell::new(Governor::new(
             capacity,
             TierBudget::zero(1),
@@ -922,24 +1145,15 @@ impl Engine {
         };
         // DAY47: the host tier lives in one cached pinned pool; every read lands in a buffer
         // from it, and the fill takes from it above the demand reserve.
-        let pool = PinnedPool::new(
-            self.ctx().clone(),
-            &plan.classes,
-            pool_chunk_bytes,
-            pool_kind,
-        )?;
+        let pool = PinnedPool::new(self.ctx().clone(), &plan.classes, pool_kind)?;
         eprintln!(
-            "[experts-via-tier] host pinned pool bytes={} classes={} headroom={POOL_HEADROOM} fill_reserve={FILL_RESERVE}{}",
+            "[experts-via-tier] host pinned pool bytes={} classes={} headroom={POOL_HEADROOM} fill_reserve={FILL_RESERVE} {}",
             pool.bytes,
             pool.classes.len(),
-            pool_chunk_bytes
-                .map(|c| format!(" chunk_bytes={c} allocations={}", pool.allocations.len()))
-                .unwrap_or_default()
-                + match pool_kind {
-                    PoolKind::Allocated => "",
-                    PoolKind::Pageable => " pageable",
-                    PoolKind::Registered => " registered",
-                }
+            match pool_kind {
+                PoolKind::Allocated => "allocated",
+                PoolKind::Registered => "registered",
+            }
         );
         let bank = bank.with_host_buffers(Box::new(PoolSource(pool.clone())))?;
         let fill_pool = pool.clone();
@@ -956,7 +1170,21 @@ impl Engine {
         };
         request.bytes.pageable = bank.slru_metadata_bytes(slots)?;
         let metadata = budget.borrow_mut().reserve(&request)?;
-        let bank = bank.with_slru(SlruPolicy::new(&plan.classes)?, &metadata)?;
+        let mut bank = bank.with_slru(SlruPolicy::new(&plan.classes)?, &metadata)?;
+        // Day 93 (I26, `research/spill-c-20260919/DAY93.md` sections 1 and 3): a host hit takes no ticket; its queue
+        // charge goes only where the bound proves it inert against this governor's capacities, else it stays.
+        let bound = bank.hit_charge_bound()?;
+        let inert = bound.inert(pageable_capacity, inflight_capacity);
+        if inert {
+            bank.drop_hit_queue_charge()?;
+        }
+        eprintln!(
+            "[experts-via-tier] hit queue charge {}: pageable_capacity={pageable_capacity} \
+             inflight_capacity={inflight_capacity} worst_without_hits={} {}",
+            if inert { "dropped" } else { "kept" },
+            bound.others,
+            bound.terms
+        );
         request.bytes = TierBudget::zero(1);
         let dispatch = SlruExpertDispatch::new(
             bank,
@@ -980,7 +1208,13 @@ impl Engine {
                 ..OwnerClock::default()
             }),
             fill: Some(fill_intake),
-            trace: String::with_capacity(TRACE_CHUNK + 256),
+            // Day 92 (I25a): the buffer only under `--expert-bank-trace`.
+            trace: if traced {
+                String::with_capacity(TRACE_CHUNK + 256)
+            } else {
+                String::new()
+            },
+            traced,
         };
         // DAY57 (I10): the fill completes inside the install, as the legacy's pinned host copy
         // completes inside its load, so no decode demand races it.
@@ -1006,7 +1240,6 @@ impl Engine {
         self.with_moe_cache(max_bytes as usize, |cache, _| {
             cache.install_banked(owner.proxy(), stage_clock)
         })?;
-        self.set_expert_bank_prefetch(true);
         if let (Some(sha), Some(catalog), Some(records), Some(setup)) =
             (sha_ns, catalog_ns, records_ns, clock(setup_started))
         {
@@ -1231,6 +1464,9 @@ struct TracedDispatch {
     /// DAY48 (I5): the host-demand trace, byte for byte as the unbuffered lines were, written to
     /// stderr in one call whenever it passes `TRACE_CHUNK` (always at a line end) and at close.
     trace: String,
+    /// Day 92 (I25a, `research/spill-c-20260919/DAY92.md`): `--expert-bank-trace`. Without it no pre-demand slot is
+    /// read, no occupant kept and no line written; every demand passes to `inner` exactly as with it.
+    traced: bool,
 }
 /// DAY48: bytes of trace buffered before one stderr write.
 const TRACE_CHUNK: usize = 64 * 1024;
@@ -1437,6 +1673,15 @@ impl ExpertDispatchBank for TracedDispatch {
     }
     fn demand(&mut self, local: ExpertDispatchId, bytes: usize) -> Result<ExpertDemand> {
         self.drain_fill(32);
+        if !self.traced {
+            // Day 92 (I25a): untraced, the demand alone (the stage clock times it and counts no hit or miss).
+            let demand_started = self.clock.as_ref().map(|_| Instant::now());
+            let demand = self.inner.demand(local, bytes);
+            if let (Some(started), Some(clock)) = (demand_started, self.clock.as_mut()) {
+                clock.inner_demand_ns = clock.inner_demand_ns.saturating_add(elapsed_ns(started));
+            }
+            return demand;
+        }
         // DAY84 (I21): the pre-demand slot by catalog position, the answer the id's lookup gave.
         let before = self.inner.resident_slot(local)?;
         let hit = before.is_some();
@@ -1454,7 +1699,7 @@ impl ExpertDispatchBank for TracedDispatch {
         self.trace_record(local, bytes, before)?;
         Ok(demand)
     }
-    fn finish(&mut self, demand: ExpertDemand) -> Result<()> {
+    fn finish(&mut self, demand: &ExpertDemand) -> Result<()> {
         self.inner.finish(demand)
     }
     /// DAY64 (I15): one ticket for the group, then one trace line per record in block order, each read as the single
@@ -1467,6 +1712,15 @@ impl ExpertDispatchBank for TracedDispatch {
             return Err(Error::Capacity);
         }
         self.drain_fill(32);
+        if !self.traced {
+            // Day 92 (I25a): untraced, the grouped demand alone, as `demand`.
+            let demand_started = self.clock.as_ref().map(|_| Instant::now());
+            let demands = self.inner.demand_many(blocks);
+            if let (Some(started), Some(clock)) = (demand_started, self.clock.as_mut()) {
+                clock.inner_demand_ns = clock.inner_demand_ns.saturating_add(elapsed_ns(started));
+            }
+            return demands;
+        }
         let mut before = [None; MAX_GROUP];
         for (slot, &(local, _)) in before.iter_mut().zip(blocks) {
             // DAY84 (I21): by catalog position, as in `demand`.
@@ -1490,7 +1744,7 @@ impl ExpertDispatchBank for TracedDispatch {
         }
         Ok(demands)
     }
-    fn finish_many(&mut self, demands: ExpertDemands) -> Result<()> {
+    fn finish_many(&mut self, demands: &ExpertDemands) -> Result<()> {
         self.inner.finish_many(demands)
     }
     fn host_resident(&self, local: ExpertDispatchId) -> Result<bool> {
@@ -1503,10 +1757,17 @@ impl ExpertDispatchBank for TracedDispatch {
             .as_ref()
             .map(|f| f.counts.line())
             .unwrap_or_else(|| "fill absent".to_owned());
+        // Day 92 (I25a): the hit and miss counts come from the trace's pre-demand read; untraced, `trace=off`.
+        let hits = if self.traced {
+            format!(
+                "host_hits={} host_misses={}",
+                clock.host_hits, clock.host_misses
+            )
+        } else {
+            "trace=off".to_owned()
+        };
         Some(format!(
-            "| owner host_hits={} host_misses={} inner_demand_ns={} trace_ns={} reads={} pread_ns={} | {fill} | bank {}",
-            clock.host_hits,
-            clock.host_misses,
+            "| owner {hits} inner_demand_ns={} trace_ns={} reads={} pread_ns={} | {fill} | bank {}",
             clock.inner_demand_ns,
             clock.trace_ns,
             clock.reads.get(),
@@ -1526,6 +1787,7 @@ mod day44_census {
     const RUN_GEN: &str = include_str!("../bin/run_gen.rs");
     const RUN_SPEC: &str = include_str!("../bin/run_spec.rs");
     const LIB: &str = include_str!("../lib.rs");
+    const SRC: &str = include_str!("native.rs");
 
     #[test]
     fn the_mapped_branch_is_taken_only_under_the_door_option() {
@@ -1544,15 +1806,29 @@ mod day44_census {
         assert!(
             MODEL.contains("the door's mapped expert banks do not cover a split stacked tensor")
         );
-        // Only the gate binaries set the option, from the parsed door, before the model loads.
-        let set = "e.set_expert_host_mapped(expert_bank.is_some());";
-        assert_eq!(RUN_GEN.matches(set).count(), 1);
-        assert_eq!(RUN_SPEC.matches(set).count(), 1);
+        // Only the gate binaries set the option, through the door's plan (day 88), before the
+        // model loads; the plan sets it on only for a qualified artifact the door will hold.
+        let plan = ".plan_expert_door(";
+        assert_eq!(RUN_GEN.matches(plan).count(), 1);
+        assert_eq!(RUN_SPEC.matches(plan).count(), 1);
         for (name, src) in [("run_gen", RUN_GEN), ("run_spec", RUN_SPEC)] {
-            let at = src.find(set).unwrap();
-            let load = src.find("HybridModel::load").unwrap();
-            assert!(at < load, "{name} sets the option after a load");
+            assert_eq!(src.matches("set_expert_host_mapped").count(), 0, "{name}");
+            let at = src.find(plan).unwrap();
+            let load = src[at..].find("HybridModel::load").map(|n| n + at).unwrap();
+            assert!(at < load, "{name} plans the door after a load");
         }
+        let code = &SRC[..SRC.find("#[cfg(test)]").unwrap()];
+        let body = &code[code.find("pub fn plan_expert_door(").unwrap()..];
+        let body = &body[..body.find("pub fn install_expert_door<").unwrap()];
+        assert_eq!(
+            body.matches("self.set_expert_host_mapped(true);").count(),
+            1
+        );
+        assert_eq!(
+            body.matches("self.set_expert_host_mapped(false);").count(),
+            1
+        );
+        assert_eq!(code.matches("set_expert_host_mapped(").count(), 2);
         assert_eq!(LIB.matches("fn set_expert_host_mapped").count(), 1);
         assert!(LIB.contains("expert_host_mapped: std::sync::atomic::AtomicBool::new(false),"));
     }
@@ -1971,29 +2247,148 @@ mod day49_record_pass {
 }
 
 #[cfg(test)]
-mod day76_pool_chunks {
-    use super::pool_chunks;
+mod day88_qualify {
+    //! Day 88 (`research/spill-c-20260919/DAY88.md` section 3): the qualification's decision over a
+    //! file (a length mismatch is off before any read, a digest mismatch is off, the process's
+    //! refusals each off with its reason, the bank and the fit per catalog) and the prefetch's
+    //! decision table.
+    use super::*;
+    use std::io::Write as _;
 
-    /// Every buffer index lands in exactly one allocation at the offset `take` computes, every
-    /// allocation holds whole buffers, none exceeds the chunk unless one buffer does.
+    fn fixture(name: &str, bytes: &[u8]) -> (Arc<File>, String) {
+        let path = std::env::temp_dir().join(format!("day88-{}-{name}", std::process::id()));
+        std::fs::File::create(&path)
+            .unwrap()
+            .write_all(bytes)
+            .unwrap();
+        let file = Arc::new(File::open(&path).unwrap());
+        std::fs::remove_file(&path).unwrap();
+        let digest: [u8; 32] = Sha256::digest(bytes).into();
+        (file, hex(&digest))
+    }
+    fn inputs<'a>(entries: &'a [QualifiedEntry], meminfo: &'a str) -> QualifyInputs<'a> {
+        QualifyInputs {
+            shards: 1,
+            cache_on: true,
+            pp_split: false,
+            entries,
+            meminfo,
+            with_mtp: false,
+            host_bytes: None,
+        }
+    }
+    const MEMINFO: &str = "MemTotal: 100 kB\nMemAvailable:   4000 kB\n";
+
     #[test]
-    fn chunks_cover_every_buffer_once_within_the_chunk() {
-        for (capacity, count, chunk) in [
-            (860_160usize, 30_720 + 90, 268_435_456usize),
-            (1_000, 7, 3_000),
-            (1_000, 7, 999),
-            (4_096, 1, 1 << 30),
-            (4_096, 3, 4_096),
-        ] {
-            let (per_chunk, buffers) = pool_chunks(capacity, count, chunk);
-            assert_eq!(buffers.iter().sum::<usize>(), count);
-            assert!(buffers.iter().all(|&n| n >= 1 && n <= per_chunk));
-            assert!(buffers[..buffers.len() - 1].iter().all(|&n| n == per_chunk));
-            assert!(per_chunk * capacity <= chunk || per_chunk == 1);
-            for index in 0..count {
-                let (allocation, slot) = (index / per_chunk, index % per_chunk);
-                assert!(allocation < buffers.len() && slot < buffers[allocation]);
-            }
+    fn the_qualification_reads_identity_then_fit() {
+        let bytes: Vec<u8> = (0..70_000u32).map(|i| (i * 7 + 3) as u8).collect();
+        let (file, sha) = fixture("q", &bytes);
+        let sha: &'static str = Box::leak(sha.into_boxed_str());
+        let entries = [QualifiedEntry {
+            sha,
+            len: bytes.len() as u64,
+            bank_trunk: 1_000,
+            bank_with_mtp: 5_000_000,
+        }];
+        // 4000 kB available: a ceiling of 3 MiB less a quarter, 3,072,000 bytes.
+        let ceiling = 4000 * 1024 / 4 * 3;
+        let Qualification::Qualified(q) = qualify_file(&file, inputs(&entries, MEMINFO)).unwrap()
+        else {
+            panic!("the fixture is qualified")
+        };
+        assert_eq!(q.sha256_hex(), sha);
+        assert_eq!((q.ceiling, q.whole_bank, q.fits), (ceiling, 1_000, true));
+        // The MTP catalog's bank does not fit; a requested budget is what must fit.
+        let with_mtp = QualifyInputs {
+            with_mtp: true,
+            ..inputs(&entries, MEMINFO)
+        };
+        let Qualification::Qualified(q) = qualify_file(&file, with_mtp).unwrap() else {
+            panic!()
+        };
+        assert_eq!((q.whole_bank, q.fits), (5_000_000, false));
+        let small = QualifyInputs {
+            with_mtp: true,
+            host_bytes: Some(2_000_000),
+            ..inputs(&entries, MEMINFO)
+        };
+        let Qualification::Qualified(q) = qualify_file(&file, small).unwrap() else {
+            panic!()
+        };
+        assert!(q.fits);
+        // A different digest at the same length is off; an unreadable MemAvailable is off.
+        let wrong = [QualifiedEntry {
+            sha: APPROVED_SHA,
+            len: bytes.len() as u64,
+            bank_trunk: 1,
+            bank_with_mtp: 1,
+        }];
+        assert_eq!(
+            qualify_file(&file, inputs(&wrong, MEMINFO)).unwrap(),
+            Qualification::Off("not a qualified artifact (its digest)".to_owned())
+        );
+        assert!(matches!(
+            qualify_file(&file, inputs(&entries, "MemTotal: 1 kB\n")).unwrap(),
+            Qualification::Off(why) if why.starts_with("host memory unknown")
+        ));
+    }
+
+    #[test]
+    fn each_refusal_is_off_with_its_reason_before_any_read() {
+        let (file, _) = fixture("r", b"not the artifact");
+        let entries = [QualifiedEntry {
+            sha: APPROVED_SHA,
+            len: 18_209_036_576,
+            bank_trunk: 1,
+            bank_with_mtp: 1,
+        }];
+        let off = |inputs: QualifyInputs<'_>| match qualify_file(&file, inputs).unwrap() {
+            Qualification::Off(why) => why,
+            Qualification::Qualified(_) => panic!("qualified"),
+        };
+        assert_eq!(off(inputs(&entries, MEMINFO)), "not a qualified artifact");
+        assert_eq!(
+            off(QualifyInputs {
+                cache_on: false,
+                ..inputs(&entries, MEMINFO)
+            }),
+            "the MoE slot cache is off (MEMRA_MOE_CACHE=0)"
+        );
+        assert_eq!(
+            off(QualifyInputs {
+                shards: 2,
+                ..inputs(&entries, MEMINFO)
+            }),
+            "a sharded artifact"
+        );
+        assert_eq!(
+            off(QualifyInputs {
+                pp_split: true,
+                ..inputs(&entries, MEMINFO)
+            }),
+            "a PP stage split (MEMRA_PP_STAGES)"
+        );
+    }
+
+    #[test]
+    fn the_qualified_entry_is_the_approved_artifact() {
+        assert_eq!(QUALIFIED.len(), 1);
+        assert_eq!(QUALIFIED[0].sha, APPROVED_SHA);
+        assert!(QUALIFIED[0].bank_trunk < QUALIFIED[0].bank_with_mtp);
+    }
+
+    #[test]
+    fn the_prefetch_decision_table() {
+        use crate::hybrid_forward::moe_prefetch_decision as d;
+        for default in [false, true] {
+            assert_eq!(d(None, default), default);
+            assert!(d(Some("1"), default));
+            assert!(!d(Some("0"), default));
+            assert!(
+                !d(Some("3"), default),
+                "a predictor depth leaves this prefetch off"
+            );
+            assert!(!d(Some(""), default));
         }
     }
 }
@@ -2001,8 +2396,9 @@ mod day76_pool_chunks {
 #[cfg(test)]
 mod day50_census {
     //! DAY50: a pending prefetch is consumed only after the compute stream waits on its copy,
-    //! the door's prefetch takes its lease through the proxy, and only the door's installer
-    //! turns the forward's prefetch condition on.
+    //! the door's prefetch takes its lease through the proxy. Day 88: the forward's prefetch
+    //! condition is `MEMRA_MOE_PREFETCH`'s one reading on both paths (on by default for a
+    //! qualified artifact), and the installer no longer turns it on.
     const CACHE: &str = include_str!("../moe_cache.rs");
     const FORWARD: &str = include_str!("../hybrid_forward.rs");
     const SRC: &str = include_str!("native.rs");
@@ -2027,13 +2423,11 @@ mod day50_census {
         assert!(prefetch.contains("stage_on_copy_stream(e, payload, &mut self.slots[slot])"));
         assert!(!prefetch.contains("bank.host_resident(local)"));
         assert!(!prefetch.contains("bank.with_bytes_at("));
-        assert_eq!(FORWARD.matches("e.expert_bank_prefetch()").count(), 1);
+        assert_eq!(FORWARD.matches("&& moe_prefetch_enabled(e)").count(), 1);
+        assert_eq!(FORWARD.matches("expert_bank_prefetch").count(), 0);
         // Count in this file's code, not in these tests' own literals.
         let code = &SRC[..SRC.find("#[cfg(test)]").unwrap()];
-        assert_eq!(
-            code.matches("self.set_expert_bank_prefetch(true);").count(),
-            1
-        );
+        assert_eq!(code.matches("set_expert_bank_prefetch").count(), 0);
     }
 }
 
@@ -2265,6 +2659,7 @@ mod day61_profile {
                 clock: None,
                 fill: None,
                 trace: String::with_capacity(TRACE_CHUNK + 256),
+                traced: true,
             },
             entries,
             ids,
@@ -2357,7 +2752,7 @@ mod day61_profile {
                 "{line} (fresh slot {fresh})"
             );
             traced.trace.clear();
-            traced.finish(demand).unwrap();
+            traced.finish(&demand).unwrap();
         };
         for local in ids.keys() {
             check(&mut s.traced, *local, false);
@@ -2366,6 +2761,101 @@ mod day61_profile {
             check(&mut s.traced, local, true);
         }
         drop(s);
+        std::fs::remove_file(path).ok();
+    }
+
+    /// Day 92 (I25a, `research/spill-c-20260919/DAY92.md`): an untraced door over the same bank takes the same demands
+    /// as the traced one, over the fill (every record a host miss) and routed singles and groups of host hits: the same
+    /// leased records and bytes, the same SLRU slot for every demanded record and the same cached records after every
+    /// finish. The traced one writes one day-48 line per demanded record, the untraced one none.
+    #[test]
+    fn an_untraced_door_demands_as_the_traced_one() {
+        let (path, bytes) = artifact("untraced");
+        let mut a = stack(&path, &bytes, false);
+        let mut b = stack(&path, &bytes, false);
+        b.traced.traced = false;
+        b.traced.trace = String::new();
+        let ids = a.ids.clone();
+        // A heap `Vec` or a pooled buffer, the bytes either way (as the proxy's `lend` reads them).
+        let payload = |lease: &BankLease| match lease.resource::<Vec<u8>>() {
+            Ok(v) => v.clone(),
+            Err(_) => lease
+                .resource::<Box<dyn HostBuffer>>()
+                .unwrap()
+                .as_slice()
+                .to_vec(),
+        };
+        let same = |a: &mut Stack, b: &mut Stack, blocks: &[(ExpertDispatchId, usize)]| {
+            let (da, db) = if blocks.len() == 1 {
+                let (x, y) = (
+                    a.traced.demand(blocks[0].0, blocks[0].1).unwrap(),
+                    b.traced.demand(blocks[0].0, blocks[0].1).unwrap(),
+                );
+                (
+                    ExpertDemands {
+                        ticket: x.ticket,
+                        leases: vec![x.lease],
+                    },
+                    ExpertDemands {
+                        ticket: y.ticket,
+                        leases: vec![y.lease],
+                    },
+                )
+            } else {
+                (
+                    a.traced.demand_many(blocks).unwrap(),
+                    b.traced.demand_many(blocks).unwrap(),
+                )
+            };
+            assert_eq!(da.leases.len(), db.leases.len());
+            for (x, y) in da.leases.iter().zip(&db.leases) {
+                assert_eq!(x.id(), y.id());
+                assert_eq!(payload(x), payload(y));
+            }
+            assert_eq!(a.traced.trace.lines().count(), blocks.len());
+            assert!(b.traced.trace.is_empty());
+            a.traced.trace.clear();
+            if blocks.len() == 1 {
+                let one = |d: ExpertDemands| ExpertDemand {
+                    ticket: d.ticket,
+                    lease: d.leases.into_iter().next().unwrap(),
+                };
+                a.traced.finish(&one(da)).unwrap();
+                b.traced.finish(&one(db)).unwrap();
+            } else {
+                a.traced.finish_many(&da).unwrap();
+                b.traced.finish_many(&db).unwrap();
+            }
+            for &(local, _) in blocks {
+                let id = &ids[&local];
+                assert_eq!(
+                    a.traced.inner.bank().slru_policy().unwrap().resident(id),
+                    b.traced.inner.bank().slru_policy().unwrap().resident(id)
+                );
+            }
+            assert_eq!(
+                a.traced.inner.bank().cached_records(),
+                b.traced.inner.bank().cached_records()
+            );
+        };
+        for &local in ids.keys() {
+            same(&mut a, &mut b, &[(local, LEN as usize)]);
+        }
+        let routed = order();
+        let mut k = 0;
+        while k < 12_000 {
+            let n = 1 + k % MAX_GROUP;
+            let mut blocks: Vec<(ExpertDispatchId, usize)> = Vec::new();
+            for &local in routed.iter().skip(k).take(n) {
+                if !blocks.iter().any(|&(l, _)| l == local) {
+                    blocks.push((local, LEN as usize));
+                }
+            }
+            same(&mut a, &mut b, &blocks);
+            k += n;
+        }
+        drop(a);
+        drop(b);
         std::fs::remove_file(path).ok();
     }
 
@@ -2560,7 +3050,7 @@ mod day61_profile {
         let mut s = stack(&path, &bytes, true);
         for local in ids.keys() {
             let demand = s.traced.inner.demand(*local, LEN as usize).unwrap();
-            s.traced.inner.finish(demand).unwrap();
+            s.traced.inner.finish(&demand).unwrap();
         }
         let before = *s.traced.inner.bank().stage_times().unwrap();
         let p3 = median_repeat(|| {
@@ -2570,7 +3060,7 @@ mod day61_profile {
                 let a = Instant::now();
                 let demand = s.traced.inner.demand(local, LEN as usize).unwrap();
                 let b = Instant::now();
-                s.traced.inner.finish(demand).unwrap();
+                s.traced.inner.finish(&demand).unwrap();
                 let c = Instant::now();
                 part[0] += ns(b - a);
                 part[1] += ns(c - b);
@@ -2615,7 +3105,7 @@ mod day61_profile {
                 let a = Instant::now();
                 std::hint::black_box(demand.lease.clone());
                 part[0] += ns(a.elapsed());
-                s.traced.inner.finish(demand).unwrap();
+                s.traced.inner.finish(&demand).unwrap();
             }
             part[1] = ns(started.elapsed());
             part

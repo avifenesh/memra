@@ -1,0 +1,20 @@
+# DAY93 I26 gates (DAY89 section 2's narrowed list): 2026-09-27T23:45:23Z, tree bd4c722234 plus the I26 diff
+## cargo test -p memra-tier (day93's fixture recorded at I25 and I24's day90 fixture both reproduce exactly; day85's twin-bank equivalence; the bound's both-branch test)
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.95s
+test result: ok. 99 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 13.75s
+test result: ok. 106 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 53 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.75s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+## cargo test -p memra-tier --test bank day93 (after the bound test landed)
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 99 filtered out; finished in 1.54s
+## cargo test -p memra-engine --lib banked_native
+test result: ok. 22 passed; 0 failed; 1 ignored; 0 measured; 636 filtered out; finished in 17.35s
+## cargo test -p memra-kv --lib
+test result: ok. 84 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+## cargo clippy -p memra-tier --all-targets -- -D warnings: rc=0
+## cargo clippy -p memra-engine --lib --tests -- -D warnings: rc=0
+## cargo fmt --all -- --check: rc=0
+## moe_cache.rs untouched: 0 files changed

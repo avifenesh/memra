@@ -1,0 +1,64 @@
+box start 2026-09-27T19:36:59Z tree 64326c89c74b23becb4d6a500273a5c30502bdd8
+name, driver_version, memory.total [MiB], power.limit [W], clocks.max.sm [MHz]
+NVIDIA RTX PRO 6000 Blackwell Workstation Edition, 595.91.07, 97887 MiB, 600.00 W, 3090 MHz
+
+==============NVSMI LOG==============
+
+Timestamp                                              : Sun Sep 27 19:37:00 2026
+Driver Version                                         : 595.91.07
+CUDA Version                                           : 13.2
+
+Attached GPUs                                          : 1
+GPU 00000000:01:00.0
+    Performance State                                  : P8
+    Clocks Event Reasons
+        Idle                                           : Not Active
+        Applications Clocks Setting                    : Not Active
+        SW Power Cap                                   : Not Active
+        HW Slowdown                                    : Not Active
+            HW Thermal Slowdown                        : Not Active
+            HW Power Brake Slowdown                    : Not Active
+        Sync Boost                                     : Not Active
+        SW Thermal Slowdown                            : Not Active
+        Display Clock Setting                          : Not Active
+    Clocks Event Reasons Counters
+        SW Power Capping                               : 200279 us
+        Sync Boost                                     : 0 us
+        SW Thermal Slowdown                            : 0 us
+        HW Thermal Slowdown                            : 0 us
+        HW Power Braking                               : 0 us
+    Sparse Operation Mode                              : N/A
+
+32
+CPU(s):                                  32
+Model name:                              AMD Ryzen 9 9950X 16-Core Processor
+Thread(s) per core:                      2
+Socket(s):                               1
+CPU(s) scaling MHz:                      27%
+MemTotal:       195184764 kB
+MemAvailable:   188203684 kB
+SwapTotal:      41943032 kB
+Filesystem      Size  Used Avail Use% Mounted on
+overlay         200G   66G  135G  33% /
+overlay         200G   66G  135G  33% /
+/root/artifacts/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf: OK
+label=p88 sha=0155bc69f start=2026-09-27T19:37:07Z
+head=0155bc69f4b2b654f3b99842fdd1e8dd054571cc
+Cuda compilation tools, release 13.1, V13.1.115
+Build cuda_13.1.r13.1/compiler.37061995_0
+cargo 1.97.1 (c980f4866 2026-06-30)
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 0.04s
+binary=run-gen-p88 tree=0155bc69f4b2b654f3b99842fdd1e8dd054571cc sha256=00bad0533e84ea7d8344975a5d1a7819bff423aa7b3ec20384c4f4e6efc4e920
+binary=run-spec-p88 tree=0155bc69f4b2b654f3b99842fdd1e8dd054571cc sha256=fcf3c25b138659dcb07b8628e11b242de60936a962a19a7d192b4da5f99fa6cc
+end=2026-09-27T19:37:07Z
+rc=0
+binary=run-gen-p88 tree=0155bc69f4b2b654f3b99842fdd1e8dd054571cc sha256=00bad0533e84ea7d8344975a5d1a7819bff423aa7b3ec20384c4f4e6efc4e920
+binary=run-spec-p88 tree=0155bc69f4b2b654f3b99842fdd1e8dd054571cc sha256=fcf3c25b138659dcb07b8628e11b242de60936a962a19a7d192b4da5f99fa6cc
+BUILDS-DONE 2026-09-27T19:37:07Z
+cpu cap: taskset -c 0-11 (no systemd scope on this box)
+promo-res rc=0 2026-09-27T19:40:23Z
+promo-res validate rc=0
+reader rc=0
+box done 2026-09-27T19:40:23Z

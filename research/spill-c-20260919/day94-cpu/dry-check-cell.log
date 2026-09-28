@@ -1,0 +1,17 @@
+== rc=0
+== calls: 92
+     10 run-gen-i24 cpus=0-11 env=[MEMRA_MOE_RESIDENT=0 MEMRA_MOE_SLOTS=9986 MEMRA_NGEN=32 ]
+     10 run-gen-i25 cpus=0-11 env=[MEMRA_EXPERTS_VIA_TIER=0 MEMRA_MOE_RESIDENT=0 MEMRA_MOE_SLOTS=9986 MEMRA_NGEN=32 ]
+     10 run-gen-i25 cpus=0-11 env=[MEMRA_EXPERTS_VIA_TIER=0 MEMRA_MOE_RESIDENT=0 MEMRA_MOE_SLOTS=9986 MEMRA_NGEN=32 ] --moe-dispatch-clock
+     10 run-gen-i25 cpus=0-11 env=[MEMRA_MOE_RESIDENT=0 MEMRA_MOE_SLOTS=9986 MEMRA_NGEN=32 ]
+     10 run-gen-i25 cpus=0-11 env=[MEMRA_MOE_RESIDENT=0 MEMRA_MOE_SLOTS=9986 MEMRA_NGEN=32 ] --moe-dispatch-clock
+     10 run-gen-i25 cpus=0-3 env=[MEMRA_EXPERTS_VIA_TIER=0 MEMRA_MOE_RESIDENT=0 MEMRA_MOE_SLOTS=9986 MEMRA_NGEN=32 ]
+     10 run-gen-i25 cpus=0-3 env=[MEMRA_EXPERTS_VIA_TIER=0 MEMRA_MOE_RESIDENT=0 MEMRA_MOE_SLOTS=9986 MEMRA_NGEN=32 ] --moe-dispatch-clock
+     10 run-gen-i25 cpus=0-3 env=[MEMRA_MOE_RESIDENT=0 MEMRA_MOE_SLOTS=9986 MEMRA_NGEN=32 ]
+      2 run-gen-i25 cpus=0-3 env=[MEMRA_MOE_RESIDENT=0 MEMRA_MOE_SLOTS=9986 MEMRA_NGEN=32 ] --expert-bank-trace
+     10 run-gen-i25 cpus=0-3 env=[MEMRA_MOE_RESIDENT=0 MEMRA_MOE_SLOTS=9986 MEMRA_NGEN=32 ] --moe-dispatch-clock
+== order: o1-wn-r1 o1-wl-r1 o1-pn-r1 o1-pl-r1 o1-wnc-r1 o1-wlc-r1 o1-pnc-r1 o1-plc-r1 o1-wo-r1 o1-wn-r2 o1-wl-r2 o1-pn-r2 o1-pl-r2 o1-wnc-r2 o1-wlc-r2 o1-pnc-r2 o1-plc-r2 o1-wo-r2 o1-wn-r3 o1-wl-r3 o1-pn-r3 o1-pl-r3 o1-wnc-r3 o1-wlc-r3 o1-pnc-r3 o1-plc-r3 o1-wo-r3 o1-wn-r4 o1-wl-r4 o1-pn-r4 o1-pl-r4 o1-wnc-r4 o1-wlc-r4 o1-pnc-r4 o1-plc-r4 o1-wo-r4 o1-wn-r5 o1-wl-r5 o1-pn-r5 o1-pl-r5 o1-wnc-r5 o1-wlc-r5 o1-pnc-r5 o1-plc-r5 o1-wo-r5 o2-wo-r1 o2-plc-r1 o2-pnc-r1 o2-wlc-r1 o2-wnc-r1 o2-pl-r1 o2-pn-r1 o2-wl-r1
+== exits:      92 0 
+== cpu files:      50 0-11      42 0-3 
+wide=0-11
+pcores=0-3

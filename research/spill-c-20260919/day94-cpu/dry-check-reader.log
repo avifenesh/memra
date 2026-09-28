@@ -1,0 +1,26 @@
+DAY94 CORES rig=synthetic wide=0-11 pcores=0-7 wide_non_p=[8, 9, 10, 11]
+DAY94 TRACED t-pnt-r1 rc=0 host demand sequence=4bdc2610c3534e42 lines=22077
+DAY94 TRACED t-pnt-r2 rc=0 host demand sequence=4bdc2610c3534e42 lines=22077
+DAY94 CHECKS rig=synthetic runs=90 integrity=ok
+DAY88 WHERE285 ADMISSIBILITY rig=synthetic ceiling=0.005 max_iqr_gen=0.0010 max_iqr_window=0.0010 failing=[] -> admissible
+DAY94 gen-only decode medians (N=10 each): wn=0.314 wl=0.311 pn=0.314 pl=0.311 wnc=0.314 wlc=0.311 pnc=0.314 plc=0.311 wo=0.314
+DAY94 steady window medians (N=10 each): wn=0.286 wl=0.286 pn=0.286 pl=0.286 wnc=0.286 wlc=0.286 pnc=0.286 plc=0.286 wo=0.286
+DAY94 GAP wide (naked_vs_legacy) gen-only decode: pooled=+0.0030 o1=+0.0030 o2=+0.0030 noise=0.0010 -> loses
+DAY94 GAP pinned (naked_vs_legacy) gen-only decode: pooled=+0.0030 o1=+0.0030 o2=+0.0030 noise=0.0010 -> loses
+DAY94 PIN door (pinned_vs_wide, beside) gen-only decode: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0000 -> flat
+DAY94 PIN legacy (pinned_vs_wide, beside) gen-only decode: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0010 -> flat
+DAY94 I25_vs_I24 (beside) gen-only decode: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0000 -> flat
+DAY94 GAP wide (naked_vs_legacy) steady window: pooled=+0.0000 o1=+0.0010 o2=+0.0000 noise=0.0010 -> matches
+DAY94 GAP pinned (naked_vs_legacy) steady window: pooled=+0.0000 o1=+0.0010 o2=+0.0000 noise=0.0010 -> matches
+DAY94 PIN door (pinned_vs_wide, beside) steady window: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0010 -> flat
+DAY94 PIN legacy (pinned_vs_wide, beside) steady window: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0000 -> flat
+DAY94 I25_vs_I24 (beside) steady window: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0010 -> flat
+DAY94 CLOCK wnc generate N=10 (us per token, medians): dispatch=- prefetch=- pf_demand=- pf_resident=- pf_retire=- pf_stage=-
+DAY94 CLOCK wlc generate N=10 (us per token, medians): dispatch=- prefetch=- pf_demand=- pf_resident=- pf_retire=- pf_stage=-
+DAY94 CLOCK pnc generate N=10 (us per token, medians): dispatch=- prefetch=- pf_demand=- pf_resident=- pf_retire=- pf_stage=-
+DAY94 CLOCK plc generate N=10 (us per token, medians): dispatch=- prefetch=- pf_demand=- pf_resident=- pf_retire=- pf_stage=-
+DAY94 CLOCK wnc window N=10 (us per token, medians): dispatch=- prefetch=- pf_demand=- pf_resident=- pf_retire=- pf_stage=-
+DAY94 CLOCK wlc window N=10 (us per token, medians): dispatch=- prefetch=- pf_demand=- pf_resident=- pf_retire=- pf_stage=-
+DAY94 CLOCK pnc window N=10 (us per token, medians): dispatch=- prefetch=- pf_demand=- pf_resident=- pf_retire=- pf_stage=-
+DAY94 CLOCK plc window N=10 (us per token, medians): dispatch=- prefetch=- pf_demand=- pf_resident=- pf_retire=- pf_stage=-
+DAY94 VERDICT rig=synthetic -> pinning_does_not (gap_wide=loses gap_pinned=loses)

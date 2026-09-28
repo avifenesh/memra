@@ -1,10 +1,17 @@
 # MoeSlotCache door: experts-via-tier owner proxy
 
-Status: landed, default OFF, CLI door. Decide-by: **2026-10-04** (lead ruling 8,
-`research/spill-lead-20260919/HANDOVER-20260920.md`: a CLI door needs no
-`docs/FLAGS.md` row but carries its decide-by in its design doc; 14 days after the
-day-nine seal on 2026-09-20). Every cell behind it is `executed-not-qualified`
-development evidence on one card class; nothing here is a support state.
+Status (day 88, 2026-09-27): **promoted** by the owner's ruling on C1(c) ("accept all clear ones. A.
+promote."). Phase 1 (`DAY88.md`, `docs/decisions/MOE-SPILL-DOOR-DEFAULT.md`): in `run-gen` and `run-spec` the
+door is the default expert-spill program, on both cards, for an artifact it is qualified on (the installer's
+qualified list, by SHA-256; one entry, the approved artifact below), with the registered host pool and the
+in-token prefetch; every other artifact runs its previous program. Rollbacks, each decide-by **2026-10-11**:
+`MEMRA_EXPERTS_VIA_TIER=0` (the legacy SLRU slot cache from pinned copies; a `docs/FLAGS.md` row),
+`--expert-bank-pool-allocated` (the `cuMemHostAlloc` pool, a CLI door carried here) and `MEMRA_MOE_PREFETCH=0`
+(the prefetch on both programs; a `docs/FLAGS.md` row). `--experts-via-tier` stays as the gate's assertion (the
+door installs or the run refuses); the budget flags stay machine config. Retired with "Removed doors" rows:
+`--expert-bank-pool-registered`, `--expert-bank-pool-pageable`, `--expert-bank-pool-chunk-bytes`. The pending
+items below are C2's remaining phases (2: the serving installer, item 6; 3: PP, item 1; 4: generality, items 2, 3
+and 5). Before day 88: landed, default OFF, a CLI door with decide-by 2026-10-04 (lead ruling 8).
 
 ## What is landed
 
@@ -45,6 +52,13 @@ step of `admit_banked`, the banked branch of `admit_native`, the owner's demand 
 `phase=close` and an `[experts-via-tier] install sha_ns= catalog_ns= records_ns= setup_ns=`
 line. No `MEMRA_*` read, no decision changes. It goes with the door. `run-gen` also prints,
 for every arm, `MoE cache STEADY-STATE window: <n> decode steps in <s>s`.
+
+Day 92 (`DAY92.md` section 1, I25a): `--expert-bank-trace` (no value, a door flag) writes the complete host demand
+trace, one `[expert-host-slru] key=... bytes= slot= hit= victim=` line per demanded record in day 48's format, that
+the gates' and cells' integrity checks read. It is set by the gates and cells that read the sequence. Without it the
+door reads no pre-demand slot and writes nothing; the demands and every answer are the same (the engine test
+`an_untraced_door_demands_as_the_traced_one`). The stage clock's owner section then prints `trace=off` in place of
+the host hit and miss counts. No `MEMRA_*` read. It goes with the door.
 
 | Surface | File | What it does |
 |---|---|---|

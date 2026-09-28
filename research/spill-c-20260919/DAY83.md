@@ -135,3 +135,7 @@ largest part is the same pair of lookups again: the traced adapter reads each de
 cost that is about 3.9 ms of `outer`'s 5.5 ms, about 70 percent (the rest: the proxy's registry entry, identity checks
 and pending insert, the fill drain, the trace's slot map). This is an estimate from the cell's own numbers and the
 source; I21's CPU gates measure it.
+
+**Note (day 88).** `day83-cpu/section0.log` as first committed held a traceback, not the table: `card-clocks.py` had
+lost its import line when it was copied from the scratch script whose run produced section 0's numbers. The import is
+restored and the log regenerated from the same receipts; its lines equal section 0's table figure for figure.

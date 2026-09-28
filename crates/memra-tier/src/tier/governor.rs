@@ -21,11 +21,12 @@ pub struct Governor {
     last_served: HashMap<Digest, u64>,
     service_sequence: u64,
     evicted_floor: u64,
-    charged_tenants: HashMap<(u64, u64), Digest>,
-    /// Outstanding charges per tenant, kept with `charged_tenants` on every reserve and
-    /// release, so `prune_fairness` reads the charged tenants in O(distinct tenants) instead of
-    /// O(outstanding charges) (a host bank of 17k cached records holds 17k charges of one tenant;
-    /// `research/spill-c-20260919/DAY43.md` section 1a).
+    /// Outstanding charges per tenant, kept on every reserve and release, so `prune_fairness`
+    /// reads the charged tenants in O(distinct tenants) instead of O(outstanding charges) (a host
+    /// bank of 17k cached records holds 17k charges of one tenant;
+    /// `research/spill-c-20260919/DAY43.md` section 1a). Day 89 (I23,
+    /// `research/spill-c-20260919/DAY89.md`): a charge's tenant rides in its own record, so no map
+    /// from lease id to tenant is kept beside it.
     charged_count: HashMap<Digest, usize>,
     next: u64,
 }
@@ -54,7 +55,6 @@ impl Governor {
             last_served: HashMap::new(),
             service_sequence: 0,
             evicted_floor: 0,
-            charged_tenants: HashMap::new(),
             charged_count: HashMap::new(),
             next: 0,
         })
@@ -180,9 +180,8 @@ impl Governor {
         }
         // Day 63 (I13 change 1): the add checked before the lease is issued, then applied in place.
         self.used.check_combine(&r.bytes, true)?;
-        let lease = self.issuer.issue(r.bytes.clone())?;
+        let lease = self.issuer.issue_for(r.bytes.clone(), r.tenant)?;
         self.used.combine_in_place(&r.bytes, true)?;
-        self.charged_tenants.insert(lease.id(), r.tenant);
         *self.charged_count.entry(r.tenant).or_insert(0) += 1;
         Ok(lease)
     }
@@ -207,9 +206,9 @@ impl BudgetGovernor for Governor {
     }
     fn release(&mut self, l: &ChargedLease) -> Result<()> {
         // Capability validation precedes accounting, including foreign/double release.
-        self.issuer.release(l)?;
+        let tenant = self.issuer.release_for(l)?;
         self.used.combine_in_place(l.bytes(), false)?;
-        if let Some(tenant) = self.charged_tenants.remove(&l.id())
+        if let Some(tenant) = tenant
             && let Some(count) = self.charged_count.get_mut(&tenant)
         {
             *count -= 1;
@@ -335,11 +334,13 @@ mod tests {
                     None => {}
                 },
             }
-            let old: HashSet<Digest> = g.charged_tenants.values().copied().collect();
+            // Day 89 (I23): the oracle is the charges this trace still holds, each tenant read from its record.
+            let held: Vec<Digest> = charges.iter().map(|c| c.tenant().unwrap()).collect();
+            let old: HashSet<Digest> = held.iter().copied().collect();
             let new: HashSet<Digest> = g.charged_count.keys().copied().collect();
             assert_eq!(old, new, "charged tenants differ at step {step}");
             for (tenant, &count) in &g.charged_count {
-                let n = g.charged_tenants.values().filter(|t| *t == tenant).count();
+                let n = held.iter().filter(|t| *t == tenant).count();
                 assert_eq!(n, count, "charge count differs at step {step}");
             }
         }

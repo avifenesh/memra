@@ -105,3 +105,36 @@ GPU batteries, lane B's DAY46, DAY50 stage 0, DAY46C and DAY48), about 6.5 h of 
 started 2026-09-27T06:29Z on the tree `ce026510b` (host uptime 161850 s), 37 minutes after the last sitting ended (inside
 the one-hour gap), and the chain starts `slow86` right after the load ends (about 13:25Z) with no gap. A sitting that
 runs between the load's runs (lane B's DAY44 rerun, if it comes) counts toward the 12 hours too.
+
+## 2. The cell `slow86` on BOX43 (run by the lead as registered; `pro-single-day86-9950x/`, `pro-single-day86-load/`)
+
+BOX43: a Ryzen 9 9950X with one RTX PRO 6000 WS, 184 GB, driver 580.65.06. The host condition as section 1c set it:
+306 minutes of sittings before the load; the load (`D86_LOAD_HOURS=6.9`) 06:29Z to 13:23Z, with integ71's GPU fix run
+(07:06Z to 08:19Z), integ72's GPU run 1 (09:43Z to 10:23Z) and lane B's DAY48 rerun (12:41Z to 12:56Z) between its
+runs; `slow86` from 13:23:29Z (host uptime 186697 s), no gap, to 13:38:50Z (`lead-extra/c13-chain.out`). The chain tree
+`ce026510b`; the builds name `tree=8efea3a54...`, `tree=b555b4141...` and `tree=4b378a064...`, each `rc=0`. Receipts:
+229 and 1190 files `OK` against the lead's box manifests (`LEAD-MANIFEST.sha256`, re-checked here), ELFs by hash.
+Regime: 38 to 48 C, SM median 2850 MHz, N=627 busy samples of 3140. Verbatim (`slow86/reading.log`):
+
+- `DAY86 SLOW CHECKS rig=pro-single runs=50 arms=ref,i20,i21,i22,i22r integrity=ok`
+- `DAY86 SLOW rig=pro-single ref_median=0.319 mark=0.349 ref=1/10 (o1 0, o2 1) i20=1/10 (o1 0, o2 1) i21=1/10 (o1 0,
+  o2 1) i22=0/10 (o1 0, o2 0) i22r=0/10 (o1 0, o2 0)`
+- `DAY86 VERDICT rig=pro-single integrity=ok -> not_reproduced (default-pool door arms slow=2)`
+
+**Read as registered: `not_reproduced`; it decides nothing.** Whether I21 or I22 makes C12's slow state more frequent
+stays open.
+
+**What the three marked runs are, deciding nothing.** They are not C12's state. They are the last round of order 2
+(`o2-i21-r5` 2.598 s, `o2-i20-r5` 2.581 s, `o2-ref-r5` 3.740 s, 13:35Z to 13:38Z), ten times the host's 0.319 s rather
+than 50 ms behind it, and REF is among them, which C12's state never touched. The load's table shows the same event
+once an hour: 15 of its 1184 door runs (0 failed, median 0.321 s; the driver's count of 1185 includes one lock retry) ran 0.376 to 4.888 s, in bursts at 06:34, 08:31 to
+08:33, 09:34, 10:31 to 10:32, 11:31 to 11:33 and 12:34 to 12:36, some with about two million page migrations failing
+inside the run and some with none. So BOX43 carries an hourly host-wide stall at about half past the hour, and in about
+12 hours of sittings and 1234 door runs it never showed C12's signature (the door arms bimodal by about 50 ms over 32
+tokens, REF steady, as DAY84 read on BOX31).
+
+**Registered now, before any further cell: where the question goes next.** The next 9950X-class sitting of any lane
+whose cell reads C12's signature (door arms bimodal by about 50 ms over 32 tokens with REF steady, `DAY84.md` section
+3a's pattern) runs `slow86` on that same host before the host is released, with no load needed (the host is in the
+state). Until such a host appears, the question stays open and nothing is reverted; the registered pool, which cleared
+the state on the 285K class, stays the owner's question (`DAY80.md` section 4a).

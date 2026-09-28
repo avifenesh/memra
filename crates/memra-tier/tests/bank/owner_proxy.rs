@@ -18,7 +18,7 @@ impl ExpertDispatchBank for CheckedBank {
         self.calls.borrow_mut().push("stage/publish");
         self.bank.demand(id, bytes)
     }
-    fn finish(&mut self, demand: ExpertDemand) -> Result<()> {
+    fn finish(&mut self, demand: &ExpertDemand) -> Result<()> {
         assert_eq!(thread::current().id(), self.thread);
         self.calls.borrow_mut().push("finish");
         if std::mem::take(&mut self.fail_finish) {

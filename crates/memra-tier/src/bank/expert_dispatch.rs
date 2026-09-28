@@ -54,7 +54,9 @@ pub struct ExpertDemands {
 pub trait ExpertDispatchBank {
     fn validate(&self, local: ExpertDispatchId, bytes: usize) -> Result<()>;
     fn demand(&mut self, local: ExpertDispatchId, bytes: usize) -> Result<ExpertDemand>;
-    fn finish(&mut self, demand: ExpertDemand) -> Result<()>;
+    /// Day 90 (I24, `research/spill-c-20260919/DAY90.md`): the demand by reference; its owner keeps it until the finish
+    /// succeeds and drops it after, so a failed finish leaves it for a retry with no copy made.
+    fn finish(&mut self, demand: &ExpertDemand) -> Result<()>;
     /// The log-only stage clock's `key=value` line, `None` when no clock is installed
     /// (the `--expert-bank-stages` diagnostic; `research/spill-c-20260919/DAY40.md`).
     fn stage_report(&self) -> Option<String> {
@@ -70,7 +72,7 @@ pub trait ExpertDispatchBank {
         Err(Error::Unsupported)
     }
     /// Day 64 (I15): finish a grouped demand's ticket, every lease at once.
-    fn finish_many(&mut self, _demands: ExpertDemands) -> Result<()> {
+    fn finish_many(&mut self, _demands: &ExpertDemands) -> Result<()> {
         Err(Error::Unsupported)
     }
 }
@@ -208,6 +210,11 @@ impl<H: Hotness<ExpertDomain>, R: ExactReader> SlruExpertDispatch<H, R> {
             .ok_or(Error::Incomplete)?
             .resident_at(position))
     }
+    /// Day 93 (`research/spill-c-20260919/DAY93.md` section 3): the bank's fault-injection door, forwarded.
+    #[doc(hidden)]
+    pub fn inject_finish_failure(&mut self) {
+        self.bank.inject_finish_failure();
+    }
     pub fn bank(&self) -> &BankService<ExpertDomain, H, R> {
         &self.bank
     }
@@ -245,6 +252,15 @@ impl<H: Hotness<ExpertDomain>, R: ExactReader> ExpertDispatchBank for SlruExpert
         self.validated(local, bytes).map(|_| ())
     }
     fn demand(&mut self, local: ExpertDispatchId, bytes: usize) -> Result<ExpertDemand> {
+        // Day 93 (I26, `research/spill-c-20260919/DAY93.md`): a host hit takes no ticket; anything else stages one.
+        let position = self.validated(local, bytes)?.1;
+        if let Some((ticket, mut leases)) =
+            self.bank
+                .stage_hit_at(&[position], self.epochs, &mut self.request)?
+        {
+            let lease = leases.pop().ok_or(Error::Incomplete)?;
+            return Ok(ExpertDemand { ticket, lease });
+        }
         // Day 61 (I11 change 4): the id validated is the id staged; one lookup. Day 85 (I22): staged with
         // its catalog position.
         let (id, position) = self.validated(local, bytes)?;
@@ -291,10 +307,10 @@ impl<H: Hotness<ExpertDomain>, R: ExactReader> ExpertDispatchBank for SlruExpert
             .slru_policy()
             .is_some_and(|policy| policy.resident_at(position).is_some()))
     }
-    fn finish(&mut self, demand: ExpertDemand) -> Result<()> {
-        // Day 63 (I13 change 3): the three retire-side calls on one pending lookup.
+    fn finish(&mut self, demand: &ExpertDemand) -> Result<()> {
+        // Day 63 (I13 change 3): the three retire-side calls on one pending lookup. Day 90 (I24): the demand is its
+        // owner's; a release decision reads pins, views and pending tickets, never how many aliases a lease has.
         self.bank.finish_ticket(&demand.ticket)?;
-        drop(demand);
         self.bank.collect_evicted()
     }
     fn demand_many(&mut self, blocks: &[(ExpertDispatchId, usize)]) -> Result<ExpertDemands> {
@@ -303,6 +319,17 @@ impl<H: Hotness<ExpertDomain>, R: ExactReader> ExpertDispatchBank for SlruExpert
         }
         if blocks.len() > MAX_GROUP {
             return Err(Error::Capacity);
+        }
+        // Day 93 (I26): every block a host hit takes no ticket; anything else stages one, as before.
+        let mut at = [0usize; MAX_GROUP];
+        for (slot, &(local, bytes)) in at.iter_mut().zip(blocks) {
+            *slot = self.validated(local, bytes)?.1;
+        }
+        if let Some((ticket, leases)) =
+            self.bank
+                .stage_hit_at(&at[..blocks.len()], self.epochs, &mut self.request)?
+        {
+            return Ok(ExpertDemands { ticket, leases });
         }
         // Day 85 (I22): each block's id and catalog position, staged together.
         let mut ids = Vec::with_capacity(blocks.len());
@@ -341,9 +368,8 @@ impl<H: Hotness<ExpertDomain>, R: ExactReader> ExpertDispatchBank for SlruExpert
         }
         result
     }
-    fn finish_many(&mut self, demands: ExpertDemands) -> Result<()> {
+    fn finish_many(&mut self, demands: &ExpertDemands) -> Result<()> {
         self.bank.finish_ticket(&demands.ticket)?;
-        drop(demands);
         self.bank.collect_evicted()
     }
 }

@@ -1,0 +1,15 @@
+# DAY89 I23 gates (DAY89 section 2, as narrowed by the owner): 2026-09-27T21:00:49Z, tree 4f9dea3e23 plus the I23 diff
+## cargo test -p memra-tier (the day89 fixture included)
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.67s
+test result: ok. 96 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.72s
+test result: ok. 106 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.04s
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 53 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.64s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+## cargo test -p memra-kv --lib
+test result: ok. 84 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s
+## cargo clippy -p memra-tier -p memra-kv --all-targets -- -D warnings: rc=0
+## cargo fmt -p memra-tier -- --check
+fmt ok

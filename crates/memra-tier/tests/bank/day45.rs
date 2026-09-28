@@ -87,7 +87,7 @@ fn a_filled_record_is_a_host_hit_without_a_read() {
         "a filled record was read again"
     );
     assert_eq!(&*demand.lease.resource::<Vec<u8>>().unwrap(), &bytes);
-    d.finish(demand).unwrap();
+    d.finish(&demand).unwrap();
     // Offered again while resident: dropped, never replaced.
     let (bytes, digest) = filled(&recs[3]);
     assert_eq!(
