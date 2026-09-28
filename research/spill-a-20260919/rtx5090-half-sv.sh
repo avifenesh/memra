@@ -3,7 +3,7 @@
 # driver as rtx5090-half.sh (section 1), with the target drivers' own split: their hit gate takes its own flock, so the
 # cells before it run in hold A, the hold is released for the hit gate, and the cells after it run in hold B.
 #   rtx5090-half-sv.sh prepare <half>  from the lane worktree: the scratch tree at the half's tip under
-#                                   /home/avifenesh/spill-a-cells/<half>/tree, the derived scripts and this file copied
+#                                   /home/avifenesh/.local/share/memra-lane-a-cells/<half>/tree, the derived scripts and this file copied
 #                                   to <half>/scripts (the frozen copy), then the derived build.sh (outside any hold).
 #   rtx5090-half-sv.sh card <half>  from the frozen copy only: each hold of /tmp/memra-5090.lock bounded (180 x 120 s
 #                                   behind the other lanes; then no compute app and >= 20000 MiB free, 15 x 60 s;
@@ -16,10 +16,11 @@
 # Executed-not-qualified. No host, id or price here.
 set -uo pipefail
 ACT=$1; HALF=$2
-S=/home/avifenesh/spill-a-cells/$HALF
+S=/home/avifenesh/.local/share/memra-lane-a-cells/$HALF
 case $HALF in
   s4) TIP=a0f9968e3; BASE=b4816eda8 ;;
   v) TIP=ccfd26af0; BASE=bbd2535b6 ;;
+  p2) TIP=064f9fa0d; BASE=dba7c0a0c ;;  # DAY68 section 11; gpp 358749c9f, build.sh's default
   *) echo "half $HALF"; exit 2 ;;
 esac
 MODEL=/home/avifenesh/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
@@ -35,6 +36,13 @@ prepare)
   git -C "$HERE" worktree add -q --detach "$A_TREE" "$TIP" || { echo "rc=2 (worktree)" >> "$A_OUT/build.log"; exit 2; }
   bash "$S/scripts/build.sh" "$TIP" "$BASE" > "$S/build.out" 2>&1
   echo "$HALF build: $(tail -1 "$A_OUT/build.log")"
+  if [ "$HALF" = p2 ]; then
+    # DAY68 section 11: P2's accepted unit step (DAY67 section 4) in its own scratch tree and target dir.
+    git -C "$HERE" worktree add -q --detach "$S/unit-tree" a2419d3e1 || { echo "rc=2 (unit worktree)" >> "$A_OUT/unit-build.log"; exit 2; }
+    mkdir -p "$A_OUT/unit"
+    CARGO_TARGET_DIR=$S/unit-target A_UNIT_TREE=$S/unit-tree bash "$S/scripts/unit-rerun.sh" build > "$S/unit-build.out" 2>&1
+    echo "$HALF unit build: $(tail -1 "$A_OUT/unit/build.log")"
+  fi
   ;;
 card)
   [ "$(cd "$(dirname "$0")" && pwd)" = "$S/scripts" ] || { echo "run the frozen copy: $S/scripts/rtx5090-half-sv.sh"; exit 2; }
@@ -79,6 +87,11 @@ card)
     cellrun ab-promote 10800 "$S/scripts/ab-promote.sh" 9
     cellrun hump-cell 3600 "$S/scripts/hump.sh" 9
     cellrun gates 5400 "$S/scripts/gates.sh" 9
+  elif [ "$HALF" = p2 ]; then
+    # DAY68 section 11: P2L2's driver's order.
+    for c in demote free promote chain; do cellrun "ab-$c-cell" 10800 "$S/scripts/ab.sh" 9 "$c"; done
+    cellrun hump-cell 3600 "$S/scripts/hump.sh" 9
+    cellrun gates 7200 "$S/scripts/gates.sh" 9
   else
     cellrun ab-pause 10800 "$S/scripts/ab-pause.sh" 9
     cellrun gates 5400 "$S/scripts/gates.sh" 9
@@ -87,15 +100,24 @@ card)
   log "hitgate start (its own flock): host load $(cut -d' ' -f1-3 /proc/loadavg)"
   bash "$S/scripts/hitgate.sh" > "$A_OUT/hitgate.out" 2>&1; log "hitgate rc=$? $(tail -1 "$A_OUT/hitgate.out")"
   hold "hold B" || exit 2
-  cellrun unit-cell 5400 "$S/scripts/unit-cells.sh" 9
+  if [ "$HALF" = p2 ]; then
+    CARGO_TARGET_DIR=$S/unit-target A_UNIT_TREE=$S/unit-tree cellrun unit-cell 5400 "$S/scripts/unit-rerun.sh" 9
+  else
+    cellrun unit-cell 5400 "$S/scripts/unit-cells.sh" 9
+  fi
   [ "$HALF" = s4 ] && cellrun trace-cell 3600 "$S/scripts/trace.sh" 9
   release "hold B"
+  if [ "$HALF" = p2 ]; then
+    python3 research/spill-a-20260919/day52-reading.py "$A_OUT" > "$A_OUT/reading-day52.log" 2>&1
+    step_rc=$?; log "reading rc=$step_rc $(tail -1 "$A_OUT/reading-day52.log")"
+  fi
   log "done"
   ;;
 clean)
   HERE=$(cd "$(dirname "$0")/../.." && pwd)
   [ -e "$HERE/.git" ] || { echo "run clean from the lane worktree's copy"; exit 2; }
   git -C "$HERE" worktree remove --force "$A_TREE" && rm -rf "$CARGO_TARGET_DIR"
+  if [ -d "$S/unit-tree" ]; then git -C "$HERE" worktree remove --force "$S/unit-tree" && rm -rf "$S/unit-target"; fi
   ;;
 *) echo "action $ACT"; exit 2 ;;
 esac

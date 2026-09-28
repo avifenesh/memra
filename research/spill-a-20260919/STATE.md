@@ -1,4 +1,4 @@
-# WP-A resumable state (2026-09-27: T-H' NEED TARGET CARD (the lead rents a clean PRO 6000 WS; lane/spill-a-th2-20260927 67af1b71e); the second DAY68 5090 chain queued; integ70 carries P2 and the records)
+# WP-A resumable state (2026-09-27: F2 built and its sitting frozen, NEED TARGET CARD (lane/spill-a-f2-20260927 502e780bd, base d6132710e); the DAY68 5090 chain rebuilding and running)
 
 - Lane `lane/spill-a-20260919`; worktree `wt-spill-a`. integ67 takes B1 (`e522a9417`, adopted on both cards) and the
   grid refusal (`231fba087`, cherry-picked as 95f275859).
@@ -52,3 +52,18 @@
 - **T-H' (DAY65 sections 7 and 8):** sitting ready on `lane/spill-a-th2-20260927` (`67af1b71e`, base `80f734c77`):
   `build.sh 67af1b71e 80f734c77` then `driver.sh`, last line `TH2 VERDICT -> ..`; the lead rents a clean PRO 6000 WS
   (not BOX43's machine) and sends the box on acceptance.
+
+- **T-H' ADOPTED** on BOX44 (DAY65 section 10). For the integ: `lane/spill-a-integ73-20260927` at `20bf78b42` on main
+  `21ce97836`: `43a956340` (T-H', the sitting's diff line for line) and `20bf78b42` (this directory at `3a2e2886f`).
+  Not built here (R1's repeat holds the 5090 in a timed cell). T-H' adds no GPU cell (its cells are CPU); its 5090 half
+  ((b') and (d)) is owed after the DAY68 chain, beside P2's. Delete `lane/spill-a-th2-20260927` once it merges.
+
+- **F2 (DAY71):** built on `lane/spill-a-f2-20260927` (`7b38cc013` code, `502e780bd` records and sitting) over
+  main's T-H' tree `d6132710e`. CPU green (server 988, engine 667, clippy), red arm caught. The sitting:
+  `build.sh 502e780bd d6132710e` then `driver.sh`, last line `F2 VERDICT -> ..`, about 2.5 h on one PRO 6000 WS.
+  Its two GPU cells (`option_b_published_spans_stay_resident_in_their_staging`,
+  `option_c_resident_spans_read_the_entry_in_place`) go to the target battery.
+- **DAY68 chain, third start** (section 12, sccache bypassed): cell root `~/.local/share/memra-lane-a-cells/`,
+  `IN-USE.txt` kept.
+
+- stopped 2026-09-28 by the owner's order; queue chain-day68c killed mid-run at R1's card (its first hold, waiting on the 5090 lock at attempt 36 of 180, after every build); F2's BOX46 sitting stopped by the lead after gates, demote and chain (promote killed mid-run), partial receipts in pro-single-f2/box-partial/.

@@ -1,0 +1,18 @@
+diff --git a/crates/memra-server/src/worker.rs b/crates/memra-server/src/worker.rs
+index 280c89111a..b51dcc3c74 100644
+--- a/crates/memra-server/src/worker.rs
++++ b/crates/memra-server/src/worker.rs
+@@ -12156,7 +12156,12 @@ impl HostHashWorker {
+                         // is copied to the heap. A heap payload hashes as before.
+                         let h0 = Instant::now();
+                         let (n, d) = match &p.staged {
+-                            Some(staged) => host_hash_payload_digest(staged.as_f32_slice()),
++                            Some(staged) => {
++                                // day71 red arm: the landed span is copied to the heap again.
++                                let src = staged.as_f32_slice();
++                                let copy = src.to_vec();
++                                host_hash_payload_digest(&copy)
++                            }
+                             None => host_hash_payload_digest(&p.data),
+                         };
+                         part.hash_ms += h0.elapsed().as_secs_f64() * 1e3;

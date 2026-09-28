@@ -192,3 +192,79 @@ GPU. Both registrations said "the 5090 half follows"; this file fixes how, befor
   - If it repeats outside the bound with no builds, it is placed as its own finding, not R1's, and registered then.
 - Item 16's `REGIME NOT REPRODUCED` and S4's and V's `NOT RUN` stand as they read (section 8), and section 9's chain
   runs as queued.
+
+## 11. The owner's ruling on local CI, and P2's and T-H''s 5090 halves registered (before they run)
+
+- **Owner ruling, 2026-09-27** (relayed by the lead): "we should stop overcomplicating our local CI, we are making all
+  our progress too slow. we should do deeper measurement where it is relevant."
+  - From now on, a push runs only the affected crates' tests and clippy. GitHub CI on the integ PR runs the rest.
+  - This lane's time goes to the measurements that decide its open items: the 5090 halves of R1, L', P2 and T-H', and
+    F2's registration and cell.
+- **P2's 5090 half, on its target sitting's own pair:** p2 `064f9fa0d`, base `dba7c0a0c`, gpp `358749c9f`.
+  - The scripts are `pro-single-p2l2/`'s `build.sh`, `ab.sh`, `hump.sh`, `gates.sh` and `hitgate.sh`, plus the unit
+    step as DAY67 section 4 accepted it: `unit-rerun.sh` on `a2419d3e1`, the p2 program with the two test-only cell
+    fixes, in its own scratch tree.
+  - They are derived by `rtx5090-derive.py` with section 1's replacements. For this half and T-H''s, the CPU cap is the
+    lead's `nice -n 19`, 600% and `MemoryMax=12G`.
+  - The cells are DAY52's, in P2L2's order, run by `rtx5090-half-sv.sh` in its two holds:
+    - hold A: demote, free, promote and chain, 20 boots each; the hump (xgpp xp2 xp2 xgpp); the gates;
+    - `hitgate.sh` on its own flock between the holds;
+    - hold B: the unit step.
+  - `day52-reading.py` reads it with DAY67 section 1's bounds.
+- **T-H''s 5090 half, on its sitting's pair:** th `67af1b71e`, base `80f734c77`.
+  - The scripts are `pro-single-th2/`'s `build.sh`, `ab.sh`, `gates.sh` and `hump.sh`, derived the same way, run in
+    one hold by `rtx5090-half.sh`: the 11 gates, the demote, chain and promote cells (20 boots each), and the hump.
+  - `th2-reading.py` reads it with DAY65 section 6's bounds.
+  - The 5090 host has 24 logical CPUs, so the helper again runs 8 threads.
+- **What a result decides:** as section 2 says.
+- **The chain's order changes to the lead's priorities.** The running chain (section 9) is stopped after R1's timed
+  cell, which is left to finish in its hold, and replaced by `rtx5090-chain-day68c.sh`:
+  1. R1's reading, once its cell ends;
+  2. P2's and T-H''s builds, outside every hold and after R1's cell has released the card;
+  3. P2's half;
+  4. T-H''s half;
+  5. then section 9's item 16 with the warm-up doubled, S4 and V.
+
+## 12. The scratch directory was removed whole mid-chain (19:23:49Z on 2026-09-27); everything rebuilt and requeued
+
+- **What happened.**
+  - At 19:23:49Z `/home/avifenesh/spill-a-cells/` was deleted with everything under it: the halves' trees (git
+    worktrees, their registrations pruned too), the built executables, the first run's local receipts, and the frozen
+    scripts.
+  - It was recreated at 19:23:50Z only by the running chain's own writes: the chain log, and R1's repeat's receipt
+    directory.
+  - This lane ran no command on that path then. Its commands at that time touched other worktrees only, and none of
+    its scripts removes that root. The cause is unplaced here, and it goes to the lead.
+- **What it cost.**
+  - R1's repeat, which had held the card since 17:20:12Z, lost its binaries under it. Its o2 boots from 19:23:49Z read
+    `boot NOT READY within 480 s` 14 times at once, and every step after it failed at once (`reading rc=1`, `item 16 2x
+    rc=1`, `s4 card rc=1`, `v card rc=1`).
+  - The repeat's receipts from before the removal are gone, so the repeat is void and reads nothing. Its surviving log
+    and the chain log are banked as `rtx5090-r1/incident-20260927/`.
+  - Everything the first chain read was committed before the removal (section 8's receipts), so nothing read is lost.
+- **Rebuilt and requeued:** `rtx5090-chain-day68c.sh` (frozen copy `spill-a-cells/chain-day68c.sh`, argument the lane
+  commit that holds it).
+  - It builds every half first, outside every hold, from a detached snapshot of the lane at that commit: R1, P2 with
+    its unit tree, T-H', item 16, S4 and V.
+  - Then it runs the cards in the lead's order:
+    - R1's card whole (the gates again, then the timed cell the lead's ruling repeats);
+    - P2's half, then T-H''s half (section 11);
+    - item 16 with the warm-up doubled, S4 and V (section 9).
+  - An `IN-USE.txt` at the root names the owner and the chain, so a sweep can see the directory is live.
+- **The lead's finding (2026-09-27):** no Claude transcript on this rig (the lead's, the lanes', other projects') holds
+  a delete-like command between 19:20Z and 19:26Z, and the journal shows no timer or sweep touching home at 19:23:49Z.
+  Recorded as **deleted, cause unknown**. The lead raises it with the owner.
+- **The second start.** The rebuild chain was stopped in its build phase, before any hold: R1's build was done and
+  P2's under way. This lane stopped its own process group. Its worktrees were removed through git and the old root
+  deleted.
+  - The cell root moved to `/home/avifenesh/.local/share/memra-lane-a-cells/`, off the home directory's top level that
+    disk-cleanup sessions list. `IN-USE.txt` stays at the root.
+  - The first start's log is banked as `rtx5090-r1/incident-20260927/chain-day68c-first-start.log`. The chain, drivers
+    and order are otherwise unchanged.
+- **The third start.** The second start's R1 build hung at 0% CPU. The rig's shared `sccache` server stopped taking
+  requests: `Compile requests 7320 -> 7320` over 30 s, with 38 client processes stalled for 20 to 33 minutes, other
+  lanes' builds among them.
+  - That server is not this lane's, so it was left alone and reported to the lead. This lane stopped only its own
+    chain and its own stalled check, and removed its partial trees.
+  - The chain restarted with `RUSTC_WRAPPER=` (sccache bypassed for this lane's builds). The log is
+    `incident-20260927/chain-day68c-second-start.log`.
