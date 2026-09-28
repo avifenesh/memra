@@ -1,3 +1,8 @@
+# WP-B checkpoint 2026-09-28: stopped 2026-09-28 by the owner's order; queue-m ended after DAY41's spec boots (last step
+logged 2026-09-27 22:30Z, the next item not started), chain-r5 killed mid-run at the O1 r5 boot burst-boff-vmm (started
+2026-09-28 00:15Z, no rc line); the DAY50 stage 1 cells and sitting 22 never ran. No new reading. The live checkout's
+uncommitted receipts are copied in as-is (two files whose committed copies differ are kept beside as `.wt-spill-b`; one
+120 MB server.log is gzipped with its raw sha256 in RAW-GZIPPED.sha256).
 # WP-B checkpoint 2026-09-27 19:5xZ (NEED TARGET CARD, sittings 20 and 21; lane push held until integ73 merges):
 integ73 carries the lane through c6d7f034f (items 1 to 3 and #476). Local and unpushed in wt-b-records: DAY50 addendum D
 (stage 1 as built), the kvrow and overlap probe modes, day50-stage1.sh and its runners, OWED O9 done. The local DAY51
