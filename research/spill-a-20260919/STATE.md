@@ -65,3 +65,5 @@
   `option_c_resident_spans_read_the_entry_in_place`) go to the target battery.
 - **DAY68 chain, third start** (section 12, sccache bypassed): cell root `~/.local/share/memra-lane-a-cells/`,
   `IN-USE.txt` kept.
+
+- stopped 2026-09-28 by the owner's order; queue chain-day68c killed mid-run at R1's card (its first hold, waiting on the 5090 lock at attempt 36 of 180, after every build); F2's BOX46 sitting stopped by the lead after gates, demote and chain (promote killed mid-run), partial receipts in pro-single-f2/box-partial/.
