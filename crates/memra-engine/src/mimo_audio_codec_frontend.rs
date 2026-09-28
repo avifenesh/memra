@@ -240,7 +240,152 @@ fn run_conv(
     Ok(output)
 }
 
+#[cfg(test)]
+fn diagnostic_preact(
+    engine: &Engine,
+    input: &CudaSlice<f32>,
+    weight: &CudaSlice<u8>,
+    bias: &CudaSlice<u8>,
+    spec: ConvSpec,
+) -> Result<Vec<f32>, Fail> {
+    use memra_reference::mimo_audio_codec_layer::bf16;
+
+    if !(1..=1_024).contains(&spec.frames) {
+        return Err("MiMo codec preactivation frame count changed".into());
+    }
+    let rows = spec.validate(input.len(), weight.len(), bias.len())?;
+    engine.gpu.ctx.bind_to_thread()?;
+    let ordinal = engine.stream().context().ordinal();
+    if input.ordinal() != ordinal || weight.ordinal() != ordinal || bias.ordinal() != ordinal {
+        return Err("MiMo codec preactivation crossed GPU devices".into());
+    }
+    ensure_finite(engine, input)?;
+    let columns = im2col(engine, input, spec, rows)?;
+    let projected = engine
+        .bf16_tc_gemm(
+            weight,
+            &columns,
+            rows,
+            spec.in_channels * 3,
+            spec.out_channels,
+        )?
+        .ok_or("MiMo preactivation lost its source BF16 GEMM arm")?;
+    let projected = engine.dtoh(&projected)?;
+    let bias_bytes = engine.dtoh_u8(bias)?;
+    let bias = bias_bytes
+        .chunks_exact(2)
+        .map(|pair| f32::from_bits(u32::from(u16::from_le_bytes([pair[0], pair[1]])) << 16))
+        .collect::<Vec<_>>();
+    if projected.len() != rows * spec.out_channels || bias.len() != spec.out_channels {
+        return Err("MiMo preactivation output or bias shape changed".into());
+    }
+    let output = projected
+        .iter()
+        .enumerate()
+        .map(|(index, &value)| bf16(value + bias[index % spec.out_channels]))
+        .collect::<Vec<_>>();
+    if output.iter().any(|value| !value.is_finite()) {
+        return Err("MiMo preactivation has non-finite output".into());
+    }
+    Ok(output)
+}
+
 impl MiMoAudioCodecEncoderWeights {
+    #[cfg(test)]
+    pub(crate) fn encode_gelu_from_preact(
+        engine: &Engine,
+        preactivation: &CudaSlice<f32>,
+        frames: usize,
+    ) -> Result<CudaSlice<f32>, Fail> {
+        if !(1..=1_024).contains(&frames)
+            || preactivation.len() != frames * HIDDEN
+            || preactivation.ordinal() != engine.stream().context().ordinal()
+        {
+            return Err("MiMo source convolution GELU diagnostic shape or GPU changed".into());
+        }
+        engine.gpu.ctx.bind_to_thread()?;
+        ensure_finite(engine, preactivation)?;
+        let zero_bias = engine.htod_bytes(&vec![0u8; HIDDEN * 2])?;
+        let output = epilogue(engine, preactivation, &zero_bias, frames, HIDDEN)?;
+        ensure_finite(engine, &output)?;
+        Ok(output)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn encode_prepared_mel_conv1_preact(
+        &self,
+        engine: &Engine,
+        mel: &CudaSlice<f32>,
+        mel_frames: usize,
+    ) -> Result<Vec<f32>, Fail> {
+        if self.device_ordinal != engine.stream().context().ordinal() {
+            return Err("MiMo codec first preactivation weight GPU changed".into());
+        }
+        let first = self.conv1_bf16()?;
+        diagnostic_preact(
+            engine,
+            mel,
+            first.weight(),
+            first.bias(),
+            ConvSpec {
+                frames: mel_frames,
+                in_channels: MEL_CHANNELS,
+                out_channels: HIDDEN,
+                stride: first.stride(),
+            },
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn encode_prepared_mel_conv2_preact(
+        &self,
+        engine: &Engine,
+        conv1: &CudaSlice<f32>,
+        mel_frames: usize,
+    ) -> Result<Vec<f32>, Fail> {
+        if self.device_ordinal != engine.stream().context().ordinal() {
+            return Err("MiMo codec second preactivation weight GPU changed".into());
+        }
+        let second = self.conv2_bf16()?;
+        diagnostic_preact(
+            engine,
+            conv1,
+            second.weight(),
+            second.bias(),
+            ConvSpec {
+                frames: mel_frames,
+                in_channels: HIDDEN,
+                out_channels: HIDDEN,
+                stride: second.stride(),
+            },
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn encode_prepared_mel_conv1(
+        &self,
+        engine: &Engine,
+        mel: &CudaSlice<f32>,
+        mel_frames: usize,
+    ) -> Result<CudaSlice<f32>, Fail> {
+        if self.device_ordinal != engine.stream().context().ordinal() {
+            return Err("MiMo codec first convolution weight GPU changed".into());
+        }
+        let first = self.conv1_bf16()?;
+        run_conv(
+            engine,
+            mel,
+            first.weight(),
+            first.bias(),
+            ConvSpec {
+                frames: mel_frames,
+                in_channels: MEL_CHANNELS,
+                out_channels: HIDDEN,
+                stride: first.stride(),
+            },
+        )
+    }
+
     /// From one frame-major `[mel_frames,128]` f32 mel plane, execute the two
     /// pinned BF16 convolutions and erf GELUs. The input is cast to BF16 before
     /// conv1. The result is `[ceil(mel_frames/2),1024]` frame-major f32
