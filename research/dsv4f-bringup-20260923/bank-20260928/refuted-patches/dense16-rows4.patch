@@ -1,0 +1,178 @@
+From bdd9e5cebdb9e30e0ab35d1ecd80a9c3b72aecf3 Mon Sep 17 00:00:00 2001
+From: memra-lane <lane@localhost>
+Date: Mon, 28 Sep 2026 02:08:28 +0300
+Subject: [PATCH] perf(dsv4): dense-fast FP8 blocks hold four output rows past
+ 8 token rows, so four outputs share each activation read (#710)
+
+Signed-off-by: memra-lane <lane@localhost>
+---
+ crates/memra-engine/cu/dsv4_gpu.cu | 70 +++++++++++++++++-------------
+ docs/KERNELS.md                    |  2 +-
+ 2 files changed, 41 insertions(+), 31 deletions(-)
+
+diff --git a/crates/memra-engine/cu/dsv4_gpu.cu b/crates/memra-engine/cu/dsv4_gpu.cu
+index 544c7a3d94..83d29d8d65 100644
+--- a/crates/memra-engine/cu/dsv4_gpu.cu
++++ b/crates/memra-engine/cu/dsv4_gpu.cu
+@@ -4865,13 +4865,19 @@ extern "C" int memra_dsv4_dense_cutlass_counts(uint64_t* splitk, uint64_t* decli
+             k, xstride, ystride, 0, 0);                                               \
+         break;
+ 
++// Output rows per dense-fast FP8 block at M token rows (memra #710 B-row): a block reads all M
++// activation rows once for its outputs, so past 8 token rows four outputs share each read. Each
++// output keeps its own leaves and tree whatever the block holds.
++constexpr int dsv4_df_rows(int m) { return m >= 9 ? 4 : 2; }
++
+ #define DSV4_DENSE_FAST_FP8_M_CASE(MM)                                                \
+-    case MM:                                                                         \
+-        memra_chain_launch(dsv4_dense_fast_fp8_kernel<2, false, MM>,(unsigned)((n + 1LL) / 2), 256, 0,  \
+-                                                   stream)(                        \
++    case MM: {                                                                       \
++        constexpr int R_ = dsv4_df_rows(MM);                                         \
++        memra_chain_launch(dsv4_dense_fast_fp8_kernel<R_, false, MM>,                 \
++                           (unsigned)((n + R_ - 1LL) / R_), R_ * 128, 0, stream)(     \
+             (const uint8_t*)w_codes, sc_f32, sc_cols, (const uint16_t*)x_bf16, y, n, \
+             k, xstride, ystride, 0, 0);                                               \
+-        break;
++    } break;
+ 
+ extern "C" int memra_dsv4_gemv_fp8_m(const void* w_codes, const float* sc_f32, int sc_cols,
+                                      const void* x_bf16, float* y, int m, int n, int k,
+@@ -5034,15 +5040,16 @@ extern "C" int memra_dsv4_gemv_fp8_m_pair(const void* wa, const float* sca, int
+         dsv4_dense_census_note(DSV4_DENSE_ENTRY_GEMV_FP8, m, na, k);
+         dsv4_dense_census_note(DSV4_DENSE_ENTRY_GEMV_FP8, m, nb, k);
+     }
+-    const int nblk_a = (int)((na + 1LL) / 2), nblk_b = (int)((nb + 1LL) / 2);
+-    const unsigned grid = (unsigned)(nblk_a + nblk_b);
+     switch (m) {
+ #define DSV4_FP8_PAIR_CASE(MM)                                                              \
+-    case MM:                                                                                \
+-        memra_chain_launch(dsv4_dense_fast_fp8_kernel_pair<2, MM>, grid, 256, 0, stream)(     \
++    case MM: {                                                                              \
++        constexpr int R_ = dsv4_df_rows(MM);                                                \
++        const int nblk_a = (int)((na + R_ - 1LL) / R_), nblk_b = (int)((nb + R_ - 1LL) / R_); \
++        memra_chain_launch(dsv4_dense_fast_fp8_kernel_pair<R_, MM>,                          \
++                           (unsigned)(nblk_a + nblk_b), R_ * 128, 0, stream)(                \
+             (const uint8_t*)wa, sca, sc_cols_a, ya, na, ystride_a, (const uint8_t*)wb, scb,   \
+             sc_cols_b, yb, nb, ystride_b, nblk_a, (const uint16_t*)x_bf16, k, xstride);      \
+-        break;
++    } break;
+         DSV4_FP8_PAIR_CASE(1)
+         DSV4_FP8_PAIR_CASE(2)
+         DSV4_FP8_PAIR_CASE(3)
+@@ -5072,7 +5079,7 @@ extern "C" int memra_dsv4_gemv_fp8_m_pair(const void* wa, const float* sca, int
+ // launch, so every output keeps its bits. Admitted exactly where memra_dsv4_gemv_fp8_m and
+ // memra_dsv4_gemv_fp8_m_pair take the dense-fast transport; anything else refuses 40004 and
+ // the caller keeps the replicated shared expert.
+-template <int M>
++template <int M, int ROWS = 2>
+ __global__ void dsv4_dense_fast_fp8_kernel_gated(const uint8_t* __restrict__ w,
+                                                  const float* __restrict__ sc, int sc_cols,
+                                                  const uint16_t* __restrict__ x,
+@@ -5080,11 +5087,11 @@ __global__ void dsv4_dense_fast_fp8_kernel_gated(const uint8_t* __restrict__ w,
+                                                  int ystride, const int* __restrict__ run) {
+     MEMRA_PDL_CHAIN_ENTRY();
+     if (!*run) return;
+-    dsv4_dense_fast_fp8_body<2, false, M>(w, sc, sc_cols, x, y, n, k, xstride, ystride, 0, 0,
+-                                          blockIdx.x);
++    dsv4_dense_fast_fp8_body<ROWS, false, M>(w, sc, sc_cols, x, y, n, k, xstride, ystride, 0, 0,
++                                             blockIdx.x);
+ }
+ 
+-template <int M>
++template <int M, int ROWS = 2>
+ __global__ void dsv4_dense_fast_fp8_kernel_pair_gated(
+         const uint8_t* __restrict__ wa, const float* __restrict__ sca, int sc_cols_a,
+         float* __restrict__ ya, int na, const uint8_t* __restrict__ wb,
+@@ -5093,11 +5100,11 @@ __global__ void dsv4_dense_fast_fp8_kernel_pair_gated(
+     MEMRA_PDL_CHAIN_ENTRY();
+     if (!*run) return;
+     if ((int)blockIdx.x < nblk_a)
+-        dsv4_dense_fast_fp8_body<2, false, M>(wa, sca, sc_cols_a, x, ya, na, k, k, na, 0, 0,
+-                                              blockIdx.x);
++        dsv4_dense_fast_fp8_body<ROWS, false, M>(wa, sca, sc_cols_a, x, ya, na, k, k, na, 0, 0,
++                                                 blockIdx.x);
+     else
+-        dsv4_dense_fast_fp8_body<2, false, M>(wb, scb, sc_cols_b, x, yb, nb, k, k, nb, 0, 0,
+-                                              blockIdx.x - nblk_a);
++        dsv4_dense_fast_fp8_body<ROWS, false, M>(wb, scb, sc_cols_b, x, yb, nb, k, k, nb, 0, 0,
++                                                 blockIdx.x - nblk_a);
+ }
+ 
+ static bool dsv4_dense_fast_gated_admits(const void* w, const float* sc, int sc_cols,
+@@ -5122,14 +5129,15 @@ extern "C" int memra_dsv4_gemv_fp8_m_gated(const void* w_codes, const float* sc_
+         if (rc) return rc;
+     }
+     if (m >= 2) dsv4_dense_census_note(DSV4_DENSE_ENTRY_GEMV_FP8, m, n, k);
+-    const unsigned grid = (unsigned)((n + 1LL) / 2);
+     switch (m) {
+ #define DSV4_FP8_GATED_CASE(MM)                                                             \
+-    case MM:                                                                                \
+-        memra_chain_launch(dsv4_dense_fast_fp8_kernel_gated<MM>, grid, 256, 0, stream)(       \
++    case MM: {                                                                              \
++        constexpr int R_ = dsv4_df_rows(MM);                                                \
++        memra_chain_launch(dsv4_dense_fast_fp8_kernel_gated<MM, R_>,                         \
++                           (unsigned)((n + R_ - 1LL) / R_), R_ * 128, 0, stream)(            \
+             (const uint8_t*)w_codes, sc_f32, sc_cols, (const uint16_t*)x_bf16, y, n, k, k,    \
+             ystride, run);                                                                  \
+-        break;
++    } break;
+         DSV4_FP8_GATED_CASE(1)
+         DSV4_FP8_GATED_CASE(2)
+         DSV4_FP8_GATED_CASE(3)
+@@ -5173,15 +5181,16 @@ extern "C" int memra_dsv4_gemv_fp8_m_pair_gated(const void* wa, const float* sca
+         dsv4_dense_census_note(DSV4_DENSE_ENTRY_GEMV_FP8, m, na, k);
+         dsv4_dense_census_note(DSV4_DENSE_ENTRY_GEMV_FP8, m, nb, k);
+     }
+-    const int nblk_a = (int)((na + 1LL) / 2), nblk_b = (int)((nb + 1LL) / 2);
+-    const unsigned grid = (unsigned)(nblk_a + nblk_b);
+     switch (m) {
+ #define DSV4_FP8_PAIR_GATED_CASE(MM)                                                        \
+-    case MM:                                                                                \
+-        memra_chain_launch(dsv4_dense_fast_fp8_kernel_pair_gated<MM>, grid, 256, 0, stream)(  \
++    case MM: {                                                                              \
++        constexpr int R_ = dsv4_df_rows(MM);                                                \
++        const int nblk_a = (int)((na + R_ - 1LL) / R_), nblk_b = (int)((nb + R_ - 1LL) / R_); \
++        memra_chain_launch(dsv4_dense_fast_fp8_kernel_pair_gated<MM, R_>,                    \
++                           (unsigned)(nblk_a + nblk_b), R_ * 128, 0, stream)(                \
+             (const uint8_t*)wa, sca, sc_cols_a, ya, na, (const uint8_t*)wb, scb, sc_cols_b,   \
+             yb, nb, nblk_a, (const uint16_t*)x_bf16, k, run);                               \
+-        break;
++    } break;
+         DSV4_FP8_PAIR_GATED_CASE(1)
+         DSV4_FP8_PAIR_GATED_CASE(2)
+         DSV4_FP8_PAIR_GATED_CASE(3)
+@@ -5310,12 +5319,13 @@ extern "C" int memra_dsv4_gemv_fp8_grouped_m1(
+ // output keeps its bits. Returns 1 without launching when the transport does not admit the
+ // slices, and the caller runs the per-group launches.
+ #define DSV4_DENSE_FAST_FP8_GROUPED_M_CASE(MM)                                              \
+-    case MM:                                                                               \
+-        memra_chain_launch(dsv4_dense_fast_fp8_kernel<2, true, MM>, (unsigned)(total / 2), 256, \
+-                           0, stream)(                                                     \
++    case MM: {                                                                             \
++        constexpr int R_ = dsv4_df_rows(MM);                                               \
++        memra_chain_launch(dsv4_dense_fast_fp8_kernel<R_, true, MM>, (unsigned)(total / R_), \
++                           R_ * 128, 0, stream)(                                           \
+             (const uint8_t*)w_codes, sc_f32, sc_cols, (const uint16_t*)x_bf16, y,          \
+             rows_per_group, k, xstride, ystride, x_group_stride, rows_per_group);          \
+-        break;
++    } break;
+ extern "C" int memra_dsv4_gemv_fp8_grouped_m(
+         const void* w_codes, const float* sc_f32, int sc_cols, const void* x_bf16, float* y,
+         int groups, int rows_per_group, int k, int x_group_stride, int m, int xstride,
+diff --git a/docs/KERNELS.md b/docs/KERNELS.md
+index f993b45f42..569b18f1d2 100644
+--- a/docs/KERNELS.md
++++ b/docs/KERNELS.md
+@@ -948,7 +948,7 @@ with identity, alongside the standalone cadence #508 and dense #507 receipts.
+ `cu/dsv4_dense_m1_exact_tail.cuh` adds `dsv4_dense_fast_fp8_kernel<2>`
+ and `dsv4_dense_fast_dots_kernel<1>`, selected in the existing raw exact-tail
+ launchers by `MEMRA_DSV4_DENSE_FAST`. Since memra #710 the FP8 kernel takes a third template argument, `M` token rows
+-(`dsv4_dense_fast_fp8_kernel<2, false, M>`, M = 2..16 since 2026-09-27, 2..8 before): `memra_dsv4_gemv_fp8_m` routes B-row
++(`dsv4_dense_fast_fp8_kernel<R, false, M>`, M = 2..16 since 2026-09-27, 2..8 before; R = 2 output rows per block up to M = 8 and 4 past it since 2026-09-28, so four outputs share each read of the M activation rows, every output keeping its own leaves and tree; the pair, gated and grouped launchers take the same R): `memra_dsv4_gemv_fp8_m` routes B-row
+ decode and verify widths there instead of `dsv4_gemv_fp8_m_kernel<M>`. The rows share each
+ weight load, and each keeps its own accumulator in the same leaf order and its own reduction
+ through the same tree, with two barriers per row instead of seven. Every bit equals the m-row
+-- 
+2.53.0
+

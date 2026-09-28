@@ -1,0 +1,127 @@
+From 1f500059fa1eee52a878d618b825fcf91c23481e Mon Sep 17 00:00:00 2001
+From: memra-lane <lane@localhost>
+Date: Sun, 27 Sep 2026 22:18:52 +0300
+Subject: [PATCH] perf(dsv4): the replayed indexer scores run eight per CTA, so
+ a launch dispatches an eighth of the capacity's blocks (#710)
+
+Signed-off-by: memra-lane <lane@localhost>
+---
+ crates/memra-engine/cu/dsv4_gpu.cu | 67 ++++++++++++++++++++++++++----
+ docs/KERNELS.md                    |  1 +
+ 2 files changed, 59 insertions(+), 9 deletions(-)
+
+diff --git a/crates/memra-engine/cu/dsv4_gpu.cu b/crates/memra-engine/cu/dsv4_gpu.cu
+index 81a9f48238..1d1e575a59 100644
+--- a/crates/memra-engine/cu/dsv4_gpu.cu
++++ b/crates/memra-engine/cu/dsv4_gpu.cu
+@@ -3681,18 +3681,59 @@ extern "C" __global__ void dsv4_indexer_score_f32acc_kernel(
+                                    replay_pos, blockIdx.x);
+ }
+ 
++// The replay program's scores, DSV4_IDX_SLOTS per CTA (memra #710): a replayed launch covers the
++// capacity's nb_max blocks and most of them exit on the live count, so it spent its time
++// dispatching them. Slot k of a CTA is the one-score CTA's work for block i0 + k: heads threads,
++// each the same dot chain, then that slot's first thread sums its heads in order. A replayed
++// launch has s = 1 and lim0 = nb, so no live block is ever masked.
++#define DSV4_IDX_SLOTS 8
++__device__ __forceinline__ void dsv4_indexer_score_f32acc_slots(
++    const float* __restrict__ q, const float* __restrict__ ckv, const float* __restrict__ w,
++    float wscale, float* __restrict__ score, int heads, int hd, int ratio, const int* replay_pos,
++    long i0) {
++    const int nb = (*replay_pos + 1) / ratio;
++    extern __shared__ float shhf[];
++    const int slot = threadIdx.x / heads, h = threadIdx.x % heads;
++    const long i = i0 + slot;
++    const bool live = i < nb;
++    float* sh = shhf + slot * heads;
++    if (live) {
++        const float* qr = q + (long)h * hd;
++        const float* kr = ckv + i * hd;
++        float dacc = 0.0f;
++        for (int x = 0; x < hd; x++) dacc += qr[x] * kr[x];
++        float r = fmaxf(dacc, 0.0f);
++        float ws = w[h] * wscale;
++        sh[h] = r * ws;
++    }
++    __syncthreads();
++    if (live && h == 0) {
++        float acc = 0.0f;
++        for (int hh = 0; hh < heads; hh++) acc += sh[hh];  // oracle h order
++        score[i] = acc;
++    }
++}
++
++__global__ void dsv4_indexer_score_f32acc_replay_kernel(
++    const float* __restrict__ q, const float* __restrict__ ckv, const float* __restrict__ w,
++    float wscale, float* __restrict__ score, int heads, int hd, int ratio, const int* pos) {
++    MEMRA_PDL_CHAIN_ENTRY();
++    dsv4_indexer_score_f32acc_slots(q, ckv, w, wscale, score, heads, hd, ratio, pos,
++                                    (long)blockIdx.x * DSV4_IDX_SLOTS);
++}
++
+ // The replay indexer scores of each row of a multi-request step (memra #710 B-row): row y reads
+ // its q and weights rows, its own compressed store kv.p[y] and position pos[y], and scores into
+ // score + y * score_row.
+ __global__ void dsv4_indexer_score_f32acc_rows_kernel(
+     const float* __restrict__ q, const __grid_constant__ Dsv4RowPtrs kv,
+     const float* __restrict__ w, float wscale, float* __restrict__ score, long score_row,
+-    int heads, int hd, int nb_max, int ratio, const int* pos) {
++    int heads, int hd, int ratio, const int* pos) {
+     MEMRA_PDL_CHAIN_ENTRY();
+     const int y = blockIdx.y;
+-    dsv4_indexer_score_f32acc_body(q + (long)y * heads * hd, kv.p[y], w + (long)y * heads, wscale,
+-                                   score + y * score_row, 1, heads, hd, nb_max, ratio, nb_max,
+-                                   pos + y, blockIdx.x);
++    dsv4_indexer_score_f32acc_slots(q + (long)y * heads * hd, kv.p[y], w + (long)y * heads,
++                                    wscale, score + y * score_row, heads, hd, ratio, pos + y,
++                                    (long)blockIdx.x * DSV4_IDX_SLOTS);
+ }
+ 
+ extern "C" int memra_dsv4_indexer_score_f32acc(const float* q, const float* ckv,
+@@ -8860,8 +8901,14 @@ extern "C" int memra_dsv4_replay_indexer(const float* q, const float* kv, const
+     if (!pos || heads < 1 || heads > 1024 || nb_max < 1 || nb_max > 4096 || ratio != 4)
+         return 40074;
+     auto stream = (cudaStream_t)raw_stream;
+-    memra_chain_launch(dsv4_indexer_score_f32acc_kernel,nb_max, heads, heads * sizeof(float), stream)(
+-        q, kv, w, scale, score, 1, heads, hd, nb_max, ratio, nb_max, pos);
++    if (heads * DSV4_IDX_SLOTS <= 1024)
++        memra_chain_launch(dsv4_indexer_score_f32acc_replay_kernel,
++                           (unsigned)((nb_max + DSV4_IDX_SLOTS - 1) / DSV4_IDX_SLOTS),
++                           heads * DSV4_IDX_SLOTS, heads * DSV4_IDX_SLOTS * sizeof(float), stream)(
++            q, kv, w, scale, score, heads, hd, ratio, pos);
++    else
++        memra_chain_launch(dsv4_indexer_score_f32acc_kernel,nb_max, heads, heads * sizeof(float), stream)(
++            q, kv, w, scale, score, 1, heads, hd, nb_max, ratio, nb_max, pos);
+     DSV4_ERR();
+     int max_pow2 = 1;
+     while (max_pow2 < nb_max) max_pow2 <<= 1;
+@@ -9027,9 +9074,11 @@ extern "C" int memra_dsv4_replay_indexer_rows(const float* q, float* const* kv,
+         t.p[i] = kv[i];
+     }
+     auto stream = (cudaStream_t)raw_stream;
+-    memra_chain_launch(dsv4_indexer_score_f32acc_rows_kernel, dim3(nb_max, n_rows), heads,
+-                       heads * sizeof(float), stream)(q, t, w, scale, score, score_row, heads, hd,
+-                                                      nb_max, ratio, pos);
++    if (heads * DSV4_IDX_SLOTS > 1024) return 40074;
++    memra_chain_launch(dsv4_indexer_score_f32acc_rows_kernel,
++                       dim3((unsigned)((nb_max + DSV4_IDX_SLOTS - 1) / DSV4_IDX_SLOTS), n_rows),
++                       heads * DSV4_IDX_SLOTS, heads * DSV4_IDX_SLOTS * sizeof(float), stream)(
++        q, t, w, scale, score, score_row, heads, hd, ratio, pos);
+     DSV4_ERR();
+     int max_pow2 = 1;
+     while (max_pow2 < nb_max) max_pow2 <<= 1;
+diff --git a/docs/KERNELS.md b/docs/KERNELS.md
+index 0b72ff7826..61bc6510c6 100644
+--- a/docs/KERNELS.md
++++ b/docs/KERNELS.md
+@@ -888,6 +888,7 @@ The source rebase does not relabel the pinned binary receipts as a new build.
+ | `cu/dsv4_gpu.cu` | `dsv4_cmp_rows_append_kernel`, `dsv4_cmp_rows_pool_kernel`, `dsv4_cmp_rows_finish_kernel` | A multi-request replay step's compressors (memra #710 B-row, 2026-09-27): three launches per compressor for up to 16 rows, each row's buffers from a `__grid_constant__` table and its position from the device, in place of the per-row snapshot, record, append and emission chain (about a dozen launches per compressor per row). Append: the snapshot of both pending rings, the row record and the slot write, per element in `dsv4_copy2_f32_kernel` then `dsv4_replay_copy_row_kernel` order. Pool: the emitted block's row through `dsv4_compressor_pool_elem` (the pool kernel's own per-channel body), 32 channels per CTA. Finish: one 128-thread CTA per row runs the overlap half shift, `dsv4_rmsnorm_f32acc_regs<8>`, the RoPE-at expression, the Hadamard butterflies and per-32 FP4 QAT or the per-64 FP8 QAT, and the store (split or unsplit), each group maximum paired as `dsv4_block_max` pairs. Non-emitting rows exit at entry. The rows gate's wide phases compare every row's logits bits against its solo steps. FFI `memra_dsv4_cmp_rows_replay`. |
+ | `cu/dsv4_gpu.cu` | `dsv4_rows_copy_kernel`, `dsv4_replay_indices_rows_kernel`, `dsv4_replay_window_rows_kernel`, `dsv4_indexer_score_f32acc_rows_kernel`, `dsv4_topk_idx_numeric_rows_kernel`, `dsv4_c4_split_gather_rows_kernel`, `dsv4_sink_scores_st_rows_kernel`, `dsv4_sink_softout_st_rows_kernel` | The rest of a multi-request replay step's per-request section as one launch set per stage (memra #710 B-row, 2026-09-27): the ring writes, the fine, coarse and window-only index lists, the indexer's scores and top-k, the position-split gather and the two-launch sink attention. Row y runs the one-row replay launch's body (`dsv4_build_idx_redirect_m_body`, `dsv4_build_idx_redirect_window_pos_body`, `dsv4_indexer_score_f32acc_body`, `dsv4_topk_idx_body<true>`, `dsv4_c4_split_source`, the sink bodies with `ROWS`) on its own store, transient base and position from `__grid_constant__` tables, and its own scratch rows. The one-row kernels keep their signatures and run the same bodies with `ROWS = false`. FFI `memra_dsv4_rows_copy`, `memra_dsv4_replay_indices_rows`, `memra_dsv4_replay_indexer_rows`, `memra_dsv4_c4_split_gather_rows`, `memra_dsv4_sink_attn_st_rows`. |
+ | `cu/dsv4_gpu.cu` | `dsv4_scatter_rows_rows_kernel`, `dsv4_argmax_rows_kernel` | A captured B-row step's commit segment (memra #710 B-row, 2026-09-27): each layer's ring commit for every row in one launch per rank (row y's transient row into its ring slot, the one-row `dsv4_scatter_rows_kernel` move), and when every row is greedy one argmax launch with one CTA per row (`dsv4_argmax_kernel`'s thread partition and tree per row). FFI `memra_dsv4_scatter_rows_rows`, `memra_dsv4_argmax_rows`. |
++| `cu/dsv4_gpu.cu` | `dsv4_indexer_score_f32acc_replay_kernel` (and the rows kernel's slots) | The replayed indexer scores with `DSV4_IDX_SLOTS` (8) scores per CTA (memra #710, 2026-09-27): a replayed launch covers the capacity's `nb_max` blocks and most exit on the live count, so the one-score CTAs spent the launch dispatching them. Slot k runs the one-score CTA's work for block `i0 + k` (heads threads, each the same dot chain, then that slot's first thread sums its heads in order), so every score keeps its bits. Taken by `memra_dsv4_replay_indexer` and `memra_dsv4_replay_indexer_rows` when `8 * heads <= 1024`; eager launches keep one score per CTA. |
+ | `cu/dsv4_gpu.cu` | `dsv4_replay_copy_row_kernel`, `dsv4_replay_copy_if_kernel` | Live append/emission addresses and uniformly predicated pending shifts. Byte copies only; existing active compressor arithmetic/reduction order retained. Same diagnostic door. |
+ | `cu/dsv4_gpu.cu` | Existing compressor pool, f32 RMSNorm, RoPE-at, Hadamard and activation-quant kernels | Optional uniform whole-block emission predicate at entry, before barriers. Null preserves eager behavior. `memra_dsv4_replay_compressor_emit` composes the exact active program; no CUDA conditional body. Real-kernel byte/sanitizer gate: `tools/dsv4-replay-live-kernel-gate.cu`. |
+ | `cu/dsv4_gpu.cu` | Existing redirect, numeric top-k, f32 indexer-score and sink score/soft/out kernels | Optional live position/count/slot inputs; same loop bounds and reduction order as eager. No padded reduction replacement. Same default-OFF full-token door and component gate. |
+-- 
+2.53.0
+

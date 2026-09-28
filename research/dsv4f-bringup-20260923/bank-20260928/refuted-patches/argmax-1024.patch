@@ -1,0 +1,251 @@
+From c8643a78591004e8dbbbe620bb31326eb5b05bd2 Mon Sep 17 00:00:00 2001
+From: memra-lane <lane@localhost>
+Date: Sun, 27 Sep 2026 21:02:30 +0300
+Subject: [PATCH] perf(dsv4): the greedy argmax runs on 1024 threads with
+ float4 loads; same pick for every row without a NaN (#710)
+
+Signed-off-by: memra-lane <lane@localhost>
+---
+ crates/memra-engine/cu/dsv4_gpu.cu  |  72 +++++++++++++++++-
+ crates/memra-engine/src/dsv4_ffi.rs |   7 ++
+ crates/memra-engine/src/dsv4_gpu.rs | 111 ++++++++++++++++++++++++++++
+ docs/KERNELS.md                     |   1 +
+ 4 files changed, 190 insertions(+), 1 deletion(-)
+
+diff --git a/crates/memra-engine/cu/dsv4_gpu.cu b/crates/memra-engine/cu/dsv4_gpu.cu
+index beeac7ef3f..a9a58528e7 100644
+--- a/crates/memra-engine/cu/dsv4_gpu.cu
++++ b/crates/memra-engine/cu/dsv4_gpu.cu
+@@ -3026,9 +3026,79 @@ extern "C" __global__ void dsv4_argmax_kernel(const float* __restrict__ v, long
+     if (tid == 0) out[0] = (int)bi[0];
+ }
+ 
++// The same pick on 1024 threads (memra #710): thread t reads the float4 words t, t + 1024, ...
++// and then the scalar tail, all in ascending index order, and the tree combines as above. The
++// pick is the maximum value's lowest index for any partition, so every row without a NaN gets
++// dsv4_argmax_kernel's answer; a NaN never compares greater and is never replaced once held, so
++// a row holding one can pick differently. One SM keeps four times the loads in flight.
++__global__ void __launch_bounds__(1024) dsv4_argmax_wide_kernel(const float* __restrict__ v,
++                                                                long n, int* __restrict__ out) {
++    MEMRA_PDL_CHAIN_ENTRY();
++    __shared__ float bv[1024];
++    __shared__ long bi[1024];
++    const int tid = threadIdx.x;
++    float best = -INFINITY;
++    long besti = -1;
++    const long n4 = n >> 2;
++    const float4* v4 = reinterpret_cast<const float4*>(v);
++    auto take4 = [&](const float4 a, long base) {
++        const float xs[4] = {a.x, a.y, a.z, a.w};
++#pragma unroll
++        for (int e = 0; e < 4; ++e) {
++            if (besti < 0 || xs[e] > best) {
++                best = xs[e];
++                besti = base + e;
++            }
++        }
++    };
++    long j = tid;
++    for (; j + 3 * 1024 < n4; j += 4 * 1024) {
++        float4 a[4];
++#pragma unroll
++        for (int k = 0; k < 4; ++k) a[k] = v4[j + (long)k * 1024];
++#pragma unroll
++        for (int k = 0; k < 4; ++k) take4(a[k], (j + (long)k * 1024) * 4);
++    }
++    for (; j < n4; j += 1024) take4(v4[j], j * 4);
++    for (long i = n4 * 4 + tid; i < n; i += 1024) {
++        const float x = v[i];
++        if (besti < 0 || x > best) {
++            best = x;
++            besti = i;
++        }
++    }
++    bv[tid] = best;
++    bi[tid] = besti;
++    __syncthreads();
++    for (int off = 512; off > 0; off >>= 1) {
++        if (tid < off) {
++            bool take = (bi[tid + off] >= 0) &&
++                        (bi[tid] < 0 || bv[tid + off] > bv[tid] ||
++                         (bv[tid + off] == bv[tid] && bi[tid + off] < bi[tid]));
++            if (take) {
++                bv[tid] = bv[tid + off];
++                bi[tid] = bi[tid + off];
++            }
++        }
++        __syncthreads();
++    }
++    if (tid == 0) out[0] = (int)bi[0];
++}
++
++// A 16-byte aligned row takes the 1024-thread kernel, any other the 256-thread one.
+ extern "C" int memra_dsv4_argmax(const float* v, long n, int* out, void* stream_v) {
+     cudaStream_t stream = (cudaStream_t)stream_v;
+-    memra_chain_launch(dsv4_argmax_kernel,1, 256, 0, stream)(v, n, out);
++    if (((uintptr_t)v & 15) == 0)
++        memra_chain_launch(dsv4_argmax_wide_kernel, 1, 1024, 0, stream)(v, n, out);
++    else
++        memra_chain_launch(dsv4_argmax_kernel, 1, 256, 0, stream)(v, n, out);
++    DSV4_ERR();
++    return 0;
++}
++
++// The 256-thread kernel on any row, for the component test that holds the two to one pick.
++extern "C" int memra_dsv4_argmax_narrow(const float* v, long n, int* out, void* stream_v) {
++    memra_chain_launch(dsv4_argmax_kernel, 1, 256, 0, (cudaStream_t)stream_v)(v, n, out);
+     DSV4_ERR();
+     return 0;
+ }
+diff --git a/crates/memra-engine/src/dsv4_ffi.rs b/crates/memra-engine/src/dsv4_ffi.rs
+index a60c4db637..9013289831 100644
+--- a/crates/memra-engine/src/dsv4_ffi.rs
++++ b/crates/memra-engine/src/dsv4_ffi.rs
+@@ -1092,6 +1092,13 @@ unsafe extern "C" {
+         stream: *mut c_void,
+     ) -> i32;
+     pub fn memra_dsv4_argmax(v: *const f32, n: i64, out: *mut i32, stream: *mut c_void) -> i32;
++    /// `memra_dsv4_argmax`'s 256-thread kernel on any row (component test reference).
++    pub fn memra_dsv4_argmax_narrow(
++        v: *const f32,
++        n: i64,
++        out: *mut i32,
++        stream: *mut c_void,
++    ) -> i32;
+     pub fn memra_dsv4_gemv_bf16(
+         w_bf16: *const c_void,
+         x_bf16: *const c_void,
+diff --git a/crates/memra-engine/src/dsv4_gpu.rs b/crates/memra-engine/src/dsv4_gpu.rs
+index 546ab9c4ef..9fb1ba68a3 100644
+--- a/crates/memra-engine/src/dsv4_gpu.rs
++++ b/crates/memra-engine/src/dsv4_gpu.rs
+@@ -25618,3 +25618,114 @@ mod session_plan_tests {
+         assert_eq!(over.occupied(), 90);
+     }
+ }
++
++#[cfg(test)]
++mod argmax_component_tests {
++    use crate::dsv4_ffi as k;
++    use cudarc::driver::{DevicePtr, DevicePtrMut};
++
++    /// The 1024-thread greedy argmax against the 256-thread one on rows without a NaN: unique
++    /// maxima, ties at many positions, constant rows, all minus infinity, signed zeros and
++    /// infinite ties, at lengths around the vocabulary and odd tails; then a rough timing of
++    /// both on a vocabulary row.
++    #[test]
++    #[ignore = "requires an exclusively locked CUDA device; greedy argmax component identity"]
++    fn cuda_argmax_wide_matches_narrow_on_finite_and_infinite_rows() {
++        let gpu = memra_runtime::Gpu::new(0).expect("GPU");
++        let stream = gpu.stream();
++        let mut rng = 0x9e3779b97f4a7c15u64;
++        let mut next = move || {
++            rng ^= rng << 13;
++            rng ^= rng >> 7;
++            rng ^= rng << 17;
++            rng
++        };
++        let mut cells = 0;
++        for &n in &[129_280usize, 129_281, 129_283, 1_000, 7, 16_391, 4_096] {
++            for pattern in 0..7 {
++                let mut row: Vec<f32> = (0..n)
++                    .map(|_| ((next() % 20_001) as f32 - 10_000.0) / 97.0)
++                    .collect();
++                match pattern {
++                    0 => {}
++                    1 => {
++                        let m = 500.0;
++                        for _ in 0..9 {
++                            let at = (next() as usize) % n;
++                            row[at] = m;
++                        }
++                    }
++                    2 => row.iter_mut().for_each(|x| *x = 1.25),
++                    3 => row.iter_mut().for_each(|x| *x = f32::NEG_INFINITY),
++                    4 => {
++                        row.iter_mut().for_each(|x| *x = -(x.abs()) - 1.0);
++                        for _ in 0..5 {
++                            let at = (next() as usize) % n;
++                            row[at] = if next() % 2 == 0 { 0.0 } else { -0.0 };
++                        }
++                    }
++                    5 => {
++                        for _ in 0..4 {
++                            let at = (next() as usize) % n;
++                            row[at] = f32::INFINITY;
++                        }
++                    }
++                    _ => row
++                        .iter_mut()
++                        .enumerate()
++                        .for_each(|(i, x)| *x = -(i as f32)),
++                }
++                let dev = stream.clone_htod(&row).unwrap();
++                let mut out = stream.alloc_zeros::<i32>(2).unwrap();
++                let v = dev.device_ptr(&stream).0 as *const f32;
++                let o = out.device_ptr_mut(&stream).0 as *mut i32;
++                unsafe {
++                    k::ck(
++                        "argmax wide",
++                        k::memra_dsv4_argmax(v, n as i64, o, stream.cu_stream().cast()),
++                    )
++                    .unwrap();
++                    k::ck(
++                        "argmax narrow",
++                        k::memra_dsv4_argmax_narrow(
++                            v,
++                            n as i64,
++                            o.add(1),
++                            stream.cu_stream().cast(),
++                        ),
++                    )
++                    .unwrap();
++                }
++                let got = stream.clone_dtoh(&out).unwrap();
++                assert_eq!(got[0], got[1], "argmax n={n} pattern={pattern}");
++                cells += 1;
++            }
++        }
++        let n = 129_280usize;
++        let row: Vec<f32> = (0..n).map(|i| ((i * 7919) % 10_007) as f32).collect();
++        let dev = stream.clone_htod(&row).unwrap();
++        let mut out = stream.alloc_zeros::<i32>(1).unwrap();
++        let v = dev.device_ptr(&stream).0 as *const f32;
++        let o = out.device_ptr_mut(&stream).0 as *mut i32;
++        let time = |wide: bool| {
++            stream.synchronize().unwrap();
++            let t0 = std::time::Instant::now();
++            for _ in 0..2_000 {
++                let rc = unsafe {
++                    if wide {
++                        k::memra_dsv4_argmax(v, n as i64, o, stream.cu_stream().cast())
++                    } else {
++                        k::memra_dsv4_argmax_narrow(v, n as i64, o, stream.cu_stream().cast())
++                    }
++                };
++                assert_eq!(rc, 0);
++            }
++            stream.synchronize().unwrap();
++            t0.elapsed().as_secs_f64() * 1e6 / 2_000.0
++        };
++        let (narrow, wide) = (time(false), time(true));
++        println!(
++            "PASS argmax wide == narrow on {cells} rows; vocabulary row {narrow:.2} us narrow, {wide:.2} us wide (stream-serialized, launch included)"
++        );
++    }
++}
+diff --git a/docs/KERNELS.md b/docs/KERNELS.md
+index 0baa20bfa6..312b5b135c 100644
+--- a/docs/KERNELS.md
++++ b/docs/KERNELS.md
+@@ -471,6 +471,7 @@ family is inventoried below (research/b200-sinkhorn-fusion-20260902); the remain
+ | `dsv4_moe_tail_hc_post_kernel` | The TP/EP joined MoE tail in one launch (memra #710, 2026-09-27): `dsv4_combine_rows_m_kernel`'s slot sum of the routed rows, the joined shared expert's rows added as `dsv4_add_inplace_kernel` adds them, then `dsv4_hc_post_kernel`'s expression for each hc copy. Every value is those kernels' op in their order, so y and out keep their bits; three launches per layer become one. | None; `moe_verify_common_tail` on a TP/EP step whose shared expert rode the expert join, with hc_post | `memra_dsv4_moe_tail_hc_post` |
+ | `dsv4_headrms_rope_f32acc_kernel` | Per-head RMS then RoPE in one launch (memra #710, 2026-09-27): `dsv4_headrms_f32acc_kernel`'s register form over each (position, head) row, then `dsv4_rope_kernel`'s rotation of the row's last rd dims; each value is those kernels' op in their order, so the q rows keep their bits and two launches per layer become one | `attention_rows_dev` on the f32-chain arm, head dim up to 512 | `memra_dsv4_headrms_rope_f32acc` |
+ | `dsv4_kv_norm_rope_quant_f32acc_kernel` | The shared K==V latent row's norm, RoPE and window QAT in one launch (memra #710, 2026-09-27): `dsv4_rmsnorm_f32acc_regs<8>` in place, `dsv4_rope_kernel`'s rotation of the last rd dims, `dsv4_act_quant_kernel`'s FP8 round trip of the prefix in 64-groups (the group max is exact in any order); three launches per layer become one | `attention_rows_dev` on the f32-chain arm, row up to 1024 | `memra_dsv4_kv_norm_rope_quant_f32acc` |
++| `dsv4_argmax_wide_kernel` | The greedy pick on 1024 threads (memra #710, 2026-09-27): float4 words `t, t + 1024, ...` then the scalar tail per thread, ascending, and `dsv4_argmax_kernel`'s (value, lowest index) tree. The pick is the maximum value's lowest index under any partition, so a row without a NaN gets the 256-thread kernel's answer; one SM keeps four times the loads in flight. `memra_dsv4_argmax` takes it for a 16-byte aligned row and the 256-thread kernel otherwise; `memra_dsv4_argmax_narrow` keeps the 256-thread one for `cuda_argmax_wide_matches_narrow_on_finite_and_infinite_rows` | every greedy argmax | `memra_dsv4_argmax` |
+ | `dsv4_hc_head_pre_kernel` (:1453) / `dsv4_hc_head_pre_m_kernel` (:3026) | dsv4's `HcCollapse::GatedHead` trunk-exit gate (sigmoid-gated pre-only collapse), single-position / batched twins — distinct from glm5_next's `Mean` exit (`dsv4_hc_mean_kernel`) | `HcCollapse::GatedHead` plans only | dsv4_ffi.rs |
+ 
+ Selected-expert FP4 projection (same TU, `-fmad=false`):
+-- 
+2.53.0
+

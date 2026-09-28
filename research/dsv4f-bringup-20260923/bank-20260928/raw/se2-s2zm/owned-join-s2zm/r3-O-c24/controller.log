@@ -1,0 +1,10 @@
+START utc=2026-09-27T23:56:27Z bin=/root/lane/bin-zmO/memra-server env=MEMRA_ENV_AUDIT=on
+READY after=220s port=59499
+CELL warmup c=1 ok=1/1 agg=61.29 tok/s decode_p50=87.25 tok/s ttft_p50=166 ms tpot_p50=11.46 ms errs=[]
+CELL greedy-c4 c=4 ok=8/8 agg=209.77 tok/s decode_p50=57.51 tok/s ttft_p50=397 ms tpot_p50=17.39 ms errs=[]
+CELL greedy-c8 c=8 ok=16/16 agg=292.70 tok/s decode_p50=40.43 tok/s ttft_p50=683 ms tpot_p50=24.73 ms errs=[]
+CELL greedy-c16 c=16 ok=16/16 agg=267.93 tok/s decode_p50=18.98 tok/s ttft_p50=1817 ms tpot_p50=52.70 ms errs=[]
+CELL greedy-c24 c=24 ok=24/24 agg=274.16 tok/s decode_p50=19.65 tok/s ttft_p50=2571 ms tpot_p50=50.89 ms errs=[]
+CELL sampled-c8 c=8 ok=16/16 agg=272.31 tok/s decode_p50=37.55 tok/s ttft_p50=671 ms tpot_p50=26.63 ms errs=[]
+CELLS_DONE utc=2026-09-28T00:01:24Z
+TERMINAL rc=0 utc=2026-09-28T00:01:31Z
