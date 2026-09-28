@@ -24,6 +24,10 @@ memra-gguf = { workspace = true }
 # gate, QoS-only extraction — the metering half stays darklane-side).
 memra-lanes = { workspace = true }
 memra-tokenizer = { workspace = true }
+# memra#533: SSRF address-range classification for the MEMRA_FETCH_URLS image_url fetch
+# path. Pure logic, no I/O: kept in its own crate so it is unit-testable without pulling
+# in this crate's CUDA build (see the crate's own doc comment for the address ranges).
+memra-net-guard = { workspace = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "signal", "io-util"] }
 axum = "0.7"
 hyper = { version = "1", features = ["server", "http1", "http2"] }
@@ -44,6 +48,14 @@ libc = "0.2"
 sha2 = "0.10"
 # keyring file format (MEMRA_API_KEYS=/path/keys.toml)
 toml = "0.8"
+# memra#533: the MEMRA_FETCH_URLS image_url fetch path (image_fetch.rs). rustls (no
+# native-tls/openssl); `stream` for the size-capped bytes_stream() read; `url::Host` (not
+# just reqwest's re-exported `Url`) is needed directly to classify an IPv6 literal host
+# without the bracket-stripping `Url::host_str()` would otherwise require.
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "stream", "http2"] }
+futures-util = { version = "0.3", default-features = false, features = ["std", "async-await"] }
+base64 = "0.22"
+url = "2"
 
 [dev-dependencies]
 h2 = "0.4"
