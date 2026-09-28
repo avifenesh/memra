@@ -1,0 +1,576 @@
+1790536604768 [server] build: memra-0.138.0-a68cc11b7991 (id: source-tree, git: 15a7fbcc8158)
+1790536604768 [server] starting; models config = [("o15", "/root/artifacts/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf", None)]
+1790536604768 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+1790536604768 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+1790536604968 [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+1790536604978 [worker] Engine ready (device=0, MEMRA_FAST=true)
+1790536604978 [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+1790536604978 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+1790536604978 [worker] loading model "o15" <- /root/artifacts/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf
+1790536605015 [tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+1790536605166 [moe] resident-experts decision (dev0): experts 18.57GB + trunk 1.60GB vs free 100.98GB (expert budget 97.38GB) -> RESIDENT
+1790536608186 [worker]   loaded "o15": 41 layers, eos=248046, stop=[248046]
+1790536608186 [worker] o15: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+1790536608186 [route-contract] model="o15" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+1790536608186 [worker] o15: decode wave cap 8; scheduler tick cap 8
+1790536608186 [prefix-cache] on: budget 4997MB (4997120000 B, derived: 2 x 2498560000 B max entry for model "o15" at served ctx 262144 (from checkpoint; MEMRA_CTX unset), requested 4997120000 B; boot driver free 81483071488 B, post-reserve clamp 79872458752 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+1790536608186 [admission] "o15": plain 9280 B/token, spec 10208 B/token; fixed residual learns from effective-free deltas
+1790536608186 [prime-walk] model="o15" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+1790536608213 [moe-sk-form] dev=0 qt=7 sms=188 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=2048 out_f=512 n_active=85 max_m=1639
+1790536608453 [fa-pool] grow #0 dev=0 o_len 0 -> 266240 ml_len 0 -> 1040 (retired kept, zero=false)
+1790536608456 [func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+1790536608457 [func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+1790536608457 [fa-pool] grow #1 dev=0 o_len 266240 -> 532480 ml_len 1040 -> 2080 (retired kept, zero=false)
+1790536608457 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+1790536608457 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+1790536608457 [func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+1790536608457 [func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+1790536608458 [spec] draft-session state high-water: 41MB (max of parked delta 41MB and capture-time pool peak 9MB; charged per spec admission and gating future captures)
+1790536608478 [spec-vg] MTP verify-graph pool ENGAGED (vt_cap=4)
+1790536608479 [func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_nvfp4_mmvq_group4_b4_rp
+1790536608479 [func] CAPTURE-TIME kernel lookup (not warmed): ssm_conv1d_fused_decode_tloop_f32
+1790536608479 [func] CAPTURE-TIME kernel lookup (not warmed): gdn_scan_s128_tsnap
+1790536608480 [func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_nvfp4_mmvq_b4_rp
+1790536608480 [func] CAPTURE-TIME kernel lookup (not warmed): moe_gate_up_silu8_dev_q8_v_rows
+1790536608480 [func] CAPTURE-TIME kernel lookup (not warmed): moe_down8_fma_dev_q8_w8h2v_rows
+1790536608480 [fa-pool] grow #2 dev=0 o_len 532480 -> 1572864 ml_len 2080 -> 6144 (retired kept, zero=false)
+1790536608507 [fa-pool] grow #3 dev=0 o_len 1572864 -> 3145728 ml_len 6144 -> 12288 (retired kept, zero=false)
+1790536608761 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":872415232,"still_owned_bytes":21031995388,"pool_reserved_bytes":21172846592,"pool_cached_bytes":140851204,"driver_free_bytes":80132505600,"synchronization_errors":[]}
+1790536608761 [admit-cal] post-probe pool trim: released 832MB cached back to the driver
+1790536608761 [admit-cal] boot calibration done: model="o15" route=mtp transient floor 1536MB (static was 1536MB; measured 749MB; probe kv charge 41MB, draft-state 41MB, drafted 93 accepted 34; [dev0 peak-mapped 21024MB rest-mapped 20192MB charged 82MB -> 749MB]; 0.6s)
+1790536608761 [admit-predict] shadow armed: budget_bytes=73665624068 budget_src=derived(effective_free_bytes=80273356804 - prefix_cache_budget_bytes=4997120000 - admission_reserve_bytes=1610612736) exempt_tenants=0 enforce=true (ENFORCING: a request whose predicted KV exceeds the arm is REJECTED before device work)
+1790536608761 [admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+1790536608761 [kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+1790536608761 [batch-oom] recover=ON source=pro6000-class-default
+1790536608761 [server] worker ready; serving models: ["o15"]
+1790536608762 [server] listening on http://127.0.0.1:18526
+1790536609181 [meter] admit id=cmpl-ed95a014e493b637a333cfd23609d08f tenant=default lane=interactive model="o15"
+1790536609181 [admission] per-session draft-state charge: model="o15" +43MB (measured capture high-water)
+1790536609181 [admission] request cost: model="o15" ctx=192 path=spec = 10208 B/token x ctx + 22MB prefill-workspace + 0MB fixed = 24MB
+1790536609181 [admit-predict] id=cmpl-ed95a014e493b637a333cfd23609d08f tenant="d48-warm" model="o15" verdict=admit reason=maxtok-fallback prompt=64 predicted_completion=64 kv_hat=66820888 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=80273356804
+1790536609181 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536609181 [spec-k] model="o15" tenant="d48-warm" K=3 source=cold-short prompt=64 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790536609181 [admission] fixed residual high-water: model="o15" 129MB (observed 130MB at ctx 136 path=spec)
+1790536609421 [spec-acc] ctx=64 burst=10/63 cum=10/63=0.159
+1790536609421 [prefix-cache] insert (spec-boundary): 64 tokens, 66.5MB (resident 66.5MB / 4997MB, model o15, ns "d48-warm")
+1790536609564 [spec-acc] ctx=96 burst=12/63 cum=22/126=0.175
+1790536611567 [meter] admit id=cmpl-9a7b7ebe1959af41d7be70ddb216d8ad tenant=default lane=interactive model="o15"
+1790536611567 [admission] per-session draft-state charge: model="o15" +43MB (measured capture high-water)
+1790536611567 [admission] request cost: model="o15" ctx=6160 path=spec = 10208 B/token x ctx + 1425MB prefill-workspace + 129MB fixed = 1617MB
+1790536611567 [admit-predict] id=cmpl-9a7b7ebe1959af41d7be70ddb216d8ad tenant="d48-seq0" model="o15" verdict=admit reason=global-p95 prompt=6000 predicted_completion=64 kv_hat=1659183864 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=79815364624
+1790536611567 [meter] admit id=cmpl-eb080acf4a80b1122a9047fbfb20de4d tenant=default lane=interactive model="o15"
+1790536611567 [meter] admit id=cmpl-138a437c392e1f318b38802986b7327e tenant=default lane=interactive model="o15"
+1790536611567 [meter] admit id=cmpl-828badcea11ae8f3a9e4cc3da6e11f37 tenant=default lane=interactive model="o15"
+1790536611568 [spec-k] model="o15" tenant="d48-seq0" K=1 source=resume-floor(k=0->1) prompt=6000 cached=0 lcp=0 active=1 wave=4 placement=single-or-non-pp2
+1790536611568 [admission] fixed residual high-water: model="o15" 134MB (observed 197MB at ctx 6104 path=spec)
+1790536611821 [prime-yield] count=1 remaining=4 chunks=1 wall_ms=253.116 max_chunk_ms=253.116
+1790536611821 [admission] request cost: model="o15" ctx=6160 path=plain = 9280 B/token x ctx + 1425MB prefill-workspace + 134MB fixed = 1616MB
+1790536611821 [admit-predict] id=cmpl-eb080acf4a80b1122a9047fbfb20de4d tenant="d48-seq1" model="o15" verdict=admit reason=global-p95 prompt=6000 predicted_completion=64 kv_hat=1615674848 booked_bytes=1659183864 booked_real=1660082168 inflight=1 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=79569460016
+1790536611821 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536611821 [spec-k] model="o15" tenant="d48-seq1" K=0 source=concurrency prompt=6000 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+1790536611821 [admit-predict] id=cmpl-138a437c392e1f318b38802986b7327e tenant="d48-seq3" model="o15" verdict=admit reason=global-p95 prompt=6000 predicted_completion=64 kv_hat=1615674848 booked_bytes=3274858712 booked_real=3276573656 inflight=2 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=79378371924
+1790536611822 [spec-k] model="o15" tenant="d48-seq3" K=0 source=concurrency prompt=6000 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+1790536611822 [admit-predict] id=cmpl-828badcea11ae8f3a9e4cc3da6e11f37 tenant="d48-seq2" model="o15" verdict=admit reason=global-p95 prompt=6000 predicted_completion=64 kv_hat=1615674848 booked_bytes=4890533560 booked_real=4893065144 inflight=3 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=79187283832
+1790536611822 [spec-k] model="o15" tenant="d48-seq2" K=0 source=concurrency prompt=6000 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+1790536611963 [prime-yield] count=2 remaining=3 chunks=1 wall_ms=141.601 max_chunk_ms=141.601
+1790536612246 [prime-yield] count=3 remaining=2 chunks=1 wall_ms=27.486 max_chunk_ms=27.486
+1790536612527 [prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.958 max_chunk_ms=18.958
+1790536613074 [prefix-cache] insert (spec-boundary): 5984 tokens, 127.0MB (resident 193.5MB / 4997MB, model o15, ns "d48-seq0")
+1790536613074 [spec-gate] demoted session to batched decode: 4 active >= HIGH=4 (model o15, committed 6001, generated 1)
+1790536613436 [prefix-cache] insert (seed): 5984 tokens, 121.4MB (resident 314.9MB / 4997MB, model o15, ns "d48-seq1")
+1790536613522 [prefix-cache] insert (seed): 5984 tokens, 121.4MB (resident 436.3MB / 4997MB, model o15, ns "d48-seq3")
+1790536613608 [prefix-cache] insert (seed): 5984 tokens, 121.4MB (resident 557.7MB / 4997MB, model o15, ns "d48-seq2")
+1790536616226 [meter] admit id=cmpl-6914fce6001311f99ed5e94e4c52ea8a tenant=default lane=interactive model="o15"
+1790536616226 [admission] per-session draft-state charge: model="o15" +43MB (measured capture high-water)
+1790536616226 [admission] request cost: model="o15" ctx=12160 path=spec = 10208 B/token x ctx + 1474MB prefill-workspace + 134MB fixed = 1733MB
+1790536616226 [admit-predict] id=cmpl-6914fce6001311f99ed5e94e4c52ea8a tenant="d48-seqb" model="o15" verdict=admit reason=global-p95 prompt=12000 predicted_completion=96 kv_hat=1775448824 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=78547811488
+1790536616226 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536616227 [spec-k] model="o15" tenant="d48-seqb" K=3 source=cold-long prompt=12000 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790536616227 [admission] fixed residual high-water: model="o15" 140MB (observed 264MB at ctx 12104 path=spec)
+1790536616481 [prime-yield] count=1 remaining=5 chunks=1 wall_ms=253.839 max_chunk_ms=253.839
+1790536616750 [prime-yield] count=2 remaining=4 chunks=1 wall_ms=268.755 max_chunk_ms=268.755
+1790536617025 [prime-yield] count=3 remaining=3 chunks=1 wall_ms=275.437 max_chunk_ms=275.437
+1790536617044 [prime-yield] count=4 remaining=2 chunks=1 wall_ms=18.868 max_chunk_ms=18.868
+1790536617063 [prime-yield] count=5 remaining=1 chunks=1 wall_ms=18.802 max_chunk_ms=18.802
+1790536617081 [prefix-cache] insert (spec-boundary): 12000 tokens, 188.4MB (resident 746.0MB / 4997MB, model o15, ns "d48-seqb")
+1790536617115 [fa-pool] grow #4 dev=0 o_len 3145728 -> 6291456 ml_len 12288 -> 24576 (retired kept, zero=false)
+1790536617277 [spec-acc] ctx=12001 burst=12/60 cum=12/60=0.200
+1790536617411 [spec-acc] ctx=12034 burst=15/54 cum=27/114=0.237
+1790536617539 [spec-acc] ctx=12067 burst=12/51 cum=39/165=0.236
+1790536619544 [meter] admit id=cmpl-748c49dd60ea12a0a8fee5c51e951768 tenant=default lane=interactive model="o15"
+1790536619544 [meter] admit id=cmpl-6980364d5617938c725556e2b2680a82 tenant=default lane=interactive model="o15"
+1790536619544 [admission] per-session draft-state charge: model="o15" +43MB (measured capture high-water)
+1790536619544 [admission] request cost: model="o15" ctx=6160 path=spec = 10208 B/token x ctx + 1425MB prefill-workspace + 140MB fixed = 1628MB
+1790536619544 [meter] admit id=cmpl-f2238a5605c463196594d5e807e84c53 tenant=default lane=interactive model="o15"
+1790536619544 [admit-predict] id=cmpl-748c49dd60ea12a0a8fee5c51e951768 tenant="d48-seq0" model="o15" verdict=admit reason=global-p95 prompt=6000 predicted_completion=96 kv_hat=1670616824 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=77817377068
+1790536619544 [meter] admit id=cmpl-aef985c81ead4d71430056e95c4462e4 tenant=default lane=interactive model="o15"
+1790536619544 [worker] plain-affinity: declined (no checkpoint retained; 1 parked, 6000 prompt tokens; model o15)
+1790536619545 [prefix-cache] hit: 5984 of 6000 prompt tokens from cache (model o15)
+1790536619545 [spec-k] model="o15" tenant="d48-seq0" K=0 source=concurrency prompt=6000 cached=5984 lcp=5984 active=1 wave=4 placement=single-or-non-pp2
+1790536619545 [prefix-cache] source lease released after restore fence (entry 5984 tokens, model o15)
+1790536619571 [admission] request cost: model="o15" ctx=6160 path=plain = 9280 B/token x ctx + 1425MB prefill-workspace + 140MB fixed = 1622MB
+1790536619571 [admit-predict] id=cmpl-6980364d5617938c725556e2b2680a82 tenant="d48-seq2" model="o15" verdict=admit reason=global-p95 prompt=6000 predicted_completion=96 kv_hat=1621539808 booked_bytes=1670616824 booked_real=1671188472 inflight=1 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=77625295696
+1790536619571 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536619571 [worker] plain-affinity: declined (no checkpoint retained; 1 parked, 6000 prompt tokens; model o15)
+1790536619571 [prefix-cache] hit: 5984 of 6000 prompt tokens from cache (model o15)
+1790536619571 [spec-k] model="o15" tenant="d48-seq2" K=0 source=concurrency prompt=6000 cached=5984 lcp=5984 active=2 wave=4 placement=single-or-non-pp2
+1790536619571 [prefix-cache] source lease released after restore fence (entry 5984 tokens, model o15)
+1790536619571 [admit-predict] id=cmpl-f2238a5605c463196594d5e807e84c53 tenant="d48-seq1" model="o15" verdict=admit reason=global-p95 prompt=6000 predicted_completion=96 kv_hat=1621539808 booked_bytes=3292156632 booked_real=3293247960 inflight=2 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=77434207604
+1790536619571 [worker] plain-affinity: declined (no checkpoint retained; 1 parked, 6000 prompt tokens; model o15)
+1790536619572 [prefix-cache] hit: 5984 of 6000 prompt tokens from cache (model o15)
+1790536619572 [spec-k] model="o15" tenant="d48-seq1" K=0 source=concurrency prompt=6000 cached=5984 lcp=5984 active=3 wave=4 placement=single-or-non-pp2
+1790536619572 [prefix-cache] source lease released after restore fence (entry 5984 tokens, model o15)
+1790536619572 [admit-predict] id=cmpl-aef985c81ead4d71430056e95c4462e4 tenant="d48-seq3" model="o15" verdict=admit reason=global-p95 prompt=6000 predicted_completion=96 kv_hat=1621539808 booked_bytes=4913696440 booked_real=4915307448 inflight=3 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=77243119512
+1790536619572 [worker] plain-affinity: declined (no checkpoint retained; 1 parked, 6000 prompt tokens; model o15)
+1790536619572 [prefix-cache] hit: 5984 of 6000 prompt tokens from cache (model o15)
+1790536619572 [spec-k] model="o15" tenant="d48-seq3" K=0 source=concurrency prompt=6000 cached=5984 lcp=5984 active=4 wave=4 placement=single-or-non-pp2
+1790536619572 [prefix-cache] source lease released after restore fence (entry 5984 tokens, model o15)
+1790536625201 [meter] admit id=cmpl-451377c6ac1b93f06d30f0601487fba9 tenant=default lane=interactive model="o15"
+1790536625201 [admission] per-session draft-state charge: model="o15" +43MB (measured capture high-water)
+1790536625201 [admission] request cost: model="o15" ctx=30848 path=spec = 10208 B/token x ctx + 1627MB prefill-workspace + 140MB fixed = 2082MB
+1790536625201 [admit-predict] id=cmpl-451377c6ac1b93f06d30f0601487fba9 tenant="d48-burst0" model="o15" verdict=admit reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=2125138168 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=77049051580
+1790536625201 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625202 [spec-k] model="o15" tenant="d48-burst0" K=3 source=cold-long prompt=30720 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790536625202 [admission] fixed residual high-water: model="o15" 157MB (observed 472MB at ctx 30792 path=spec)
+1790536625202 [meter] admit id=cmpl-44bedda6ad48d1a77b8a72d5f4668aff tenant=default lane=interactive model="o15"
+1790536625204 [meter] admit id=cmpl-83870d544deb74ecec64558336d73e82 tenant=default lane=interactive model="o15"
+1790536625205 [meter] admit id=cmpl-1f40647e75376e1cad66b2d28f50f1e8 tenant=default lane=interactive model="o15"
+1790536625205 [meter] admit id=cmpl-f1b82d7f55f4a3551e7255d1d6e0d590 tenant=default lane=interactive model="o15"
+1790536625205 [meter] admit id=cmpl-604e22aa519cfeabee7fcf726cef9b3a tenant=default lane=interactive model="o15"
+1790536625206 [meter] admit id=cmpl-0b8e143bb8f3707b374deedd400571ef tenant=default lane=interactive model="o15"
+1790536625207 [meter] admit id=cmpl-94a9b7a6630153f574ea23b822d8b499 tenant=default lane=interactive model="o15"
+1790536625208 [meter] admit id=cmpl-a94fca532d7563e2e16e94ed9d3e64d6 tenant=default lane=interactive model="o15"
+1790536625208 [meter] admit id=cmpl-c389a8fd2a63461fac429e40fb9f54ac tenant=default lane=interactive model="o15"
+1790536625212 [meter] admit id=cmpl-b51492100cebe4b9fc1286291afc1c11 tenant=default lane=interactive model="o15"
+1790536625212 [meter] admit id=cmpl-6ea04a1096bd281747479c17f7489b11 tenant=default lane=interactive model="o15"
+1790536625213 [meter] admit id=cmpl-7eac3896bffe0c1e57f68f5850095110 tenant=default lane=interactive model="o15"
+1790536625214 [meter] admit id=cmpl-c1ea559c8d7d8c0e7df8ead118cb4dc3 tenant=default lane=interactive model="o15"
+1790536625216 [meter] admit id=cmpl-5fa698b817173983047361b215a1c5ed tenant=default lane=interactive model="o15"
+1790536625217 [meter] admit id=cmpl-77763fdc5a6405a619481054d144057a tenant=default lane=interactive model="o15"
+1790536625218 [meter] admit id=cmpl-64500c309473ca0f882238797b6a1979 tenant=default lane=interactive model="o15"
+1790536625218 [meter] admit id=cmpl-bcf456ba517f5e06636d95826e199c2c tenant=default lane=interactive model="o15"
+1790536625220 [meter] admit id=cmpl-790afc92e0f61ba07b8741628f210b06 tenant=default lane=interactive model="o15"
+1790536625232 [meter] admit id=cmpl-79ba67350bc2542eadbfdd3c7b8b37ec tenant=default lane=interactive model="o15"
+1790536625232 [meter] admit id=cmpl-23d824ddc94cc15455b1d46af69fe551 tenant=default lane=interactive model="o15"
+1790536625232 [meter] admit id=cmpl-414cd932e51c52d7c430d7c2bfc3b117 tenant=default lane=interactive model="o15"
+1790536625232 [meter] admit id=cmpl-76cc6a8472e664bf9ef792f1167d6a7d tenant=default lane=interactive model="o15"
+1790536625232 [meter] admit id=cmpl-dd9a8c86487324f15bfb41667e3bd30a tenant=default lane=interactive model="o15"
+1790536625232 [meter] admit id=cmpl-669369df07e3efe7ba677e0b34c5fb9c tenant=default lane=interactive model="o15"
+1790536625232 [meter] admit id=cmpl-abe859bf517fc9e7dc572e975315004f tenant=default lane=interactive model="o15"
+1790536625232 [meter] admit id=cmpl-5656034e7e95e764b8402801790c08ea tenant=default lane=interactive model="o15"
+1790536625232 [meter] admit id=cmpl-113d46aff2d4c47067f5fd25bb308af7 tenant=default lane=interactive model="o15"
+1790536625232 [meter] admit id=cmpl-024ff7be45ca47be0f89d26e57428446 tenant=default lane=interactive model="o15"
+1790536625232 [meter] admit id=cmpl-039755a8e2f0ae0de93f6afdc47a0d7d tenant=default lane=interactive model="o15"
+1790536625233 [meter] admit id=cmpl-8491f62a653510c65308e801c98454cf tenant=default lane=interactive model="o15"
+1790536625234 [meter] admit id=cmpl-93a56709cd98bdb7f33c237041d59c96 tenant=default lane=interactive model="o15"
+1790536625237 [meter] admit id=cmpl-848d94b18175371184083cfcac5a977f tenant=default lane=interactive model="o15"
+1790536625238 [meter] admit id=cmpl-1a713b4bd1c265f5301ea8557836f927 tenant=default lane=interactive model="o15"
+1790536625239 [meter] admit id=cmpl-ab58314b0080877d8e48343350f06782 tenant=default lane=interactive model="o15"
+1790536625239 [meter] admit id=cmpl-4b654e2ed29eb084ac46e69569f48ce2 tenant=default lane=interactive model="o15"
+1790536625240 [meter] admit id=cmpl-a2dc1d0fa29795351a2f6aed004c7bb8 tenant=default lane=interactive model="o15"
+1790536625240 [meter] admit id=cmpl-01b9e596b7171d3751ee55b1f346827b tenant=default lane=interactive model="o15"
+1790536625240 [meter] admit id=cmpl-3bf271560e3aad82c7e3b84ff5fd0dc9 tenant=default lane=interactive model="o15"
+1790536625244 [meter] admit id=cmpl-1b9d5ec1deabcb8b723a84556dbb8f78 tenant=default lane=interactive model="o15"
+1790536625245 [meter] admit id=cmpl-8fa22d50bc39a5019910121f2a813f1e tenant=default lane=interactive model="o15"
+1790536625245 [meter] admit id=cmpl-49698e0746052366a4dbe1b56d9bfed0 tenant=default lane=interactive model="o15"
+1790536625245 [meter] admit id=cmpl-abbd24535bb86be0bdf800fd229bf372 tenant=default lane=interactive model="o15"
+1790536625246 [meter] admit id=cmpl-2c94c427cb34f4c1874525e9707f0660 tenant=default lane=interactive model="o15"
+1790536625248 [meter] admit id=cmpl-2137350c343af2864c54d572cba18b53 tenant=default lane=interactive model="o15"
+1790536625248 [meter] admit id=cmpl-36e5b27635ae825dbdf2896b8b2feb1b tenant=default lane=interactive model="o15"
+1790536625248 [meter] admit id=cmpl-ab4af301dda424cbdd96c821e12735ae tenant=default lane=interactive model="o15"
+1790536625251 [meter] admit id=cmpl-a8c244ee63f1f0425630d9370410a92e tenant=default lane=interactive model="o15"
+1790536625253 [meter] admit id=cmpl-4a6cfe5034af88385421dbec56bfec39 tenant=default lane=interactive model="o15"
+1790536625253 [meter] admit id=cmpl-0a596ae13c1ab35b254ba497894a6bec tenant=default lane=interactive model="o15"
+1790536625253 [meter] admit id=cmpl-257dcbe6d26fa9fead3876eb4c6eaeed tenant=default lane=interactive model="o15"
+1790536625257 [meter] admit id=cmpl-8dcee053f9a7ef5272e1d58f5abcf8c2 tenant=default lane=interactive model="o15"
+1790536625257 [meter] admit id=cmpl-fae972cce76d1c7091b94d7ad22cc501 tenant=default lane=interactive model="o15"
+1790536625258 [meter] admit id=cmpl-96579c0364b1397af8d77588e0c13f48 tenant=default lane=interactive model="o15"
+1790536625259 [meter] admit id=cmpl-fbc04b2e140db8dc6e1b413d5d41c281 tenant=default lane=interactive model="o15"
+1790536625259 [meter] admit id=cmpl-d0ed8ae4cb53358eccc602cd0753ad9e tenant=default lane=interactive model="o15"
+1790536625260 [meter] admit id=cmpl-5c30ed10b9727f251a66e5890486329b tenant=default lane=interactive model="o15"
+1790536625263 [meter] admit id=cmpl-5a8da29ff1a2a73dca7a00978c4dbf77 tenant=default lane=interactive model="o15"
+1790536625264 [meter] admit id=cmpl-d21ba775bbc3421aec6989acb387cae3 tenant=default lane=interactive model="o15"
+1790536625266 [meter] admit id=cmpl-45bb5d0be327d05a2f40679ca0b5d428 tenant=default lane=interactive model="o15"
+1790536625268 [meter] admit id=cmpl-71954b1244f3b5751489e12648482a43 tenant=default lane=interactive model="o15"
+1790536625268 [meter] admit id=cmpl-1018e7eb22b518c12967cc909e81472e tenant=default lane=interactive model="o15"
+1790536625268 [meter] admit id=cmpl-c34da2cba3a16532ae6f456d80920ba5 tenant=default lane=interactive model="o15"
+1790536625268 [meter] admit id=cmpl-0a1d4b08082371ae6c027819186f8d25 tenant=default lane=interactive model="o15"
+1790536625456 [prime-yield] count=1 remaining=15 chunks=1 wall_ms=254.273 max_chunk_ms=254.273
+1790536625456 [admission] request cost: model="o15" ctx=30592 path=plain = 9280 B/token x ctx + 1625MB prefill-workspace + 157MB fixed = 2067MB
+1790536625456 [admit-predict] id=cmpl-44bedda6ad48d1a77b8a72d5f4668aff tenant="d48-burst1" model="o15" verdict=admit reason=global-p95 prompt=30464 predicted_completion=64 kv_hat=2066020320 booked_bytes=2125138168 booked_real=2125709816 inflight=1 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=76325715164
+1790536625456 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625456 [spec-k] model="o15" tenant="d48-burst1" K=0 source=concurrency prompt=30464 cached=0 lcp=0 active=2 wave=64 placement=single-or-non-pp2
+1790536625457 [admission] request cost: model="o15" ctx=30080 path=plain = 9280 B/token x ctx + 1621MB prefill-workspace + 157MB fixed = 2058MB
+1790536625457 [admit-predict] id=cmpl-83870d544deb74ecec64558336d73e82 tenant="d48-burst3" model="o15" verdict=admit reason=global-p95 prompt=29952 predicted_completion=64 kv_hat=2057074656 booked_bytes=4191158488 booked_real=4192249816 inflight=2 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=75885225216
+1790536625457 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625457 [spec-k] model="o15" tenant="d48-burst3" K=0 source=concurrency prompt=29952 cached=0 lcp=0 active=3 wave=64 placement=single-or-non-pp2
+1790536625457 [admission] request cost: model="o15" ctx=30336 path=plain = 9280 B/token x ctx + 1623MB prefill-workspace + 157MB fixed = 2062MB
+1790536625457 [admit-predict] id=cmpl-1f40647e75376e1cad66b2d28f50f1e8 tenant="d48-burst2" model="o15" verdict=admit reason=global-p95 prompt=30208 predicted_completion=64 kv_hat=2061547488 booked_bytes=6248233144 booked_real=6249844152 inflight=3 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=75449961764
+1790536625457 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625457 [spec-k] model="o15" tenant="d48-burst2" K=0 source=concurrency prompt=30208 cached=0 lcp=0 active=4 wave=64 placement=single-or-non-pp2
+1790536625457 [admission] request cost: model="o15" ctx=29568 path=plain = 9280 B/token x ctx + 1617MB prefill-workspace + 157MB fixed = 2049MB
+1790536625457 [admit-predict] id=cmpl-f1b82d7f55f4a3551e7255d1d6e0d590 tenant="d48-burst5" model="o15" verdict=admit reason=global-p95 prompt=29440 predicted_completion=64 kv_hat=2048128992 booked_bytes=8309780632 booked_real=8311911320 inflight=4 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=75012085064
+1790536625457 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625458 [spec-k] model="o15" tenant="d48-burst5" K=0 source=concurrency prompt=29440 cached=0 lcp=0 active=5 wave=64 placement=single-or-non-pp2
+1790536625458 [admission] request cost: model="o15" ctx=29824 path=plain = 9280 B/token x ctx + 1619MB prefill-workspace + 157MB fixed = 2053MB
+1790536625458 [admit-predict] id=cmpl-604e22aa519cfeabee7fcf726cef9b3a tenant="d48-burst4" model="o15" verdict=admit reason=global-p95 prompt=29696 predicted_completion=64 kv_hat=2052601824 booked_bytes=10357909624 booked_real=10360559992 inflight=5 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=74582048108
+1790536625458 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625459 [spec-k] model="o15" tenant="d48-burst4" K=0 source=concurrency prompt=29696 cached=0 lcp=0 active=6 wave=64 placement=single-or-non-pp2
+1790536625459 [admission] request cost: model="o15" ctx=29312 path=plain = 9280 B/token x ctx + 1615MB prefill-workspace + 157MB fixed = 2044MB
+1790536625459 [admit-predict] id=cmpl-0b8e143bb8f3707b374deedd400571ef tenant="d48-burst6" model="o15" verdict=admit reason=global-p95 prompt=29184 predicted_completion=64 kv_hat=2043656160 booked_bytes=12410511448 booked_real=12413681496 inflight=6 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=74149397904
+1790536625459 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625459 [spec-k] model="o15" tenant="d48-burst6" K=0 source=concurrency prompt=29184 cached=0 lcp=0 active=7 wave=64 placement=single-or-non-pp2
+1790536625459 [admission] request cost: model="o15" ctx=29056 path=plain = 9280 B/token x ctx + 1613MB prefill-workspace + 157MB fixed = 2040MB
+1790536625459 [admit-predict] id=cmpl-94a9b7a6630153f574ea23b822d8b499 tenant="d48-burst7" model="o15" verdict=admit reason=global-p95 prompt=28928 predicted_completion=64 kv_hat=2039183328 booked_bytes=14454167608 booked_real=14457857336 inflight=7 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=73721974196
+1790536625459 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625460 [spec-k] model="o15" tenant="d48-burst7" K=0 source=concurrency prompt=28928 cached=0 lcp=0 active=8 wave=64 placement=single-or-non-pp2
+1790536625460 [admission] request cost: model="o15" ctx=30848 path=plain = 9280 B/token x ctx + 1627MB prefill-workspace + 157MB fixed = 2071MB
+1790536625460 [admit-predict] id=cmpl-a94fca532d7563e2e16e94ed9d3e64d6 tenant="d48-burst8" model="o15" verdict=admit reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=2070493152 booked_bytes=16493350936 booked_real=16497560344 inflight=8 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=73297163736
+1790536625460 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625461 [spec-k] model="o15" tenant="d48-burst8" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=9 wave=64 placement=single-or-non-pp2
+1790536625461 [admission] request cost: model="o15" ctx=30592 path=plain = 9280 B/token x ctx + 1625MB prefill-workspace + 157MB fixed = 2067MB
+1790536625461 [admit-predict] id=cmpl-c389a8fd2a63461fac429e40fb9f54ac tenant="d48-burst9" model="o15" verdict=admit reason=global-p95 prompt=30464 predicted_completion=64 kv_hat=2066020320 booked_bytes=18563844088 booked_real=18568573176 inflight=9 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=72854060540
+1790536625461 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625461 [spec-k] model="o15" tenant="d48-burst9" K=0 source=concurrency prompt=30464 cached=0 lcp=0 active=10 wave=64 placement=single-or-non-pp2
+1790536625461 [admission] request cost: model="o15" ctx=30336 path=plain = 9280 B/token x ctx + 1623MB prefill-workspace + 157MB fixed = 2062MB
+1790536625461 [admit-predict] id=cmpl-b51492100cebe4b9fc1286291afc1c11 tenant="d48-burst10" model="o15" verdict=admit reason=global-p95 prompt=30208 predicted_completion=64 kv_hat=2061547488 booked_bytes=20629864408 booked_real=20635113176 inflight=10 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=72413570592
+1790536625461 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625462 [spec-k] model="o15" tenant="d48-burst10" K=0 source=concurrency prompt=30208 cached=0 lcp=0 active=11 wave=64 placement=single-or-non-pp2
+1790536625462 [admission] request cost: model="o15" ctx=30080 path=plain = 9280 B/token x ctx + 1621MB prefill-workspace + 157MB fixed = 2058MB
+1790536625462 [admit-predict] id=cmpl-6ea04a1096bd281747479c17f7489b11 tenant="d48-burst11" model="o15" verdict=admit reason=global-p95 prompt=29952 predicted_completion=64 kv_hat=2057074656 booked_bytes=22691411896 booked_real=22697180344 inflight=11 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=71975693892
+1790536625462 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625463 [spec-k] model="o15" tenant="d48-burst11" K=0 source=concurrency prompt=29952 cached=0 lcp=0 active=12 wave=64 placement=single-or-non-pp2
+1790536625463 [admission] request cost: model="o15" ctx=29568 path=plain = 9280 B/token x ctx + 1617MB prefill-workspace + 157MB fixed = 2049MB
+1790536625463 [admit-predict] id=cmpl-7eac3896bffe0c1e57f68f5850095110 tenant="d48-burst13" model="o15" verdict=admit reason=global-p95 prompt=29440 predicted_completion=64 kv_hat=2048128992 booked_bytes=24748486552 booked_real=24754774680 inflight=12 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=71540430440
+1790536625463 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625463 [spec-k] model="o15" tenant="d48-burst13" K=0 source=concurrency prompt=29440 cached=0 lcp=0 active=13 wave=64 placement=single-or-non-pp2
+1790536625464 [admission] request cost: model="o15" ctx=29824 path=plain = 9280 B/token x ctx + 1619MB prefill-workspace + 157MB fixed = 2053MB
+1790536625464 [admit-predict] id=cmpl-c1ea559c8d7d8c0e7df8ead118cb4dc3 tenant="d48-burst12" model="o15" verdict=admit reason=global-p95 prompt=29696 predicted_completion=64 kv_hat=2052601824 booked_bytes=26796615544 booked_real=26803423352 inflight=13 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=71110393484
+1790536625464 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625464 [spec-k] model="o15" tenant="d48-burst12" K=0 source=concurrency prompt=29696 cached=0 lcp=0 active=14 wave=64 placement=single-or-non-pp2
+1790536625464 [admission] request cost: model="o15" ctx=29312 path=plain = 9280 B/token x ctx + 1615MB prefill-workspace + 157MB fixed = 2044MB
+1790536625464 [admit-predict] id=cmpl-5fa698b817173983047361b215a1c5ed tenant="d48-burst14" model="o15" verdict=admit reason=global-p95 prompt=29184 predicted_completion=64 kv_hat=2043656160 booked_bytes=28849217368 booked_real=28856544856 inflight=14 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=70677743280
+1790536625464 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625465 [spec-k] model="o15" tenant="d48-burst14" K=0 source=concurrency prompt=29184 cached=0 lcp=0 active=15 wave=64 placement=single-or-non-pp2
+1790536625465 [admission] request cost: model="o15" ctx=29056 path=plain = 9280 B/token x ctx + 1613MB prefill-workspace + 157MB fixed = 2040MB
+1790536625465 [admit-predict] id=cmpl-77763fdc5a6405a619481054d144057a tenant="d48-burst15" model="o15" verdict=admit reason=global-p95 prompt=28928 predicted_completion=64 kv_hat=2039183328 booked_bytes=30892873528 booked_real=30900720696 inflight=15 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=70250319572
+1790536625465 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625466 [spec-k] model="o15" tenant="d48-burst15" K=0 source=concurrency prompt=28928 cached=0 lcp=0 active=16 wave=64 placement=single-or-non-pp2
+1790536625466 [admission] request cost: model="o15" ctx=30592 path=plain = 9280 B/token x ctx + 1625MB prefill-workspace + 157MB fixed = 2067MB
+1790536625466 [admit-predict] id=cmpl-64500c309473ca0f882238797b6a1979 tenant="d48-burst17" model="o15" verdict=admit reason=global-p95 prompt=30464 predicted_completion=64 kv_hat=2066020320 booked_bytes=32932056856 booked_real=32940423704 inflight=16 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=69825509112
+1790536625466 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625466 [spec-k] model="o15" tenant="d48-burst17" K=0 source=concurrency prompt=30464 cached=0 lcp=0 active=17 wave=64 placement=single-or-non-pp2
+1790536625466 [admission] request cost: model="o15" ctx=30848 path=plain = 9280 B/token x ctx + 1627MB prefill-workspace + 157MB fixed = 2071MB
+1790536625466 [admit-predict] id=cmpl-bcf456ba517f5e06636d95826e199c2c tenant="d48-burst16" model="o15" verdict=admit reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=2070493152 booked_bytes=34998077176 booked_real=35006963704 inflight=17 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=69385019164
+1790536625466 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625467 [spec-k] model="o15" tenant="d48-burst16" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=18 wave=64 placement=single-or-non-pp2
+1790536625467 [admission] request cost: model="o15" ctx=30336 path=plain = 9280 B/token x ctx + 1623MB prefill-workspace + 157MB fixed = 2062MB
+1790536625467 [admit-predict] id=cmpl-790afc92e0f61ba07b8741628f210b06 tenant="d48-burst18" model="o15" verdict=admit reason=global-p95 prompt=30208 predicted_completion=64 kv_hat=2061547488 booked_bytes=37068570328 booked_real=37077976536 inflight=18 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=68941915968
+1790536625467 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625468 [spec-k] model="o15" tenant="d48-burst18" K=0 source=concurrency prompt=30208 cached=0 lcp=0 active=19 wave=64 placement=single-or-non-pp2
+1790536625468 [admit-predict] id=cmpl-79ba67350bc2542eadbfdd3c7b8b37ec tenant="d48-burst26" model="o15" verdict=admit reason=global-p95 prompt=30208 predicted_completion=64 kv_hat=2061547488 booked_bytes=39130117816 booked_real=39140043704 inflight=19 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=68504039268
+1790536625468 [spec-k] model="o15" tenant="d48-burst26" K=0 source=concurrency prompt=30208 cached=0 lcp=0 active=20 wave=64 placement=single-or-non-pp2
+1790536625468 [admission] request cost: model="o15" ctx=30592 path=plain = 9280 B/token x ctx + 1625MB prefill-workspace + 157MB fixed = 2067MB
+1790536625468 [admit-predict] id=cmpl-23d824ddc94cc15455b1d46af69fe551 tenant="d48-burst25" model="o15" verdict=admit reason=global-p95 prompt=30464 predicted_completion=64 kv_hat=2066020320 booked_bytes=41191665304 booked_real=41202110872 inflight=20 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=68066162568
+1790536625468 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625469 [spec-k] model="o15" tenant="d48-burst25" K=0 source=concurrency prompt=30464 cached=0 lcp=0 active=21 wave=64 placement=single-or-non-pp2
+1790536625469 [admission] request cost: model="o15" ctx=30080 path=plain = 9280 B/token x ctx + 1621MB prefill-workspace + 157MB fixed = 2058MB
+1790536625469 [admit-predict] id=cmpl-414cd932e51c52d7c430d7c2bfc3b117 tenant="d48-burst27" model="o15" verdict=admit reason=global-p95 prompt=29952 predicted_completion=64 kv_hat=2057074656 booked_bytes=43257685624 booked_real=43268650872 inflight=21 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=67625672620
+1790536625469 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625470 [spec-k] model="o15" tenant="d48-burst27" K=0 source=concurrency prompt=29952 cached=0 lcp=0 active=22 wave=64 placement=single-or-non-pp2
+1790536625470 [admission] request cost: model="o15" ctx=29568 path=plain = 9280 B/token x ctx + 1617MB prefill-workspace + 157MB fixed = 2049MB
+1790536625470 [admit-predict] id=cmpl-76cc6a8472e664bf9ef792f1167d6a7d tenant="d48-burst21" model="o15" verdict=admit reason=global-p95 prompt=29440 predicted_completion=64 kv_hat=2048128992 booked_bytes=45314760280 booked_real=45326245208 inflight=22 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=67190409168
+1790536625470 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625470 [spec-k] model="o15" tenant="d48-burst21" K=0 source=concurrency prompt=29440 cached=0 lcp=0 active=23 wave=64 placement=single-or-non-pp2
+1790536625470 [admission] request cost: model="o15" ctx=30848 path=plain = 9280 B/token x ctx + 1627MB prefill-workspace + 157MB fixed = 2071MB
+1790536625470 [admit-predict] id=cmpl-dd9a8c86487324f15bfb41667e3bd30a tenant="d48-burst24" model="o15" verdict=admit reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=2070493152 booked_bytes=47362889272 booked_real=47374893880 inflight=23 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=66760372212
+1790536625470 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625471 [spec-k] model="o15" tenant="d48-burst24" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=24 wave=64 placement=single-or-non-pp2
+1790536625471 [admission] request cost: model="o15" ctx=30080 path=plain = 9280 B/token x ctx + 1621MB prefill-workspace + 157MB fixed = 2058MB
+1790536625471 [admit-predict] id=cmpl-669369df07e3efe7ba677e0b34c5fb9c tenant="d48-burst19" model="o15" verdict=admit reason=global-p95 prompt=29952 predicted_completion=64 kv_hat=2057074656 booked_bytes=49433382424 booked_real=49445906712 inflight=24 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=66317269016
+1790536625471 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625472 [spec-k] model="o15" tenant="d48-burst19" K=0 source=concurrency prompt=29952 cached=0 lcp=0 active=25 wave=64 placement=single-or-non-pp2
+1790536625472 [admission] request cost: model="o15" ctx=29056 path=plain = 9280 B/token x ctx + 1613MB prefill-workspace + 157MB fixed = 2040MB
+1790536625472 [admit-predict] id=cmpl-abe859bf517fc9e7dc572e975315004f tenant="d48-burst23" model="o15" verdict=admit reason=global-p95 prompt=28928 predicted_completion=64 kv_hat=2039183328 booked_bytes=51490457080 booked_real=51503501048 inflight=25 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=65882005564
+1790536625472 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625472 [spec-k] model="o15" tenant="d48-burst23" K=0 source=concurrency prompt=28928 cached=0 lcp=0 active=26 wave=64 placement=single-or-non-pp2
+1790536625472 [admission] request cost: model="o15" ctx=29312 path=plain = 9280 B/token x ctx + 1615MB prefill-workspace + 157MB fixed = 2044MB
+1790536625472 [admit-predict] id=cmpl-5656034e7e95e764b8402801790c08ea tenant="d48-burst22" model="o15" verdict=admit reason=global-p95 prompt=29184 predicted_completion=64 kv_hat=2043656160 booked_bytes=53529640408 booked_real=53543204056 inflight=26 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=65457195104
+1790536625472 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625473 [spec-k] model="o15" tenant="d48-burst22" K=0 source=concurrency prompt=29184 cached=0 lcp=0 active=27 wave=64 placement=single-or-non-pp2
+1790536625473 [admission] request cost: model="o15" ctx=29824 path=plain = 9280 B/token x ctx + 1619MB prefill-workspace + 157MB fixed = 2053MB
+1790536625473 [admit-predict] id=cmpl-113d46aff2d4c47067f5fd25bb308af7 tenant="d48-burst28" model="o15" verdict=admit reason=global-p95 prompt=29696 predicted_completion=64 kv_hat=2052601824 booked_bytes=55573296568 booked_real=55587379896 inflight=27 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=65029771396
+1790536625473 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625474 [spec-k] model="o15" tenant="d48-burst28" K=0 source=concurrency prompt=29696 cached=0 lcp=0 active=28 wave=64 placement=single-or-non-pp2
+1790536625474 [admit-predict] id=cmpl-024ff7be45ca47be0f89d26e57428446 tenant="d48-burst20" model="o15" verdict=admit reason=global-p95 prompt=29696 predicted_completion=64 kv_hat=2052601824 booked_bytes=57625898392 booked_real=57640501400 inflight=28 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=64597121192
+1790536625474 [spec-k] model="o15" tenant="d48-burst20" K=0 source=concurrency prompt=29696 cached=0 lcp=0 active=29 wave=64 placement=single-or-non-pp2
+1790536625475 [admission] request cost: model="o15" ctx=29568 path=plain = 9280 B/token x ctx + 1617MB prefill-workspace + 157MB fixed = 2049MB
+1790536625475 [admit-predict] id=cmpl-039755a8e2f0ae0de93f6afdc47a0d7d tenant="d48-burst29" model="o15" verdict=admit reason=global-p95 prompt=29440 predicted_completion=64 kv_hat=2048128992 booked_bytes=59678500216 booked_real=59693622904 inflight=29 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=64164470988
+1790536625475 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625475 [spec-k] model="o15" tenant="d48-burst29" K=0 source=concurrency prompt=29440 cached=0 lcp=0 active=30 wave=64 placement=single-or-non-pp2
+1790536625475 [admission] request cost: model="o15" ctx=29312 path=plain = 9280 B/token x ctx + 1615MB prefill-workspace + 157MB fixed = 2044MB
+1790536625475 [admit-predict] id=cmpl-8491f62a653510c65308e801c98454cf tenant="d48-burst30" model="o15" verdict=admit reason=global-p95 prompt=29184 predicted_completion=64 kv_hat=2043656160 booked_bytes=61726629208 booked_real=61742271576 inflight=30 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=63734434032
+1790536625475 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625476 [spec-k] model="o15" tenant="d48-burst30" K=0 source=concurrency prompt=29184 cached=0 lcp=0 active=31 wave=64 placement=single-or-non-pp2
+1790536625476 [admission] request cost: model="o15" ctx=29056 path=plain = 9280 B/token x ctx + 1613MB prefill-workspace + 157MB fixed = 2040MB
+1790536625476 [admit-predict] id=cmpl-93a56709cd98bdb7f33c237041d59c96 tenant="d48-burst31" model="o15" verdict=admit reason=global-p95 prompt=28928 predicted_completion=64 kv_hat=2039183328 booked_bytes=63770285368 booked_real=63786447416 inflight=31 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=63307010324
+1790536625476 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625477 [spec-k] model="o15" tenant="d48-burst31" K=0 source=concurrency prompt=28928 cached=0 lcp=0 active=32 wave=64 placement=single-or-non-pp2
+1790536625477 [admission] request cost: model="o15" ctx=30848 path=plain = 9280 B/token x ctx + 1627MB prefill-workspace + 157MB fixed = 2071MB
+1790536625477 [admit-predict] id=cmpl-848d94b18175371184083cfcac5a977f tenant="d48-burst32" model="o15" verdict=admit reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=2070493152 booked_bytes=65809468696 booked_real=65826150424 inflight=32 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=62882199864
+1790536625477 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625477 [spec-k] model="o15" tenant="d48-burst32" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=33 wave=64 placement=single-or-non-pp2
+1790536625477 [admission] request cost: model="o15" ctx=30080 path=plain = 9280 B/token x ctx + 1621MB prefill-workspace + 157MB fixed = 2058MB
+1790536625477 [admit-predict] id=cmpl-1a713b4bd1c265f5301ea8557836f927 tenant="d48-burst35" model="o15" verdict=admit reason=global-p95 prompt=29952 predicted_completion=64 kv_hat=2057074656 booked_bytes=67879961848 booked_real=67897163256 inflight=33 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=62439096668
+1790536625477 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625478 [spec-k] model="o15" tenant="d48-burst35" K=0 source=concurrency prompt=29952 cached=0 lcp=0 active=34 wave=64 placement=single-or-non-pp2
+1790536625478 [admission] request cost: model="o15" ctx=30592 path=plain = 9280 B/token x ctx + 1625MB prefill-workspace + 157MB fixed = 2067MB
+1790536625478 [admit-predict] id=cmpl-ab58314b0080877d8e48343350f06782 tenant="d48-burst33" model="o15" verdict=admit reason=global-p95 prompt=30464 predicted_completion=64 kv_hat=2066020320 booked_bytes=69937036504 booked_real=69954757592 inflight=34 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=62003833216
+1790536625478 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536625479 [spec-k] model="o15" tenant="d48-burst33" K=0 source=concurrency prompt=30464 cached=0 lcp=0 active=35 wave=64 placement=single-or-non-pp2
+1790536625479 [admission] request cost: model="o15" ctx=30336 path=plain = 9280 B/token x ctx + 1623MB prefill-workspace + 157MB fixed = 2062MB
+1790536625479 [admit-predict] id=cmpl-4b654e2ed29eb084ac46e69569f48ce2 tenant="d48-burst34" model="o15" verdict=reject-kv reason=global-p95 prompt=30208 predicted_completion=64 kv_hat=2061547488 booked_bytes=72003056824 booked_real=72021297592 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=1 exempt=0 enforce=1 live_free_bytes=61563343268
+1790536625479 [admission] request cost: model="o15" ctx=29824 path=plain = 9280 B/token x ctx + 1619MB prefill-workspace + 157MB fixed = 2053MB
+1790536625479 [admit-predict] id=cmpl-a2dc1d0fa29795351a2f6aed004c7bb8 tenant="d48-burst36" model="o15" verdict=reject-kv reason=global-p95 prompt=29696 predicted_completion=64 kv_hat=2052601824 booked_bytes=72003056824 booked_real=72021297592 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=1 exempt=0 enforce=1 live_free_bytes=61563343268
+1790536625479 [admission] request cost: model="o15" ctx=29568 path=plain = 9280 B/token x ctx + 1617MB prefill-workspace + 157MB fixed = 2049MB
+1790536625479 [admit-predict] id=cmpl-01b9e596b7171d3751ee55b1f346827b tenant="d48-burst37" model="o15" verdict=reject-kv reason=global-p95 prompt=29440 predicted_completion=64 kv_hat=2048128992 booked_bytes=72003056824 booked_real=72021297592 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=1 exempt=0 enforce=1 live_free_bytes=61563343268
+1790536625479 [admission] request cost: model="o15" ctx=29312 path=plain = 9280 B/token x ctx + 1615MB prefill-workspace + 157MB fixed = 2044MB
+1790536625479 [admit-predict] id=cmpl-3bf271560e3aad82c7e3b84ff5fd0dc9 tenant="d48-burst38" model="o15" verdict=reject-kv reason=global-p95 prompt=29184 predicted_completion=64 kv_hat=2043656160 booked_bytes=72003056824 booked_real=72021297592 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=1 exempt=0 enforce=1 live_free_bytes=61563343268
+1790536625479 [admission] request cost: model="o15" ctx=30592 path=plain = 9280 B/token x ctx + 1625MB prefill-workspace + 157MB fixed = 2067MB
+1790536625479 [admit-predict] id=cmpl-1b9d5ec1deabcb8b723a84556dbb8f78 tenant="d48-burst41" model="o15" verdict=reject-kv reason=global-p95 prompt=30464 predicted_completion=64 kv_hat=2066020320 booked_bytes=72003056824 booked_real=72021297592 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=1 exempt=0 enforce=1 live_free_bytes=61563343268
+1790536625479 [admission] request cost: model="o15" ctx=29056 path=plain = 9280 B/token x ctx + 1613MB prefill-workspace + 157MB fixed = 2040MB
+1790536625479 [admit-predict] id=cmpl-8fa22d50bc39a5019910121f2a813f1e tenant="d48-burst39" model="o15" verdict=reject-kv reason=global-p95 prompt=28928 predicted_completion=64 kv_hat=2039183328 booked_bytes=72003056824 booked_real=72021297592 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=1 exempt=0 enforce=1 live_free_bytes=61563343268
+1790536625479 [admission] request cost: model="o15" ctx=30848 path=plain = 9280 B/token x ctx + 1627MB prefill-workspace + 157MB fixed = 2071MB
+1790536625479 [admit-predict] id=cmpl-49698e0746052366a4dbe1b56d9bfed0 tenant="d48-burst40" model="o15" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=2070493152 booked_bytes=72003056824 booked_real=72021297592 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=1 exempt=0 enforce=1 live_free_bytes=61563343268
+1790536625479 [admission] request cost: model="o15" ctx=30080 path=plain = 9280 B/token x ctx + 1621MB prefill-workspace + 157MB fixed = 2058MB
+1790536625479 [admit-predict] id=cmpl-abbd24535bb86be0bdf800fd229bf372 tenant="d48-burst43" model="o15" verdict=reject-kv reason=global-p95 prompt=29952 predicted_completion=64 kv_hat=2057074656 booked_bytes=72003056824 booked_real=72021297592 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=1 exempt=0 enforce=1 live_free_bytes=61563343268
+1790536625479 [admission] request cost: model="o15" ctx=30336 path=plain = 9280 B/token x ctx + 1623MB prefill-workspace + 157MB fixed = 2062MB
+1790536625479 [admit-predict] id=cmpl-2c94c427cb34f4c1874525e9707f0660 tenant="d48-burst42" model="o15" verdict=reject-kv reason=global-p95 prompt=30208 predicted_completion=64 kv_hat=2061547488 booked_bytes=72003056824 booked_real=72021297592 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=1 exempt=0 enforce=1 live_free_bytes=61563343268
+1790536625479 [admission] request cost: model="o15" ctx=29568 path=plain = 9280 B/token x ctx + 1617MB prefill-workspace + 157MB fixed = 2049MB
+1790536625479 [admit-predict] id=cmpl-2137350c343af2864c54d572cba18b53 tenant="d48-burst45" model="o15" verdict=reject-kv reason=global-p95 prompt=29440 predicted_completion=64 kv_hat=2048128992 booked_bytes=72003056824 booked_real=72021297592 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=1 exempt=0 enforce=1 live_free_bytes=61563343268
+1790536625479 [admission] request cost: model="o15" ctx=29312 path=plain = 9280 B/token x ctx + 1615MB prefill-workspace + 157MB fixed = 2044MB
+1790536625479 [admit-predict] id=cmpl-36e5b27635ae825dbdf2896b8b2feb1b tenant="d48-burst46" model="o15" verdict=reject-kv reason=global-p95 prompt=29184 predicted_completion=64 kv_hat=2043656160 booked_bytes=72003056824 booked_real=72021297592 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=1 exempt=0 enforce=1 live_free_bytes=61563343268
+1790536625479 [admission] request cost: model="o15" ctx=29824 path=plain = 9280 B/token x ctx + 1619MB prefill-workspace + 157MB fixed = 2053MB
+1790536625479 [admit-predict] id=cmpl-ab4af301dda424cbdd96c821e12735ae tenant="d48-burst44" model="o15" verdict=reject-kv reason=global-p95 prompt=29696 predicted_completion=64 kv_hat=2052601824 booked_bytes=72003056824 booked_real=72021297592 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=1 exempt=0 enforce=1 live_free_bytes=61563343268
+1790536625479 [admission] request cost: model="o15" ctx=29056 path=plain = 9280 B/token x ctx + 1613MB prefill-workspace + 157MB fixed = 2040MB
+1790536625479 [admit-predict] id=cmpl-a8c244ee63f1f0425630d9370410a92e tenant="d48-burst47" model="o15" verdict=reject-kv reason=global-p95 prompt=28928 predicted_completion=64 kv_hat=2039183328 booked_bytes=72003056824 booked_real=72021297592 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=1 exempt=0 enforce=1 live_free_bytes=61563343268
+1790536625479 [admission] request cost: model="o15" ctx=30848 path=plain = 9280 B/token x ctx + 1627MB prefill-workspace + 157MB fixed = 2071MB
+1790536625479 [admit-predict] id=cmpl-4a6cfe5034af88385421dbec56bfec39 tenant="d48-burst48" model="o15" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=2070493152 booked_bytes=72003056824 booked_real=72021297592 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=1 exempt=0 enforce=1 live_free_bytes=61563343268
+1790536625479 [admission] request cost: model="o15" ctx=30336 path=plain = 9280 B/token x ctx + 1623MB prefill-workspace + 157MB fixed = 2062MB
+1790536625479 [admit-predict] id=cmpl-0a596ae13c1ab35b254ba497894a6bec tenant="d48-burst50" model="o15" verdict=reject-kv reason=global-p95 prompt=30208 predicted_completion=64 kv_hat=2061547488 booked_bytes=72003056824 booked_real=72021297592 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=1 exempt=0 enforce=1 live_free_bytes=61563343268
+1790536625479 [admission] request cost: model="o15" ctx=30592 path=plain = 9280 B/token x ctx + 1625MB prefill-workspace + 157MB fixed = 2067MB
+1790536625479 [admit-predict] id=cmpl-257dcbe6d26fa9fead3876eb4c6eaeed tenant="d48-burst49" model="o15" verdict=reject-kv reason=global-p95 prompt=30464 predicted_completion=64 kv_hat=2066020320 booked_bytes=72003056824 booked_real=72021297592 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=1 exempt=0 enforce=1 live_free_bytes=61563343268
+1790536625479 [admission] request cost: model="o15" ctx=30080 path=plain = 9280 B/token x ctx + 1621MB prefill-workspace + 157MB fixed = 2058MB
+1790536625479 [admit-predict] id=cmpl-8dcee053f9a7ef5272e1d58f5abcf8c2 tenant="d48-burst51" model="o15" verdict=reject-kv reason=global-p95 prompt=29952 predicted_completion=64 kv_hat=2057074656 booked_bytes=72003056824 booked_real=72021297592 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=1 exempt=0 enforce=1 live_free_bytes=61563343268
+1790536625479 [admission] request cost: model="o15" ctx=29824 path=plain = 9280 B/token x ctx + 1619MB prefill-workspace + 157MB fixed = 2053MB
+1790536625479 [admit-predict] id=cmpl-fae972cce76d1c7091b94d7ad22cc501 tenant="d48-burst52" model="o15" verdict=reject-kv reason=global-p95 prompt=29696 predicted_completion=64 kv_hat=2052601824 booked_bytes=72003056824 booked_real=72021297592 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=1 exempt=0 enforce=1 live_free_bytes=61563343268
+1790536625479 [admission] request cost: model="o15" ctx=29568 path=plain = 9280 B/token x ctx + 1617MB prefill-workspace + 157MB fixed = 2049MB
+1790536625479 [admit-predict] id=cmpl-96579c0364b1397af8d77588e0c13f48 tenant="d48-burst53" model="o15" verdict=reject-kv reason=global-p95 prompt=29440 predicted_completion=64 kv_hat=2048128992 booked_bytes=72003056824 booked_real=72021297592 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=1 exempt=0 enforce=1 live_free_bytes=61563343268
+1790536625479 [admission] request cost: model="o15" ctx=29312 path=plain = 9280 B/token x ctx + 1615MB prefill-workspace + 157MB fixed = 2044MB
+1790536625479 [admit-predict] id=cmpl-fbc04b2e140db8dc6e1b413d5d41c281 tenant="d48-burst54" model="o15" verdict=reject-kv reason=global-p95 prompt=29184 predicted_completion=64 kv_hat=2043656160 booked_bytes=72003056824 booked_real=72021297592 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=1 exempt=0 enforce=1 live_free_bytes=61563343268
+1790536625479 [admission] request cost: model="o15" ctx=29056 path=plain = 9280 B/token x ctx + 1613MB prefill-workspace + 157MB fixed = 2040MB
+1790536625479 [admit-predict] id=cmpl-d0ed8ae4cb53358eccc602cd0753ad9e tenant="d48-burst55" model="o15" verdict=reject-kv reason=global-p95 prompt=28928 predicted_completion=64 kv_hat=2039183328 booked_bytes=72003056824 booked_real=72021297592 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=1 exempt=0 enforce=1 live_free_bytes=61563343268
+1790536625479 [admission] request cost: model="o15" ctx=30848 path=plain = 9280 B/token x ctx + 1627MB prefill-workspace + 157MB fixed = 2071MB
+1790536625479 [admit-predict] id=cmpl-5c30ed10b9727f251a66e5890486329b tenant="d48-burst56" model="o15" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=2070493152 booked_bytes=72003056824 booked_real=72021297592 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=1 exempt=0 enforce=1 live_free_bytes=61563343268
+1790536625479 [admission] request cost: model="o15" ctx=30592 path=plain = 9280 B/token x ctx + 1625MB prefill-workspace + 157MB fixed = 2067MB
+1790536625479 [admit-predict] id=cmpl-5a8da29ff1a2a73dca7a00978c4dbf77 tenant="d48-burst57" model="o15" verdict=reject-kv reason=global-p95 prompt=30464 predicted_completion=64 kv_hat=2066020320 booked_bytes=72003056824 booked_real=72021297592 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=1 exempt=0 enforce=1 live_free_bytes=61563343268
+1790536625479 [admission] request cost: model="o15" ctx=30336 path=plain = 9280 B/token x ctx + 1623MB prefill-workspace + 157MB fixed = 2062MB
+1790536625479 [admit-predict] id=cmpl-d21ba775bbc3421aec6989acb387cae3 tenant="d48-burst58" model="o15" verdict=reject-kv reason=global-p95 prompt=30208 predicted_completion=64 kv_hat=2061547488 booked_bytes=72003056824 booked_real=72021297592 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=1 exempt=0 enforce=1 live_free_bytes=61563343268
+1790536625479 [admission] request cost: model="o15" ctx=30080 path=plain = 9280 B/token x ctx + 1621MB prefill-workspace + 157MB fixed = 2058MB
+1790536625479 [admit-predict] id=cmpl-45bb5d0be327d05a2f40679ca0b5d428 tenant="d48-burst59" model="o15" verdict=reject-kv reason=global-p95 prompt=29952 predicted_completion=64 kv_hat=2057074656 booked_bytes=72003056824 booked_real=72021297592 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=1 exempt=0 enforce=1 live_free_bytes=61563343268
+1790536625479 [admission] request cost: model="o15" ctx=29824 path=plain = 9280 B/token x ctx + 1619MB prefill-workspace + 157MB fixed = 2053MB
+1790536625479 [admit-predict] id=cmpl-71954b1244f3b5751489e12648482a43 tenant="d48-burst60" model="o15" verdict=reject-kv reason=global-p95 prompt=29696 predicted_completion=64 kv_hat=2052601824 booked_bytes=72003056824 booked_real=72021297592 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=1 exempt=0 enforce=1 live_free_bytes=61563343268
+1790536625479 [admission] request cost: model="o15" ctx=29568 path=plain = 9280 B/token x ctx + 1617MB prefill-workspace + 157MB fixed = 2049MB
+1790536625479 [admit-predict] id=cmpl-1018e7eb22b518c12967cc909e81472e tenant="d48-burst61" model="o15" verdict=reject-kv reason=global-p95 prompt=29440 predicted_completion=64 kv_hat=2048128992 booked_bytes=72003056824 booked_real=72021297592 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=1 exempt=0 enforce=1 live_free_bytes=61563343268
+1790536625479 [admission] request cost: model="o15" ctx=29312 path=plain = 9280 B/token x ctx + 1615MB prefill-workspace + 157MB fixed = 2044MB
+1790536625479 [admit-predict] id=cmpl-c34da2cba3a16532ae6f456d80920ba5 tenant="d48-burst62" model="o15" verdict=reject-kv reason=global-p95 prompt=29184 predicted_completion=64 kv_hat=2043656160 booked_bytes=72003056824 booked_real=72021297592 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=1 exempt=0 enforce=1 live_free_bytes=61563343268
+1790536625479 [admission] request cost: model="o15" ctx=29056 path=plain = 9280 B/token x ctx + 1613MB prefill-workspace + 157MB fixed = 2040MB
+1790536625479 [admit-predict] id=cmpl-0a1d4b08082371ae6c027819186f8d25 tenant="d48-burst63" model="o15" verdict=reject-kv reason=global-p95 prompt=28928 predicted_completion=64 kv_hat=2039183328 booked_bytes=72003056824 booked_real=72021297592 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=1 exempt=0 enforce=1 live_free_bytes=61563343268
+1790536625748 [prime-yield] count=2 remaining=14 chunks=1 wall_ms=268.536 max_chunk_ms=268.536
+1790536628991 [prime-yield] count=3 remaining=13 chunks=1 wall_ms=284.226 max_chunk_ms=284.226
+1790536632304 [prime-yield] count=4 remaining=12 chunks=1 wall_ms=300.264 max_chunk_ms=300.264
+1790536635676 [prime-yield] count=5 remaining=11 chunks=1 wall_ms=315.073 max_chunk_ms=315.073
+1790536639118 [prime-yield] count=6 remaining=10 chunks=1 wall_ms=330.065 max_chunk_ms=330.065
+1790536642622 [prime-yield] count=7 remaining=9 chunks=1 wall_ms=346.364 max_chunk_ms=346.364
+1790536646022 [prime-yield] count=8 remaining=8 chunks=1 wall_ms=202.800 max_chunk_ms=202.800
+1790536649276 [prime-yield] count=9 remaining=7 chunks=1 wall_ms=18.901 max_chunk_ms=18.901
+1790536652574 [prime-yield] count=10 remaining=6 chunks=1 wall_ms=18.873 max_chunk_ms=18.873
+1790536655916 [prime-yield] count=11 remaining=5 chunks=1 wall_ms=18.849 max_chunk_ms=18.849
+1790536659303 [prime-yield] count=12 remaining=4 chunks=1 wall_ms=18.884 max_chunk_ms=18.884
+1790536662730 [prime-yield] count=13 remaining=3 chunks=1 wall_ms=18.960 max_chunk_ms=18.960
+1790536666209 [prime-yield] count=14 remaining=2 chunks=1 wall_ms=18.877 max_chunk_ms=18.877
+1790536669736 [prime-yield] count=15 remaining=1 chunks=1 wall_ms=18.871 max_chunk_ms=18.871
+1790536676885 [prefix-cache] insert (spec-boundary): 30720 tokens, 379.5MB (resident 1125.5MB / 4997MB, model o15, ns "d48-burst0")
+1790536676885 [spec-gate] demoted session to batched decode: 35 active >= HIGH=4 (model o15, committed 30721, generated 1)
+1790536727542 [prefix-cache] insert (seed): 29440 tokens, 339.1MB (resident 1464.6MB / 4997MB, model o15, ns "d48-burst5")
+1790536727665 [prefix-cache] insert (seed): 29696 tokens, 341.4MB (resident 1806.0MB / 4997MB, model o15, ns "d48-burst4")
+1790536727748 [prefix-cache] insert (seed): 29184 tokens, 336.7MB (resident 2142.7MB / 4997MB, model o15, ns "d48-burst6")
+1790536727819 [prefix-cache] insert (seed): 28928 tokens, 334.3MB (resident 2477.0MB / 4997MB, model o15, ns "d48-burst7")
+1790536728423 [prefix-cache] insert (seed): 29440 tokens, 339.1MB (resident 2816.1MB / 4997MB, model o15, ns "d48-burst13")
+1790536728546 [prefix-cache] insert (seed): 29696 tokens, 341.4MB (resident 3157.5MB / 4997MB, model o15, ns "d48-burst12")
+1790536728628 [prefix-cache] insert (seed): 29184 tokens, 336.7MB (resident 3494.2MB / 4997MB, model o15, ns "d48-burst14")
+1790536728698 [prefix-cache] insert (seed): 28928 tokens, 334.3MB (resident 3828.5MB / 4997MB, model o15, ns "d48-burst15")
+1790536729547 [prefix-cache] insert (seed): 29440 tokens, 339.1MB (resident 4167.6MB / 4997MB, model o15, ns "d48-burst21")
+1790536729860 [prefix-cache] insert (seed): 28928 tokens, 334.3MB (resident 4501.9MB / 4997MB, model o15, ns "d48-burst23")
+1790536729941 [prefix-cache] insert (seed): 29184 tokens, 336.7MB (resident 4838.6MB / 4997MB, model o15, ns "d48-burst22")
+1790536730064 [prefix-cache] evict (snapshot preflight, LRU): 64 tokens, 66.5MB (model o15, ns "d48-warm")
+1790536730064 [prefix-cache] evict (snapshot preflight, LRU): 12000 tokens, 188.4MB (model o15, ns "d48-seqb")
+1790536730065 [prefix-cache] insert (seed): 29696 tokens, 341.4MB (resident 4925.2MB / 4997MB, model o15, ns "d48-burst28")
+1790536730291 [prefix-cache] evict (snapshot preflight, LRU): 5984 tokens, 127.0MB (model o15, ns "d48-seq0")
+1790536730291 [prefix-cache] evict (snapshot preflight, LRU): 5984 tokens, 121.4MB (model o15, ns "d48-seq2")
+1790536730291 [prefix-cache] evict (snapshot preflight, LRU): 5984 tokens, 121.4MB (model o15, ns "d48-seq1")
+1790536730291 [prefix-cache] insert (seed): 29440 tokens, 339.1MB (resident 4894.5MB / 4997MB, model o15, ns "d48-burst29")
+1790536730372 [prefix-cache] evict (snapshot preflight, LRU): 5984 tokens, 121.4MB (model o15, ns "d48-seq3")
+1790536730372 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 379.5MB (model o15, ns "d48-burst0")
+1790536730372 [prefix-cache] insert (seed): 29184 tokens, 336.7MB (resident 4730.3MB / 4997MB, model o15, ns "d48-burst30")
+1790536730441 [prefix-cache] evict (snapshot preflight, LRU): 29440 tokens, 339.1MB (model o15, ns "d48-burst5")
+1790536730441 [prefix-cache] insert (seed): 28928 tokens, 334.3MB (resident 4725.6MB / 4997MB, model o15, ns "d48-burst31")
+1790536730809 [fa-pool] grow #5 dev=0 o_len 6291456 -> 12582912 ml_len 24576 -> 49152 (retired kept, zero=false)
+1790536730946 [prefix-cache] evict (snapshot preflight, LRU): 29696 tokens, 341.4MB (model o15, ns "d48-burst4")
+1790536730946 [prefix-cache] insert (seed): 30464 tokens, 348.6MB (resident 4732.7MB / 4997MB, model o15, ns "d48-burst1")
+1790536731015 [prefix-cache] evict (snapshot preflight, LRU): 29184 tokens, 336.7MB (model o15, ns "d48-burst6")
+1790536731015 [prefix-cache] insert (seed): 29952 tokens, 343.8MB (resident 4739.8MB / 4997MB, model o15, ns "d48-burst3")
+1790536731096 [prefix-cache] evict (snapshot preflight, LRU): 28928 tokens, 334.3MB (model o15, ns "d48-burst7")
+1790536731097 [prefix-cache] insert (seed): 30208 tokens, 346.2MB (resident 4751.7MB / 4997MB, model o15, ns "d48-burst2")
+1790536731221 [prefix-cache] evict (snapshot preflight, LRU): 29440 tokens, 339.1MB (model o15, ns "d48-burst13")
+1790536731221 [prefix-cache] insert (seed): 30720 tokens, 350.9MB (resident 4763.6MB / 4997MB, model o15, ns "d48-burst8")
+1790536731335 [prefix-cache] evict (snapshot preflight, LRU): 29696 tokens, 341.4MB (model o15, ns "d48-burst12")
+1790536731335 [prefix-cache] insert (seed): 30464 tokens, 348.6MB (resident 4770.7MB / 4997MB, model o15, ns "d48-burst9")
+1790536731417 [prefix-cache] evict (snapshot preflight, LRU): 29184 tokens, 336.7MB (model o15, ns "d48-burst14")
+1790536731417 [prefix-cache] insert (seed): 30208 tokens, 346.2MB (resident 4780.2MB / 4997MB, model o15, ns "d48-burst10")
+1790536731486 [prefix-cache] evict (snapshot preflight, LRU): 28928 tokens, 334.3MB (model o15, ns "d48-burst15")
+1790536731486 [prefix-cache] insert (seed): 29952 tokens, 343.8MB (resident 4789.7MB / 4997MB, model o15, ns "d48-burst11")
+1790536731600 [prefix-cache] evict (snapshot preflight, LRU): 29440 tokens, 339.1MB (model o15, ns "d48-burst21")
+1790536731600 [prefix-cache] insert (seed): 30464 tokens, 348.6MB (resident 4799.2MB / 4997MB, model o15, ns "d48-burst17")
+1790536731724 [prefix-cache] evict (snapshot preflight, LRU): 28928 tokens, 334.3MB (model o15, ns "d48-burst23")
+1790536731725 [prefix-cache] insert (seed): 30720 tokens, 350.9MB (resident 4815.8MB / 4997MB, model o15, ns "d48-burst16")
+1790536731807 [prefix-cache] evict (snapshot preflight, LRU): 29184 tokens, 336.7MB (model o15, ns "d48-burst22")
+1790536731807 [prefix-cache] insert (seed): 30208 tokens, 346.2MB (resident 4825.3MB / 4997MB, model o15, ns "d48-burst18")
+1790536731889 [prefix-cache] evict (snapshot preflight, LRU): 29696 tokens, 341.4MB (model o15, ns "d48-burst28")
+1790536731889 [prefix-cache] insert (seed): 30208 tokens, 346.2MB (resident 4830.1MB / 4997MB, model o15, ns "d48-burst26")
+1790536732003 [prefix-cache] evict (snapshot preflight, LRU): 29440 tokens, 339.1MB (model o15, ns "d48-burst29")
+1790536732003 [prefix-cache] insert (seed): 30464 tokens, 348.6MB (resident 4839.6MB / 4997MB, model o15, ns "d48-burst25")
+1790536732071 [prefix-cache] evict (snapshot preflight, LRU): 29184 tokens, 336.7MB (model o15, ns "d48-burst30")
+1790536732071 [prefix-cache] insert (seed): 29952 tokens, 343.8MB (resident 4846.7MB / 4997MB, model o15, ns "d48-burst27")
+1790536732195 [prefix-cache] evict (snapshot preflight, LRU): 28928 tokens, 334.3MB (model o15, ns "d48-burst31")
+1790536732196 [prefix-cache] insert (seed): 30720 tokens, 350.9MB (resident 4863.3MB / 4997MB, model o15, ns "d48-burst24")
+1790536732265 [prefix-cache] evict (snapshot preflight, LRU): 30464 tokens, 348.6MB (model o15, ns "d48-burst1")
+1790536732265 [prefix-cache] insert (seed): 29952 tokens, 343.8MB (resident 4858.6MB / 4997MB, model o15, ns "d48-burst19")
+1790536732332 [prefix-cache] evict (snapshot preflight, LRU): 29952 tokens, 343.8MB (model o15, ns "d48-burst3")
+1790536732332 [prefix-cache] insert (seed): 29696 tokens, 341.4MB (resident 4856.2MB / 4997MB, model o15, ns "d48-burst20")
+1790536732456 [prefix-cache] evict (snapshot preflight, LRU): 30208 tokens, 346.2MB (model o15, ns "d48-burst2")
+1790536732456 [prefix-cache] insert (seed): 30720 tokens, 350.9MB (resident 4861.0MB / 4997MB, model o15, ns "d48-burst32")
+1790536732524 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 350.9MB (model o15, ns "d48-burst8")
+1790536732524 [prefix-cache] insert (seed): 29952 tokens, 343.8MB (resident 4853.8MB / 4997MB, model o15, ns "d48-burst35")
+1790536732637 [prefix-cache] evict (snapshot preflight, LRU): 30464 tokens, 348.6MB (model o15, ns "d48-burst9")
+1790536732637 [prefix-cache] insert (seed): 30464 tokens, 348.6MB (resident 4853.8MB / 4997MB, model o15, ns "d48-burst33")
+1790536733934 [meter] admit id=cmpl-41a3735c085c2a4a313ecbda36d08650 tenant=default lane=interactive model="o15"
+1790536733939 [meter] admit id=cmpl-17bf9016c59d5478d50123363ca2ec9b tenant=default lane=interactive model="o15"
+1790536733940 [meter] admit id=cmpl-90e8c7c320b1e3f4cf808e02192441b1 tenant=default lane=interactive model="o15"
+1790536733940 [meter] admit id=cmpl-afd1cd8345140a29fb771404cfc89ae1 tenant=default lane=interactive model="o15"
+1790536733941 [meter] admit id=cmpl-72deed80cf3bc4ff1385605b2a23ae11 tenant=default lane=interactive model="o15"
+1790536733943 [meter] admit id=cmpl-bd110ad74d99fdaf874c8f0363931b92 tenant=default lane=interactive model="o15"
+1790536733945 [meter] admit id=cmpl-97982d599fd16349b4f68309407567b1 tenant=default lane=interactive model="o15"
+1790536733947 [meter] admit id=cmpl-fce57dacd30b3332cbffdc1714b59a24 tenant=default lane=interactive model="o15"
+1790536733948 [meter] admit id=cmpl-a46d2744a0d9fa27c4b3065e5d947edb tenant=default lane=interactive model="o15"
+1790536733948 [meter] admit id=cmpl-2b2f302399cfe32b98903fb9676924b6 tenant=default lane=interactive model="o15"
+1790536733948 [meter] admit id=cmpl-9fc3bb50162b0162cdd890de6d932c5c tenant=default lane=interactive model="o15"
+1790536733949 [meter] admit id=cmpl-bfb3505219074b304064d00c66ceca7a tenant=default lane=interactive model="o15"
+1790536733949 [meter] admit id=cmpl-270b80b934bdc5fa77bd4a07de397e21 tenant=default lane=interactive model="o15"
+1790536733952 [meter] admit id=cmpl-68fa1f96d8fd3dfdb90de5e26fb0740e tenant=default lane=interactive model="o15"
+1790536733954 [meter] admit id=cmpl-f55e2b64193ac9eaf2a8e7b14a507341 tenant=default lane=interactive model="o15"
+1790536733954 [meter] admit id=cmpl-b198993a8c95cf45a11729d2bd0f6929 tenant=default lane=interactive model="o15"
+1790536733954 [meter] admit id=cmpl-de4e6ffcbfd59c276515984fab878d26 tenant=default lane=interactive model="o15"
+1790536733957 [meter] admit id=cmpl-b89059d55134bd1f552fcff7ebfe7fa9 tenant=default lane=interactive model="o15"
+1790536733957 [meter] admit id=cmpl-88ead17d05b15e1330776a075dc1028e tenant=default lane=interactive model="o15"
+1790536733958 [meter] admit id=cmpl-c22b423d4b0caff291157979f4dec65d tenant=default lane=interactive model="o15"
+1790536733961 [meter] admit id=cmpl-175cb32097849b90b9f79810ce45b2a6 tenant=default lane=interactive model="o15"
+1790536733962 [meter] admit id=cmpl-009831d0de6307f7cf6178a27975fabc tenant=default lane=interactive model="o15"
+1790536733962 [meter] admit id=cmpl-92bd711deb3ed60b709b03ef6a6a2367 tenant=default lane=interactive model="o15"
+1790536733962 [meter] admit id=cmpl-aca46c5c526881ffbdf8dbca46b0955f tenant=default lane=interactive model="o15"
+1790536733962 [meter] admit id=cmpl-01213868065be9c5aa7b8792480587b8 tenant=default lane=interactive model="o15"
+1790536733967 [meter] admit id=cmpl-2471e643234a9e1c6ec07e4411dfe25f tenant=default lane=interactive model="o15"
+1790536733967 [meter] admit id=cmpl-a19611b745895b3489e762dad4f171c9 tenant=default lane=interactive model="o15"
+1790536733967 [meter] admit id=cmpl-502473f6b5c5bf25e83162c9c741a7f2 tenant=default lane=interactive model="o15"
+1790536733968 [meter] admit id=cmpl-7beaab091e83d00880f59011c4797e70 tenant=default lane=interactive model="o15"
+1790536733969 [meter] admit id=cmpl-676a34b2a36c240fce34746e6b463b4f tenant=default lane=interactive model="o15"
+1790536733970 [meter] admit id=cmpl-7aa7492168cd89939b00677e0bcef243 tenant=default lane=interactive model="o15"
+1790536733970 [meter] admit id=cmpl-b442d33bba2582b27ff6bd27ee5a1c74 tenant=default lane=interactive model="o15"
+1790536733980 [admission] request cost: model="o15" ctx=30080 path=plain = 9280 B/token x ctx + 1621MB prefill-workspace + 157MB fixed = 2058MB
+1790536733980 [admit-predict] id=cmpl-41a3735c085c2a4a313ecbda36d08650 tenant="d48-wave20" model="o15" verdict=admit reason=global-p95 prompt=29952 predicted_completion=64 kv_hat=2057074656 booked_bytes=69932563672 booked_real=69950284760 inflight=34 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=57546053288
+1790536733980 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536733980 [spec-k] model="o15" tenant="d48-wave20" K=0 source=concurrency prompt=29952 cached=0 lcp=0 active=35 wave=66 placement=single-or-non-pp2
+1790536733980 [admission] request cost: model="o15" ctx=29312 path=plain = 9280 B/token x ctx + 1615MB prefill-workspace + 157MB fixed = 2044MB
+1790536733980 [admit-predict] id=cmpl-17bf9016c59d5478d50123363ca2ec9b tenant="d48-wave23" model="o15" verdict=reject-kv reason=global-p95 prompt=29184 predicted_completion=64 kv_hat=2043656160 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733980 [admission] request cost: model="o15" ctx=30848 path=plain = 9280 B/token x ctx + 1627MB prefill-workspace + 157MB fixed = 2071MB
+1790536733980 [admit-predict] id=cmpl-90e8c7c320b1e3f4cf808e02192441b1 tenant="d48-wave25" model="o15" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=2070493152 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733980 [admission] request cost: model="o15" ctx=29568 path=plain = 9280 B/token x ctx + 1617MB prefill-workspace + 157MB fixed = 2049MB
+1790536733980 [admit-predict] id=cmpl-afd1cd8345140a29fb771404cfc89ae1 tenant="d48-wave22" model="o15" verdict=reject-kv reason=global-p95 prompt=29440 predicted_completion=64 kv_hat=2048128992 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733981 [admission] request cost: model="o15" ctx=29824 path=plain = 9280 B/token x ctx + 1619MB prefill-workspace + 157MB fixed = 2053MB
+1790536733981 [admit-predict] id=cmpl-72deed80cf3bc4ff1385605b2a23ae11 tenant="d48-wave21" model="o15" verdict=reject-kv reason=global-p95 prompt=29696 predicted_completion=64 kv_hat=2052601824 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733981 [admission] request cost: model="o15" ctx=29056 path=plain = 9280 B/token x ctx + 1613MB prefill-workspace + 157MB fixed = 2040MB
+1790536733981 [admit-predict] id=cmpl-bd110ad74d99fdaf874c8f0363931b92 tenant="d48-wave24" model="o15" verdict=reject-kv reason=global-p95 prompt=28928 predicted_completion=64 kv_hat=2039183328 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733981 [admission] request cost: model="o15" ctx=30592 path=plain = 9280 B/token x ctx + 1625MB prefill-workspace + 157MB fixed = 2067MB
+1790536733981 [admit-predict] id=cmpl-97982d599fd16349b4f68309407567b1 tenant="d48-wave26" model="o15" verdict=reject-kv reason=global-p95 prompt=30464 predicted_completion=64 kv_hat=2066020320 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733981 [admission] request cost: model="o15" ctx=30336 path=plain = 9280 B/token x ctx + 1623MB prefill-workspace + 157MB fixed = 2062MB
+1790536733981 [admit-predict] id=cmpl-fce57dacd30b3332cbffdc1714b59a24 tenant="d48-wave27" model="o15" verdict=reject-kv reason=global-p95 prompt=30208 predicted_completion=64 kv_hat=2061547488 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733981 [admission] request cost: model="o15" ctx=29824 path=plain = 9280 B/token x ctx + 1619MB prefill-workspace + 157MB fixed = 2053MB
+1790536733981 [admit-predict] id=cmpl-a46d2744a0d9fa27c4b3065e5d947edb tenant="d48-wave29" model="o15" verdict=reject-kv reason=global-p95 prompt=29696 predicted_completion=64 kv_hat=2052601824 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733981 [admission] request cost: model="o15" ctx=30080 path=plain = 9280 B/token x ctx + 1621MB prefill-workspace + 157MB fixed = 2058MB
+1790536733981 [admit-predict] id=cmpl-2b2f302399cfe32b98903fb9676924b6 tenant="d48-wave28" model="o15" verdict=reject-kv reason=global-p95 prompt=29952 predicted_completion=64 kv_hat=2057074656 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733981 [admission] request cost: model="o15" ctx=29312 path=plain = 9280 B/token x ctx + 1615MB prefill-workspace + 157MB fixed = 2044MB
+1790536733981 [admit-predict] id=cmpl-9fc3bb50162b0162cdd890de6d932c5c tenant="d48-wave211" model="o15" verdict=reject-kv reason=global-p95 prompt=29184 predicted_completion=64 kv_hat=2043656160 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733981 [admission] request cost: model="o15" ctx=29568 path=plain = 9280 B/token x ctx + 1617MB prefill-workspace + 157MB fixed = 2049MB
+1790536733981 [admit-predict] id=cmpl-bfb3505219074b304064d00c66ceca7a tenant="d48-wave210" model="o15" verdict=reject-kv reason=global-p95 prompt=29440 predicted_completion=64 kv_hat=2048128992 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733981 [admission] request cost: model="o15" ctx=29056 path=plain = 9280 B/token x ctx + 1613MB prefill-workspace + 157MB fixed = 2040MB
+1790536733981 [admit-predict] id=cmpl-270b80b934bdc5fa77bd4a07de397e21 tenant="d48-wave212" model="o15" verdict=reject-kv reason=global-p95 prompt=28928 predicted_completion=64 kv_hat=2039183328 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733981 [admission] request cost: model="o15" ctx=30848 path=plain = 9280 B/token x ctx + 1627MB prefill-workspace + 157MB fixed = 2071MB
+1790536733981 [admit-predict] id=cmpl-68fa1f96d8fd3dfdb90de5e26fb0740e tenant="d48-wave213" model="o15" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=2070493152 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733981 [admission] request cost: model="o15" ctx=30080 path=plain = 9280 B/token x ctx + 1621MB prefill-workspace + 157MB fixed = 2058MB
+1790536733981 [admit-predict] id=cmpl-f55e2b64193ac9eaf2a8e7b14a507341 tenant="d48-wave216" model="o15" verdict=reject-kv reason=global-p95 prompt=29952 predicted_completion=64 kv_hat=2057074656 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733981 [admission] request cost: model="o15" ctx=30336 path=plain = 9280 B/token x ctx + 1623MB prefill-workspace + 157MB fixed = 2062MB
+1790536733981 [admit-predict] id=cmpl-b198993a8c95cf45a11729d2bd0f6929 tenant="d48-wave215" model="o15" verdict=reject-kv reason=global-p95 prompt=30208 predicted_completion=64 kv_hat=2061547488 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733981 [admission] request cost: model="o15" ctx=30592 path=plain = 9280 B/token x ctx + 1625MB prefill-workspace + 157MB fixed = 2067MB
+1790536733981 [admit-predict] id=cmpl-de4e6ffcbfd59c276515984fab878d26 tenant="d48-wave214" model="o15" verdict=reject-kv reason=global-p95 prompt=30464 predicted_completion=64 kv_hat=2066020320 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733981 [admission] request cost: model="o15" ctx=29824 path=plain = 9280 B/token x ctx + 1619MB prefill-workspace + 157MB fixed = 2053MB
+1790536733981 [admit-predict] id=cmpl-b89059d55134bd1f552fcff7ebfe7fa9 tenant="d48-wave217" model="o15" verdict=reject-kv reason=global-p95 prompt=29696 predicted_completion=64 kv_hat=2052601824 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733981 [admission] request cost: model="o15" ctx=29568 path=plain = 9280 B/token x ctx + 1617MB prefill-workspace + 157MB fixed = 2049MB
+1790536733981 [admit-predict] id=cmpl-88ead17d05b15e1330776a075dc1028e tenant="d48-wave218" model="o15" verdict=reject-kv reason=global-p95 prompt=29440 predicted_completion=64 kv_hat=2048128992 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733981 [admission] request cost: model="o15" ctx=29312 path=plain = 9280 B/token x ctx + 1615MB prefill-workspace + 157MB fixed = 2044MB
+1790536733981 [admit-predict] id=cmpl-c22b423d4b0caff291157979f4dec65d tenant="d48-wave219" model="o15" verdict=reject-kv reason=global-p95 prompt=29184 predicted_completion=64 kv_hat=2043656160 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733981 [admission] request cost: model="o15" ctx=30848 path=plain = 9280 B/token x ctx + 1627MB prefill-workspace + 157MB fixed = 2071MB
+1790536733981 [admit-predict] id=cmpl-175cb32097849b90b9f79810ce45b2a6 tenant="d48-wave221" model="o15" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=2070493152 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733981 [admission] request cost: model="o15" ctx=30336 path=plain = 9280 B/token x ctx + 1623MB prefill-workspace + 157MB fixed = 2062MB
+1790536733981 [admit-predict] id=cmpl-009831d0de6307f7cf6178a27975fabc tenant="d48-wave223" model="o15" verdict=reject-kv reason=global-p95 prompt=30208 predicted_completion=64 kv_hat=2061547488 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733981 [admission] request cost: model="o15" ctx=30592 path=plain = 9280 B/token x ctx + 1625MB prefill-workspace + 157MB fixed = 2067MB
+1790536733981 [admit-predict] id=cmpl-92bd711deb3ed60b709b03ef6a6a2367 tenant="d48-wave222" model="o15" verdict=reject-kv reason=global-p95 prompt=30464 predicted_completion=64 kv_hat=2066020320 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733981 [admission] request cost: model="o15" ctx=29056 path=plain = 9280 B/token x ctx + 1613MB prefill-workspace + 157MB fixed = 2040MB
+1790536733981 [admit-predict] id=cmpl-aca46c5c526881ffbdf8dbca46b0955f tenant="d48-wave220" model="o15" verdict=reject-kv reason=global-p95 prompt=28928 predicted_completion=64 kv_hat=2039183328 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733981 [admission] request cost: model="o15" ctx=30080 path=plain = 9280 B/token x ctx + 1621MB prefill-workspace + 157MB fixed = 2058MB
+1790536733981 [admit-predict] id=cmpl-01213868065be9c5aa7b8792480587b8 tenant="d48-wave224" model="o15" verdict=reject-kv reason=global-p95 prompt=29952 predicted_completion=64 kv_hat=2057074656 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733981 [admission] request cost: model="o15" ctx=29568 path=plain = 9280 B/token x ctx + 1617MB prefill-workspace + 157MB fixed = 2049MB
+1790536733981 [admit-predict] id=cmpl-2471e643234a9e1c6ec07e4411dfe25f tenant="d48-wave226" model="o15" verdict=reject-kv reason=global-p95 prompt=29440 predicted_completion=64 kv_hat=2048128992 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733981 [admission] request cost: model="o15" ctx=29824 path=plain = 9280 B/token x ctx + 1619MB prefill-workspace + 157MB fixed = 2053MB
+1790536733981 [admit-predict] id=cmpl-a19611b745895b3489e762dad4f171c9 tenant="d48-wave225" model="o15" verdict=reject-kv reason=global-p95 prompt=29696 predicted_completion=64 kv_hat=2052601824 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733981 [admission] request cost: model="o15" ctx=29312 path=plain = 9280 B/token x ctx + 1615MB prefill-workspace + 157MB fixed = 2044MB
+1790536733981 [admit-predict] id=cmpl-502473f6b5c5bf25e83162c9c741a7f2 tenant="d48-wave227" model="o15" verdict=reject-kv reason=global-p95 prompt=29184 predicted_completion=64 kv_hat=2043656160 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733981 [admission] request cost: model="o15" ctx=30848 path=plain = 9280 B/token x ctx + 1627MB prefill-workspace + 157MB fixed = 2071MB
+1790536733981 [admit-predict] id=cmpl-7beaab091e83d00880f59011c4797e70 tenant="d48-wave229" model="o15" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=2070493152 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733981 [admission] request cost: model="o15" ctx=29056 path=plain = 9280 B/token x ctx + 1613MB prefill-workspace + 157MB fixed = 2040MB
+1790536733981 [admit-predict] id=cmpl-676a34b2a36c240fce34746e6b463b4f tenant="d48-wave228" model="o15" verdict=reject-kv reason=global-p95 prompt=28928 predicted_completion=64 kv_hat=2039183328 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733981 [admission] request cost: model="o15" ctx=30592 path=plain = 9280 B/token x ctx + 1625MB prefill-workspace + 157MB fixed = 2067MB
+1790536733981 [admit-predict] id=cmpl-7aa7492168cd89939b00677e0bcef243 tenant="d48-wave230" model="o15" verdict=reject-kv reason=global-p95 prompt=30464 predicted_completion=64 kv_hat=2066020320 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536733981 [admission] request cost: model="o15" ctx=30336 path=plain = 9280 B/token x ctx + 1623MB prefill-workspace + 157MB fixed = 2062MB
+1790536733981 [admit-predict] id=cmpl-b442d33bba2582b27ff6bd27ee5a1c74 tenant="d48-wave231" model="o15" verdict=reject-kv reason=global-p95 prompt=30208 predicted_completion=64 kv_hat=2061547488 booked_bytes=71989638328 booked_real=72007879096 inflight=35 cap=64 budget_bytes=73665624068 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=57110789836
+1790536738767 [prefix-cache] evict (snapshot preflight, LRU): 30208 tokens, 346.2MB (model o15, ns "d48-burst10")
+1790536738767 [prefix-cache] insert (seed): 29952 tokens, 343.8MB (resident 4851.5MB / 4997MB, model o15, ns "d48-wave20")
+1790536744472 [meter] admit id=cmpl-a1d95ea9972d465de553315c9d16ec85 tenant=default lane=interactive model="o15"
+1790536744472 [admission] per-session draft-state charge: model="o15" +43MB (measured capture high-water)
+1790536744472 [admission] request cost: model="o15" ctx=592 path=spec = 10208 B/token x ctx + 176MB prefill-workspace + 157MB fixed = 340MB
+1790536744472 [admit-predict] id=cmpl-a1d95ea9972d465de553315c9d16ec85 tenant="d48-probe" model="o15" verdict=admit reason=global-p95 prompt=512 predicted_completion=16 kv_hat=382398200 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=73665624068 retry_after_s=- exempt=0 enforce=1 live_free_bytes=67831594756
+1790536744472 [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+1790536744472 [spec-k] model="o15" tenant="d48-probe" K=3 source=cold-short prompt=512 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790536744635 [spec-acc] ctx=512 burst=6/30 cum=6/30=0.200
+1790536744655 [server] SIGTERM: draining (0 in flight, deadline 30s)
+1790536744655 [server] drain complete in 0.0s; exiting
+1790536745481 [server] GPU worker shutdown complete

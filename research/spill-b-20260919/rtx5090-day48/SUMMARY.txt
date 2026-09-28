@@ -1,0 +1,22 @@
+DAY48 V1 card=rtx5090 boot=O1-enforce pool_engaged_lines=1 physical_debt_lines=1 physical_debt_mb_max=34 vg_debt_lines=0 vg_debt_max=0 -> PASS
+DAY48 V2 card=rtx5090 boot=O1-enforce oom_lines=0 parked_oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY48 V3 card=rtx5090 boot=O1-enforce r429=57 without_reject_line=[] retry_after_out_of_1_60=[] other_non200=[] -> PASS
+DAY48 READING card=rtx5090 boot=O1-enforce wave=burst n=32 ok200=0 r429=32 ttft_ms p50=nan p95=nan N=0
+DAY48 READING card=rtx5090 boot=O1-enforce wave=wave2 n=16 ok200=0 r429=16 ttft_ms p50=nan p95=nan N=0
+DAY48 V1 card=rtx5090 boot=O1-enforce-vg pool_engaged_lines=1 physical_debt_lines=2 physical_debt_mb_max=34 vg_debt_lines=59 vg_debt_max=33554432 -> PASS
+DAY48 V2 card=rtx5090 boot=O1-enforce-vg oom_lines=0 parked_oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY48 V3 card=rtx5090 boot=O1-enforce-vg r429=57 without_reject_line=[] retry_after_out_of_1_60=[] other_non200=[] -> PASS
+DAY48 READING card=rtx5090 boot=O1-enforce-vg wave=burst n=32 ok200=0 r429=32 ttft_ms p50=nan p95=nan N=0
+DAY48 READING card=rtx5090 boot=O1-enforce-vg wave=wave2 n=16 ok200=0 r429=16 ttft_ms p50=nan p95=nan N=0
+DAY48 V1 card=rtx5090 boot=O2-enforce pool_engaged_lines=1 physical_debt_lines=1 physical_debt_mb_max=34 vg_debt_lines=0 vg_debt_max=0 -> PASS
+DAY48 V2 card=rtx5090 boot=O2-enforce oom_lines=0 parked_oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY48 V3 card=rtx5090 boot=O2-enforce r429=57 without_reject_line=[] retry_after_out_of_1_60=[] other_non200=[] -> PASS
+DAY48 READING card=rtx5090 boot=O2-enforce wave=burst n=32 ok200=0 r429=32 ttft_ms p50=nan p95=nan N=0
+DAY48 READING card=rtx5090 boot=O2-enforce wave=wave2 n=16 ok200=0 r429=16 ttft_ms p50=nan p95=nan N=0
+DAY48 V1 card=rtx5090 boot=O2-enforce-vg pool_engaged_lines=1 physical_debt_lines=2 physical_debt_mb_max=34 vg_debt_lines=59 vg_debt_max=33554432 -> PASS
+DAY48 V2 card=rtx5090 boot=O2-enforce-vg oom_lines=0 parked_oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY48 V3 card=rtx5090 boot=O2-enforce-vg r429=57 without_reject_line=[] retry_after_out_of_1_60=[] other_non200=[] -> PASS
+DAY48 READING card=rtx5090 boot=O2-enforce-vg wave=burst n=32 ok200=0 r429=32 ttft_ms p50=nan p95=nan N=0
+DAY48 READING card=rtx5090 boot=O2-enforce-vg wave=wave2 n=16 ok200=0 r429=16 ttft_ms p50=nan p95=nan N=0
+DAY48 V4 card=rtx5090 order=O1 rows_200_both=2 status_mismatch=0 differ=[] -> PASS
+DAY48 V4 card=rtx5090 order=O2 rows_200_both=2 status_mismatch=0 differ=[] -> PASS

@@ -1670,6 +1670,190 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 );
             }
         }
+        "kvrow" => {
+            // WP-B DAY50 stage 1 (addendum D): the KV bytes per row and the D2D copy time of rows
+            // [0, g) of every KV layer's K and V planes (the shadow's full-copy form).
+            let pa = text_arg(&rest, "--prompt-a").expect("--prompt-a");
+            let contexts: Vec<usize> = arg(&rest, "--contexts")
+                .unwrap_or_else(|| "6144,30720,122880".into())
+                .split(',')
+                .filter_map(|v| v.trim().parse().ok())
+                .collect();
+            let reps: usize = arg(&rest, "--reps")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(5);
+            let gap_ms: u64 = arg(&rest, "--gap-ms")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(50);
+            let g_max = contexts.iter().copied().max().expect("--contexts");
+            let mut ta = encode_prompt(&cx.tok, &pa, chat);
+            while ta.len() < g_max {
+                let more = ta.clone();
+                ta.extend_from_slice(&more);
+            }
+            ta.truncate(g_max);
+            let mut c = Cache::new(&cx.e, &cx.model.cfg, g_max + 8)?;
+            let t0 = std::time::Instant::now();
+            let _ = cx.model.prime_cache(&cx.e, &ta, &mut c, 0)?;
+            cx.e.stream().synchronize()?;
+            let layers: Vec<(usize, usize)> =
+                c.kv.iter()
+                    .flatten()
+                    .map(|kvl| (kvl.k_tok_bytes, kvl.v_tok_bytes))
+                    .collect();
+            let row_bytes: usize = layers.iter().map(|(k, v)| k + v).sum();
+            println!(
+                "kvrow setup: primed {g_max} rows in {:.1} ms; kv_layers={} kv_bytes_per_row={row_bytes}",
+                t0.elapsed().as_secs_f64() * 1e3,
+                layers.len()
+            );
+            let widest = layers
+                .iter()
+                .map(|(k, v)| k.max(v))
+                .copied()
+                .max()
+                .unwrap_or(0);
+            let mut scratch = cx.e.alloc_u8(g_max * widest)?;
+            for &g in &contexts {
+                let mut walls: Vec<f64> = Vec::with_capacity(reps);
+                for rep in 0..=reps {
+                    std::thread::sleep(std::time::Duration::from_millis(gap_ms));
+                    let t0 = std::time::Instant::now();
+                    for kvl in c.kv.iter().flatten() {
+                        let nk = g * kvl.k_tok_bytes;
+                        let nv = g * kvl.v_tok_bytes;
+                        cx.e.stream()
+                            .memcpy_dtod(&kvl.k.slice(0..nk), &mut scratch.slice_mut(0..nk))?;
+                        cx.e.stream()
+                            .memcpy_dtod(&kvl.v.slice(0..nv), &mut scratch.slice_mut(0..nv))?;
+                    }
+                    cx.e.stream().synchronize()?;
+                    if rep > 0 {
+                        walls.push(t0.elapsed().as_secs_f64() * 1e3);
+                    }
+                }
+                let mut sorted = walls.clone();
+                sorted.sort_by(|a, b| a.total_cmp(b));
+                let bytes = g * row_bytes;
+                let p50 = sorted[sorted.len() / 2];
+                println!(
+                    "kvrow g={g} N={reps} bytes={bytes} copy_ms p50={p50:.3} min={:.3} max={:.3} gb_s={:.1} all=[{}]",
+                    sorted[0],
+                    sorted[sorted.len() - 1],
+                    bytes as f64 / (p50 * 1e-3) / 1e9,
+                    walls
+                        .iter()
+                        .map(|w| format!("{w:.3}"))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                );
+            }
+        }
+        "overlap" => {
+            // WP-B DAY50 stage 1 (addendum D): engine A's decode TPOT alone, beside engine B's
+            // settle-shaped prime calls on its own stream (a second Engine on device 0), and alone
+            // again; and whether A's token stream is identical across the three phases.
+            let pa = text_arg(&rest, "--prompt-a").expect("--prompt-a");
+            let l: usize = arg(&rest, "--prompt-tokens")
+                .and_then(|v| v.parse().ok())
+                .expect("--prompt-tokens L");
+            let rows: usize = arg(&rest, "--rows")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(32);
+            let steps: usize = arg(&rest, "--decode-steps")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(64);
+            let mut ta = encode_prompt(&cx.tok, &pa, chat);
+            let need = l + rows;
+            while ta.len() < need {
+                let more = ta.clone();
+                ta.extend_from_slice(&more);
+            }
+            ta.truncate(need);
+            // Engine A: the decoding session, primed once and restored per phase.
+            let mut ca = Cache::new(&cx.e, &cx.model.cfg, l + steps + 16)?;
+            let (logits, _, _) = cx.model.prime_cache(&cx.e, &ta[..l], &mut ca, 0)?;
+            let first = argmax(&logits) as u32;
+            let snap_a = ca.snapshot(&cx.e)?;
+            // Engine B: the settle engine on the same device, its session primed to L once.
+            let eb = Engine::new(0)?;
+            let mut cb = Cache::new(&eb, &cx.model.cfg, need + 8)?;
+            let _ = cx.model.prime_cache(&eb, &ta[..l], &mut cb, 0)?;
+            eb.stream().synchronize()?;
+            let snap_b = cb.snapshot(&eb)?;
+            let decode = |ca: &mut Cache| -> Result<(Vec<u32>, Vec<f64>), String> {
+                memra_engine::pp::restore_cache_checkpoint(&cx.e, &cx.model, None, ca, &snap_a)
+                    .map_err(|e| e.to_string())?;
+                cx.e.stream().synchronize().map_err(|e| e.to_string())?;
+                let mut t = first;
+                let mut stream = vec![t];
+                let mut walls = Vec::with_capacity(steps);
+                for _ in 0..steps {
+                    let t0 = std::time::Instant::now();
+                    let (lg, _) = cx
+                        .model
+                        .decode_step_h(&cx.e, t, ca)
+                        .map_err(|e| e.to_string())?;
+                    t = argmax(&lg) as u32;
+                    walls.push(t0.elapsed().as_secs_f64() * 1e3);
+                    stream.push(t);
+                }
+                Ok((stream, walls))
+            };
+            let pct = |w: &[f64], q: f64| {
+                let mut s = w.to_vec();
+                s.sort_by(|a, b| a.total_cmp(b));
+                s[((s.len() - 1) as f64 * q).round() as usize]
+            };
+            let (s1, w1) = decode(&mut ca)?;
+            let stop = std::sync::atomic::AtomicBool::new(false);
+            let (s2, w2, side_calls, side_ms) = std::thread::scope(|scope| {
+                let side = scope.spawn(|| -> Result<(usize, f64), String> {
+                    let mut calls = 0usize;
+                    let mut total = 0.0f64;
+                    while !stop.load(std::sync::atomic::Ordering::Acquire) {
+                        memra_engine::pp::restore_cache_checkpoint(
+                            &eb, &cx.model, None, &mut cb, &snap_b,
+                        )
+                        .map_err(|e| e.to_string())?;
+                        let t0 = std::time::Instant::now();
+                        let _ = cx
+                            .model
+                            .prime_cache(&eb, &ta[l..l + rows], &mut cb, 0)
+                            .map_err(|e| e.to_string())?;
+                        eb.stream().synchronize().map_err(|e| e.to_string())?;
+                        total += t0.elapsed().as_secs_f64() * 1e3;
+                        calls += 1;
+                    }
+                    Ok((calls, total))
+                });
+                // Let the side stream reach its steady state before the decode starts.
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                let main = decode(&mut ca);
+                stop.store(true, std::sync::atomic::Ordering::Release);
+                let side = side.join().expect("side thread");
+                match (main, side) {
+                    (Ok((s, w)), Ok((n, ms))) => Ok((s, w, n, ms)),
+                    (Err(e), _) | (_, Err(e)) => Err(e),
+                }
+            })?;
+            let (s3, w3) = decode(&mut ca)?;
+            for (name, w) in [("alone", &w1), ("beside", &w2), ("alone-again", &w3)] {
+                println!(
+                    "overlap L={l} R={rows} phase={name} N={} tpot_ms p50={:.3} p95={:.3}",
+                    w.len(),
+                    pct(w, 0.5),
+                    pct(w, 0.95)
+                );
+            }
+            println!(
+                "overlap L={l} R={rows} side_calls={side_calls} side_call_ms_mean={:.2} \
+                 tpot_ratio_beside_over_alone={:.4} streams_identical={}",
+                side_ms / side_calls.max(1) as f64,
+                pct(&w2, 0.5) / pct(&w1, 0.5),
+                s1 == s2 && s2 == s3
+            );
+        }
         "primepath" => {
             let pa = text_arg(&rest, "--prompt-a").expect("--prompt-a");
             let steps: usize = arg(&rest, "--steps")

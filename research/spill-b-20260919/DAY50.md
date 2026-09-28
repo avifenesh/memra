@@ -148,6 +148,33 @@ one plane and the tail from another decides the shadow's form: a split view (no 
 3 to 4, for the second-engine settle path, the per-stream slab key, the shadow and its swap, the arrival rule, the
 event ordering and the bit-identity GPU tests against the one-stream settle.
 
+### 1.10 Addendum D (2026-09-27, stage 1 as built, before any stage-1 run)
+
+Stage 1 answers addendum C's three questions before arm O's design is final. Each is a reading; none is a clause.
+
+- **The two planes, read from the code.** `fa_prefill_view_ws` runs pass 1, `fa_dequant_kv_ws_bf16`: one thread per
+  element, grid-stride, writing `Kw[t x kv_dim + e]` from row `t` of the quantized plane. Pass 2, `fa_prefill_qw*`,
+  reads only that bf16 workspace. So the entry's rows `[0, g)` and the shadow's rows `[g, t_kv)` can feed pass 2 through
+  two pass-1 launches, one per plane, with the second at a workspace offset of `g x kv_dim`. Each element's value does
+  not depend on the launch, so the split is the same bytes as one launch over a contiguous plane. That makes the shadow
+  a split view, with no copy of the quantized prefix. Its bit-identity against the one-plane call is arm O's first GPU
+  test.
+- **`kvrow`** (`concat-prime-probe <model> kvrow --contexts 6144,30720,122880 --reps 5 --gap-ms 50`): primes the
+  largest context once, then prints the KV bytes per row (the sum over the cache's KV layers of `k_tok_bytes +
+  v_tok_bytes`) and the layer count. For each `g` it times the D2D copy of rows `[0, g)` of every KV layer's K and V
+  planes into a scratch buffer on the engine stream, one warm call then N reps with idle gaps, printing wall
+  p50/min/max, bytes and GB/s. This is the cost of the shadow's full-copy form, which the split view avoids.
+- **`overlap`** (`concat-prime-probe <model> overlap --prompt-tokens L --rows 32 --decode-steps N`): two Engines on
+  device 0, arm O's shape. Engine A primes a session to `L`, then greedy-decodes N steps three times from the same
+  snapshot: alone, beside engine B, and alone again. Engine B runs settle-shaped prime calls back to back (32 rows at
+  context `L`, restored from its own snapshot each time) on its own stream in a second thread. The probe prints each
+  phase's TPOT p50 and p95 (the per-step wall, logits read included), B's call count and mean wall, and whether A's
+  token stream is identical across the three phases. It answers E7's question (does a side-stream settle slow the decode
+  beside it) before arm O is built.
+- **Cells:** the 5090 (the 9B, `kvrow` at 6,144 and 30,720, `overlap` at L = 6,144 and 30,720, N = 64 steps) under
+  `/tmp/memra-5090.lock`. The target card (the 27B, `kvrow` at all three contexts, `overlap` at L = 6,144, 30,720 and
+  122,880) as a sitting. One boot per mode; the binary is the stage-0 probe built at the change.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.

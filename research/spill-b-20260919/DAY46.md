@@ -204,3 +204,32 @@ DAY46 READING card=pro6000 boot=O2-enforce-wrel wave=wave2 n=32 ok200=11 r429=21
   32 of 32 after the storm.
 - **What it decides:** no default moves. This is the owner's input for the enforcing predictive door, and for the W
   release that is its second arm.
+
+### 2.3 Addendum C on the 5090 (the 9B at `MEMRA_CTX=65536`, B = 32, L = 6,144, `rtx5090-day46c/`, 2026-09-27 03:28 to 14:12Z)
+
+The binary built from `8926ccfb3` (sha256 `b619eb42...`); all six boots used it. It ran through queue-n under the idle
+wait, with other lanes' cells between the boots. Every boot `rc=0`. Verbatim (`read.log`; O2 reads alike):
+
+```
+DAY46 P5 card=rtx5090 boot=O1-enforce-wrel w_booked=24 w_release=23 w_retire_unreleased=1 twice=[] bytes_mismatch=[] neither=[] -> PASS
+DAY46 READING card=rtx5090 boot=O1-enforce wave=wave2 n=16 ok200=1 r429=15 booked_at_first_line=10366394448 ttft_ms p50=1337.4 p95=1337.4 N=1 time_to_429_ms p50=10.6 max=14.5
+DAY46 READING card=rtx5090 boot=O1-enforce-wrel wave=wave2 n=16 ok200=6 r429=10 booked_at_first_line=1362139488 ttft_ms p50=7197.5 p95=7199.5 N=6 time_to_429_ms p50=9.6 max=14.7
+DAY46 P4 card=rtx5090 order=O1 arm=enforce rows_200_both=19 status_mismatch=40 differ=[] -> PASS
+DAY46 P4 card=rtx5090 order=O1 arm=enforce-wrel rows_200_both=24 status_mismatch=35 differ=[] -> PASS
+```
+
+- **P1 to P5 PASS on all four enforcing boots, both orders.**
+  - Every refusal is typed, with its own reject line (40 on `enforce`, 35 on `enforce-wrel`).
+  - There is no OOM, parked OOM, 503 or crash. Every admitted line is within the budget (peak 12.15 to 12.21 GB against
+    12.76 to 12.80 GB). The probe reads both books at 0.
+  - On `enforce-wrel`, 23 of 24 booked workspaces release at prime completion.
+  - The requests `200` on both boots of a pair have equal digests.
+- **The value reading, as on the target card:** by the second wave the W release has taken the book from 10.37 GB down
+  to 1.36 GB (1.31 GB on O2). The enforcing door then admits 6 of the 16 second-wave requests with the release, against
+  1 of 16 without it. The burst admits 7 of 32 on both arms (TTFT p50 8.4 to 9.4 s, N=7). Over the boot that is 24
+  admitted against 19.
+- **The before (`shadow`):** no OOM line on this card at this shape. All 32 and 16 end `200`, the burst at a TTFT p50
+  of 43 s, because every prime runs admitted. The target card's shadow boots OOMed 55 and 56 times (2.2).
+- With 2.1 and 2.2, O6 and O4 are read on both cards. No default moves; the owner decides the enforcing door and its W
+  release.
+

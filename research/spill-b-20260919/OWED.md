@@ -120,7 +120,9 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   the fuller charge"). Dropped from STATE at day 33 with no closing record; restored here.
 - Acceptance to pre-register: `MEMRA_ADMIT_PREDICT_ENFORCE=1` against a budget arm on both cards, the day-24 sequence
   and a burst, before and after the day-24 charge, every refusal a typed 429 with its `Retry-After`, no OOM.
-- Status: target card `read` (DAY46 2.2, the seventeenth sitting, addendum C): P1 to P5 PASS on all four enforcing
+- Status (2026-09-28): `read` on both cards. On the 5090 (DAY46 2.3, queue-n) P1 to P5 PASS on all four enforcing boots,
+  and the W release admits 6 of 16 second-wave requests against 1 of 16. The owner's input. Earlier: target card `read`
+  (DAY46 2.2, the seventeenth sitting, addendum C): P1 to P5 PASS on all four enforcing
   boots, both orders. The W release takes the book from 60.60 GB to 20.47 GB by the second wave, and the enforcing door
   admits 11 of 32 of that wave with the release against 1 of 32 without it (39 against 29 over the boot, no OOM on
   either arm). The owner's input for both doors; no default moves. The 5090 half runs from `rtx5090-day46c/run.sh`.
@@ -165,8 +167,9 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   recorded as it reads; V6 the pool held at 34 MB, so the growing-pool case is the engine test's alone. Open: a physical
   debt line on every admission and a sitting to observe V5's coverage as registered (its own addendum, after integ72
   merges); a clause revision is the owner's. The owner kept the clause as written (2026-09-27): addendum E, the
-  per-admission line with the door on (`15a7fbcc8`) and the V5E reader line; NEED TARGET CARD, the twentieth sitting
-  (`pro-single-b-sitting20.sh`, receipts `b-day48c`). Before: target card `read` (DAY48 2.1, the eighteenth sitting): V1 to V4 PASS on all four boots; the pool's remaining
+  per-admission line with the door on (`15a7fbcc8`) and the V5E reader line. The twentieth sitting read it (DAY48 2.3):
+  `V5E ... admitted_vg=45 paired_by_id=45 unobserved=[] apart=[] -> PASS` on both enforce-vg boots, V1 to V4 PASS.
+  **Closed** (2026-09-27); the door stays default off to its decide-by (2026-10-11), the owner's call. Before: target card `read` (DAY48 2.1, the eighteenth sitting): V1 to V4 PASS on all four boots; the pool's remaining
   debt is at most 34 MB, so both arms admit the same (35 of 64, 1 of 32). The owner's input; the 5090 half runs. Before:
   `running`. DAY46 read, so DAY48 left text only: addendum A (the door and the cell as built); code `5a6f1898f`
   (`MEMRA_ADMIT_PREDICT_VG_DEBT`, default off, decide-by 2026-10-11; memra-server lib 987 passed, clippy clean); the
@@ -187,9 +190,9 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   device work, or a torn-state check), or split it, keeping one numeric program per request (a retried chunk is the
   same batched step); sessions that never emitted park as today. Design, the torn-state argument and the cells are
   pre-registered before code (DAY49).
-- Status (2026-09-27): the owner's ruling: `MEMRA_BATCH_OOM_RECOVER` is ON by default on the RTX PRO 6000 Blackwell
-  class (DAY49 addendum F, `be4d7f92c`, `docs/decisions/BATCH-OOM-RECOVER-DEFAULT.md`; `=0` the seam, decide-by
-  2026-10-11). The RTX 5090's flip waits for queue-n's serving boots (decide-by 2026-10-10). Earlier:
+- Status (2026-09-28): ON by default on both first-class classes. The RTX PRO 6000 Blackwell class came first (DAY49
+  addendum F, `be4d7f92c`). The RTX 5090 class followed once queue-n's serving boots read (2.7, addendum G,
+  `c28363d08`). `=0` is the seam, decide-by 2026-10-12 (`docs/decisions/BATCH-OOM-RECOVER-DEFAULT.md`). Earlier:
   Status: `running`. Pre-registered (DAY49), addendum A (the marker check replaced by the engine step guard),
   addendum B (the cells). Code `6102fb63a` and `02dbdfa40` (`MEMRA_BATCH_OOM_RECOVER`, decide-by 2026-10-10; engine
   and server suites pass, clippy clean). The gate's arm i with its red twin and the serving shape run locally
@@ -217,9 +220,11 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
 
 - Source: `DAY30.md` section 6; the lane's comment on #464 (2026-09-22): two guard-only seeds, "the format is your
   call"; the code is darklanes' `recover_request_ledger` (the money path).
-- Status: waiting on the owner's format choice (sidecar `requests.jsonl.accounted`, which the issue itself names, or
-  a zero-amount `debit` row per carried id). The implementation is 0.5 agent-day once chosen. The lane does not
-  choose a money-path format.
+- Status: `done` (2026-09-27). The owner delegated the money-path formats to the lead, who chose a zero-amount `debit`
+  row per carried id. Built as darklanes `memra-server carry-guard` (a read-only dry run and an `--execute` that refuses
+  a live journal), with the budget journal's source-file top-up rows (form b2: `amount_micro` 0, `source_delta_micro`,
+  an atomic first-boot cut) on the same branch. darklanes#1173 merged (darklanes main `31eda55ee`); the lead closed
+  memra#464. Test logs: `darklanes-money-20260927/`. Earlier: waiting on the owner's format choice.
 
 ### O10. The part (b) arm of `MEMRA_ADMIT_BY_MEMORY` with the host tier armed
 

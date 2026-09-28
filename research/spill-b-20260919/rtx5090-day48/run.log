@@ -1,0 +1,20 @@
+2026-09-27T04:21:22Z start HEAD=eb826568dd5ab282c9ba253ae5ff9326d6286e22 5f6349e541f7e5cd8fb0f7de3619a9984fe7449ffd604af8488cbf6a001fb71a  ./tip/memra-server  model=72ff9600aa2b0de7
+2026-09-27T04:21:22Z boot O1-enforce: waiting for an idle rig
+2026-09-27T06:03:53Z boot O1-enforce start arm=enforce bin=5f6349e541f7e5cd env=[MEMRA_ADMIT_PREDICT_SHADOW=1 MEMRA_ADMIT_PREDICT_ENFORCE=1] args=[--burst 32 --length 6144 --max-tokens 64]
+2026-09-27T07:05:10Z boot O1-enforce rc=0 DAY48 BOOT rows=59 ok=2 r429=57 rejects=57 vg_debt_lines=0 pool_engaged=1 oom=0
+2026-09-27T07:09:10Z boot O1-enforce-vg: waiting for an idle rig
+2026-09-27T09:09:11Z boot O1-enforce-vg: rig not idle after 7200 s; not run
+2026-09-27T09:09:11Z boots rc=3
+2026-09-27T09:09:11Z done
+2026-09-27T09:16:12Z queue-o: asking for O1-enforce-vg:enforce-vg O2-enforce-vg:enforce-vg O2-enforce:enforce (try 1)
+2026-09-27T09:16:12Z boot O1-enforce-vg: waiting for an idle rig
+2026-09-27T09:56:42Z boot O1-enforce-vg start arm=enforce-vg bin=5f6349e541f7e5cd env=[MEMRA_ADMIT_PREDICT_SHADOW=1 MEMRA_ADMIT_PREDICT_ENFORCE=1 MEMRA_ADMIT_PREDICT_VG_DEBT=1] args=[--burst 32 --length 6144 --max-tokens 64]
+2026-09-27T10:57:56Z boot O1-enforce-vg rc=0 DAY48 BOOT rows=59 ok=2 r429=57 rejects=57 vg_debt_lines=58 pool_engaged=1 oom=0
+2026-09-27T11:01:56Z boot O2-enforce-vg: waiting for an idle rig
+2026-09-27T11:21:57Z boot O2-enforce-vg start arm=enforce-vg bin=5f6349e541f7e5cd env=[MEMRA_ADMIT_PREDICT_SHADOW=1 MEMRA_ADMIT_PREDICT_ENFORCE=1 MEMRA_ADMIT_PREDICT_VG_DEBT=1] args=[--burst 32 --length 6144 --max-tokens 64]
+2026-09-27T12:23:10Z boot O2-enforce-vg rc=0 DAY48 BOOT rows=59 ok=2 r429=57 rejects=57 vg_debt_lines=58 pool_engaged=1 oom=0
+2026-09-27T12:27:10Z boot O2-enforce: waiting for an idle rig
+2026-09-27T12:48:40Z boot O2-enforce start arm=enforce bin=5f6349e541f7e5cd env=[MEMRA_ADMIT_PREDICT_SHADOW=1 MEMRA_ADMIT_PREDICT_ENFORCE=1] args=[--burst 32 --length 6144 --max-tokens 64]
+2026-09-27T13:49:46Z boot O2-enforce rc=0 DAY48 BOOT rows=59 ok=2 r429=57 rejects=57 vg_debt_lines=0 pool_engaged=1 oom=0
+2026-09-27T13:53:46Z boots done: O1-enforce-vg:enforce-vg O2-enforce-vg:enforce-vg O2-enforce:enforce
+2026-09-27T13:53:46Z queue-o done

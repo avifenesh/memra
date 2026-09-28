@@ -1,0 +1,5 @@
+arm=enforce
+bin_sha256=679b5e83df25802cc57add03f52e3536065fc87a3168026f12764ff584fbb65e
+env=MEMRA_ADMIT_PREDICT_SHADOW=1 MEMRA_ADMIT_PREDICT_ENFORCE=1
+client_args=--burst 64 --length 30720 --max-tokens 64
+lock_hold=/tmp/memra-gpu.lock held by day48-run.sh from 2026-09-27T19:08:48Z

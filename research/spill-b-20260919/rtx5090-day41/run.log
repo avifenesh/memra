@@ -1,0 +1,41 @@
+2026-09-27T13:54:29Z boot rx-plain-O1-keep: waiting for an idle rig
+2026-09-27T14:36:59Z boot rx-plain-O1-keep start arm=keep route=plain shape=RX bin=2a1614c901cc6613 env=[MEMRA_SERVE_SPEC=0 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720]
+2026-09-27T14:47:55Z boot rx-plain-O1-keep rc=0 re.error: bad character range v-r at position 4
+2026-09-27T14:51:55Z boot rx-plain-O1-rewind: waiting for an idle rig
+2026-09-27T15:35:56Z boot rx-plain-O1-rewind start arm=rewind route=plain shape=RX bin=2a1614c901cc6613 env=[MEMRA_RESUME_GRID_REWIND=1 MEMRA_SERVE_SPEC=0 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720]
+2026-09-27T16:05:03Z boot rx-plain-O1-rewind rc=0 re.error: bad character range v-r at position 4
+2026-09-27T16:09:03Z boot rx-plain-O2-rewind: waiting for an idle rig
+2026-09-27T16:30:03Z boot rx-plain-O2-rewind start arm=rewind route=plain shape=RX bin=2a1614c901cc6613 env=[MEMRA_RESUME_GRID_REWIND=1 MEMRA_SERVE_SPEC=0 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720]
+2026-09-27T17:02:36Z boot rx-plain-O2-rewind rc=0 re.error: bad character range v-r at position 4
+2026-09-27T17:06:36Z boot rx-plain-O2-keep: waiting for an idle rig
+2026-09-27T17:09:07Z boot rx-plain-O2-keep start arm=keep route=plain shape=RX bin=2a1614c901cc6613 env=[MEMRA_SERVE_SPEC=0 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720]
+2026-09-27T17:20:06Z boot rx-plain-O2-keep rc=0 re.error: bad character range v-r at position 4
+2026-09-27T17:24:06Z boot fx-plain-keep: waiting for an idle rig
+2026-09-27T19:24:07Z boot fx-plain-keep: rig not idle after 7200 s; not run
+2026-09-27T19:24:07Z boot fx-plain-keep: waiting for an idle rig
+2026-09-27T19:27:37Z boot fx-plain-keep start arm=keep route=plain shape=FX bin=2a1614c901cc6613 env=[MEMRA_SERVE_SPEC=0] args=[--shapes FX]
+2026-09-27T19:28:00Z boot fx-plain-keep rc=0 re.error: bad character range v-r at position 4
+2026-09-27T19:32:00Z boot fx-plain-rewind: waiting for an idle rig
+2026-09-27T19:42:00Z boot fx-plain-rewind start arm=rewind route=plain shape=FX bin=2a1614c901cc6613 env=[MEMRA_RESUME_GRID_REWIND=1 MEMRA_SERVE_SPEC=0] args=[--shapes FX]
+2026-09-27T19:42:45Z boot fx-plain-rewind rc=0 re.error: bad character range v-r at position 4
+2026-09-27T19:46:45Z boots done: fx-plain-keep:keep:plain:FX fx-plain-rewind:rewind:plain:FX
+2026-09-27T19:46:45Z boot rx-spec-O1-keep: waiting for an idle rig
+2026-09-27T19:51:45Z boot rx-spec-O1-keep start arm=keep route=spec shape=RX bin=2a1614c901cc6613 env=[MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720]
+2026-09-27T20:03:25Z boot rx-spec-O1-keep rc=0 re.error: bad character range v-r at position 4
+2026-09-27T20:07:25Z boot rx-spec-O1-rewind: waiting for an idle rig
+2026-09-27T20:22:55Z boot rx-spec-O1-rewind start arm=rewind route=spec shape=RX bin=2a1614c901cc6613 env=[MEMRA_RESUME_GRID_REWIND=1 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720]
+2026-09-27T20:34:58Z boot rx-spec-O1-rewind rc=0 re.error: bad character range v-r at position 4
+2026-09-27T20:38:58Z boot rx-spec-O2-rewind: waiting for an idle rig
+2026-09-27T21:11:59Z boot rx-spec-O2-rewind start arm=rewind route=spec shape=RX bin=2a1614c901cc6613 env=[MEMRA_RESUME_GRID_REWIND=1 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720]
+2026-09-27T21:24:17Z boot rx-spec-O2-rewind rc=0 re.error: bad character range v-r at position 4
+2026-09-27T21:28:17Z boot rx-spec-O2-keep: waiting for an idle rig
+2026-09-27T21:30:17Z boot rx-spec-O2-keep start arm=keep route=spec shape=RX bin=2a1614c901cc6613 env=[MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720]
+2026-09-27T21:41:52Z boot rx-spec-O2-keep rc=0 re.error: bad character range v-r at position 4
+2026-09-27T21:45:52Z boot fx-spec-keep: waiting for an idle rig
+2026-09-27T22:01:22Z boot fx-spec-keep start arm=keep route=spec shape=FX bin=2a1614c901cc6613 env=[] args=[--shapes FX]
+2026-09-27T22:01:48Z boot fx-spec-keep rc=0 re.error: bad character range v-r at position 4
+2026-09-27T22:05:48Z boot fx-spec-rewind: waiting for an idle rig
+2026-09-27T22:25:49Z boot fx-spec-rewind start arm=rewind route=spec shape=FX bin=2a1614c901cc6613 env=[MEMRA_RESUME_GRID_REWIND=1] args=[--shapes FX]
+2026-09-27T22:26:13Z boot fx-spec-rewind rc=0 re.error: bad character range v-r at position 4
+2026-09-27T22:30:13Z boots done: rx-spec-O1-keep:keep:spec:RX rx-spec-O1-rewind:rewind:spec:RX rx-spec-O2-rewind:rewind:spec:RX rx-spec-O2-keep:keep:spec:RX fx-spec-keep:keep:spec:FX fx-spec-rewind:rewind:spec:FX
+2026-09-27T22:30:13Z boot offprev: waiting for an idle rig

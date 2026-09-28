@@ -151,4 +151,34 @@ G4: Overloaded/OOM lines = 0: PASS
   - The pool reserved at ready: +771,751,936 B.
 - **What it means:** the booking point works as the owner approved it. No request grows the FA partial pool after ready
   on this model and card. The cost is the reachable envelope, 774 MiB, booked at boot, and the admission budget is
-  smaller by that much. The 5090 half runs from `rtx5090-day51/run.sh`.
+  smaller by that much.
+
+### 2.2 The 5090 (the 9B at `MEMRA_CTX=65536`, `rtx5090-day51/`, 2026-09-27 19:23 to 19:25Z)
+
+The release server built from `11ee6ed77` (`binary.sha256`). The hold runner waited 1,287 s for `/tmp/memra-5090.lock`
+behind another lane's A/B, then found the card idle under the hold: no compute app, 85 MiB used. DAY28's local run had a
+1.4 GB co-tenant. `rc=0`, 25 of 25 requests `200`. Verbatim:
+
+```
+1790537052398 [fa-pool] pre-grown model="q9" dev=0 served_ctx=65536 rows=16 o_len=33554432 ml_len=131072 bytes=135266304 (pool holds o_len 33554432 ml_len 131072)
+G_fa at ready (the probe's grows, inside the floor's measurement) = 135266304; grows after ready = 0
+G3: exact rows max |residual| = 0 (tolerance 0); line~ rows max |residual| = 775928 (tolerance 2e6 at the 1 MB grain)
+G1: growth(end) = 0 (G_fa after ready 0 + delta_D 0) <= 10% floor = 161061273: PASS
+G2: while inflight > 0, max_underbook_real = 3325677512 <= floor = 1610612736: FAIL
+G4: Overloaded/OOM lines = 0: PASS
+```
+
+- **P1 PASS (`grows after ready = 0`), P2 PASS (1.3's 33,554,432 and 131,072, 135,266,304 B), P3 PASS (G3 exact, G4).**
+  DAY28's two post-ready grows (S8 at 8 in flight, L at 1) and the probe's three are gone.
+- **G2 (not a clause) reads as on the target card:** 3,325,677,512 B at the `S8b-0` admit, one request booked. Over the
+  walk the pool's reserved bytes rose from 8,891,924,480 to 13,153,337,344; 1,654,200,848 B of that were cached blocks at
+  the sample. The rest is the intended retention (the prefix entries under the 2,052 MB budget, the parked spec
+  sessions). `growth(t)` is 0 against DAY28's 25.8 MB.
+- **P4:**
+  - The measured floor is 1,302 MB against 1,266 MB. The static 1,536 MB floor serves in both.
+  - The pool reserved at ready is +100,663,296 B.
+  - DAY28's co-tenant makes the budget and `mem.used` comparisons not like for like. This run: budget 12,633,008,128 B,
+    8,861 MiB at ready.
+- Both cards read the same: the booking point removes every post-ready grow of the FA partial pool, at the boot cost 1.3
+  computed.
+

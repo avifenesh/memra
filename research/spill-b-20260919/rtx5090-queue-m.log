@@ -1,3 +1,11 @@
 2026-09-26T17:48:21Z queue-m start HEAD=77fe12114fcb1834803429353c4643df855756de (YIELD_S=240)
 2026-09-26T20:37:51Z note (lane, the lead's rc audit): this queue's chain.log 'boots rc=' lines (queue-m.sh lines 168, 184, 198, 212) print date's exit, not the runner's; the per-boot 'boot <name> rc=' lines in each run.log are the runners' own and correct. The script runs on; the fix lands in the next queue.
 2026-09-26T22:46:21Z day39-run.sh v3-G2-r2:v3:G2 v3-L64-r2:v3:L64 v1-G2:v1:G2 v1-L64:v1:L64: asked again (try 2) after an idle-wait timeout
+2026-09-27T02:42:43Z day39-run.sh v1-L64:v1:L64: asked again (try 3) after an idle-wait timeout
+2026-09-27T03:01:35Z day 39B boots rc=0
+2026-09-27T03:42:29Z day 39B gate rc=0 ADMIT-MEM BURST GATE: ALL GREEN
+2026-09-27T09:57:34Z day 40 done
+2026-09-27T13:54:29Z day 41 probe rc=0 (try 1)
+2026-09-27T19:24:07Z day41-run.sh fx-plain-keep:keep:plain:FX fx-plain-rewind:rewind:plain:FX: asked again (try 2) after an idle-wait timeout
+2026-09-27T19:46:45Z day 41 plain boots rc=0
+2026-09-27T22:30:13Z day 41 spec boots rc=0

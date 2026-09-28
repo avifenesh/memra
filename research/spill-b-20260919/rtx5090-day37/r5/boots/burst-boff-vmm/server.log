@@ -1,0 +1,48 @@
+1790554552474 [server] build: memra-0.138.0-f613f5a4efea (id: source-tree, git: 3734c30bc168)
+1790554552474 [server] starting; models config = [("q9", "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", None)]
+1790554552475 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+1790554552475 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+1790554552575 [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+1790554552662 [worker] Engine ready (device=0, MEMRA_FAST=true)
+1790554552662 [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+1790554552662 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+1790554552662 [worker] loading model "q9" <- /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+1790554552702 [tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+1790554554073 [q8rp] split-plane decode mirrors built: 92 tensors
+1790554554211 [worker]   loaded "q9": 33 layers, eos=248046, stop=[248046]
+1790554554211 [worker] q9: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+1790554554211 [route-contract] model="q9" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+1790554554211 [worker] q9: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+1790554554212 [prefix-cache] on: budget 2052MB (2051538944 B, derived: 2 x 1025769472 B max entry for model "q9" at served ctx 65536 (from MEMRA_CTX; MEMRA_CTX set), requested 2051538944 B; boot driver free 18173591552 B, post-reserve clamp 16562978816 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+1790554554212 [admission] "q9": plain 14848 B/token, spec 16704 B/token; fixed residual learns from effective-free deltas
+1790554554212 [prime-walk] model="q9" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+1790554555111 [fa-pool] grow #0 dev=0 o_len 0 -> 266240 ml_len 0 -> 1040 (retired kept, zero=false)
+1790554555125 [func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+1790554555125 [func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q8_0_mmvq
+1790554555126 [func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+1790554555126 [fa-pool] grow #1 dev=0 o_len 266240 -> 532480 ml_len 1040 -> 2080 (retired kept, zero=false)
+1790554555126 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+1790554555126 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+1790554555126 [func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+1790554555126 [func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+1790554555131 [spec] draft-session state high-water: 41MB (max of parked delta 41MB and capture-time pool peak 9MB; charged per spec admission and gating future captures)
+1790554555168 [fa-pool] grow #2 dev=0 o_len 532480 -> 1064960 ml_len 2080 -> 4160 (retired kept, zero=false)
+1790554555475 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1442840576,"still_owned_bytes":8327347072,"pool_reserved_bytes":8455716864,"pool_cached_bytes":128369792,"driver_free_bytes":16294543360,"synchronization_errors":[]}
+1790554555475 [admit-cal] post-probe pool trim: released 1376MB cached back to the driver
+1790554555475 [admit-cal] boot calibration done: model="q9" route=mtp transient floor 1536MB (static was 1536MB; measured 1266MB; probe kv charge 67MB, draft-state 41MB, drafted 48 accepted 47; [dev0 peak-mapped 9440MB rest-mapped 8064MB charged 109MB -> 1266MB]; 1.3s)
+1790554555475 [admit-predict] shadow armed: budget_bytes=12760761472 budget_src=derived(effective_free_bytes=16422913152 - prefix_cache_budget_bytes=2051538944 - admission_reserve_bytes=1610612736) exempt_tenants=0 enforce=false (logging only, nothing is rejected; enforcement is a separate flip)
+1790554555475 [admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+1790554555475 [kv-vmm] door=ON routes=spec,plain granularity=2097152 grow=helper (rtx5090-receipt) reap=owner-tick slack_rows=64 faults=none
+1790554555475 [server] worker ready; serving models: ["q9"]
+1790554555475 [server] listening on http://127.0.0.1:18526
+1790554557019 [meter] admit id=chatcmpl-d728b56e2389d7f60665c6341940b424 tenant=default lane=interactive model="q9"
+1790554557020 [admission] per-session draft-state charge: model="q9" +44MB (measured capture high-water)
+1790554557020 [admission] request cost: model="q9" ctx=186 path=spec = 16704 B/token x ctx + 32MB prefill-workspace + 0MB fixed = 36MB
+1790554557020 [admit-predict] id=chatcmpl-d728b56e2389d7f60665c6341940b424 tenant="" model="q9" verdict=admit reason=maxtok-fallback prompt=90 predicted_completion=32 kv_hat=78516624 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=12760761472 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790554557021 [spec-k] model="q9" tenant="" K=3 source=cold-short prompt=90 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790554557021 [admission] fixed residual high-water: model="q9" 103MB (observed 105MB at ctx 130 path=spec)
+1790554557021 [kv-vmm] admit id=chatcmpl-d728b56e2389d7f60665c6341940b424 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790554557234 [spec-acc] ctx=90 burst=24/27 cum=24/27=0.889
+1790554558563 [server] SIGTERM: draining (0 in flight, deadline 30s)
+1790554558563 [server] drain complete in 0.0s; exiting
+1790554558623 [server] GPU worker shutdown complete
