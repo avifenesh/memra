@@ -1,0 +1,8879 @@
+{
+ "pin": "stepfun-ai/Step-3.7-Flash-GGUF@0b69336d2fd2adfdef9c66e425f7778196c31482",
+ "files": [
+  {
+   "path": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "size": 46483327296,
+   "sha256": "b940497a9cec2f801f07e3a9783f2115fd8bf79cbd453225b4f73d86bcd11259",
+   "gguf_version": 3,
+   "tensors": 357,
+   "data_start": 5253824,
+   "tensor_bytes": 46478073472,
+   "architecture": "step35",
+   "expert_count": 288,
+   "expert_used_count": 8,
+   "block_count": 45,
+   "split": [
+    0,
+    3
+   ]
+  },
+  {
+   "path": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "size": 46999941600,
+   "sha256": "e7e0caaaf0057fabc8bf9b71cbe41322f9945a44df7240bb58e6b7c375e7ffec",
+   "gguf_version": 3,
+   "tensors": 323,
+   "data_start": 20576,
+   "tensor_bytes": 46999921024,
+   "architecture": null,
+   "expert_count": null,
+   "expert_used_count": null,
+   "block_count": null,
+   "split": [
+    1,
+    3
+   ]
+  },
+  {
+   "path": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "size": 11510293728,
+   "sha256": "ccbd3df81b4f4cb8e73d899734944bcbdefcf436faec9203353419c6750c0590",
+   "gguf_version": 3,
+   "tensors": 74,
+   "data_start": 4832,
+   "tensor_bytes": 11510288896,
+   "architecture": null,
+   "expert_count": null,
+   "expert_used_count": null,
+   "block_count": null,
+   "split": [
+    2,
+    3
+   ]
+  },
+  {
+   "path": "Step3.7-flash-mtp-Q8_0.gguf",
+   "size": 3707276416,
+   "sha256": "469a81667a6cd6d87a85d501d57155fd90cee5af7010fd289c5169881763fd57",
+   "gguf_version": 3,
+   "tensors": 55,
+   "data_start": 5234560,
+   "tensor_bytes": 3702041856,
+   "architecture": "step35",
+   "expert_count": 288,
+   "expert_used_count": 8,
+   "block_count": 48,
+   "split": [
+    null,
+    null
+   ]
+  }
+ ],
+ "tensors": [
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "output.weight",
+   "type": "Q6_K",
+   "dims": [
+    4096,
+    128896
+   ],
+   "elements": 527958016,
+   "bytes": 433090560
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "output_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "rope_freqs.weight",
+   "type": "F32",
+   "dims": [
+    64
+   ],
+   "elements": 64,
+   "bytes": 256
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "token_embd.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    128896
+   ],
+   "elements": 527958016,
+   "bytes": 280477696
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.0.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    64
+   ],
+   "elements": 262144,
+   "bytes": 139264
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.0.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.0.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.0.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.0.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    8192,
+    4096
+   ],
+   "elements": 33554432,
+   "bytes": 17825792
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.0.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    8192
+   ],
+   "elements": 33554432,
+   "bytes": 17825792
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.0.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.0.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.0.ffn_down.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    11264,
+    4096
+   ],
+   "elements": 46137344,
+   "bytes": 24510464
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.0.ffn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    11264
+   ],
+   "elements": 46137344,
+   "bytes": 24510464
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.0.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.0.ffn_up.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    11264
+   ],
+   "elements": 46137344,
+   "bytes": 24510464
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.1.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.1.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.1.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.1.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.1.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.1.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.1.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.1.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.1.ffn_down.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    11264,
+    4096
+   ],
+   "elements": 46137344,
+   "bytes": 24510464
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.1.ffn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    11264
+   ],
+   "elements": 46137344,
+   "bytes": 24510464
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.1.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.1.ffn_up.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    11264
+   ],
+   "elements": 46137344,
+   "bytes": 24510464
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.2.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.2.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.2.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.2.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.2.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.2.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.2.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.2.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.2.ffn_down.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    11264,
+    4096
+   ],
+   "elements": 46137344,
+   "bytes": 24510464
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.2.ffn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    11264
+   ],
+   "elements": 46137344,
+   "bytes": 24510464
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.2.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.2.ffn_up.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    11264
+   ],
+   "elements": 46137344,
+   "bytes": 24510464
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.3.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.3.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.3.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.3.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.3.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.3.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.3.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.3.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.3.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.3.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.3.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.3.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.3.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.3.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.3.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.3.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.3.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.4.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    64
+   ],
+   "elements": 262144,
+   "bytes": 139264
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.4.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.4.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.4.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.4.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    8192,
+    4096
+   ],
+   "elements": 33554432,
+   "bytes": 17825792
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.4.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    8192
+   ],
+   "elements": 33554432,
+   "bytes": 17825792
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.4.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.4.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.4.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.4.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.4.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.4.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.4.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.4.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.4.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.4.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.4.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.5.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.5.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.5.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.5.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.5.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.5.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.5.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.5.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.5.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.5.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.5.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.5.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.5.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.5.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.5.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.5.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.5.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.6.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.6.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.6.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.6.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.6.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.6.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.6.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.6.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.6.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.6.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.6.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.6.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.6.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.6.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.6.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.6.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.6.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.7.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.7.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.7.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.7.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.7.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.7.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.7.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.7.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.7.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.7.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.7.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.7.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.7.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.7.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.7.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.7.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.7.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.8.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    64
+   ],
+   "elements": 262144,
+   "bytes": 139264
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.8.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.8.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.8.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.8.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    8192,
+    4096
+   ],
+   "elements": 33554432,
+   "bytes": 17825792
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.8.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    8192
+   ],
+   "elements": 33554432,
+   "bytes": 17825792
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.8.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.8.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.8.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.8.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.8.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.8.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.8.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.8.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.8.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.8.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.8.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.9.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.9.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.9.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.9.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.9.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.9.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.9.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.9.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.9.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.9.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.9.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.9.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.9.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.9.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.9.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.9.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.9.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.10.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.10.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.10.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.10.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.10.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.10.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.10.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.10.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.10.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.10.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.10.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.10.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.10.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.10.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.10.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.10.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.10.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.11.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.11.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.11.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.11.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.11.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.11.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.11.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.11.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.11.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.11.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.11.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.11.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.11.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.11.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.11.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.11.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.11.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.12.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    64
+   ],
+   "elements": 262144,
+   "bytes": 139264
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.12.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.12.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.12.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.12.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    8192,
+    4096
+   ],
+   "elements": 33554432,
+   "bytes": 17825792
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.12.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    8192
+   ],
+   "elements": 33554432,
+   "bytes": 17825792
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.12.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.12.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.12.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.12.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.12.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.12.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.12.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.12.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.12.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.12.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.12.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.13.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.13.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.13.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.13.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.13.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.13.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.13.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.13.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.13.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.13.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.13.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.13.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.13.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.13.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.13.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.13.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.13.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.14.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.14.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.14.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.14.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.14.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.14.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.14.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.14.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.14.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.14.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.14.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.14.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.14.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.14.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.14.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.14.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.14.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.15.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.15.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.15.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.15.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.15.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.15.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.15.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.15.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.15.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.15.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.15.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.15.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.15.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.15.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.15.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.15.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.15.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.16.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    64
+   ],
+   "elements": 262144,
+   "bytes": 139264
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.16.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.16.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.16.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.16.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    8192,
+    4096
+   ],
+   "elements": 33554432,
+   "bytes": 17825792
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.16.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    8192
+   ],
+   "elements": 33554432,
+   "bytes": 17825792
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.16.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.16.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.16.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.16.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.16.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.16.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.16.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.16.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.16.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.16.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.16.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.17.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.17.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.17.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.17.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.17.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.17.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.17.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.17.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.17.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.17.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.17.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.17.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.17.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.17.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.17.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.17.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.17.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.18.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.18.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.18.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.18.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.18.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.18.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.18.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.18.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.18.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.18.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.18.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.18.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.18.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.18.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.18.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.18.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.18.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.19.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.19.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.19.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.19.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.19.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.19.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.19.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.19.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.19.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.19.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.19.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.19.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.19.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.19.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.19.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.19.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.19.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.20.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    64
+   ],
+   "elements": 262144,
+   "bytes": 139264
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.20.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.20.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.20.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.20.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    8192,
+    4096
+   ],
+   "elements": 33554432,
+   "bytes": 17825792
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.20.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    8192
+   ],
+   "elements": 33554432,
+   "bytes": 17825792
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.20.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.20.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.20.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.20.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.20.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.20.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.20.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.20.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.20.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.20.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.20.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.21.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.21.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.21.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.21.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.21.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.21.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.21.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.21.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.21.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.21.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+   "name": "blk.21.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.21.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.21.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.21.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.21.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.21.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.21.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.22.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.22.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.22.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.22.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.22.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.22.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.22.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.22.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.22.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.22.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.22.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.22.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.22.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.22.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.22.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.22.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.22.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.23.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.23.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.23.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.23.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.23.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.23.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.23.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.23.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.23.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.23.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.23.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.23.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.23.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.23.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.23.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.23.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.23.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.24.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    64
+   ],
+   "elements": 262144,
+   "bytes": 139264
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.24.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.24.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.24.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.24.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    8192,
+    4096
+   ],
+   "elements": 33554432,
+   "bytes": 17825792
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.24.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    8192
+   ],
+   "elements": 33554432,
+   "bytes": 17825792
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.24.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.24.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.24.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.24.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.24.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.24.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.24.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.24.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.24.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.24.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.24.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.25.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.25.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.25.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.25.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.25.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.25.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.25.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.25.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.25.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.25.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.25.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.25.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.25.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.25.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.25.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.25.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.25.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.26.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.26.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.26.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.26.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.26.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.26.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.26.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.26.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.26.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.26.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.26.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.26.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.26.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.26.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.26.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.26.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.26.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.27.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.27.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.27.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.27.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.27.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.27.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.27.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.27.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.27.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.27.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.27.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.27.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.27.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.27.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.27.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.27.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.27.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.28.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    64
+   ],
+   "elements": 262144,
+   "bytes": 139264
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.28.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.28.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.28.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.28.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    8192,
+    4096
+   ],
+   "elements": 33554432,
+   "bytes": 17825792
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.28.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    8192
+   ],
+   "elements": 33554432,
+   "bytes": 17825792
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.28.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.28.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.28.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.28.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.28.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.28.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.28.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.28.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.28.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.28.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.28.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.29.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.29.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.29.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.29.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.29.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.29.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.29.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.29.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.29.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.29.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.29.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.29.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.29.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.29.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.29.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.29.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.29.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.30.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.30.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.30.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.30.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.30.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.30.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.30.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.30.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.30.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.30.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.30.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.30.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.30.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.30.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.30.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.30.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.30.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.31.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.31.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.31.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.31.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.31.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.31.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.31.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.31.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.31.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.31.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.31.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.31.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.31.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.31.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.31.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.31.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.31.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.32.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    64
+   ],
+   "elements": 262144,
+   "bytes": 139264
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.32.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.32.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.32.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.32.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    8192,
+    4096
+   ],
+   "elements": 33554432,
+   "bytes": 17825792
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.32.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    8192
+   ],
+   "elements": 33554432,
+   "bytes": 17825792
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.32.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.32.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.32.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.32.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.32.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.32.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.32.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.32.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.32.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.32.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.32.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.33.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.33.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.33.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.33.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.33.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.33.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.33.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.33.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.33.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.33.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.33.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.33.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.33.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.33.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.33.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.33.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.33.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.34.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.34.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.34.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.34.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.34.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.34.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.34.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.34.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.34.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.34.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.34.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.34.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.34.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.34.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.34.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.34.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.34.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.35.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.35.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.35.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.35.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.35.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.35.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.35.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.35.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.35.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.35.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.35.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.35.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.35.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.35.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.35.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.35.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.35.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.36.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    64
+   ],
+   "elements": 262144,
+   "bytes": 139264
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.36.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.36.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.36.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.36.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    8192,
+    4096
+   ],
+   "elements": 33554432,
+   "bytes": 17825792
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.36.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    8192
+   ],
+   "elements": 33554432,
+   "bytes": 17825792
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.36.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.36.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.36.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.36.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.36.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.36.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.36.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.36.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.36.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.36.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.36.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.37.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.37.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.37.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.37.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.37.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.37.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.37.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.37.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.37.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.37.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.37.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.37.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.37.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.37.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.37.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.37.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.37.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.38.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.38.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.38.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.38.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.38.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.38.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.38.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.38.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.38.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.38.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.38.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.38.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.38.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.38.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.38.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.38.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.38.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.39.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.39.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.39.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.39.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.39.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.39.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.39.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.39.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.39.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.39.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.39.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.39.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.39.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.39.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.39.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.39.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.39.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.40.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    64
+   ],
+   "elements": 262144,
+   "bytes": 139264
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.40.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.40.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.40.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.40.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    8192,
+    4096
+   ],
+   "elements": 33554432,
+   "bytes": 17825792
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.40.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    8192
+   ],
+   "elements": 33554432,
+   "bytes": 17825792
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.40.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.40.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.40.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.40.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+   "name": "blk.40.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.40.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.40.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.40.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.40.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.40.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.40.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.41.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.41.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.41.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.41.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.41.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.41.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.41.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.41.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.41.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.41.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.41.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.41.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.41.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.41.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.41.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.41.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.41.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.42.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.42.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.42.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.42.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.42.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.42.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.42.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.42.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.42.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.42.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.42.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.42.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.42.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.42.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.42.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.42.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.42.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.43.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 208896
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.43.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.43.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.43.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.43.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.43.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 26738688
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.43.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.43.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.43.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.43.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.43.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.43.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.43.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.43.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.43.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.43.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.43.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.44.attn_gate.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    64
+   ],
+   "elements": 262144,
+   "bytes": 139264
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.44.attn_k.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2228224
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.44.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.44.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.44.attn_output.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    8192,
+    4096
+   ],
+   "elements": 33554432,
+   "bytes": 17825792
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.44.attn_q.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    8192
+   ],
+   "elements": 33554432,
+   "bytes": 17825792
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.44.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.44.attn_v.weight",
+   "type": "Q5_K",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 2883584
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.44.exp_probs_b.bias",
+   "type": "F32",
+   "dims": [
+    288
+   ],
+   "elements": 288,
+   "bytes": 1152
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.44.ffn_down_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.44.ffn_down_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    1280,
+    4096
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.44.ffn_gate_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.44.ffn_gate_inp.weight",
+   "type": "F32",
+   "dims": [
+    4096,
+    288
+   ],
+   "elements": 1179648,
+   "bytes": 4718592
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.44.ffn_gate_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.44.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.44.ffn_up_exps.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280,
+    288
+   ],
+   "elements": 1509949440,
+   "bytes": 802160640
+  },
+  {
+   "file": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+   "name": "blk.44.ffn_up_shexp.weight",
+   "type": "IQ4_XS",
+   "dims": [
+    4096,
+    1280
+   ],
+   "elements": 5242880,
+   "bytes": 2785280
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "rope_freqs.weight",
+   "type": "F32",
+   "dims": [
+    64
+   ],
+   "elements": 64,
+   "bytes": 256
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "output.weight",
+   "type": "Q8_0",
+   "dims": [
+    4096,
+    128896
+   ],
+   "elements": 527958016,
+   "bytes": 560955392
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "token_embd.weight",
+   "type": "Q8_0",
+   "dims": [
+    4096,
+    128896
+   ],
+   "elements": 527958016,
+   "bytes": 560955392
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.45.nextn.eh_proj.weight",
+   "type": "Q8_0",
+   "dims": [
+    8192,
+    4096
+   ],
+   "elements": 33554432,
+   "bytes": 35651584
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.45.nextn.enorm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.45.nextn.hnorm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.45.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.45.ffn_down.weight",
+   "type": "Q8_0",
+   "dims": [
+    11264,
+    4096
+   ],
+   "elements": 46137344,
+   "bytes": 49020928
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.45.ffn_gate.weight",
+   "type": "Q8_0",
+   "dims": [
+    4096,
+    11264
+   ],
+   "elements": 46137344,
+   "bytes": 49020928
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.45.ffn_up.weight",
+   "type": "Q8_0",
+   "dims": [
+    4096,
+    11264
+   ],
+   "elements": 46137344,
+   "bytes": 49020928
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.45.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.45.attn_gate.weight",
+   "type": "Q8_0",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 417792
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.45.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.45.attn_k.weight",
+   "type": "Q8_0",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 4456448
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.45.attn_output.weight",
+   "type": "Q8_0",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 53477376
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.45.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.45.attn_q.weight",
+   "type": "Q8_0",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 53477376
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.45.attn_v.weight",
+   "type": "Q8_0",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 4456448
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.45.nextn.shared_head_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.45.nextn.shared_head_head.weight",
+   "type": "Q8_0",
+   "dims": [
+    4096,
+    128896
+   ],
+   "elements": 527958016,
+   "bytes": 560955392
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.46.nextn.eh_proj.weight",
+   "type": "Q8_0",
+   "dims": [
+    8192,
+    4096
+   ],
+   "elements": 33554432,
+   "bytes": 35651584
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.46.nextn.enorm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.46.nextn.hnorm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.46.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.46.ffn_down.weight",
+   "type": "Q8_0",
+   "dims": [
+    11264,
+    4096
+   ],
+   "elements": 46137344,
+   "bytes": 49020928
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.46.ffn_gate.weight",
+   "type": "Q8_0",
+   "dims": [
+    4096,
+    11264
+   ],
+   "elements": 46137344,
+   "bytes": 49020928
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.46.ffn_up.weight",
+   "type": "Q8_0",
+   "dims": [
+    4096,
+    11264
+   ],
+   "elements": 46137344,
+   "bytes": 49020928
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.46.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.46.attn_gate.weight",
+   "type": "Q8_0",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 417792
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.46.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.46.attn_k.weight",
+   "type": "Q8_0",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 4456448
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.46.attn_output.weight",
+   "type": "Q8_0",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 53477376
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.46.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.46.attn_q.weight",
+   "type": "Q8_0",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 53477376
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.46.attn_v.weight",
+   "type": "Q8_0",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 4456448
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.46.nextn.shared_head_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.46.nextn.shared_head_head.weight",
+   "type": "Q8_0",
+   "dims": [
+    4096,
+    128896
+   ],
+   "elements": 527958016,
+   "bytes": 560955392
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.47.nextn.eh_proj.weight",
+   "type": "Q8_0",
+   "dims": [
+    8192,
+    4096
+   ],
+   "elements": 33554432,
+   "bytes": 35651584
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.47.nextn.enorm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.47.nextn.hnorm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.47.attn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.47.ffn_down.weight",
+   "type": "Q8_0",
+   "dims": [
+    11264,
+    4096
+   ],
+   "elements": 46137344,
+   "bytes": 49020928
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.47.ffn_gate.weight",
+   "type": "Q8_0",
+   "dims": [
+    4096,
+    11264
+   ],
+   "elements": 46137344,
+   "bytes": 49020928
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.47.ffn_up.weight",
+   "type": "Q8_0",
+   "dims": [
+    4096,
+    11264
+   ],
+   "elements": 46137344,
+   "bytes": 49020928
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.47.ffn_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.47.attn_gate.weight",
+   "type": "Q8_0",
+   "dims": [
+    4096,
+    96
+   ],
+   "elements": 393216,
+   "bytes": 417792
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.47.attn_k_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.47.attn_k.weight",
+   "type": "Q8_0",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 4456448
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.47.attn_output.weight",
+   "type": "Q8_0",
+   "dims": [
+    12288,
+    4096
+   ],
+   "elements": 50331648,
+   "bytes": 53477376
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.47.attn_q_norm.weight",
+   "type": "F32",
+   "dims": [
+    128
+   ],
+   "elements": 128,
+   "bytes": 512
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.47.attn_q.weight",
+   "type": "Q8_0",
+   "dims": [
+    4096,
+    12288
+   ],
+   "elements": 50331648,
+   "bytes": 53477376
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.47.attn_v.weight",
+   "type": "Q8_0",
+   "dims": [
+    4096,
+    1024
+   ],
+   "elements": 4194304,
+   "bytes": 4456448
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.47.nextn.shared_head_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "blk.47.nextn.shared_head_head.weight",
+   "type": "Q8_0",
+   "dims": [
+    4096,
+    128896
+   ],
+   "elements": 527958016,
+   "bytes": 560955392
+  },
+  {
+   "file": "Step3.7-flash-mtp-Q8_0.gguf",
+   "name": "output_norm.weight",
+   "type": "F32",
+   "dims": [
+    4096
+   ],
+   "elements": 4096,
+   "bytes": 16384
+  }
+ ],
+ "summary": {
+  "trunk_tensor_bytes": 104988283392,
+  "trunk_file_bytes": 104993562624,
+  "expert_bank_bytes": 101072240640,
+  "expert_bank_tensors": 126,
+  "expert_layers": 42,
+  "first_expert_layer": 3,
+  "expert_count": 288,
+  "expert_bank_types": [
+   "IQ4_XS"
+  ],
+  "expert_slice_bytes": [
+   2785280
+  ],
+  "expert_bank_bytes_per_layer": [
+   2406481920
+  ],
+  "non_expert_trunk_bytes": 3916042752,
+  "mtp_file_bytes": 3707276416,
+  "mtp_tensor_bytes": 3702041856,
+  "mtp_expert_bytes": 0,
+  "tensors": {
+   "trunk": 754,
+   "mtp": 55
+  }
+ }
+}

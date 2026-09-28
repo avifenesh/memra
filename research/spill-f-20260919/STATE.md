@@ -1,47 +1,31 @@
-# WP-F resumable state (2026-09-26 about 23:10Z; integrable; 5090 queue on f17 then handoff-8g)
+# WP-F resumable state (2026-09-27 about 21:10Z; integrable; OWED 18 v1 8 GiB rerun, then v2 cells, on the 5090)
 
-- Lane `lane/spill-f-20260919`, worktree `wt-spill-f`; integ68 takes 290fbbc1e after integ67 (#762).
-- Done since 290fbbc1e: OWED 26 routed to F and registered (`M1-PREREG.md` G): G1 visibility in
-  every arm's gate and per-visit GPU telemetry; G2 fix `e5d899500` (red arm red, green green); its
-  serving-shape check FAILED (a free buffer still waited 30 s; 0.65 tok/s); correction `50e1cf3f6`,
-  both red arms red and green, serving-shape check PASS 6 of 6 with zero fallbacks; G3 census `owed26/CENSUS.md`. PRO sitting prepared: `pro-sitting/SITTING.md`
-  (host needs) and `pro-sitting/run-sitting.sh` (commands). Old closed OWED 26 renumbered 28.
-- Frozen binaries (`~/spill-f-5090`): `bin` (B3 build, BOX27 engine), `bin17` (OWED 17 door,
-  pre-fix), `bin18` (handoff door), `bin-g2` (G2 probe), `bin26-attempt1` (first fix, failed the
-  serving check), `bin26` (corrected fix: the OWED 17 cell and PRO sittings use this),
-  `bin26-tests` (red, green, red2, green2 lib test binaries). Hashes under each `build*/` record.
-- Queue (detached, idle-gated on `/tmp/memra-5090.lock`, lanes B and C hold the card for long
-  stretches): `m1-5090-queue.py --receipts ~/spill-f-5090/receipts --from owed26-cells --bounded-max
-  7864223232 --step-rounds handoff-1g=3-10 --from f17-spec-staged`; remaining steps f17-spec-staged,
-  f17-spec-mapped, handoff-1g rounds 3 to 10, bounded, g2, f17, handoff-8g.
-  `touch ~/spill-f-5090/PAUSE` holds it between cells; a failing step stops it.
-- BOX36 (the lead ran `run-sitting.sh` at 114ef768d, 13:08Z to 14:43Z): raw mirror private in
-  `~/.local/share/memra-lane-f-private/box36-f-pro/`, sanitized export and `box36/RESULTS.md` in the
-  lane. OWED 17 and 18 PRO rows done; their decisions follow the 5090 rows.
-- Merged origin/main ff53e3e50 (integ68); SLRU fixture re-pinned to the merged `moe_cache.rs`
-  (3a532fbf...), post-merge battery green. Bounded's first cell OOMed on the runner's whole-file
-  hash; fixed (streamed), queue resumes `--from bounded`.
-- Mirror each finished step into `rtx5090/`, `owed17/5090/`, `owed18/5090/`, `owed26/5090/`; pool
-  bounded with `--fallback-unclean`, f17 with `--bypass-check --fallback-unclean`; handoff with
-  `m1-handoff-pairs.py`.
-- Scratch to remove at the end: `~/spill-f-5090/` (the red-arm worktree and its build are already removed), `/data/cache/spill-f-b2/`, `/data/cache/spill-f-5090-proof/`,
-  `target/handoff-io-tests/` if present.
-- Engine or server pushes from this lane now run, before the push: `cargo fmt --all -- --check`;
-  `cargo clippy -p memra-engine -p memra-server -p memra-tier --offline --all-targets -- -D warnings`;
-  `DOCS_RS=1 cargo clippy -p memra-engine -p memra-server -p memra-tier -p memra-kv -p memra-gguf
-  --offline --target x86_64-unknown-linux-gnu --all-targets -- -D warnings`;
-  `cargo test -p memra-tier -p memra-kv --offline --no-fail-fast`; the touched crates' suites;
-  `bash tools/check-flags.sh`. An edit to `moe_cache.rs` re-pins
-  `research/spill-c-20260919/fixtures/slru-synthetic.json` after checking no SLRU statement changed.
-- After integ68 lands: merge origin/main (its clippy fix is cherry-picked here as 93214be84, same
-  bytes), re-pin the SLRU fixture to the merged `moe_cache.rs`, rerun the list above.
-- Card sharing (coordinator, 2026-09-26 ~18:10Z): the 5090 driver now releases the lock after every
-  registered cell and sits out a recorded 300 s `yield` (longer than lane B's 240 s) before its idle
-  check; each cell stays one continuous hold. Recorded in `~/spill-f-5090/receipts/QUEUE.jsonl`
-  (`queue-change`) and in bounded's `waits.jsonl`. Queue relaunched 18:12Z `--from bounded
-  --step-rounds bounded=8-10`; bounded rounds 1 to 7 done under the old back-to-back holds.
-- 5090 progress: bounded done and unscored (pre-fix build fallbacks plus contamination), G2 done and
-  replay-validated (OWED 23 closed), f17 round 1 of 10 done (171 s), queue waiting behind lane A's R1
-  cells since 20:42Z. Remaining: f17 rounds 2 to 10, then handoff-8g. After f17: pool with
-  `m1-b3-pool.py ~/spill-f-5090/receipts/f17 --bypass-check --fallback-unclean`; after handoff-8g:
-  `m1-handoff-pairs.py`; then the two doors' decisions (section F and E rules, both rigs).
+- Lane `lane/spill-f-20260919`, worktree `wt-spill-f`; tip on origin; main 21ce97836 (integ72)
+  fast-forwarded in. Everything through d58f4bfd8 (OWED 26, 17 and 18 code, BOX36) is in main.
+- Resync 2026-09-27 17:00Z (many hours since the last check): the 5090 f17 cell had finished at
+  11:05Z and handoff-8g was running; re-derived from QUEUE.jsonl and git before acting.
+- OWED 17 closed: door deleted (`31247ab134`), both rigs measured (`owed17/RESULTS.md`).
+- OWED 20 closed by owner ruling 2026-09-27 (option 3: BOX27's balloon regime stands; no Step
+  sitting); the pin, census and sitting text stay as the record.
+- Scratch loss (~19:20Z): `~/spill-f-5090` vanished, cause unknown (`rtx5090/RESULTS.md`); the
+  handoff-8g cell's first run (rounds 1 to 8) was lost. Rerun from round 1 on a rebuild of
+  5b001e125 (`owed18/build-rebuild/`, section E rebuild amendment), started 19:42Z; round 1 passed
+  and is mirrored; a nice-19 watcher (`~/spill-f-5090/mirror-8g.sh`, 12 h timeout) mirrors each
+  later round into `owed18/5090/handoff-8g/` (drop the `.mirrored` marker files before committing).
+  The driver now mirrors cells itself (`--mirror`, from the next launch).
+- Post-deletion pool GPU cells: 6 of 6 on the 5090 (`owed17/deletion/poolcells-after-deletion`).
+- After handoff-8g: `m1-handoff-pairs.py owed18/5090/handoff-8g`, then the OWED 18 decision
+  (section E, both rigs).
+- Builds: nice 19, CPUQuota=600%, MemoryMax=12G. Pre-push (owner, 2026-09-27: stop
+  overcomplicating local CI): the affected crates' tests only; effort goes to the measurements
+  that decide open items.
+- Scratch at the end: `~/spill-f-5090/`, `/data/cache/spill-f-b2/`, `/data/cache/spill-f-5090-proof/`,
+  the local backup ref.
+- OWED 18 v2 (section E, pipelined direct writer; `owed18/v2/`): the 5090 1 GiB v1 pairs were flat
+  because direct export was trimodal with its write phase (QD1 synchronous writes) absorbing the
+  shared volume's latency. v2 writes up to three blocks in flight from a writer thread; 13 handoff
+  cells and the server suite (991) green. Frozen gate binaries in `~/spill-f-5090/bin18v2`.
+  `~/spill-f-5090/chain-v2.sh` (nice 19) starts `--from handoff-1g-v2` when the v1 8 GiB step ends;
+  both v2 steps mirror each cell into `owed18/5090/handoff-{1g,8g}-v2`. The default decision uses the
+  v2 rows on both cards; the PRO 6000 v2 pair needs a target card.
+

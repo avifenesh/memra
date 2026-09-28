@@ -1,0 +1,28 @@
+   Compiling memra-tokenizer v0.138.0 (/home/avifenesh/projects/wt-spill-f/crates/memra-tokenizer)
+   Compiling memra-tier v0.138.0 (/home/avifenesh/projects/wt-spill-f/crates/memra-tier)
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-spill-f/crates/memra-server)
+   Compiling memra-reference v0.138.0 (/home/avifenesh/projects/wt-spill-f/crates/memra-reference)
+   Compiling memra-kv v0.138.0 (/home/avifenesh/projects/wt-spill-f/crates/memra-kv)
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-spill-f/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 1m 25s
+     Running unittests src/lib.rs (target/release/deps/memra_server-4614b386bcd7fe54)
+
+running 14 tests
+test handoff_io::tests::mode_parse_refuses_unknown_values ... ok
+test worker::host_glm::tests::host_generic_arena_all_planes_and_handoff ... ignored, requires one CUDA device; run on the lane tune box
+test worker::host_handoff_tests::host_handoff_header_corruption_refuses_the_whole_file ... ok
+test worker::host_handoff_tests::host_handoff_refuses_bad_plane_census_before_allocation ... ok
+test worker::host_handoff_tests::host_handoff_round_trips_every_field_class ... ok
+test worker::host_handoff_tests::host_handoff_skips_a_corrupt_frame_and_keeps_the_stream_in_register ... ok
+test worker::host_handoff_tests::host_handoff_truncated_stream_aborts_instead_of_inventing_entries ... ok
+test worker::host_handoff_tests::host_handoff_verdict_refuses_layout_age_and_stamp_mismatch ... ok
+test handoff_io::tests::direct_open_on_a_refusing_filesystem_fails_loudly ... ok
+test worker::host_handoff_tests::host_handoff_wiring ... ok
+test handoff_io::tests::a_direct_write_fault_fails_the_export ... ok
+test worker::host_handoff_tests::host_handoff_file_arms_are_byte_identical_and_cross_readable ... ok
+test handoff_io::tests::the_ring_keeps_writes_in_order_across_many_blocks ... ok
+test handoff_io::tests::both_writers_produce_identical_bytes_and_both_readers_read_both ... ok
+
+test result: ok. 13 passed; 0 failed; 1 ignored; 0 measured; 1004 filtered out; finished in 4.88s
+

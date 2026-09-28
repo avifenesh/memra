@@ -46,7 +46,16 @@ def steps(rec, first_rounds="1-10", bounded_bytes=None, over=None):
         ("g2", lambda: rounds("g2", "g2", "--memory-max", CAP)),
         ("f17", lambda: rounds("f17", "f17", "--memory-max", CAP, "--rounds", over.get("f17", "1-10"))),
         ("handoff-8g", lambda: rounds("handoff", "handoff-8g", "--memory-max", CAP, "--rounds", over.get("handoff-8g", "1-10"),
+                                      "--mirror", str(HERE / "owed18/5090/handoff-8g"),
                                       "--size-bytes", str(8 << 30), "--host-mb", "12288", "--tenant-pct", "100")),
+        ("handoff-1g-v2", lambda: rounds("handoff", "handoff-1g-v2", "--memory-max", CAP, "--rounds", over.get("handoff-1g-v2", "1-10"),
+                                         "--mirror", str(HERE / "owed18/5090/handoff-1g-v2"),
+                                         "--bin18", "/home/avifenesh/spill-f-5090/bin18v2",
+                                         "--size-bytes", str(1 << 30), "--host-mb", "4096", "--tenant-pct", "100")),
+        ("handoff-8g-v2", lambda: rounds("handoff", "handoff-8g-v2", "--memory-max", CAP, "--rounds", over.get("handoff-8g-v2", "1-10"),
+                                         "--mirror", str(HERE / "owed18/5090/handoff-8g-v2"),
+                                         "--bin18", "/home/avifenesh/spill-f-5090/bin18v2",
+                                         "--size-bytes", str(8 << 30), "--host-mb", "12288", "--tenant-pct", "100")),
 
     ]
 

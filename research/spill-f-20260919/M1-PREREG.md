@@ -624,3 +624,141 @@ some processes in this unit`). The runner's `sha()` read the whole 18.2 GB artif
 check its hash, which fits the 20 GiB capped scope but not the 7,864,223,232-byte bounded one.
 Fix: `sha()` streams in 1 MiB blocks (the collector's own digest shape; same values). No visit
 changes; the refused cell is kept as `refused-bounded-oom-runner-hash`.
+
+## H. OWED 20: the above-RAM storage-bound cells on Step-3.7-Flash IQ4_XS (registered 2026-09-27 before any code or data)
+
+Owner ruling, 2026-09-27: OWED 20's artifact is candidate 3, the model card's qualified PP-2
+artifact. Pin: `stepfun-ai/Step-3.7-Flash-GGUF@0b69336d2fd2adfdef9c66e425f7778196c31482`, the one
+locked in `research/modelplan-onboarding-537-20260919/artifacts.lock.json` (108,700,839,040 bytes):
+
+| File | Bytes | sha256 |
+|---|---|---|
+| `IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf` | 46,483,327,296 | `b940497a9cec2f801f07e3a9783f2115fd8bf79cbd453225b4f73d86bcd11259` |
+| `IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf` | 46,999,941,600 | `e7e0caaaf0057fabc8bf9b71cbe41322f9945a44df7240bb58e6b7c375e7ffec` |
+| `IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf` | 11,510,293,728 | `ccbd3df81b4f4cb8e73d899734944bcbdefcf436faec9203353419c6750c0590` |
+| `Step3.7-flash-mtp-Q8_0.gguf` (the qualified path's MTP head) | 3,707,276,416 | `469a81667a6cd6d87a85d501d57155fd90cee5af7010fd289c5169881763fd57` |
+
+Tensor census (`owed20/census.py` over the four headers, range-fetched at the pinned revision into
+`owed20/raw/`; every tensor's extent equals its type and shape, and the census refuses otherwise):
+expert bank 101,072,240,640 bytes (94.13 GiB), 126 tensors (`ffn_{gate,up,down}_exps`), 42 MoE
+layers (3 to 44), 288 experts, all IQ4_XS, one expert slice 2,785,280 bytes, 2,406,481,920 bytes per
+layer; non-expert trunk 3,916,042,752 bytes; the MTP head file has no routed-expert tensor. Every
+bank tensor starts 4 KiB-misaligned while every slice is a 4 KiB multiple, so a direct read
+over-reads exactly 4,096 bytes, as on the 35B.
+
+Serving path: the qualified PP-2 program exactly as `modelplan-onboarding-537-20260919/qualify.py`
+runs it (`run-gen` on shard 1, `MEMRA_PP_STAGES=2`, `MEMRA_PP_DEVICES=0,1`,
+`MEMRA_MTP_DRAFT=<Step3.7-flash-mtp-Q8_0.gguf>`, `MEMRA_PARALLEL=off`), plus the disk tier (B3's
+common env: `MEMRA_SPILL_DISK=1`, `MEMRA_SPILL_PINNED_FRAC=0.000000001`, `MEMRA_MOE_CACHE=1`,
+`MEMRA_MOE_RESIDENT=0`, `MEMRA_MOE_SLOTS=8`, `MEMRA_SPILL_STATS=1`, `MEMRA_NGEN=128`). Not a
+single-card path: one card cannot hold the 104.99 GB trunk, and a single-card Step spill path would
+be a new support state; it is neither used nor claimed. The disk tier has never run on Step PP-2,
+so it is a candidate execution of the qualified program, not a new state, only if it passes:
+
+1. Reference: one resident visit, the qualified program without the disk tier, same binary,
+   prompt and env otherwise (its token ids are the byte oracle for every arm).
+2. Every disk-tier visit's token ids equal the reference and run-gen's decode argmax is MATCH;
+   `run-spec` K=1..8 self-consistency PASS for `worker16` with the disk tier. Any mismatch stops
+   the sitting: the disk tier on Step is then a different numeric program, recorded as such, and no
+   timing is taken on it.
+
+Regime: one storage-bound regime replaces cold, warm and bounded. Each visit starts cold
+(`POSIX_FADV_DONTNEED` on all three shards, `mincore` 0); no balloon and no cgroup bound. The box's
+`MemTotal` must be below the expert bank (101,072,240,640 bytes), checked and recorded before any
+cell; a box at or above it is refused, because then the page cache could hold the bank and the
+cell would not be storage-bound. Each visit records the three shards' residency at its end.
+
+Arms, order and verdict: B3's six arms verbatim (`worker16` baseline, `mmap-random`,
+`mmap-normal`, `pread16`, `worker2`, `direct16`) on the OWED 26 fix build, the B3 prompt with
+`MEMRA_CHAT=1`, ten rounds alternating order, expected placement 0 pinned and 36,288 blocks on disk,
+direct over-read 4,096 bytes per read, the B3 verdict rule, the 2% co-tenancy gate, fallback visits
+unclean (all positioned-read arms), per-visit GPU telemetry for both cards. Every `[spill-pread]`
+totals line a visit prints (one per stage engine under PP-2) is summed.
+
+Box: 2x RTX PRO 6000 Blackwell (the qualified PP-2 topology), both cards the only GPU tenants at
+maximum power; host `MemTotal` below 101,072,240,640 bytes (64 GB preferred, so the page cache can
+hold at most about half of the bank); a local PCIe NVMe scratch (ext4 or xfs) that passes the M1
+proof with at least 300 GB free; at least 16 CPU threads; root or unlimited memlock; no swap in use.
+
+Section F decision (2026-09-27, after both rows): PRO 6000 (BOX36, scored): `bypass-staged` flat
+(cold 1.0018, bounded 1.0095), `bypass-mapped` loser (cold 0.8725, bounded 0.8958). 5090 (ten
+rounds, unscored: 6 to 7 contaminated visits per arm on the shared volume; zero fallbacks):
+descriptive `bypass-staged` 1.0010, `bypass-mapped` 0.6945. No row on either rig supports turning
+either value on, so no per-rig default exists. Under door hygiene the lane that measured it deletes
+`MEMRA_MOE_COLD_BYPASS` whole: the env read, both values, the doorkeeper, the bypass dispatch and
+its call sites, the mapped pinned-buffer views, their GPU cells and the FLAGS row; the verdict and
+receipt pointers move to the FLAGS "Removed doors" ledger. The OWED 26 demand wait stays; only its
+guard for mapped buffers (`awaiting_consumer`) goes with the door.
+
+Section E, 8 GiB rebuild amendment (2026-09-27 about 19:41Z, after the scratch loss, before any
+new 8 GiB cycle): the 8 GiB cell's first run (rounds 1 to 8) was lost with the local scratch
+(`rtx5090/RESULTS.md`, scratch loss). It reruns in full, rounds 1 to 10, on a rebuild of the same
+commit `5b001e125` (`owed18/build-rebuild/`). The rebuild's bytes differ from the 1 GiB cell's
+binaries (the build ran in another directory and target dir; no build path string appears in the
+binary, so the exact source of the difference is not established); the source commit is the same. Each pair
+compares buffered and direct inside one binary, so the 8 GiB verdict stands on its own; no cross-size
+statement assumes one binary.
+
+Section H, market amendment (2026-09-27 about 20:00Z, before any rental or run). Fact from the lead:
+every reachable 2x RTX PRO 6000 offer gives the container at least 184 GB of RAM (184, 189, 208,
+220, 249 GB and up), so no offer meets `MemTotal` below the 101,072,240,640-byte bank. Evidence
+gathered here (`owed20/container-capability-docker-default.log`, a default unprivileged Docker
+container on this rig): the container runs the host's kernel (`/proc/cmdline` is the host's), so
+`mem=` cannot apply; `/proc/sys` is mounted read-only, so `vm.nr_hugepages` refuses
+(`Read-only file system`); `/sys/fs/cgroup` is read-only, so no child cgroup with a lower limit;
+and `MemTotal` inside shows the host's RAM while the container's own limit is its cgroup
+`memory.max`. A marketplace box's "RAM" is therefore itself a cgroup limit on a larger host.
+
+The candidates, judged against the point (one real storage-bound regime, no balloon):
+
+1. A larger qualified artifact: none. The disk tier is GGUF-only; the other large models' cards
+   are experimental (DeepSeek-V4-Flash, safetensors-only), NativeReference (GLM-5.3-Flash) or
+   bring-up (Qwen3.8-Flash-Next); Hy3's qualified all-expert payload is 180,826,481,152 bytes
+   (below 184 GB, four cards, safetensors, the Hy3 lane's); Step's Q8_0 and BF16 GGUFs are not
+   qualified and do not fit two cards for the resident reference that gates the disk tier.
+2. `mem=` on a box whose kernel is ours (a VM, including a marketplace VM instance type, or bare
+   metal): the kernel boots with less memory, so `MemTotal` itself is below the bank. This is a
+   smaller machine, not a carve-out, and it is the only form this lane can defend as "no balloon".
+   Registered form: boot with `mem=64G` (page cache ceiling about 55 GB, about half the bank);
+   the sitting's existing check (`MemTotal` below the bank) then passes unchanged.
+3. A hugepage reservation (`vm.nr_hugepages`, or `hugepages=` at boot): memory the page cache
+   cannot use, with global reclaim unchanged. In effect it is the balloon (a carve-out of a larger
+   machine), cleaner to operate but not a different regime; it also needs a kernel of our own. Not
+   proposed as "not a balloon".
+4. A cgroup memory limit on the cell (the 5090 section D bounded mechanism): what a small
+   marketplace box would have been anyway, since marketplace RAM is a cgroup limit. It needs a
+   provider limit below the bank (none offered) or a writable cgroup delegation (not in a default
+   container); its reclaim is per-cgroup direct reclaim rather than a small machine's global
+   reclaim.
+
+Recommendation: 2, which needs a VM or bare-metal rental rather than a container, and changes what
+the pick assumed (a container box under about 128 GB); that is the owner's decision, with 4 as the
+form the pick implicitly assumed if the owner prefers containers and a provider can set the limit.
+The sitting's RAM check also records the cell's effective ceiling, the smaller of `MemTotal` and the
+cell cgroup's `memory.max`, and names which one bound it.
+
+Section H, owner ruling (2026-09-27, after the market amendment): option 3. The storage-bound
+regime is the touched balloon, regime (iii), already measured on BOX27: the scored bounded verdict,
+`worker16` over every challenger (`box27/RESULTS.md`: `mmap-random` 0.093, `mmap-normal` 0.435,
+`pread16` 0.407, `direct16` 0.893; `worker2` insufficient, and a mixed worker-plus-mmap program per
+the OWED 26 correction). No VM or bare-metal rental and no Step storage sitting. The market
+amendment stays as the reason. The Step pin and tensor census (`owed20/census.json`) stay as a
+record; nothing more is owed on them. OWED 20 closes on these receipts.
+
+Section E, finding and the pipelined direct arm (2026-09-27, registered before any code). The 5090
+1 GiB pairs (`owed18/5090/handoff-1g`) are flat because direct export is trimodal (about 1.4 s in
+rounds 1 to 4 and 6, 3.65 s in rounds 5 and 7, 4.9 to 6.2 s in rounds 8 to 10), almost all of it
+the write phase (1.03 s, 3.28 s, 5.8 s), while buffered's fsync ranges 0.23 to 2.8 s. The direct
+writer issues one synchronous 4 MiB write at a time after the serializer (queue depth 1, no
+overlap), so device latency on the contended shared volume lands on the export directly; on the PRO
+6000 the same design shows as the write loser (1.215 at both sizes).
+
+Arm `direct` v2, same door value, same bytes: the serializer fills one 4096-aligned 4 MiB buffer
+while a dedicated writer thread writes the previous one (a ring of four buffers, so up to three
+writes are in flight at ascending offsets); the tail, truncate, `fdatasync` and rename are
+unchanged. Correctness first: the existing unit cells (byte-identical files at every length around
+4 KiB and 4 MiB boundaries, both readers read both files, truncation) run unchanged against v2,
+plus one cell that forces a write error mid-stream and requires the export to fail with the file
+removed. Then the 5090 paired cells as in section E (1 GiB with tenant 100%, ten pairs; 8 GiB, ten
+pairs) with v2, and the PRO 6000 pair when a card is available; the default decision uses the v2
+rows. The v1 rows stay as recorded.

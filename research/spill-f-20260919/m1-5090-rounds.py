@@ -90,7 +90,7 @@ def wait_idle(log, label):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     ap.add_argument("--regime", choices=["capped", "bounded", "g2", "handoff", "anonpeak", "f17", "gpucell", "diag",
-                                              "owed26cells", "owed26serve", "spec"], required=True)
+                                              "owed26cells", "owed26serve", "spec", "poolcells"], required=True)
     ap.add_argument("--memory-max", type=int, required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--rounds", default="1-10")
@@ -99,6 +99,8 @@ def main():
     ap.add_argument("--host-mb", type=int)
     ap.add_argument("--tenant-pct", type=int)
     ap.add_argument("--arm", help="spec regime: the F lock arm to run run-spec with")
+    ap.add_argument("--bin18", default=BIN18, help="handoff gate binaries dir (section E v2 uses bin18v2)")
+    ap.add_argument("--mirror", help="copy each finished cell (and the waits log) here at once (after the 2026-09-27 scratch loss)")
     a = ap.parse_args()
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -113,7 +115,13 @@ def main():
                         "-p", f"MemoryMax={a.memory_max}", "-p", "MemorySwapMax=0",
                         sys.executable, str(ROOT / "tools/tier-battery.py"), "--rig", "rtx5090", "--timeout", "10800",
                         "--external-lock", "--out", str(target), "--execute", sys.executable]
-                if a.regime in ("owed26cells", "owed26serve"):
+                if a.regime == "poolcells":
+                    # The pool's GPU cells on a frozen lib test binary (after the OWED 17 deletion).
+                    argv = ["flock", "-n", "-E", "75", LOCK, "systemd-run", "--user", "--scope", "-q",
+                            "-p", "CPUQuota=1200%", "-p", f"MemoryMax={a.memory_max}",
+                            "/home/avifenesh/spill-f-5090/bin-del/lib-tests", "--ignored", "spill_pread::tests",
+                            "--test-threads", "1", "--nocapture"]
+                elif a.regime in ("owed26cells", "owed26serve"):
                     # Section G: the red/green GPU cells, then the serving-shape check, under the lock.
                     tail = (["bash", str(HERE / "owed26/run-cells2.sh"), str(target), TESTS26 + "/red2-lib-tests",
                              TESTS26 + "/green2-lib-tests"] if a.regime == "owed26cells" else
@@ -142,8 +150,8 @@ def main():
                 elif a.regime == "handoff":
                     order = "buffered,direct" if k % 2 else "direct,buffered"
                     argv[-4:-4] = ["--storage-root", B2_SCRATCH, "--storage-proof", str(PUBLIC_PROOF)]
-                    argv += [str(HERE / "m1-handoff-driver.py"), "run", "--gate", BIN18 + "/kv-handoff-gate",
-                             "--server", BIN18 + "/memra-server", "--artifact", ART, "--prompts", B2_PROMPTS,
+                    argv += [str(HERE / "m1-handoff-driver.py"), "run", "--gate", a.bin18 + "/kv-handoff-gate",
+                             "--server", a.bin18 + "/memra-server", "--artifact", ART, "--prompts", B2_PROMPTS,
                              "--proof", PROOF, "--scratch", B2_SCRATCH, "--out", str(target / "visits"),
                              "--size-bytes", str(a.size_bytes), "--host-mb", str(a.host_mb), "--rig", "rtx5090",
                              "--lock-fd", "@COLLECTOR_LOCK_FD@", "--io-schedule", order]
@@ -173,7 +181,7 @@ def main():
                 with (out / f"round-{k:02d}.driver-attempt{attempt}.log").open("xb") as dl:
                     rc = subprocess.run(argv, stdout=dl, stderr=subprocess.STDOUT, cwd=ROOT).returncode
                 text = (out / f"round-{k:02d}.driver-attempt{attempt}.log").read_text(errors="replace")
-                lost = (rc == 75 if a.regime in ("gpucell", "diag", "owed26cells", "owed26serve") else
+                lost = (rc == 75 if a.regime in ("gpucell", "diag", "owed26cells", "owed26serve", "poolcells") else
                         rc != 0 and "Resource temporarily unavailable" in text and not (target / "visits").exists())
                 log.write(json.dumps({"utc": now(), "event": "cell", "round": k, "attempt": attempt, "rc": rc,
                                       "seconds": round(time.monotonic() - t0, 1), "lost_lock_race": lost,
@@ -187,6 +195,17 @@ def main():
                                       "seconds": YIELD_S}) + "\n")
                 log.flush()
                 time.sleep(YIELD_S)
+            if a.mirror:
+                import shutil
+                dest = Path(a.mirror)
+                dest.mkdir(parents=True, exist_ok=True)
+                for src in [target, out / f"round-{k:02d}.driver-attempt{attempt}.log"]:
+                    if src.is_dir():
+                        shutil.copytree(src, dest / src.name, dirs_exist_ok=True)
+                    elif src.exists():
+                        shutil.copy2(src, dest / src.name)
+                log.flush()
+                shutil.copy2(out / "waits.jsonl", dest / "waits.jsonl")
             log.write(json.dumps({"utc": now(), "event": "yield", "after_round": k, "seconds": YIELD_S,
                                   "why": "release the shared card between registered cells"}) + "\n")
             log.flush()
@@ -198,7 +217,8 @@ def main():
                 log.flush()
                 print(f"M1-5090 regime={a.regime} STOPPED at round {k} rc={rc}", flush=True)
                 return 2
-            if a.smoke or a.regime in ("g2", "anonpeak", "gpucell", "diag", "owed26cells", "owed26serve", "spec"):
+            if a.smoke or a.regime in ("g2", "anonpeak", "gpucell", "diag", "owed26cells", "owed26serve", "spec",
+                                        "poolcells"):
                 break
     return 0
 

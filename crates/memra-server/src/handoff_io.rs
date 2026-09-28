@@ -107,50 +107,163 @@ fn open_direct(path: &str, write: bool) -> io::Result<File> {
         .map_err(|e| io::Error::new(e.kind(), format!("O_DIRECT open refused for {path}: {e}")))
 }
 
-/// `O_DIRECT` writer: every device write is a whole aligned buffer at an aligned offset.
+/// Buffers in the direct writer's ring: one being filled, up to `DIRECT_RING - 1` in flight.
+pub(crate) const DIRECT_RING: usize = 4;
+
+type Block = (AlignedBuf, usize, u64);
+
+/// `O_DIRECT` writer (section E v2, the pipelined arm): the serializer fills one 4096-aligned
+/// buffer while a dedicated writer thread writes the previous ones, each a whole aligned block at an
+/// ascending aligned offset. A write error stops the thread and surfaces on the next call; the
+/// caller's export then fails and removes its `.tmp` file.
 pub(crate) struct DirectWriter {
-    file: File,
-    buf: AlignedBuf,
+    file: std::sync::Arc<File>,
+    buf: Option<AlignedBuf>,
     fill: usize,
     offset: u64,
+    blocks: Option<std::sync::mpsc::SyncSender<Block>>,
+    free: std::sync::mpsc::Receiver<AlignedBuf>,
+    writer: Option<std::thread::JoinHandle<io::Result<()>>>,
 }
 
 impl DirectWriter {
     pub(crate) fn create(path: &str) -> io::Result<DirectWriter> {
+        Self::create_with_fault(path, None)
+    }
+
+    /// `fail_at_block`: a test seam; the writer thread fails that block (0-based) with EIO.
+    fn create_with_fault(path: &str, fail_at_block: Option<u64>) -> io::Result<DirectWriter> {
+        let file = std::sync::Arc::new(open_direct(path, true)?);
+        let (blocks, pending) = std::sync::mpsc::sync_channel::<Block>(DIRECT_RING);
+        let (give_back, free) = std::sync::mpsc::sync_channel::<AlignedBuf>(DIRECT_RING);
+        for _ in 1..DIRECT_RING {
+            give_back
+                .send(AlignedBuf::new(HANDOFF_BUF))
+                .expect("fresh ring has room");
+        }
+        let target = file.clone();
+        let writer = std::thread::Builder::new()
+            .name("memra-handoff-direct".into())
+            .spawn(move || -> io::Result<()> {
+                let mut n = 0u64;
+                for (buf, len, offset) in pending {
+                    debug_assert!(len.is_multiple_of(DIRECT_ALIGN));
+                    if fail_at_block == Some(n) {
+                        return Err(io::Error::other("injected direct write fault"));
+                    }
+                    target.write_all_at(&buf.as_slice()[..len], offset)?;
+                    n += 1;
+                    // The owner may already be finishing; a closed ring is not an error.
+                    let _ = give_back.send(buf);
+                }
+                Ok(())
+            })?;
         Ok(DirectWriter {
-            file: open_direct(path, true)?,
-            buf: AlignedBuf::new(HANDOFF_BUF),
+            file,
+            buf: Some(AlignedBuf::new(HANDOFF_BUF)),
             fill: 0,
             offset: 0,
+            blocks: Some(blocks),
+            free,
+            writer: Some(writer),
         })
     }
 
-    fn write_block(&mut self, len: usize) -> io::Result<()> {
-        debug_assert!(len.is_multiple_of(DIRECT_ALIGN));
-        self.file
-            .write_all_at(&self.buf.as_slice()[..len], self.offset)?;
+    /// The writer thread's outcome once it has stopped (the ring closed or it failed).
+    fn writer_error(&mut self) -> io::Error {
+        self.blocks = None;
+        match self.writer.take().map(|h| h.join()) {
+            Some(Ok(Err(e))) => {
+                io::Error::new(e.kind(), format!("handoff direct write failed: {e}"))
+            }
+            Some(Err(_)) => io::Error::other("handoff direct writer thread panicked"),
+            _ => io::Error::other("handoff direct writer stopped"),
+        }
+    }
+
+    /// Hand the current buffer (its first `len` bytes) to the writer thread at the next offset.
+    fn submit(&mut self, len: usize) -> io::Result<()> {
+        let buf = self.buf.take().expect("a current buffer");
+        let offset = self.offset;
+        let sent = self
+            .blocks
+            .as_ref()
+            .map(|tx| tx.send((buf, len, offset)).is_ok())
+            .unwrap_or(false);
+        if !sent {
+            return Err(self.writer_error());
+        }
         self.offset += len as u64;
+        self.fill = 0;
         Ok(())
+    }
+
+    fn next_buffer(&mut self) -> io::Result<()> {
+        match self.free.recv() {
+            Ok(buf) => {
+                self.buf = Some(buf);
+                Ok(())
+            }
+            Err(_) => Err(self.writer_error()),
+        }
+    }
+
+    /// Pad and submit the tail, wait for every write, truncate to the logical length. Returns
+    /// the file for the durability step.
+    fn complete(&mut self) -> io::Result<()> {
+        let logical = self.offset + self.fill as u64;
+        if self.fill > 0 {
+            let padded = self.fill.div_ceil(DIRECT_ALIGN) * DIRECT_ALIGN;
+            let fill = self.fill;
+            self.buf.as_mut().expect("a current buffer").as_mut_slice()[fill..padded].fill(0);
+            self.submit(padded)?;
+        }
+        self.blocks = None; // close the ring: the writer drains it and returns
+        match self.writer.take().map(|h| h.join()) {
+            Some(Ok(Ok(()))) | None => {}
+            Some(Ok(Err(e))) => {
+                return Err(io::Error::new(
+                    e.kind(),
+                    format!("handoff direct write failed: {e}"),
+                ));
+            }
+            Some(Err(_)) => return Err(io::Error::other("handoff direct writer thread panicked")),
+        }
+        self.file.set_len(logical)
     }
 }
 
 impl Write for DirectWriter {
     fn write(&mut self, data: &[u8]) -> io::Result<usize> {
-        let n = data.len().min(self.buf.cap - self.fill);
+        if self.buf.is_none() {
+            self.next_buffer()?;
+        }
+        let cap = HANDOFF_BUF;
+        let n = data.len().min(cap - self.fill);
         let fill = self.fill;
-        self.buf.as_mut_slice()[fill..fill + n].copy_from_slice(&data[..n]);
+        self.buf.as_mut().expect("a current buffer").as_mut_slice()[fill..fill + n]
+            .copy_from_slice(&data[..n]);
         self.fill += n;
-        if self.fill == self.buf.cap {
-            self.write_block(self.buf.cap)?;
-            self.fill = 0;
+        if self.fill == cap {
+            self.submit(cap)?;
         }
         Ok(n)
     }
 
     /// Buffered bytes stay buffered: a partial block cannot be written with `O_DIRECT`
-    /// before `finish` pads it.
+    /// before `complete` pads it.
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
+    }
+}
+
+impl Drop for DirectWriter {
+    fn drop(&mut self) {
+        // An abandoned export (an error upstream): stop the writer before the file goes.
+        self.blocks = None;
+        if let Some(h) = self.writer.take() {
+            let _ = h.join();
+        }
     }
 }
 
@@ -254,20 +367,9 @@ impl HandoffWriter {
                 .map(FinishedHandoff::Buffered)
                 .map_err(|e| format!("handoff flush failed: {e}")),
             HandoffWriter::Direct(w) => {
-                let DirectWriter {
-                    file,
-                    buf,
-                    fill,
-                    offset,
-                } = w;
-                let logical = offset + fill as u64;
+                let logical = w.offset + w.fill as u64;
                 Ok(FinishedHandoff::Direct {
-                    pending: Some(DirectWriter {
-                        file,
-                        buf,
-                        fill,
-                        offset,
-                    }),
+                    pending: Some(w),
                     logical,
                 })
             }
@@ -303,24 +405,16 @@ pub(crate) enum FinishedHandoff {
 }
 
 impl FinishedHandoff {
-    /// Write the direct arm's tail now (part of the write stage in both arms).
+    /// Write the direct arm's tail and wait for every in-flight write (part of the write stage in
+    /// both arms), then truncate to the logical length.
     pub(crate) fn complete_writes(&mut self) -> Result<(), String> {
         if let FinishedHandoff::Direct {
             pending: Some(w),
             logical,
         } = self
         {
-            let fill = w.fill;
-            if fill > 0 {
-                let padded = fill.div_ceil(DIRECT_ALIGN) * DIRECT_ALIGN;
-                w.buf.as_mut_slice()[fill..padded].fill(0);
-                w.write_block(padded)
-                    .map_err(|e| format!("handoff direct tail write failed: {e}"))?;
-                w.fill = 0;
-            }
-            w.file
-                .set_len(*logical)
-                .map_err(|e| format!("handoff truncate to {logical} failed: {e}"))?;
+            w.complete()
+                .map_err(|e| format!("handoff direct tail or truncate to {logical} failed: {e}"))?;
         }
         Ok(())
     }
@@ -458,6 +552,59 @@ mod tests {
                 let _ = std::fs::remove_file(&pd);
             }
         }
+    }
+
+    #[test]
+    fn a_direct_write_fault_fails_the_export() {
+        if !direct_supported() {
+            eprintln!("SKIP: the test filesystem refuses O_DIRECT");
+            return;
+        }
+        // Section E v2: the writer thread fails block 1 of 3; the error must surface, never a
+        // silently short file.
+        let path = scratch("fault");
+        let mut w = DirectWriter::create_with_fault(&path, Some(1)).unwrap();
+        let data = payload(3 * HANDOFF_BUF);
+        let mut failed = None;
+        for chunk in data.chunks(1 << 20) {
+            if let Err(e) = w.write_all(chunk) {
+                failed = Some(e);
+                break;
+            }
+        }
+        let err = match failed {
+            Some(e) => e,
+            None => w.complete().unwrap_err(),
+        };
+        assert!(
+            err.to_string().contains("injected direct write fault"),
+            "{err}"
+        );
+        drop(w);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn the_ring_keeps_writes_in_order_across_many_blocks() {
+        if !direct_supported() {
+            eprintln!("SKIP: the test filesystem refuses O_DIRECT");
+            return;
+        }
+        // More blocks than the ring holds, written in small pieces: offsets must stay ascending
+        // and the file byte-identical to the buffered arm.
+        let data = payload(9 * HANDOFF_BUF + 777);
+        let (pb, pd) = (scratch("ring-b"), scratch("ring-d"));
+        assert_eq!(
+            write_with(&pb, HandoffIo::Buffered, &data, 4093),
+            data.len() as u64
+        );
+        assert_eq!(
+            write_with(&pd, HandoffIo::Direct, &data, 4093),
+            data.len() as u64
+        );
+        assert_eq!(std::fs::read(&pb).unwrap(), std::fs::read(&pd).unwrap());
+        let _ = std::fs::remove_file(&pb);
+        let _ = std::fs::remove_file(&pd);
     }
 
     #[test]

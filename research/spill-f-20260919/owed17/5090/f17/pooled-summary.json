@@ -1,0 +1,97 @@
+{
+ "rounds": [
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10
+ ],
+ "fallback_unclean_rule": true,
+ "visits_with_mmap_fallbacks": 0,
+ "cells": {
+  "1": "round-01",
+  "2": "round-02",
+  "3": "round-03",
+  "4": "round-04",
+  "5": "round-05",
+  "6": "round-06",
+  "7": "round-07",
+  "8": "round-08",
+  "9": "round-09",
+  "10": "round-10"
+ },
+ "visits": 30,
+ "refused_arms": [],
+ "gpu_cotenant_unclean_visits": 0,
+ "registered": {
+  "regime_scored": false,
+  "contaminated_visits": {
+   "worker16": 7,
+   "bypass-staged": 6,
+   "bypass-mapped": 7
+  },
+  "arms": {
+   "bypass-staged": {
+    "verdict": "unscored-regime",
+    "n_pairs": 2,
+    "median_ratio": 1.0009822820456946,
+    "ratios_forward": [
+     0.9928994082840238
+    ],
+    "ratios_reverse": [
+     1.0090651558073656
+    ]
+   },
+   "bypass-mapped": {
+    "verdict": "unscored-regime",
+    "n_pairs": 2,
+    "median_ratio": 0.6945136362874433,
+    "ratios_forward": [
+     0.7017751479289941
+    ],
+    "ratios_reverse": [
+     0.6872521246458925
+    ]
+   }
+  }
+ },
+ "post_hoc_read_gate": {
+  "regime_scored": false,
+  "contaminated_visits": {
+   "worker16": 6,
+   "bypass-staged": 4,
+   "bypass-mapped": 4
+  },
+  "arms": {
+   "bypass-staged": {
+    "verdict": "unscored-regime",
+    "n_pairs": 3,
+    "median_ratio": 0.9928994082840238,
+    "ratios_forward": [
+     0.9928994082840238
+    ],
+    "ratios_reverse": [
+     0.9705882352941175,
+     1.0090651558073656
+    ]
+   },
+   "bypass-mapped": {
+    "verdict": "unscored-regime",
+    "n_pairs": 3,
+    "median_ratio": 0.6872521246458925,
+    "ratios_forward": [
+     0.7017751479289941
+    ],
+    "ratios_reverse": [
+     0.6632064590542099,
+     0.6872521246458925
+    ]
+   }
+  }
+ }
+}

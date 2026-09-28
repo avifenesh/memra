@@ -447,7 +447,6 @@ Rules that follow, and are now enforced rather than remembered:
 | `MEMRA_MOE_VRAM_FRAC` | 0.85 | SLRU expert-cache fraction of free VRAM (sweep 2026-07-06: 0.40=25.0 → 0.85=28.5 tok/s). The measured Hy3 5090 launcher sets 0.90 for both soft and hard fractions; lower it on rigs co-running other GPU work |
 | `MEMRA_MOE_HARD_VRAM_FRAC` | 0.80 | machine-specific hard ceiling for the SLRU allocation (`0.10..=0.95`). Raise only after a local OOM-gated sweep. Hy3 on the 24GB RTX 5090 validated `0.85` at 21.21GiB peak framebuffer use: 2,006 slots, exact argmax/tokens, and 0.53 -> 1.03 tok/s on the warm repeat together with worker depth 16 |
 | `MEMRA_MOE_SLOTS` | auto | force an exact SLRU slot count (spill experiments used 64/512) |
-| `MEMRA_MOE_COLD_BYPASS` | **`off` (default), decide-by: 2026-10-10** | COLD READ-ONCE BYPASS (lane/spill-f-20260919, OWED 17, registered in `research/spill-f-20260919/M1-PREREG.md` section F). Positioned-read spill path only (`MEMRA_SPILL_IO` pread, worker or direct; any other setup refuses at cache construction) and only at the batch-1 decode expert GEMMs (`moe_cached_gemm`, `moe_cached_gemm_q8`), where the kernel is enqueued inside the cache scope; every other dispatch keeps first-miss admit. A doorkeeper (FIFO of the last max(4 x slots, 64) first misses) decides cold: a block's first miss is not admitted, a repeat miss admits. `staged` copies the first-miss block into one dedicated device scratch (never published): this is the removed `MEMRA_MOE_GHOST` program, kept only as the cell's control. `mapped` copies nothing: the kernel reads the pinned read-pool buffer through `cuMemHostGetDevicePointer`, and the buffer stays owned until an event recorded after that kernel; refused loudly if the driver will not map the pool. Same bytes and same kernel in every arm, so the token stream must equal the byte oracle. Receipts: `[moe-bypass] mode= bypassed= ghost_admits=` at teardown and `mapped_serves=` on the `[spill-pread]` totals line. Unit cells: `cold_ghost_*`, `cold_bypass_parse_*`; GPU cell `mapped_serve_reads_in_place_and_owns_the_buffer_until_its_event`. Decision: the registered interleaved B3-shape cell on both rigs; a losing `staged` value is deleted in the measuring lane, a flat or losing door is deleted whole. |
 | `MEMRA_MOE_RESIDENT` | on | `0` forces the SLRU path even when experts fit VRAM (fits-VRAM resident = 169.55 vs 28.5 tok/s on the local 35B) |
 | `MEMRA_MOE_RESIDENT_GB` | free − trunk − headroom | resident-experts budget override, absolute GB (rtx6000 M3 partial-resident tier). Default is RESIDENT-IF-FITS (2026-08-02): exact expert-bank bytes summed from the GGUF header (per-layer x n_layer misprojects UD-quants both ways: Ornith-35B +7%, Qwen3.6-35B −2%) vs free VRAM minus the file's non-expert bytes minus the headroom reserve. Under PP, the expert numerator is partitioned by the actual stage-to-device placement; stages sharing one device are combined, while distinct devices decide from only their owned layer slices. The old 0.80 x free default reserved 20% of the card and spilled the Ornith-35B 19.5GB bank that fits: −33% decode / −54% prefill (research/residency-cap-20260802/) |
 | `MEMRA_MOE_RESIDENT_HEADROOM_GB` | 2.0 | machine-specific headroom the resident decision reserves beside weights (CUDA ctx + KV + workspace; measured ~1.7GB at board shape on the 24GB 5090, serve c=8 peaked 23220/24463 MiB). Raise it on rigs co-running other GPU work or serving many long-ctx sessions |
@@ -1670,6 +1669,26 @@ refuse. Git history is the archive.
 Matching darklanes ledger line: `agent-knowledge/gpu/verdicts-ledger.md`
 `glm5-b200-vrows-pack-plus-0-70-ord-neutral` (already amended 2026-09-27; the darklanes-side PR for
 this issue adds the deletion verdict).
+
+## Removed doors, 2026-09-27 (the cold read-once bypass: staged flat, mapped a loser on both rigs)
+
+`MEMRA_MOE_COLD_BYPASS` (lane/spill-f-20260919, OWED 17) served a spilled expert block's first miss
+without admitting it to a slot, at the batch-1 decode expert GEMMs: `staged` copied it into one
+scratch buffer (the removed `MEMRA_MOE_GHOST` program, kept as the control), `mapped` let the kernel
+read the pinned read buffer in place through its device alias. Correct on both rigs (tokens equal the
+byte oracle; run-spec K=1..8 PASS for both values). Measured, B3 shape, ten rounds each, ratio to
+`worker16` (`research/spill-f-20260919/M1-PREREG.md` section F and its decision):
+
+| rig | regime | `staged` | `mapped` |
+|---|---|---|---|
+| RTX PRO 6000 (scored) | cold | flat, 1.0018 | loser, 0.8725 |
+| RTX PRO 6000 (scored) | bounded | flat, 1.0095 | loser, 0.8958 |
+| RTX 5090 (unscored, shared-volume contamination) | capped | 1.0010 | 0.6945 |
+
+Receipts: `research/spill-f-20260919/box36/RESULTS.md`, `research/spill-f-20260919/owed17/`.
+Deleted with its env read, both values, the doorkeeper, the bypass dispatch and its two call sites,
+the pinned buffers' device-alias views and their ownership guard, the GPU cell, the `mapped_serves`
+counter and the unit cells. The OWED 26 demand wait stays. Git history is the archive.
 
 ## Removed doors, 2026-09-26 (the two DSpark drafter chain doors: flat and negative on TP/EP)
 

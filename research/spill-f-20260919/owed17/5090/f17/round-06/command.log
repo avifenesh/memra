@@ -1,0 +1,9 @@
+M1-CACHE {"attempts": 1, "file": "Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", "mode": "cold", "pages": 4445566, "resident_pages": 0, "state": "PASS"}
+M1-VISIT r06-1-bypass-mapped exit=0 tok_s=11.50
+M1-CACHE {"attempts": 1, "file": "Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", "mode": "cold", "pages": 4445566, "resident_pages": 0, "state": "PASS"}
+M1-VISIT r06-2-bypass-staged exit=0 tok_s=16.83
+M1-CACHE {"attempts": 1, "file": "Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", "mode": "cold", "pages": 4445566, "resident_pages": 0, "state": "PASS"}
+M1-VISIT r06-3-worker16 exit=0 tok_s=17.34
+M1-SUMMARY {"regime": "cold", "visits": 3, "regime_scored": true, "refused_arms": [], "mmap_fallback_visits": {"worker16": 0, "bypass-staged": 0, "bypass-mapped": 0}}
+M1-VERDICT regime=cold arm=bypass-staged vs worker16: insufficient median_ratio=None pairs=0
+M1-VERDICT regime=cold arm=bypass-mapped vs worker16: insufficient median_ratio=None pairs=0
