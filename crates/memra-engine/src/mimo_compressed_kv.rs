@@ -74,6 +74,24 @@ unsafe extern "C" {
         window: i32,
         stream: *mut c_void,
     ) -> i32;
+    #[cfg(test)]
+    fn memra_mimo_swa_ring_continuing_chunk_f32(
+        q: *const f32,
+        old_k: *const f32,
+        old_v: *const f32,
+        k: *const f32,
+        v: *const f32,
+        sink: *const f32,
+        output: *mut f32,
+        start: i32,
+        queries: i32,
+        heads: i32,
+        kv_heads: i32,
+        qk_dim: i32,
+        v_dim: i32,
+        window: i32,
+        stream: *mut c_void,
+    ) -> i32;
 }
 
 /// Exact persistent allocations, before allocator granularity and transient
@@ -425,6 +443,94 @@ fn decode_local_first_chunk(
     };
     if rc != 0 {
         return Err(format!("MiMo local first-chunk attention returned {rc}").into());
+    }
+    stream.synchronize()?;
+    Ok(output)
+}
+
+#[cfg(test)]
+struct ContinuingLocalRing<'a> {
+    old_key: &'a CudaSlice<f32>,
+    old_value: &'a CudaSlice<f32>,
+    key: &'a CudaSlice<f32>,
+    value: &'a CudaSlice<f32>,
+    sink: &'a CudaSlice<f32>,
+    start: usize,
+}
+
+#[cfg(test)]
+fn decode_local_continuing_chunk(
+    engine: &Engine,
+    queries: &CudaSlice<f32>,
+    ring: ContinuingLocalRing<'_>,
+    tokens: usize,
+) -> Result<CudaSlice<f32>, Fail> {
+    engine.gpu.ctx.bind_to_thread()?;
+    let stream = engine.stream();
+    let device = stream.context().ordinal();
+    if ring.start == 0
+        || !(1..=SWA).contains(&tokens)
+        || ring
+            .start
+            .checked_add(tokens)
+            .is_none_or(|end| end > MAX_COMPRESSED_CONTEXT_TOKENS)
+        || queries.len() != tokens * HEADS * QK
+        || ring.old_key.len() != LOCAL_K_ELEMENTS
+        || ring.old_value.len() != LOCAL_V_ELEMENTS
+        || ring.key.len() != LOCAL_K_ELEMENTS
+        || ring.value.len() != LOCAL_V_ELEMENTS
+        || ring.sink.len() != HEADS
+        || [
+            queries.ordinal(),
+            ring.old_key.ordinal(),
+            ring.old_value.ordinal(),
+            ring.key.ordinal(),
+            ring.value.ordinal(),
+            ring.sink.ordinal(),
+        ]
+        .iter()
+        .any(|&ordinal| ordinal != device)
+    {
+        return Err("MiMo local continuing chunk extent, cursor, or GPU changed".into());
+    }
+    let mut output = engine.uninit(tokens * HEADS * VALUE)?;
+    let (q_ptr, q_guard) = queries.device_ptr(&stream);
+    let (old_k_ptr, old_k_guard) = ring.old_key.device_ptr(&stream);
+    let (old_v_ptr, old_v_guard) = ring.old_value.device_ptr(&stream);
+    let (k_ptr, k_guard) = ring.key.device_ptr(&stream);
+    let (v_ptr, v_guard) = ring.value.device_ptr(&stream);
+    let (sink_ptr, sink_guard) = ring.sink.device_ptr(&stream);
+    let (output_ptr, output_guard) = output.device_ptr_mut(&stream);
+    let rc = unsafe {
+        memra_mimo_swa_ring_continuing_chunk_f32(
+            q_ptr as *const f32,
+            old_k_ptr as *const f32,
+            old_v_ptr as *const f32,
+            k_ptr as *const f32,
+            v_ptr as *const f32,
+            sink_ptr as *const f32,
+            output_ptr as *mut f32,
+            ring.start as i32,
+            tokens as i32,
+            HEADS as i32,
+            LOCAL_KV_HEADS as i32,
+            QK as i32,
+            VALUE as i32,
+            SWA as i32,
+            stream.cu_stream() as *mut c_void,
+        )
+    };
+    drop((
+        q_guard,
+        old_k_guard,
+        old_v_guard,
+        k_guard,
+        v_guard,
+        sink_guard,
+        output_guard,
+    ));
+    if rc != 0 {
+        return Err(format!("MiMo local continuing-chunk attention returned {rc}").into());
     }
     stream.synchronize()?;
     Ok(output)
@@ -1258,6 +1364,135 @@ mod tests {
         );
         assert!(
             decode_local_first_chunk(&engine, &one, &key_gpu, &value_gpu, &sink_gpu, 129).is_err()
+        );
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "requires a dedicated MiMo GPU component lane"]
+    fn gpu_local_continuing_chunk_matches_serial_ring_bits() -> Result<(), Fail> {
+        let gpu: usize = std::env::var("MEMRA_MIMO_COMPONENT_GPU")
+            .unwrap_or_else(|_| "0".into())
+            .parse()?;
+        let engine = Engine::new(gpu)?;
+        engine.gpu.ctx.bind_to_thread()?;
+        let sink = (0..HEADS)
+            .map(|head| (head as f32 - 31.0) / 47.0)
+            .collect::<Vec<_>>();
+        let sink_gpu = engine.htod(&sink)?;
+        let old_key = (0..LOCAL_K_ELEMENTS)
+            .map(|index| ((index * 17 % 79) as f32 - 39.0) / 71.0)
+            .collect::<Vec<_>>();
+        let old_value = (0..LOCAL_V_ELEMENTS)
+            .map(|index| ((index * 23 % 89) as f32 - 44.0) / 83.0)
+            .collect::<Vec<_>>();
+        let old_key_gpu = engine.htod(&old_key)?;
+        let old_value_gpu = engine.htod(&old_value)?;
+        for start in [1usize, 127, 128, 255] {
+            for tokens in [1usize, 9, 128] {
+                let mut new_key = old_key.clone();
+                let mut new_value = old_value.clone();
+                for row in 0..tokens {
+                    let slot = (start + row) % SWA;
+                    for col in 0..LOCAL_KV_HEADS * QK {
+                        new_key[slot * LOCAL_KV_HEADS * QK + col] =
+                            ((col * 29 + (start + row) * 31) % 113) as f32 / 59.0 - 0.75;
+                    }
+                    for col in 0..LOCAL_KV_HEADS * VALUE {
+                        new_value[slot * LOCAL_KV_HEADS * VALUE + col] =
+                            ((col * 41 + (start + row) * 37) % 109) as f32 / 61.0 - 0.5;
+                    }
+                }
+                assert_ne!(old_key, new_key);
+                let new_key_gpu = engine.htod(&new_key)?;
+                let new_value_gpu = engine.htod(&new_value)?;
+                let queries = (0..tokens * HEADS * QK)
+                    .map(|index| ((index * 19 + start * 11) % 97) as f32 / 61.0 - 0.75)
+                    .collect::<Vec<_>>();
+                let queries_gpu = engine.htod(&queries)?;
+                let batch = decode_local_continuing_chunk(
+                    &engine,
+                    &queries_gpu,
+                    ContinuingLocalRing {
+                        old_key: &old_key_gpu,
+                        old_value: &old_value_gpu,
+                        key: &new_key_gpu,
+                        value: &new_value_gpu,
+                        sink: &sink_gpu,
+                        start,
+                    },
+                    tokens,
+                )?;
+                let batch = engine.dtoh(&batch)?;
+                assert_eq!(batch.len(), tokens * HEADS * VALUE);
+                let mut running_key = old_key.clone();
+                let mut running_value = old_value.clone();
+                for row in 0..tokens {
+                    let slot = (start + row) % SWA;
+                    let key_first = slot * LOCAL_KV_HEADS * QK;
+                    let key_end = key_first + LOCAL_KV_HEADS * QK;
+                    running_key[key_first..key_end].copy_from_slice(&new_key[key_first..key_end]);
+                    let value_first = slot * LOCAL_KV_HEADS * VALUE;
+                    let value_end = value_first + LOCAL_KV_HEADS * VALUE;
+                    running_value[value_first..value_end]
+                        .copy_from_slice(&new_value[value_first..value_end]);
+                    let query = engine.htod(&queries[row * HEADS * QK..(row + 1) * HEADS * QK])?;
+                    let serial = decode_local(
+                        &engine,
+                        &query,
+                        &engine.htod(&running_key)?,
+                        &engine.htod(&running_value)?,
+                        &sink_gpu,
+                        start + row,
+                    )?;
+                    let serial = engine.dtoh(&serial)?;
+                    for (element, (&got, &want)) in batch
+                        [row * HEADS * VALUE..(row + 1) * HEADS * VALUE]
+                        .iter()
+                        .zip(&serial)
+                        .enumerate()
+                    {
+                        assert_eq!(
+                            got.to_bits(),
+                            want.to_bits(),
+                            "MiMo continuing ring start {start}, rows {tokens}, query {row}, element {element}"
+                        );
+                    }
+                }
+            }
+        }
+        let one = engine.htod(&vec![0.0f32; HEADS * QK])?;
+        assert!(
+            decode_local_continuing_chunk(
+                &engine,
+                &one,
+                ContinuingLocalRing {
+                    old_key: &old_key_gpu,
+                    old_value: &old_value_gpu,
+                    key: &old_key_gpu,
+                    value: &old_value_gpu,
+                    sink: &sink_gpu,
+                    start: 0,
+                },
+                1,
+            )
+            .is_err()
+        );
+        assert!(
+            decode_local_continuing_chunk(
+                &engine,
+                &one,
+                ContinuingLocalRing {
+                    old_key: &old_key_gpu,
+                    old_value: &old_value_gpu,
+                    key: &old_key_gpu,
+                    value: &old_value_gpu,
+                    sink: &sink_gpu,
+                    start: 128,
+                },
+                129,
+            )
+            .is_err()
         );
         Ok(())
     }

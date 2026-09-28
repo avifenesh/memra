@@ -17,14 +17,16 @@ constexpr int kValue = 128;
 constexpr int kWindow = 128;
 constexpr int kThreads = 256;
 
-template <bool kBatch>
+template <bool kBatch, bool kContinuing>
 __global__ void decode_ring(const float* __restrict__ q,
                             const float* __restrict__ k,
                             const float* __restrict__ v,
                             const float* __restrict__ sink,
-                            float* __restrict__ output, int position) {
+                            float* __restrict__ output, int position,
+                            const float* __restrict__ old_k,
+                            const float* __restrict__ old_v, int start) {
     const int query = kBatch ? blockIdx.y : 0;
-    const int at = kBatch ? query : position;
+    const int at = kBatch ? (kContinuing ? start + query : query) : position;
     const int head = blockIdx.x;
     const int lane = threadIdx.x;
     const int kv_head = head / (kHeads / kKvHeads);
@@ -47,11 +49,19 @@ __global__ void decode_ring(const float* __restrict__ q,
 
     for (int token = first; token <= at; ++token) {
         const int slot = token & (kWindow - 1);
+        const float* key_source = k;
+        const float* value_source = v;
+        if constexpr (kContinuing) {
+            if (token < start) {
+                key_source = old_k;
+                value_source = old_v;
+            }
+        }
         const size_t k_base =
             (static_cast<size_t>(slot) * kKvHeads + kv_head) * kQk;
         partial[lane] =
             lane < kQk ? q[(static_cast<size_t>(query) * kHeads + head) * kQk + lane] *
-                             k[k_base + lane] : 0.0f;
+                             key_source[k_base + lane] : 0.0f;
         __syncthreads();
         for (int stride = kThreads / 2; stride > 0; stride /= 2) {
             if (lane < stride) partial[lane] += partial[lane + stride];
@@ -70,7 +80,7 @@ __global__ void decode_ring(const float* __restrict__ q,
         if (lane < kValue) {
             const size_t v_base =
                 (static_cast<size_t>(slot) * kKvHeads + kv_head) * kValue;
-            value_sum = value_sum * alpha + beta * v[v_base + lane];
+            value_sum = value_sum * alpha + beta * value_source[v_base + lane];
         }
         __syncthreads();
     }
@@ -97,8 +107,8 @@ extern "C" int memra_mimo_swa_ring_decode_f32(
         output == nullptr || stream_v == nullptr) return 40003;
     const cudaError_t prior = cudaPeekAtLastError();
     if (prior != cudaSuccess) return 10000 + static_cast<int>(prior);
-    decode_ring<false><<<kHeads, kThreads, 0, static_cast<cudaStream_t>(stream_v)>>>(
-        q, k, v, sink, output, position);
+    decode_ring<false, false><<<kHeads, kThreads, 0, static_cast<cudaStream_t>(stream_v)>>>(
+        q, k, v, sink, output, position, nullptr, nullptr, 0);
     const cudaError_t launch = cudaGetLastError();
     return launch == cudaSuccess ? 0 : 10000 + static_cast<int>(launch);
 }
@@ -119,9 +129,35 @@ extern "C" int memra_mimo_swa_ring_first_chunk_f32(
         output == nullptr || stream_v == nullptr) return 40003;
     const cudaError_t prior = cudaPeekAtLastError();
     if (prior != cudaSuccess) return 10000 + static_cast<int>(prior);
-    decode_ring<true><<<dim3(kHeads, queries), kThreads, 0,
-                         static_cast<cudaStream_t>(stream_v)>>>(
-        q, k, v, sink, output, 0);
+    decode_ring<true, false><<<dim3(kHeads, queries), kThreads, 0,
+                                static_cast<cudaStream_t>(stream_v)>>>(
+        q, k, v, sink, output, 0, nullptr, nullptr, 0);
+    const cudaError_t launch = cudaGetLastError();
+    return launch == cudaSuccess ? 0 : 10000 + static_cast<int>(launch);
+}
+
+// Bounded later chunk. `old_k/old_v` are the pre-append 128-row ring snapshot;
+// `k/v` contain the fully appended new chunk. Each query chooses rows from the
+// appropriate generation of the same ring by absolute token position.
+extern "C" int memra_mimo_swa_ring_continuing_chunk_f32(
+    const float* q, const float* old_k, const float* old_v,
+    const float* k, const float* v, const float* sink, float* output,
+    int start, int queries, int heads, int kv_heads, int qk_dim,
+    int v_dim, int window, void* stream_v) {
+    if (heads != kHeads || kv_heads != kKvHeads ||
+        qk_dim != kQk || v_dim != kValue || window != kWindow) {
+        return 40001;
+    }
+    if (start < 1 || start >= 1048576 || queries < 1 ||
+        queries > kWindow || queries > 1048576 - start) return 40002;
+    if (q == nullptr || old_k == nullptr || old_v == nullptr ||
+        k == nullptr || v == nullptr || sink == nullptr ||
+        output == nullptr || stream_v == nullptr) return 40003;
+    const cudaError_t prior = cudaPeekAtLastError();
+    if (prior != cudaSuccess) return 10000 + static_cast<int>(prior);
+    decode_ring<true, true><<<dim3(kHeads, queries), kThreads, 0,
+                               static_cast<cudaStream_t>(stream_v)>>>(
+        q, k, v, sink, output, 0, old_k, old_v, start);
     const cudaError_t launch = cudaGetLastError();
     return launch == cudaSuccess ? 0 : 10000 + static_cast<int>(launch);
 }

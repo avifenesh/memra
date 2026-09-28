@@ -12,6 +12,18 @@ Serving dispatch is unchanged; target-GPU bit parity and speed are gates.
 | --- | --- | --- | --- | --- | --- |
 | `memra_mimo_swa_ring_first_chunk_f32` | Run source local attention for every fresh-chunk query in one grid | F32 Q/K/V/sink/output | sm_120a | Explicit MiMo component, no serving door | `MiMoCompressedKv::attend_appended_first_chunk` |
 
+## MiMo continuing-chunk local ring component, 2026-09-27
+
+For a later 1..128-token chunk, each query reads earlier K/V from a snapshot
+of the ring before append and current-chunk K/V from the appended ring. This
+keeps the decoder's learned-sink softmax and reduction order per query. The
+component has no KV transaction or text-forward dispatch yet. Global
+attention and long-prompt throughput remain separate gates.
+
+| Symbol | Purpose | Types | Architecture | Door | Binding |
+| --- | --- | --- | --- | --- | --- |
+| `memra_mimo_swa_ring_continuing_chunk_f32` | Attend one later chunk against old and appended local ring generations | F32 Q/K/V/sink/output | sm_120a | Explicit MiMo component, no serving door | `decode_local_continuing_chunk` GPU parity gate |
+
 ## Qwen FA2 attention experiment, 2026-09-09
 
 Both entries carry the same numerical body: BF16 MMA, FP32 direct PV accumulation,
