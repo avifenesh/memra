@@ -100,3 +100,5 @@ the 285K class.
 - **If the verdict is `pinning_closes`,** every earlier 285K verdict ran under `taskset -c 0-11`. Each record gets a
   banner naming that placement and pointing here; its readings are not rewritten. The records are `DAY64.md` to
   `DAY91.md`, the 285K halves.
+
+stopped 2026-09-28 by the owner's order; v23 killed at o1-i26s-r5 (28 of its 60 split runs ended, the check done); DAY94 never ran (its BOX46 chain was cancelled before it started)
