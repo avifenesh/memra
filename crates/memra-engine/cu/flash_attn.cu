@@ -9924,9 +9924,10 @@ extern "C" __global__ void __launch_bounds__(N_WARPS*WARP_SZ, 2) fa_prefill_qw_t
                                       scale, causal, kv_dim_k, kv_dim_v);
 }
 
-// Experimental numeric class: GQA-packed rows, FP32 direct PV accumulation,
-// BF16-rounded denominator and log2 softmax. Session state enters through the
-// replay table in captured prime. Qualified only through MEMRA_PRIME_ATTN_FA2.
+// The Qwen prime numeric class on the 170-SM sm_120a target at MEMRA_PRIME_CHUNK=1024
+// (memra #902): GQA-packed rows, FP32 direct PV accumulation, BF16-rounded denominator
+// and log2 softmax. Session state enters through the replay table in captured prime.
+// Selected by Engine::prime_attn_fa2_enabled; no environment door.
 __device__ __forceinline__ float fa2_exp2(float x) {
     float y; asm("ex2.approx.ftz.f32 %0, %1;" : "=f"(y) : "f"(x)); return y;
 }
