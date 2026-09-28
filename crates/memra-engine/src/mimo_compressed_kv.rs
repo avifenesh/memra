@@ -1,6 +1,7 @@
 //! Model-owned MiMo text KV storage and one-token attention component.
-//! Global layers keep Q8_0 K and GGUF NVFP4 V; local layers keep a 128-token
-//! f32 ring. This has no text-forward dispatch, modality path, or serving door.
+//! Global layers keep Q8_0 K and GGUF NVFP4 V by default. An explicit
+//! experimental constructor selects signed 5-bit group16 V. Local layers
+//! keep a 128-token f32 ring. Neither variant enters serving dispatch.
 
 use core::ffi::c_void;
 use std::error::Error;
@@ -12,6 +13,7 @@ use memra_gguf::model_plan::ModelPlan;
 use crate::Engine;
 use crate::mimo_attn_load::MiMoAttentionGeometry;
 use crate::mimo_mixed_attn_ffi::MiMoMixedAttentionWorkspace;
+use crate::mimo_s5_g16_codec::{self, TOKEN_BYTES as S5_V_BYTES};
 use crate::mimo_text_forward::{validate_forward_plan, validate_residency};
 use crate::mimo_text_weights::{MiMoTextWeights, stage_for_layer};
 
@@ -25,7 +27,7 @@ const GLOBAL_KV_HEADS: usize = 4;
 const LOCAL_KV_HEADS: usize = 8;
 const SWA: usize = 128;
 const GLOBAL_K_BYTES: usize = GLOBAL_KV_HEADS * (QK / 32) * 34;
-const GLOBAL_V_BYTES: usize = GLOBAL_KV_HEADS * (VALUE / 64) * 36;
+const NVFP4_V_BYTES: usize = GLOBAL_KV_HEADS * (VALUE / 64) * 36;
 const DUMMY_Q5_BYTES: usize = GLOBAL_KV_HEADS * (VALUE / 32) * 24;
 const LOCAL_K_ELEMENTS: usize = SWA * LOCAL_KV_HEADS * QK;
 const LOCAL_V_ELEMENTS: usize = SWA * LOCAL_KV_HEADS * VALUE;
@@ -35,6 +37,21 @@ pub const MAX_MIMO_KV_BATCH_TOKENS: usize = 256;
 
 /// The pinned source context includes both input and generated tokens.
 pub const MAX_COMPRESSED_CONTEXT_TOKENS: usize = 1_048_576;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GlobalVFormat {
+    Nvfp4,
+    S5G16,
+}
+
+impl GlobalVFormat {
+    const fn row_bytes(self) -> usize {
+        match self {
+            Self::Nvfp4 => NVFP4_V_BYTES,
+            Self::S5G16 => S5_V_BYTES,
+        }
+    }
+}
 
 unsafe extern "C" {
     fn memra_mimo_kv_nvfp4_encode_f32(
@@ -109,6 +126,24 @@ impl MiMoCompressedKvBudget {
         plan: &ModelPlan,
         max_tokens: usize,
     ) -> Result<Self, Fail> {
+        Self::for_plan_with_v_format(config, plan, max_tokens, GlobalVFormat::Nvfp4)
+    }
+
+    /// Persistent allocation for the explicit Q8_0 K / S5 group16 V experiment.
+    pub fn for_plan_s5_g16(
+        config: &ModelConfig,
+        plan: &ModelPlan,
+        max_tokens: usize,
+    ) -> Result<Self, Fail> {
+        Self::for_plan_with_v_format(config, plan, max_tokens, GlobalVFormat::S5G16)
+    }
+
+    fn for_plan_with_v_format(
+        config: &ModelConfig,
+        plan: &ModelPlan,
+        max_tokens: usize,
+        v_format: GlobalVFormat,
+    ) -> Result<Self, Fail> {
         validate_forward_plan(config, plan)?;
         if !(1..=MAX_COMPRESSED_CONTEXT_TOKENS).contains(&max_tokens)
             || !plan.partition_boundaries.contains(&STAGE_CUT)
@@ -121,7 +156,7 @@ impl MiMoCompressedKvBudget {
             let stage = stage_for_layer(index)?;
             let bytes = if geometry.window == 0 {
                 max_tokens
-                    .checked_mul(GLOBAL_K_BYTES + GLOBAL_V_BYTES)
+                    .checked_mul(GLOBAL_K_BYTES + v_format.row_bytes())
                     .ok_or("MiMo global KV extent overflowed")?
             } else {
                 (LOCAL_K_ELEMENTS + LOCAL_V_ELEMENTS)
@@ -170,13 +205,19 @@ impl LayerCache {
         }
     }
 
-    fn validate(&self, geometry: MiMoAttentionGeometry, max_tokens: usize, device: usize) -> bool {
+    fn validate(
+        &self,
+        geometry: MiMoAttentionGeometry,
+        max_tokens: usize,
+        device: usize,
+        v_format: GlobalVFormat,
+    ) -> bool {
         match self {
             Self::Global { key, value, .. } => {
                 geometry.window == 0
                     && geometry.kv_heads == GLOBAL_KV_HEADS
                     && key.len() == max_tokens * GLOBAL_K_BYTES
-                    && value.len() == max_tokens * GLOBAL_V_BYTES
+                    && value.len() == max_tokens * v_format.row_bytes()
                     && key.ordinal() == device
                     && value.ordinal() == device
             }
@@ -287,6 +328,7 @@ pub struct MiMoCompressedKv<'a> {
     max_tokens: usize,
     min_free_after: [usize; 2],
     budget: MiMoCompressedKvBudget,
+    v_format: GlobalVFormat,
 }
 
 fn require_memory(
@@ -316,19 +358,23 @@ fn encode_value_at(
     output: &mut CudaSlice<u8>,
     position: usize,
     max_tokens: usize,
+    v_format: GlobalVFormat,
 ) -> Result<(), Fail> {
+    if v_format == GlobalVFormat::S5G16 {
+        return mimo_s5_g16_codec::encode_token_at(engine, input, output, position, max_tokens);
+    }
     let stream = engine.stream();
     let device = stream.context().ordinal();
     if position >= max_tokens
         || input.len() != GLOBAL_KV_HEADS * VALUE
-        || output.len() != max_tokens * GLOBAL_V_BYTES
+        || output.len() != max_tokens * NVFP4_V_BYTES
         || input.ordinal() != device
         || output.ordinal() != device
     {
         return Err("MiMo NVFP4 V append geometry, position, or device changed".into());
     }
-    let byte_offset = position * GLOBAL_V_BYTES;
-    let mut row = output.slice_mut(byte_offset..byte_offset + GLOBAL_V_BYTES);
+    let byte_offset = position * NVFP4_V_BYTES;
+    let mut row = output.slice_mut(byte_offset..byte_offset + NVFP4_V_BYTES);
     let row_bytes = row.len();
     let rc = unsafe {
         memra_mimo_kv_nvfp4_encode_f32(
@@ -546,7 +592,30 @@ impl MiMoTextWeights {
         max_tokens: usize,
         min_free_after: [usize; 2],
     ) -> Result<MiMoCompressedKv<'a>, Fail> {
-        MiMoCompressedKv::new(self, engines, max_tokens, min_free_after)
+        MiMoCompressedKv::new(
+            self,
+            engines,
+            max_tokens,
+            min_free_after,
+            GlobalVFormat::Nvfp4,
+        )
+    }
+
+    /// Explicit MiMo-only Q8_0 K / signed 5-bit group16 V experiment.
+    /// This method does not change the default or serving admission.
+    pub fn compressed_text_kv_s5_g16<'a>(
+        &'a self,
+        engines: [&'a Engine; 2],
+        max_tokens: usize,
+        min_free_after: [usize; 2],
+    ) -> Result<MiMoCompressedKv<'a>, Fail> {
+        MiMoCompressedKv::new(
+            self,
+            engines,
+            max_tokens,
+            min_free_after,
+            GlobalVFormat::S5G16,
+        )
     }
 }
 
@@ -556,6 +625,7 @@ impl<'a> MiMoCompressedKv<'a> {
         engines: [&'a Engine; 2],
         max_tokens: usize,
         min_free_after: [usize; 2],
+        v_format: GlobalVFormat,
     ) -> Result<Self, Fail> {
         validate_residency(weights, engines)?;
         if min_free_after
@@ -564,7 +634,12 @@ impl<'a> MiMoCompressedKv<'a> {
         {
             return Err("MiMo compressed KV requires at least 4 GiB free per card".into());
         }
-        let budget = MiMoCompressedKvBudget::for_plan(&weights.config, &weights.plan, max_tokens)?;
+        let budget = MiMoCompressedKvBudget::for_plan_with_v_format(
+            &weights.config,
+            &weights.plan,
+            max_tokens,
+            v_format,
+        )?;
         let preflight = budget.total_bytes.map(|bytes| {
             bytes
                 .checked_add(ALLOCATION_SLACK_BYTES)
@@ -581,7 +656,7 @@ impl<'a> MiMoCompressedKv<'a> {
             if geometry.window == 0 {
                 caches.push(LayerCache::Global {
                     key: engine.alloc_u8_uninit(max_tokens * GLOBAL_K_BYTES)?,
-                    value: engine.alloc_u8_uninit(max_tokens * GLOBAL_V_BYTES)?,
+                    value: engine.alloc_u8_uninit(max_tokens * v_format.row_bytes())?,
                     tokens: 0,
                 });
             } else {
@@ -594,7 +669,14 @@ impl<'a> MiMoCompressedKv<'a> {
         }
         let new_workspace = |stage: usize| {
             engines[stage].gpu.ctx.bind_to_thread()?;
-            MiMoMixedAttentionWorkspace::new_dp4a_native_vscale(engines[stage], max_tokens)
+            match v_format {
+                GlobalVFormat::Nvfp4 => {
+                    MiMoMixedAttentionWorkspace::new_dp4a_native_vscale(engines[stage], max_tokens)
+                }
+                GlobalVFormat::S5G16 => {
+                    MiMoMixedAttentionWorkspace::new_dp4a_s5_g16(engines[stage], max_tokens)
+                }
+            }
         };
         let workspaces = [new_workspace(0)?, new_workspace(1)?];
         let new_key_staging = |stage: usize| {
@@ -628,6 +710,7 @@ impl<'a> MiMoCompressedKv<'a> {
             max_tokens,
             min_free_after,
             budget,
+            v_format,
         })
     }
 
@@ -662,8 +745,8 @@ impl<'a> MiMoCompressedKv<'a> {
     }
 
     /// Store one complete layer's post-RoPE K and pre-scaled V rows in the
-    /// model-owned cache. Global K is Q8_0 and V is GGUF NVFP4, matching
-    /// serial decode storage. Local K/V keep the latest 128 F32 rows. Calls
+    /// model-owned cache. Global K is Q8_0 and V uses the selected format.
+    /// Local K/V keep the latest 128 F32 rows. Calls
     /// must visit layers 0..47 in source order for the same chunk.
     pub fn append_prefill_layer(
         &mut self,
@@ -688,7 +771,7 @@ impl<'a> MiMoCompressedKv<'a> {
         let device = engine.stream().context().ordinal();
         let key_width = geometry.kv_heads * QK;
         let value_width = geometry.kv_heads * VALUE;
-        if !cache.validate(geometry, self.max_tokens, device)
+        if !cache.validate(geometry, self.max_tokens, device, self.v_format)
             || key_rows.len() != batch.rows * key_width
             || value_rows.len() != batch.rows * value_width
             || key_rows.ordinal() != device
@@ -698,7 +781,7 @@ impl<'a> MiMoCompressedKv<'a> {
         }
         let end = batch.start + batch.rows;
         let extra = if geometry.window == 0 {
-            batch.rows * (GLOBAL_K_BYTES + DUMMY_Q5_BYTES + GLOBAL_V_BYTES)
+            batch.rows * (GLOBAL_K_BYTES + DUMMY_Q5_BYTES + self.v_format.row_bytes())
         } else {
             0
         };
@@ -732,11 +815,15 @@ impl<'a> MiMoCompressedKv<'a> {
                     &packed_key,
                     &mut keys.slice_mut(key_start..key_start + packed_key.len()),
                 )?;
-                let packed_value = engine.mimo_nvfp4_encode_rows(value_rows, VALUE)?;
-                if packed_value.len() != batch.rows * GLOBAL_V_BYTES {
-                    return Err("MiMo KV batch NVFP4 V byte extent changed".into());
+                let packed_value = match self.v_format {
+                    GlobalVFormat::Nvfp4 => engine.mimo_nvfp4_encode_rows(value_rows, VALUE)?,
+                    GlobalVFormat::S5G16 => engine.mimo_s5_g16_encode_rows(value_rows)?,
+                };
+                let value_bytes = self.v_format.row_bytes();
+                if packed_value.len() != batch.rows * value_bytes {
+                    return Err("MiMo KV batch V byte extent changed".into());
                 }
-                let value_start = batch.start * GLOBAL_V_BYTES;
+                let value_start = batch.start * value_bytes;
                 engine.stream().memcpy_dtod(
                     &packed_value,
                     &mut values.slice_mut(value_start..value_start + packed_value.len()),
@@ -823,13 +910,22 @@ impl<'a> MiMoCompressedKv<'a> {
                 &mut query,
             )?;
             let context = match cache {
-                LayerCache::Global { key, value, .. } => engine.mimo_global_q8_nvfp4_decode(
-                    &query,
-                    key,
-                    value,
-                    position + 1,
-                    &mut self.workspaces[stage],
-                )?,
+                LayerCache::Global { key, value, .. } => match self.v_format {
+                    GlobalVFormat::Nvfp4 => engine.mimo_global_q8_nvfp4_decode(
+                        &query,
+                        key,
+                        value,
+                        position + 1,
+                        &mut self.workspaces[stage],
+                    )?,
+                    GlobalVFormat::S5G16 => engine.mimo_global_q8_s5_g16_decode(
+                        &query,
+                        key,
+                        value,
+                        position + 1,
+                        &mut self.workspaces[stage],
+                    )?,
+                },
                 LayerCache::Local { .. } => {
                     return Err("MiMo local first-chunk cache changed after admission".into());
                 }
@@ -864,8 +960,8 @@ impl<'a> MiMoCompressedKv<'a> {
     }
 
     /// Append one post-RoPE key and pre-scaled value, then attend with the
-    /// current query. Global K uses GGUF Q8_0 bytes; V uses the source-probed
-    /// GGUF NVFP4 codec. Local KV stays f32 in a fixed circular window.
+    /// current query. Global K uses GGUF Q8_0 bytes; V uses the selected
+    /// codec. Local KV stays f32 in a fixed circular window.
     ///
     /// Only the current row is written. The existing Q8 kernel quantizes into
     /// one staged row at offset zero, then copies that row to the cache slot.
@@ -888,7 +984,7 @@ impl<'a> MiMoCompressedKv<'a> {
         let engine = self.engines[stage];
         engine.gpu.ctx.bind_to_thread()?;
         let device = engine.stream().context().ordinal();
-        if !cache.validate(geometry, self.max_tokens, device)
+        if !cache.validate(geometry, self.max_tokens, device, self.v_format)
             || self.key_staging[stage].len() != GLOBAL_K_BYTES
             || self.key_staging[stage].ordinal() != device
             || self.dummy_q5[stage].len() != DUMMY_Q5_BYTES
@@ -937,14 +1033,30 @@ impl<'a> MiMoCompressedKv<'a> {
                     &self.key_staging[stage],
                     &mut keys.slice_mut(start..start + GLOBAL_K_BYTES),
                 )?;
-                encode_value_at(engine, value, values, self.cursor.position, self.max_tokens)?;
-                let context = engine.mimo_global_q8_nvfp4_decode(
-                    query,
-                    keys,
+                encode_value_at(
+                    engine,
+                    value,
                     values,
-                    self.cursor.position + 1,
-                    &mut self.workspaces[stage],
+                    self.cursor.position,
+                    self.max_tokens,
+                    self.v_format,
                 )?;
+                let context = match self.v_format {
+                    GlobalVFormat::Nvfp4 => engine.mimo_global_q8_nvfp4_decode(
+                        query,
+                        keys,
+                        values,
+                        self.cursor.position + 1,
+                        &mut self.workspaces[stage],
+                    )?,
+                    GlobalVFormat::S5G16 => engine.mimo_global_q8_s5_g16_decode(
+                        query,
+                        keys,
+                        values,
+                        self.cursor.position + 1,
+                        &mut self.workspaces[stage],
+                    )?,
+                };
                 *tokens += 1;
                 context
             }
@@ -998,8 +1110,8 @@ mod tests {
         assert_eq!(
             budget.cache_bytes,
             [
-                5 * cap * (GLOBAL_K_BYTES + GLOBAL_V_BYTES) + 19 * local_bytes,
-                4 * cap * (GLOBAL_K_BYTES + GLOBAL_V_BYTES) + 20 * local_bytes,
+                5 * cap * (GLOBAL_K_BYTES + NVFP4_V_BYTES) + 19 * local_bytes,
+                4 * cap * (GLOBAL_K_BYTES + NVFP4_V_BYTES) + 20 * local_bytes,
             ]
         );
         assert!(budget.workspace_bytes_per_card > 0);
@@ -1012,6 +1124,37 @@ mod tests {
         );
         assert!(MiMoCompressedKvBudget::for_plan(&config, &plan, 0).is_err());
         assert!(MiMoCompressedKvBudget::for_plan(&config, &plan, cap + 1).is_err());
+    }
+
+    #[test]
+    fn s5_budget_charges_every_global_row_and_preserves_default() {
+        let (config, plan) = pinned_plan();
+        let cap = MAX_COMPRESSED_CONTEXT_TOKENS;
+        let default = MiMoCompressedKvBudget::for_plan(&config, &plan, cap).unwrap();
+        let s5 = MiMoCompressedKvBudget::for_plan_s5_g16(&config, &plan, cap).unwrap();
+        assert_eq!(GLOBAL_K_BYTES, 816);
+        assert_eq!(NVFP4_V_BYTES, 288);
+        assert_eq!(S5_V_BYTES, 352);
+        assert_eq!(
+            s5.workspace_bytes_per_card,
+            default.workspace_bytes_per_card
+        );
+        assert_eq!(
+            s5.cache_bytes[0] - default.cache_bytes[0],
+            5 * cap * (S5_V_BYTES - NVFP4_V_BYTES)
+        );
+        assert_eq!(
+            s5.cache_bytes[1] - default.cache_bytes[1],
+            4 * cap * (S5_V_BYTES - NVFP4_V_BYTES)
+        );
+        for stage in 0..2 {
+            assert_eq!(
+                s5.total_bytes[stage] - default.total_bytes[stage],
+                s5.cache_bytes[stage] - default.cache_bytes[stage]
+            );
+        }
+        assert!(MiMoCompressedKvBudget::for_plan_s5_g16(&config, &plan, 0).is_err());
+        assert!(MiMoCompressedKvBudget::for_plan_s5_g16(&config, &plan, cap + 1).is_err());
     }
 
     #[test]
@@ -1198,7 +1341,7 @@ mod tests {
                     .clone_dtoh(&key.slice(0..rows * GLOBAL_K_BYTES))?;
                 let got_value = engine
                     .stream()
-                    .clone_dtoh(&value.slice(0..rows * GLOBAL_V_BYTES))?;
+                    .clone_dtoh(&value.slice(0..rows * NVFP4_V_BYTES))?;
                 engine.stream().synchronize()?;
                 assert_eq!(got_key, f32_to_q8_0(&keys));
                 assert_eq!(got_value, f32_to_nvfp4(&values));

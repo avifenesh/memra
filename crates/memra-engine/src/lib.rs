@@ -947,6 +947,7 @@ pub mod mimo_mtp_forward;
 pub mod mimo_mtp_weights;
 pub mod mimo_nvfp4_ffi;
 pub mod mimo_qkv_ffi;
+pub mod mimo_s5_g16_codec;
 pub mod mimo_sink_ffi;
 pub mod mimo_text_chunk_ffi;
 pub mod mimo_text_forward;

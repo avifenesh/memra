@@ -1,5 +1,11 @@
 # Environment flags — the audited catalog
 
+## MiMo signed 5-bit V experimental method, 2026-09-27
+
+| Method | Default, decision and gate |
+| --- | --- |
+| `MiMoTextWeights::compressed_text_forward_s5_g16` | **Opt-in, decide-by: 2026-10-11.** Selects Q8_0 K / signed 5-bit group16 V in the model-owned compressed text cache. `compressed_text_kv_s5_g16` is the KV-only companion. The normal constructors continue to select Q8_0 K / NVFP4 V. No process flag or serving dispatch selects this variant. S5 V is 352 bytes per four-head token row, 64 bytes above NVFP4; at the 1,048,576-token cap its nine global layers add 320 MiB on stage 0 and 256 MiB on stage 1. Keep the method experimental until dedicated GPU byte parity, packed attention parity at short and split-boundary sequences, pinned-source first-chunk/continuation replay, memory admission and matched-split performance and quality gates have receipts. Remove the method and reader if the gate is negative or expires. |
+
 ## Memory-shaped admission for a high session ceiling, 2026-09-09
 
 Lane: `lane/glm5-memory-admission-20260909` (memra#365). Motivation, in the owner's words on

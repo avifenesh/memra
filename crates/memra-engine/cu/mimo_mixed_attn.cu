@@ -1,6 +1,7 @@
 // Split decode attention for the pinned MiMo global-layer geometry.
 // K: GGUF q8_0, 34 bytes / 32 values, [seq, 4, 192].
-// V: GGUF NVFP4, 36 bytes / 64 values, [seq, 4, 128].
+// V: default GGUF NVFP4, 36 bytes / 64 values, or experimental signed
+//    5-bit group16, 88 bytes / 128 values, [seq, 4, 128].
 // Q: f32 [64, 192]. Output: f32 [64, 128].
 // This is a source-inspection component, not a serving admission path.
 
@@ -22,6 +23,7 @@ constexpr int kQk = 192;
 constexpr int kValue = 128;
 constexpr int kQ8RowBytes = (kQk / 32) * 34;
 constexpr int kNvfp4RowBytes = (kValue / 64) * 36;
+constexpr int kS5RowBytes = (kValue / 16) * 11;
 constexpr int kThreads = 256;
 constexpr int kWarps = kThreads / 32;
 constexpr int kTile = 256;
@@ -89,6 +91,24 @@ __device__ __forceinline__ float nvfp4_value_t(const uint8_t* row, int dim) {
 
 __device__ __forceinline__ float nvfp4_value(const uint8_t* row, int dim) {
     return nvfp4_value_t<false>(row, dim);
+}
+
+// Each group is one positive UE4M3 scale and 16 signed two's-complement
+// 5-bit codes, packed least-significant bit first. Read only the addressed
+// group into the existing 32-token shared V tile.
+__device__ __forceinline__ float s5_g16_value(const uint8_t* row, int dim) {
+    const uint8_t* group = row + (dim / 16) * 11;
+    const int bit = (dim & 15) * 5;
+    const int byte = 1 + bit / 8;
+    const int shift = bit & 7;
+    uint16_t packed = group[byte];
+    if (shift > 3) {
+        packed |= static_cast<uint16_t>(group[byte + 1]) << 8;
+    }
+    const int bits = (packed >> shift) & 31;
+    const int code = bits >= 16 ? bits - 32 : bits;
+    return static_cast<float>(code) *
+           (2.0f * ue4m3_scale_native(group[0]));
 }
 
 __device__ __forceinline__ float q8_scale(const uint8_t* block) {
@@ -287,9 +307,10 @@ __global__ void mixed_grouped_tile(const float* __restrict__ q,
 }
 
 // Eight query heads share the staged K/V tile; two CTAs cover the 16 heads
-// that map to one MiMo global KV head. kDp4a changes only the Q operand and
-// score program. V storage, softmax, and split reduction stay identical.
-template <bool kDp4a, bool kNativeScale>
+// that map to one MiMo global KV head. kDp4a selects the Q operand and
+// score program. kS5 selects only the V reader and row stride; softmax and
+// split reduction stay identical.
+template <bool kDp4a, bool kNativeScale, bool kS5>
 __global__ void mixed_deep_tile(const float* __restrict__ q,
                                 const uint8_t* __restrict__ k,
                                 const uint8_t* __restrict__ v,
@@ -376,8 +397,12 @@ __global__ void mixed_deep_tile(const float* __restrict__ q,
             const int dim = index % kValue;
             const uint8_t* row =
                 v + (static_cast<size_t>(t0 + token) * kKvHeads + kv_head) *
-                        kNvfp4RowBytes;
-            value_tile[index] = nvfp4_value_t<kNativeScale>(row, dim);
+                        (kS5 ? kS5RowBytes : kNvfp4RowBytes);
+            if constexpr (kS5) {
+                value_tile[index] = s5_g16_value(row, dim);
+            } else {
+                value_tile[index] = nvfp4_value_t<kNativeScale>(row, dim);
+            }
         }
         __syncthreads();
 
@@ -515,7 +540,7 @@ static int dispatch(
     if (seq <= 0 || seq > kMaxSeq) return 41002;
     if (!q || !k || !v || !output || !scratch1 || !scratch2 ||
         !scratch3 || !stream_v) return 41003;
-    if (program < 0 || program > 4) return 41005;
+    if (program < 0 || program > 5) return 41005;
     const int tile_size =
         program >= 2 ? kDeepSplit : program == 1 ? kGroupedTile : kTile;
     const int tiles = (seq + tile_size - 1) / tile_size;
@@ -544,14 +569,17 @@ static int dispatch(
         const cudaError_t recorded = cudaEventRecord(marks[0], stream);
         if (recorded != cudaSuccess) return fail(recorded);
     }
-    if (program == 4) {
-        mixed_deep_tile<true, true><<<dim3(kKvHeads, 2, tiles), dim3(32, 8), 0, stream>>>(
+    if (program == 5) {
+        mixed_deep_tile<true, true, true><<<dim3(kKvHeads, 2, tiles), dim3(32, 8), 0, stream>>>(
+            q, k, v, scratch1, seq, tiles);
+    } else if (program == 4) {
+        mixed_deep_tile<true, true, false><<<dim3(kKvHeads, 2, tiles), dim3(32, 8), 0, stream>>>(
             q, k, v, scratch1, seq, tiles);
     } else if (program == 3) {
-        mixed_deep_tile<true, false><<<dim3(kKvHeads, 2, tiles), dim3(32, 8), 0, stream>>>(
+        mixed_deep_tile<true, false, false><<<dim3(kKvHeads, 2, tiles), dim3(32, 8), 0, stream>>>(
             q, k, v, scratch1, seq, tiles);
     } else if (program == 2) {
-        mixed_deep_tile<false, false><<<dim3(kKvHeads, 2, tiles), dim3(32, 8), 0, stream>>>(
+        mixed_deep_tile<false, false, false><<<dim3(kKvHeads, 2, tiles), dim3(32, 8), 0, stream>>>(
             q, k, v, scratch1, seq, tiles);
     } else if (program == 1) {
         mixed_grouped_tile<<<dim3(kKvHeads, tiles), 1024, 0, stream>>>(
@@ -593,6 +621,7 @@ static int dispatch(
             if (launch != cudaSuccess) return fail(launch);
         }
         std::fprintf(stderr, "mimo_split_stage_ms\t%s\t%.6f\t%.6f\t%.6f\t%.6f\n",
+                     program == 5 ? "deep_dp4a_s5_g16" :
                      program == 4 ? "deep_dp4a_native_vscale" :
                      program == 3 ? "deep_dp4a" : program == 2 ? "deep" :
                      program == 1 ? "grouped" : "baseline",
@@ -661,4 +690,16 @@ extern "C" int memra_mimo_global_q8_nvfp4_decode_dp4a_native_vscale(
                     seq, heads, kv_heads, qk_dim, v_dim,
                     scratch1_floats, scratch2_floats, scratch3_floats,
                     stream_v, 4);
+}
+
+extern "C" int memra_mimo_global_q8_s5_g16_decode_dp4a(
+    const float* q, const uint8_t* k, const uint8_t* v,
+    float* output, float* scratch1, float* scratch2, float* scratch3,
+    int seq, int heads, int kv_heads, int qk_dim, int v_dim,
+    size_t scratch1_floats, size_t scratch2_floats,
+    size_t scratch3_floats, void* stream_v) {
+    return dispatch(q, k, v, output, scratch1, scratch2, scratch3,
+                    seq, heads, kv_heads, qk_dim, v_dim,
+                    scratch1_floats, scratch2_floats, scratch3_floats,
+                    stream_v, 5);
 }
