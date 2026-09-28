@@ -567,13 +567,30 @@ parallel; version numbers are a shared resource. Before tagging vX.Y.Z:
 
 ## Match validation to the changed behavior
 
-GitHub runners have no GPU. `.github/workflows/ci.yml` catches build breaks (nvcc compiles fine
-GPU-less). Before merging native execution changes, and before any tag,
-re-run the full battery on a designated non-serving 2x RTX PRO 6000 pair. `box1` is the pair that has
-actually carried it (`research/coldfix-20260812/PROGRESS.md` records the stopped run
-and the green retry): `kernel-check` ALL GREEN, `run-gen` argmax MATCH on affected models, and
-`run-spec` K=1..8 self-consistency PASS. The battery never runs on a serving box (which box
-serves, and where, is a deployment fact that lives outside this repo).
+GitHub runners have no GPU. `.github/workflows/ci.yml` builds every target (nvcc compiles fine
+GPU-less) and runs every CPU suite, so it is the CPU gate. The GPU battery is chosen from the
+change's content and what it reaches; it is not run whole on every merge. Owner, 2026-09-27:
+"we dont need to run full battery on every change, its depend on change content and what it
+touces."
+
+- **Scoped battery, the default for a merge.** Run the cells the change can reach and name them
+  in the PR body, with the reason for each exclusion: the lane's own GPU cells and red arms; the
+  serving gates (serve-smoke, identity, spec-on-cache-hit) when the change is on a serving path;
+  `run-gen` argmax and `run-spec` K=1..8 on each model family whose numeric program the change
+  can reach. `tools/fast-gate/fast-gate.sh --plan --diff origin/main` is an input to that
+  choice; its own GPU selection stays shadow-only. One PRO 6000 of the target class carries a
+  single-card change. Pair-only surfaces (PP, TP/EP, P2P, multi-card placement) need a pair.
+- **Full battery**: `kernel-check` ALL GREEN, `run-gen` argmax MATCH on every board model and
+  `run-spec` K=1..8 self-consistency PASS, on a designated non-serving 2x RTX PRO 6000 pair
+  (`box1` is the pair that has carried it; `research/coldfix-20260812/PROGRESS.md` records the
+  stopped run and the green retry). It is required when the change touches a `.cu` kernel, an
+  FFI shim or kernel dispatch, a numeric path several families share, compiler or build
+  defaults, a qualification tolerance or required gate coverage; when the impact is unknown;
+  and before any tag.
+- **Main moves** between the battery and the merge rerun only the cells main's new commits can
+  reach. No overlap, no rerun: CI on the merged head covers the CPU side.
+- The battery never runs on a serving box (which box serves, and where, is a deployment fact
+  that lives outside this repo).
 
 Documentation changes use relevant text and link checks. CPU-only development,
 admission and artifact-transport tooling uses its relevant
@@ -582,7 +599,8 @@ needs real native build/restore integrity evidence. This merge scope must leave
 native math, emitted native programs, compiler/build defaults, model artifacts or
 defaults, qualification tolerances and required native-gate coverage unchanged.
 Unknown impact expands to the full GPU battery. A tooling merge does not qualify
-a model, runtime or serving binary, and does not admit narrower GPU selection.
+a model, runtime or serving binary, and does not promote fast-gate's GPU selection out of
+shadow mode.
 `docs/TESTING.md` and `tools/fast-gate/README.md` define the development boundary.
 Do not rent GPUs solely to qualify this CPU-only tooling scope.
 

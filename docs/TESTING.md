@@ -1,7 +1,12 @@
 # Testing: the tiered gate structure
 
-**The full GPU battery gates native execution changes and tags.** Fast-gate
-accelerates development between those checkpoints. A fast-gate green is a
+**The GPU battery follows what a change touches.** A native execution change runs the
+cells it can reach: its own cells and red arms, the serving gates when it is on a serving
+path, and `run-gen` argmax plus `run-spec` K=1..8 on each family whose numeric program it
+reaches. The full battery (tier 2 on a non-serving 2x RTX PRO 6000 pair) gates `.cu` kernel,
+FFI and dispatch changes, numeric paths several families share, compiler/build defaults,
+tolerance or gate-coverage changes, unknown impact, and tags (owner, 2026-09-27; the rule
+lives in AGENTS.md). Fast-gate accelerates development between those checkpoints. A fast-gate green is a
 *keep going* signal, never model or serving qualification.
 
 Documentation changes use text and link checks. CPU-only tooling can merge on
@@ -12,9 +17,11 @@ native programs, compiler/build defaults, model artifacts/defaults, qualificatio
 tolerances and required native-gate coverage unchanged. File location alone does
 not establish that scope. Unknown impact expands to the native battery.
 
-Changing runtime code or adopting a narrower GPU gate set still requires the
-original model/hardware-specific battery. CPU tooling admission cannot promote
-GPU selection out of shadow mode or qualify a model or serving binary.
+Changing runtime code requires the model- and hardware-specific cells that code
+reaches. Changing the gate set itself (a narrower default selection, a removed
+cell) is a coverage change and takes the full battery. CPU tooling admission
+cannot promote fast-gate's GPU selection out of shadow mode or qualify a model or
+serving binary.
 
 ## Plan and reuse development feedback
 
