@@ -23073,6 +23073,7 @@ temperature = 0.6
     /// must still be refused by the gate. The fix is background-specific, not a global
     /// weakening of the feasibility check.
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: DRAIN_LOCK serializes this test against its shared-state peers; holding it across the awaits is the point
     async fn nonstream_deadline_gate_still_refuses_the_same_shape_without_background() {
         let _l = drain_lock();
         let st = fake_worker_state();
