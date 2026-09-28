@@ -175,6 +175,7 @@ unsafe extern "C" {
         pend_len: i64,
         recent_rows: i32,
         rank: i32,
+        emit: i32,
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_dsv4_replay_compressor_emit(

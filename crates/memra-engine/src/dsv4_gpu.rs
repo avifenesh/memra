@@ -16824,7 +16824,8 @@ impl Dsv4Gpu {
         // n_commit >= 1), so it is skipped there; the TP/EP refusal path rolls a round back
         // to zero rows at any width and keeps it.
         ck_dev.snap_live = t > 1 || self.topology.is_tp_ep();
-        if ck_dev.snap_live {
+        // Under replay the one-row append launch below takes the snapshot (memra #710).
+        if ck_dev.snap_live && replay_pos.is_none() {
             // One kernel for both snapshots: same bytes, and a captured step keeps its launch
             // chain through it where two memcpy nodes would break it.
             if pend_score.len() != pend_kv.len()
@@ -16918,6 +16919,79 @@ impl Dsv4Gpu {
                 latent,
                 sc_rows,
             )?;
+        }
+        if let Some(pos_dev) = replay_pos {
+            // The replayed row (t = 1) through the multi-row compressor launches with one row
+            // (memra #710): the snapshot, record and slot append in one launch, then on a variant
+            // whose position can emit the pool and the finish, in place of the snapshot copy,
+            // the two appends and the emission chain. Same bytes, as the rows gate holds.
+            if ck_dev.snap_live
+                && (pend_score.len() != pend_kv.len()
+                    || ck_dev.kv_snap.len() < pend_kv.len()
+                    || ck_dev.sc_snap.len() < pend_kv.len())
+            {
+                return Err("compressor snapshot shape mismatch".into());
+            }
+            let (recent, tags, recent_rows, rank) = match split.as_deref_mut() {
+                Some(sp_) => (
+                    sp_.recent.device_ptr_mut(&stream).0 as *mut f32,
+                    sp_.tags.device_ptr_mut(&stream).0 as *mut i32,
+                    sp_.recent_rows as i32,
+                    sp_.rank as i32,
+                ),
+                None => (std::ptr::null_mut(), std::ptr::null_mut(), 0, 0),
+            };
+            let (kv_snap, sc_snap) = if ck_dev.snap_live {
+                (dpm!(ck_dev.kv_snap, &stream), dpm!(ck_dev.sc_snap, &stream))
+            } else {
+                (std::ptr::null_mut(), std::ptr::null_mut())
+            };
+            let row = k::Dsv4CmpRowPtrs {
+                pend_kv: dpm!(*pend_kv, &stream),
+                pend_sc: dpm!(*pend_score, &stream),
+                kv_snap,
+                sc_snap,
+                rows_kv: kv_rows,
+                rows_sc: sc_rows,
+                src_kv: kv_rows as *const f32,
+                src_sc: sc_rows as *const f32,
+                emit: dpm!(*emit, &stream),
+                store: dpm!(*store, &stream),
+                recent,
+                tags,
+                pos: pos_dev,
+                store_row0: row0 as i32,
+                pad: 0,
+            };
+            let emits = replay_cadence.is_none_or(|cadence| cadence.emits(ratio));
+            unsafe {
+                ck(
+                    "one-row replay compressor",
+                    k::memra_dsv4_cmp_rows_replay(
+                        &row,
+                        1,
+                        dpf!(cmp.ape, &stream),
+                        dpf!(cmp.norm, &stream),
+                        dpf!(fc_dev, &stream),
+                        ratio as i32,
+                        d as i32,
+                        latent as i32,
+                        cmp.overlap as i32,
+                        cmp.rotate as i32,
+                        (self.variant == ActQuantVariant::ClampOnly) as i32,
+                        rd as i32,
+                        eps,
+                        (d as f32).powf(-0.5),
+                        pend_kv.len() as i64,
+                        recent_rows,
+                        rank,
+                        i32::from(emits),
+                        sp(&stream),
+                    ),
+                )?;
+            }
+            *blocks = (pos0 + 1) / ratio;
+            return Ok(());
         }
         let mut seg_start = 0usize;
         for i in 0..t {
@@ -17523,6 +17597,7 @@ impl Dsv4Gpu {
                     pend_len.unwrap_or(0) as i64,
                     recent_rows as i32,
                     rank as i32,
+                    1,
                     sp(&stream),
                 ),
             )?;

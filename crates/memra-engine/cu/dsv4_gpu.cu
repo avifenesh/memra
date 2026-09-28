@@ -9344,12 +9344,13 @@ __global__ void __launch_bounds__(128) dsv4_cmp_rows_finish_kernel(
     for (int i = tid; i < d; i += 128) dst[i] = row[i];
 }
 
-// Validates the table and launches `append`, `pool` and `finish` over `n_rows` rows, in chunks of
-// DSV4_CMP_ROWS_MAX.
+// Validates the table and launches `append`, then with `emit` `pool` and `finish`, over `n_rows`
+// rows, in chunks of DSV4_CMP_ROWS_MAX. A one-row replay variant whose position never emits
+// passes emit 0 (memra #710).
 extern "C" int memra_dsv4_cmp_rows_replay(const Dsv4CmpRowPtrs* rows, int n_rows,
     const float* ape, const float* norm, const float* cs, int ratio, int d, int latent,
     int overlap, int rotate, int clamp_only, int rd, float eps, float hadamard_scale,
-    long pend_len, int recent_rows, int rank, void* raw_stream) {
+    long pend_len, int recent_rows, int rank, int emit, void* raw_stream) {
     if (!rows || n_rows < 1 || !ape || !norm || !cs || (ratio != 4 && ratio != 128) || d < rd ||
         rd <= 0 || rd % 2 || d > 1024 || latent != (overlap ? 2 * d : d) ||
         (rotate && ((d & (d - 1)) || d % 32)) || (!rotate && (d - rd) % 64) ||
@@ -9369,6 +9370,7 @@ extern "C" int memra_dsv4_cmp_rows_replay(const Dsv4CmpRowPtrs* rows, int n_rows
         memra_chain_launch(dsv4_cmp_rows_append_kernel, dim3((unsigned)((pend_len + 255) / 256), n),
                            256, 0, stream)(t, ratio, latent, overlap, pend_len);
         DSV4_ERR();
+        if (!emit) continue;
         memra_chain_launch(dsv4_cmp_rows_pool_kernel, dim3((unsigned)((d + 31) / 32), n), 32, 0,
                            stream)(t, ape, ratio, d, latent, overlap);
         DSV4_ERR();
