@@ -1,0 +1,608 @@
+From 8a40f4b41a06e00119f47402027606bed797d85e Mon Sep 17 00:00:00 2001
+From: memra-lane <lane@localhost>
+Date: Thu, 10 Sep 2026 18:22:07 +0300
+Subject: [PATCH 1/2] dsv4: chunked prefill never leaves a single-row tail, so
+ the chunk door stops changing logits
+
+A chunked prefill commits DIFFERENT logits from an unchunked prefill of the same prompt whenever
+its final transaction carries exactly one row, and is bit-identical otherwise. That made
+MEMRA_DSV4_PREFILL_CHUNK a quality decision for roughly one prompt length in every `chunk`
+values, about 1.5625% at the inherited ceiling of 64, while the other ~98.4% were exact.
+
+The cause is not a tile shape. A one-row transaction takes the m=1 decode-shaped kernels AND
+engages two default-ON doors that no multi-row transaction can reach: dense exact-tail and
+dense-fast are suppressed at m != 1 by `Dsv4DenseExactTailControlScope control(m != 1)` in
+cu/dsv4_gpu.cu:4109 and `control(s != 1)` at :4370, and are declared DoorShape::DecodeOnlyM1 in
+dsv4_doors.rs (#462). That is why two different widths which both leave a 1-row tail were
+measured bit-identical to EACH OTHER and different from width 64: same alternate path, same door
+set. The generalisable hazard is worth naming: a door whose engagement depends on transaction
+SHAPE makes the engine's output depend on how a request happens to be chunked.
+
+The fix is width selection, not a new kernel. Every multi-row width is already bit-identical to
+every other (measured: 32 and 63 both reproduce 64 exactly on a 1024-row suffix; 31 is exact on
+a 999-row suffix), so shrinking the width to dodge a 1-row tail costs nothing numerically.
+`dsv4_chunk_width_avoiding_single_row_tail` picks the LARGEST safe width so memory and batching
+stay as close to the request as possible.
+
+AT THE SERVED WIDTH THE MITIGATION IS TOTAL, which is what changes the door's character: for
+chunk 64 the only unreachable case is a suffix of exactly one row, i.e. a two-token prompt whose
+first token is primed on its own. The door becomes bit-identical for every prompt but that one
+and stops being a quality decision at all.
+
+The exception set is real but confined, and DERIVED rather than asserted: no safe width exists
+exactly when suffix_len - 1 is divisible by every candidate in 2..=min(chunk, suffix_len), i.e.
+by their lcm. An exhaustive sweep over chunk 2..64 and suffix 2..4096 confirms the
+characterisation matches the actual failures exactly (3221 of 3221, identical sets) and that
+failures occur only for chunk 2..10. lcm(2..=64) is about 1.18e27, so at the served width no
+reachable prompt length can hit it.
+
+An earlier draft of these tests claimed the exception did not extend past chunk 2. That was
+wrong and the sweep refuted it: chunk 3 with a 7-row suffix has no safe width, because 7-1 = 6 is
+divisible by both 2 and 3. The tests now pin the derived characterisation instead of the guess,
+and that counterexample is named in them.
+
+Six tests, sweeps rather than hand-picked cases. The main one asserts TWO-SIDED (where a safe
+width exists the tail must be avoided; where none exists the requested chunk must be returned)
+with red arms that fail if either branch is never exercised, so deleting the mitigation fails the
+suite rather than passing vacuously. Minimality is tested separately, because a rule that dropped
+straight to width 2 would satisfy the property test and still be wrong.
+
+Also in this commit, unavoidably: `cargo fmt --all` hunks in memra-server/src/worker.rs and
+memra-server/src/dsv4_serve.rs. They are formatting-only, they are not mine and not related to
+this change, and they are here because the pre-commit hook checks formatting tree-wide rather
+than per-file, so the commit cannot land without them. Flagging them so a reviewer skips them
+rather than hunting for the connection.
+
+MEMRA_SKIP_PERF_CI=1: no perf surface touched; this changes only which width a chunked prefill
+selects, and every selectable width was already bit-identical.
+
+Signed-off-by: memra-lane <lane@localhost>
+---
+ crates/memra-engine/src/dsv4_gpu.rs   | 190 +++++++++++++++++++++++++-
+ crates/memra-server/src/dsv4_serve.rs |   6 +-
+ crates/memra-server/src/worker.rs     |   9 +-
+ 3 files changed, 198 insertions(+), 7 deletions(-)
+
+diff --git a/crates/memra-engine/src/dsv4_gpu.rs b/crates/memra-engine/src/dsv4_gpu.rs
+index 3b616fe8d2..1b88cb20e8 100644
+--- a/crates/memra-engine/src/dsv4_gpu.rs
++++ b/crates/memra-engine/src/dsv4_gpu.rs
+@@ -5959,7 +5959,7 @@ impl Dsv4Gpu {
+                 state.capacity
+             ));
+         }
+-        let width = chunk.min(suffix.len());
++        let width = dsv4_chunk_width_avoiding_single_row_tail(chunk, suffix.len());
+         let mut vstate = self.alloc_prefill_state_for(state.capacity, width)?;
+         let mut last_logits = None;
+         for (i, toks) in suffix.chunks(width).enumerate() {
+@@ -20137,3 +20137,191 @@ mod norm2_wide_policy_tests {
+         assert_eq!(4096 % (128 * NORM2_WIDE_TILES), 0);
+     }
+ }
++
++/// Pick the transaction width that avoids leaving a SINGLE-ROW tail.
++///
++/// A one-row transaction is a different numeric class from a multi-row one, and not merely a
++/// different tile shape: it takes the m=1 decode-shaped kernels AND engages two default-ON
++/// doors, dense exact-tail and dense-fast, which are suppressed at m != 1
++/// (`Dsv4DenseExactTailControlScope control(m != 1)` in `cu/dsv4_gpu.cu`, declared
++/// `DoorShape::DecodeOnlyM1` in `dsv4_doors.rs`). So a chunked prefill whose final transaction
++/// carries exactly one row commits different logits from an unchunked prefill of the same
++/// prompt, while every other prompt is bit-identical. That made the chunk door a quality
++/// decision for roughly one prompt length in every `chunk` values.
++///
++/// Every multi-row width is bit-identical to every other (measured: widths 32 and 63 both
++/// reproduce width 64 exactly on a 1024-row suffix; width 31 is exact on a 999-row suffix), so
++/// shrinking the width to dodge a 1-row tail costs nothing numerically. Pick the LARGEST such
++/// width so the memory and batching behaviour stays as close to the requested chunk as
++/// possible.
++///
++/// Exceptions, both documented rather than discovered later:
++/// - `suffix_len == 1` is irreducible: one row is all there is. This is reachable only for a
++///   two-token prompt, where the first token is primed on its own.
++/// - When no width in `2..=chunk` avoids the tail, the requested `chunk` is returned unchanged.
++///   That needs `suffix_len % w == 1` for every such `w`, i.e. `w | (suffix_len - 1)` for all
++///   of them, which for `chunk >= 3` requires `suffix_len - 1` to be a multiple of
++///   `lcm(2..=chunk)` and is unreachable at any realistic length. It is genuinely reachable at
++///   `chunk == 2` with an odd suffix, which is why the fallback exists at all.
++pub(crate) fn dsv4_chunk_width_avoiding_single_row_tail(chunk: usize, suffix_len: usize) -> usize {
++    let requested = chunk.min(suffix_len);
++    if requested <= 1 || suffix_len % requested != 1 {
++        return requested;
++    }
++    for w in (2..requested).rev() {
++        if suffix_len % w != 1 {
++            return w;
++        }
++    }
++    requested
++}
++
++#[cfg(test)]
++mod dsv4_chunk_tail_width_tests {
++    use super::dsv4_chunk_width_avoiding_single_row_tail as pick;
++
++    /// A safe width exists unless `suffix_len - 1` is divisible by EVERY candidate width in
++    /// `2..=min(chunk, suffix_len)`, i.e. by their lcm. This is the exact characterisation of
++    /// when the mitigation cannot help, derived rather than guessed, and it is what the tests
++    /// below assert against in BOTH directions.
++    fn no_safe_width_exists(chunk: usize, suffix_len: usize) -> bool {
++        let requested = chunk.min(suffix_len);
++        if requested <= 1 {
++            return true;
++        }
++        (2..=requested).all(|w| suffix_len % w == 1)
++    }
++
++    /// TWO-SIDED. Where a safe width exists the chosen width must not leave a 1-row tail, and
++    /// where none exists the function must fall back to the requested chunk rather than
++    /// inventing something. A one-sided version would pass vacuously if the exception set moved.
++    #[test]
++    fn tail_is_avoided_exactly_when_it_can_be() {
++        let mut shrank = 0usize;
++        let mut hit_the_exception = 0usize;
++        for chunk in 2..=64usize {
++            for suffix_len in 2..=4096usize {
++                let w = pick(chunk, suffix_len);
++                assert!(w >= 1 && w <= chunk.min(suffix_len));
++                if no_safe_width_exists(chunk, suffix_len) {
++                    hit_the_exception += 1;
++                    assert_eq!(
++                        w,
++                        chunk.min(suffix_len),
++                        "must fall back to the requested width"
++                    );
++                } else {
++                    assert_ne!(
++                        suffix_len % w,
++                        1,
++                        "chunk {chunk}, suffix {suffix_len}: width {w} leaves a 1-row tail"
++                    );
++                }
++                if w != chunk.min(suffix_len) {
++                    shrank += 1;
++                }
++            }
++        }
++        // RED ARMS: both branches must actually be exercised or the assertions above are
++        // decoration. Deleting the mitigation makes `shrank` zero and fails here.
++        assert!(
++            shrank > 0,
++            "shrink path never exercised; the tail assertion is vacuous"
++        );
++        assert!(hit_the_exception > 0, "exception path never exercised");
++    }
++
++    /// The requested width is kept whenever it is already safe, so the mitigation cannot
++    /// silently change batching for the prompts that never had a problem.
++    #[test]
++    fn keeps_the_requested_width_when_the_tail_is_not_one_row() {
++        for chunk in 2..=64usize {
++            for suffix_len in 2..=4096usize {
++                let requested = chunk.min(suffix_len);
++                if suffix_len % requested != 1 {
++                    assert_eq!(pick(chunk, suffix_len), requested);
++                }
++            }
++        }
++    }
++
++    /// The shrink is MINIMAL: the largest safe width. A rule that dropped straight to 2 would
++    /// satisfy the property test and still be wrong.
++    #[test]
++    fn shrinks_to_the_largest_safe_width() {
++        for chunk in 3..=64usize {
++            for suffix_len in 2..=4096usize {
++                let w = pick(chunk, suffix_len);
++                for bigger in (w + 1)..=chunk.min(suffix_len) {
++                    assert_eq!(
++                        suffix_len % bigger,
++                        1,
++                        "chunk {chunk}, suffix {suffix_len}: {bigger} was safe and larger than {w}"
++                    );
++                }
++            }
++        }
++    }
++
++    /// AT THE SERVED WIDTH the mitigation is total, which is the claim the door verdict rests
++    /// on. lcm(2..=64) is about 1.18e27, so `suffix_len - 1` cannot be a multiple of it at any
++    /// reachable length: the only failing case is a suffix of exactly one row, reachable only
++    /// for a two-token prompt whose first token is primed on its own.
++    #[test]
++    fn at_the_served_width_the_only_exception_is_a_one_row_suffix() {
++        assert_eq!(pick(64, 1), 1, "one row is all there is");
++        for suffix_len in 2..=8192usize {
++            assert_ne!(
++                suffix_len % pick(64, suffix_len),
++                1,
++                "served width 64 still tailed at 1 for suffix {suffix_len}"
++            );
++        }
++    }
++
++    /// The exception set is REAL but confined to small chunks, and it is pinned here so it stays
++    /// documented rather than being rediscovered as a bug. An earlier draft of this test claimed
++    /// the exception did not extend past chunk 2; the sweep refuted that, and chunk 3 suffix 7
++    /// is the counterexample that killed it.
++    #[test]
++    fn the_exception_set_is_small_chunks_only() {
++        assert!(no_safe_width_exists(2, 7));
++        assert_eq!(pick(2, 7), 2);
++        assert_eq!(
++            7 % pick(2, 7),
++            1,
++            "chunk 2 with an odd suffix still tails at 1"
++        );
++
++        assert!(
++            no_safe_width_exists(3, 7),
++            "7-1=6 is divisible by both 2 and 3"
++        );
++        assert_eq!(pick(3, 7), 3);
++
++        for chunk in 11..=64usize {
++            for suffix_len in 2..=4096usize {
++                assert!(
++                    !no_safe_width_exists(chunk, suffix_len),
++                    "chunk {chunk} suffix {suffix_len} unexpectedly has no safe width"
++                );
++            }
++        }
++    }
++
++    /// Regression pin on the measured gate-1 boundary cases from the darklanes chunk-door lane,
++    /// because they are what established the rule: on a 1024-row suffix widths 31 and 33 each
++    /// leave a 1-row tail and were bit-identical to EACH OTHER and different from 64, while 32
++    /// and 63 do not; on a 999-row suffix width 31 leaves 7 rows and is already safe.
++    #[test]
++    fn pins_the_measured_gate_one_boundary_cases() {
++        assert_eq!(1024 % 31, 1);
++        assert_eq!(1024 % 33, 1);
++        assert_eq!(pick(31, 1024), 30);
++        assert_eq!(pick(33, 1024), 32);
++        assert_eq!(pick(32, 1024), 32);
++        assert_eq!(pick(63, 1024), 63);
++        assert_eq!(pick(64, 1024), 64);
++        assert_eq!(pick(31, 999), 31);
++    }
++}
+diff --git a/crates/memra-server/src/dsv4_serve.rs b/crates/memra-server/src/dsv4_serve.rs
+index 38629dd2d5..f5884a2ab8 100644
+--- a/crates/memra-server/src/dsv4_serve.rs
++++ b/crates/memra-server/src/dsv4_serve.rs
+@@ -1375,7 +1375,11 @@ mod declared_context_tests {
+     #[test]
+     fn a_checkpoint_that_declares_nothing_refuses_as_undeclared() {
+         for raw in [r#"{}"#, r#"{"max_position_embeddings":null}"#] {
+-            assert_eq!(declared_context_from_config(&cfg(raw)), DeclaredContext::Absent, "{raw}");
++            assert_eq!(
++                declared_context_from_config(&cfg(raw)),
++                DeclaredContext::Absent,
++                "{raw}"
++            );
+         }
+         let refusal = resolve_ctx(None, 0).expect_err("undeclared must refuse");
+         assert!(
+diff --git a/crates/memra-server/src/worker.rs b/crates/memra-server/src/worker.rs
+index f903885f70..1dc3380eb7 100644
+--- a/crates/memra-server/src/worker.rs
++++ b/crates/memra-server/src/worker.rs
+@@ -18091,7 +18091,6 @@ pub fn resolve_ctx(raw: Option<&str>, model_ctx: usize) -> Result<usize, String>
+     }
+ }
+ 
+-
+ /// `resolve_ctx` against the process environment. A non-Unicode value is treated like any other
+ /// unusable value: it refuses, it does not silently become a default.
+ pub fn resolve_env_ctx(model_ctx: usize) -> Result<usize, String> {
+@@ -26051,14 +26050,14 @@ mod tests {
+         AdsdDetector,
+     };
+     use super::{
+-        AdmissionCostModel, AdmissionDeviceHeadroom, AdmissionHeadroom, MAX_NEW_CTX_BOUNDED,
+-        MAX_PROMPT_SOURCE_BYTES, ParkedCandidate, ParkedPool, Request, ReuseMetrics,
+-        SPEC_SHRINK_RESERVE, admission_required, admission_reserve,
++        AdmissionCostModel, AdmissionDeviceHeadroom, AdmissionHeadroom, ENGINE_MAX_CTX,
++        MAX_NEW_CTX_BOUNDED, MAX_PROMPT_SOURCE_BYTES, ParkedCandidate, ParkedPool, Request,
++        ReuseMetrics, SPEC_SHRINK_RESERVE, admission_required, admission_reserve,
+         alloc_with_single_reclaim_retry, calibration_transient_floor, enforce_prompt_limit,
+         is_cuda_oom, oldest_parked_candidate, parallel_device_requirements, parked_entry_count,
+         pp_admission_stage_count, pp_boundary_slot_bytes, pp_boundary_token_cap_resolve,
+         pp_device_requirements, pp_stage_admissions, pp_stage_observed_residuals, prepare_park,
+-        ENGINE_MAX_CTX, prompt_source_limit_error, request_ctx_cap, resolve_ctx,
++        prompt_source_limit_error, request_ctx_cap, resolve_ctx,
+     };
+     use super::{
+         DEFAULT_PREFIX_CACHE_PROTECTED_PCT, HostPrefixCache, HostPrefixEntry,
+-- 
+2.53.0
+
+
+From 5aad4bd3b69cfcc971b0e8ad6fb2c2060849c8cb Mon Sep 17 00:00:00 2001
+From: memra-lane <lane@localhost>
+Date: Fri, 11 Sep 2026 01:30:18 +0300
+Subject: [PATCH 2/2] dsv4: chunked prefill is the naked default and
+ MEMRA_DSV4_PREFILL_CHUNK is removed
+
+Under the standing no-OFF-doors ruling a door is the default or it is deleted. This receipt is
+positive and categorical, so the door goes and the behaviour stays.
+
+REMOVED: the env read, the resolve_prefill_chunk parser and its four refusal branches, the
+chunk == 0 dispatch arm, and the two "requires a nonzero MEMRA_DSV4_PREFILL_CHUNK" errors that
+existed only because the flag could be off. The FLAGS.md catalogue row moves to the removed-doors
+ledger with the verdict and the receipt pointer. There is no KERNELS.md door row for this flag,
+so nothing moves there.
+
+KEPT: the gates and their red arms, which are checks rather than doors, and the boot-time width
+bound, which is now a compile-time constant rather than a parse.
+
+THE CASE, categorical rather than a rate: monolithic prefill allocates 673 KiB of scratch per
+prompt token and dies on CUDA_ERROR_OUT_OF_MEMORY at 15,974 tokens on a 2x96 GiB pair, 3.4 s in
+with no first token, while chunked allocates 7.9 KiB per token and serves 110,554. Chunking also
+roughly doubles what fits inside the shipped 90 s deadline. The separation cell measured the
+scratch as O(chunk) and independent of prompt length, 0.073 GiB at width 16 against 0.292 GiB at
+width 64, exactly 4.00x for 4x the width, which is what this flag claimed to bound.
+
+WHAT THE PROMOTION IS NOT, recorded in the ledger because the lane published the opposite first
+and withdrew it: chunked prefill is a NEW NUMERIC CLASS against monolithic at every prompt
+length, not for a thin slice. Gate g-r4 compared the programs at n = 65, 100, 129, 256, 513 and
+1000, whose tails at width 64 are 0, 35, 0, 63, 0 and 39 so none is a 1-row-tail case, and all
+six are bit_equal=no. On those rows the divergence is sub-top-1 (top1_changed=0,
+greedy_identical=6/6, KL fwd mean 1.850e-2 max 9.687e-2), which is an encouraging early signal
+and is NOT the paired task-accuracy control the HC S16 precedent requires. That control is owed
+and tracked in darklanes #457.
+
+The ledger entry also replaces the exactness law the deleted row asserted. "Widths 1..32 use
+register-specialized exact twins; 33..64 tile those same exact row kernels by eight" does not
+describe the engine. The boundary is one row versus two, because a single-row transaction takes
+the m=1 decode-shaped kernels AND engages two doors declared DoorShape::DecodeOnlyM1 (#462), and
+the prompt lengths are part of the fact since a width's class depends on the prompt it meets.
+
+TESTS: the flag-parsing module is replaced rather than deleted. What is left to check is that
+the served width stays inside the kernel bound, that MEMRA_CTX below the width lowers it without
+ever returning zero (the removed door's OFF state reappearing by arithmetic), and a RED ARM that
+no chunk value now disables chunking for a long prompt, which the old chunk == 0 dispatch did.
+The non-Unicode env test kept its subject by moving to a live flag name, since it is about
+env_text rather than about which flag it reads.
+
+MEMRA_SKIP_PERF_CI=1: the served path is the arm that was already measured throughout this lane.
+
+Signed-off-by: memra-lane <lane@localhost>
+---
+ crates/memra-server/src/dsv4_serve.rs | 97 ++++++++++++++-------------
+ docs/FLAGS.md                         | 49 +++++++++++++-
+ 2 files changed, 99 insertions(+), 47 deletions(-)
+
+diff --git a/crates/memra-server/src/dsv4_serve.rs b/crates/memra-server/src/dsv4_serve.rs
+index f5884a2ab8..a6f6e11170 100644
+--- a/crates/memra-server/src/dsv4_serve.rs
++++ b/crates/memra-server/src/dsv4_serve.rs
+@@ -232,28 +232,30 @@ impl Dsv4Model {
+     }
+ }
+ 
+-fn resolve_prefill_chunk(raw: Option<&str>, max_seq: usize) -> Result<usize, String> {
+-    let chunk = match raw {
+-        None => 0,
+-        Some(raw) => raw.trim().parse::<usize>().map_err(|_| {
+-            format!("MEMRA_DSV4_PREFILL_CHUNK {raw:?} is not a non-negative integer")
+-        })?,
+-    };
+-    if chunk > max_seq {
+-        return Err(format!(
+-            "MEMRA_DSV4_PREFILL_CHUNK {chunk} exceeds MEMRA_CTX {max_seq}"
+-        ));
+-    }
+-    if chunk > DSV4_BATCH_WIDTH_MAX {
+-        return Err(format!(
+-            "MEMRA_DSV4_PREFILL_CHUNK {chunk} exceeds kernel width {DSV4_BATCH_WIDTH_MAX}"
+-        ));
+-    }
+-    Ok(chunk)
++/// The served prefill transaction width. Was `MEMRA_DSV4_PREFILL_CHUNK`, a default-OFF door;
++/// it is the naked default since 2026-09-11 and the seam is gone (darklanes #457).
++///
++/// The case for the flip is CATEGORICAL rather than a rate: the monolithic prefill allocates
++/// 673 KiB of scratch per prompt token and dies on `CUDA_ERROR_OUT_OF_MEMORY` at 15,974 tokens
++/// on a 2x96 GiB pair, while chunked allocates 7.9 KiB per token and serves 110,554. The
++/// separation cell measured the scratch as O(chunk) and independent of prompt length (0.073 GiB
++/// at width 16 against 0.292 GiB at width 64, 4.00x for 4x the width), which is exactly what
++/// this width is supposed to bound.
++///
++/// 64 is the served value and is not a performance choice on the reference expert program,
++/// where the width curve is flat (-1.4% from 32 to 512) and widths 32 and 64 are bit-identical.
++/// It becomes a performance choice if the served program moves to matrix (+61.5%), and the
++/// width receipts would have to be re-taken there.
++const DSV4_PREFILL_CHUNK: usize = 64;
++
++/// The width this run will actually use. `MEMRA_CTX` below the chunk width is the only way the
++/// served width cannot be honoured, and it is a real runtime condition rather than a door.
++fn prefill_chunk_for(max_seq: usize) -> usize {
++    DSV4_PREFILL_CHUNK.min(max_seq).max(1)
+ }
+ 
+ fn use_chunked_prefill(chunk: usize, prompt_tokens: usize) -> bool {
+-    chunk > 0 && prompt_tokens > chunk
++    prompt_tokens > chunk
+ }
+ 
+ struct ParkedEntry {
+@@ -433,17 +435,13 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
+         std::env::var_os("MEMRA_DSV4_KV_HOST_MB"),
+     )?;
+     let host_cache_mb = host_cache_bytes / (1024 * 1024);
+-    let prefill_chunk_raw = configured_env_text("MEMRA_DSV4_PREFILL_CHUNK")?;
+-    let prefill_chunk = resolve_prefill_chunk(prefill_chunk_raw.as_deref(), max_seq)?;
++    let prefill_chunk = prefill_chunk_for(max_seq);
+     let c4_host_raw = configured_env_text("MEMRA_DSV4_C4_HOST_MB")?;
+     let c4_host_bytes = resolve_c4_host_bytes(c4_host_raw.as_deref())?;
+-    if c4_host_bytes > 0 && prefill_chunk == 0 {
+-        return Err("MEMRA_DSV4_C4_HOST_MB requires nonzero MEMRA_DSV4_PREFILL_CHUNK".into());
+-    }
++    // The two "requires a nonzero chunk" refusals that used to live here are gone with the
++    // door: chunked prefill is now the only prefill, so the condition they guarded against
++    // cannot arise. Their subjects (active C4 needs the matrix program, below) still refuse.
+     let gpu = Dsv4Gpu::load(dir, &devices, variant, max_seq)?;
+-    if gpu.matrix_moe_enabled() && prefill_chunk == 0 {
+-        return Err("experimental matrix program requires nonzero MEMRA_DSV4_PREFILL_CHUNK".into());
+-    }
+     if c4_host_bytes > 0 {
+         if !gpu.matrix_moe_enabled() {
+             return Err(
+@@ -470,11 +468,7 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
+         } else {
+             format!("{host_cache_mb} MiB")
+         },
+-        if prefill_chunk == 0 {
+-            "OFF (MEMRA_DSV4_PREFILL_CHUNK=0)".to_string()
+-        } else {
+-            format!("{prefill_chunk} tokens")
+-        },
++        format!("{prefill_chunk} tokens (default, no seam)"),
+     );
+     Ok(Dsv4Model {
+         gpu: Arc::new(gpu),
+@@ -1563,38 +1557,51 @@ mod c4_host_budget_tests {
+         }
+         #[cfg(unix)]
+         {
++            // Non-Unicode env refuses rather than silently becoming a default. The subject
++            // moved from MEMRA_DSV4_PREFILL_CHUNK to another live name when that door was
++            // removed; the check is about env_text, not about which flag it reads.
+             use std::os::unix::ffi::OsStringExt;
+             let err = env_text(
+-                "MEMRA_DSV4_PREFILL_CHUNK",
++                "MEMRA_DSV4_C4_HOST_MB",
+                 Some(OsString::from_vec(vec![0xff, b'1'])),
+             )
+             .unwrap_err();
+-            assert!(err.contains("MEMRA_DSV4_PREFILL_CHUNK"), "{err}");
++            assert!(err.contains("MEMRA_DSV4_C4_HOST_MB"), "{err}");
+         }
+     }
+ }
+ 
+ #[cfg(test)]
+-mod prefill_chunk_flag_tests {
+-    use super::{resolve_prefill_chunk, use_chunked_prefill};
++mod prefill_chunk_tests {
++    use super::{DSV4_BATCH_WIDTH_MAX, DSV4_PREFILL_CHUNK, prefill_chunk_for, use_chunked_prefill};
+ 
++    /// The served width is a constant now, not an env read, so what is left to check is that
++    /// it stays inside the kernel's own bound and that the one runtime condition which can
++    /// lower it (MEMRA_CTX below the width) does so without ever returning zero.
+     #[test]
+-    fn default_is_off_and_values_are_strictly_bounded() {
+-        assert_eq!(resolve_prefill_chunk(None, 1_048_576), Ok(0));
+-        assert_eq!(resolve_prefill_chunk(Some("0"), 1_048_576), Ok(0));
+-        assert_eq!(resolve_prefill_chunk(Some("64"), 1_048_576), Ok(64));
+-        assert!(resolve_prefill_chunk(Some("-1"), 1_048_576).is_err());
+-        assert!(resolve_prefill_chunk(Some("banana"), 1_048_576).is_err());
+-        assert!(resolve_prefill_chunk(Some("65"), 64).is_err());
+-        assert!(resolve_prefill_chunk(Some("65"), 1_048_576).is_err());
++    fn served_width_is_bounded_and_never_zero() {
++        assert!(
++            DSV4_PREFILL_CHUNK >= 2,
++            "a width of 1 is the m=1 numeric class"
++        );
++        assert!(DSV4_PREFILL_CHUNK <= DSV4_BATCH_WIDTH_MAX);
++        assert_eq!(prefill_chunk_for(1_048_576), DSV4_PREFILL_CHUNK);
++        assert_eq!(prefill_chunk_for(DSV4_PREFILL_CHUNK), DSV4_PREFILL_CHUNK);
++        // MEMRA_CTX below the served width: honour the context, never widen past it.
++        assert_eq!(prefill_chunk_for(8), 8);
++        // and never zero, which would be the removed door's OFF state reappearing by arithmetic
++        assert_eq!(prefill_chunk_for(0), 1);
++        assert!(prefill_chunk_for(0) > 0);
+     }
+ 
+     #[test]
+     fn prompts_at_or_below_one_chunk_stay_monolithic() {
+-        assert!(!use_chunked_prefill(0, 10_000));
+         assert!(!use_chunked_prefill(32, 1));
+         assert!(!use_chunked_prefill(32, 32));
+         assert!(use_chunked_prefill(32, 33));
++        // RED ARM for the removal: with the door gone there is no chunk value that disables
++        // chunking for a long prompt. Under the old dispatch `chunk == 0` did exactly that.
++        assert!(use_chunked_prefill(prefill_chunk_for(1_048_576), 10_000));
+     }
+ }
+ 
+diff --git a/docs/FLAGS.md b/docs/FLAGS.md
+index fb51ca7a9b..a2bdf9bd4c 100644
+--- a/docs/FLAGS.md
++++ b/docs/FLAGS.md
+@@ -86,7 +86,6 @@ Scope note: the merged dsv4 knobs are catalogued individually in §5 below — t
+ numeric arms (`MEMRA_DSV4_DECODE_PATH`, `MEMRA_DSV4_DENSE_ARM`) and the serve-door
+ seams (`MEMRA_DSV4_DRAFTER`, `MEMRA_DSV4_DEVICES`, `MEMRA_DSV4_SPEC_DEPTH`,
+ `MEMRA_DSV4_VT`, `MEMRA_DSV4_VT_TAU`/`_FLOOR`, `MEMRA_DSV4_KV_HOST_MB`,
+-`MEMRA_DSV4_PREFILL_CHUNK`,
+ lane/dsv4-flash-revival-20260822). The dsv4 door itself is **experimental engine
+ support, not a serving-grade path** (docs/MODELS.md has the posture and the numbers;
+ tuning is issue #4). The remaining `MEMRA_DSV4_*` names are that door's bench/gate
+@@ -1272,7 +1271,6 @@ so this file does reach HTTP traffic when that door is armed.
+ | `MEMRA_DSV4_KV_HOST_MB=N` | **0 (OFF)** | dsv4 parked-session host tier (`lane/dsv4f-2card-1m-20260904`): a byte-budgeted LRU of exact-token prefixes inside the request's PC-ISO cache namespace. A parked entry stores only LIVE compressed state in one pinned slab per PP stage: 128-token SWA rings, CSA/HCA rows through their high-water marks, indexer rows and pending compressor state; full-capacity dead tails and verify/step scratch are never copied. DSpark entries also store the three persistent rings plus newest trunk tap, not transient draft rows. A hit is consumed, restored at the incoming request's planned capacity, and feeds a mandatory non-empty suffix before generation, so no 129k-logit row is retained. Entries below 128 tokens are skipped; snapshot/copy failure latches the tier off with no pageable fallback. This is not the active C4 budget; when `MEMRA_DSV4_C4_HOST_MB` is enabled, warm states restore directly to host C4. Default is OFF until the 2x RTX PRO gate proves restored-vs-cold sampled/greedy identity, DSpark state identity, host-copy wall, 1M reachability and concurrency; rollback is `0`. |
+ | `MEMRA_DSV4_C4_HOST_MB=N` | **0 (OFF)** | Experimental dedicated-DSV4 active C4 host-history budget, separate from parked-prefix `MEMRA_DSV4_KV_HOST_MB`. Nonzero requires the matrix program and nonzero prefill chunk. Fresh position-zero states and warm restores allocate C4 history directly in cacheable pinned host RAM; GPU history contains only SWA and transient rows. Indexer keys, C128 and pending compressors remain on GPU, with unchanged bits/selection. Per-request admission sums the full-capacity C4 forecast across both stages and returns overload before consuming a prefix or allocating if it exceeds this budget. Actual host bytes must match the forecast; there is no full-GPU-history fallback. The current FIFO worker has one active state; concurrent scheduling must add aggregate reservations. This budget does not include parked snapshots or transient snapshot workspace, which require additional host headroom. Strict integer/overflow/Unicode checks; rollback `0`/unset restores the device-history path. Gate: `dsv4_c4_direct_gate`; API/receipt: `research/dsv4f-2card-1m-20260904/active-c4-host.md`. Target direct allocation/restore and short HTTP cold/warm/budget-refusal gates pass; long HTTP and concurrency remain pending. No default promotion. |
+ | `set_c4_host_copy_elision_for_gate` | **OFF** (gate-only) | Active-C4 profile seam, not a request or serving flag. After canonical prime/snapshot/restore, a complete recent-row sidecar may serve newly emitted rows while host publication is skipped; snapshots reject while enabled. The bounded composition profile preserved sampled identity and removed the C4 D2H calls, but sampled-logit D2H remains. No default or graph admission. Receipt: `research/dsv4f-devpair-20260905/c4-host-copy-elision-progress-20260906.md`. |
+-| `MEMRA_DSV4_PREFILL_CHUNK=N` | **0 (OFF)** | dsv4 bounded-memory prefill (`lane/dsv4f-2card-1m-20260904`): after a one-token canonical prime, teacher-force the prompt through width-N device transactions, commit every row, and retain only the compact persistent cache plus O(N) activation/indexer scratch. With DSpark resident, target-layer taps advance its persistent rings at absolute positions and seed the newest tap exactly as the monolithic prime does. Restored suffixes use the same path. Prompts no wider than N use the measured-faster canonical monolithic prime and are not parked, keeping that numeric regime isolated; cacheable longer prompts and restored suffixes use the chunked regime. The state allocation reserves N transient rows per trunk layer; malformed values, N greater than `MEMRA_CTX`, and N greater than the current 64-row ceiling refuse at boot. Widths 1..32 use register-specialized exact twins; 33..64 tile those same exact row kernels by eight inside one causal transaction. Default remains OFF until chunk-width exactness, sampled cache transparency, 256K/512K/1M reachability, and TTFT gates pass; rollback is `0` (the existing monolithic prefill). |
+ | `MEMRA_DSV4_DSPARK_FUSED_MOE` | **0 (OFF)** | DSpark-only selected-expert dispatch arm. `1` keeps the existing host-oracle router values and expert ordering, but replaces each MTP block's per-expert projection loop with the same exact indirect FP4 projection kernels used by batched verification. Trunk prefill/decode are untouched. Requires device decode. Default stays OFF until proposal/component identity, spec==plain greedy identity, sampled serving, and interleaved wall gates pass; rollback is `0`. |
+ | `MEMRA_DSPARK_VERIFY_GRAPH` | ROUTE-SPLIT: serve route ON, bin arm off | engine-bundle slice 3 + graphs-serve lane: replay per-(segment, vt) CUDA graphs for the dspark verify's consecutive LINEAR-layer runs, plus the full-verify (vt, rung, hi) graph when a round rides one seqs rung (captured from the same `qwen35_tparallel_linear_layer`/fa-layer bodies the eager arm runs — no second copy of the math; pointer tables refreshed per verify). SERVE ROUTE DEFAULT ON since v0.103 (owner-ratified 2026-08-22 on the §10 serve-lifetime battery: crossover K=36–43 requests, steady −0.357 ms/round, session wall −1.55..−1.65%, byte-exact 240/240 ×3 interleaved boot pairs; pool = model-owned, shared across sessions, multi-GiB at storm-complete; the pool magnitude is per-export and unknown until observed on the serving box (the 2026-08-31 refuted-read pass killed the earlier 8,852 MiB q38 figure as a portable claim)) — `MEMRA_DSPARK_VERIFY_GRAPH=0` is the kill-switch (eager walk, byte-identical), `MEMRA_DSPARK_VG_MAX=0` the finer freeze valve. COMPOSITION CONSTRAINT (measured on the v0.103 train battery): the door rides the slice-2 deferred path ONLY, and the confidence-slot vt policy (the v0.101 default on accept-rate-head checkpoints under adaptive) keeps the legacy readback order — so on a head-carrying drafter at the adaptive route default the pool is structurally inert (0 captures, exactness unchanged); ladder/fixed arms (`MEMRA_DFLASH_ADAPT=0`, `MEMRA_DFLASH_VERIFY_T=k`) with markov/plain-chain drafters engage it. MEASURED CORRECTION (lane/graph-launch-guard-sweep-20260831, dev-box census runs): a DFlash2 drafter does NOT engage the pool on either arm; the DFlash2 propose branch never builds the deferred device chain (dflash.rs serve + bin arms set `deferred` only on the markov/plain-chain branch), so on the q38+DFlash2 serving shape the pool prints ENGAGED, takes ZERO captures, and run_full/run_segment never launch. The MTP route (`MEMRA_SPEC_VERIFY_GRAPH`) replays the same pool through the same walk and is the caller that exercises it on GDN exports. BIN ARM stays opt-in (`=1`) by its own measured disposition: at gate scale the mean is FLAT (109.2 vs 109.4 — the capture toll is never repaid over a 256-token run). dspark-only; MTP untouched; refuses to co-arm with the ROUND-STREAM verify. ADMISSION ACCOUNTING (2026-08-23, lane/hermes-perf-fixes): the serve gate charges the pool's projected remaining growth (`dspark_vg_debt_projection`: remaining capture slots x the MARGINAL bytes a new key adds to the device graph-mem pool, two-point measured) on top of the transient reserve, so sessions admitted while the pool is cold no longer overcommit the VRAM it will hold. CHARGED BY STRUCT since lane/graph-launch-guard-sweep-20260831: the MTP route's `MEMRA_SPEC_VERIFY_GRAPH` door fills the SAME model-owned pool and no longer escapes the term behind the old dspark-route gate; `MEMRA_DSPARK_VG_MAX` doubles as the reserve's tightening valve (=0 zeroes it with the freeze). MARGINAL, not mean, by on-box measurement: with the q38 pool's reservation flat at ~33.6 MiB across captures 1..3 a mean-based reading extrapolated the pool's ONE-TIME shared allocation and charged 8,556/4,261/2,830 MB of phantom reserve — an over-reserve that can refuse admissions that would have fit. Until growth is measurable (single observation) the charge is bounded to one more pool's worth. GRAPH-LAUNCH HEADROOM GUARD (lane/graph-launch-guard-sweep-20260831, extending step37 defect 3): below the 256 MiB `GRAPH_LAUNCH_MIN_FREE` driver-free floor every replay round yields to the byte-identical eager walk, one grep-stable `[dspark-vg] graph replay suspended:` line (once per process); unguarded, cuGraphLaunch segfaults inside libcuda on an exhausted card with zero log lines |
+ | `MEMRA_DFLASH_EMB_SCALE` | off (raw) | `1` = feed the drafter sqrt(n_embd)-scaled embed rows — whether z-lab's gemma4 training fed scaled or raw is not visible from the reference; acceptance arbitrates |
+@@ -1498,6 +1496,53 @@ argued per case in [darklanes #601](https://github.com/avifenesh/darklanes/pull/
+ outcomes of the memra #461 matrix verdict; doors whose removal would move a published performance
+ claim are the owner's call.
+ 
++## Removed doors, 2026-09-11 (dsv4 chunked prefill: promoted to the naked default)
++
++`MEMRA_DSV4_PREFILL_CHUNK` is GONE as a runtime name. Chunked prefill at width 64 is the only
++prefill: the env read, the `resolve_prefill_chunk` parser, the `chunk == 0` dispatch arm and the
++two "requires a nonzero chunk" refusals are deleted. The gates and their red arms are KEPT,
++because they are checks rather than doors.
++
++**Verdict: promoted, on a CATEGORICAL receipt rather than a rate.** The monolithic prefill
++allocates 673 KiB of scratch per prompt token and dies on `CUDA_ERROR_OUT_OF_MEMORY` at 15,974
++tokens on a 2x96 GiB pair, 3.4 s in with no first token; chunked allocates 7.9 KiB per token and
++serves 110,554 tokens. Chunking also roughly doubles what fits inside the shipped 90 s deadline
++(2,708 tokens at 43.3 s unchunked against 5,752 at 58.9 s chunked, both arms refused at 90.0 s
++past their own ceiling). The separation cell measured the scratch as O(chunk) and independent of
++prompt length: 0.073 GiB at width 16 against 0.292 GiB at width 64, exactly 4.00x for 4x the
++width, which is precisely what this flag claimed to bound.
++
++**What the promotion is NOT, stated because the lane published the opposite first and withdrew
++it.** Chunked prefill is a NEW NUMERIC CLASS against monolithic at EVERY prompt length, not for
++a thin slice: `dsv4_prefill_chunk_door_gate` g-r4 compared the two programs at n = 65, 100, 129,
++256, 513 and 1000, whose suffix tails at width 64 are 0, 35, 0, 63, 0 and 39 so not one is a
++1-row-tail case, and all six come back `bit_equal=no`. On those rows the divergence is sub-top-1
++(`top1_changed=0`, `greedy_identical=6/6`, KL fwd mean 1.850e-2 max 9.687e-2), which is an
++encouraging early signal and is NOT the paired task-accuracy control the HC S16 precedent
++requires for shipping a class change. That control is owed and is tracked in darklanes #457.
++
++**Width 64 is a correctness and memory choice on the served reference program**, where the width
++curve is flat (-1.4% from 32 to 512) and widths 32 and 64 are bit-identical. It becomes a
++performance choice if the served program moves to matrix (+61.5%), and these width receipts must
++be re-taken there rather than carried over.
++
++**The exactness law this replaced.** The row above claimed "widths 1..32 use register-specialized
++exact twins; 33..64 tile those same exact row kernels by eight". That does not describe the
++engine. The real boundary is ONE ROW versus TWO: a single-row transaction takes the m=1
++decode-shaped kernels AND engages dense exact-tail and dense-fast, which are suppressed at
++`m != 1` and declared `DoorShape::DecodeOnlyM1` (#462). Measured, and the PROMPT LENGTHS are part
++of the fact because a width's class depends on the prompt it meets: on a 1024-row suffix widths
++32 and 63 are bit-identical to 64 while 1, 31 and 33 differ, and 31 and 33 are bit-identical to
++EACH OTHER since both leave a 1-row tail; on a 999-row suffix width 31 leaves 7 rows and is
++exact. A gate over this must assert TWO-SIDED or it passes vacuously when the boundary moves.
++`dsv4_chunk_width_avoiding_single_row_tail` now removes 1-row tails entirely at the served width.
++
++Rollback is the commit revert; the monolithic path stays in-tree as the reference prefill every
++`CLASS` row compares against, so the comparison arm does not disappear with the flag.
++
++Receipts: darklanes `research/dsv4f-prefill-chunk-door-20260910/LANE.md` (gate-g-r2, gate-g-r4,
++split-sep-r1, ladder-mem-r1, reach-chunk64-r2, reach-unchunked-r2).
++
+ ## Removed doors, 2026-09-10 (the dsv4f split vocab head: the read halves, the step does not)
+ 
+ - `MEMRA_DSV4_TP_HEAD_SPLIT` (memra #433: the door, its environment policy, the
+-- 
+2.53.0
+

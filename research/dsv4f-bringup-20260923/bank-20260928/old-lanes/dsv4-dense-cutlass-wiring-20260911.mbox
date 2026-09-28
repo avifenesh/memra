@@ -1,0 +1,1715 @@
+From ec1c07dd1e4cad1a675f382954e617d293b99429 Mon Sep 17 00:00:00 2001
+From: memra-lane <lane@localhost>
+Date: Fri, 11 Sep 2026 06:23:43 +0300
+Subject: [PATCH 1/9] dsv4 dense: wire the CUTLASS tensor-core path into the
+ engine (memra #472)
+
+The kernel and the build seam, banked as measured: split-K at the 128-wide
+scale granularity, a weak hook in dsv4_gpu.cu, and an independent
+MEMRA_DSV4_CUTLASS build block. The link is a rustc-link-lib with
+static:+whole-archive, because rustc-link-arg does not cross package
+boundaries and the first served A/B compared two identical binaries.
+
+Served: this state is a 37% regression, diagnosed as per-call host setup.
+The fix lands in the next commit.
+
+Signed-off-by: memra-lane <lane@localhost>
+---
+ crates/memra-engine/build.rs                 |  56 +++++
+ crates/memra-engine/cu/dsv4_dense_cutlass.cu | 236 +++++++++++++++++++
+ crates/memra-engine/cu/dsv4_gpu.cu           |  17 ++
+ 3 files changed, 309 insertions(+)
+ create mode 100644 crates/memra-engine/cu/dsv4_dense_cutlass.cu
+
+diff --git a/crates/memra-engine/build.rs b/crates/memra-engine/build.rs
+index 6f12b25ec1..26688398de 100644
+--- a/crates/memra-engine/build.rs
++++ b/crates/memra-engine/build.rs
+@@ -697,6 +697,62 @@ fn main() {
+     }
+ 
+     // ---- CUTLASS sm_120a NVFP4 GEMM: a STATIC LIB (7th artifact, different kind), NOT a fatbin ----
++    // DSV4 dense tensor-core path (memra #472). Deliberately INDEPENDENT of the MEMRA_CUTLASS
++    // block below: that one carries the fp4 experiment, sets the memra_cutlass cfg and pulls the
++    // fp4 Rust call sites in with it, and its archive hit an lld symbol-ordering failure on this
++    // box. This path needs none of that. It has its own switch, its own archive, and NO cfg,
++    // because cu/dsv4_gpu.cu declares memra_dsv4_dense_cutlass_fp8 WEAK: when this block does not
++    // run the symbol is null and the scalar kernel runs untouched.
++    //
++    // -fmad=false to match cu/dsv4_gpu.cu, because this family's numerics are the point.
++    if std::env::var("MEMRA_DSV4_CUTLASS").is_ok() {
++        println!("cargo:rerun-if-env-changed=MEMRA_DSV4_CUTLASS");
++        let dense_src = "cu/dsv4_dense_cutlass.cu";
++        println!("cargo:rerun-if-changed={dense_src}");
++        let root = std::env::var("MEMRA_CUTLASS_ROOT")
++            .expect("MEMRA_DSV4_CUTLASS requires MEMRA_CUTLASS_ROOT");
++        let obj = out.join("dsv4_dense_cutlass.o");
++        let lib = out.join("libmemra_dsv4_cutlass.a");
++        let status = Command::new(&nvcc)
++            .args([
++                "-gencode",
++                "arch=compute_120a,code=sm_120a",
++                "-O3",
++                "-std=c++17",
++                "-fmad=false",
++                "--expt-relaxed-constexpr",
++                "-I",
++                &format!("{root}/include"),
++                "-I",
++                &format!("{root}/tools/util/include"),
++                "-c",
++                dense_src,
++                "-o",
++                obj.to_str().unwrap(),
++            ])
++            .status()
++            .expect("spawn nvcc (dsv4 dense cutlass)");
++        assert!(status.success(), "nvcc build failed for {dense_src}");
++        let _ = std::fs::remove_file(&lib);
++        let status = Command::new("ar")
++            .args(["crus", lib.to_str().unwrap(), obj.to_str().unwrap()])
++            .status()
++            .expect("spawn ar (dsv4 dense cutlass)");
++        assert!(status.success(), "ar failed for {}", lib.display());
++        // link-LIB, not link-ARG, and this is the whole reason the first attempt produced a
++        // binary byte-identical to the baseline with the symbol still weak-undefined:
++        // `cargo:rustc-link-arg` applies only to the crate whose build script emitted it and to
++        // binaries in the SAME package, so it never reached memra-server in another package.
++        // `cargo:rustc-link-lib` does propagate to downstream crates, and the
++        // `static:+whole-archive` modifier carries the whole-archive that the CUDART
++        // fatbin-registration ctor needs (without it the device kernels silently never register).
++        println!("cargo:rustc-link-search=native={}", out.display());
++        println!("cargo:rustc-link-lib=static:+whole-archive=memra_dsv4_cutlass");
++        println!("cargo:rustc-link-lib=dylib=cudart");
++        println!("cargo:rustc-link-lib=dylib=stdc++");
++        let _ = &lib;
++    }
++
+     // CUTLASS needs its host-side GemmUniversalAdapter::run() (host C++), so it cannot go through the
+     // fatbin/load_module path above. It is compiled to an object, archived, and whole-archived at link.
+     // Additive: the 6-fatbin loop above is byte-for-byte unchanged (the parallel flash_attn.cu FA build
+diff --git a/crates/memra-engine/cu/dsv4_dense_cutlass.cu b/crates/memra-engine/cu/dsv4_dense_cutlass.cu
+new file mode 100644
+index 0000000000..e1b8f549d6
+--- /dev/null
++++ b/crates/memra-engine/cu/dsv4_dense_cutlass.cu
+@@ -0,0 +1,236 @@
++// DSV4 dense projections on tensor cores (memra #472).
++//
++// Replaces the scalar per-output-row GEMV for the prefill's m = DSV4_TMAX
++// transactions. Compiled only under MEMRA_CUTLASS; when it is not built, or when
++// a shape is not admitted, the caller keeps the scalar kernel and nothing here
++// runs. There is no environment variable and no door: this is either the code or
++// it is deleted (owner ruling 2026-09-10).
++//
++// WHY THIS SHAPE, in one paragraph, because the design took five passes to find:
++// the dense family is 40.6% of a served prefill and is bound by INSTRUCTION
++// ISSUE, not bytes (a 2-D register tile cutting reads 5.4x returned 1.29x). The
++// fix is tensor cores. The obstacle was the per-128 block scale, which cannot be
++// folded into a bf16 operand: doing so costs 3,236x the shipped kernel's dot
++// error and, being a value 128 weights SHARE, the error is coherent and does not
++// shrink with k. So the operand stays exact and the scale multiplies the block's
++// f32 partial sum. And that is the whole trick here: a 128-wide k-block IS a
++// split-K slice, so the scale placement the numerics demand costs no custom
++// mainloop at all -- only a custom REDUCTION, with CUTLASS doing the tensor-core
++// work unmodified.
++//
++// Split-K at that granularity is also FASTER than one slice (1.426x), because
++// m = 32 is so skinny that a single-slice GEMM at n = 1024 launches 16
++// threadblocks onto 188 SMs while 32 slices give 512. The constraint that was
++// supposed to be the price supplies the occupancy the shape was missing.
++//
++// Receipts: darklanes research/dsv4f-dense-perrow-20260910/.
++#include <cstdint>
++#include <cstdio>
++#include <map>
++#include <mutex>
++#include <cuda_runtime.h>
++#include <cuda_bf16.h>
++#include <cuda_fp8.h>
++#include "cutlass/cutlass.h"
++#include "cutlass/gemm/device/gemm_universal.h"
++#include "cutlass/numeric_types.h"
++
++// The scale granularity along k, and therefore the split-K slice width. These are
++// the same number by construction and the code says so rather than repeating 128.
++#define DSV4_DENSE_SCALE_BLOCK 128
++
++using DsvGemm = cutlass::gemm::device::GemmUniversal<
++    cutlass::bfloat16_t, cutlass::layout::RowMajor,
++    cutlass::bfloat16_t, cutlass::layout::ColumnMajor,
++    float, cutlass::layout::ColumnMajor,
++    float, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
++    cutlass::gemm::GemmShape<64, 32, 64>, cutlass::gemm::GemmShape<32, 32, 32>,
++    cutlass::gemm::GemmShape<16, 8, 16>,
++    cutlass::epilogue::thread::LinearCombination<float, 4, float, float>,
++    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 3>;
++
++// ---------------------------------------------------------------------------
++// Lazy bf16 mirror of the e4m3 dense weights.
++//
++// The conversion is LOSSLESS (e4m3 carries 3 mantissa bits, bf16 carries 7), so
++// this costs memory and nothing else: about 3.39 GB per card for the whole dense
++// trunk, against roughly 11.8 GB free with the model loaded. It is keyed on the
++// weight pointer and filled on first use rather than at load, so no loader change
++// is needed; the steady state is identical either way.
++//
++// The scale is deliberately NOT folded in here. That is the thing the numerics
++// forbid, and mirroring the codes alone is what keeps the operand exact.
++// ---------------------------------------------------------------------------
++namespace {
++// Announce the first admitted call AND the first declined one. The first served
++// A/B of this path measured two identical arms because the symbol was
++// weak-undefined and nothing said so; a path that is inert has to be able to
++// report that it is inert.
++void announce_decline(const char* why, int m, int n, int k, int xstride, int sc_cols) {
++    static bool said = false;
++    if (said) return;
++    said = true;
++    fprintf(stderr,
++            "[dsv4-dense-cutlass] DECLINED (%s): m=%d n=%d k=%d xstride=%d sc_cols=%d; the scalar "
++            "kernel runs\n",
++            why, m, n, k, xstride, sc_cols);
++}
++
++struct Mirror {
++    __nv_bfloat16* ptr = nullptr;
++    size_t elems = 0;
++};
++std::mutex g_mirror_lock;
++std::map<const void*, Mirror> g_mirrors;
++size_t g_mirror_bytes = 0;
++uint64_t g_mirror_misses = 0;
++
++__global__ void e4m3_to_bf16_kernel(const __nv_fp8_e4m3* __restrict__ src,
++                                    __nv_bfloat16* __restrict__ dst, long count) {
++    long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
++    if (i >= count) return;
++    dst[i] = __float2bfloat16(__half2float(__nv_cvt_fp8_to_halfraw(src[i].__x, __NV_E4M3)));
++}
++
++// partial[b] is column-major [m][n] with ld = n. sc is [row_block][sc_cols].
++// master += partial * scale, all in f32: the scale lands BEFORE accumulation into
++// the master sum, which is the contract the whole design rests on.
++__global__ void scaled_reduce_kernel(const float* __restrict__ partial,
++                                     const float* __restrict__ sc, int sc_cols,
++                                     float* __restrict__ y, int n, int m, int blocks,
++                                     int ystride) {
++    long idx = (long)blockIdx.x * blockDim.x + threadIdx.x;
++    if (idx >= (long)n * m) return;
++    int row = (int)(idx % n);
++    int t = (int)(idx / n);
++    const float* srow = sc + (long)(row >> 7) * sc_cols;
++    float master = 0.f;
++    for (int b = 0; b < blocks; b++)
++        master += partial[(long)b * m * n + (long)t * n + row] * srow[b];
++    y[(long)t * ystride + row] = master;
++}
++
++// One partial workspace per host thread, grown on demand. Peak among the shapes
++// the split-K arm wins is 8.4 MB; the 529 MB case is n = 129280, which takes the
++// single-slice arm and never allocates here.
++thread_local float* g_ws = nullptr;
++thread_local size_t g_ws_elems = 0;
++
++float* workspace(size_t elems) {
++    if (elems <= g_ws_elems) return g_ws;
++    if (g_ws) cudaFree(g_ws);
++    g_ws = nullptr;
++    if (cudaMalloc(&g_ws, elems * sizeof(float)) != cudaSuccess) {
++        g_ws_elems = 0;
++        return nullptr;
++    }
++    g_ws_elems = elems;
++    return g_ws;
++}
++
++const __nv_bfloat16* mirror_for(const void* w_codes, int n, int k, cudaStream_t stream) {
++    size_t elems = (size_t)n * k;
++    {
++        std::lock_guard<std::mutex> guard(g_mirror_lock);
++        auto it = g_mirrors.find(w_codes);
++        if (it != g_mirrors.end() && it->second.elems == elems) return it->second.ptr;
++    }
++    __nv_bfloat16* dst = nullptr;
++    if (cudaMalloc(&dst, elems * sizeof(__nv_bfloat16)) != cudaSuccess) return nullptr;
++    e4m3_to_bf16_kernel<<<(elems + 255) / 256, 256, 0, stream>>>(
++        (const __nv_fp8_e4m3*)w_codes, dst, (long)elems);
++    if (cudaGetLastError() != cudaSuccess) {
++        cudaFree(dst);
++        return nullptr;
++    }
++    // The mirror must be complete before any GEMM reads it, and it is filled once.
++    if (cudaStreamSynchronize(stream) != cudaSuccess) {
++        cudaFree(dst);
++        return nullptr;
++    }
++    std::lock_guard<std::mutex> guard(g_mirror_lock);
++    auto& slot = g_mirrors[w_codes];
++    if (slot.ptr && slot.elems == elems) {
++        // Another thread won the race; keep one mirror and free ours.
++        cudaFree(dst);
++        return slot.ptr;
++    }
++    if (slot.ptr) cudaFree(slot.ptr);
++    slot.ptr = dst;
++    slot.elems = elems;
++    g_mirror_bytes += elems * sizeof(__nv_bfloat16);
++    g_mirror_misses++;
++    return dst;
++}
++
++// NOTE, and it corrects a number this lane published: there is no per-shape
++// choice between split-K and a single slice here, because a SINGLE SLICE CANNOT
++// CARRY THE SCALE. One slice produces one partial covering all of k, and the
++// scale changes every 128 along k, so there is nothing to multiply it by. The
++// "best of two per shape" that measured 6.377x was on the UNSCALED gemm and is
++// not reachable once the numerics are honoured; split-K at the scale granularity
++// is mandatory rather than preferred. The real dispatch is split-K against the
++// SCALAR kernel, and split-K beats it at every census shape.
++uint64_t g_calls_splitk = 0;
++uint64_t g_calls_declined = 0;
++}  // namespace
++
++extern "C" int memra_dsv4_dense_cutlass_counts_for_gate(uint64_t* splitk, uint64_t* declined,
++                                                        uint64_t* mirror_bytes) {
++    if (!splitk || !declined || !mirror_bytes) return 40079;
++    *splitk = g_calls_splitk;
++    *declined = g_calls_declined;
++    *mirror_bytes = g_mirror_bytes;
++    return 0;
++}
++
++// Returns 0 when it ran, 40080 when the shape is not admitted (the caller keeps
++// the scalar kernel), and a CUDA/CUTLASS code on a real failure. Declining is
++// NOT an error: it is how the skinny and strided shapes stay on the path that
++// suits them.
++extern "C" int memra_dsv4_dense_cutlass_fp8(const void* w_codes, const float* sc_f32, int sc_cols,
++                                            const void* x_bf16, float* y, int m, int n, int k,
++                                            int xstride, int ystride, void* stream_v) {
++    // Admission, stated positively so a reader can see the whole domain at once.
++    if (m != 32) { announce_decline("m!=32", m, n, k, xstride, sc_cols); g_calls_declined++; return 40080; }
++    if (k % DSV4_DENSE_SCALE_BLOCK != 0) { announce_decline("k%128", m, n, k, xstride, sc_cols); g_calls_declined++; return 40080; }
++    if (xstride != k) { announce_decline("xstride!=k", m, n, k, xstride, sc_cols); g_calls_declined++; return 40080; }
++    if (n <= 0 || k <= 0) { announce_decline("bad n/k", m, n, k, xstride, sc_cols); g_calls_declined++; return 40080; }
++    const int blocks = k / DSV4_DENSE_SCALE_BLOCK;
++    if (sc_cols < blocks) { announce_decline("sc_cols<blocks", m, n, k, xstride, sc_cols); g_calls_declined++; return 40080; }
++    if (ystride <= 0) ystride = n;
++
++    cudaStream_t stream = (cudaStream_t)stream_v;
++    const __nv_bfloat16* w = mirror_for(w_codes, n, k, stream);
++    if (!w) { announce_decline("no mirror", m, n, k, xstride, sc_cols); g_calls_declined++; return 40080; }
++
++    float* part = workspace((size_t)blocks * m * n);
++    if (!part) { announce_decline("no workspace", m, n, k, xstride, sc_cols); g_calls_declined++; return 40080; }
++
++    DsvGemm gemm;
++    typename DsvGemm::Arguments args(
++        cutlass::gemm::GemmUniversalMode::kBatched, {n, m, DSV4_DENSE_SCALE_BLOCK}, blocks,
++        {1.f, 0.f}, (cutlass::bfloat16_t const*)w, (cutlass::bfloat16_t const*)x_bf16, part, part,
++        (int64_t)DSV4_DENSE_SCALE_BLOCK, (int64_t)DSV4_DENSE_SCALE_BLOCK, (int64_t)m * n,
++        (int64_t)m * n, k, k, n, n);
++    if (gemm.can_implement(args) != cutlass::Status::kSuccess) {
++        announce_decline("cutlass cannot_implement", m, n, k, xstride, sc_cols);
++        g_calls_declined++;
++        return 40080;
++    }
++    if (gemm.initialize(args, nullptr, stream) != cutlass::Status::kSuccess) return 40081;
++    if (gemm(stream) != cutlass::Status::kSuccess) return 40082;
++    scaled_reduce_kernel<<<((long)n * m + 255) / 256, 256, 0, stream>>>(part, sc_f32, sc_cols, y, n,
++                                                                       m, blocks, ystride);
++    if (cudaGetLastError() != cudaSuccess) return 40083;
++    // Engagement receipt, once per process. Without it a served A/B can only
++    // infer that this path ran from the fact that the numbers moved, and "the
++    // numbers moved" is exactly what the A/B is trying to establish.
++    if (g_calls_splitk == 0)
++        fprintf(stderr,
++                "[dsv4-dense-cutlass] engaged: split-K at the %d-wide scale block, m=%d n=%d k=%d, "
++                "blocks=%d\n",
++                DSV4_DENSE_SCALE_BLOCK, m, n, k, blocks);
++    g_calls_splitk++;
++    return 0;
++}
+diff --git a/crates/memra-engine/cu/dsv4_gpu.cu b/crates/memra-engine/cu/dsv4_gpu.cu
+index 3046d89947..b2ede67a70 100644
+--- a/crates/memra-engine/cu/dsv4_gpu.cu
++++ b/crates/memra-engine/cu/dsv4_gpu.cu
+@@ -3850,6 +3850,11 @@ __global__ void dsv4_gemv_fp8_m_kernel(const uint8_t* __restrict__ w,
+ 
+ #include "dsv4_dense_m1_exact_tail.cuh"
+ 
++// Defined in cu/dsv4_dense_cutlass.cu, compiled only under MEMRA_CUTLASS.
++extern "C" __attribute__((weak)) int memra_dsv4_dense_cutlass_fp8(
++    const void* w_codes, const float* sc_f32, int sc_cols, const void* x_bf16, float* y, int m,
++    int n, int k, int xstride, int ystride, void* stream_v);
++
+ #define DSV4_GEMV_FP8_M_CASE(MM)                                                     \
+     case MM:                                                                         \
+         dsv4_gemv_fp8_m_kernel<MM, false><<<(unsigned)n, 128, 0, stream>>>(           \
+@@ -3887,6 +3892,18 @@ extern "C" int memra_dsv4_gemv_fp8_m(const void* w_codes, const float* sc_f32, i
+         return 0;
+     }
+     dsv4_dense_census_note(DSV4_DENSE_ENTRY_GEMV_FP8, m, n, k);
++    // Tensor-core dense path (memra #472). Declared WEAK because it is compiled
++    // only under MEMRA_CUTLASS; when it is absent the symbol is null and the
++    // scalar kernel below runs exactly as it always has. When it is present it
++    // still declines every shape it does not admit, and declining is normal
++    // rather than an error, so the scalar kernel remains the fallback for the
++    // strided grouped-output projection and for every m below DSV4_TMAX.
++    if (memra_dsv4_dense_cutlass_fp8) {
++        int rc = memra_dsv4_dense_cutlass_fp8(w_codes, sc_f32, sc_cols, x_bf16, y, m, n, k, xstride,
++                                              ystride, stream_v);
++        if (rc == 0) return 0;
++        if (rc != 40080) return rc;  // a real failure is a failure, not a fallback
++    }
+     switch (m) {
+         DSV4_GEMV_FP8_M_CASE(1)
+         DSV4_GEMV_FP8_M_CASE(2)
+-- 
+2.53.0
+
+
+From 402aaffc3f23aa9807c87e95f88976ba43c022f6 Mon Sep 17 00:00:00 2001
+From: memra-lane <lane@localhost>
+Date: Fri, 11 Sep 2026 06:34:18 +0300
+Subject: [PATCH 2/9] dsv4 dense: cache the CUTLASS setup per shape, and retire
+ the hypothesis it was built to test
+
+Builds Gemm::Arguments, can_implement and initialize once per distinct (n, k)
+instead of once per call, and refreshes only the pointers thereafter through
+params update(). The column-major-C adapter's forwarding update() does not
+compile in this CUTLASS, so the cache holds the adapter's public underlying
+operator and transposes the arguments itself.
+
+It works and it is worth nothing. A standalone replay of the census call counts
+through the real entry point prices can_implement+initialize at 0.026 us per
+call, 0.6 ms across the whole 21,312-call family, and the replay measures
+250.0 ms pre-cache against 250.4 ms post-cache, three reps each, interleaved.
+The per-call host setup was never the 37 percent, and the reasoning that made
+it the leading hypothesis was wrong in a way worth naming: dense calls scale
+with tokens, so a per-CALL cost and a per-TOKEN cost both show up as a FLAT
+rate change. That tell distinguishes nothing.
+
+Signed-off-by: memra-lane <lane@localhost>
+---
+ crates/memra-engine/cu/dsv4_dense_cutlass.cu | 113 +++++++++++++++++--
+ 1 file changed, 101 insertions(+), 12 deletions(-)
+
+diff --git a/crates/memra-engine/cu/dsv4_dense_cutlass.cu b/crates/memra-engine/cu/dsv4_dense_cutlass.cu
+index e1b8f549d6..e4ecebc05c 100644
+--- a/crates/memra-engine/cu/dsv4_dense_cutlass.cu
++++ b/crates/memra-engine/cu/dsv4_dense_cutlass.cu
+@@ -173,14 +173,105 @@ const __nv_bfloat16* mirror_for(const void* w_codes, int n, int k, cudaStream_t
+ // SCALAR kernel, and split-K beats it at every census shape.
+ uint64_t g_calls_splitk = 0;
+ uint64_t g_calls_declined = 0;
++uint64_t g_shapes_built = 0;
++
++// ---------------------------------------------------------------------------
++// Per-shape CUTLASS setup cache.
++//
++// This is the whole difference between a 5.25x device-side win and a 37% SERVED
++// regression, and the gap was entirely HOST work. The first served A/B built
++// Gemm::Arguments, called can_implement() and called initialize() on every one
++// of the ~20k dense calls a prefill issues. initialize() runs init_params(),
++// which queries the device and constructs the whole GemmKernel::Params block
++// (grid tiled shape, swizzle, gemm-k geometry); can_implement() re-validates
++// alignment and extents. None of that depends on the call, and the tell was in
++// the served rows themselves: the regression was FLAT in prompt length (-37.0%
++// at 981 tokens, -37.7% at 3,686), so it scaled with CALL COUNT and not with
++// tokens.
++//
++// Everything that setup computes is a function of (n, k) alone. m is pinned to
++// DSV4_TMAX by admission, the batch count is k/128 by construction, and the four
++// leading dimensions are k, k, n, n. So it is computed ONCE per distinct shape
++// (the census over a real prefill has 14) and thereafter only the four pointers
++// move, through params update(), which is the API CUTLASS provides for exactly
++// this and which copies pointers and batch strides and nothing else.
++//
++// thread_local, matching the workspace above, and for the same reason: the
++// params block is MUTATED by update() on every call, so a single copy shared
++// across host threads would race between one thread's update and another's
++// launch. Fourteen params blocks per thread is a few kilobytes. The map is
++// leaked on purpose, because a thread_local holding CUDA-derived state must not
++// be destroyed during thread teardown, which can run after the context is gone.
++struct ShapeKey {
++    int n;
++    int k;
++    bool operator<(const ShapeKey& o) const { return n != o.n ? n < o.n : k < o.k; }
++};
++
++// The CUTLASS device wrapper for a COLUMN-MAJOR C is a thin adapter that
++// transposes the problem and forwards to an underlying row-major operator, and
++// in this CUTLASS its forwarding `update` does not compile: it calls the base's
++// one-argument update with two. The adapter's underlying operator is a public
++// typedef and so is the transpose, so the cache holds the underlying operator
++// and transposes the arguments itself. Same kernel, same params, same launch;
++// only the two lines of forwarding the adapter would have done are here instead.
++using DsvGemmOp = typename DsvGemm::UnderlyingOperator;
++
++struct Shape {
++    DsvGemmOp gemm;
++    int status = 0;  // 0 ready, 40080 declined by can_implement, 40081 initialize failed
++};
++
++thread_local std::map<ShapeKey, Shape>* g_shapes = nullptr;
++
++// Everything except the four pointers is a function of (n, k); the pointers are
++// what update() refreshes per call.
++typename DsvGemm::Arguments dense_args(int m, int n, int k, int blocks, const __nv_bfloat16* w,
++                                       const void* x_bf16, float* part) {
++    return typename DsvGemm::Arguments(
++        cutlass::gemm::GemmUniversalMode::kBatched, {n, m, DSV4_DENSE_SCALE_BLOCK}, blocks,
++        {1.f, 0.f}, (cutlass::bfloat16_t const*)w, (cutlass::bfloat16_t const*)x_bf16, part, part,
++        (int64_t)DSV4_DENSE_SCALE_BLOCK, (int64_t)DSV4_DENSE_SCALE_BLOCK, (int64_t)m * n,
++        (int64_t)m * n, k, k, n, n);
++}
++
++// Returns the cached entry for this shape, building it on first use. A shape
++// that CUTLASS declines is cached as declined, so the second call through it
++// costs a map lookup rather than another can_implement().
++Shape* shape_entry(int m, int n, int k, int blocks, const __nv_bfloat16* w, const void* x_bf16,
++                   float* part, cudaStream_t stream) {
++    if (!g_shapes) g_shapes = new std::map<ShapeKey, Shape>();
++    ShapeKey key{n, k};
++    auto it = g_shapes->find(key);
++    if (it != g_shapes->end()) return &it->second;
++
++    Shape& slot = (*g_shapes)[key];
++    auto args = DsvGemm::to_underlying_arguments(dense_args(m, n, k, blocks, w, x_bf16, part));
++    if (DsvGemmOp::can_implement(args) != cutlass::Status::kSuccess) {
++        slot.status = 40080;
++        return &slot;
++    }
++    if (slot.gemm.initialize(args, nullptr, stream) != cutlass::Status::kSuccess) {
++        slot.status = 40081;
++        return &slot;
++    }
++    slot.status = 0;
++    g_shapes_built++;
++    return &slot;
++}
+ }  // namespace
+ 
+ extern "C" int memra_dsv4_dense_cutlass_counts_for_gate(uint64_t* splitk, uint64_t* declined,
+-                                                        uint64_t* mirror_bytes) {
+-    if (!splitk || !declined || !mirror_bytes) return 40079;
++                                                        uint64_t* mirror_bytes,
++                                                        uint64_t* shapes_built) {
++    if (!splitk || !declined || !mirror_bytes || !shapes_built) return 40079;
+     *splitk = g_calls_splitk;
+     *declined = g_calls_declined;
+     *mirror_bytes = g_mirror_bytes;
++    // The count that says the setup cache is working: it must stop growing while
++    // the call count keeps climbing. A prefill that builds a shape per call has
++    // the cache defeated, however fast the kernel is.
++    *shapes_built = g_shapes_built;
+     return 0;
+ }
+ 
+@@ -207,19 +298,17 @@ extern "C" int memra_dsv4_dense_cutlass_fp8(const void* w_codes, const float* sc
+     float* part = workspace((size_t)blocks * m * n);
+     if (!part) { announce_decline("no workspace", m, n, k, xstride, sc_cols); g_calls_declined++; return 40080; }
+ 
+-    DsvGemm gemm;
+-    typename DsvGemm::Arguments args(
+-        cutlass::gemm::GemmUniversalMode::kBatched, {n, m, DSV4_DENSE_SCALE_BLOCK}, blocks,
+-        {1.f, 0.f}, (cutlass::bfloat16_t const*)w, (cutlass::bfloat16_t const*)x_bf16, part, part,
+-        (int64_t)DSV4_DENSE_SCALE_BLOCK, (int64_t)DSV4_DENSE_SCALE_BLOCK, (int64_t)m * n,
+-        (int64_t)m * n, k, k, n, n);
+-    if (gemm.can_implement(args) != cutlass::Status::kSuccess) {
++    Shape* shape = shape_entry(m, n, k, blocks, w, x_bf16, part, stream);
++    if (shape->status == 40080) {
+         announce_decline("cutlass cannot_implement", m, n, k, xstride, sc_cols);
+         g_calls_declined++;
+         return 40080;
+     }
+-    if (gemm.initialize(args, nullptr, stream) != cutlass::Status::kSuccess) return 40081;
+-    if (gemm(stream) != cutlass::Status::kSuccess) return 40082;
++    if (shape->status != 0) return shape->status;
++    // Per call, from here on: refresh the four pointers and launch. No
++    // can_implement, no initialize, no device query.
++    shape->gemm.update(DsvGemm::to_underlying_arguments(dense_args(m, n, k, blocks, w, x_bf16, part)));
++    if (shape->gemm(stream) != cutlass::Status::kSuccess) return 40082;
+     scaled_reduce_kernel<<<((long)n * m + 255) / 256, 256, 0, stream>>>(part, sc_f32, sc_cols, y, n,
+                                                                        m, blocks, ystride);
+     if (cudaGetLastError() != cudaSuccess) return 40083;
+@@ -229,7 +318,7 @@ extern "C" int memra_dsv4_dense_cutlass_fp8(const void* w_codes, const float* sc
+     if (g_calls_splitk == 0)
+         fprintf(stderr,
+                 "[dsv4-dense-cutlass] engaged: split-K at the %d-wide scale block, m=%d n=%d k=%d, "
+-                "blocks=%d\n",
++                "blocks=%d, setup cached per shape\n",
+                 DSV4_DENSE_SCALE_BLOCK, m, n, k, blocks);
+     g_calls_splitk++;
+     return 0;
+-- 
+2.53.0
+
+
+From a0f8ae840c5e7a45f2bc0c7fc618f8ca0fd2f646 Mon Sep 17 00:00:00 2001
+From: memra-lane <lane@localhost>
+Date: Fri, 11 Sep 2026 07:21:30 +0300
+Subject: [PATCH 3/9] dsv4 dense census: the chunk width is a parameter, not a
+ constant
+
+memra #482 moves the served prefill chunk default from 64 to 512 and deletes
+the 64 ceiling. A census with the width baked in counts a program nobody runs,
+so MEMRA_DSV4_CENSUS_WIDTH selects it and the SOURCE line prints it either way.
+Defaults to 64 so this lane's existing receipts replay unchanged.
+
+Signed-off-by: memra-lane <lane@localhost>
+---
+ .../memra-engine/src/bin/dsv4_dense_census.rs | 29 +++++++++++++++----
+ 1 file changed, 23 insertions(+), 6 deletions(-)
+
+diff --git a/crates/memra-engine/src/bin/dsv4_dense_census.rs b/crates/memra-engine/src/bin/dsv4_dense_census.rs
+index 1fc5c0544a..66eb0af44a 100644
+--- a/crates/memra-engine/src/bin/dsv4_dense_census.rs
++++ b/crates/memra-engine/src/bin/dsv4_dense_census.rs
+@@ -34,7 +34,22 @@ use sha2::{Digest, Sha256};
+ use std::path::Path;
+ use std::time::Instant;
+ 
+-const SERVED_WIDTH: usize = 64;
++/// The prefill chunk width the census runs at.
++///
++/// It was a constant until memra #482 moved the served default from 64 to 512,
++/// and a census that cannot follow the served width measures a program nobody
++/// runs. It defaults to 64 so every receipt this lane already took replays
++/// unchanged, and the width is printed on the SOURCE line either way, so a
++/// receipt always says which program it counted.
++fn served_width() -> usize {
++    match std::env::var("MEMRA_DSV4_CENSUS_WIDTH") {
++        Ok(value) => value
++            .parse()
++            .unwrap_or_else(|err| panic!("MEMRA_DSV4_CENSUS_WIDTH={value}: {err}")),
++        Err(std::env::VarError::NotPresent) => 64,
++        Err(err) => panic!("MEMRA_DSV4_CENSUS_WIDTH: {err}"),
++    }
++}
+ 
+ fn entry_name(entry: i32) -> &'static str {
+     match entry {
+@@ -75,8 +90,10 @@ fn main() {
+     let mut prompt = tokenizer.encode(&format!("Review this engine source:\n{source}"), true);
+     assert!(prompt.len() >= 1025, "do not pad/repeat source");
+     prompt.truncate(1025);
++    let width = served_width();
++    assert!(width > 0, "census width must be positive");
+     println!(
+-        "SOURCE sha256={:x} tokens={} width={SERVED_WIDTH}",
++        "SOURCE sha256={:x} tokens={} width={width}",
+         Sha256::digest(source.as_bytes()),
+         prompt.len()
+     );
+@@ -90,10 +107,10 @@ fn main() {
+     // census is taken on a warm one and the cold one is thrown away.
+     {
+         let mut state = gpu
+-            .alloc_decode_state_for_transient(prompt.len() + 32, SERVED_WIDTH)
++            .alloc_decode_state_for_transient(prompt.len() + 32, width)
+             .expect("cache");
+         let mut draft = gpu.dspark_alloc_state().expect("draft");
+-        gpu.dspark_prefill_prime_chunked(&prompt, &mut state, &mut draft, SERVED_WIDTH)
++        gpu.dspark_prefill_prime_chunked(&prompt, &mut state, &mut draft, width)
+             .expect("warmup prime");
+     }
+ 
+@@ -101,11 +118,11 @@ fn main() {
+     let tiles_before = dense_tile_counts_for_gate();
+     set_dense_census_for_gate(true).expect("arm census");
+     let mut state = gpu
+-        .alloc_decode_state_for_transient(prompt.len() + 32, SERVED_WIDTH)
++        .alloc_decode_state_for_transient(prompt.len() + 32, width)
+         .expect("cache");
+     let mut draft = gpu.dspark_alloc_state().expect("draft");
+     let timer = Instant::now();
+-    gpu.dspark_prefill_prime_chunked(&prompt, &mut state, &mut draft, SERVED_WIDTH)
++    gpu.dspark_prefill_prime_chunked(&prompt, &mut state, &mut draft, width)
+         .expect("census prime");
+     let seconds = timer.elapsed().as_secs_f64();
+     set_dense_census_for_gate(false).expect("disarm census");
+-- 
+2.53.0
+
+
+From 83f01b5048b75f1a1beb6aaf99da50348a6dfe70 Mon Sep 17 00:00:00 2001
+From: memra-lane <lane@localhost>
+Date: Fri, 11 Sep 2026 07:30:16 +0300
+Subject: [PATCH 4/9] dsv4 dense: a gate-only arm for the tensor-core path, so
+ a class cell can take both arms in one process
+
+NOT a door. No environment read, no serving caller, no dispatch a serving
+process can reach: when the CUTLASS archive is linked this path is the code.
+The switch exists because a CLASS comparison has to take both arms over ONE
+tape in ONE process. Two binaries cannot share a model load, and a drift row
+measured across two loads carries the load's variation into the number it is
+trying to attribute to a reduction tree. memra #482 set the precedent with
+arm_reference_expert_program_for_gate().
+
+Standing the path down returns 40080 BEFORE admission, so it is not counted or
+announced as a decline: no shape was rejected.
+
+The wrappers in dsv4_gpu.cu are linked unconditionally and return 40084 when
+the archive is absent, so arm_dense_cutlass_for_gate() gives a named refusal
+instead of a link error, and dense_cutlass_armed_for_gate() returns None rather
+than false. A class cell whose two arms are secretly the same program has to
+fail, not report zero drift: that is the mistake this lane already made once,
+when a served A/B compared two byte-identical binaries.
+
+Signed-off-by: memra-lane <lane@localhost>
+---
+ crates/memra-engine/cu/dsv4_dense_cutlass.cu | 27 +++++++
+ crates/memra-engine/cu/dsv4_gpu.cu           | 25 +++++++
+ crates/memra-engine/src/dsv4_gpu.rs          | 79 ++++++++++++++++++++
+ 3 files changed, 131 insertions(+)
+
+diff --git a/crates/memra-engine/cu/dsv4_dense_cutlass.cu b/crates/memra-engine/cu/dsv4_dense_cutlass.cu
+index e4ecebc05c..b3a38dada7 100644
+--- a/crates/memra-engine/cu/dsv4_dense_cutlass.cu
++++ b/crates/memra-engine/cu/dsv4_dense_cutlass.cu
+@@ -175,6 +175,23 @@ uint64_t g_calls_splitk = 0;
+ uint64_t g_calls_declined = 0;
+ uint64_t g_shapes_built = 0;
+ 
++// ---------------------------------------------------------------------------
++// The gate-only arm.
++//
++// NOT a door, and the difference is load-bearing under the owner's no-OFF-doors
++// rule: there is no environment read, no dispatch on anything a serving process
++// can set, and no caller outside a gate binary. When the archive is linked this
++// path IS the code; when it is not, the weak symbol is null and the scalar kernel
++// runs. This switch exists for one reason: a CLASS comparison has to take both
++// arms in ONE process over ONE tape. Two binaries cannot share a model load, and
++// a drift row measured across two loads carries the load's variation into the
++// numbers it is trying to attribute to a reduction tree. memra #482 set the
++// precedent with arm_reference_expert_program_for_gate().
++//
++// Default ARMED, so a binary that links the archive serves this path unless a
++// gate deliberately stands it down.
++bool g_armed = true;
++
+ // ---------------------------------------------------------------------------
+ // Per-shape CUTLASS setup cache.
+ //
+@@ -261,6 +278,13 @@ Shape* shape_entry(int m, int n, int k, int blocks, const __nv_bfloat16* w, cons
+ }
+ }  // namespace
+ 
++extern "C" int memra_dsv4_dense_cutlass_set_for_gate(int on) {
++    g_armed = on != 0;
++    return 0;
++}
++
++extern "C" int memra_dsv4_dense_cutlass_armed_for_gate() { return g_armed ? 1 : 0; }
++
+ extern "C" int memra_dsv4_dense_cutlass_counts_for_gate(uint64_t* splitk, uint64_t* declined,
+                                                         uint64_t* mirror_bytes,
+                                                         uint64_t* shapes_built) {
+@@ -282,6 +306,9 @@ extern "C" int memra_dsv4_dense_cutlass_counts_for_gate(uint64_t* splitk, uint64
+ extern "C" int memra_dsv4_dense_cutlass_fp8(const void* w_codes, const float* sc_f32, int sc_cols,
+                                             const void* x_bf16, float* y, int m, int n, int k,
+                                             int xstride, int ystride, void* stream_v) {
++    // The gate arm, checked before admission: standing the path down is not a
++    // DECLINE (no shape was rejected) and must not be counted or announced as one.
++    if (!g_armed) return 40080;
+     // Admission, stated positively so a reader can see the whole domain at once.
+     if (m != 32) { announce_decline("m!=32", m, n, k, xstride, sc_cols); g_calls_declined++; return 40080; }
+     if (k % DSV4_DENSE_SCALE_BLOCK != 0) { announce_decline("k%128", m, n, k, xstride, sc_cols); g_calls_declined++; return 40080; }
+diff --git a/crates/memra-engine/cu/dsv4_gpu.cu b/crates/memra-engine/cu/dsv4_gpu.cu
+index b2ede67a70..21f954e0c6 100644
+--- a/crates/memra-engine/cu/dsv4_gpu.cu
++++ b/crates/memra-engine/cu/dsv4_gpu.cu
+@@ -3854,6 +3854,31 @@ __global__ void dsv4_gemv_fp8_m_kernel(const uint8_t* __restrict__ w,
+ extern "C" __attribute__((weak)) int memra_dsv4_dense_cutlass_fp8(
+     const void* w_codes, const float* sc_f32, int sc_cols, const void* x_bf16, float* y, int m,
+     int n, int k, int xstride, int ystride, void* stream_v);
++extern "C" __attribute__((weak)) int memra_dsv4_dense_cutlass_set_for_gate(int on);
++extern "C" __attribute__((weak)) int memra_dsv4_dense_cutlass_armed_for_gate();
++extern "C" __attribute__((weak)) int memra_dsv4_dense_cutlass_counts_for_gate(
++    uint64_t* splitk, uint64_t* declined, uint64_t* mirror_bytes, uint64_t* shapes_built);
++
++// Unconditionally-linked wrappers, so Rust can call the gate arm from a binary
++// built WITHOUT the CUTLASS archive and get a named refusal rather than a link
++// error. 40084 means "this binary does not contain the path", which is a fact a
++// gate needs to be able to read: a class cell whose OFF arm and ON arm are the
++// same program has to fail rather than report zero drift.
++extern "C" int memra_dsv4_dense_cutlass_arm(int on) {
++    if (!memra_dsv4_dense_cutlass_set_for_gate) return 40084;
++    return memra_dsv4_dense_cutlass_set_for_gate(on);
++}
++
++extern "C" int memra_dsv4_dense_cutlass_armed(void) {
++    if (!memra_dsv4_dense_cutlass_armed_for_gate) return -1;
++    return memra_dsv4_dense_cutlass_armed_for_gate();
++}
++
++extern "C" int memra_dsv4_dense_cutlass_counts(uint64_t* splitk, uint64_t* declined,
++                                               uint64_t* mirror_bytes, uint64_t* shapes_built) {
++    if (!memra_dsv4_dense_cutlass_counts_for_gate) return 40084;
++    return memra_dsv4_dense_cutlass_counts_for_gate(splitk, declined, mirror_bytes, shapes_built);
++}
+ 
+ #define DSV4_GEMV_FP8_M_CASE(MM)                                                     \
+     case MM:                                                                         \
+diff --git a/crates/memra-engine/src/dsv4_gpu.rs b/crates/memra-engine/src/dsv4_gpu.rs
+index fadff5ed5a..1dccae1923 100644
+--- a/crates/memra-engine/src/dsv4_gpu.rs
++++ b/crates/memra-engine/src/dsv4_gpu.rs
+@@ -123,6 +123,85 @@ pub struct Dsv4DenseCensusRow {
+     pub calls: u64,
+ }
+ 
++/// Counters the dense tensor-core path keeps about itself (memra #472).
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub struct Dsv4DenseCutlassCounts {
++    /// Calls the split-K path ran.
++    pub splitk: u64,
++    /// Calls it declined, which is normal: the strided grouped output projection
++    /// and every `m` below `DSV4_TMAX` belong to the scalar kernel.
++    pub declined: u64,
++    /// Bytes held by the lazy bf16 weight mirror.
++    pub mirror_bytes: u64,
++    /// Distinct shapes whose CUTLASS setup has been built and cached. It must
++    /// stop growing while the call count keeps climbing; a prefill that builds a
++    /// shape per call has the cache defeated however fast the kernel is.
++    pub shapes_built: u64,
++}
++
++/// Stand the dense tensor-core path up or down for a GATE (memra #472).
++///
++/// NOT a door. There is no environment read, no serving caller, and no dispatch
++/// a serving process can reach: when the CUTLASS archive is linked this path IS
++/// the code. It exists so a CLASS cell can take both arms in ONE process over ONE
++/// tape, because two binaries cannot share a model load and a drift row measured
++/// across two loads carries the load's variation into the number it is trying to
++/// attribute to a reduction tree. Same shape as `#482`'s
++/// `arm_reference_expert_program_for_gate`.
++///
++/// Returns an error when this binary was built without the archive, so a class
++/// cell whose two arms would be the same program fails instead of reporting no
++/// drift.
++pub fn arm_dense_cutlass_for_gate(on: bool) -> Res<()> {
++    unsafe extern "C" {
++        fn memra_dsv4_dense_cutlass_arm(on: i32) -> i32;
++    }
++    ck("dense cutlass arm", unsafe {
++        memra_dsv4_dense_cutlass_arm(i32::from(on))
++    })
++}
++
++/// Whether the dense tensor-core path is armed, or `None` when this binary does
++/// not contain it at all. The distinction is the point: "off" and "absent" look
++/// identical in a drift row and are not the same fact.
++pub fn dense_cutlass_armed_for_gate() -> Option<bool> {
++    unsafe extern "C" {
++        fn memra_dsv4_dense_cutlass_armed() -> i32;
++    }
++    match unsafe { memra_dsv4_dense_cutlass_armed() } {
++        0 => Some(false),
++        1 => Some(true),
++        _ => None,
++    }
++}
++
++/// The dense tensor-core path's own counters, or `None` when it is not linked.
++pub fn dense_cutlass_counts_for_gate() -> Option<Dsv4DenseCutlassCounts> {
++    unsafe extern "C" {
++        fn memra_dsv4_dense_cutlass_counts(
++            splitk: *mut u64,
++            declined: *mut u64,
++            mirror_bytes: *mut u64,
++            shapes_built: *mut u64,
++        ) -> i32;
++    }
++    let mut counts = Dsv4DenseCutlassCounts {
++        splitk: 0,
++        declined: 0,
++        mirror_bytes: 0,
++        shapes_built: 0,
++    };
++    let rc = unsafe {
++        memra_dsv4_dense_cutlass_counts(
++            &mut counts.splitk,
++            &mut counts.declined,
++            &mut counts.mirror_bytes,
++            &mut counts.shapes_built,
++        )
++    };
++    (rc == 0).then_some(counts)
++}
++
+ /// Turn the dense shape census on or off for this host thread (memra #472). An
+ /// instrument: recording changes no dispatch and no kernel, and it is OFF unless
+ /// a census binary turns it on.
+-- 
+2.53.0
+
+
+From 99f119ffe01e7b3230ec78bca781e3e238eaf54e Mon Sep 17 00:00:00 2001
+From: memra-lane <lane@localhost>
+Date: Fri, 11 Sep 2026 08:14:42 +0300
+Subject: [PATCH 5/9] dsv4 dense: a no-model family bench that runs BOTH real
+ kernels in one process
+
+The served regression survived the setup cache unchanged (87.7-88.0 against
+138.6-140.5 tok/s, four arms), and it costs about 4 seconds per 981-token
+prefill, which is more than the entire dense family costs the scalar program.
+So the question is no longer how much the kernel gained; it is whether the
+regression reproduces outside the engine at all.
+
+This bench answers that without a replica. It calls memra_dsv4_gemv_fp8_m, the
+engine's own entry point, and selects the arm with arm_dense_cutlass_for_gate,
+so both arms are shipped code over the same buffers in one process with no
+model load.
+
+The condition under test is WEIGHT RESIDENCY, the one thing the standalone
+probe did not model: it reused one weight buffer per shape, so weights sat in
+the card's 128 MiB L2 for the whole replay, while the engine cycles about
+3.4 GB of distinct layer weights and the CUTLASS path reads a bf16 mirror at
+2 bytes per weight where the scalar path reads e4m3 codes at 1.
+
+Each outcome kills something, stated before the run: winning hot and cold moves
+the search out of the family and into the engine's surroundings; winning hot
+and losing cold makes residency the cause and the mirror's 2x weight bytes the
+mechanism; losing both means the 5.25x was an artefact of the earlier harness.
+
+The bench refuses unless the ON arm's split-K count rises and the OFF arm's
+does not, and unless the binary contains the path at all. An arm switch that
+does nothing reports a clean null, which is exactly what this lane's first
+served A/B did with two byte-identical binaries.
+
+Signed-off-by: memra-lane <lane@localhost>
+---
+ crates/memra-engine/Cargo.toml                |   4 +
+ .../src/bin/dsv4_dense_family_bench.rs        | 207 ++++++++++++++++++
+ 2 files changed, 211 insertions(+)
+ create mode 100644 crates/memra-engine/src/bin/dsv4_dense_family_bench.rs
+
+diff --git a/crates/memra-engine/Cargo.toml b/crates/memra-engine/Cargo.toml
+index 4100c27857..3586148b3f 100644
+--- a/crates/memra-engine/Cargo.toml
++++ b/crates/memra-engine/Cargo.toml
+@@ -31,6 +31,10 @@ base64 = "0.22"
+ name = "bw-roofline"
+ path = "src/bin/bw_roofline.rs"
+ 
++[[bin]]
++name = "dsv4-dense-family-bench"
++path = "src/bin/dsv4_dense_family_bench.rs"
++
+ [[bin]]
+ name = "tp-ar-bench"
+ path = "src/bin/tp_ar_bench.rs"
+diff --git a/crates/memra-engine/src/bin/dsv4_dense_family_bench.rs b/crates/memra-engine/src/bin/dsv4_dense_family_bench.rs
+new file mode 100644
+index 0000000000..a4d719c9df
+--- /dev/null
++++ b/crates/memra-engine/src/bin/dsv4_dense_family_bench.rs
+@@ -0,0 +1,207 @@
++//! dsv4-dense-family-bench: the dense family, both real kernels, one process, no model.
++//!
++//! WHY THIS EXISTS. The tensor-core dense path (memra #472) measures 5.25x faster than the
++//! scalar kernel device-side and REGRESSES 37% on the served path, and the first explanation
++//! (per-call host setup) is dead: `can_implement + initialize` prices at 0.027 us per call,
++//! 0.6 ms across the whole 21,312-call family, and a census replay measures 250.0 ms
++//! pre-cache against 250.4 ms cached. Something else costs about 4 seconds per 981-token
++//! prefill, which is MORE than the entire dense family costs the scalar program, so the
++//! question is not "how much did the kernel gain" but "does the regression reproduce outside
++//! the engine at all".
++//!
++//! WHAT THIS IS NOT. It is not a replica. This lane has already been burned once by a
++//! standalone harness that modelled the right thing for the questions it was asked and the
++//! wrong thing for this one, so nothing here re-implements a kernel: it calls
++//! `memra_dsv4_gemv_fp8_m`, the engine's own entry point, and selects the arm with
++//! `arm_dense_cutlass_for_gate`, which is a gate arm and not a door. Both arms are the
++//! shipped code, in one process, over the same buffers.
++//!
++//! THE CONDITION UNDER TEST: WEIGHT RESIDENCY. The standalone probe that priced the family
++//! reused ONE weight buffer per shape, so weights sat in the card's 128 MiB L2 for the whole
++//! replay. The engine cycles a different layer's weights on every call, about 3.4 GB of them,
++//! and the CUTLASS path reads a bf16 MIRROR at 2 bytes per weight where the scalar path reads
++//! e4m3 codes at 1. `--weights N` sets how many distinct weight buffers each shape cycles, so
++//! the same replay runs cache-hot (1) and cache-cold (enough to blow past L2), and the two
++//! arms are compared under EACH condition rather than one.
++//!
++//! WHAT EACH ARM KILLS:
++//!   * cutlass beats scalar hot AND cold  -> the family is not where the regression lives,
++//!     and the search moves to the engine's surroundings (allocator pressure, the expert
++//!     path, per-request state) rather than the kernel.
++//!   * cutlass beats scalar hot, loses cold -> residency is the cause, it reproduces
++//!     standalone, and the 2x weight bytes of the bf16 mirror is the mechanism to attack.
++//!   * cutlass loses both -> the 5.25x was an artefact of the earlier harness and the path
++//!     never had the win this lane has been spending GPU time on.
++//!
++//! NON-VACUITY, because an arm switch that does nothing reports a clean null. The bench
++//! refuses unless the ON arm's split-K call count actually rises and the OFF arm's does not,
++//! and unless the binary contains the path at all (`dense_cutlass_armed_for_gate` returns
++//! `None` when the CUTLASS archive was not linked, which is a DIFFERENT fact from "off").
++//! This lane's first served A/B compared two byte-identical binaries and reported a clean
++//! null; that is the mistake this guard exists to make impossible.
++//!
++//! Usage: `dsv4-dense-family-bench [device] [weights_per_shape] [reps]`
++use cudarc::driver::{CudaContext, DevicePtr, DevicePtrMut};
++use memra_engine::dsv4_ffi as k;
++use memra_engine::dsv4_gpu::{
++    arm_dense_cutlass_for_gate, dense_cutlass_armed_for_gate, dense_cutlass_counts_for_gate,
++};
++use std::ffi::c_void;
++
++/// The `gemv_fp8` rows of the dense census (darklanes
++/// `research/dsv4f-dense-perrow-20260910/receipts/census-r1.log`), replayed at their real
++/// call counts over one 1,025-token prefill at the served chunk width. These are the rows
++/// that reach this entry point; `dots_*` rows use a different one.
++const CENSUS: &[(usize, usize, usize)] = &[
++    // (n, k, calls)
++    (1024, 4096, 12384),
++    (32768, 1024, 1376),
++    (4096, 8192, 1376),
++    (2048, 4096, 2752),
++    (4096, 2048, 1376),
++    (8192, 1024, 672),
++    (512, 4096, 1376),
++];
++/// `DSV4_TMAX`: every census call is m = 32, because the entry point re-enters itself in
++/// 32-wide tiles above that, which is also why the prefill chunk width does not move the
++/// census.
++const M: usize = 32;
++const SCALE_BLOCK: usize = 128;
++
++fn main() {
++    let arg = |i: usize, d: usize| -> usize {
++        std::env::args()
++            .nth(i)
++            .and_then(|v| v.parse().ok())
++            .unwrap_or(d)
++    };
++    let dev = arg(1, 0);
++    let weights = arg(2, 1).max(1);
++    let reps = arg(3, 3).max(1);
++
++    // The path must be PRESENT before anything is timed. Absent and off look identical in a
++    // timing row and are not the same fact.
++    match dense_cutlass_armed_for_gate() {
++        None => {
++            println!("BENCH_FAIL this binary does not contain the dense CUTLASS path");
++            std::process::exit(1);
++        }
++        Some(armed) => println!("PRESENT armed_at_start={armed}"),
++    }
++
++    let ctx = CudaContext::new(dev).expect("ctx");
++    let stream = ctx.default_stream();
++
++    struct Buf {
++        w: Vec<cudarc::driver::CudaSlice<u8>>,
++        sc: cudarc::driver::CudaSlice<f32>,
++        x: cudarc::driver::CudaSlice<u8>,
++        y: cudarc::driver::CudaSlice<f32>,
++        blocks: usize,
++    }
++    let mut bufs: Vec<Buf> = Vec::new();
++    let mut weight_bytes = 0usize;
++    for &(n, kdim, _) in CENSUS {
++        let blocks = kdim / SCALE_BLOCK;
++        let sc_rows = n.div_ceil(128);
++        let mut w = Vec::with_capacity(weights);
++        for _ in 0..weights {
++            w.push(stream.alloc_zeros::<u8>(n * kdim).expect("w"));
++            weight_bytes += n * kdim;
++        }
++        bufs.push(Buf {
++            w,
++            sc: stream.alloc_zeros::<f32>(sc_rows * blocks).expect("sc"),
++            x: stream.alloc_zeros::<u8>(M * kdim * 2).expect("x"),
++            y: stream.alloc_zeros::<f32>(M * n).expect("y"),
++            blocks,
++        });
++    }
++    let total_calls: usize = CENSUS.iter().map(|r| r.2).sum();
++    println!(
++        "CONFIG device={dev} weights_per_shape={weights} codes_MB={:.1} calls={total_calls} reps={reps}",
++        weight_bytes as f64 / 1e6
++    );
++
++    // One pass per weight buffer per shape, so the bf16 mirror for every buffer the timed
++    // region will touch is already built and no arm pays mirror construction.
++    let replay = |arm_on: bool, warm_only: bool| -> f64 {
++        arm_dense_cutlass_for_gate(arm_on).expect("arm");
++        let t0 = std::time::Instant::now();
++        for (s, &(n, kdim, calls)) in CENSUS.iter().enumerate() {
++            let b = &bufs[s];
++            let passes = if warm_only { weights } else { calls };
++            for c in 0..passes {
++                let wi = &b.w[c % weights];
++                let rc = unsafe {
++                    k::memra_dsv4_gemv_fp8_m(
++                        wi.device_ptr(&stream).0 as *const c_void,
++                        b.sc.device_ptr(&stream).0 as *const f32,
++                        b.blocks as i32,
++                        b.x.device_ptr(&stream).0 as *const c_void,
++                        b.y.device_ptr(&stream).0 as *mut f32,
++                        M as i32,
++                        n as i32,
++                        kdim as i32,
++                        kdim as i32,
++                        n as i32,
++                        stream.cu_stream() as *mut c_void,
++                    )
++                };
++                assert_eq!(rc, 0, "gemv_fp8_m rc={rc} at n={n} k={kdim}");
++            }
++        }
++        stream.synchronize().expect("sync");
++        t0.elapsed().as_secs_f64() * 1e3
++    };
++
++    for on in [false, true] {
++        replay(on, true);
++    }
++
++    // Interleaved, because this box drifts: scalar, cutlass, scalar, cutlass.
++    let mut rows: Vec<(bool, f64)> = Vec::new();
++    for rep in 1..=reps {
++        for on in [false, true] {
++            let before = dense_cutlass_counts_for_gate().expect("counts");
++            let ms = replay(on, false);
++            let after = dense_cutlass_counts_for_gate().expect("counts");
++            let engaged = after.splitk - before.splitk;
++            println!(
++                "REPLAY rep={rep} arm={} ms={ms:.1} per_call_us={:.3} splitk_calls={engaged} \
++                 declined={} mirror_MB={:.1} shapes_built={}",
++                if on { "cutlass" } else { "scalar" },
++                ms * 1000.0 / total_calls as f64,
++                after.declined - before.declined,
++                after.mirror_bytes as f64 / 1e6,
++                after.shapes_built
++            );
++            // The guard that makes the comparison mean something.
++            if on && engaged == 0 {
++                println!(
++                    "BENCH_FAIL the cutlass arm ran no split-K calls, so the arms are the same program"
++                );
++                std::process::exit(1);
++            }
++            if !on && engaged != 0 {
++                println!(
++                    "BENCH_FAIL the scalar arm ran {engaged} split-K calls, so standing the path down does nothing"
++                );
++                std::process::exit(1);
++            }
++            rows.push((on, ms));
++        }
++    }
++    let median = |on: bool| -> f64 {
++        let mut v: Vec<f64> = rows.iter().filter(|r| r.0 == on).map(|r| r.1).collect();
++        v.sort_by(f64::total_cmp);
++        v[v.len() / 2]
++    };
++    let (scalar, cutlass) = (median(false), median(true));
++    println!(
++        "VERDICT weights_per_shape={weights} scalar_ms={scalar:.1} cutlass_ms={cutlass:.1} \
++         cutlass_over_scalar={:.3}x",
++        scalar / cutlass
++    );
++    println!("BENCH_OK");
++}
+-- 
+2.53.0
+
+
+From 446bc77d6a1f43333532b9666e7e96287b056163 Mon Sep 17 00:00:00 2001
+From: memra-lane <lane@localhost>
+Date: Fri, 11 Sep 2026 14:07:28 +0300
+Subject: [PATCH 6/9] dsv4 dense: per-shape rows in the family bench, because
+ launch-bound and byte-bound predict different rows
+
+A family total cannot tell a per-call fixed cost from a per-byte one. One row
+per census shape can: a launch-bound family costs the same per CALL at every
+(n, k), a byte-bound one costs in proportion to n*k. The bytes printed are the
+arm's own (scalar reads n*k e4m3 codes; cutlass reads a 2 n*k bf16 mirror and
+writes then re-reads a split-K partial that is exactly n*k, since
+(k/128)*32*4 = k), so the GB/s column is comparable across arms.
+
+Signed-off-by: memra-lane <lane@localhost>
+---
+ .../src/bin/dsv4_dense_family_bench.rs        | 35 ++++++++++++++++---
+ 1 file changed, 31 insertions(+), 4 deletions(-)
+
+diff --git a/crates/memra-engine/src/bin/dsv4_dense_family_bench.rs b/crates/memra-engine/src/bin/dsv4_dense_family_bench.rs
+index a4d719c9df..2016696fdd 100644
+--- a/crates/memra-engine/src/bin/dsv4_dense_family_bench.rs
++++ b/crates/memra-engine/src/bin/dsv4_dense_family_bench.rs
+@@ -125,11 +125,13 @@ fn main() {
+ 
+     // One pass per weight buffer per shape, so the bf16 mirror for every buffer the timed
+     // region will touch is already built and no arm pays mirror construction.
+-    let replay = |arm_on: bool, warm_only: bool| -> f64 {
++    let replay = |arm_on: bool, warm_only: bool, per_shape: &mut Vec<f64>| -> f64 {
+         arm_dense_cutlass_for_gate(arm_on).expect("arm");
++        per_shape.clear();
+         let t0 = std::time::Instant::now();
+         for (s, &(n, kdim, calls)) in CENSUS.iter().enumerate() {
+             let b = &bufs[s];
++            let shape_t0 = std::time::Instant::now();
+             let passes = if warm_only { weights } else { calls };
+             for c in 0..passes {
+                 let wi = &b.w[c % weights];
+@@ -150,13 +152,18 @@ fn main() {
+                 };
+                 assert_eq!(rc, 0, "gemv_fp8_m rc={rc} at n={n} k={kdim}");
+             }
++            // Per shape, because the two candidate limits predict different SHAPES of row.
++            // A launch-bound family costs the same per CALL at every (n, k); a byte-bound one
++            // costs in proportion to n*k. One arm of rows separates them without another cell.
++            stream.synchronize().expect("sync");
++            per_shape.push(shape_t0.elapsed().as_secs_f64() * 1e3);
+         }
+-        stream.synchronize().expect("sync");
+         t0.elapsed().as_secs_f64() * 1e3
+     };
+ 
++    let mut scratch: Vec<f64> = Vec::new();
+     for on in [false, true] {
+-        replay(on, true);
++        replay(on, true, &mut scratch);
+     }
+ 
+     // Interleaved, because this box drifts: scalar, cutlass, scalar, cutlass.
+@@ -164,8 +171,28 @@ fn main() {
+     for rep in 1..=reps {
+         for on in [false, true] {
+             let before = dense_cutlass_counts_for_gate().expect("counts");
+-            let ms = replay(on, false);
++            let mut shape_ms: Vec<f64> = Vec::new();
++            let ms = replay(on, false, &mut shape_ms);
+             let after = dense_cutlass_counts_for_gate().expect("counts");
++            for (s, &(n, kdim, calls)) in CENSUS.iter().enumerate() {
++                // Bytes this arm moves for this shape, from the source and not from a model:
++                // scalar reads n*k e4m3 codes; cutlass reads a 2 n*k bf16 mirror and then writes
++                // and re-reads a split-K partial that is exactly n*k bytes ((k/128)*32*4 = k).
++                let nk = (n * kdim) as f64;
++                let per_call = if on {
++                    4.0 * nk + (M * kdim * 2) as f64 + (M * n * 4) as f64
++                } else {
++                    nk + (M * kdim * 2) as f64 + (M * n * 4) as f64
++                };
++                let gb = per_call * calls as f64 / 1e9;
++                println!(
++                    "SHAPE rep={rep} arm={} n={n} k={kdim} calls={calls} ms={:.1}                      per_call_us={:.2} GB={gb:.1} GB_per_s={:.0}",
++                    if on { "cutlass" } else { "scalar" },
++                    shape_ms[s],
++                    shape_ms[s] * 1000.0 / calls as f64,
++                    gb / (shape_ms[s] / 1e3)
++                );
++            }
+             let engaged = after.splitk - before.splitk;
+             println!(
+                 "REPLAY rep={rep} arm={} ms={ms:.1} per_call_us={:.3} splitk_calls={engaged} \
+-- 
+2.53.0
+
+
+From 54c46bf117b6c30829827c7eeda8dbbb6c141e4f Mon Sep 17 00:00:00 2001
+From: memra-lane <lane@localhost>
+Date: Fri, 11 Sep 2026 14:10:34 +0300
+Subject: [PATCH 7/9] dsv4 dense: both arms, one model load, no server, so the
+ next question can be asked at all
+
+The served 37% is not the kernel and not the family: the per-shape setup cache
+retired the host hypothesis (0.027 us per call) and the family bench runs both
+real kernels over the real census counts at three weight-residency levels with
+the CUTLASS arm winning every one (5.93x in L2, 4.55x with 3.15 GB of codes and
+6.31 GB of mirror cycling past it). That leaves the engine's surroundings, and
+narrowing them needs a cell with no HTTP, no sampler, no spec route and no
+second process: one load, the same prompt, the arm flipped between timed
+prefills, at the served width of 512 rather than the 64 every earlier receipt
+in this lane used.
+
+The three non-vacuity checks are the ones this lane learned the hard way: the
+path must be PRESENT (absent and off are different facts and look identical in
+a timing row), the ON arm must run split-K calls, and the OFF arm must run
+none.
+
+Signed-off-by: memra-lane <lane@localhost>
+---
+ crates/memra-engine/Cargo.toml                |   4 +
+ .../memra-engine/src/bin/dsv4_dense_arm_ab.rs | 159 ++++++++++++++++++
+ 2 files changed, 163 insertions(+)
+ create mode 100644 crates/memra-engine/src/bin/dsv4_dense_arm_ab.rs
+
+diff --git a/crates/memra-engine/Cargo.toml b/crates/memra-engine/Cargo.toml
+index 3586148b3f..f0fe9a0f93 100644
+--- a/crates/memra-engine/Cargo.toml
++++ b/crates/memra-engine/Cargo.toml
+@@ -35,6 +35,10 @@ path = "src/bin/bw_roofline.rs"
+ name = "dsv4-dense-family-bench"
+ path = "src/bin/dsv4_dense_family_bench.rs"
+ 
++[[bin]]
++name = "dsv4-dense-arm-ab"
++path = "src/bin/dsv4_dense_arm_ab.rs"
++
+ [[bin]]
+ name = "tp-ar-bench"
+ path = "src/bin/tp_ar_bench.rs"
+diff --git a/crates/memra-engine/src/bin/dsv4_dense_arm_ab.rs b/crates/memra-engine/src/bin/dsv4_dense_arm_ab.rs
+new file mode 100644
+index 0000000000..4c59e78c6a
+--- /dev/null
++++ b/crates/memra-engine/src/bin/dsv4_dense_arm_ab.rs
+@@ -0,0 +1,159 @@
++//! dsv4-dense-arm-ab: the dense tensor-core path, both arms, ONE model load, no server.
++//!
++//! WHY THIS EXISTS. The served A/B says the CUTLASS dense path costs 37% of the
++//! prefill rate (darklanes `research/dsv4f-dense-perrow-20260910/receipts-wiring/cell-r2`
++//! and `receipts/cell-rA`). Two explanations are already dead:
++//!
++//!   * per-call HOST setup: `can_implement` + `initialize` price at 0.027 us per call,
++//!     0.6 ms across the whole 21,312-call family, and the served cell WITH the
++//!     per-shape cache measured the same 37%;
++//!   * the dense family itself: `dsv4-dense-family-bench` runs both real kernels over
++//!     the real census call counts at three weight-residency levels and the CUTLASS arm
++//!     WINS every one of them (5.93x with the family in L2, 4.55x with 3.15 GB of codes
++//!     and 6.31 GB of mirror cycling past it).
++//!
++//! So the cost is not in the kernel and not in the family. This binary asks the next
++//! question in the only order that narrows it: does it appear in the ENGINE's prefill,
++//! with no HTTP, no sampler, no spec route and no second process? One model load, the
++//! same prompt, the arm flipped between timed prefills.
++//!
++//! If prefill seconds regress here, the cause is inside `dspark_prefill_prime_chunked`
++//! and an nsys run over this same binary attributes it to a kernel. If they do NOT, the
++//! cause is outside prefill, and the search moves to what the server does around it.
++//!
++//! NON-VACUITY. The arm must be PRESENT (a binary built without the CUTLASS archive has
++//! a null weak symbol and reports `None`, which is a different fact from "off"), the ON
++//! arm must run split-K calls, and the OFF arm must run none. This lane's first served
++//! A/B compared two byte-identical binaries and reported a clean null; that is the
++//! mistake these three checks exist to make impossible.
++//!
++//! Usage: `dsv4-dense-arm-ab <model-dir> <real-source.txt> [reps]`
++use memra_engine::dsv4_gpu::{
++    Dsv4Gpu, arm_dense_cutlass_for_gate, dense_cutlass_armed_for_gate,
++    dense_cutlass_counts_for_gate,
++};
++use memra_gguf::dsv4_forward::ActQuantVariant;
++use memra_tokenizer::Tokenizer;
++use sha2::{Digest, Sha256};
++use std::path::Path;
++use std::time::Instant;
++
++/// The prefill chunk width. memra #482 moved the served default to 512, and a cell that
++/// measures 64 measures a program nobody runs any more.
++fn served_width() -> usize {
++    match std::env::var("MEMRA_DSV4_CENSUS_WIDTH") {
++        Ok(value) => value
++            .parse()
++            .unwrap_or_else(|err| panic!("MEMRA_DSV4_CENSUS_WIDTH={value}: {err}")),
++        Err(std::env::VarError::NotPresent) => 512,
++        Err(err) => panic!("MEMRA_DSV4_CENSUS_WIDTH: {err}"),
++    }
++}
++
++fn main() {
++    let args: Vec<String> = std::env::args().collect();
++    assert!(
++        args.len() == 3 || args.len() == 4,
++        "usage: dsv4-dense-arm-ab <model-dir> <real-source.txt> [reps]"
++    );
++    let reps: usize = args.get(3).map_or(3, |v| v.parse().expect("reps"));
++    let dir = Path::new(&args[1]);
++    let source = std::fs::read_to_string(&args[2]).expect("real source");
++
++    match dense_cutlass_armed_for_gate() {
++        None => {
++            println!("AB_FAIL this binary does not contain the dense CUTLASS path");
++            std::process::exit(1);
++        }
++        Some(armed) => println!("PRESENT armed_at_start={armed}"),
++    }
++
++    let tokenizer = Tokenizer::from_hf_dir(dir).expect("tokenizer");
++    let mut prompt = tokenizer.encode(&format!("Review this engine source:\n{source}"), true);
++    assert!(prompt.len() >= 1025, "do not pad/repeat source");
++    prompt.truncate(1025);
++    let width = served_width();
++    println!(
++        "SOURCE sha256={:x} tokens={} width={width}",
++        Sha256::digest(source.as_bytes()),
++        prompt.len()
++    );
++
++    // Served defaults: the matrix expert program (memra #482) is what loads unless a
++    // gate arms the reference executor, and nothing here arms it.
++    let mut gpu = Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 4096).expect("load");
++
++    let prime = |gpu: &mut Dsv4Gpu| -> f64 {
++        let mut state = gpu
++            .alloc_decode_state_for_transient(prompt.len() + 32, width)
++            .expect("cache");
++        let mut draft = gpu.dspark_alloc_state().expect("draft");
++        let timer = Instant::now();
++        gpu.dspark_prefill_prime_chunked(&prompt, &mut state, &mut draft, width)
++            .expect("prime");
++        timer.elapsed().as_secs_f64()
++    };
++
++    // A cold first prefill is its own regime, and the bf16 mirror is built lazily on
++    // first use, so BOTH arms get a warm-up and neither pays mirror construction in a
++    // timed region.
++    for on in [false, true] {
++        arm_dense_cutlass_for_gate(on).expect("arm");
++        prime(&mut gpu);
++    }
++    let warm = dense_cutlass_counts_for_gate().expect("counts");
++    println!(
++        "WARM mirror_MB={:.1} shapes_built={} splitk={} declined={}",
++        warm.mirror_bytes as f64 / 1e6,
++        warm.shapes_built,
++        warm.splitk,
++        warm.declined
++    );
++
++    // Interleaved, because this box drifts: scalar, cutlass, scalar, cutlass.
++    let mut rows: Vec<(bool, f64)> = Vec::new();
++    for rep in 1..=reps {
++        for on in [false, true] {
++            arm_dense_cutlass_for_gate(on).expect("arm");
++            let before = dense_cutlass_counts_for_gate().expect("counts");
++            let seconds = prime(&mut gpu);
++            let after = dense_cutlass_counts_for_gate().expect("counts");
++            let engaged = after.splitk - before.splitk;
++            println!(
++                "PRIME rep={rep} arm={} seconds={seconds:.4} tok_per_s={:.1} splitk={engaged} \
++                 declined={} mirror_MB={:.1} shapes_built={}",
++                if on { "cutlass" } else { "scalar" },
++                prompt.len() as f64 / seconds,
++                after.declined - before.declined,
++                after.mirror_bytes as f64 / 1e6,
++                after.shapes_built
++            );
++            if on && engaged == 0 {
++                println!(
++                    "AB_FAIL the cutlass arm ran no split-K calls, so the arms are one program"
++                );
++                std::process::exit(1);
++            }
++            if !on && engaged != 0 {
++                println!(
++                    "AB_FAIL the scalar arm ran {engaged} split-K calls, so the arm does nothing"
++                );
++                std::process::exit(1);
++            }
++            rows.push((on, seconds));
++        }
++    }
++    let median = |on: bool| -> f64 {
++        let mut v: Vec<f64> = rows.iter().filter(|r| r.0 == on).map(|r| r.1).collect();
++        v.sort_by(f64::total_cmp);
++        v[v.len() / 2]
++    };
++    let (scalar, cutlass) = (median(false), median(true));
++    println!(
++        "VERDICT width={width} scalar_s={scalar:.4} cutlass_s={cutlass:.4} \
++         cutlass_over_scalar={:.3}x delta_pct={:.1}",
++        scalar / cutlass,
++        (scalar / cutlass - 1.0) * 100.0
++    );
++    println!("AB_OK");
++}
+-- 
+2.53.0
+
+
+From f11e24936167ee91bffdb600706a382e84d1c237 Mon Sep 17 00:00:00 2001
+From: memra-lane <lane@localhost>
+Date: Fri, 11 Sep 2026 14:18:11 +0300
+Subject: [PATCH 8/9] dsv4 dense: key the split-K workspace and setup cache by
+ DEVICE, and count the crossings
+
+The split-K partial workspace was one thread_local pointer. dsv4f serves PP-2
+and drives both stages from ONE host thread that binds each stage's context in
+turn, so both cards shared one allocation: whichever device was current when it
+grew owns the memory, and every call on the other card hands CUTLASS a peer
+pointer. The partial is written once and read once per call and is exactly n*k
+bytes, so that is 2 n*k bytes crossing PCIe instead of staying on the card, on
+roughly half the family's calls. Nothing fails and the answers stay right,
+which is the worst shape a defect can take.
+
+The setup cache is keyed by device for the same reason: initialize() queries the
+device it runs on, and a params block built against one card should not be
+launched on the other.
+
+This is a CANDIDATE for the served 37%, not yet a cause, so it lands with the
+number that can refute it: ws_device_flips counts calls that arrived on a
+different device from the call before them. A run where it stays 0 never put two
+cards through this path, so a clean result from that run says nothing about
+whether keying by device mattered.
+
+Signed-off-by: memra-lane <lane@localhost>
+---
+ crates/memra-engine/cu/dsv4_dense_cutlass.cu  | 66 +++++++++++++++----
+ crates/memra-engine/cu/dsv4_gpu.cu            |  9 ++-
+ .../memra-engine/src/bin/dsv4_dense_arm_ab.rs |  5 +-
+ crates/memra-engine/src/dsv4_gpu.rs           |  9 +++
+ 4 files changed, 71 insertions(+), 18 deletions(-)
+
+diff --git a/crates/memra-engine/cu/dsv4_dense_cutlass.cu b/crates/memra-engine/cu/dsv4_dense_cutlass.cu
+index b3a38dada7..8d7d44145d 100644
+--- a/crates/memra-engine/cu/dsv4_dense_cutlass.cu
++++ b/crates/memra-engine/cu/dsv4_dense_cutlass.cu
+@@ -113,19 +113,45 @@ __global__ void scaled_reduce_kernel(const float* __restrict__ partial,
+ // One partial workspace per host thread, grown on demand. Peak among the shapes
+ // the split-K arm wins is 8.4 MB; the 529 MB case is n = 129280, which takes the
+ // single-slice arm and never allocates here.
+-thread_local float* g_ws = nullptr;
+-thread_local size_t g_ws_elems = 0;
++//
++// KEYED BY DEVICE, and that is not a tidiness point. dsv4f serves PP-2, and the
++// stages are driven from ONE host thread that binds each stage's context in turn
++// (`dsv4_gpu.rs` calls `ctx.bind_to_thread()` around every stage's work). A single
++// thread_local workspace is therefore shared by BOTH cards: whichever device was
++// current when it was allocated owns the allocation, and every call on the other
++// card hands CUTLASS a peer pointer. The split-K partial is written once and read
++// once per call and is exactly n*k bytes, so on this box that is 2 n*k bytes over
++// PCIe instead of over the card's own memory, on roughly half the family's calls.
++// It is correct through UVA and it is slow, which is the worst shape a defect can
++// take: nothing fails, the answers stay right, and the served rate drops.
++struct Ws {
++    float* ptr = nullptr;
++    size_t elems = 0;
++};
++thread_local std::map<int, Ws>* g_ws = nullptr;
++// The instrument that makes the claim above checkable rather than plausible: how
++// many times a call arrived on a different device from the previous call. A run
++// where this stays 0 did not exercise the condition, so a PASS from it means
++// nothing.
++thread_local int g_ws_last_device = -1;
++uint64_t g_ws_device_flips = 0;
+ 
+ float* workspace(size_t elems) {
+-    if (elems <= g_ws_elems) return g_ws;
+-    if (g_ws) cudaFree(g_ws);
+-    g_ws = nullptr;
+-    if (cudaMalloc(&g_ws, elems * sizeof(float)) != cudaSuccess) {
+-        g_ws_elems = 0;
++    int dev = -1;
++    if (cudaGetDevice(&dev) != cudaSuccess) return nullptr;
++    if (!g_ws) g_ws = new std::map<int, Ws>();
++    if (g_ws_last_device >= 0 && g_ws_last_device != dev) g_ws_device_flips++;
++    g_ws_last_device = dev;
++    Ws& w = (*g_ws)[dev];
++    if (elems <= w.elems) return w.ptr;
++    if (w.ptr) cudaFree(w.ptr);
++    w.ptr = nullptr;
++    if (cudaMalloc(&w.ptr, elems * sizeof(float)) != cudaSuccess) {
++        w.elems = 0;
+         return nullptr;
+     }
+-    g_ws_elems = elems;
+-    return g_ws;
++    w.elems = elems;
++    return w.ptr;
+ }
+ 
+ const __nv_bfloat16* mirror_for(const void* w_codes, int n, int k, cudaStream_t stream) {
+@@ -220,9 +246,13 @@ bool g_armed = true;
+ // leaked on purpose, because a thread_local holding CUDA-derived state must not
+ // be destroyed during thread teardown, which can run after the context is gone.
+ struct ShapeKey {
++    int device;
+     int n;
+     int k;
+-    bool operator<(const ShapeKey& o) const { return n != o.n ? n < o.n : k < o.k; }
++    bool operator<(const ShapeKey& o) const {
++        if (device != o.device) return device < o.device;
++        return n != o.n ? n < o.n : k < o.k;
++    }
+ };
+ 
+ // The CUTLASS device wrapper for a COLUMN-MAJOR C is a thin adapter that
+@@ -258,7 +288,12 @@ typename DsvGemm::Arguments dense_args(int m, int n, int k, int blocks, const __
+ Shape* shape_entry(int m, int n, int k, int blocks, const __nv_bfloat16* w, const void* x_bf16,
+                    float* part, cudaStream_t stream) {
+     if (!g_shapes) g_shapes = new std::map<ShapeKey, Shape>();
+-    ShapeKey key{n, k};
++    int device = -1;
++    if (cudaGetDevice(&device) != cudaSuccess) return nullptr;
++    // Keyed by device with the workspace, and for the same reason: `initialize()`
++    // queries the device it is called on, and a params block built against one
++    // card must not be launched on the other.
++    ShapeKey key{device, n, k};
+     auto it = g_shapes->find(key);
+     if (it != g_shapes->end()) return &it->second;
+ 
+@@ -287,8 +322,12 @@ extern "C" int memra_dsv4_dense_cutlass_armed_for_gate() { return g_armed ? 1 :
+ 
+ extern "C" int memra_dsv4_dense_cutlass_counts_for_gate(uint64_t* splitk, uint64_t* declined,
+                                                         uint64_t* mirror_bytes,
+-                                                        uint64_t* shapes_built) {
+-    if (!splitk || !declined || !mirror_bytes || !shapes_built) return 40079;
++                                                        uint64_t* shapes_built,
++                                                        uint64_t* ws_device_flips) {
++    if (!splitk || !declined || !mirror_bytes || !shapes_built || !ws_device_flips) return 40079;
++    // Zero here means the run never put two devices through this path, so it did
++    // not test the condition the device-keyed workspace exists for.
++    *ws_device_flips = g_ws_device_flips;
+     *splitk = g_calls_splitk;
+     *declined = g_calls_declined;
+     *mirror_bytes = g_mirror_bytes;
+@@ -326,6 +365,7 @@ extern "C" int memra_dsv4_dense_cutlass_fp8(const void* w_codes, const float* sc
+     if (!part) { announce_decline("no workspace", m, n, k, xstride, sc_cols); g_calls_declined++; return 40080; }
+ 
+     Shape* shape = shape_entry(m, n, k, blocks, w, x_bf16, part, stream);
++    if (!shape) { announce_decline("no device", m, n, k, xstride, sc_cols); g_calls_declined++; return 40080; }
+     if (shape->status == 40080) {
+         announce_decline("cutlass cannot_implement", m, n, k, xstride, sc_cols);
+         g_calls_declined++;
+diff --git a/crates/memra-engine/cu/dsv4_gpu.cu b/crates/memra-engine/cu/dsv4_gpu.cu
+index 21f954e0c6..db2720f681 100644
+--- a/crates/memra-engine/cu/dsv4_gpu.cu
++++ b/crates/memra-engine/cu/dsv4_gpu.cu
+@@ -3857,7 +3857,8 @@ extern "C" __attribute__((weak)) int memra_dsv4_dense_cutlass_fp8(
+ extern "C" __attribute__((weak)) int memra_dsv4_dense_cutlass_set_for_gate(int on);
+ extern "C" __attribute__((weak)) int memra_dsv4_dense_cutlass_armed_for_gate();
+ extern "C" __attribute__((weak)) int memra_dsv4_dense_cutlass_counts_for_gate(
+-    uint64_t* splitk, uint64_t* declined, uint64_t* mirror_bytes, uint64_t* shapes_built);
++    uint64_t* splitk, uint64_t* declined, uint64_t* mirror_bytes, uint64_t* shapes_built,
++    uint64_t* ws_device_flips);
+ 
+ // Unconditionally-linked wrappers, so Rust can call the gate arm from a binary
+ // built WITHOUT the CUTLASS archive and get a named refusal rather than a link
+@@ -3875,9 +3876,11 @@ extern "C" int memra_dsv4_dense_cutlass_armed(void) {
+ }
+ 
+ extern "C" int memra_dsv4_dense_cutlass_counts(uint64_t* splitk, uint64_t* declined,
+-                                               uint64_t* mirror_bytes, uint64_t* shapes_built) {
++                                               uint64_t* mirror_bytes, uint64_t* shapes_built,
++                                               uint64_t* ws_device_flips) {
+     if (!memra_dsv4_dense_cutlass_counts_for_gate) return 40084;
+-    return memra_dsv4_dense_cutlass_counts_for_gate(splitk, declined, mirror_bytes, shapes_built);
++    return memra_dsv4_dense_cutlass_counts_for_gate(splitk, declined, mirror_bytes, shapes_built,
++                                                    ws_device_flips);
+ }
+ 
+ #define DSV4_GEMV_FP8_M_CASE(MM)                                                     \
+diff --git a/crates/memra-engine/src/bin/dsv4_dense_arm_ab.rs b/crates/memra-engine/src/bin/dsv4_dense_arm_ab.rs
+index 4c59e78c6a..264d9b036b 100644
+--- a/crates/memra-engine/src/bin/dsv4_dense_arm_ab.rs
++++ b/crates/memra-engine/src/bin/dsv4_dense_arm_ab.rs
+@@ -121,12 +121,13 @@ fn main() {
+             let engaged = after.splitk - before.splitk;
+             println!(
+                 "PRIME rep={rep} arm={} seconds={seconds:.4} tok_per_s={:.1} splitk={engaged} \
+-                 declined={} mirror_MB={:.1} shapes_built={}",
++                 declined={} mirror_MB={:.1} shapes_built={} ws_device_flips={}",
+                 if on { "cutlass" } else { "scalar" },
+                 prompt.len() as f64 / seconds,
+                 after.declined - before.declined,
+                 after.mirror_bytes as f64 / 1e6,
+-                after.shapes_built
++                after.shapes_built,
++                after.ws_device_flips - before.ws_device_flips
+             );
+             if on && engaged == 0 {
+                 println!(
+diff --git a/crates/memra-engine/src/dsv4_gpu.rs b/crates/memra-engine/src/dsv4_gpu.rs
+index 1dccae1923..8724877e39 100644
+--- a/crates/memra-engine/src/dsv4_gpu.rs
++++ b/crates/memra-engine/src/dsv4_gpu.rs
+@@ -137,6 +137,12 @@ pub struct Dsv4DenseCutlassCounts {
+     /// stop growing while the call count keeps climbing; a prefill that builds a
+     /// shape per call has the cache defeated however fast the kernel is.
+     pub shapes_built: u64,
++    /// Calls that arrived on a different device from the call before them. dsv4f
++    /// serves PP-2 from ONE host thread that binds each stage in turn, so this is
++    /// how often the path crosses cards. It is the non-vacuity number for the
++    /// device-keyed split-K workspace: a run where it stays 0 never put two cards
++    /// through this path and cannot say whether keying by device mattered.
++    pub ws_device_flips: u64,
+ }
+ 
+ /// Stand the dense tensor-core path up or down for a GATE (memra #472).
+@@ -183,6 +189,7 @@ pub fn dense_cutlass_counts_for_gate() -> Option<Dsv4DenseCutlassCounts> {
+             declined: *mut u64,
+             mirror_bytes: *mut u64,
+             shapes_built: *mut u64,
++            ws_device_flips: *mut u64,
+         ) -> i32;
+     }
+     let mut counts = Dsv4DenseCutlassCounts {
+@@ -190,6 +197,7 @@ pub fn dense_cutlass_counts_for_gate() -> Option<Dsv4DenseCutlassCounts> {
+         declined: 0,
+         mirror_bytes: 0,
+         shapes_built: 0,
++        ws_device_flips: 0,
+     };
+     let rc = unsafe {
+         memra_dsv4_dense_cutlass_counts(
+@@ -197,6 +205,7 @@ pub fn dense_cutlass_counts_for_gate() -> Option<Dsv4DenseCutlassCounts> {
+             &mut counts.declined,
+             &mut counts.mirror_bytes,
+             &mut counts.shapes_built,
++            &mut counts.ws_device_flips,
+         )
+     };
+     (rc == 0).then_some(counts)
+-- 
+2.53.0
+
+
+From ecf319585e6b97e63111d8e7f19a083ed2c4ba12 Mon Sep 17 00:00:00 2001
+From: memra-lane <lane@localhost>
+Date: Fri, 11 Sep 2026 18:33:56 +0300
+Subject: [PATCH 9/9] dsv4 dense: the A/B cell refuses unless the drafter is
+ armed, because the first pair of runs died in the load and reported rc=0
+
+The served process this cell exists to reproduce runs with the drafter RESIDENT
+and the prime it times is the drafter's own chunked prime. Run without
+MEMRA_DSV4_DRAFTER=dspark the binary loads for 100 seconds and then panics
+inside dspark_alloc_state ("MEMRA_DSV4_DRAFTER=dspark not loaded"). Both arms of
+the first attempt died that way, at both widths, and the cell script's per-width
+`continue` turned four dead runs into a controller exit of 0, so the pair of
+receipts looked like cells that had run.
+
+So the binary states the condition it needs before it spends the load: unset or
+wrong, it prints AB_FAIL with the value it saw and exits 1. The cell script
+treats a failed width as fatal for the same reason.
+
+Signed-off-by: memra-lane <lane@localhost>
+---
+ crates/memra-engine/src/bin/dsv4_dense_arm_ab.rs | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/crates/memra-engine/src/bin/dsv4_dense_arm_ab.rs b/crates/memra-engine/src/bin/dsv4_dense_arm_ab.rs
+index 264d9b036b..bb203c62ce 100644
+--- a/crates/memra-engine/src/bin/dsv4_dense_arm_ab.rs
++++ b/crates/memra-engine/src/bin/dsv4_dense_arm_ab.rs
+@@ -68,6 +68,22 @@ fn main() {
+         Some(armed) => println!("PRESENT armed_at_start={armed}"),
+     }
+ 
++    // The served process runs with the drafter RESIDENT (`[dsv4-serve] ... drafter
++    // RESIDENT (spec route armed)`), and the prime this cell times is the drafter's
++    // own chunked prime. Without the arm the drafter is not loaded and the run dies
++    // 100 seconds into the load, inside `dspark_alloc_state`, with a panic that the
++    // first attempt at this cell mistook for a cell that had run. Refuse up front,
++    // and name the condition being matched.
++    let drafter = std::env::var("MEMRA_DSV4_DRAFTER").unwrap_or_default();
++    if drafter != "dspark" {
++        println!(
++            "AB_FAIL MEMRA_DSV4_DRAFTER={drafter:?}: this cell measures the SERVED shape, \
++             which loads the drafter (spec route armed), so it must be set to dspark"
++        );
++        std::process::exit(1);
++    }
++    println!("DRAFTER dspark (served shape)");
++
+     let tokenizer = Tokenizer::from_hf_dir(dir).expect("tokenizer");
+     let mut prompt = tokenizer.encode(&format!("Review this engine source:\n{source}"), true);
+     assert!(prompt.len() >= 1025, "do not pad/repeat source");
+-- 
+2.53.0
+

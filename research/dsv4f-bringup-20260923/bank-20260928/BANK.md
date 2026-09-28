@@ -45,3 +45,11 @@ record, `../ceiling/CEILING.md`).
 
 `lane/dsv4-vt-default-20260924` (#709, the per-slot DSpark window default) waits on the owner as
 before and is left as its own branch.
+
+## Older DSv4 lanes (`old-lanes/`)
+
+The commits of seven 2026-09-10/14 DSv4 lane branches that never reached main, as mbox patches
+against main at the stop (`git am` applies them). Their branches are left on origin:
+`dense-class`, `dense-cutlass-default`, `dense-cutlass-served`, `dense-cutlass-wiring`,
+`eos-park`, `prefill-chunk-tail` and `serve-prefill-width`. The `dense-cutlass-guard` and
+`dense-cutlass-keying` branches are fully merged.

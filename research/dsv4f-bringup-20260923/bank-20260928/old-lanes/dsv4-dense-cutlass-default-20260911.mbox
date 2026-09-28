@@ -1,0 +1,294 @@
+From 9cc592df0111a77dee74718c41627d008ac31613 Mon Sep 17 00:00:00 2001
+From: memra-lane <lane@localhost>
+Date: Mon, 14 Sep 2026 09:26:17 +0300
+Subject: [PATCH] wip: state banked at the 20260914 worktree sweep (uncommitted
+ work from wt-memra-dw-verdict-20260911)
+
+Signed-off-by: memra-lane <lane@localhost>
+---
+ crates/memra-engine/build.rs          | 49 ++++++++++++++++++----
+ crates/memra-engine/cu/dsv4_gpu.cu    | 60 ++++++++++++++++++++-------
+ crates/memra-engine/src/dsv4_doors.rs | 53 ++++++++++++++++++++---
+ docs/KERNELS.md                       | 31 ++++++++++----
+ 4 files changed, 159 insertions(+), 34 deletions(-)
+
+diff --git a/crates/memra-engine/build.rs b/crates/memra-engine/build.rs
+index c42bbf761f..ef56719409 100644
+--- a/crates/memra-engine/build.rs
++++ b/crates/memra-engine/build.rs
+@@ -628,6 +628,22 @@ fn main() {
+                 } else {
+                     args.push("-fmad=false".into());
+                 }
++                // The dense tensor-core archive below is linked into EVERY sm_120a build and
++                // there is no switch that leaves it out, so on this arch dsv4_gpu.cu declares
++                // the entry STRONG: a dropped archive becomes a link failure instead of a
++                // silently null weak symbol that serves the scalar path and makes an A/B
++                // compare one program against itself. Every other arch has no such kernel at
++                // all and keeps the weak declaration, where null is an architecture fact
++                // rather than a choice anybody made.
++                //
++                // The macro is deliberately NOT MEMRA_DSV4_-prefixed, like MEMRA_PORTABLE_CUDA
++                // and MEMRA_HOPPER_MMA above. dsv4_doors' coverage test derives its name set by
++                // scanning every cu/dsv4* file for MEMRA_DSV4_*/MEMRA_F16G_* tokens, so a
++                // compile-time macro carrying that prefix reads to it as an undeclared door and
++                // reddens the build. This is an nvcc -D, not an environment read.
++                if cuda_arch == "120a" {
++                    args.push("-DMEMRA_DENSE_CUTLASS_LINKED=1".into());
++                }
+             }
+             args.extend([
+                 "-c".into(),
+@@ -699,17 +715,36 @@ fn main() {
+     // DSV4 dense tensor-core path (memra #472). Deliberately INDEPENDENT of the MEMRA_CUTLASS
+     // block below: that one carries the fp4 experiment, sets the memra_cutlass cfg and pulls the
+     // fp4 Rust call sites in with it, and its archive hit an lld symbol-ordering failure on this
+-    // box. This path needs none of that. It has its own switch, its own archive, and NO cfg,
+-    // because cu/dsv4_gpu.cu declares memra_dsv4_dense_cutlass_fp8 WEAK: when this block does not
+-    // run the symbol is null and the scalar kernel runs untouched.
++    // box. This path needs none of that: its own archive, and NO cfg.
++    //
++    // NOT a switch any more. This used to read MEMRA_DSV4_CUTLASS, and the served A/B that
++    // decided the question measured +45.53% at a 3,686-token prefill, disjoint in both ABBA
++    // orders, on the merged main that carries the device-keyed workspace. Under the standing
++    // rule that a door is the default or it is deleted, the archive is now part of the DEFAULT
++    // sm_120a build and there is no way to ask for the scalar dense path at build time. The
++    // condition is the ARCHITECTURE, not an environment variable, because the kernel is
++    // sm_120a-only (docs/KERNELS.md): on 100a/90a/89 there is no tensor-core arm to link and
++    // the scalar kernel is the only correct code, so those builds neither need nor get a
++    // CUTLASS tree.
++    //
++    // The consequence is stated rather than buried: an sm_120a build now requires the CUTLASS
++    // header tree. `tools/install-cutlass.sh` fetches the pinned v3.9.2 and prints the export;
++    // CI runs it. The tree is headers only, 838 files, and the pin is by tarball sha256.
+     //
+     // -fmad=false to match cu/dsv4_gpu.cu, because this family's numerics are the point.
+-    if std::env::var("MEMRA_DSV4_CUTLASS").is_ok() {
+-        println!("cargo:rerun-if-env-changed=MEMRA_DSV4_CUTLASS");
++    if cuda_arch == "120a" {
+         let dense_src = "cu/dsv4_dense_cutlass.cu";
+         println!("cargo:rerun-if-changed={dense_src}");
+-        let root = std::env::var("MEMRA_CUTLASS_ROOT")
+-            .expect("MEMRA_DSV4_CUTLASS requires MEMRA_CUTLASS_ROOT");
++        let root = std::env::var("MEMRA_CUTLASS_ROOT").unwrap_or_else(|_| {
++            panic!(
++                "the default sm_120a build links the dense tensor-core archive \
++                 (cu/dsv4_dense_cutlass.cu) and needs the CUTLASS header tree. Run \
++                 tools/install-cutlass.sh and export what it prints, or point \
++                 MEMRA_CUTLASS_ROOT at an existing v3.9.2 tree. Build another arch \
++                 (MEMRA_CUDA_ARCH=100a|90a|89) if you need a CUTLASS-free build; the \
++                 dense tensor-core kernel is sm_120a-only."
++            )
++        });
+         let obj = out.join("dsv4_dense_cutlass.o");
+         let lib = out.join("libmemra_dsv4_cutlass.a");
+         let status = Command::new(&nvcc)
+diff --git a/crates/memra-engine/cu/dsv4_gpu.cu b/crates/memra-engine/cu/dsv4_gpu.cu
+index d74524529b..8651a2d863 100644
+--- a/crates/memra-engine/cu/dsv4_gpu.cu
++++ b/crates/memra-engine/cu/dsv4_gpu.cu
+@@ -3904,21 +3904,49 @@ __global__ void dsv4_gemv_fp8_m_kernel(const uint8_t* __restrict__ w,
+ 
+ #include "dsv4_dense_m1_exact_tail.cuh"
+ 
+-// Defined in cu/dsv4_dense_cutlass.cu, compiled only under MEMRA_DSV4_CUTLASS.
++// Defined in cu/dsv4_dense_cutlass.cu. On sm_120a build.rs links that archive into
++// EVERY build and defines MEMRA_DENSE_CUTLASS_LINKED, so the served entry is
++// declared STRONG there: a dropped archive is a link failure, not a null symbol that
++// quietly serves the scalar path. That is the failure this family already paid for
++// once, when an A/B compared two identical binaries and reported a clean null.
++// Every other arch has no such kernel (it is sm_120a-only), keeps the weak
++// declaration, and a null symbol there is an architecture fact, not a choice.
++#ifdef MEMRA_DENSE_CUTLASS_LINKED
++extern "C" int memra_dsv4_dense_cutlass_fp8(
++    const void* w_codes, const float* sc_f32, int sc_cols, const void* x_bf16, float* y, int m,
++    int n, int k, int xstride, int ystride, void* stream_v);
++#else
+ extern "C" __attribute__((weak)) int memra_dsv4_dense_cutlass_fp8(
+     const void* w_codes, const float* sc_f32, int sc_cols, const void* x_bf16, float* y, int m,
+     int n, int k, int xstride, int ystride, void* stream_v);
++#endif
+ extern "C" __attribute__((weak)) int memra_dsv4_dense_cutlass_set_for_gate(int on);
+ extern "C" __attribute__((weak)) int memra_dsv4_dense_cutlass_armed_for_gate();
+ extern "C" __attribute__((weak)) int memra_dsv4_dense_cutlass_counts_for_gate(
+     uint64_t* splitk, uint64_t* declined, uint64_t* mirror_bytes, uint64_t* shapes_built,
+     uint64_t* ws_device_flips);
+ 
+-// Unconditionally-linked wrappers, so Rust can call the gate arm from a binary
+-// built WITHOUT the CUTLASS archive and get a named refusal rather than a link
+-// error. 40084 means "this binary does not contain the path", which is a fact a
+-// gate needs to be able to read: a class cell whose OFF arm and ON arm are the
+-// same program has to fail rather than report zero drift.
++// The ONE place the architecture difference is spelled. Returns 0 when the tensor-core
++// path ran, 40080 when the shape was declined or the arch has no such kernel, and any
++// other code unchanged so a real failure is never laundered into a fallback. The call
++// site below is therefore unconditional: which kernel a shape gets is decided by the
++// tensor-core path's own admission rules, never by a build flag or an environment read.
++static inline int dsv4_dense_try_tensorcore(const void* w_codes, const float* sc_f32, int sc_cols,
++                                            const void* x_bf16, float* y, int m, int n, int k,
++                                            int xstride, int ystride, void* stream_v) {
++#ifndef MEMRA_DENSE_CUTLASS_LINKED
++    if (!memra_dsv4_dense_cutlass_fp8) return 40080;
++#endif
++    return memra_dsv4_dense_cutlass_fp8(w_codes, sc_f32, sc_cols, x_bf16, y, m, n, k, xstride,
++                                        ystride, stream_v);
++}
++
++// Unconditionally-linked wrappers, so Rust can call the gate arm from an arch that has
++// no tensor-core kernel at all (100a/90a/89) and get a named refusal rather than a link
++// error. 40084 means "this binary does not contain the path", which is a fact a gate
++// needs to be able to read: a class cell whose OFF arm and ON arm are the same program
++// has to fail rather than report zero drift. On sm_120a the archive is always linked, so
++// 40084 is unreachable there and "off" is a real, armed state rather than an absence.
+ extern "C" int memra_dsv4_dense_cutlass_arm(int on) {
+     if (!memra_dsv4_dense_cutlass_set_for_gate) return 40084;
+     return memra_dsv4_dense_cutlass_set_for_gate(on);
+@@ -3974,15 +4002,17 @@ extern "C" int memra_dsv4_gemv_fp8_m(const void* w_codes, const float* sc_f32, i
+         return 0;
+     }
+     dsv4_dense_census_note(DSV4_DENSE_ENTRY_GEMV_FP8, m, n, k);
+-    // Tensor-core dense path (memra #472). Declared WEAK because it is compiled
+-    // only under MEMRA_DSV4_CUTLASS; when it is absent the symbol is null and the
+-    // scalar kernel below runs exactly as it always has. When it is present it
+-    // still declines every shape it does not admit, and declining is normal
+-    // rather than an error, so the scalar kernel remains the fallback for the
+-    // strided grouped-output projection and for every m below DSV4_TMAX.
+-    if (memra_dsv4_dense_cutlass_fp8) {
+-        int rc = memra_dsv4_dense_cutlass_fp8(w_codes, sc_f32, sc_cols, x_bf16, y, m, n, k, xstride,
+-                                              ystride, stream_v);
++    // Tensor-core dense path (memra #472), the DEFAULT on sm_120a since the served A/B
++    // measured +45.53% at a 3,686-token prefill, disjoint in both ABBA orders. There is
++    // no arm to select here and no environment read behind it: the shape either is
++    // admitted by the tensor-core path's own rules or it is not. Declining is normal
++    // rather than an error, so the scalar kernel below stays the SHAPE-COVERAGE fallback
++    // for the strided grouped-output projection and for every m below the admitted 32,
++    // and it is reachable as a forced REFERENCE arm only through
++    // memra_dsv4_dense_cutlass_arm(0), which no serving process calls.
++    {
++        int rc = dsv4_dense_try_tensorcore(w_codes, sc_f32, sc_cols, x_bf16, y, m, n, k, xstride,
++                                           ystride, stream_v);
+         if (rc == 0) return 0;
+         if (rc != 40080) return rc;  // a real failure is a failure, not a fallback
+     }
+diff --git a/crates/memra-engine/src/dsv4_doors.rs b/crates/memra-engine/src/dsv4_doors.rs
+index 9de89810de..84b696a24a 100644
+--- a/crates/memra-engine/src/dsv4_doors.rs
++++ b/crates/memra-engine/src/dsv4_doors.rs
+@@ -920,6 +920,54 @@ mod tests {
+         assert!(matrix_expert_program_resolved());
+     }
+ 
++    /// The dense tensor-core path has no switch, at build time or at runtime. It used to
++    /// be `MEMRA_DSV4_CUTLASS`, an exemption in the list below; the served A/B
++    /// (+45.53% at a 3,686-token prefill, ranges disjoint in both ABBA orders) made the
++    /// archive part of the DEFAULT sm_120a build and the name left the tree. The red arm
++    /// is the source itself: reintroduce the switch and this fails naming the file,
++    /// because a build flag that selects which kernel serves is an OFF door wearing a
++    /// different layer, and the door rule does not care which layer it lives at.
++    ///
++    /// This file is deliberately absent from the scanned set. It names the removed
++    /// variable in this very assertion, which is the same self-reference the coverage
++    /// derivation excludes it for.
++    #[test]
++    fn the_dense_tensor_core_path_has_no_switch_that_turns_it_off() {
++        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
++        for rel in [
++            "build.rs",
++            "cu/dsv4_gpu.cu",
++            "cu/dsv4_dense_cutlass.cu",
++            "src/dsv4_gpu.rs",
++        ] {
++            let path = root.join(rel);
++            let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path:?}: {e}"));
++            assert!(
++                !text.contains("MEMRA_DSV4_CUTLASS"),
++                "{rel} names the removed build switch again: the dense tensor-core archive \
++                 is part of the default sm_120a build and must not be switchable"
++            );
++        }
++        // What gates the archive now is the ARCHITECTURE, which nobody chooses per build,
++        // and the macro carrying that fact to the dispatch is what makes a dropped
++        // archive a link failure on sm_120a instead of a silently scalar binary.
++        let build = std::fs::read_to_string(root.join("build.rs")).expect("build.rs");
++        assert!(
++            build.contains("MEMRA_DENSE_CUTLASS_LINKED"),
++            "build.rs must still tell dsv4_gpu.cu whether it linked the archive"
++        );
++        assert!(
++            build.contains("cu/dsv4_dense_cutlass.cu"),
++            "build.rs must still compile the dense tensor-core kernel"
++        );
++        let cu = std::fs::read_to_string(root.join("cu/dsv4_gpu.cu")).expect("dsv4_gpu.cu");
++        assert!(
++            cu.contains("dsv4_dense_try_tensorcore"),
++            "the served dispatch must go through the one helper that spells the arch \
++             difference, so the call site itself stays unconditional"
++        );
++    }
++
+     #[test]
+     fn every_declared_door_has_a_flags_row() {
+         let flags = std::fs::read_to_string(
+@@ -946,11 +994,6 @@ mod tests {
+             "gate-only all-reduce phase instrument, refuses to load unarmed",
+         ),
+         ("MEMRA_DSV4_BENCH_PROFILE", "bench profile selector"),
+-        (
+-            "MEMRA_DSV4_CUTLASS",
+-            "build-time archive switch; when the archive is linked the dense \
+-             tensor-core path IS the code, and no serving process reads it",
+-        ),
+         ("MEMRA_DSV4_DECODE_PATH", "program selector"),
+         ("MEMRA_DSV4_DENSE_ARM", "program selector"),
+         ("MEMRA_DSV4_DOTS_ARM", "program selector"),
+diff --git a/docs/KERNELS.md b/docs/KERNELS.md
+index f684d9b982..84845b623a 100644
+--- a/docs/KERNELS.md
++++ b/docs/KERNELS.md
+@@ -34,19 +34,36 @@ above `DSV4_TMAX` byte-identical to the untiled width-32 walk and carries two re
+ arms. The measurement that made this the default is in the removed-doors ledger
+ in `docs/FLAGS.md` and in darklanes `research/dsv4f-dense-tile-20260910/`.
+ 
+-## DSV4 dense tensor-core path, 2026-09-11 (memra #472)
++## DSV4 dense tensor-core path, 2026-09-11 (memra #472), the sm_120a DEFAULT 2026-09-12
+ 
+ CUTLASS split-K at the per-128 block-scale granularity (the scale multiplies the f32 block
+ partial sum in `scaled_reduce_kernel`; folding it into a bf16 operand is refused on numerics).
+-Compiled only under `MEMRA_DSV4_CUTLASS`; the dispatch declares the entry WEAK, so without the
+-archive the scalar kernel runs untouched. Gate-armed only (`arm_dense_cutlass_for_gate`); there
+-is no env read and no serving caller. Numeric class NEW: mma fragment registers per 128-k block,
+-never bit-equal to the shipped 128-leaf smem tree. Drift rows plus the paired accuracy control
+-are owed before default.
++
++Linked into EVERY sm_120a build. The `MEMRA_DSV4_CUTLASS` build switch is deleted, so no build
++serves the scalar dense path for a shape this admits, and on that arch the entry symbol is
++declared STRONG rather than weak: a dropped archive is now a link failure instead of a silently
++scalar binary, which is the failure mode that once made an A/B compare one program against
++itself and report a clean null. Every other arch has no such kernel (sm_120a-only) and keeps the
++weak declaration, where a null symbol is an architecture fact and not a choice. See the
++removed-doors ledger in `docs/FLAGS.md`.
++
++The scalar kernel stays in tree with two jobs that are not an arm: SHAPE COVERAGE for what this
++declines by its own admission rules, and the reference side of every class row, reachable only
++through `arm_dense_cutlass_for_gate(false)`, which no serving process calls.
++
++Numeric class NEW: mma fragment registers per 128-k block, never bit-equal to the shipped
++128-leaf smem tree, so no bit-identity gate can pass on it and none was run. What was run
++instead, all banked in darklanes `research/dsv4f-dense-perrow-20260910/`: drift over 448
++teacher-forced paired rows (21 top-1 changes, greedy identity 427/448, KL means ~1e-2 in both
++directions, Hebrew the highest-drift domain), a paired accuracy control WITH Hebrew coverage
++(twin 300 at -2.0pp McNemar p=0.18, Hebrew 100 at -3.0pp p=0.375, neither significant at 5%,
++frozen scorer bodies), and the served end-to-end A/B that made this the default: **+45.53% at a
++3,686-token prefill and +45.09% at 981, arm ranges disjoint in both ABBA orders, 20/20 boots
++eligible with the device-keyed workspace crossing cards 71 times per boot**.
+ 
+ | Symbol | Purpose | Types | Architecture | Door | Binding |
+ | --- | --- | --- | --- | --- | --- |
+-| `memra_dsv4_dense_cutlass_fp8` | Split-K CUTLASS GEMM over the lazy bf16 mirror plus scaled f32 reduction; admits m=32, k%128=0, xstride=k | e4m3 weights (lossless bf16 mirror), bf16 activations, f32 accumulate | sm_120a | None (naked default when linked) | `memra_dsv4_gemv_fp8_m` |
++| `memra_dsv4_dense_cutlass_fp8` | Split-K CUTLASS GEMM over the lazy bf16 mirror plus scaled f32 reduction; admits m=32, k%128=0, xstride=k | e4m3 weights (lossless bf16 mirror), bf16 activations, f32 accumulate | sm_120a | None at any layer: the default sm_120a build, no env read and no build switch | `memra_dsv4_gemv_fp8_m` |
+ | `scaled_reduce_kernel` | Per-output scaled sum over k/128 f32 partials | f32 partials and scales, f32 out | sm_120a | None | `memra_dsv4_dense_cutlass_fp8` |
+ 
+ ## Whisper CPU reference operators, 2026-09-09
+-- 
+2.53.0
+
