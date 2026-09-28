@@ -173,6 +173,10 @@ async fn run_capture(
         // Capture requests never enter the first-token deadline gate (their prime IS
         // the product), so no wire deadline is carried.
         wire_deadline: None,
+        // memra#522: the hybrid-lane queue-wait histogram's start. A capture request still
+        // crosses the same admission queue as any generating request (it just never emits
+        // a token, so it contributes no TTFT sample).
+        queued_at: std::time::Instant::now(),
         route_ticket: None,
         ttft: None,
         tx,
