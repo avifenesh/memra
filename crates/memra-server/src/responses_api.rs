@@ -659,6 +659,11 @@ async fn responses_with_admission(
             );
         }
     };
+    // Captured from the RAW request before `translate` strips the field (memra#550): the
+    // door-open check here mirrors `translate`'s own gate exactly, so this can only be true
+    // when `translate` is about to accept `background: true` rather than refuse it below.
+    let background_requested =
+        background_door_open() && parsed.get("background").and_then(|b| b.as_bool()) == Some(true);
     let translated = match translate(&parsed) {
         Ok(v) => v,
         Err((msg, param)) => {
@@ -708,6 +713,7 @@ async fn responses_with_admission(
         body_admission
             .as_ref()
             .map(|Extension(admission)| admission),
+        background_requested,
     )
     .await;
     let admission = match admitted {
@@ -723,6 +729,24 @@ async fn responses_with_admission(
         stop_strings,
         deadline,
     } = admission;
+    // `translate` refuses `background: true` combined with `stream: true` as a
+    // contradiction, so `background_requested` implies `!stream` here; the deadline this
+    // admission computed is spent on nothing (background removes the wall-clock bound per
+    // the design doc, point 2) and simply dropped.
+    if background_requested {
+        return handle_background_submit(
+            st.clone(),
+            env,
+            model,
+            rx,
+            receipt,
+            guard,
+            rl,
+            parser,
+            stop_strings,
+        )
+        .await;
+    }
     if stream {
         // Streaming: timeout_ms bounds TIME-TO-FIRST-TOKEN only. The ordinary <=90 s
         // path stays pre-header; an explicitly extended deployment may commit during
@@ -835,6 +859,603 @@ async fn responses_with_admission(
     let resp = axum::Json(body).into_response();
     drop(guard);
     rl.attach(crate::with_request_id(&env.id, resp))
+}
+
+// ---- background jobs (memra#550, docs/decisions/COMPLETE-RESULT-PATH-V1.md) ------------
+//
+// The route wiring PR #900/#905 named as owed: `background: true` with the door open no
+// longer runs synchronously. It is admitted exactly like any other request (budget, capacity,
+// deadline-feasibility gates all run unchanged), then handed to a spawned task that drives
+// the worker's event stream with NO wall-clock bound instead of being awaited inline, while
+// the handler answers immediately with a queued envelope carrying the request id. `GET
+// /v1/responses/{id}` polls `JobStore::get`; `POST /v1/responses/{id}/cancel` signals the
+// spawned task to stop and drop its `EventReceiver` (the same cancel idiom the deadline-miss
+// path already uses), then waits briefly for the task's own terminal write.
+
+/// One background job's output rendered the same way a synchronous call would have rendered
+/// it (`text_item` / `reasoning_item` / `call_item`): a `GET` on a finished job must return
+/// exactly the accumulator that was actually produced, never a resummarized or regenerated
+/// answer.
+fn build_output_array(
+    text: &str,
+    reasoning: &str,
+    calls: &[crate::toolcall::ParsedToolCall],
+) -> Vec<Value> {
+    let mut output: Vec<Value> = Vec::new();
+    if !reasoning.is_empty() {
+        output.push(reasoning_item(
+            &format!("rs_{}", crate::gen_hex128()),
+            reasoning,
+        ));
+    }
+    if !text.is_empty() {
+        output.push(text_item(&format!("msg_{}", crate::gen_hex128()), text));
+    }
+    for call in calls {
+        output.push(call_item(&format!("fc_{}", crate::gen_hex128()), call));
+    }
+    output
+}
+
+fn job_status_str(s: crate::metering::JobStatus) -> &'static str {
+    use crate::metering::JobStatus as S;
+    match s {
+        S::Queued => "queued",
+        S::InProgress => "in_progress",
+        S::Completed => "completed",
+        S::Incomplete => "incomplete",
+        S::Failed => "failed",
+        S::Cancelled => "cancelled",
+    }
+}
+
+/// Render one `JobStore` record as the poll/cancel response body. Terminal states with a
+/// stored envelope (`Completed`/`Incomplete`/`Cancelled`, always populated by
+/// [`run_background_job`]) return that envelope verbatim; `Failed` and the two non-terminal
+/// states have no full envelope to carry (a `Failed` job's `output` is always `None` by
+/// construction) and get a minimal `{id, object, status[, error]}` body instead.
+fn job_record_response(id: &str, record: crate::metering::JobRecord) -> Response {
+    use crate::metering::JobStatus as S;
+    match record.status {
+        S::Completed | S::Incomplete | S::Cancelled => match record.output {
+            Some(body) => axum::Json(body).into_response(),
+            None => axum::Json(json!({
+                "id": id, "object": "response", "status": job_status_str(record.status),
+            }))
+            .into_response(),
+        },
+        S::Failed => axum::Json(json!({
+            "id": id,
+            "object": "response",
+            "status": "failed",
+            "error": {
+                "message": record.error.unwrap_or_else(|| "background job failed".to_string()),
+                "type": "server_error",
+                "code": "background_job_failed",
+            },
+        }))
+        .into_response(),
+        S::Queued | S::InProgress => axum::Json(json!({
+            "id": id, "object": "response", "status": job_status_str(record.status),
+        }))
+        .into_response(),
+    }
+}
+
+/// Admit-then-answer-immediately half of a background submission: puts the job's `Queued`
+/// placeholder into the store (the write that mints the id there, and the only point a
+/// `CapacityExceeded` byte-cap refusal can land, before any worker time is spent), arms the
+/// cancel signal, answers the caller, then spawns [`run_background_job`] to drive the rest.
+#[allow(clippy::too_many_arguments)]
+async fn handle_background_submit(
+    st: AppState,
+    env: Envelope,
+    model: String,
+    rx: crate::worker::EventReceiver,
+    receipt: Option<Box<dyn crate::metering::Receipt>>,
+    guard: crate::InflightGuard,
+    rl: crate::RateLimit,
+    parser: Option<crate::toolcall::ToolStreamParser>,
+    stop_strings: Vec<String>,
+) -> Response {
+    let id = env.id.clone();
+    if let Err(err) = st.job_store.put(&id, crate::metering::JobRecord::queued()) {
+        drop(guard);
+        let code = match err {
+            crate::metering::JobStoreError::CapacityExceeded => {
+                "background_job_store_capacity_exceeded"
+            }
+            _ => "background_job_store_unavailable",
+        };
+        let resp = crate::error_response_coded(
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            "the background job store cannot admit this request right now",
+            "server_error",
+            None,
+            Some(code),
+        );
+        // Same discipline as every other admission refusal (revuto caught this returning
+        // a bare response and letting the receipt drop unfinalized, which the metering
+        // seam's Drop then prices as an abandoned CLIENT rather than OUR refusal).
+        return rl.attach(crate::ledger_rejected(receipt, resp, code, &env.id));
+    }
+
+    let notify = std::sync::Arc::new(tokio::sync::Notify::new());
+    st.background_cancel
+        .lock()
+        .unwrap()
+        .insert(id.clone(), notify.clone());
+
+    let body = response_json(&env, &model, "queued", &[], None, Value::Null, Value::Null);
+    let immediate = rl.attach(crate::with_request_id(
+        &env.id,
+        axum::Json(body).into_response(),
+    ));
+
+    let bg_state = st.clone();
+    let cleanup_state = st;
+    let bg_env = env;
+    let bg_model = model;
+    let bg_id = id.clone();
+    tokio::spawn(async move {
+        run_background_job(
+            bg_state,
+            bg_id.clone(),
+            bg_env,
+            bg_model,
+            rx,
+            receipt,
+            guard,
+            parser,
+            stop_strings,
+            notify,
+        )
+        .await;
+        // The task's own terminal write already landed; nothing left to signal.
+        cleanup_state
+            .background_cancel
+            .lock()
+            .unwrap()
+            .remove(&bg_id);
+    });
+
+    immediate
+}
+
+/// Drive one background job's worker event stream to a terminal state and write the result
+/// into the `JobStore`. This is `surfaces::collect_final`'s event handling with the two
+/// differences the design doc calls for on this surface: no wall-clock deadline (background
+/// removes the 90 s bound), and a cancellation signal that can interrupt the loop
+/// mid-generation, dropping `rx` (the same idiom `blocking_response_with_receipt` and this
+/// module's own synchronous deadline path already use to stop a worker) and settling the
+/// ledger with the new `cancelled` outcome instead of a deadline one. Exactly one terminal
+/// `JobStore::put` happens on every path out of this function, matching the exactly-one
+/// terminal ledger row the `Receipt` calls below already guarantee.
+///
+/// Write a job's terminal state, falling back to a small `Failed` record if the primary
+/// write is refused. `InMemoryJobStore::put` re-checks its byte cap on every update, so a
+/// large `Completed`/`Incomplete`/`Cancelled` body can be refused even though the tiny
+/// `Queued` placeholder that minted the id fit under the same cap. Swallowing that error
+/// (the first version of this lane did) leaves the job stuck `InProgress` forever: the
+/// receipt has already billed the caller, `GET` answers `in_progress` forever, and the TTL
+/// sweep never evicts it because `finished_at` is stamped only by a successful terminal
+/// write. The fallback record is small enough to always fit, so it keeps the "exactly one
+/// terminal `JobStore` row" guarantee even when the real output could not be buffered.
+fn finalize_terminal_job(
+    store: &dyn crate::metering::JobStore,
+    id: &str,
+    record: crate::metering::JobRecord,
+) {
+    if store.put(id, record).is_err() {
+        let _ = store.put(
+            id,
+            crate::metering::JobRecord {
+                status: crate::metering::JobStatus::Failed,
+                output: None,
+                error: Some(
+                    "background job output could not be buffered (store capacity); the \
+                     result may already be billed but is not retrievable"
+                        .to_string(),
+                ),
+            },
+        );
+    }
+}
+
+/// Every terminal write here goes through [`finalize_terminal_job`] rather than a bare
+/// `put`, so a refused write (revuto's finding on the first version of this lane:
+/// `InMemoryJobStore::put` re-checks the byte cap on every update, so a large completed or
+/// cancelled body can be refused even though the `Queued` placeholder fit) cannot leave the
+/// job stuck `InProgress` forever: already billed, `GET` answering `in_progress` forever,
+/// never TTL-evicted because `finished_at` is only stamped on a SUCCESSFUL terminal put.
+#[allow(clippy::too_many_arguments)]
+async fn run_background_job(
+    st: AppState,
+    id: String,
+    env: Envelope,
+    model: String,
+    mut rx: crate::worker::EventReceiver,
+    mut receipt: Option<Box<dyn crate::metering::Receipt>>,
+    guard: crate::InflightGuard,
+    mut parser: Option<crate::toolcall::ToolStreamParser>,
+    stop_strings: Vec<String>,
+    notify: std::sync::Arc<tokio::sync::Notify>,
+) {
+    use crate::metering::{JobRecord, JobStatus, UsageCounts};
+
+    let mut text = String::new();
+    let mut reasoning = String::new();
+    let mut calls: Vec<crate::toolcall::ParsedToolCall> = Vec::new();
+    let mut n_completion_tokens: u64 = 0;
+    let mut usage = UsageCounts::default();
+    let started = std::time::Instant::now();
+
+    let _ = st.job_store.put(
+        &id,
+        JobRecord {
+            status: JobStatus::InProgress,
+            output: None,
+            error: None,
+        },
+    );
+
+    loop {
+        tokio::select! {
+            _ = notify.notified() => {
+                drop(rx); // the cancel signal: the worker prunes the closed channel
+                let elapsed = started.elapsed().as_secs_f64();
+                let ledger_ok = if n_completion_tokens > 0 {
+                    match receipt.as_mut() {
+                        Some(r) => match r.complete_deadline_partial(usage, elapsed) {
+                            Ok(()) => true,
+                            Err(err) => {
+                                eprintln!(
+                                    "[ledger] ERROR: background job {id} cancel-partial \
+                                     receipt failed: {err}"
+                                );
+                                // A pricing failure here leaves the receipt unfinalized;
+                                // settle it rejected (best effort) so Drop cannot bill OUR
+                                // bookkeeping failure as a client abandon.
+                                let _ = r.reject(500, "request_ledger_unavailable");
+                                false
+                            }
+                        },
+                        None => true,
+                    }
+                } else {
+                    if let Some(r) = receipt.as_mut() {
+                        let _ = r.settle_unbilled("cancelled", 409, "cancelled");
+                    }
+                    true
+                };
+                if !ledger_ok {
+                    finalize_terminal_job(
+                        &*st.job_store,
+                        &id,
+                        JobRecord {
+                            status: JobStatus::Failed,
+                            output: None,
+                            error: Some("request_ledger_unavailable".to_string()),
+                        },
+                    );
+                    drop(guard);
+                    return;
+                }
+                let output = build_output_array(&text, &reasoning, &calls);
+                let body = response_json(
+                    &env,
+                    &model,
+                    "cancelled",
+                    &output,
+                    Some(usage_json(
+                        usage.prompt_tokens as usize,
+                        usage.completion_tokens as usize,
+                        usage.cached_prompt_tokens as usize,
+                    )),
+                    Value::Null,
+                    Value::Null,
+                );
+                finalize_terminal_job(
+                    &*st.job_store,
+                    &id,
+                    JobRecord { status: JobStatus::Cancelled, output: Some(body), error: None },
+                );
+                drop(guard);
+                return;
+            }
+            ev = rx.recv() => {
+                let Some(ev) = ev else {
+                    if let Some(r) = receipt.as_mut() {
+                        let _ = r.reject(500, "worker_channel_closed");
+                    }
+                    finalize_terminal_job(
+                        &*st.job_store,
+                        &id,
+                        JobRecord {
+                            status: JobStatus::Failed,
+                            output: None,
+                            error: Some("worker channel closed before completion".to_string()),
+                        },
+                    );
+                    drop(guard);
+                    return;
+                };
+                match ev {
+                    Event::PromptCapture { .. } => {}
+                    Event::PromptUsage { n_prompt, n_cached } => {
+                        usage.prompt_tokens = n_prompt as u64;
+                        usage.cached_prompt_tokens = n_cached as u64;
+                        if let Some(r) = receipt.as_mut()
+                            && let Err(err) = r.record_prompt_usage(n_prompt as u64, n_cached as u64)
+                        {
+                            eprintln!(
+                                "[ledger] ERROR: background job {id} prompt receipt failed: {err}"
+                            );
+                            let _ = r.reject(500, "request_ledger_unavailable");
+                            finalize_terminal_job(
+                                &*st.job_store,
+                                &id,
+                                JobRecord {
+                                    status: JobStatus::Failed,
+                                    output: None,
+                                    error: Some("ledger error".to_string()),
+                                },
+                            );
+                            drop(guard);
+                            return;
+                        }
+                    }
+                    Event::Token { text: delta, .. } => {
+                        n_completion_tokens += 1;
+                        usage.completion_tokens = n_completion_tokens;
+                        if let Some(r) = receipt.as_mut() {
+                            if let Err(err) = r.record_completion_token() {
+                                eprintln!(
+                                    "[ledger] ERROR: background job {id} completion receipt \
+                                     failed: {err}"
+                                );
+                                let _ = r.reject(500, "request_ledger_unavailable");
+                                finalize_terminal_job(
+                                    &*st.job_store,
+                                    &id,
+                                    JobRecord {
+                                        status: JobStatus::Failed,
+                                        output: None,
+                                        error: Some("ledger error".to_string()),
+                                    },
+                                );
+                                drop(guard);
+                                return;
+                            }
+                            r.capture_completion_delta(&delta);
+                        }
+                        match parser.as_mut() {
+                            Some(p) => {
+                                for piece in p.push(&delta) {
+                                    match piece {
+                                        Piece::Content(t) => text.push_str(&t),
+                                        Piece::Reasoning(t) => reasoning.push_str(&t),
+                                        Piece::Call(c) => calls.push(c),
+                                    }
+                                }
+                            }
+                            None => text.push_str(&delta),
+                        }
+                    }
+                    Event::TokenSnapshot(_) => {}
+                    Event::Error(err) => {
+                        if let Some(r) = receipt.as_mut() {
+                            let _ = r.reject(
+                                crate::class_http(err.class).0.as_u16(),
+                                crate::engine_error_code(err.class),
+                            );
+                        }
+                        finalize_terminal_job(
+                            &*st.job_store,
+                            &id,
+                            JobRecord {
+                                status: JobStatus::Failed,
+                                output: None,
+                                error: Some(err.message.clone()),
+                            },
+                        );
+                        drop(guard);
+                        return;
+                    }
+                    Event::DeadlineExceeded { .. } => {
+                        if let Some(r) = receipt.as_mut() {
+                            let _ = r.settle_unbilled(
+                                "deadline_exceeded",
+                                408,
+                                "deadline_exceeded",
+                            );
+                        }
+                        finalize_terminal_job(
+                            &*st.job_store,
+                            &id,
+                            JobRecord {
+                                status: JobStatus::Failed,
+                                output: None,
+                                error: Some("deadline_exceeded".to_string()),
+                            },
+                        );
+                        drop(guard);
+                        return;
+                    }
+                    Event::Done {
+                        stop_reason,
+                        n_tokens,
+                        n_prompt,
+                        n_cached,
+                        elapsed_s,
+                        ..
+                    } => {
+                        if let Some(p) = parser.as_mut() {
+                            for piece in p.finish() {
+                                match piece {
+                                    Piece::Content(t) => text.push_str(&t),
+                                    Piece::Reasoning(t) => reasoning.push_str(&t),
+                                    Piece::Call(c) => calls.push(c),
+                                }
+                            }
+                        }
+                        if let Some((at, _)) = stop_strings
+                            .iter()
+                            .filter_map(|s| text.find(s).map(|at| (at, s)))
+                            .min_by_key(|(at, _)| *at)
+                        {
+                            text.truncate(at);
+                        }
+                        let done_usage = UsageCounts {
+                            prompt_tokens: n_prompt as u64,
+                            cached_prompt_tokens: n_cached as u64,
+                            completion_tokens: n_tokens as u64,
+                        };
+                        if let Some(r) = receipt.as_mut()
+                            && let Err(err) = r.complete(done_usage, elapsed_s)
+                        {
+                            eprintln!(
+                                "[ledger] ERROR: background job {id} completion receipt \
+                                 failed: {err}"
+                            );
+                            // Same discipline as the cancel-partial and synchronous paths:
+                            // a pricing failure inside complete() leaves the receipt
+                            // unfinalized; settle it rejected (best effort) so Drop cannot
+                            // bill OUR bookkeeping failure as a client abandon, and answer
+                            // the job Failed rather than claim a completion that was never
+                            // actually billed.
+                            let _ = r.reject(500, "request_ledger_unavailable");
+                            finalize_terminal_job(
+                                &*st.job_store,
+                                &id,
+                                JobRecord {
+                                    status: JobStatus::Failed,
+                                    output: None,
+                                    error: Some("request_ledger_unavailable".to_string()),
+                                },
+                            );
+                            drop(guard);
+                            return;
+                        }
+                        let output = build_output_array(&text, &reasoning, &calls);
+                        let (status_str, incomplete) = match incomplete_reason(&stop_reason) {
+                            Some(reason) => ("incomplete", json!({ "reason": reason })),
+                            None => ("completed", Value::Null),
+                        };
+                        let job_status = if status_str == "incomplete" {
+                            JobStatus::Incomplete
+                        } else {
+                            JobStatus::Completed
+                        };
+                        let body = response_json(
+                            &env,
+                            &model,
+                            status_str,
+                            &output,
+                            Some(usage_json(n_prompt, n_tokens, n_cached)),
+                            Value::Null,
+                            incomplete,
+                        );
+                        finalize_terminal_job(
+                            &*st.job_store,
+                            &id,
+                            JobRecord { status: job_status, output: Some(body), error: None },
+                        );
+                        drop(guard);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// `GET /v1/responses/{id}`: poll a background job. Authenticates against the same tenant
+/// keyring as every other surface; does not (yet) check that the polling tenant is the one
+/// that submitted the job (memra#550 owed gap, named in the PR: any authenticated tenant
+/// that knows a job id can poll or cancel it).
+pub(crate) async fn poll_admitted(
+    State(st): State<AppState>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Response {
+    if let Err(why) =
+        surfaces::authenticate_candidates(&st.api_auth, &[crate::bearer_token(&headers)])
+    {
+        return crate::authentication_error(why);
+    }
+    match st.job_store.get(&id) {
+        None => crate::error_response(
+            axum::http::StatusCode::NOT_FOUND,
+            "no background job with this id",
+            "invalid_request_error",
+            None,
+        ),
+        Some(record) => job_record_response(&id, record),
+    }
+}
+
+/// `POST /v1/responses/{id}/cancel`: cancel a background job. 404 if the id is unknown or
+/// past its TTL; 409 if the job already reached a terminal state (a cancel after completion
+/// is refused, not a silent no-op, so a caller cannot mistake it for having stopped a
+/// generation that already finished). Otherwise signals the running task and waits briefly
+/// for its own terminal write before answering, so the response body reflects the actual
+/// outcome rather than "cancellation requested".
+pub(crate) async fn cancel_admitted(
+    State(st): State<AppState>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Response {
+    if let Err(why) =
+        surfaces::authenticate_candidates(&st.api_auth, &[crate::bearer_token(&headers)])
+    {
+        return crate::authentication_error(why);
+    }
+    let record = match st.job_store.get(&id) {
+        None => {
+            return crate::error_response(
+                axum::http::StatusCode::NOT_FOUND,
+                "no background job with this id",
+                "invalid_request_error",
+                None,
+            );
+        }
+        Some(r) => r,
+    };
+    if record.status.is_terminal() {
+        return crate::error_response_coded(
+            axum::http::StatusCode::CONFLICT,
+            "this background job already reached a terminal state and cannot be cancelled",
+            "invalid_request_error",
+            None,
+            Some("background_job_already_terminal"),
+        );
+    }
+    let notify = st.background_cancel.lock().unwrap().get(&id).cloned();
+    if let Some(n) = notify {
+        n.notify_one();
+    }
+    // Poll briefly for the background task's own terminal write (it is the only writer of a
+    // terminal state; see `run_background_job`). Bounded so a task that is slow to notice the
+    // signal cannot hold this handler open indefinitely; a real GPU worker's next tick is the
+    // same order of magnitude the existing deadline-miss cancel path already assumes.
+    for _ in 0..200 {
+        if let Some(r) = st.job_store.get(&id)
+            && r.status.is_terminal()
+        {
+            return job_record_response(&id, r);
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
+    match st.job_store.get(&id) {
+        Some(r) => job_record_response(&id, r),
+        None => crate::error_response(
+            axum::http::StatusCode::NOT_FOUND,
+            "no background job with this id",
+            "invalid_request_error",
+            None,
+        ),
+    }
 }
 
 /// The Responses streaming vocabulary over the worker's event stream, with the SAME
