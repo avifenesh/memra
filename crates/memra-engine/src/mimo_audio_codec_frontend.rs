@@ -53,6 +53,20 @@ unsafe extern "C" {
         fault: *mut i32,
         stream: *mut c_void,
     ) -> i32;
+    #[cfg(test)]
+    fn memra_bf16_pp_gemm_bias_out_bf16(
+        weight: *const c_void,
+        input: *const f32,
+        converted_input: *mut c_void,
+        bias: *const c_void,
+        output: *mut c_void,
+        rows: i32,
+        out_channels: i32,
+        in_channels: i32,
+        workspace: *mut c_void,
+        workspace_bytes: usize,
+        stream: *mut c_void,
+    ) -> i32;
 }
 
 #[derive(Clone, Copy)]
@@ -359,6 +373,76 @@ impl MiMoAudioCodecEncoderWeights {
                 stride: second.stride(),
             },
         )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn encode_prepared_mel_conv2_fused_bias_diagnostic(
+        &self,
+        engine: &Engine,
+        conv1: &CudaSlice<f32>,
+        mel_frames: usize,
+    ) -> Result<Vec<f32>, Fail> {
+        if self.device_ordinal != engine.stream().context().ordinal() || mel_frames != 9 {
+            return Err("MiMo codec fused-bias conv2 diagnostic source changed".into());
+        }
+        let second = self.conv2_bf16()?;
+        let spec = ConvSpec {
+            frames: mel_frames,
+            in_channels: HIDDEN,
+            out_channels: HIDDEN,
+            stride: second.stride(),
+        };
+        let rows = spec.validate(conv1.len(), second.weight().len(), second.bias().len())?;
+        if rows != 5 {
+            return Err("MiMo codec fused-bias conv2 diagnostic rows changed".into());
+        }
+        engine.gpu.ctx.bind_to_thread()?;
+        ensure_finite(engine, conv1)?;
+        let columns = im2col(engine, conv1, spec, rows)?;
+        let stream = engine.stream();
+        let mut converted = engine.alloc_u8_uninit(rows * HIDDEN * 3 * 2)?;
+        let mut output = engine.alloc_u8_uninit(rows * HIDDEN * 2)?;
+        let mut workspace = engine.alloc_u8_uninit(crate::f16_ffi::F16_WS_BYTES)?;
+        let (weight_ptr, weight_guard) = second.weight().device_ptr(&stream);
+        let (input_ptr, input_guard) = columns.device_ptr(&stream);
+        let (converted_ptr, converted_guard) = converted.device_ptr_mut(&stream);
+        let (bias_ptr, bias_guard) = second.bias().device_ptr(&stream);
+        let (output_ptr, output_guard) = output.device_ptr_mut(&stream);
+        let (workspace_ptr, workspace_guard) = workspace.device_ptr_mut(&stream);
+        let rc = unsafe {
+            memra_bf16_pp_gemm_bias_out_bf16(
+                weight_ptr as *const c_void,
+                input_ptr as *const f32,
+                converted_ptr as *mut c_void,
+                bias_ptr as *const c_void,
+                output_ptr as *mut c_void,
+                rows as i32,
+                HIDDEN as i32,
+                (HIDDEN * 3) as i32,
+                workspace_ptr as *mut c_void,
+                crate::f16_ffi::F16_WS_BYTES,
+                stream.cu_stream() as *mut c_void,
+            )
+        };
+        drop((
+            weight_guard,
+            input_guard,
+            converted_guard,
+            bias_guard,
+            output_guard,
+            workspace_guard,
+        ));
+        if rc != 0 {
+            return Err(format!("MiMo fused-bias conv2 diagnostic returned {rc}").into());
+        }
+        let bytes = engine.dtoh_u8(&output)?;
+        if bytes.len() != rows * HIDDEN * 2 {
+            return Err("MiMo fused-bias conv2 diagnostic output extent changed".into());
+        }
+        Ok(bytes
+            .chunks_exact(2)
+            .map(|pair| f32::from_bits(u32::from(u16::from_le_bytes([pair[0], pair[1]])) << 16))
+            .collect())
     }
 
     #[cfg(test)]

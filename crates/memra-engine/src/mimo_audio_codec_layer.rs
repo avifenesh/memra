@@ -20,6 +20,65 @@ use crate::mimo_audio_codec_weights::{
 type Fail = Box<dyn Error>;
 const HIDDEN: usize = 1_024;
 
+#[cfg(test)]
+type Layer0Stages = Vec<(&'static str, Vec<f32>)>;
+
+#[cfg(test)]
+std::thread_local! {
+    static LAYER0_STAGES: std::cell::RefCell<Option<Layer0Stages>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub(crate) struct Layer0StageCaptureGuard;
+
+#[cfg(test)]
+pub(crate) fn start_layer0_stage_capture() -> Layer0StageCaptureGuard {
+    LAYER0_STAGES.with(|capture| {
+        assert!(
+            capture.borrow_mut().replace(Vec::new()).is_none(),
+            "MiMo codec layer-0 capture is already active"
+        );
+    });
+    Layer0StageCaptureGuard
+}
+
+#[cfg(test)]
+impl Layer0StageCaptureGuard {
+    pub(crate) fn finish(self) -> Layer0Stages {
+        LAYER0_STAGES.with(|capture| capture.borrow_mut().take().unwrap_or_default())
+    }
+}
+
+#[cfg(test)]
+impl Drop for Layer0StageCaptureGuard {
+    fn drop(&mut self) {
+        LAYER0_STAGES.with(|capture| {
+            capture.borrow_mut().take();
+        });
+    }
+}
+
+#[cfg(test)]
+fn capture_layer0_stage(
+    engine: &Engine,
+    layer_index: usize,
+    label: &'static str,
+    values: &CudaSlice<f32>,
+) -> Result<(), Fail> {
+    if layer_index == 0 && LAYER0_STAGES.with(|capture| capture.borrow().is_some()) {
+        let host = engine.dtoh(values)?;
+        LAYER0_STAGES.with(|capture| {
+            capture
+                .borrow_mut()
+                .as_mut()
+                .expect("MiMo codec layer-0 capture disappeared")
+                .push((label, host));
+        });
+    }
+    Ok(())
+}
+
 unsafe extern "C" {
     fn memra_mimo_codec_layer_check_values(
         values: *const f32,
@@ -74,6 +133,20 @@ unsafe extern "C" {
         output: *mut f32,
         tokens: i32,
         window: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    #[cfg(test)]
+    fn memra_bf16_pp_gemm_bias_out_bf16(
+        weight: *const c_void,
+        input: *const f32,
+        converted_input: *mut c_void,
+        bias: *const c_void,
+        output: *mut c_void,
+        rows: i32,
+        out_channels: i32,
+        in_channels: i32,
+        workspace: *mut c_void,
+        workspace_bytes: usize,
         stream: *mut c_void,
     ) -> i32;
 }
@@ -383,6 +456,91 @@ fn attended(
 }
 
 impl MiMoAudioCodecEncoderWeights {
+    #[cfg(test)]
+    pub(crate) fn project_layer0_fc2_source_input(
+        &self,
+        engine: &Engine,
+        input: &CudaSlice<f32>,
+        tokens: usize,
+    ) -> Result<CudaSlice<f32>, Fail> {
+        if tokens != 5 || input.len() != tokens * 4_096 || input.ordinal() != self.device_ordinal {
+            return Err("MiMo source fc2 diagnostic input extent or GPU changed".into());
+        }
+        engine.gpu.ctx.bind_to_thread()?;
+        self.check_device(engine)?;
+        let weights = self.encoder_layer_bf16(0)?;
+        if weights.fc2.input != 4_096 || weights.fc2.output != HIDDEN {
+            return Err("MiMo source fc2 diagnostic matrix geometry changed".into());
+        }
+        projected(engine, input, &weights.fc2, tokens)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn project_layer0_fc2_fused_bias_source_input(
+        &self,
+        engine: &Engine,
+        input: &CudaSlice<f32>,
+        tokens: usize,
+    ) -> Result<Vec<f32>, Fail> {
+        if tokens != 5 || input.len() != tokens * 4_096 || input.ordinal() != self.device_ordinal {
+            return Err("MiMo fused-bias fc2 diagnostic input extent or GPU changed".into());
+        }
+        engine.gpu.ctx.bind_to_thread()?;
+        self.check_device(engine)?;
+        let weights = self.encoder_layer_bf16(0)?;
+        let fc2 = &weights.fc2;
+        let bias = fc2
+            .bias
+            .ok_or("MiMo fused-bias fc2 diagnostic lost source bias")?;
+        if fc2.input != 4_096 || fc2.output != HIDDEN {
+            return Err("MiMo fused-bias fc2 diagnostic matrix geometry changed".into());
+        }
+        let stream = engine.stream();
+        let mut converted = engine.alloc_u8_uninit(tokens * fc2.input * 2)?;
+        let mut output = engine.alloc_u8_uninit(tokens * HIDDEN * 2)?;
+        let mut workspace = engine.alloc_u8_uninit(crate::f16_ffi::F16_WS_BYTES)?;
+        let (weight_ptr, weight_guard) = fc2.weight.device_ptr(&stream);
+        let (input_ptr, input_guard) = input.device_ptr(&stream);
+        let (converted_ptr, converted_guard) = converted.device_ptr_mut(&stream);
+        let (bias_ptr, bias_guard) = bias.device_ptr(&stream);
+        let (output_ptr, output_guard) = output.device_ptr_mut(&stream);
+        let (workspace_ptr, workspace_guard) = workspace.device_ptr_mut(&stream);
+        let rc = unsafe {
+            memra_bf16_pp_gemm_bias_out_bf16(
+                weight_ptr as *const c_void,
+                input_ptr as *const f32,
+                converted_ptr as *mut c_void,
+                bias_ptr as *const c_void,
+                output_ptr as *mut c_void,
+                tokens as i32,
+                HIDDEN as i32,
+                fc2.input as i32,
+                workspace_ptr as *mut c_void,
+                crate::f16_ffi::F16_WS_BYTES,
+                stream.cu_stream() as *mut c_void,
+            )
+        };
+        drop((
+            weight_guard,
+            input_guard,
+            converted_guard,
+            bias_guard,
+            output_guard,
+            workspace_guard,
+        ));
+        if rc != 0 {
+            return Err(format!("MiMo fused-bias fc2 diagnostic returned {rc}").into());
+        }
+        let bytes = engine.dtoh_u8(&output)?;
+        if bytes.len() != tokens * HIDDEN * 2 {
+            return Err("MiMo fused-bias fc2 diagnostic output extent changed".into());
+        }
+        Ok(bytes
+            .chunks_exact(2)
+            .map(|pair| f32::from_bits(u32::from(u16::from_le_bytes([pair[0], pair[1]])) << 16))
+            .collect())
+    }
+
     /// Execute exactly one selected transformer layer over one frontended,
     /// BF16-valued `[tokens,1024]` sequence on the weight-owning GPU.
     ///
@@ -404,6 +562,8 @@ impl MiMoAudioCodecEncoderWeights {
         let weights = self.encoder_layer_bf16(layer_index)?;
         check_input(engine, input)?;
         let attention_input = normalized(engine, input, &weights.attention_norm, tokens)?;
+        #[cfg(test)]
+        capture_layer0_stage(engine, layer_index, "layer0_attn_norm", &attention_input)?;
         let mut query = projected(engine, &attention_input, &weights.query, tokens)?;
         let mut key = projected(engine, &attention_input, &weights.key, tokens)?;
         let value = projected(engine, &attention_input, &weights.value, tokens)?;
@@ -417,6 +577,8 @@ impl MiMoAudioCodecEncoderWeights {
             weights.attention_window(),
         )?;
         let projection = projected(engine, &context, &weights.attention_output, tokens)?;
+        #[cfg(test)]
+        capture_layer0_stage(engine, layer_index, "layer0_attention", &projection)?;
         let residual = epilogue(
             engine,
             &projection,
@@ -426,9 +588,13 @@ impl MiMoAudioCodecEncoderWeights {
             Epilogue::Residual,
         )?;
         let mlp_input = normalized(engine, &residual, &weights.final_norm, tokens)?;
+        #[cfg(test)]
+        capture_layer0_stage(engine, layer_index, "layer0_mlp_norm", &mlp_input)?;
         let hidden = projected(engine, &mlp_input, &weights.fc1, tokens)?;
         let hidden = epilogue(engine, &hidden, None, None, 4_096, Epilogue::Gelu)?;
         let projection = projected(engine, &hidden, &weights.fc2, tokens)?;
+        #[cfg(test)]
+        capture_layer0_stage(engine, layer_index, "layer0_fc2", &projection)?;
         let output = epilogue(
             engine,
             &projection,
@@ -437,6 +603,8 @@ impl MiMoAudioCodecEncoderWeights {
             HIDDEN,
             Epilogue::Residual,
         )?;
+        #[cfg(test)]
+        capture_layer0_stage(engine, layer_index, "layer0", &output)?;
         check_result(engine, &output)?;
         Ok(output)
     }
