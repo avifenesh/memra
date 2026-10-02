@@ -3,6 +3,7 @@
 import argparse, copy, hashlib, json, math, os, re, secrets, socket, subprocess, threading, time, tomllib
 import urllib.error, urllib.request
 from pathlib import Path
+from cache_qualification import capture_len, gdn_grid
 
 DECODE_FIELDS={'temperature','top_p','top_k','min_p','seed','max_tokens','frequency_penalty','presence_penalty','repetition_penalty','reasoning','reasoning_effort','enable_thinking','chat_template_kwargs','include_reasoning'}
 PHRASE='The quick brown fox jumps over the lazy dog while a quiet river flows past the old stone bridge.'
@@ -66,7 +67,7 @@ def verify_progress(id,progress):
     require(progress and progress[0]['id']==id and progress[0]['completion_tokens']==32,'cancel lacked native progress')
 
 class Server:
-    def __init__(self,args,out,port,door=True,compat='native',context=32768):
+    def __init__(self,args,out,port,door=True,compat='native',context=32768,cache=False):
         self.args,self.out,self.port=args,Path(out),port;self.out.mkdir(parents=True)
         self.base=f'http://127.0.0.1:{port}'
         self.cv=threading.Condition();self.receipts={};self.stored={};self.progress={};self.unsettled=[];self.lines=[]
@@ -74,7 +75,7 @@ class Server:
         self.keys={name:secrets.token_hex(24) for name in ['owner','rotated','foreign']}
         env={k:v for k,v in os.environ.items() if not k.startswith('MEMRA_') or k in {'MEMRA_GPU_LOCK','MEMRA_CI_LOCK','MEMRA_CI_LOCK_HELD','MEMRA_RIG_LOCK_FD'}}
         ring=','.join(('acme' if k!='foreign' else 'blue')+':'+hashlib.sha256(v.encode()).hexdigest() for k,v in self.keys.items())
-        env.update(MEMRA_MODELS='q9='+str(args.model.resolve()),MEMRA_CTX=str(context),MEMRA_ADDR=f'127.0.0.1:{port}',MEMRA_BACKGROUND_RESPONSES='1' if door else '0',MEMRA_PREFIX_CACHE_MB='0',MEMRA_REUSE_POOL='0',MEMRA_AFFINITY='0',MEMRA_API_KEYS=ring,MEMRA_COMPAT=compat,MEMRA_MODEL_METADATA=str(args.metadata.resolve()),MEMRA_SKEY_PROBE='1',MEMRA_DEBUG_SPEC='1')
+        env.update(MEMRA_MODELS='q9='+str(args.model.resolve()),MEMRA_CTX=str(context),MEMRA_ADDR=f'127.0.0.1:{port}',MEMRA_BACKGROUND_RESPONSES='1' if door else '0',MEMRA_PREFIX_CACHE_MB='2048' if cache else '0',MEMRA_REUSE_POOL='0',MEMRA_AFFINITY='0',MEMRA_API_KEYS=ring,MEMRA_COMPAT=compat,MEMRA_MODEL_METADATA=str(args.metadata.resolve()),MEMRA_SKEY_PROBE='1',MEMRA_DEBUG_SPEC='1')
         self.env=env
         public={k:('fixture credentials omitted' if k=='MEMRA_API_KEYS' else v) for k,v in env.items() if k.startswith('MEMRA_')}
         (self.out/'environment.json').write_text(json.dumps(public,indent=2)+'\n')
@@ -171,8 +172,29 @@ def short_body(chat,bg=False):
     if bg:body['background']=True
     return body
 
+def verify_cache(cold,warm,rows,chat,trace):
+    verify_receipt(warm,rows,chat,'complete')
+    c,w=usage(cold),usage(warm)
+    require(c['cached_tokens']==0 and c['prompt_tokens']>=64,'cold cache path was not established')
+    require(w['cached_tokens']==capture_len(c['prompt_tokens'],gdn_grid({})) and w['cached_tokens']>0,'warm cache accounting does not match restored grid')
+    require(c['prompt_tokens']==w['prompt_tokens'] and c['completion_tokens']==w['completion_tokens'] and content(cold,chat)==content(warm,chat),'cache changed the generated result')
+    witness=f"[prefix-cache] spec restore: {w['cached_tokens']} of {w['prompt_tokens']} prompt tokens"
+    require(witness in trace,'no actual prefix/draft restore witness')
+    after=trace[trace.index(witness):]
+    rounds=re.findall(r'(?m)^\[R\d+\] .*draft=\[[0-9, ]+\] n_acc=\d+',after)
+    require(rounds,'eligible cache-hit request did not execute native speculative rounds')
+    return {'cached_tokens':w['cached_tokens'],'restore_witness':witness,'spec_rounds_observed':len(rounds),'first_round':rounds[0]}
+
+def cached_body(chat):
+    body=short_body(chat,False)
+    prompt=(PHRASE+' ')*24+'Write a detailed essay of at least 1000 words about this passage. Keep writing paragraphs. Essay:\n'
+    body.update(max_tokens=256,cache_salt='bg914-cached-'+('chat' if chat else 'text'))
+    if chat:body['messages']=[{'role':'user','content':prompt}]
+    else:body['prompt']=prompt
+    return body
+
 def context_for_phase(phase):
-    return {'short':8192,'long-chat':32768,'long-text':32768}[phase]
+    return {'short':8192,'cached':8192,'long-chat':32768,'long-text':32768}[phase]
 
 def main(args):
     os.fstat(9);require(os.path.samefile('/proc/self/fd/9',os.environ['MEMRA_GPU_LOCK']),'wrong inherited GPU lease')
@@ -214,8 +236,36 @@ def main(args):
                         summary.append({'cell':'bare-default','chat':chat,'request':body,'usage':usage(result),'mode':'artifact/template default','parameter_proof':vendor_trace(''.join(server.lines),profile,trace_start),'trace_start_line':trace_start})
                 if compat=='native':
                     summary.append({'cell':'default-parameters','proof':vendor_trace(''.join(server.lines),profile),'metadata_sha256':digest(args.metadata)})
+    elif args.phase=='cached':
+        with Server(args,out/'cached',args.port,context=context,cache=True) as server:
+            for chat in [False,True]:
+                path='/v1/chat/completions' if chat else '/v1/completions';body=cached_body(chat)
+                cold_start=len(server.lines)
+                status,cold,gid,_=server.request('POST',path,body,timeout=180)
+                require(status==200,'cached boot cold reference failed')
+                verify_receipt(cold,server.event(server.receipts,gid),chat,'complete')
+                require('[prefix-cache] spec restore:' not in ''.join(server.lines[cold_start:]),'cold request unexpectedly restored a prefix')
+                warm_start=len(server.lines)
+                status,ack,id,_=server.request('POST',path,{**body,'background':True});require(status==200,'cached background request refused')
+                warm=server.result(id)
+                proof=verify_cache(cold,warm,server.event(server.receipts,id),chat,''.join(server.lines[warm_start:]))
+                if not chat:require(cold['tokens']==warm['tokens'],'cache changed native token ids')
+                require(server.request('GET','/v1/jobs/'+id,key='foreign')[0]==404,'cached result leaked to foreign tenant')
+                status,ack,cid,_=server.request('POST',path,{**body,'background':True})
+                require(status==200,'cached cancel submission failed')
+                verify_progress(cid,server.event(server.progress,cid,timeout=120))
+                status,cancelled,_,_=server.request('POST','/v1/jobs/'+cid+'/cancel')
+                require(status==200 and cancelled['status']=='cancelled' and cancelled.get('error',{}).get('code')=='cancelled','cached cancel lost explicit partial error')
+                verify_receipt(cancelled,server.event(server.receipts,cid),chat,'cancel_partial')
+                require(content(cold,chat).startswith(content(cancelled,chat)) and usage(cancelled)['cached_tokens']>0,'cached cancel lost original prefix/accounting')
+                peer_start=len(server.lines)
+                status,peer,pid,_=server.request('POST',path,body,timeout=180)
+                require(status==200,'synchronous continuation failed after cached cancellation')
+                peer_proof=verify_cache(cold,peer,server.event(server.receipts,pid),chat,''.join(server.lines[peer_start:]))
+                require(server.request('GET','/v1/jobs/'+id,key='rotated')[1]==warm,'cached stored result mutated after peer/cancel')
+                summary.append({'cell':'cached','chat':chat,'usage':usage(warm),'warm':proof,'cancel_usage':usage(cancelled),'sync_continuation':peer_proof})
     else:
-        chat=args.phase=='long-chat';path='/v1/chat/completions' if chat else '/v1/completions'
+        chat=args.phase=='long-chat' ;path='/v1/chat/completions' if chat else '/v1/completions'
         with Server(args,out/args.phase,args.port,context=context) as server:
             body={'model':'q9','max_tokens':24000,'temperature':0,'top_p':1,'top_k':0,'min_p':0,'presence_penalty':0,'frequency_penalty':0,'repetition_penalty':1,'seed':7}
             if chat:
@@ -250,5 +300,5 @@ def main(args):
     print(json.dumps(summary,indent=2))
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('--phase',choices=['short','long-chat','long-text'],required=True);p.add_argument('--out',type=Path,required=True);p.add_argument('--binary',type=Path,required=True);p.add_argument('--model',type=Path,required=True);p.add_argument('--model-sha',required=True);p.add_argument('--metadata',type=Path,required=True);p.add_argument('--port',type=int,required=True)
+    p=argparse.ArgumentParser();p.add_argument('--phase',choices=['short','cached','long-chat','long-text'],required=True);p.add_argument('--out',type=Path,required=True);p.add_argument('--binary',type=Path,required=True);p.add_argument('--model',type=Path,required=True);p.add_argument('--model-sha',required=True);p.add_argument('--metadata',type=Path,required=True);p.add_argument('--port',type=int,required=True)
     main(p.parse_args())

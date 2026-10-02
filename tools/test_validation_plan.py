@@ -130,7 +130,7 @@ class ValidationPlanTests(unittest.TestCase):
             with self.subTest(path=path):
                 plan = self.plan([path])
                 self.assertEqual([c['id'] for c in plan['cpu_contracts']], ['background-chat-text'])
-                self.assertEqual(plan['cpu_contracts'][0]['cpu'][-1], '8')
+                self.assertEqual(plan['cpu_contracts'][0]['cpu'][-1], '9')
                 self.assertTrue(plan['native']['requirements'])
                 self.assertFalse(plan['native']['qualification'])
 

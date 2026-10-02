@@ -33,8 +33,19 @@ class NativeJudge(unittest.TestCase):
         self.assertEqual(g.vendor_trace('[server] listening on http://localhost\n'+trace,profile)['resolved_arm'],'primary_thinking')
         for log in [trace+'[server] listening on http://localhost\n','[server] listening on http://localhost\n'+trace.replace('top_k=20','top_k=0')]:
             with self.subTest(log=log),self.assertRaises(AssertionError):g.vendor_trace(log,profile)
+    def test_cached_path_requires_restore_grid_and_executed_spec_rounds(self):
+        cold={**self.value,'prompt_tokens':241,'cached_tokens':0}
+        warm={**cold,'cached_tokens':g.capture_len(241,g.gdn_grid({}))}
+        row={**self.row,'prompt_tokens':241,'cached_tokens':warm['cached_tokens']}
+        trace=f"[prefix-cache] spec restore: {warm['cached_tokens']} of 241 prompt tokens + draft plane\n[R0] pos=241 draft=[7, 8, 9] n_acc=2\n"
+        self.assertGreater(g.verify_cache(cold,warm,[row],False,trace)['spec_rounds_observed'],0)
+        for wrong in [trace.replace('[prefix-cache] spec restore:','[setup]'),trace.split('[R0]')[0]]:
+            with self.subTest(trace=wrong),self.assertRaises(AssertionError):g.verify_cache(cold,warm,[row],False,wrong)
+        for wrong in [0,warm['cached_tokens']-1]:
+            value={**warm,'cached_tokens':wrong};receipt={**row,'cached_tokens':wrong}
+            with self.subTest(cached=wrong),self.assertRaises(AssertionError):g.verify_cache(cold,value,[receipt],False,trace)
     def test_manifest_context_and_actual_server_context_share_the_phase_contract(self):
-        for phase,expected in [('short',8192),('long-chat',32768),('long-text',32768)]:
+        for phase,expected in [('short',8192),('cached',8192),('long-chat',32768),('long-text',32768)]:
             with self.subTest(phase=phase),tempfile.TemporaryDirectory() as directory:
                 context=g.context_for_phase(phase)
                 self.assertEqual(context,expected)
