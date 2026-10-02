@@ -1,0 +1,21 @@
+[
+  {
+    "args": [
+      "--workspace",
+      "--bin",
+      "a"
+    ],
+    "exit": 0,
+    "output": "   Compiling shared v0.1.0 (/tmp/memra-cargo-scope-txc5toon/shared)\n   Compiling a v0.1.0 (/tmp/memra-cargo-scope-txc5toon/a)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.09s\n"
+  },
+  {
+    "args": [
+      "-p",
+      "a",
+      "--bin",
+      "a"
+    ],
+    "exit": 101,
+    "output": "   Compiling shared v0.1.0 (/tmp/memra-cargo-scope-txc5toon/shared)\nerror: workspace feature union missing\n --> shared/src/lib.rs:2:1\n  |\n2 | compile_error!(\"workspace feature union missing\");\n  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n\nerror: could not compile `shared` (lib) due to 1 previous error\n"
+  }
+]

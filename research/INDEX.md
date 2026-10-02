@@ -687,5 +687,8 @@ dsv4-route-receipt-20260926 | "all 16 answered 200, finishing in 2.6 to 20.0 s" 
 
 gemma4-oracle-contract-20261002 | HTTP/API top-five parity is exact after matching the N-4/4 checkpoint split; local oracle fusion effect isolates to RMS-norm fusions; no Memra runtime or default change | gemma4-oracle-contract-20261002/RESULTS.md
 a4-component-cost-20261002 | Calibrated FP4 quantization plus GEMM is 2.500x INT8 on the 272-slot input group at 4096 rows on RTX 5090 Laptop; full A4 quality negative unchanged; bounded quality ablation prepared | a4-component-cost-20261002/RESULTS.md
+modelplan-onboarding-20261002-qwen35-9b | All five scoped serving cells passed on the pinned Qwen3.5-9B artifact; checkpoint parity and strict runtime/rewrite prerequisites remain pending. | modelplan-onboarding-20261002-qwen35-9b/RESULTS.md
 
+sampled-mtp-pmin-20261002 | Positive-PMIN single-head graph/eager and zero-draft probes passed; 3072 requests found no detected difference in 40 registered token marginals; pinned vendor-profile chat/cache/concurrency/rollback passed. PMIN default unchanged. | sampled-mtp-pmin-20261002/RESULTS.md
+background-responses-20261002 | "PASS for the recorded local API scope." | background-responses-20261002/RESULTS.md
 image-url-fetch-20261002 | "PASS on the existing Qwen3.8-27B vision path." | image-url-fetch-20261002/RESULTS.md

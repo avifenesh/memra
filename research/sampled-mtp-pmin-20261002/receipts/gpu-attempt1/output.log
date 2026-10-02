@@ -1,0 +1,30 @@
+WAITING canonical GPU lock /tmp/memra-5090.lock
+ACQUIRED canonical GPU lock on inherited FD9
+uuid, name, memory.total [MiB], memory.free [MiB], driver_version
+GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, NVIDIA GeForce RTX 5090 Laptop GPU, 24463 MiB, 23899 MiB, 595.91.07
+
+target/release/sample_check: OK
+target/release/run-spec: OK
+target/release/memra-server: OK
+/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf: OK
+plain: FAILED: invalid native token ids
+pmin0: FAILED: invalid native token ids
+positive_graph: FAILED: invalid native token ids
+positive_eager: FAILED: invalid native token ids
+zero_graph: FAILED: invalid native token ids
+zero_eager: FAILED: invalid native token ids
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-rig-qualification-20261002/tools/collect-sampled-mtp.py", line 302, in <module>
+    main(p.parse_args())
+    ~~~~^^^^^^^^^^^^^^^^
+  File "/home/avifenesh/projects/wt-memra-rig-qualification-20261002/tools/collect-sampled-mtp.py", line 293, in main
+    require(not errors and statistics and not failures, "sampled cell failed; retain all evidence")
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/avifenesh/projects/wt-memra-rig-qualification-20261002/tools/collect-serving-qualification.py", line 37, in require
+    raise ValueError(message)
+ValueError: sampled cell failed; retain all evidence
+          Finished with result: exit-code
+Main processes terminated with: code=exited, status=1/FAILURE
+               Service runtime: 1min 22.152s
+             CPU time consumed: 1min 19.533s
+                   Memory peak: 6.4G (swap: 0B)

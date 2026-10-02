@@ -1,0 +1,44 @@
+WAITING canonical GPU lock /tmp/memra-5090.lock
+ACQUIRED canonical GPU lock on inherited FD9
+uuid, name, memory.total [MiB], memory.free [MiB], driver_version
+GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, NVIDIA GeForce RTX 5090 Laptop GPU, 24463 MiB, 23899 MiB, 595.91.07
+
+target/release/sample_check: OK
+target/release/run-spec: OK
+target/release/memra-server: OK
+/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf: OK
+plain: 1/512 real samples
+plain: 128/512 real samples
+plain: 256/512 real samples
+plain: 384/512 real samples
+plain: 512/512 real samples
+pmin0: 1/512 real samples
+pmin0: 128/512 real samples
+pmin0: 256/512 real samples
+pmin0: 384/512 real samples
+pmin0: 512/512 real samples
+positive_graph: 1/512 real samples
+positive_graph: 128/512 real samples
+positive_graph: 256/512 real samples
+positive_graph: 384/512 real samples
+positive_graph: 512/512 real samples
+positive_eager: 1/512 real samples
+positive_eager: 128/512 real samples
+positive_eager: 256/512 real samples
+positive_eager: 384/512 real samples
+positive_eager: 512/512 real samples
+zero_graph: 1/512 real samples
+zero_graph: 128/512 real samples
+zero_graph: 256/512 real samples
+zero_graph: 384/512 real samples
+zero_graph: 512/512 real samples
+zero_eager: 1/512 real samples
+zero_eager: 128/512 real samples
+zero_eager: 256/512 real samples
+zero_eager: 384/512 real samples
+zero_eager: 512/512 real samples
+          Finished with result: success
+Main processes terminated with: code=exited, status=0/SUCCESS
+               Service runtime: 7min 32.237s
+             CPU time consumed: 7min 30.728s
+                   Memory peak: 5.9G (swap: 0B)

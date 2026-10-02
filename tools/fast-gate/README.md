@@ -11,6 +11,12 @@ a requirement to execute GPU probes.
 
 ## Plan before building
 
+The plan also includes the [changed-input CI graph](../../docs/VALIDATION-SELECTION.md):
+direct inputs, reverse dependency witnesses, binary affected-edge decisions and the reason
+for each omitted CPU execution component. Registered non-compiled contracts run only their
+CPU/content checks, without Cargo or model loading. An issue's separate live-evidence
+obligations remain visible and are not supplied by that CPU pass.
+
 ```sh
 tools/fast-gate/fast-gate.sh --plan --diff origin/main
 python3 tools/fast-gate/plan.py --changed crates/memra-engine/src/spec.rs --json
@@ -48,6 +54,10 @@ Before admitting a narrower GPU class, retain a selected/full comparison on the
 same candidate, artifact, request shape and target hardware. Replay its historical
 failure and a mechanism-changing red arm. A miss expands that class and blocks
 adoption. Coverage observations are supporting data, not independence proof.
+
+Use `tools/validation_coverage.py` to select a source-bound composite test set for explicitly
+required behavior edges. Controls, context boundaries and fresh-process requirements remain
+mandatory. Its result is an assertion-coverage record, not automatic native qualification.
 
 ## Reuse an isolated CPU component
 

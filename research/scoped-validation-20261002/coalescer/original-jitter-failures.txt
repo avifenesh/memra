@@ -1,0 +1,18 @@
+Job 75e57727eb9e
+---- dsv4_serve::c4_host_budget_tests::one_workspace_keeps_jittered_lanes_in_full_batches stdout ----
+jittered lanes: 8 of 14 batches full, widths [16, 15, 16, 16, 16, 15, 15, 16, 16, 14, 16, 16, 4, 1]
+
+thread 'dsv4_serve::c4_host_budget_tests::one_workspace_keeps_jittered_lanes_in_full_batches' (1001129) panicked at crates/memra-server/src/dsv4_serve.rs:3992:9:
+the lanes split: widths [16, 15, 16, 16, 16, 15, 15, 16, 16, 14, 16, 16, 4, 1]
+
+
+
+Job dc37b7514b80
+---- dsv4_serve::c4_host_budget_tests::one_workspace_keeps_jittered_lanes_in_full_batches stdout ----
+jittered lanes: 7 of 13 batches full, widths [14, 16, 16, 16, 14, 16, 15, 16, 16, 15, 16, 15, 7]
+
+thread 'dsv4_serve::c4_host_budget_tests::one_workspace_keeps_jittered_lanes_in_full_batches' (1534331) panicked at crates/memra-server/src/dsv4_serve.rs:3992:9:
+the lanes split: widths [14, 16, 16, 16, 14, 16, 15, 16, 16, 15, 16, 15, 7]
+
+
+

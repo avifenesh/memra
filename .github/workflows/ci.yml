@@ -1,27 +1,12 @@
 name: ci
 
-# Compile gate only. GitHub runners have no GPU, so the exactness battery
-# (kernel-check, argmax gates, spec self-consistency) runs on the rig before
-# any merge (docs/RELEASING.md). What CI catches: broken Rust, broken kernel
-# compiles (nvcc runs fine without a GPU), fatbin flag drift, and the text-level
-# censuses that keep the tree releasable.
-#
-# SHAPE (2026-09-02, ci-diet lane). Until this date every step below lived in ONE serial job
-# that took 42 min wall per push (run 33582547232: CPU expert companion 767 s, release build
-# 542 s, memra-server suite 469 s, clippy 380 s, boundary check 125 s, allowlist drift 124 s),
-# while the three parallel jobs finished in under 15 min. Nothing in the serial chain depended
-# on its predecessor except through a warm target dir, so the chain is now parallel jobs, each
-# with its own rust-cache key, and the wall time is the slowest single job (the publish
-# dry-run, about 15 min). Two more rules:
-#   * The compile jobs are gated by tools/ci-change-class.sh: a change set made solely of docs,
-#     research receipts and corpus text does not compile anything, because the text gates
-#     already answer every question such a change can raise. Fail closed: any doubt compiles.
-#     The gate reads `code != 'false'` under `!cancelled()`, so a failed or missing
-#     classification still compiles (teeth: tools/test_ci_change_class.sh, arm 14).
-#   * Superseded pull-request runs are cancelled (concurrency below); main pushes never are.
-# Every invocation the fixtures anchor on (tools/test_flags_guard.sh, tools/test_release_guard.sh,
-# tools/test_public_boundary.py, tools/test_fatbin_lookup_census.sh) is unchanged in text; only
-# the job it lives in moved.
+# CPU compilation/tests and declared contract checks. Native qualification runs on the
+# actual target through the scoped local plan, never on these GPU-less runners.
+# tools/validation_plan.py follows Cargo dependencies (including dev/build/target edges)
+# and declared external inputs. A changed server module does not rerun engine unit suites;
+# an upstream crate reaches all consumers. Unknown inputs select the complete CI plan.
+# Every job checks output != 'false' with !cancelled(): planner failure cannot skip it.
+# Exact commands and the impact/omission explanation are retained as validation-plan.json.
 
 on:
   push:
@@ -41,6 +26,18 @@ jobs:
     outputs:
       code: ${{ steps.classify.outputs.code }}
       reason: ${{ steps.classify.outputs.reason }}
+      build: ${{ steps.classify.outputs.build }}
+      clippy: ${{ steps.classify.outputs.clippy }}
+      server: ${{ steps.classify.outputs.server }}
+      engine: ${{ steps.classify.outputs.engine }}
+      portable: ${{ steps.classify.outputs.portable }}
+      core: ${{ steps.classify.outputs.core }}
+      lanes: ${{ steps.classify.outputs.lanes }}
+      arch: ${{ steps.classify.outputs.arch }}
+      publish: ${{ steps.classify.outputs.publish }}
+      packages: ${{ steps.classify.outputs.packages }}
+      requires_cuda: ${{ steps.classify.outputs.requires_cuda }}
+      contracts: ${{ steps.classify.outputs.contracts }}
     steps:
       # fetch-depth 0 is cheap on this history (rebuilt 2026-09-01) and is what makes the PR
       # base and the push `before` reachable for the diff.
@@ -48,19 +45,36 @@ jobs:
         with:
           fetch-depth: 0
       - id: classify
-        name: Classify the change set (docs-only skips the compile jobs; any doubt compiles)
+        name: Plan affected checks (unknown dependencies expand to all jobs)
         run: |
           tools/ci-change-class.sh "${{ github.event_name }}" \
             "${{ github.event.pull_request.base.sha }}" \
             "${{ github.event.before }}" \
-            "${{ github.event.pull_request.head.sha || github.sha }}" | tee -a "$GITHUB_OUTPUT"
+            "${{ github.sha }}" | tee -a "$GITHUB_OUTPUT"
+          python3 tools/validation_plan.py ci "${{ github.event_name }}" \
+            "${{ github.event.pull_request.base.sha }}" "${{ github.event.before }}" \
+            "${{ github.sha }}" --json > validation-plan.json
+          cat validation-plan.json
+      - name: Retain the affected-edge and omitted-check explanation
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: validation-plan
+          path: validation-plan.json
+          if-no-files-found: error
+          retention-days: 14
 
   # ── text gates: every CPU-only census and fixture, plus the CUDA-free unit suites ───────────
   gates:
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          toolchain: "1.97.1"
 
       - name: Immutable GitHub Action pin census
         run: |
@@ -69,8 +83,21 @@ jobs:
           tools/test_install_authenticity.sh
           tools/test_boundary_refs_guard.sh
 
-      - name: Change-class teeth (the docs-only skip fails closed in every arm)
-        run: tools/test_ci_change_class.sh
+      - name: Change selection and edge coverage refusal controls
+        run: |
+          python3 tools/validation_plan.py check-registry
+          tools/test_ci_change_class.sh
+          tools/unittest-floor.sh tools 'test_validation_*.py' 88
+          tools/unittest-floor.sh tools test_model_memory_fixture.py 3
+
+      - name: Declared changed-input CPU contracts (missing selection runs all available)
+        run: python3 tools/validation_plan.py contracts
+        env:
+          CI_VALIDATION_CONTRACTS: ${{ needs.changes.result == 'success' && needs.changes.outputs.contracts || '' }}
+
+      - name: Exact-source coalescer membership and wait contracts (CPU-only)
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.server != 'false' }}
+        run: python3 tools/check-coalescer-contract.py --out "$RUNNER_TEMP/coalescer-contract"
 
       # Duplicate mapping keys: GitHub refuses the whole workflow file and runs ZERO jobs (main at
       # 34ed99dfc, 2026-09-21: two portable-suites jobs from #592 and #590). This step can only
@@ -99,9 +126,6 @@ jobs:
           python3 -m unittest tools.test_check_hardware_gate
           python3 -m unittest tools.test_request_fault_gate
 
-      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
-        with:
-          toolchain: "1.97.1"
       - name: Prepare compiler input isolation
         run: bash tools/install-release-sandbox-ci.sh
       - name: Compiler input view and filesystem boundary (CPU-only)
@@ -112,7 +136,7 @@ jobs:
         run: |
           tools/unittest-floor.sh tools test_local_build_cache.py 48
           tools/unittest-floor.sh tools test_build_measurement.py 2
-          tools/unittest-floor.sh tools/fast-gate test_plan.py 33
+          tools/unittest-floor.sh tools/fast-gate test_plan.py 39
           tools/unittest-floor.sh tools/fast-gate test_component.py 4
 
       - name: Cache qualification harness regressions (unittest floor 15; 16 measured 2026-09-21)
@@ -255,22 +279,43 @@ jobs:
       # would have let all ~68 of that crate's speech tests disappear behind a green check.
       # 400 leaves slack for the declared skips and for honest single-test removals only.
       - name: Skip census negative controls (memra #484)
-        run: tools/unittest-floor.sh tools test_skip_census.py 14
+        run: |
+          python3 tools/skip-census.py verify
+          tools/unittest-floor.sh tools test_skip_census.py 18
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           key: ci-gates
       - name: Unit suites (CUDA-free crates) + skip census
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.core != 'false' }}
         run: |
           python3 tools/skip-census.py verify
           MEMRA_GGUF_SKIP_BUDGET=20 python3 tools/skip-census.py run \
             --budget-var MEMRA_GGUF_SKIP_BUDGET --min-passed 400 \
             -- cargo test -p memra-gguf -p memra-reference -p memra-tokenizer -p memra-validate -p memra-sampling --lib
       - name: Canonical config and shared JSON feature-unification contracts
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.core != 'false' }}
         run: |
           cargo test -p memra-gguf --test canonical_config
           cargo test -p memra-gguf --features serde_json/preserve_order --test canonical_config
           cargo test -p memra-gguf --features serde_json/preserve_order --lib strict_json::tests
+      - name: Network guard address classification contracts (CPU-only, no skips or ignores)
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.core != 'false' }}
+        run: |
+          if [ -f crates/memra-net-guard/Cargo.toml ]; then
+            mkdir -p target
+            python3 tools/skip-census.py verify --crate memra-net-guard
+            MEMRA_SKIP_BUDGET=0 python3 tools/skip-census.py run \
+              --budget-var MEMRA_SKIP_BUDGET --min-passed 15 \
+              --log target/net-guard-tests.log -- cargo test -p memra-net-guard --locked
+            python3 - <<'PYCODE'
+          import pathlib, re
+          text = pathlib.Path("target/net-guard-tests.log").read_text()
+          ignored = re.findall(r"test result: ok\. \d+ passed; 0 failed; (\d+) ignored;", text)
+          assert ignored and all(int(n) == 0 for n in ignored), "net-guard tests must execute without ignored cases"
+          PYCODE
+          fi
       - name: Indexed MLA and KDA memory fixture contracts (CPU-only)
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.engine != 'false' }}
         run: tools/test-model-memory-fixture.sh
 
       # memra-lanes is CUDA-free and was outside every unit suite, so the lane admission
@@ -279,6 +324,7 @@ jobs:
       # have been tests nothing ran. Named separately from the census above because
       # memra-lanes has no skip budget to verify.
       - name: Unit suite (memra-lanes — lane admission + streaming-audio scheduler)
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.lanes != 'false' }}
         run: cargo test -p memra-lanes --lib
 
   # ── public boundary: what the public repository is permitted to publish ─────────────────────
@@ -311,12 +357,15 @@ jobs:
   # ── build: every bin, every CUDA fatbin, at the primary arch ────────────────────────────────
   build:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    env:
+      CI_VALIDATION_PACKAGES: ${{ needs.changes.result == 'success' && needs.changes.outputs.packages || '' }}
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.build != 'false') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install CUDA 13.1 (nvcc + headers only — compile needs no GPU)
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.requires_cuda != 'false' }}
         run: tools/install-cuda-ci.sh
       # PINNED to the workspace rust-version, not @stable. The pin itself is rust-toolchain.toml
       # at the repo root; the explicit input pre-installs the exact toolchain. Bump rust-version
@@ -334,8 +383,8 @@ jobs:
       # 120a only because runners have no GPU. What CI compiled was an accident of runner
       # hardware. It is also what made the sm_89 link failure invisible for a day (see the
       # arch-matrix job below).
-      - name: Build (all bins, release — compiles every CUDA fatbin)
-        run: cargo build --release --bins
+      - name: Build affected packages and consumers (release bins)
+        run: python3 tools/validation_plan.py cargo build
         env:
           MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
           MEMRA_CUDA_ARCH: "120a"
@@ -344,6 +393,7 @@ jobs:
       # from the tree, never memra-unknown (the 2026-09-01 fleet builds shipped memra-unknown
       # because a container could not resolve the submodule gitfile).
       - name: Build identity (the release binary reports a real fingerprint)
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.server != 'false' }}
         run: |
           set -euo pipefail
           out=$(./target/release/memra-server --version)
@@ -369,6 +419,7 @@ jobs:
       # binaries (`#[path = "../parity_geometry.rs"]`), so `-p memra-engine --lib` does NOT
       # reach them; the target has to be named. Nothing in them touches the CUDA driver.
       - name: Parity geometry and argmax instrument tests
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.engine != 'false' }}
         run: cargo test --release -p memra-engine --bin dflash_parity --bin dspark_q38_parity --bin argmax-margin-probe
         env:
           MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
@@ -377,6 +428,7 @@ jobs:
       # These tests exercise RNG/CDF boundaries, timing contracts and drift metrics;
       # they never create a CUDA context or run the gates' main functions.
       - name: DSV4 sampled, drift and composition CPU contract tests
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.engine != 'false' }}
         run: |
           cargo test --release -p memra-engine --bin dsv4_tp_ep_sampled_perf_gate --bin dsv4_compose_cadence_dense_gate --bin dsv4_hc_dot_split_gate --bin dsv4-dense-arm-ab
           CARGO_TARGET_DIR="$PWD/target" bash tools/test-dsv4-dense-control-policy.sh
@@ -396,7 +448,9 @@ jobs:
   # agreement holds because the toolchain is pinned to the workspace rust-version the rig runs.
   clippy:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    env:
+      CI_VALIDATION_PACKAGES: ${{ needs.changes.result == 'success' && needs.changes.outputs.packages || '' }}
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.clippy != 'false') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -410,8 +464,8 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           key: ci-clippy-120a
-      - name: Clippy gate (workspace clippy-zero, -D warnings)
-        run: cargo clippy --release --all-targets -- -D warnings
+      - name: Clippy affected packages and consumers (-D warnings)
+        run: python3 tools/validation_plan.py cargo clippy
         env:
           MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
           MEMRA_CUDA_ARCH: "120a"
@@ -424,7 +478,7 @@ jobs:
   # `cargo test -p memra-server --lib` exits 101 with "no library targets found".
   server-tests:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.server != 'false') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -462,7 +516,7 @@ jobs:
   # a model, a numeric program, a default or a support state, and the step names say so.
   portable-suites:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.portable != 'false') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -477,20 +531,6 @@ jobs:
         run: cargo fetch --locked
       - name: Tier, KV and onboarding-CLI suites (CPU execution through the skip census; NOT GPU qualification)
         run: tools/portable-suites.sh
-      - name: Network address guard (CPU, minimum 15 tests, zero skips or ignored tests)
-        if: ${{ hashFiles('crates/memra-net-guard/Cargo.toml') != '' }}
-        env:
-          MEMRA_PORTABLE_SKIP_BUDGET: "0"
-        run: |
-          mkdir -p target
-          python3 tools/skip-census.py verify --crate memra-net-guard
-          python3 tools/skip-census.py run --budget-var MEMRA_PORTABLE_SKIP_BUDGET --min-passed 15 --log target/net-guard-tests.log -- cargo test -p memra-net-guard --offline --locked
-          python3 - <<'PYCODE'
-          import pathlib, re
-          text = pathlib.Path("target/net-guard-tests.log").read_text()
-          ignored = re.findall(r"test result: ok\. \d+ passed; 0 failed; (\d+) ignored;", text)
-          assert ignored and all(int(n) == 0 for n in ignored), "net-guard tests must execute without ignored cases"
-          PYCODE
       - name: Portable-suites teeth (planted tier/KV/CLI failures and an undeclared skip must red the same wrapper)
         run: tools/test_portable_suites.sh
       - name: Collector test suite with BOTH rig lock paths held (ruling 12; CPU tests, not qualification)
@@ -518,7 +558,7 @@ jobs:
   # floor of 300 passed refuses a vacuous run.
   engine-tests:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.engine != 'false') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -588,7 +628,9 @@ jobs:
   # SHIPPED BINARY, not the source set, the symbols, or the link.
   arch-coverage:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    env:
+      CI_VALIDATION_PACKAGES: ${{ needs.changes.result == 'success' && needs.changes.outputs.packages || '' }}
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.arch != 'false') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
@@ -614,8 +656,8 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           key: ci-arch-sm${{ matrix.cuda_arch }}
-      - name: Build (all bins, release) at sm_${{ matrix.cuda_arch }}
-        run: cargo build --release --bins
+      - name: Build affected native packages at sm_${{ matrix.cuda_arch }}
+        run: python3 tools/validation_plan.py cargo build
         env:
           MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
           MEMRA_CUDA_ARCH: ${{ matrix.cuda_arch }}
@@ -627,6 +669,7 @@ jobs:
       # remains literal-1 opt-in and install.sh refuses an unpublished B200 prebuilt before network.
       # Every command is host-only; none opens the CUDA driver.
       - name: B200 kernel-twin ABI, SASS, layout, and admission gates
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.engine != 'false' }}
         run: |
           research/b200-kernel-twins-dry-20260901/check-layouts.sh
           research/b200-kernel-twins-dry-20260901/check-nvfp4.sh
@@ -649,6 +692,7 @@ jobs:
       # that drops a kernel with no `#else` is a RUNTIME failure on a shipped binary that every
       # compile gate passes. Exceptions are per symbol in tools/fatbin-lookup-exceptions.txt.
       - name: Fatbin-vs-lookup census at sm_${{ matrix.cuda_arch }}
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.engine != 'false' }}
         run: tools/fatbin-lookup-census.py --arch ${{ matrix.cuda_arch }}
 
   # ── crates.io publish dry-run ──────────────────────────────────────────────────────────────
@@ -659,11 +703,12 @@ jobs:
   # from its tarball. Floats on newest stable on purpose (the pinned jobs cover the MSRV).
   publish-dryrun:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.publish != 'false') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
       RUSTUP_TOOLCHAIN: stable
+      CI_VALIDATION_PACKAGES: ${{ needs.changes.result == 'success' && needs.changes.outputs.packages || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install CUDA 13.1 (publish verification compiles the kernels)
@@ -672,8 +717,8 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           key: ci-publish-dryrun
-      - name: cargo publish --dry-run over every publishable member
-        run: cargo publish --workspace --exclude memra-probe --locked --dry-run
+      - name: Package verification over affected members and their dependencies
+        run: python3 tools/validation_plan.py cargo publish
         env:
           MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
           MEMRA_CUDA_ARCH: "120a"

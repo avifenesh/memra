@@ -94,3 +94,25 @@ The final ON arm has 26 HTTP cases and eight successful native generations; all
 prior controls passed again. The OFF arm remains one inline generation and two
 remote refusals. Evidence: `raw/qwen-vendor-pass/`, including the two request files,
 HTTP responses and server path-engagement log.
+
+## Combined background and image admission
+
+The integrated background/image tree at `a35091775e18ef290d5329af5ac649fcebfe012d`
+passed the release server suite: 1,053 passed, zero failures, 28 declared ignores.
+The address classifier passed 15 tests with zero ignores. The release binary has
+SHA256 `e9f4db9f3665cbb0461e8731506aae8b68359ea699280e01d4393b8504445e31`.
+Collector-only source `7c314dcfaaea39c48b05c902694898433a762bcc` then repeated the
+fresh OFF/ON native fixture with the background Responses switch also enabled.
+
+All earlier image controls and both bare requests passed again. The ON arm adds
+a remote-image background request that returned queued, then completed with the
+same red answer as the inline control. A blocked literal and a one-second caller
+fetch deadline both returned named 400s before any queued envelope. The deadline
+refused at 1.001 seconds. This confirms that bounded image preflight and background
+job delivery compose in the shared admission handler.
+
+The combined cell contains ten successful native image generations across OFF/ON
+and 33 ON HTTP requests including four background polls. The exact production
+fetch-byte fixture ran and passed once. Evidence: `raw/qwen-combined/`,
+`raw/cpu-combined.log`, and `combined-provenance.json`. The earlier long-duration
+background and usage-accounting receipt remains separate and unchanged.

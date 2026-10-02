@@ -8,3 +8,11 @@ research/mtp-calibrated-depth-20260920/prototype.patch -text whitespace=-blank-a
 
 # The lane-only server topology selector the #679 served rows were built with, kept byte-exact.
 research/dsv4f-bringup-20260923/attn-tp-exact/raw/topology-lane.patch -text whitespace=-blank-at-eol
+
+# Raw test transcripts retain libtest/unittest output whitespace and line endings.
+research/scoped-validation-20261002/coalescer/*.log -text whitespace=-blank-at-eol,-blank-at-eof
+research/scoped-validation-20261002/literal-path-red-control.txt -text whitespace=-blank-at-eol
+
+# Keep trailing blank lines in the recorded test transcripts.
+research/scoped-validation-20261002/coalescer/original-jitter-failures.txt -text whitespace=-blank-at-eof
+research/image-url-fetch-20261002/raw/qwen-combined/on/transport-unit.log -text whitespace=-blank-at-eof

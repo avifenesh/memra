@@ -1,0 +1,82 @@
+{
+  "tool_sha256": {
+    "tools/validation_plan.py": "c1c0a9f044be653f2b8ac5cd4f52d33f2773fb99cd6c700399a758848f14653d",
+    "tools/fast-gate/plan.py": "88227833c0cdbc6544f9ee32b0737579227f445752731c08d6a01efc914be568"
+  },
+  "rows": [
+    {
+      "changed": "research/gemma4-bringup/e4b-chat-watercycle-ids.txt",
+      "cpu_jobs": {
+        "build": false,
+        "clippy": false,
+        "server": false,
+        "engine": false,
+        "portable": false,
+        "core": false,
+        "lanes": false,
+        "arch": false,
+        "publish": false
+      },
+      "native_requirements": [
+        "Changed native probe input research/gemma4-bringup/e4b-chat-watercycle-ids.txt: rerun pinned assertions for tools/fast-gate/models.tsv:e4b, tools/fast-gate/models.tsv:g12, tools/fast-gate/models.tsv:g26, tools/fast-gate/models.tsv:g31, tools/fast-gate/models.tsv:g31spec"
+      ],
+      "fast_gate_decision": "expand",
+      "required_native_gates": [
+        "MiMo MTP",
+        "MiMo audio",
+        "MiMo serving and topology",
+        "MiMo text checkpoint parity",
+        "MiMo vision"
+      ]
+    },
+    {
+      "changed": "research/chunk-invariance-20260805/prompt-pp6257.txt",
+      "cpu_jobs": {
+        "build": false,
+        "clippy": false,
+        "server": false,
+        "engine": false,
+        "portable": false,
+        "core": false,
+        "lanes": false,
+        "arch": false,
+        "publish": false
+      },
+      "native_requirements": [
+        "Changed native probe input research/chunk-invariance-20260805/prompt-pp6257.txt: rerun pinned assertions for tools/fast-gate/models.tsv:chunkinv35, tools/fast-gate/models.tsv:chunkinv35c, tools/fast-gate/models.tsv:tickinv35, tools/fast-gate/models.tsv:tickinv35c"
+      ],
+      "fast_gate_decision": "expand",
+      "required_native_gates": [
+        "MiMo MTP",
+        "MiMo audio",
+        "MiMo serving and topology",
+        "MiMo text checkpoint parity",
+        "MiMo vision"
+      ]
+    },
+    {
+      "changed": "research/e2e/prompts/short.txt",
+      "cpu_jobs": {
+        "build": false,
+        "clippy": false,
+        "server": false,
+        "engine": false,
+        "portable": false,
+        "core": false,
+        "lanes": false,
+        "arch": false,
+        "publish": false
+      },
+      "native_requirements": [],
+      "fast_gate_decision": "expand",
+      "required_native_gates": [
+        "MiMo MTP",
+        "MiMo audio",
+        "MiMo serving and topology",
+        "MiMo text checkpoint parity",
+        "MiMo vision"
+      ]
+    }
+  ],
+  "native_execution": false
+}

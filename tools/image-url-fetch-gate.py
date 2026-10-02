@@ -32,6 +32,7 @@ p.add_argument('--vision-kind', choices=('gemma', 'qwen'), default='gemma')
 p.add_argument('--context', type=int, default=8192)
 p.add_argument('--transport-only', action='store_true', help='No vision qualification; test HTTP controls with the text-only trunk')
 p.add_argument('--test-binary', type=Path)
+p.add_argument('--with-background', action='store_true', help='Exercise remote image admission with the background Responses switch enabled')
 a = p.parse_args()
 a.out.mkdir(parents=True, exist_ok=True)
 assert os.path.samefile(f'/proc/self/fd/{a.external_lock}', os.environ['MEMRA_GPU_LOCK'])
@@ -136,11 +137,13 @@ fixture = FixtureServer(('127.0.0.1', a.fixture_port), Fixture)
 fixture_thread = threading.Thread(target=fixture.serve_forever, daemon=True)
 fixture_thread.start()
 url_root = f'http://127.0.0.1:{a.fixture_port}'
-manifest = {'source': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(), 'binary_sha256': sha(a.binary), 'model': str(a.model), 'model_sha256': sha(a.model), 'mmproj': str(a.mmproj), 'mmproj_sha256': sha(a.mmproj), 'gpu': subprocess.check_output(['nvidia-smi', '--query-gpu=name,uuid,driver_version,memory.total', '--format=csv,noheader'], text=True), 'context': a.context, 'temperature': 0, 'cache': 'prefix cache disabled', 'door': 'off' if a.door_off else 'on', 'vision_kind': a.vision_kind, 'spec': 'plain', 'scope': 'http_transport_only' if a.transport_only else 'native_vision', 'fixture_sha256': {k: hashlib.sha256(v).hexdigest() for k, v in images.items()}}
+manifest = {'source': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(), 'binary_sha256': sha(a.binary), 'model': str(a.model), 'model_sha256': sha(a.model), 'mmproj': str(a.mmproj), 'mmproj_sha256': sha(a.mmproj), 'gpu': subprocess.check_output(['nvidia-smi', '--query-gpu=name,uuid,driver_version,memory.total', '--format=csv,noheader'], text=True), 'context': a.context, 'temperature': 0, 'cache': 'prefix cache disabled', 'door': 'off' if a.door_off else 'on', 'vision_kind': a.vision_kind, 'spec': 'plain', 'scope': 'http_transport_only' if a.transport_only else 'native_vision', 'background_responses': a.with_background, 'fixture_sha256': {k: hashlib.sha256(v).hexdigest() for k, v in images.items()}}
 (a.out / 'manifest.json').write_text(json.dumps(manifest, indent=2))
 env = {k: v for k, v in os.environ.items() if not k.startswith('MEMRA_') or k in {'MEMRA_GPU_LOCK', 'MEMRA_CI_LOCK', 'MEMRA_CI_LOCK_HELD', 'MEMRA_RIG_LOCK_FD'}}
 env.update(MEMRA_MODELS='vision=' + str(a.model), MEMRA_GEMMA_VISION='1', MEMRA_GEMMA_MMPROJ=str(a.mmproj), MEMRA_CTX=str(a.context), MEMRA_ADDR=f'127.0.0.1:{a.server_port}', MEMRA_PREFIX_CACHE_MB='0', MEMRA_FETCH_URLS='0' if a.door_off else '1', MEMRA_FETCH_URLS_ALLOWED_HOSTS='127.0.0.1', MEMRA_API_KEY='image-gate-token')
 env['MEMRA_SPEC'] = '0'
+if a.with_background:
+    env['MEMRA_BACKGROUND_RESPONSES'] = '1'
 if a.vision_kind == 'qwen':
     env.pop('MEMRA_GEMMA_VISION', None)
     env.pop('MEMRA_GEMMA_MMPROJ', None)
@@ -194,6 +197,22 @@ def request(case, data, response=False):
     http_log.write(json.dumps({'case': case, 'endpoint': endpoint, 'request_bytes': len(raw), 'request_sha256': hashlib.sha256(raw).hexdigest(), 'elapsed_s': elapsed, 'status': status, 'body': value}) + '\n')
     http_log.flush()
     return status, value, elapsed
+
+def background_result(ident):
+    deadline = time.monotonic() + 60
+    sample = 0
+    while time.monotonic() < deadline:
+        req = urllib.request.Request(f'http://127.0.0.1:{a.server_port}/v1/responses/' + urllib.parse.quote(ident, safe=''), headers={'Authorization': 'Bearer image-gate-token'})
+        with urllib.request.urlopen(req, timeout=min(10, max(0.1, deadline - time.monotonic()))) as result:
+            status, value = result.status, json.loads(result.read())
+        http_log.write(json.dumps({'case': 'background-poll-' + str(sample), 'status': status, 'body': value}) + '\n')
+        http_log.flush()
+        assert status == 200, value
+        if value['status'] not in ('queued', 'in_progress'):
+            return status, value, 0
+        sample += 1
+        threading.Event().wait(0.1)
+    raise AssertionError('background remote image completion deadline')
 
 def successful(result, response=False, colour='red'):
     status, value, _ = result
@@ -278,6 +297,17 @@ try:
                 result = request('vendor-default-' + str(response), naked, response)
                 successful(result, response)
                 verdicts['vendor_default_' + ('responses' if response else 'chat')] = {'pass': True, 'decode_fields': []}
+        if a.with_background and not a.transport_only:
+            refuse('background-literal-blocked', ['http://10.0.0.1/x'], 'image_url_blocked', response=True, background=True)
+            elapsed = refuse('background-caller-deadline', [url_root + '/slow-header'], 'image_url_unreachable', response=True, background=True, timeout_ms=1000)
+            assert 0.7 <= elapsed <= 4, elapsed
+            submitted = payload([url_root + '/red.png'], True)
+            submitted['background'] = True
+            (a.out / 'background-remote-request.json').write_text(json.dumps(submitted, indent=2))
+            status, queued, _ = request('background-remote-submit', submitted, True)
+            assert status == 200 and queued['status'] == 'queued', queued
+            assert successful(background_result(queued['id']), True) == inline_text
+            verdicts['background_remote_image_and_preflight'] = {'pass': True, 'queued_then_completed': True, 'blocked_literal_refused_before_queue': True, 'caller_deadline_s': elapsed}
         for response in (False, True):
             refuse('whole-byte-budget-' + str(response), [url_root + '/budget-header'], 'image_url_too_large', response=response, _padding='x' * (192 * 1024 * 1024 - 1024 * 1024 - 4096))
         elapsed = refuse('per-image-timeout', [url_root + '/slow-header'], 'image_url_unreachable')

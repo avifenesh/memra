@@ -1,0 +1,28 @@
+{
+  "scope": "one pinned Qwen3.5-9B artifact, single-head MTP, one RTX5090 Laptop",
+  "runtime_source": "2873dd4ca37faa15cd4261e7b398926cced30106",
+  "default_pmin_unchanged": 0,
+  "cpu_exact_rational_tests": 6,
+  "gpu_sampler_primitives": "ALL GREEN",
+  "cli_probes": "passed",
+  "vendor_default_positive_rollback": "passed with pinned Qwen profile on chat/completions",
+  "statistical_requests": 3072,
+  "statistical_output_tokens": 24576,
+  "statistical_positions_per_arm": 8,
+  "comparisons": 40,
+  "threshold": 0.00125,
+  "minimum_p_value": 0.066,
+  "distribution_verdict": "no_detected_difference",
+  "uncovered": [
+    "multi-head sampled chain",
+    "other model families or topologies",
+    "full autoregressive distribution proof",
+    "independent confidence-read clock",
+    "checkpoint and strict runtime qualification"
+  ],
+  "generic_default_positive_rollback": "passed",
+  "vendor_profile_sha256": "f8363f31c18a7227af37d51ed801c7c5da3237c35351f50c05512027e732de71",
+  "vendor_chat_requests": 18,
+  "vendor_prompt_tokens": 250,
+  "vendor_warm_cached_tokens": 224
+}

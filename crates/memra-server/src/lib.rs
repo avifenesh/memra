@@ -2087,6 +2087,23 @@ struct AppState {
     /// resident, which is every deployment today — so the surface refuses with
     /// `engine_unbound` rather than answering with something that is not the model.
     audio: audio_api::SharedAudio,
+    /// Background job buffered-output store (memra#550,
+    /// `docs/decisions/COMPLETE-RESULT-PATH-V1.md`). Always present, the same way `metrics`
+    /// always exists: the stock binary wires the in-memory reference implementation
+    /// (`job_store::InMemoryJobStore::from_env`). A deployment can replace it through
+    /// `ServerWiring::with_job_store`. Stored keys include authenticated tenant ownership.
+    /// Only reachable
+    /// when MEMRA_BACKGROUND_RESPONSES is on: with the door closed, `responses_api::translate`
+    /// refuses `background: true` before any handler touches this.
+    job_store: Arc<dyn metering::JobStore>,
+    /// Per-job cancellation signal for a background job with a live task on a worker
+    /// (memra#550). The spawned task holding that job's `EventReceiver` races this against
+    /// the worker's event stream (`tokio::select!`); `POST /v1/responses/{id}/cancel` fires it
+    /// and the task itself removes its own entry once it finalizes. An id absent from this map
+    /// means either no background job with that id exists, or its task already finished; the
+    /// `JobStore`'s own terminal-status check is what actually answers 404 / already-terminal,
+    /// this map is only the stop signal.
+    background_cancel: Arc<Mutex<HashMap<String, Arc<tokio::sync::Notify>>>>,
 }
 
 impl AppState {
@@ -5809,6 +5826,7 @@ enum MeteringWiring {
 /// its own metering and hooks the runtime handles it needs.
 pub struct ServerWiring {
     metering: MeteringWiring,
+    job_store: Option<Arc<dyn metering::JobStore>>,
     /// Called once, when the worker is live (models loaded, commands accepted),
     /// with the runtime handles a deployment-side surface needs. Not awaited.
     on_ready: Option<Box<dyn FnOnce(RuntimeHandles) + Send>>,
@@ -5823,6 +5841,7 @@ impl ServerWiring {
     pub fn stock() -> Self {
         ServerWiring {
             metering: MeteringWiring::Stock,
+            job_store: None,
             on_ready: None,
             claimed_env: Vec::new(),
         }
@@ -5833,9 +5852,18 @@ impl ServerWiring {
     pub fn with_metering(factory: metering::MeteringFactory) -> Self {
         ServerWiring {
             metering: MeteringWiring::Custom(factory),
+            job_store: None,
             on_ready: None,
             claimed_env: Vec::new(),
         }
+    }
+
+    /// Use a deployment-owned result store. Keys are opaque tenant-scoped identities;
+    /// retain the complete key on every operation. Sharing stored results does not move
+    /// live worker cancellation across processes; route cancellation to the owning worker.
+    pub fn with_job_store(mut self, store: Arc<dyn metering::JobStore>) -> Self {
+        self.job_store = Some(store);
+        self
     }
 
     /// Declare that the deployment consumes this reference-only env var itself
@@ -6218,6 +6246,10 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
         // No speech pack can be resident yet: no speech operation has a CUDA kernel
         // (docs/SPEECH.md §1). The surface exists and fails closed.
         audio: audio_api::shared_audio(false),
+        job_store: wiring
+            .job_store
+            .unwrap_or_else(|| Arc::new(job_store::InMemoryJobStore::from_env())),
+        background_cancel: Arc::new(Mutex::new(HashMap::new())),
     };
     let inflight_handle = state.inflight.clone();
     // For the drain-kill fault-attribution latch: the drain future outlives the
@@ -6259,6 +6291,14 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
         // `?beta=true` query some clients append arrives here too.
         .route("/v1/messages", post(anthropic::messages_admitted))
         .route("/v1/responses", post(responses_api::responses_admitted))
+        // Background job poll/cancel (memra#550, MEMRA_BACKGROUND_RESPONSES): a plain
+        // segment param is enough: job ids are `resp_<hex128>`, never contain a slash, unlike
+        // the model-id wildcard above.
+        .route("/v1/responses/:id", get(responses_api::poll_admitted))
+        .route(
+            "/v1/responses/:id/cancel",
+            post(responses_api::cancel_admitted),
+        )
         // Audio (lane/audio-endpoint-g8). `transcriptions` is the OpenAI-named batch surface
         // and the target of G7's live half; the `sessions` trio is the streaming lane
         // lifecycle whose admission is the thing the c4 collapse broke.
@@ -22641,6 +22681,809 @@ temperature = 0.6
         );
     }
 
+    // ---- background job route wiring (memra#550, docs/decisions/COMPLETE-RESULT-PATH-V1.md) --
+
+    /// Serializes every test that flips `MEMRA_BACKGROUND_RESPONSES`: the on-arm mutates
+    /// process-global env and the door-off tests would observe that mutation if they ran in
+    /// parallel. Same shape as `gate_env_lock`, a different flag.
+    static BACKGROUND_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn background_env_lock() -> std::sync::MutexGuard<'static, ()> {
+        let guard = BACKGROUND_ENV_LOCK.lock().unwrap_or_else(|poisoned| {
+            BACKGROUND_ENV_LOCK.clear_poison();
+            poisoned.into_inner()
+        });
+        unsafe { std::env::remove_var(responses_api::BACKGROUND_RESPONSES_ENV) };
+        guard
+    }
+
+    /// Door OFF: a route-level `background: true` request refuses exactly like before this
+    /// lane, and never reaches the JobStore (no id is created, so a follow-up poll on any id
+    /// this request could plausibly have gotten is still a 404, not a stale record).
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
+    async fn background_door_off_route_refuses_and_creates_no_job() {
+        let _env_lock = background_env_lock();
+        let st = fake_worker_state();
+        let resp = responses_api::responses(
+            State(st.clone()),
+            axum::http::HeaderMap::new(),
+            None,
+            axum::body::Bytes::from(
+                json!({"model": "m", "input": "hi", "background": true}).to_string(),
+            ),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let body = body_value(resp).await;
+        assert_eq!(body["error"]["param"], "background");
+    }
+
+    /// Door ON: `background: true` is admitted, answers immediately with a queued envelope
+    /// carrying the request id, and the worker's actual output later shows up on `GET
+    /// /v1/responses/{id}`, the same accumulator a synchronous call would have rendered,
+    /// never a resummarized answer.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
+    async fn background_submit_returns_queued_then_poll_reaches_completed() {
+        let _l = drain_lock();
+        let _env_lock = background_env_lock();
+        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
+
+        let st = fake_worker_state_with_steps(3, std::time::Duration::from_millis(2));
+        let resp = responses_api::responses(
+            State(st.clone()),
+            axum::http::HeaderMap::new(),
+            None,
+            axum::body::Bytes::from(
+                json!({"model": "m", "input": "hi", "background": true}).to_string(),
+            ),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_value(resp).await;
+        assert_eq!(body["status"], "queued");
+        let id = body["id"].as_str().unwrap().to_string();
+
+        let mut final_body = None;
+        for _ in 0..500 {
+            let poll = responses_api::poll_admitted(
+                State(st.clone()),
+                axum::http::HeaderMap::new(),
+                Path(id.clone()),
+            )
+            .await;
+            assert_eq!(poll.status(), StatusCode::OK, "poll must never itself fail");
+            let b = body_value(poll).await;
+            if b["status"] == "completed" {
+                final_body = Some(b);
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        let b = final_body.expect("background job never reached completed");
+        assert_eq!(b["output"][0]["content"][0]["text"], "xxx");
+        assert_eq!(b["usage"]["output_tokens"], 3);
+    }
+
+    #[test]
+    fn background_storage_keys_are_unambiguous() {
+        assert_ne!(
+            responses_api::background_store_key("a", "bc"),
+            responses_api::background_store_key("ab", "c")
+        );
+        assert_ne!(
+            responses_api::background_store_key("a:1", "x"),
+            responses_api::background_store_key("a", ":1x")
+        );
+        assert_ne!(
+            responses_api::background_store_key("blue", "4:acmeresp_x"),
+            responses_api::background_store_key("acme", "resp_x")
+        );
+    }
+
+    #[test]
+    fn deployment_job_store_is_retained_by_wiring() {
+        let store: Arc<dyn metering::JobStore> = Arc::new(job_store::InMemoryJobStore::new(
+            std::time::Duration::from_secs(60),
+            4096,
+        ));
+        let wiring = ServerWiring::stock().with_job_store(store.clone());
+        assert!(Arc::ptr_eq(wiring.job_store.as_ref().unwrap(), &store));
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: shared drain/env controls must remain held through handler awaits
+    async fn background_tenant_isolation_on_submit_poll_and_cancel() {
+        let _l = drain_lock();
+        let _env_lock = background_env_lock();
+        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
+        let mut st = fake_worker_state_with_steps(100, std::time::Duration::from_millis(2));
+        let spec = format!(
+            "acme:{},acme:{},blue:{}",
+            auth::sha256_hex("owner-key"),
+            auth::sha256_hex("rotated-key"),
+            auth::sha256_hex("foreign-key")
+        );
+        st.api_auth.keyring = Some(Box::leak(Box::new(
+            auth::KeyStore::from_spec(&spec).unwrap(),
+        )));
+        let headers = |key: &str| {
+            let mut h = HeaderMap::new();
+            h.insert("authorization", format!("Bearer {key}").parse().unwrap());
+            h
+        };
+        let response = responses_api::responses(
+            State(st.clone()),
+            headers("owner-key"),
+            None,
+            axum::body::Bytes::from(
+                json!({"model":"m", "input":"hi", "background":true}).to_string(),
+            ),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_value(response).await;
+        let id = body["id"].as_str().unwrap().to_string();
+        assert!(
+            !id.contains("acme"),
+            "storage tenant must not leak into the public id"
+        );
+        let key = responses_api::background_store_key("acme", &id);
+        let notify = st
+            .background_cancel
+            .lock()
+            .unwrap()
+            .get(&key)
+            .unwrap()
+            .clone();
+        for candidate in [id.clone(), key] {
+            let poll = responses_api::poll_admitted(
+                State(st.clone()),
+                headers("foreign-key"),
+                Path(candidate.clone()),
+            )
+            .await;
+            let cancel = responses_api::cancel_admitted(
+                State(st.clone()),
+                headers("foreign-key"),
+                Path(candidate),
+            )
+            .await;
+            assert_eq!(poll.status(), StatusCode::NOT_FOUND);
+            assert_eq!(cancel.status(), StatusCode::NOT_FOUND);
+            assert_eq!(body_value(poll).await, body_value(cancel).await);
+        }
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(1), notify.notified())
+                .await
+                .is_err(),
+            "foreign cancel must never signal the task"
+        );
+        assert_eq!(
+            responses_api::poll_admitted(State(st.clone()), HeaderMap::new(), Path(id.clone()))
+                .await
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+        let owner_poll = responses_api::poll_admitted(
+            State(st.clone()),
+            headers("rotated-key"),
+            Path(id.clone()),
+        )
+        .await;
+        assert_eq!(
+            owner_poll.status(),
+            StatusCode::OK,
+            "ownership is per tenant, not per API key"
+        );
+        let cancel = responses_api::cancel_admitted(
+            State(st.clone()),
+            headers("rotated-key"),
+            Path(id.clone()),
+        )
+        .await;
+        assert_eq!(cancel.status(), StatusCode::OK);
+        assert_eq!(body_value(cancel).await["status"], "cancelled");
+        assert_eq!(
+            responses_api::poll_admitted(
+                State(st.clone()),
+                headers("foreign-key"),
+                Path(id.clone())
+            )
+            .await
+            .status(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            responses_api::cancel_admitted(
+                State(st.clone()),
+                headers("foreign-key"),
+                Path(id.clone())
+            )
+            .await
+            .status(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            responses_api::cancel_admitted(State(st), headers("owner-key"), Path(id))
+                .await
+                .status(),
+            StatusCode::CONFLICT
+        );
+    }
+
+    /// `GET` on an id the store never admitted (never submitted, or a typo) is a plain 404,
+    /// not a 500 or an empty 200. The same answer applies whether the id never existed or existed
+    /// and was TTL-evicted (the sweep just removes the record; there is no tombstone).
+    #[tokio::test]
+    async fn poll_unknown_job_id_is_404() {
+        let st = fake_worker_state();
+        let resp = responses_api::poll_admitted(
+            State(st),
+            axum::http::HeaderMap::new(),
+            Path("resp_does-not-exist".to_string()),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    /// A cancel after the job already completed is refused (409), not a silent no-op: the
+    /// caller must be able to tell "too late, it already finished" from "cancelled".
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
+    async fn cancel_after_completion_is_conflict_not_a_silent_noop() {
+        let _l = drain_lock();
+        let _env_lock = background_env_lock();
+        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
+
+        let st = fake_worker_state_with_steps(1, std::time::Duration::ZERO);
+        let resp = responses_api::responses(
+            State(st.clone()),
+            axum::http::HeaderMap::new(),
+            None,
+            axum::body::Bytes::from(
+                json!({"model": "m", "input": "hi", "background": true}).to_string(),
+            ),
+        )
+        .await;
+        let body = body_value(resp).await;
+        let id = body["id"].as_str().unwrap().to_string();
+
+        let mut completed = false;
+        for _ in 0..500 {
+            let poll = responses_api::poll_admitted(
+                State(st.clone()),
+                axum::http::HeaderMap::new(),
+                Path(id.clone()),
+            )
+            .await;
+            if body_value(poll).await["status"] == "completed" {
+                completed = true;
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        assert!(completed, "setup: job never reached completed");
+
+        let cancel = responses_api::cancel_admitted(
+            State(st.clone()),
+            axum::http::HeaderMap::new(),
+            Path(id.clone()),
+        )
+        .await;
+        assert_eq!(cancel.status(), StatusCode::CONFLICT);
+        let cb = body_value(cancel).await;
+        assert_eq!(cb["error"]["code"], "background_job_already_terminal");
+
+        // The completed record is untouched by the refused cancel.
+        let poll = responses_api::poll_admitted(
+            State(st.clone()),
+            axum::http::HeaderMap::new(),
+            Path(id.clone()),
+        )
+        .await;
+        assert_eq!(body_value(poll).await["status"], "completed");
+    }
+
+    /// Cancel mid-run: the running task actually stops (the worker's event channel closes,
+    /// mirroring the existing deadline-cancel idiom), the ledger gets exactly ONE terminal
+    /// row (a deadline-partial billing the one token that was produced, never a plain
+    /// `complete` and never left unfinalized on `Drop`), and the store carries the partial
+    /// text under `status: "cancelled"`.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
+    async fn cancel_mid_run_stops_the_worker_and_writes_one_cancelled_row() {
+        let _l = drain_lock();
+        let _env_lock = background_env_lock();
+        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
+
+        let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<Cmd>();
+        let health = health::WorkerHealth::new();
+        let h = health.clone();
+        let worker_saw_cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let worker_saw_cancel2 = worker_saw_cancel.clone();
+        std::thread::spawn(move || {
+            h.mark_ready();
+            while let Ok(Cmd::Generate(req)) = cmd_rx.recv() {
+                worker::release_pending_admit();
+                worker::release_admission_reservation(req.lane);
+                let _ = req.tx.send(Event::PromptUsage {
+                    n_prompt: 1,
+                    n_cached: 0,
+                });
+                let _ = req.tx.send(Event::Token {
+                    id: 1,
+                    text: "partial".into(),
+                });
+                // Never sends Done: this job is cancelled before the worker would finish.
+                // The cancel signal is `rx` being dropped on the consumer side; this loop
+                // proves it happened by watching the sender's own channel close.
+                for _ in 0..5_000 {
+                    if req.tx.is_closed() {
+                        worker_saw_cancel2.store(true, std::sync::atomic::Ordering::SeqCst);
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+            }
+        });
+        for _ in 0..2_000 {
+            if health.live().is_ok() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+
+        let mut st = fake_worker_state();
+        st.cmd_tx = cmd_tx;
+        st.health = health;
+        let mock = MockMetering::admit_all();
+        st.metering = Some(mock.clone());
+
+        let resp = responses_api::responses(
+            State(st.clone()),
+            axum::http::HeaderMap::new(),
+            None,
+            axum::body::Bytes::from(
+                json!({"model": "m", "input": "hi", "background": true}).to_string(),
+            ),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_value(resp).await;
+        let id = body["id"].as_str().unwrap().to_string();
+
+        // Give the background task a moment to record the one token before cancelling.
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+        let cancel = responses_api::cancel_admitted(
+            State(st.clone()),
+            axum::http::HeaderMap::new(),
+            Path(id.clone()),
+        )
+        .await;
+        assert_eq!(cancel.status(), StatusCode::OK);
+        let cb = body_value(cancel).await;
+        assert_eq!(cb["status"], "cancelled");
+        assert_eq!(
+            cb["output"][0]["content"][0]["text"], "partial",
+            "the partial output actually produced must be preserved, never dropped: {cb}"
+        );
+
+        assert!(
+            worker_saw_cancel.load(std::sync::atomic::Ordering::SeqCst),
+            "the worker must observe its event channel close: cancel did not stop generation"
+        );
+
+        // Exactly one terminal ledger row: a deadline-partial billing the one token that
+        // was produced (the design doc's "zero tokens bills zero, some tokens bills what
+        // was delivered", reusing the existing partial-billing outcome), never a plain
+        // `complete`, and never left unfinalized on Drop.
+        let events = mock.events();
+        let terminal_rows: Vec<_> = events
+            .iter()
+            .filter(|e| {
+                matches!(
+                    e,
+                    MeterEvent::Complete { .. }
+                        | MeterEvent::DeadlinePartial { .. }
+                        | MeterEvent::Reject { .. }
+                        | MeterEvent::Unbilled { .. }
+                        | MeterEvent::Dropped { .. }
+                )
+            })
+            .collect();
+        assert_eq!(
+            terminal_rows.len(),
+            1,
+            "exactly one terminal row per job: {events:?}"
+        );
+        assert!(
+            matches!(
+                terminal_rows[0],
+                MeterEvent::DeadlinePartial { completion: 1, .. }
+            ),
+            "a cancel with tokens already produced bills the partial, never zero and never \
+             a full `complete`: {events:?}"
+        );
+
+        // The job is terminal; a poll afterward still reports cancelled, never resurrected
+        // back to in_progress by a late worker write racing this test's own assertions.
+        let poll = responses_api::poll_admitted(
+            State(st.clone()),
+            axum::http::HeaderMap::new(),
+            Path(id.clone()),
+        )
+        .await;
+        assert_eq!(body_value(poll).await["status"], "cancelled");
+    }
+
+    /// A worker result arriving after a job was cancelled and already collected must not
+    /// resurrect it. This is the exact race `job_store::tests::a_stale_write_after_cancel_and_...`
+    /// covers at the `JobStore` level, exercised here through the same store instance a
+    /// route would use (`AppState.job_store`), not a bespoke store built just for this test.
+    #[test]
+    fn late_worker_write_after_cancel_and_collect_does_not_resurrect_the_job() {
+        let st = fake_worker_state();
+        st.job_store
+            .put("resp_late", metering::JobRecord::queued())
+            .unwrap();
+        st.job_store.cancel("resp_late").unwrap();
+        let taken = st.job_store.take("resp_late").unwrap();
+        assert_eq!(taken.status, metering::JobStatus::Cancelled);
+
+        // A worker that had not yet noticed the cancel writes late, non-terminal or
+        // terminal: both are refused because the id is now unknown to the store, never
+        // treated as permission to resurrect a job the store already forgot.
+        let late_in_progress = st.job_store.put(
+            "resp_late",
+            metering::JobRecord {
+                status: metering::JobStatus::InProgress,
+                output: Some(json!({"text": "still going"})),
+                error: None,
+            },
+        );
+        assert_eq!(late_in_progress, Err(metering::JobStoreError::NotFound));
+        assert_eq!(st.job_store.get("resp_late"), None);
+    }
+
+    /// A byte-cap tight enough to admit the `Queued` placeholder but not the real job is
+    /// refused at SUBMIT, before any worker time is spent, with the same 503 shape a deployment
+    /// can already recognize by its `code`.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
+    async fn byte_cap_refuses_submission_before_any_worker_time_is_spent() {
+        let _env_lock = background_env_lock();
+        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
+
+        let mut st = fake_worker_state();
+        // Tight enough that the Queued placeholder itself does not fit.
+        st.job_store = Arc::new(job_store::InMemoryJobStore::new(
+            std::time::Duration::from_secs(60),
+            8,
+        ));
+        let mock = MockMetering::admit_all();
+        st.metering = Some(mock.clone());
+        let resp = responses_api::responses(
+            State(st.clone()),
+            axum::http::HeaderMap::new(),
+            None,
+            axum::body::Bytes::from(
+                json!({"model": "m", "input": "hi", "background": true}).to_string(),
+            ),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let body = body_value(resp).await;
+        assert_eq!(
+            body["error"]["code"],
+            "background_job_store_capacity_exceeded"
+        );
+
+        // revuto's finding: this refusal must settle the receipt through `ledger_rejected`
+        // like every other admission refusal, not drop it and let the metering seam's Drop
+        // price it as an abandoned CLIENT rather than OUR refusal.
+        let events = mock.events();
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, MeterEvent::Reject { status: 503, .. })),
+            "the capacity refusal must settle as a rejected receipt: {events:?}"
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, MeterEvent::Dropped { .. })),
+            "the receipt must not be left to Drop as an abandoned client: {events:?}"
+        );
+    }
+
+    /// revuto's second round of findings: a ledger failure INSIDE `run_background_job`
+    /// (its `Receipt::complete` returning `Err`) must not leave the receipt unfinalized
+    /// (which `Drop` would price as an abandoned client) and must not answer the job
+    /// `Completed` when it was never actually billed.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
+    async fn a_complete_ledger_failure_rejects_the_receipt_and_fails_the_job() {
+        let _l = drain_lock();
+        let _env_lock = background_env_lock();
+        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
+
+        struct FailCompleteReceipt {
+            events: Arc<std::sync::Mutex<Vec<&'static str>>>,
+        }
+        impl metering::Receipt for FailCompleteReceipt {
+            fn arm_capture(&mut self, _prompt: serde_json::Value) {}
+            fn capture_completion_delta(&mut self, _text: &str) {}
+            fn record_prompt_usage(&mut self, _p: u64, _c: u64) -> Result<(), String> {
+                Ok(())
+            }
+            fn record_completion_token(&mut self) -> Result<(), String> {
+                Ok(())
+            }
+            fn complete(&mut self, _u: metering::UsageCounts, _e: f64) -> Result<(), String> {
+                Err("simulated ledger failure".to_string())
+            }
+            fn complete_deadline_partial(
+                &mut self,
+                _u: metering::UsageCounts,
+                _e: f64,
+            ) -> Result<(), String> {
+                Err("simulated ledger failure".to_string())
+            }
+            fn reject(&mut self, status: u16, code: &str) -> Result<(), String> {
+                self.events.lock().unwrap().push(
+                    if status == 500 && code == "request_ledger_unavailable" {
+                        "rejected"
+                    } else {
+                        "rejected_other"
+                    },
+                );
+                Ok(())
+            }
+            fn settle_unbilled(
+                &mut self,
+                _outcome: &'static str,
+                _status: u16,
+                _code: &str,
+            ) -> Result<(), String> {
+                Ok(())
+            }
+        }
+        struct FailCompleteMetering {
+            events: Arc<std::sync::Mutex<Vec<&'static str>>>,
+        }
+        impl metering::Metering for FailCompleteMetering {
+            fn enforces_limits(&self) -> bool {
+                false
+            }
+            fn is_limited(&self, _tenant: &str) -> Result<bool, metering::AdmitError> {
+                Ok(true)
+            }
+            fn reserve(
+                &self,
+                _t: &str,
+                _p: Option<&str>,
+                _m: &str,
+                _pt: u64,
+                _cb: u64,
+            ) -> Result<Option<metering::Permit>, metering::AdmitError> {
+                Ok(None)
+            }
+            fn open(
+                &self,
+                _meta: &metering::RequestMeta<'_>,
+                _permit: Option<metering::Permit>,
+            ) -> Box<dyn metering::Receipt> {
+                Box::new(FailCompleteReceipt {
+                    events: self.events.clone(),
+                })
+            }
+            fn limits_health(&self) -> Option<metering::LimitsHealth> {
+                None
+            }
+        }
+        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut st = fake_worker_state_with_steps(1, std::time::Duration::ZERO);
+        st.metering = Some(Arc::new(FailCompleteMetering {
+            events: events.clone(),
+        }));
+
+        let resp = responses_api::responses(
+            State(st.clone()),
+            axum::http::HeaderMap::new(),
+            None,
+            axum::body::Bytes::from(
+                json!({"model": "m", "input": "hi", "background": true}).to_string(),
+            ),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let id = body_value(resp).await["id"].as_str().unwrap().to_string();
+
+        let mut terminal_body = None;
+        for _ in 0..500 {
+            let poll = responses_api::poll_admitted(
+                State(st.clone()),
+                axum::http::HeaderMap::new(),
+                Path(id.clone()),
+            )
+            .await;
+            let b = body_value(poll).await;
+            if b["status"] != "queued" && b["status"] != "in_progress" {
+                terminal_body = Some(b);
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        let b = terminal_body.expect("job never reached a terminal state");
+        assert_eq!(
+            b["status"], "failed",
+            "a ledger failure at completion must not be reported as completed: {b}"
+        );
+        assert_eq!(
+            *events.lock().unwrap(),
+            vec!["rejected"],
+            "the receipt must be explicitly rejected, not left for Drop to price as an \
+             abandoned client"
+        );
+    }
+
+    /// revuto's other finding on the first version of this lane: a cap that admits the tiny
+    /// `Queued`/`InProgress` placeholders but is too small for the real completed body must
+    /// not leave the job stuck `InProgress` forever (billed, unreachable by `GET`, never
+    /// TTL-evicted). `finalize_terminal_job`'s fallback must land a small `Failed` record
+    /// instead, so the job still reaches a terminal, pollable state.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
+    async fn a_terminal_write_the_byte_cap_refuses_falls_back_to_failed_not_stuck() {
+        let _l = drain_lock();
+        let _env_lock = background_env_lock();
+        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
+
+        let mut st = fake_worker_state_with_steps(50, std::time::Duration::from_millis(1));
+        // Exactly fills the placeholder reservation, but cannot hold a completed
+        // envelope. The fallback must still fit with no spare capacity.
+        st.job_store = Arc::new(job_store::InMemoryJobStore::new(
+            std::time::Duration::from_secs(60),
+            256,
+        ));
+        let resp = responses_api::responses(
+            State(st.clone()),
+            axum::http::HeaderMap::new(),
+            None,
+            axum::body::Bytes::from(
+                json!({"model": "m", "input": "hi", "background": true}).to_string(),
+            ),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let id = body_value(resp).await["id"].as_str().unwrap().to_string();
+
+        let mut terminal_body = None;
+        for _ in 0..500 {
+            let poll = responses_api::poll_admitted(
+                State(st.clone()),
+                axum::http::HeaderMap::new(),
+                Path(id.clone()),
+            )
+            .await;
+            let b = body_value(poll).await;
+            if b["status"] != "queued" && b["status"] != "in_progress" {
+                terminal_body = Some(b);
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        let b = terminal_body.expect(
+            "a terminal write the byte cap refuses must still reach a terminal state, \
+             never stay in_progress forever",
+        );
+        assert_eq!(b["status"], "failed");
+        assert!(
+            b["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("could not be buffered"),
+            "the fallback record must say why the real output is missing: {b}"
+        );
+    }
+
+    /// A job past its TTL is evicted lazily on the next store touch; polling it afterward is
+    /// indistinguishable from an id that never existed: a 404, not a stale "completed".
+    #[tokio::test]
+    async fn ttl_eviction_then_poll_is_404() {
+        let mut st = fake_worker_state();
+        st.job_store = Arc::new(job_store::InMemoryJobStore::new(
+            std::time::Duration::from_millis(10),
+            job_store::DEFAULT_MAX_BYTES,
+        ));
+        let key = responses_api::background_store_key("default", "resp_ttl");
+        st.job_store
+            .put(&key, metering::JobRecord::queued())
+            .unwrap();
+        st.job_store
+            .put(
+                &key,
+                metering::JobRecord {
+                    status: metering::JobStatus::Completed,
+                    output: Some(json!({"id": "resp_ttl", "status": "completed"})),
+                    error: None,
+                },
+            )
+            .unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+
+        let resp = responses_api::poll_admitted(
+            State(st),
+            axum::http::HeaderMap::new(),
+            Path("resp_ttl".to_string()),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    /// revuto's finding on the first version of this lane: admission still ran the
+    /// synchronous non-stream deadline-feasibility gate against a `background: true`
+    /// submission, so exactly the >90 s generations background delivery exists to serve
+    /// were refused before ever reaching the new routes. `max_output_tokens: 200000` against
+    /// the 60 tok/s decode floor estimates ~3333 s, which does not fit the default 90 s
+    /// deadline even at the gate's 150% margin: infeasible under the OLD code path.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
+    async fn background_bypasses_the_nonstream_deadline_feasibility_gate() {
+        let _l = drain_lock();
+        let _env_lock = background_env_lock();
+        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
+
+        let st = fake_worker_state();
+        let resp = responses_api::responses(
+            State(st),
+            axum::http::HeaderMap::new(),
+            None,
+            axum::body::Bytes::from(
+                json!({
+                    "model": "m", "input": "hi", "background": true,
+                    "max_output_tokens": 200_000,
+                })
+                .to_string(),
+            ),
+        )
+        .await;
+        let status = resp.status();
+        let body = body_value(resp).await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "a background submission must not be refused by the synchronous \
+             deadline-feasibility gate: {body}"
+        );
+        assert_eq!(body["status"], "queued");
+    }
+
+    /// The control half of the test above: the SAME shape, without `background: true`,
+    /// must still be refused by the gate. The fix is background-specific, not a global
+    /// weakening of the feasibility check.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: DRAIN_LOCK serializes this test against its shared-state peers; holding it across the awaits is the point
+    async fn nonstream_deadline_gate_still_refuses_the_same_shape_without_background() {
+        let _l = drain_lock();
+        let st = fake_worker_state();
+        let resp = responses_api::responses(
+            State(st),
+            axum::http::HeaderMap::new(),
+            None,
+            axum::body::Bytes::from(
+                json!({"model": "m", "input": "hi", "max_output_tokens": 200_000}).to_string(),
+            ),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let body = body_value(resp).await;
+        assert_eq!(body["error"]["code"], "nonstream_deadline_infeasible");
+    }
+
     fn fake_worker_state() -> AppState {
         fake_worker_state_with_steps(1, std::time::Duration::ZERO)
     }
@@ -22805,6 +23648,8 @@ temperature = 0.6
             health,
             bg: None,
             audio: audio_api::shared_audio(false),
+            job_store: Arc::new(job_store::InMemoryJobStore::from_env()),
+            background_cancel: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 

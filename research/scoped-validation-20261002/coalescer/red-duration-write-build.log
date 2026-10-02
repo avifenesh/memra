@@ -1,0 +1,10 @@
+warning: unused variable: `ran`
+   --> target/coalescer-contract/red-duration-write.rs:208:21
+    |
+208 |                 let ran = std::time::Instant::now();
+    |                     ^^^ help: if this is intentional, prefix it with an underscore: `_ran`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: 1 warning emitted
+
