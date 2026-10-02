@@ -1,0 +1,57 @@
+  ok: A fanout cached_tokens == [0] + [256]x4
+  ok: A-req1 prompt_tokens == 272
+  ok: A-req2 prompt_tokens == 272
+  ok: A-req3 prompt_tokens == 272
+  ok: A-req4 prompt_tokens == 272
+  ok: A-req5 prompt_tokens == 272
+  ok: B-req1 cached_tokens == 0 (cross-salt blindness)
+  ok: B-req1 prompt_tokens == 272
+  ok: prompt_tokens_in == 1632
+  ok: cached_tokens_in == 1024
+  ok: computed_tokens_in == prompt - cached
+  ok: cache_hit_token_ratio matches arithmetic
+  ok: prefix_cache_hits == N-1
+  ok: prefix_cache_misses == 2 (one A leader + cross-salt B)
+  ok: prefix_cache_inserts == 2 (shared A prefix + B seed)
+  ok: prefix_cache_hit_tokens == 1024
+  ok: lcp_histogram: 6 probes total
+  ok: lcp_histogram: 2 cold probes in bucket [0]
+  ok: lcp_histogram: 4 probes in K's bucket (edge 256)
+  ok: tick-seg [64,512) window carries the shared-prefix probes
+  ok: tenants[meter-A] split exact
+  ok: tenants[meter-B] split exact (0 cached)
+  ok: Prometheus content type
+  ok: promtool check metrics
+  ok: Prometheus memra_prompt_tokens_in_total == 1632
+  ok: Prometheus memra_cached_tokens_in_total == 1024
+  ok: Prometheus memra_computed_tokens_in_total == 608
+  ok: Prometheus memra_prefix_cache_hits_total == 4
+  ok: Prometheus memra_prefix_cache_misses_total == 2
+  ok: Prometheus memra_prefix_cache_inserts_total == 2
+  ok: Prometheus memra_prefix_cache_evictions_total == 0
+  ok: Prometheus memra_prefix_cache_hit_tokens_total == 1024
+  ok: Prometheus cache-hit ratio
+  ok: hybrid queue_wait count == 6
+  ok: hybrid ttft count == 6
+  ok: hybrid e2e count == 6
+  ok: completion-token usage available for emitted-gap accounting
+  ok: emitted-token gaps for interactive == 36
+  ok: emitted-token gaps for judge == 0
+  ok: emitted-token gaps for harvest == 0
+  ok: labels bounded to loaded model, backend, HTTP outcome, three lanes and fixed buckets
+  ok: common cached-token counter matches request usage
+  ok: prefill histogram matches prompt accounting
+  ok: completion histogram matches output accounting
+  ok: post-workload active sessions return to zero
+  ok: post-workload queued sessions return to zero
+  ok: canonical KV backed bytes do not exceed capacity
+  ok: JSON schema unchanged by Prometheus negotiation
+  ok: JSON prompt_tokens_in remains unchanged
+  ok: JSON cached_tokens_in remains unchanged
+  ok: JSON computed_tokens_in remains unchanged
+  ok: JSON prefix_cache_hits remains unchanged
+  ok: JSON prefix_cache_misses remains unchanged
+  ok: JSON prefix_cache_inserts remains unchanged
+  ok: JSON contains no new histogram fields
+  ok: economics revenue_multiplier == 2.6842 (factor 1.0)
+cache-meter-gate: 0 failed

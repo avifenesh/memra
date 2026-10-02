@@ -1,0 +1,669 @@
+semantic_name	physical_name	dtype	shape	storage	physical_bytes
+output.weight	output.weight	Q6_K	[4096, 248320]	Quantized(QuantLayout { format: "Q6_K", block_shape: [256], auxiliaries: [] })	834355200
+output_norm.weight	output_norm.weight	F32	[4096]	Float(F32)	16384
+token_embd.weight	token_embd.weight	NVFP4	[4096, 248320]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	572129280
+blk.0.attn_gate.weight	blk.0.attn_gate.weight	Q5_K	[4096, 4096]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	11534336
+blk.0.attn_norm.weight	blk.0.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.0.attn_qkv.weight	blk.0.attn_qkv.weight	Q4_K	[4096, 8192]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	18874368
+blk.0.ffn_down.weight	blk.0.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.0.ffn_down.scale	blk.0.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.0.ffn_down.input_scale	blk.0.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.0.ffn_gate.weight	blk.0.ffn_gate.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.0.ffn_gate.scale	blk.0.ffn_gate.scale	F32	[1]	Float(F32)	4
+blk.0.ffn_gate.input_scale	blk.0.ffn_gate.input_scale	F32	[1]	Float(F32)	4
+blk.0.ffn_up.weight	blk.0.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.0.ffn_up.scale	blk.0.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.0.ffn_up.input_scale	blk.0.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.0.post_attention_norm.weight	blk.0.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.0.ssm_a	blk.0.ssm_a	F32	[32]	Float(F32)	128
+blk.0.ssm_alpha.weight	blk.0.ssm_alpha.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.0.ssm_beta.weight	blk.0.ssm_beta.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.0.ssm_conv1d.weight	blk.0.ssm_conv1d.weight	F32	[4, 8192]	Float(F32)	131072
+blk.0.ssm_dt.bias	blk.0.ssm_dt.bias	F32	[32]	Float(F32)	128
+blk.0.ssm_norm.weight	blk.0.ssm_norm.weight	F32	[128]	Float(F32)	512
+blk.0.ssm_out.weight	blk.0.ssm_out.weight	Q4_K	[4096, 4096]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	9437184
+blk.1.attn_gate.weight	blk.1.attn_gate.weight	Q4_K	[4096, 4096]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	9437184
+blk.1.attn_norm.weight	blk.1.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.1.attn_qkv.weight	blk.1.attn_qkv.weight	Q4_K	[4096, 8192]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	18874368
+blk.1.ffn_down.weight	blk.1.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.1.ffn_down.scale	blk.1.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.1.ffn_down.input_scale	blk.1.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.1.ffn_gate.weight	blk.1.ffn_gate.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.1.ffn_gate.scale	blk.1.ffn_gate.scale	F32	[1]	Float(F32)	4
+blk.1.ffn_gate.input_scale	blk.1.ffn_gate.input_scale	F32	[1]	Float(F32)	4
+blk.1.ffn_up.weight	blk.1.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.1.ffn_up.scale	blk.1.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.1.ffn_up.input_scale	blk.1.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.1.post_attention_norm.weight	blk.1.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.1.ssm_a	blk.1.ssm_a	F32	[32]	Float(F32)	128
+blk.1.ssm_alpha.weight	blk.1.ssm_alpha.weight	BF16	[4096, 32]	Float(Bf16)	262144
+blk.1.ssm_beta.weight	blk.1.ssm_beta.weight	BF16	[4096, 32]	Float(Bf16)	262144
+blk.1.ssm_conv1d.weight	blk.1.ssm_conv1d.weight	F32	[4, 8192]	Float(F32)	131072
+blk.1.ssm_dt.bias	blk.1.ssm_dt.bias	F32	[32]	Float(F32)	128
+blk.1.ssm_norm.weight	blk.1.ssm_norm.weight	F32	[128]	Float(F32)	512
+blk.1.ssm_out.weight	blk.1.ssm_out.weight	Q4_K	[4096, 4096]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	9437184
+blk.2.attn_gate.weight	blk.2.attn_gate.weight	Q4_K	[4096, 4096]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	9437184
+blk.2.attn_norm.weight	blk.2.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.2.attn_qkv.weight	blk.2.attn_qkv.weight	NVFP4	[4096, 8192]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	18874368
+blk.2.attn_qkv.scale	blk.2.attn_qkv.scale	F32	[1]	Float(F32)	4
+blk.2.attn_qkv.input_scale	blk.2.attn_qkv.input_scale	F32	[1]	Float(F32)	4
+blk.2.ffn_down.weight	blk.2.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.2.ffn_down.scale	blk.2.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.2.ffn_down.input_scale	blk.2.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.2.ffn_gate.weight	blk.2.ffn_gate.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.2.ffn_gate.scale	blk.2.ffn_gate.scale	F32	[1]	Float(F32)	4
+blk.2.ffn_gate.input_scale	blk.2.ffn_gate.input_scale	F32	[1]	Float(F32)	4
+blk.2.ffn_up.weight	blk.2.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.2.ffn_up.scale	blk.2.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.2.ffn_up.input_scale	blk.2.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.2.post_attention_norm.weight	blk.2.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.2.ssm_a	blk.2.ssm_a	F32	[32]	Float(F32)	128
+blk.2.ssm_alpha.weight	blk.2.ssm_alpha.weight	BF16	[4096, 32]	Float(Bf16)	262144
+blk.2.ssm_beta.weight	blk.2.ssm_beta.weight	BF16	[4096, 32]	Float(Bf16)	262144
+blk.2.ssm_conv1d.weight	blk.2.ssm_conv1d.weight	F32	[4, 8192]	Float(F32)	131072
+blk.2.ssm_dt.bias	blk.2.ssm_dt.bias	F32	[32]	Float(F32)	128
+blk.2.ssm_norm.weight	blk.2.ssm_norm.weight	F32	[128]	Float(F32)	512
+blk.2.ssm_out.weight	blk.2.ssm_out.weight	Q4_K	[4096, 4096]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	9437184
+blk.3.attn_k.weight	blk.3.attn_k.weight	Q5_K	[4096, 1024]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	2883584
+blk.3.attn_k_norm.weight	blk.3.attn_k_norm.weight	F32	[256]	Float(F32)	1024
+blk.3.attn_norm.weight	blk.3.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.3.attn_output.weight	blk.3.attn_output.weight	NVFP4	[4096, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	9437184
+blk.3.attn_output.scale	blk.3.attn_output.scale	F32	[1]	Float(F32)	4
+blk.3.attn_output.input_scale	blk.3.attn_output.input_scale	F32	[1]	Float(F32)	4
+blk.3.attn_q.weight	blk.3.attn_q.weight	Q4_K	[4096, 8192]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	18874368
+blk.3.attn_q_norm.weight	blk.3.attn_q_norm.weight	F32	[256]	Float(F32)	1024
+blk.3.attn_v.weight	blk.3.attn_v.weight	Q5_K	[4096, 1024]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	2883584
+blk.3.ffn_down.weight	blk.3.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.3.ffn_down.scale	blk.3.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.3.ffn_down.input_scale	blk.3.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.3.ffn_gate.weight	blk.3.ffn_gate.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.3.ffn_gate.scale	blk.3.ffn_gate.scale	F32	[1]	Float(F32)	4
+blk.3.ffn_gate.input_scale	blk.3.ffn_gate.input_scale	F32	[1]	Float(F32)	4
+blk.3.ffn_up.weight	blk.3.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.3.ffn_up.scale	blk.3.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.3.ffn_up.input_scale	blk.3.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.3.post_attention_norm.weight	blk.3.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.4.attn_gate.weight	blk.4.attn_gate.weight	Q4_K	[4096, 4096]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	9437184
+blk.4.attn_norm.weight	blk.4.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.4.attn_qkv.weight	blk.4.attn_qkv.weight	Q4_K	[4096, 8192]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	18874368
+blk.4.ffn_down.weight	blk.4.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.4.ffn_down.scale	blk.4.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.4.ffn_down.input_scale	blk.4.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.4.ffn_gate.weight	blk.4.ffn_gate.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.4.ffn_gate.scale	blk.4.ffn_gate.scale	F32	[1]	Float(F32)	4
+blk.4.ffn_gate.input_scale	blk.4.ffn_gate.input_scale	F32	[1]	Float(F32)	4
+blk.4.ffn_up.weight	blk.4.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.4.ffn_up.scale	blk.4.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.4.ffn_up.input_scale	blk.4.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.4.post_attention_norm.weight	blk.4.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.4.ssm_a	blk.4.ssm_a	F32	[32]	Float(F32)	128
+blk.4.ssm_alpha.weight	blk.4.ssm_alpha.weight	BF16	[4096, 32]	Float(Bf16)	262144
+blk.4.ssm_beta.weight	blk.4.ssm_beta.weight	BF16	[4096, 32]	Float(Bf16)	262144
+blk.4.ssm_conv1d.weight	blk.4.ssm_conv1d.weight	F32	[4, 8192]	Float(F32)	131072
+blk.4.ssm_dt.bias	blk.4.ssm_dt.bias	F32	[32]	Float(F32)	128
+blk.4.ssm_norm.weight	blk.4.ssm_norm.weight	F32	[128]	Float(F32)	512
+blk.4.ssm_out.weight	blk.4.ssm_out.weight	NVFP4	[4096, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	9437184
+blk.4.ssm_out.scale	blk.4.ssm_out.scale	F32	[1]	Float(F32)	4
+blk.4.ssm_out.input_scale	blk.4.ssm_out.input_scale	F32	[1]	Float(F32)	4
+blk.5.attn_gate.weight	blk.5.attn_gate.weight	Q5_K	[4096, 4096]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	11534336
+blk.5.attn_norm.weight	blk.5.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.5.attn_qkv.weight	blk.5.attn_qkv.weight	Q4_K	[4096, 8192]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	18874368
+blk.5.ffn_down.weight	blk.5.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.5.ffn_down.scale	blk.5.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.5.ffn_down.input_scale	blk.5.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.5.ffn_gate.weight	blk.5.ffn_gate.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.5.ffn_gate.scale	blk.5.ffn_gate.scale	F32	[1]	Float(F32)	4
+blk.5.ffn_gate.input_scale	blk.5.ffn_gate.input_scale	F32	[1]	Float(F32)	4
+blk.5.ffn_up.weight	blk.5.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.5.ffn_up.scale	blk.5.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.5.ffn_up.input_scale	blk.5.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.5.post_attention_norm.weight	blk.5.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.5.ssm_a	blk.5.ssm_a	F32	[32]	Float(F32)	128
+blk.5.ssm_alpha.weight	blk.5.ssm_alpha.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.5.ssm_beta.weight	blk.5.ssm_beta.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.5.ssm_conv1d.weight	blk.5.ssm_conv1d.weight	F32	[4, 8192]	Float(F32)	131072
+blk.5.ssm_dt.bias	blk.5.ssm_dt.bias	F32	[32]	Float(F32)	128
+blk.5.ssm_norm.weight	blk.5.ssm_norm.weight	F32	[128]	Float(F32)	512
+blk.5.ssm_out.weight	blk.5.ssm_out.weight	Q4_K	[4096, 4096]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	9437184
+blk.6.attn_gate.weight	blk.6.attn_gate.weight	Q5_K	[4096, 4096]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	11534336
+blk.6.attn_norm.weight	blk.6.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.6.attn_qkv.weight	blk.6.attn_qkv.weight	NVFP4	[4096, 8192]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	18874368
+blk.6.attn_qkv.scale	blk.6.attn_qkv.scale	F32	[1]	Float(F32)	4
+blk.6.attn_qkv.input_scale	blk.6.attn_qkv.input_scale	F32	[1]	Float(F32)	4
+blk.6.ffn_down.weight	blk.6.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.6.ffn_down.scale	blk.6.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.6.ffn_down.input_scale	blk.6.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.6.ffn_gate.weight	blk.6.ffn_gate.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.6.ffn_gate.scale	blk.6.ffn_gate.scale	F32	[1]	Float(F32)	4
+blk.6.ffn_gate.input_scale	blk.6.ffn_gate.input_scale	F32	[1]	Float(F32)	4
+blk.6.ffn_up.weight	blk.6.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.6.ffn_up.scale	blk.6.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.6.ffn_up.input_scale	blk.6.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.6.post_attention_norm.weight	blk.6.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.6.ssm_a	blk.6.ssm_a	F32	[32]	Float(F32)	128
+blk.6.ssm_alpha.weight	blk.6.ssm_alpha.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.6.ssm_beta.weight	blk.6.ssm_beta.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.6.ssm_conv1d.weight	blk.6.ssm_conv1d.weight	F32	[4, 8192]	Float(F32)	131072
+blk.6.ssm_dt.bias	blk.6.ssm_dt.bias	F32	[32]	Float(F32)	128
+blk.6.ssm_norm.weight	blk.6.ssm_norm.weight	F32	[128]	Float(F32)	512
+blk.6.ssm_out.weight	blk.6.ssm_out.weight	NVFP4	[4096, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	9437184
+blk.6.ssm_out.scale	blk.6.ssm_out.scale	F32	[1]	Float(F32)	4
+blk.6.ssm_out.input_scale	blk.6.ssm_out.input_scale	F32	[1]	Float(F32)	4
+blk.7.attn_k.weight	blk.7.attn_k.weight	Q5_K	[4096, 1024]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	2883584
+blk.7.attn_k_norm.weight	blk.7.attn_k_norm.weight	F32	[256]	Float(F32)	1024
+blk.7.attn_norm.weight	blk.7.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.7.attn_output.weight	blk.7.attn_output.weight	NVFP4	[4096, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	9437184
+blk.7.attn_output.scale	blk.7.attn_output.scale	F32	[1]	Float(F32)	4
+blk.7.attn_output.input_scale	blk.7.attn_output.input_scale	F32	[1]	Float(F32)	4
+blk.7.attn_q.weight	blk.7.attn_q.weight	NVFP4	[4096, 8192]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	18874368
+blk.7.attn_q.scale	blk.7.attn_q.scale	F32	[1]	Float(F32)	4
+blk.7.attn_q.input_scale	blk.7.attn_q.input_scale	F32	[1]	Float(F32)	4
+blk.7.attn_q_norm.weight	blk.7.attn_q_norm.weight	F32	[256]	Float(F32)	1024
+blk.7.attn_v.weight	blk.7.attn_v.weight	Q5_K	[4096, 1024]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	2883584
+blk.7.ffn_down.weight	blk.7.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.7.ffn_down.scale	blk.7.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.7.ffn_down.input_scale	blk.7.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.7.ffn_gate.weight	blk.7.ffn_gate.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.7.ffn_gate.scale	blk.7.ffn_gate.scale	F32	[1]	Float(F32)	4
+blk.7.ffn_gate.input_scale	blk.7.ffn_gate.input_scale	F32	[1]	Float(F32)	4
+blk.7.ffn_up.weight	blk.7.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.7.ffn_up.scale	blk.7.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.7.ffn_up.input_scale	blk.7.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.7.post_attention_norm.weight	blk.7.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.8.attn_gate.weight	blk.8.attn_gate.weight	Q5_K	[4096, 4096]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	11534336
+blk.8.attn_norm.weight	blk.8.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.8.attn_qkv.weight	blk.8.attn_qkv.weight	Q4_K	[4096, 8192]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	18874368
+blk.8.ffn_down.weight	blk.8.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.8.ffn_down.scale	blk.8.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.8.ffn_down.input_scale	blk.8.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.8.ffn_gate.weight	blk.8.ffn_gate.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.8.ffn_gate.scale	blk.8.ffn_gate.scale	F32	[1]	Float(F32)	4
+blk.8.ffn_gate.input_scale	blk.8.ffn_gate.input_scale	F32	[1]	Float(F32)	4
+blk.8.ffn_up.weight	blk.8.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.8.ffn_up.scale	blk.8.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.8.ffn_up.input_scale	blk.8.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.8.post_attention_norm.weight	blk.8.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.8.ssm_a	blk.8.ssm_a	F32	[32]	Float(F32)	128
+blk.8.ssm_alpha.weight	blk.8.ssm_alpha.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.8.ssm_beta.weight	blk.8.ssm_beta.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.8.ssm_conv1d.weight	blk.8.ssm_conv1d.weight	F32	[4, 8192]	Float(F32)	131072
+blk.8.ssm_dt.bias	blk.8.ssm_dt.bias	F32	[32]	Float(F32)	128
+blk.8.ssm_norm.weight	blk.8.ssm_norm.weight	F32	[128]	Float(F32)	512
+blk.8.ssm_out.weight	blk.8.ssm_out.weight	Q4_K	[4096, 4096]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	9437184
+blk.9.attn_gate.weight	blk.9.attn_gate.weight	Q5_K	[4096, 4096]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	11534336
+blk.9.attn_norm.weight	blk.9.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.9.attn_qkv.weight	blk.9.attn_qkv.weight	Q4_K	[4096, 8192]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	18874368
+blk.9.ffn_down.weight	blk.9.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.9.ffn_down.scale	blk.9.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.9.ffn_down.input_scale	blk.9.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.9.ffn_gate.weight	blk.9.ffn_gate.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.9.ffn_gate.scale	blk.9.ffn_gate.scale	F32	[1]	Float(F32)	4
+blk.9.ffn_gate.input_scale	blk.9.ffn_gate.input_scale	F32	[1]	Float(F32)	4
+blk.9.ffn_up.weight	blk.9.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.9.ffn_up.scale	blk.9.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.9.ffn_up.input_scale	blk.9.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.9.post_attention_norm.weight	blk.9.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.9.ssm_a	blk.9.ssm_a	F32	[32]	Float(F32)	128
+blk.9.ssm_alpha.weight	blk.9.ssm_alpha.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.9.ssm_beta.weight	blk.9.ssm_beta.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.9.ssm_conv1d.weight	blk.9.ssm_conv1d.weight	F32	[4, 8192]	Float(F32)	131072
+blk.9.ssm_dt.bias	blk.9.ssm_dt.bias	F32	[32]	Float(F32)	128
+blk.9.ssm_norm.weight	blk.9.ssm_norm.weight	F32	[128]	Float(F32)	512
+blk.9.ssm_out.weight	blk.9.ssm_out.weight	NVFP4	[4096, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	9437184
+blk.9.ssm_out.scale	blk.9.ssm_out.scale	F32	[1]	Float(F32)	4
+blk.9.ssm_out.input_scale	blk.9.ssm_out.input_scale	F32	[1]	Float(F32)	4
+blk.10.attn_gate.weight	blk.10.attn_gate.weight	Q5_K	[4096, 4096]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	11534336
+blk.10.attn_norm.weight	blk.10.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.10.attn_qkv.weight	blk.10.attn_qkv.weight	NVFP4	[4096, 8192]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	18874368
+blk.10.attn_qkv.scale	blk.10.attn_qkv.scale	F32	[1]	Float(F32)	4
+blk.10.attn_qkv.input_scale	blk.10.attn_qkv.input_scale	F32	[1]	Float(F32)	4
+blk.10.ffn_down.weight	blk.10.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.10.ffn_down.scale	blk.10.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.10.ffn_down.input_scale	blk.10.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.10.ffn_gate.weight	blk.10.ffn_gate.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.10.ffn_gate.scale	blk.10.ffn_gate.scale	F32	[1]	Float(F32)	4
+blk.10.ffn_gate.input_scale	blk.10.ffn_gate.input_scale	F32	[1]	Float(F32)	4
+blk.10.ffn_up.weight	blk.10.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.10.ffn_up.scale	blk.10.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.10.ffn_up.input_scale	blk.10.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.10.post_attention_norm.weight	blk.10.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.10.ssm_a	blk.10.ssm_a	F32	[32]	Float(F32)	128
+blk.10.ssm_alpha.weight	blk.10.ssm_alpha.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.10.ssm_beta.weight	blk.10.ssm_beta.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.10.ssm_conv1d.weight	blk.10.ssm_conv1d.weight	F32	[4, 8192]	Float(F32)	131072
+blk.10.ssm_dt.bias	blk.10.ssm_dt.bias	F32	[32]	Float(F32)	128
+blk.10.ssm_norm.weight	blk.10.ssm_norm.weight	F32	[128]	Float(F32)	512
+blk.10.ssm_out.weight	blk.10.ssm_out.weight	Q4_K	[4096, 4096]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	9437184
+blk.11.attn_k.weight	blk.11.attn_k.weight	Q5_K	[4096, 1024]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	2883584
+blk.11.attn_k_norm.weight	blk.11.attn_k_norm.weight	F32	[256]	Float(F32)	1024
+blk.11.attn_norm.weight	blk.11.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.11.attn_output.weight	blk.11.attn_output.weight	Q4_K	[4096, 4096]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	9437184
+blk.11.attn_q.weight	blk.11.attn_q.weight	NVFP4	[4096, 8192]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	18874368
+blk.11.attn_q.scale	blk.11.attn_q.scale	F32	[1]	Float(F32)	4
+blk.11.attn_q.input_scale	blk.11.attn_q.input_scale	F32	[1]	Float(F32)	4
+blk.11.attn_q_norm.weight	blk.11.attn_q_norm.weight	F32	[256]	Float(F32)	1024
+blk.11.attn_v.weight	blk.11.attn_v.weight	Q5_K	[4096, 1024]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	2883584
+blk.11.ffn_down.weight	blk.11.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.11.ffn_down.scale	blk.11.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.11.ffn_down.input_scale	blk.11.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.11.ffn_gate.weight	blk.11.ffn_gate.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.11.ffn_gate.scale	blk.11.ffn_gate.scale	F32	[1]	Float(F32)	4
+blk.11.ffn_gate.input_scale	blk.11.ffn_gate.input_scale	F32	[1]	Float(F32)	4
+blk.11.ffn_up.weight	blk.11.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.11.ffn_up.scale	blk.11.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.11.ffn_up.input_scale	blk.11.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.11.post_attention_norm.weight	blk.11.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.12.attn_gate.weight	blk.12.attn_gate.weight	Q5_K	[4096, 4096]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	11534336
+blk.12.attn_norm.weight	blk.12.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.12.attn_qkv.weight	blk.12.attn_qkv.weight	Q4_K	[4096, 8192]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	18874368
+blk.12.ffn_down.weight	blk.12.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.12.ffn_down.scale	blk.12.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.12.ffn_down.input_scale	blk.12.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.12.ffn_gate.weight	blk.12.ffn_gate.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.12.ffn_gate.scale	blk.12.ffn_gate.scale	F32	[1]	Float(F32)	4
+blk.12.ffn_gate.input_scale	blk.12.ffn_gate.input_scale	F32	[1]	Float(F32)	4
+blk.12.ffn_up.weight	blk.12.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.12.ffn_up.scale	blk.12.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.12.ffn_up.input_scale	blk.12.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.12.post_attention_norm.weight	blk.12.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.12.ssm_a	blk.12.ssm_a	F32	[32]	Float(F32)	128
+blk.12.ssm_alpha.weight	blk.12.ssm_alpha.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.12.ssm_beta.weight	blk.12.ssm_beta.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.12.ssm_conv1d.weight	blk.12.ssm_conv1d.weight	F32	[4, 8192]	Float(F32)	131072
+blk.12.ssm_dt.bias	blk.12.ssm_dt.bias	F32	[32]	Float(F32)	128
+blk.12.ssm_norm.weight	blk.12.ssm_norm.weight	F32	[128]	Float(F32)	512
+blk.12.ssm_out.weight	blk.12.ssm_out.weight	NVFP4	[4096, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	9437184
+blk.12.ssm_out.scale	blk.12.ssm_out.scale	F32	[1]	Float(F32)	4
+blk.12.ssm_out.input_scale	blk.12.ssm_out.input_scale	F32	[1]	Float(F32)	4
+blk.13.attn_gate.weight	blk.13.attn_gate.weight	Q5_K	[4096, 4096]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	11534336
+blk.13.attn_norm.weight	blk.13.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.13.attn_qkv.weight	blk.13.attn_qkv.weight	Q4_K	[4096, 8192]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	18874368
+blk.13.ffn_down.weight	blk.13.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.13.ffn_down.scale	blk.13.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.13.ffn_down.input_scale	blk.13.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.13.ffn_gate.weight	blk.13.ffn_gate.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.13.ffn_gate.scale	blk.13.ffn_gate.scale	F32	[1]	Float(F32)	4
+blk.13.ffn_gate.input_scale	blk.13.ffn_gate.input_scale	F32	[1]	Float(F32)	4
+blk.13.ffn_up.weight	blk.13.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.13.ffn_up.scale	blk.13.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.13.ffn_up.input_scale	blk.13.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.13.post_attention_norm.weight	blk.13.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.13.ssm_a	blk.13.ssm_a	F32	[32]	Float(F32)	128
+blk.13.ssm_alpha.weight	blk.13.ssm_alpha.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.13.ssm_beta.weight	blk.13.ssm_beta.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.13.ssm_conv1d.weight	blk.13.ssm_conv1d.weight	F32	[4, 8192]	Float(F32)	131072
+blk.13.ssm_dt.bias	blk.13.ssm_dt.bias	F32	[32]	Float(F32)	128
+blk.13.ssm_norm.weight	blk.13.ssm_norm.weight	F32	[128]	Float(F32)	512
+blk.13.ssm_out.weight	blk.13.ssm_out.weight	Q4_K	[4096, 4096]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	9437184
+blk.14.attn_gate.weight	blk.14.attn_gate.weight	Q5_K	[4096, 4096]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	11534336
+blk.14.attn_norm.weight	blk.14.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.14.attn_qkv.weight	blk.14.attn_qkv.weight	Q4_K	[4096, 8192]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	18874368
+blk.14.ffn_down.weight	blk.14.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.14.ffn_down.scale	blk.14.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.14.ffn_down.input_scale	blk.14.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.14.ffn_gate.weight	blk.14.ffn_gate.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.14.ffn_gate.scale	blk.14.ffn_gate.scale	F32	[1]	Float(F32)	4
+blk.14.ffn_gate.input_scale	blk.14.ffn_gate.input_scale	F32	[1]	Float(F32)	4
+blk.14.ffn_up.weight	blk.14.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.14.ffn_up.scale	blk.14.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.14.ffn_up.input_scale	blk.14.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.14.post_attention_norm.weight	blk.14.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.14.ssm_a	blk.14.ssm_a	F32	[32]	Float(F32)	128
+blk.14.ssm_alpha.weight	blk.14.ssm_alpha.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.14.ssm_beta.weight	blk.14.ssm_beta.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.14.ssm_conv1d.weight	blk.14.ssm_conv1d.weight	F32	[4, 8192]	Float(F32)	131072
+blk.14.ssm_dt.bias	blk.14.ssm_dt.bias	F32	[32]	Float(F32)	128
+blk.14.ssm_norm.weight	blk.14.ssm_norm.weight	F32	[128]	Float(F32)	512
+blk.14.ssm_out.weight	blk.14.ssm_out.weight	Q4_K	[4096, 4096]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	9437184
+blk.15.attn_k.weight	blk.15.attn_k.weight	Q5_K	[4096, 1024]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	2883584
+blk.15.attn_k_norm.weight	blk.15.attn_k_norm.weight	F32	[256]	Float(F32)	1024
+blk.15.attn_norm.weight	blk.15.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.15.attn_output.weight	blk.15.attn_output.weight	NVFP4	[4096, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	9437184
+blk.15.attn_output.scale	blk.15.attn_output.scale	F32	[1]	Float(F32)	4
+blk.15.attn_output.input_scale	blk.15.attn_output.input_scale	F32	[1]	Float(F32)	4
+blk.15.attn_q.weight	blk.15.attn_q.weight	NVFP4	[4096, 8192]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	18874368
+blk.15.attn_q.scale	blk.15.attn_q.scale	F32	[1]	Float(F32)	4
+blk.15.attn_q.input_scale	blk.15.attn_q.input_scale	F32	[1]	Float(F32)	4
+blk.15.attn_q_norm.weight	blk.15.attn_q_norm.weight	F32	[256]	Float(F32)	1024
+blk.15.attn_v.weight	blk.15.attn_v.weight	Q5_K	[4096, 1024]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	2883584
+blk.15.ffn_down.weight	blk.15.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.15.ffn_down.scale	blk.15.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.15.ffn_down.input_scale	blk.15.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.15.ffn_gate.weight	blk.15.ffn_gate.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.15.ffn_gate.scale	blk.15.ffn_gate.scale	F32	[1]	Float(F32)	4
+blk.15.ffn_gate.input_scale	blk.15.ffn_gate.input_scale	F32	[1]	Float(F32)	4
+blk.15.ffn_up.weight	blk.15.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.15.ffn_up.scale	blk.15.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.15.ffn_up.input_scale	blk.15.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.15.post_attention_norm.weight	blk.15.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.16.attn_gate.weight	blk.16.attn_gate.weight	Q5_K	[4096, 4096]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	11534336
+blk.16.attn_norm.weight	blk.16.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.16.attn_qkv.weight	blk.16.attn_qkv.weight	Q4_K	[4096, 8192]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	18874368
+blk.16.ffn_down.weight	blk.16.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.16.ffn_down.scale	blk.16.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.16.ffn_down.input_scale	blk.16.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.16.ffn_gate.weight	blk.16.ffn_gate.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.16.ffn_gate.scale	blk.16.ffn_gate.scale	F32	[1]	Float(F32)	4
+blk.16.ffn_gate.input_scale	blk.16.ffn_gate.input_scale	F32	[1]	Float(F32)	4
+blk.16.ffn_up.weight	blk.16.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.16.ffn_up.scale	blk.16.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.16.ffn_up.input_scale	blk.16.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.16.post_attention_norm.weight	blk.16.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.16.ssm_a	blk.16.ssm_a	F32	[32]	Float(F32)	128
+blk.16.ssm_alpha.weight	blk.16.ssm_alpha.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.16.ssm_beta.weight	blk.16.ssm_beta.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.16.ssm_conv1d.weight	blk.16.ssm_conv1d.weight	F32	[4, 8192]	Float(F32)	131072
+blk.16.ssm_dt.bias	blk.16.ssm_dt.bias	F32	[32]	Float(F32)	128
+blk.16.ssm_norm.weight	blk.16.ssm_norm.weight	F32	[128]	Float(F32)	512
+blk.16.ssm_out.weight	blk.16.ssm_out.weight	NVFP4	[4096, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	9437184
+blk.16.ssm_out.scale	blk.16.ssm_out.scale	F32	[1]	Float(F32)	4
+blk.16.ssm_out.input_scale	blk.16.ssm_out.input_scale	F32	[1]	Float(F32)	4
+blk.17.attn_gate.weight	blk.17.attn_gate.weight	Q5_K	[4096, 4096]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	11534336
+blk.17.attn_norm.weight	blk.17.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.17.attn_qkv.weight	blk.17.attn_qkv.weight	Q4_K	[4096, 8192]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	18874368
+blk.17.ffn_down.weight	blk.17.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.17.ffn_down.scale	blk.17.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.17.ffn_down.input_scale	blk.17.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.17.ffn_gate.weight	blk.17.ffn_gate.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.17.ffn_gate.scale	blk.17.ffn_gate.scale	F32	[1]	Float(F32)	4
+blk.17.ffn_gate.input_scale	blk.17.ffn_gate.input_scale	F32	[1]	Float(F32)	4
+blk.17.ffn_up.weight	blk.17.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.17.ffn_up.scale	blk.17.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.17.ffn_up.input_scale	blk.17.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.17.post_attention_norm.weight	blk.17.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.17.ssm_a	blk.17.ssm_a	F32	[32]	Float(F32)	128
+blk.17.ssm_alpha.weight	blk.17.ssm_alpha.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.17.ssm_beta.weight	blk.17.ssm_beta.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.17.ssm_conv1d.weight	blk.17.ssm_conv1d.weight	F32	[4, 8192]	Float(F32)	131072
+blk.17.ssm_dt.bias	blk.17.ssm_dt.bias	F32	[32]	Float(F32)	128
+blk.17.ssm_norm.weight	blk.17.ssm_norm.weight	F32	[128]	Float(F32)	512
+blk.17.ssm_out.weight	blk.17.ssm_out.weight	NVFP4	[4096, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	9437184
+blk.17.ssm_out.scale	blk.17.ssm_out.scale	F32	[1]	Float(F32)	4
+blk.17.ssm_out.input_scale	blk.17.ssm_out.input_scale	F32	[1]	Float(F32)	4
+blk.18.attn_gate.weight	blk.18.attn_gate.weight	Q5_K	[4096, 4096]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	11534336
+blk.18.attn_norm.weight	blk.18.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.18.attn_qkv.weight	blk.18.attn_qkv.weight	Q4_K	[4096, 8192]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	18874368
+blk.18.ffn_down.weight	blk.18.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.18.ffn_down.scale	blk.18.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.18.ffn_down.input_scale	blk.18.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.18.ffn_gate.weight	blk.18.ffn_gate.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.18.ffn_gate.scale	blk.18.ffn_gate.scale	F32	[1]	Float(F32)	4
+blk.18.ffn_gate.input_scale	blk.18.ffn_gate.input_scale	F32	[1]	Float(F32)	4
+blk.18.ffn_up.weight	blk.18.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.18.ffn_up.scale	blk.18.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.18.ffn_up.input_scale	blk.18.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.18.post_attention_norm.weight	blk.18.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.18.ssm_a	blk.18.ssm_a	F32	[32]	Float(F32)	128
+blk.18.ssm_alpha.weight	blk.18.ssm_alpha.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.18.ssm_beta.weight	blk.18.ssm_beta.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.18.ssm_conv1d.weight	blk.18.ssm_conv1d.weight	F32	[4, 8192]	Float(F32)	131072
+blk.18.ssm_dt.bias	blk.18.ssm_dt.bias	F32	[32]	Float(F32)	128
+blk.18.ssm_norm.weight	blk.18.ssm_norm.weight	F32	[128]	Float(F32)	512
+blk.18.ssm_out.weight	blk.18.ssm_out.weight	Q4_K	[4096, 4096]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	9437184
+blk.19.attn_k.weight	blk.19.attn_k.weight	Q5_K	[4096, 1024]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	2883584
+blk.19.attn_k_norm.weight	blk.19.attn_k_norm.weight	F32	[256]	Float(F32)	1024
+blk.19.attn_norm.weight	blk.19.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.19.attn_output.weight	blk.19.attn_output.weight	NVFP4	[4096, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	9437184
+blk.19.attn_output.scale	blk.19.attn_output.scale	F32	[1]	Float(F32)	4
+blk.19.attn_output.input_scale	blk.19.attn_output.input_scale	F32	[1]	Float(F32)	4
+blk.19.attn_q.weight	blk.19.attn_q.weight	NVFP4	[4096, 8192]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	18874368
+blk.19.attn_q.scale	blk.19.attn_q.scale	F32	[1]	Float(F32)	4
+blk.19.attn_q.input_scale	blk.19.attn_q.input_scale	F32	[1]	Float(F32)	4
+blk.19.attn_q_norm.weight	blk.19.attn_q_norm.weight	F32	[256]	Float(F32)	1024
+blk.19.attn_v.weight	blk.19.attn_v.weight	Q5_K	[4096, 1024]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	2883584
+blk.19.ffn_down.weight	blk.19.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.19.ffn_down.scale	blk.19.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.19.ffn_down.input_scale	blk.19.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.19.ffn_gate.weight	blk.19.ffn_gate.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.19.ffn_gate.scale	blk.19.ffn_gate.scale	F32	[1]	Float(F32)	4
+blk.19.ffn_gate.input_scale	blk.19.ffn_gate.input_scale	F32	[1]	Float(F32)	4
+blk.19.ffn_up.weight	blk.19.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.19.ffn_up.scale	blk.19.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.19.ffn_up.input_scale	blk.19.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.19.post_attention_norm.weight	blk.19.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.20.attn_gate.weight	blk.20.attn_gate.weight	Q5_K	[4096, 4096]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	11534336
+blk.20.attn_norm.weight	blk.20.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.20.attn_qkv.weight	blk.20.attn_qkv.weight	Q5_K	[4096, 8192]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	23068672
+blk.20.ffn_down.weight	blk.20.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.20.ffn_down.scale	blk.20.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.20.ffn_down.input_scale	blk.20.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.20.ffn_gate.weight	blk.20.ffn_gate.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.20.ffn_gate.scale	blk.20.ffn_gate.scale	F32	[1]	Float(F32)	4
+blk.20.ffn_gate.input_scale	blk.20.ffn_gate.input_scale	F32	[1]	Float(F32)	4
+blk.20.ffn_up.weight	blk.20.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.20.ffn_up.scale	blk.20.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.20.ffn_up.input_scale	blk.20.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.20.post_attention_norm.weight	blk.20.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.20.ssm_a	blk.20.ssm_a	F32	[32]	Float(F32)	128
+blk.20.ssm_alpha.weight	blk.20.ssm_alpha.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.20.ssm_beta.weight	blk.20.ssm_beta.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.20.ssm_conv1d.weight	blk.20.ssm_conv1d.weight	F32	[4, 8192]	Float(F32)	131072
+blk.20.ssm_dt.bias	blk.20.ssm_dt.bias	F32	[32]	Float(F32)	128
+blk.20.ssm_norm.weight	blk.20.ssm_norm.weight	F32	[128]	Float(F32)	512
+blk.20.ssm_out.weight	blk.20.ssm_out.weight	NVFP4	[4096, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	9437184
+blk.20.ssm_out.scale	blk.20.ssm_out.scale	F32	[1]	Float(F32)	4
+blk.20.ssm_out.input_scale	blk.20.ssm_out.input_scale	F32	[1]	Float(F32)	4
+blk.21.attn_gate.weight	blk.21.attn_gate.weight	Q5_K	[4096, 4096]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	11534336
+blk.21.attn_norm.weight	blk.21.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.21.attn_qkv.weight	blk.21.attn_qkv.weight	Q5_K	[4096, 8192]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	23068672
+blk.21.ffn_down.weight	blk.21.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.21.ffn_down.scale	blk.21.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.21.ffn_down.input_scale	blk.21.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.21.ffn_gate.weight	blk.21.ffn_gate.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.21.ffn_gate.scale	blk.21.ffn_gate.scale	F32	[1]	Float(F32)	4
+blk.21.ffn_gate.input_scale	blk.21.ffn_gate.input_scale	F32	[1]	Float(F32)	4
+blk.21.ffn_up.weight	blk.21.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.21.ffn_up.scale	blk.21.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.21.ffn_up.input_scale	blk.21.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.21.post_attention_norm.weight	blk.21.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.21.ssm_a	blk.21.ssm_a	F32	[32]	Float(F32)	128
+blk.21.ssm_alpha.weight	blk.21.ssm_alpha.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.21.ssm_beta.weight	blk.21.ssm_beta.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.21.ssm_conv1d.weight	blk.21.ssm_conv1d.weight	F32	[4, 8192]	Float(F32)	131072
+blk.21.ssm_dt.bias	blk.21.ssm_dt.bias	F32	[32]	Float(F32)	128
+blk.21.ssm_norm.weight	blk.21.ssm_norm.weight	F32	[128]	Float(F32)	512
+blk.21.ssm_out.weight	blk.21.ssm_out.weight	Q4_K	[4096, 4096]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	9437184
+blk.22.attn_gate.weight	blk.22.attn_gate.weight	Q5_K	[4096, 4096]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	11534336
+blk.22.attn_norm.weight	blk.22.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.22.attn_qkv.weight	blk.22.attn_qkv.weight	Q4_K	[4096, 8192]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	18874368
+blk.22.ffn_down.weight	blk.22.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.22.ffn_down.scale	blk.22.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.22.ffn_down.input_scale	blk.22.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.22.ffn_gate.weight	blk.22.ffn_gate.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.22.ffn_gate.scale	blk.22.ffn_gate.scale	F32	[1]	Float(F32)	4
+blk.22.ffn_gate.input_scale	blk.22.ffn_gate.input_scale	F32	[1]	Float(F32)	4
+blk.22.ffn_up.weight	blk.22.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.22.ffn_up.scale	blk.22.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.22.ffn_up.input_scale	blk.22.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.22.post_attention_norm.weight	blk.22.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.22.ssm_a	blk.22.ssm_a	F32	[32]	Float(F32)	128
+blk.22.ssm_alpha.weight	blk.22.ssm_alpha.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.22.ssm_beta.weight	blk.22.ssm_beta.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.22.ssm_conv1d.weight	blk.22.ssm_conv1d.weight	F32	[4, 8192]	Float(F32)	131072
+blk.22.ssm_dt.bias	blk.22.ssm_dt.bias	F32	[32]	Float(F32)	128
+blk.22.ssm_norm.weight	blk.22.ssm_norm.weight	F32	[128]	Float(F32)	512
+blk.22.ssm_out.weight	blk.22.ssm_out.weight	Q4_K	[4096, 4096]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	9437184
+blk.23.attn_k.weight	blk.23.attn_k.weight	Q5_K	[4096, 1024]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	2883584
+blk.23.attn_k_norm.weight	blk.23.attn_k_norm.weight	F32	[256]	Float(F32)	1024
+blk.23.attn_norm.weight	blk.23.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.23.attn_output.weight	blk.23.attn_output.weight	NVFP4	[4096, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	9437184
+blk.23.attn_output.scale	blk.23.attn_output.scale	F32	[1]	Float(F32)	4
+blk.23.attn_output.input_scale	blk.23.attn_output.input_scale	F32	[1]	Float(F32)	4
+blk.23.attn_q.weight	blk.23.attn_q.weight	NVFP4	[4096, 8192]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	18874368
+blk.23.attn_q.scale	blk.23.attn_q.scale	F32	[1]	Float(F32)	4
+blk.23.attn_q.input_scale	blk.23.attn_q.input_scale	F32	[1]	Float(F32)	4
+blk.23.attn_q_norm.weight	blk.23.attn_q_norm.weight	F32	[256]	Float(F32)	1024
+blk.23.attn_v.weight	blk.23.attn_v.weight	Q5_K	[4096, 1024]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	2883584
+blk.23.ffn_down.weight	blk.23.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.23.ffn_down.scale	blk.23.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.23.ffn_down.input_scale	blk.23.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.23.ffn_gate.weight	blk.23.ffn_gate.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.23.ffn_gate.scale	blk.23.ffn_gate.scale	F32	[1]	Float(F32)	4
+blk.23.ffn_gate.input_scale	blk.23.ffn_gate.input_scale	F32	[1]	Float(F32)	4
+blk.23.ffn_up.weight	blk.23.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.23.ffn_up.scale	blk.23.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.23.ffn_up.input_scale	blk.23.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.23.post_attention_norm.weight	blk.23.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.24.attn_gate.weight	blk.24.attn_gate.weight	Q5_K	[4096, 4096]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	11534336
+blk.24.attn_norm.weight	blk.24.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.24.attn_qkv.weight	blk.24.attn_qkv.weight	Q5_K	[4096, 8192]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	23068672
+blk.24.ffn_down.weight	blk.24.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.24.ffn_down.scale	blk.24.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.24.ffn_down.input_scale	blk.24.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.24.ffn_gate.weight	blk.24.ffn_gate.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.24.ffn_gate.scale	blk.24.ffn_gate.scale	F32	[1]	Float(F32)	4
+blk.24.ffn_gate.input_scale	blk.24.ffn_gate.input_scale	F32	[1]	Float(F32)	4
+blk.24.ffn_up.weight	blk.24.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.24.ffn_up.scale	blk.24.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.24.ffn_up.input_scale	blk.24.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.24.post_attention_norm.weight	blk.24.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.24.ssm_a	blk.24.ssm_a	F32	[32]	Float(F32)	128
+blk.24.ssm_alpha.weight	blk.24.ssm_alpha.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.24.ssm_beta.weight	blk.24.ssm_beta.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.24.ssm_conv1d.weight	blk.24.ssm_conv1d.weight	F32	[4, 8192]	Float(F32)	131072
+blk.24.ssm_dt.bias	blk.24.ssm_dt.bias	F32	[32]	Float(F32)	128
+blk.24.ssm_norm.weight	blk.24.ssm_norm.weight	F32	[128]	Float(F32)	512
+blk.24.ssm_out.weight	blk.24.ssm_out.weight	Q4_K	[4096, 4096]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	9437184
+blk.25.attn_gate.weight	blk.25.attn_gate.weight	Q5_K	[4096, 4096]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	11534336
+blk.25.attn_norm.weight	blk.25.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.25.attn_qkv.weight	blk.25.attn_qkv.weight	Q5_K	[4096, 8192]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	23068672
+blk.25.ffn_down.weight	blk.25.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.25.ffn_down.scale	blk.25.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.25.ffn_down.input_scale	blk.25.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.25.ffn_gate.weight	blk.25.ffn_gate.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.25.ffn_gate.scale	blk.25.ffn_gate.scale	F32	[1]	Float(F32)	4
+blk.25.ffn_gate.input_scale	blk.25.ffn_gate.input_scale	F32	[1]	Float(F32)	4
+blk.25.ffn_up.weight	blk.25.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.25.ffn_up.scale	blk.25.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.25.ffn_up.input_scale	blk.25.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.25.post_attention_norm.weight	blk.25.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.25.ssm_a	blk.25.ssm_a	F32	[32]	Float(F32)	128
+blk.25.ssm_alpha.weight	blk.25.ssm_alpha.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.25.ssm_beta.weight	blk.25.ssm_beta.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.25.ssm_conv1d.weight	blk.25.ssm_conv1d.weight	F32	[4, 8192]	Float(F32)	131072
+blk.25.ssm_dt.bias	blk.25.ssm_dt.bias	F32	[32]	Float(F32)	128
+blk.25.ssm_norm.weight	blk.25.ssm_norm.weight	F32	[128]	Float(F32)	512
+blk.25.ssm_out.weight	blk.25.ssm_out.weight	Q4_K	[4096, 4096]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	9437184
+blk.26.attn_gate.weight	blk.26.attn_gate.weight	Q5_K	[4096, 4096]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	11534336
+blk.26.attn_norm.weight	blk.26.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.26.attn_qkv.weight	blk.26.attn_qkv.weight	Q5_K	[4096, 8192]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	23068672
+blk.26.ffn_down.weight	blk.26.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.26.ffn_down.scale	blk.26.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.26.ffn_down.input_scale	blk.26.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.26.ffn_gate.weight	blk.26.ffn_gate.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.26.ffn_gate.scale	blk.26.ffn_gate.scale	F32	[1]	Float(F32)	4
+blk.26.ffn_gate.input_scale	blk.26.ffn_gate.input_scale	F32	[1]	Float(F32)	4
+blk.26.ffn_up.weight	blk.26.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.26.ffn_up.scale	blk.26.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.26.ffn_up.input_scale	blk.26.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.26.post_attention_norm.weight	blk.26.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.26.ssm_a	blk.26.ssm_a	F32	[32]	Float(F32)	128
+blk.26.ssm_alpha.weight	blk.26.ssm_alpha.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.26.ssm_beta.weight	blk.26.ssm_beta.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.26.ssm_conv1d.weight	blk.26.ssm_conv1d.weight	F32	[4, 8192]	Float(F32)	131072
+blk.26.ssm_dt.bias	blk.26.ssm_dt.bias	F32	[32]	Float(F32)	128
+blk.26.ssm_norm.weight	blk.26.ssm_norm.weight	F32	[128]	Float(F32)	512
+blk.26.ssm_out.weight	blk.26.ssm_out.weight	Q4_K	[4096, 4096]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	9437184
+blk.27.attn_k.weight	blk.27.attn_k.weight	Q5_K	[4096, 1024]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	2883584
+blk.27.attn_k_norm.weight	blk.27.attn_k_norm.weight	F32	[256]	Float(F32)	1024
+blk.27.attn_norm.weight	blk.27.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.27.attn_output.weight	blk.27.attn_output.weight	Q4_K	[4096, 4096]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	9437184
+blk.27.attn_q.weight	blk.27.attn_q.weight	NVFP4	[4096, 8192]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	18874368
+blk.27.attn_q.scale	blk.27.attn_q.scale	F32	[1]	Float(F32)	4
+blk.27.attn_q.input_scale	blk.27.attn_q.input_scale	F32	[1]	Float(F32)	4
+blk.27.attn_q_norm.weight	blk.27.attn_q_norm.weight	F32	[256]	Float(F32)	1024
+blk.27.attn_v.weight	blk.27.attn_v.weight	Q5_K	[4096, 1024]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	2883584
+blk.27.ffn_down.weight	blk.27.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.27.ffn_down.scale	blk.27.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.27.ffn_down.input_scale	blk.27.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.27.ffn_gate.weight	blk.27.ffn_gate.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.27.ffn_gate.scale	blk.27.ffn_gate.scale	F32	[1]	Float(F32)	4
+blk.27.ffn_gate.input_scale	blk.27.ffn_gate.input_scale	F32	[1]	Float(F32)	4
+blk.27.ffn_up.weight	blk.27.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.27.ffn_up.scale	blk.27.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.27.ffn_up.input_scale	blk.27.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.27.post_attention_norm.weight	blk.27.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.28.attn_gate.weight	blk.28.attn_gate.weight	Q5_K	[4096, 4096]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	11534336
+blk.28.attn_norm.weight	blk.28.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.28.attn_qkv.weight	blk.28.attn_qkv.weight	Q5_K	[4096, 8192]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	23068672
+blk.28.ffn_down.weight	blk.28.ffn_down.weight	Q4_K	[12288, 4096]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	28311552
+blk.28.ffn_gate.weight	blk.28.ffn_gate.weight	Q4_K	[4096, 12288]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	28311552
+blk.28.ffn_up.weight	blk.28.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.28.ffn_up.scale	blk.28.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.28.ffn_up.input_scale	blk.28.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.28.post_attention_norm.weight	blk.28.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.28.ssm_a	blk.28.ssm_a	F32	[32]	Float(F32)	128
+blk.28.ssm_alpha.weight	blk.28.ssm_alpha.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.28.ssm_beta.weight	blk.28.ssm_beta.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.28.ssm_conv1d.weight	blk.28.ssm_conv1d.weight	F32	[4, 8192]	Float(F32)	131072
+blk.28.ssm_dt.bias	blk.28.ssm_dt.bias	F32	[32]	Float(F32)	128
+blk.28.ssm_norm.weight	blk.28.ssm_norm.weight	F32	[128]	Float(F32)	512
+blk.28.ssm_out.weight	blk.28.ssm_out.weight	Q4_K	[4096, 4096]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	9437184
+blk.29.attn_gate.weight	blk.29.attn_gate.weight	Q5_K	[4096, 4096]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	11534336
+blk.29.attn_norm.weight	blk.29.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.29.attn_qkv.weight	blk.29.attn_qkv.weight	Q4_K	[4096, 8192]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	18874368
+blk.29.ffn_down.weight	blk.29.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.29.ffn_down.scale	blk.29.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.29.ffn_down.input_scale	blk.29.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.29.ffn_gate.weight	blk.29.ffn_gate.weight	Q4_K	[4096, 12288]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	28311552
+blk.29.ffn_up.weight	blk.29.ffn_up.weight	Q4_K	[4096, 12288]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	28311552
+blk.29.post_attention_norm.weight	blk.29.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.29.ssm_a	blk.29.ssm_a	F32	[32]	Float(F32)	128
+blk.29.ssm_alpha.weight	blk.29.ssm_alpha.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.29.ssm_beta.weight	blk.29.ssm_beta.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.29.ssm_conv1d.weight	blk.29.ssm_conv1d.weight	F32	[4, 8192]	Float(F32)	131072
+blk.29.ssm_dt.bias	blk.29.ssm_dt.bias	F32	[32]	Float(F32)	128
+blk.29.ssm_norm.weight	blk.29.ssm_norm.weight	F32	[128]	Float(F32)	512
+blk.29.ssm_out.weight	blk.29.ssm_out.weight	Q4_K	[4096, 4096]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	9437184
+blk.30.attn_gate.weight	blk.30.attn_gate.weight	Q5_K	[4096, 4096]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	11534336
+blk.30.attn_norm.weight	blk.30.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.30.attn_qkv.weight	blk.30.attn_qkv.weight	Q5_K	[4096, 8192]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	23068672
+blk.30.ffn_down.weight	blk.30.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.30.ffn_down.scale	blk.30.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.30.ffn_down.input_scale	blk.30.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.30.ffn_gate.weight	blk.30.ffn_gate.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.30.ffn_gate.scale	blk.30.ffn_gate.scale	F32	[1]	Float(F32)	4
+blk.30.ffn_gate.input_scale	blk.30.ffn_gate.input_scale	F32	[1]	Float(F32)	4
+blk.30.ffn_up.weight	blk.30.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.30.ffn_up.scale	blk.30.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.30.ffn_up.input_scale	blk.30.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.30.post_attention_norm.weight	blk.30.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.30.ssm_a	blk.30.ssm_a	F32	[32]	Float(F32)	128
+blk.30.ssm_alpha.weight	blk.30.ssm_alpha.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.30.ssm_beta.weight	blk.30.ssm_beta.weight	Q8_0	[4096, 32]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	139264
+blk.30.ssm_conv1d.weight	blk.30.ssm_conv1d.weight	F32	[4, 8192]	Float(F32)	131072
+blk.30.ssm_dt.bias	blk.30.ssm_dt.bias	F32	[32]	Float(F32)	128
+blk.30.ssm_norm.weight	blk.30.ssm_norm.weight	F32	[128]	Float(F32)	512
+blk.30.ssm_out.weight	blk.30.ssm_out.weight	Q4_K	[4096, 4096]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	9437184
+blk.31.attn_k.weight	blk.31.attn_k.weight	Q5_K	[4096, 1024]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	2883584
+blk.31.attn_k_norm.weight	blk.31.attn_k_norm.weight	F32	[256]	Float(F32)	1024
+blk.31.attn_norm.weight	blk.31.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.31.attn_output.weight	blk.31.attn_output.weight	Q4_K	[4096, 4096]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	9437184
+blk.31.attn_q.weight	blk.31.attn_q.weight	NVFP4	[4096, 8192]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	18874368
+blk.31.attn_q.scale	blk.31.attn_q.scale	F32	[1]	Float(F32)	4
+blk.31.attn_q.input_scale	blk.31.attn_q.input_scale	F32	[1]	Float(F32)	4
+blk.31.attn_q_norm.weight	blk.31.attn_q_norm.weight	F32	[256]	Float(F32)	1024
+blk.31.attn_v.weight	blk.31.attn_v.weight	Q5_K	[4096, 1024]	Quantized(QuantLayout { format: "Q5_K", block_shape: [256], auxiliaries: [] })	2883584
+blk.31.ffn_down.weight	blk.31.ffn_down.weight	NVFP4	[12288, 4096]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.31.ffn_down.scale	blk.31.ffn_down.scale	F32	[1]	Float(F32)	4
+blk.31.ffn_down.input_scale	blk.31.ffn_down.input_scale	F32	[1]	Float(F32)	4
+blk.31.ffn_gate.weight	blk.31.ffn_gate.weight	Q4_K	[4096, 12288]	Quantized(QuantLayout { format: "Q4_K", block_shape: [256], auxiliaries: [] })	28311552
+blk.31.ffn_up.weight	blk.31.ffn_up.weight	NVFP4	[4096, 12288]	Quantized(QuantLayout { format: "NVFP4", block_shape: [64], auxiliaries: [] })	28311552
+blk.31.ffn_up.scale	blk.31.ffn_up.scale	F32	[1]	Float(F32)	4
+blk.31.ffn_up.input_scale	blk.31.ffn_up.input_scale	F32	[1]	Float(F32)	4
+blk.31.post_attention_norm.weight	blk.31.post_attention_norm.weight	F32	[4096]	Float(F32)	16384
+blk.32.attn_k.weight	blk.32.attn_k.weight	Q8_0	[4096, 1024]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	4456448
+blk.32.attn_k_norm.weight	blk.32.attn_k_norm.weight	F32	[256]	Float(F32)	1024
+blk.32.attn_norm.weight	blk.32.attn_norm.weight	F32	[4096]	Float(F32)	16384
+blk.32.attn_output.weight	blk.32.attn_output.weight	Q8_0	[4096, 4096]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	17825792
+blk.32.attn_q.weight	blk.32.attn_q.weight	Q8_0	[4096, 8192]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	35651584
+blk.32.attn_q_norm.weight	blk.32.attn_q_norm.weight	F32	[256]	Float(F32)	1024
+blk.32.attn_v.weight	blk.32.attn_v.weight	Q8_0	[4096, 1024]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	4456448
+blk.32.ffn_down.weight	blk.32.ffn_down.weight	Q8_0	[12288, 4096]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	53477376
+blk.32.ffn_gate.weight	blk.32.ffn_gate.weight	Q8_0	[4096, 12288]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	53477376
+blk.32.ffn_up.weight	blk.32.ffn_up.weight	Q8_0	[4096, 12288]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	53477376
+blk.32.nextn.eh_proj.weight	blk.32.nextn.eh_proj.weight	Q8_0	[8192, 4096]	Quantized(QuantLayout { format: "Q8_0", block_shape: [32], auxiliaries: [] })	35651584
+blk.32.nextn.enorm.weight	blk.32.nextn.enorm.weight	F32	[4096]	Float(F32)	16384
+blk.32.nextn.hnorm.weight	blk.32.nextn.hnorm.weight	F32	[4096]	Float(F32)	16384
+blk.32.nextn.shared_head_norm.weight	blk.32.nextn.shared_head_norm.weight	F32	[4096]	Float(F32)	16384
+blk.32.post_attention_norm.weight	blk.32.post_attention_norm.weight	F32	[4096]	Float(F32)	16384

@@ -3056,6 +3056,14 @@ impl DflashDraft {
 }
 
 impl DflashKv {
+    /// Allocated draft K/V data planes, including the reserved append window.
+    pub fn kv_plane_bytes(&self) -> usize {
+        self.k
+            .iter()
+            .chain(&self.v)
+            .map(|plane| plane.len() * 4)
+            .sum()
+    }
     pub fn new(
         e: &Engine,
         cfg: &DflashCfg,
@@ -4708,6 +4716,12 @@ fn dspark_commit_limit(
 }
 
 impl DsparkSpecSession {
+    /// Canonical trunk and draft state planes, without transient verification snapshots.
+    pub fn kv_plane_bytes(&self) -> (usize, usize) {
+        let (used, capacity) = self.cache.kv_plane_bytes();
+        let draft = self.dkv.kv_plane_bytes();
+        (used + draft, capacity + draft)
+    }
     /// How many trailing draft-KV rows a restore must carry for the drafter to be
     /// indistinguishable from one that cold-primed: the sliding window plus one block.
     ///

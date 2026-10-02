@@ -1661,6 +1661,14 @@ pub struct SpecSession {
     pub capture_disabled: bool,
 }
 impl SpecSession {
+    /// Canonical trunk and draft K/V state planes; excludes rollback copies and workspaces.
+    pub fn kv_plane_bytes(&self) -> (usize, usize) {
+        self.scratch_layers()
+            .fold(self.cache.kv_plane_bytes(), |(u, c), layer| {
+                let (lu, lc) = layer.kv_plane_bytes();
+                (u + lu, c + lc)
+            })
+    }
     /// Context capacity of the session's caches (the server's ContextFull guard).
     pub fn cache_max_ctx(&self) -> usize {
         self.cache.max_ctx
@@ -12016,7 +12024,16 @@ impl HybridModel {
             prime_logits = Vec::new();
             prompt_h = Some(e.uninit(prompt.len() * n_embd)?);
             for (i, &tok) in prompt.iter().enumerate() {
-                let (l, h) = self.spec_target_step_h(e, tok, &mut *cache)?;
+                // Cold short prompts must use the plain worker's eager prefill program.
+                // GDN target steps use batched T=1 math; priming through them changes the
+                // initial recurrent state and can flip greedy output (#918).
+                let (l, h) = if prompt.len() < crate::hybrid_forward::PRIME_MIN_T
+                    && crate::plan_backend::gdn_dspark_compatible(&self.plan)
+                {
+                    self.decode_step_h(e, tok, &mut *cache)?
+                } else {
+                    self.spec_target_step_h(e, tok, &mut *cache)?
+                };
                 if let Some(ph) = prompt_h.as_mut() {
                     e.copy_into(ph, i * n_embd, &h, n_embd)?;
                 }

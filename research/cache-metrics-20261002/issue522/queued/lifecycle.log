@@ -1,0 +1,13 @@
+PASS before-queue metrics HTTP 200
+PASS before-queue promtool
+PASS queued leader completes
+PASS queued follower completes
+PASS after-queue metrics HTTP 200
+PASS after-queue promtool
+PASS real queue pressure engaged session cap
+PASS queue_wait counts both queued-cell requests
+PASS ttft counts both queued-cell requests
+PASS e2e counts both queued-cell requests
+PASS queue wait histogram records positive wait
+PASS queued-cell emitted gaps account for both streams
+{"passed": 12, "failed": 0}

@@ -1,0 +1,14 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 0.07s
+     Running unittests src/lib.rs (target/release/deps/memra_server-37c911a5442b05cf)
+
+running 6 tests
+test histogram::tests::prometheus_rendering_is_well_formed_and_ends_in_inf ... ok
+test tests::a_fake_hybrid_request_moves_its_histograms_and_the_prometheus_exposition ... ok
+test tests::hybrid_prometheus_families_stay_contiguous_across_two_models ... ok
+test tests::prometheus_exposition_has_help_escaped_labels_and_cache_totals ... ok
+test tests::route_prometheus_families_stay_contiguous_across_two_routes ... ok
+test tests::a_fake_route_request_moves_its_histograms_and_the_prometheus_exposition ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 1047 filtered out; finished in 0.00s
+

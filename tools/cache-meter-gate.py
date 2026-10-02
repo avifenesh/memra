@@ -47,6 +47,8 @@ import time
 import urllib.request
 from pathlib import Path
 
+from prometheus_metrics import histogram, parse_samples, scalar
+
 FAILS = 0
 
 
@@ -59,17 +61,30 @@ def check(name: str, ok: bool, detail: str = "") -> None:
         print(f"  FAIL: {name}{' — ' + detail if detail else ''}")
 
 
-def post(base: str, body: dict) -> dict:
+def post(base: str, body: dict, headers: dict | None = None) -> dict:
     req = urllib.request.Request(
         f"{base}/v1/completions", data=json.dumps(body).encode(),
-        headers={"Content-Type": "application/json"})
+        headers={"Content-Type": "application/json", **(headers or {})})
     with urllib.request.urlopen(req, timeout=300) as f:
         return json.load(f)
 
 
-def scrape(base: str) -> dict:
-    with urllib.request.urlopen(f"{base}/metrics", timeout=10) as f:
+def scrape(base: str, headers: dict | None = None) -> dict:
+    req = urllib.request.Request(f"{base}/metrics", headers=headers or {})
+    with urllib.request.urlopen(req, timeout=10) as f:
         return json.load(f)
+
+
+
+def response_usage(response: dict) -> dict:
+    """Keep OpenAI usage, or normalize the native completion receipt's field names."""
+    if response.get("usage"):
+        return response["usage"]
+    return {
+        "prompt_tokens": response["prompt_tokens"],
+        "completion_tokens": response["n_tokens"],
+        "prompt_tokens_details": {"cached_tokens": response["cached_tokens"]},
+    }
 
 
 def main() -> None:
@@ -82,7 +97,22 @@ def main() -> None:
                          "[64,512) LCP window)")
     ap.add_argument("--suffix", type=int, default=16, help="unique suffix tokens")
     ap.add_argument("--raw-out", help="write per-request responses + the scrape here (JSONL)")
+    ap.add_argument("--api-key-file", type=Path, help="completion credential file")
+    ap.add_argument("--metrics-token-file", type=Path, help="operator scrape credential file")
+    ap.add_argument("--prometheus", action="store_true", help="also verify standard exposition and hybrid histograms")
+    ap.add_argument("--promtool", type=Path, help="promtool binary, required with --prometheus")
     args = ap.parse_args()
+    if args.prometheus and args.promtool is None:
+        ap.error("--prometheus requires --promtool (validation may not be skipped)")
+    def bearer(path):
+        if path is None:
+            return {}
+        token = path.read_text().strip()
+        if not token:
+            ap.error(f"empty credential file: {path}")
+        return {"Authorization": "Bearer " + token}
+    api_headers = bearer(args.api_key_file)
+    metrics_headers = bearer(args.metrics_token_file or args.api_key_file)
     n, k, s = args.n, args.k, args.suffix
     assert n >= 2 and k >= 64 and s >= 1
 
@@ -96,15 +126,12 @@ def main() -> None:
                 "max_tokens": 8, "temperature": 0, "cache_salt": salt}
         start.wait()
         t0 = time.monotonic()
-        r = post(args.base, body)
+        r = post(args.base, body, api_headers)
         # compat mode carries the OpenAI usage object; the native /v1/completions shape
         # carries the same worker truth as flat prompt_tokens/cached_tokens fields.
-        u = r.get("usage") or {
-            "prompt_tokens": r["prompt_tokens"],
-            "prompt_tokens_details": {"cached_tokens": r["cached_tokens"]},
-        }
+        u = response_usage(r)
         return u, {"salt": salt, "i": i,
-                   "elapsed_s": round(time.monotonic() - t0, 4), "usage": u}
+                   "elapsed_s": round(time.monotonic() - t0, 4), "usage": u, "response": r}
 
     # ---- simultaneous per-request exactness (deliverable 1's receipt) ----
     start = threading.Barrier(n + 1)
@@ -138,7 +165,7 @@ def main() -> None:
     total_p, total_c = (n + 1) * (k + s), (n - 1) * k
     m = {}
     for _ in range(20):
-        m = scrape(args.base)
+        m = scrape(args.base, metrics_headers)
         if m.get("prompt_tokens_in") == total_p and m.get("cached_tokens_in") == total_c:
             break
         time.sleep(0.2)
@@ -187,6 +214,73 @@ def main() -> None:
     check("tenants[meter-B] split exact (0 cached)",
           tb.get("prompt_tokens_in") == k + s and tb.get("cached_tokens_in") == 0,
           f"got {tb}")
+
+    # ---- standard exposition: the SAME closed form, parsed by real promtool ----
+    if args.prometheus:
+        req = urllib.request.Request(f"{args.base}/metrics", headers={
+            **metrics_headers, "Accept": "text/plain;version=0.0.4"})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            text = response.read().decode()
+            check("Prometheus content type", response.headers.get_content_type() == "text/plain")
+        validated = subprocess.run([str(args.promtool), "check", "metrics"],
+                                   input=text, capture_output=True, text=True, timeout=30)
+        check("promtool check metrics", validated.returncode == 0,
+              validated.stdout + validated.stderr)
+        if args.raw_out:
+            Path(args.raw_out + ".prom").write_text(text)
+            Path(args.raw_out + ".promtool.log").write_text(validated.stdout + validated.stderr)
+        samples = parse_samples(text)
+        expected = {
+            "memra_prompt_tokens_in_total": total_p,
+            "memra_cached_tokens_in_total": total_c,
+            "memra_computed_tokens_in_total": total_p - total_c,
+            "memra_prefix_cache_hits_total": n - 1,
+            "memra_prefix_cache_misses_total": 2,
+            "memra_prefix_cache_inserts_total": 2,
+            "memra_prefix_cache_evictions_total": m.get("prefix_cache_evictions"),
+            "memra_prefix_cache_hit_tokens_total": total_c,
+        }
+        for metric, want in expected.items():
+            got = scalar(samples, metric)
+            check(f"Prometheus {metric} == {want}", got == want, f"got {got}")
+        got = scalar(samples, "memra_cache_hit_token_ratio")
+        check("Prometheus cache-hit ratio", abs(got - total_c / total_p) < 1e-9, f"got {got}")
+        for name in ("queue_wait", "ttft", "e2e"):
+            h = histogram(samples, f"memra_hybrid_{name}_seconds", model=args.model)
+            check(f"hybrid {name} count == {n + 1}", h["count"] == n + 1, f"got {h}")
+        output_tokens = [u.get("completion_tokens") for u, _ in [*a_results, b_result]]
+        check("completion-token usage available for emitted-gap accounting",
+              all(isinstance(t, int) and t > 0 for t in output_tokens), repr(output_tokens))
+        expected_gaps = sum(max(t - 1, 0) for t in output_tokens if isinstance(t, int))
+        for lane in ("interactive", "judge", "harvest"):
+            h = histogram(samples, "memra_hybrid_token_gap_seconds", model=args.model, lane=lane)
+            want = expected_gaps if lane == "interactive" else 0
+            check(f"emitted-token gaps for {lane} == {want}", h["count"] == want, f"got {h}")
+        bounded = all(
+            set(dict(labels)) <= {"model", "lane", "le", "route", "code", "device", "tier"}
+            and dict(labels).get("model", args.model) == args.model
+            and dict(labels).get("lane", "interactive") in {"interactive", "judge", "harvest"}
+            and dict(labels).get("route", "hybrid") == "hybrid"
+            and dict(labels).get("code", "200") == "200"
+            and dict(labels).get("device", "0").isdigit()
+            and 0 <= int(dict(labels).get("device", "0")) < 64
+            and dict(labels).get("tier", "device") == "device"
+            for _, labels in samples
+        )
+        check("labels bounded to loaded model, backend, HTTP outcome, three lanes and fixed buckets", bounded)
+        shared = {"model": args.model, "route": "hybrid", "lane": "interactive"}
+        check("common cached-token counter matches request usage", scalar(samples, "memra_cached_tokens_total", **shared) == total_c)
+        check("prefill histogram matches prompt accounting", histogram(samples, "memra_prefill_tokens", **shared)["sum"] == total_p)
+        check("completion histogram matches output accounting", histogram(samples, "memra_completion_tokens", **shared)["sum"] == sum(output_tokens))
+        check("post-workload active sessions return to zero", scalar(samples, "memra_active_sessions", model=args.model, route="hybrid") == 0)
+        check("post-workload queued sessions return to zero", scalar(samples, "memra_queued_sessions", model=args.model, route="hybrid") == 0)
+        check("canonical KV backed bytes do not exceed capacity", scalar(samples, "memra_kv_used_bytes", model=args.model, route="hybrid") <= scalar(samples, "memra_kv_capacity_bytes", model=args.model, route="hybrid"))
+        # Existing consumers still receive JSON after a text scrape; no histogram fields leak.
+        after = scrape(args.base, metrics_headers)
+        check("JSON schema unchanged by Prometheus negotiation", set(after) == set(m))
+        for key in ("prompt_tokens_in", "cached_tokens_in", "computed_tokens_in", "prefix_cache_hits", "prefix_cache_misses", "prefix_cache_inserts"):
+            check(f"JSON {key} remains unchanged", after.get(key) == m.get(key))
+        check("JSON contains no new histogram fields", not any(key.startswith("memra_hybrid_") for key in after))
 
     # ---- the economics row crosschecks the same scrape (deliverable 3) ----
     econ = subprocess.run(

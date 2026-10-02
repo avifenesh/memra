@@ -1,0 +1,67 @@
+# HELP memra_requests_admitted_total Requests admitted since process start.
+# TYPE memra_requests_admitted_total counter
+memra_requests_admitted_total 0
+# HELP memra_requests_completed_total Worker request retirements since process start.
+# TYPE memra_requests_completed_total counter
+memra_requests_completed_total 0
+# HELP memra_tokens_out_total Output tokens since process start.
+# TYPE memra_tokens_out_total counter
+memra_tokens_out_total 0
+# HELP memra_prompt_tokens_in_total Prompt tokens including restored cache tokens since process start.
+# TYPE memra_prompt_tokens_in_total counter
+memra_prompt_tokens_in_total 0
+# HELP memra_cached_tokens_in_total Prompt tokens restored from cache since process start.
+# TYPE memra_cached_tokens_in_total counter
+memra_cached_tokens_in_total 0
+# HELP memra_computed_tokens_in_total Prompt tokens computed since process start.
+# TYPE memra_computed_tokens_in_total counter
+memra_computed_tokens_in_total 0
+# HELP memra_step_latency_p50_seconds Central-worker step latency percentile over its current window, in seconds.
+# TYPE memra_step_latency_p50_seconds gauge
+memra_step_latency_p50_seconds 0
+# HELP memra_step_latency_p99_seconds Central-worker step latency percentile over its current window, in seconds.
+# TYPE memra_step_latency_p99_seconds gauge
+memra_step_latency_p99_seconds 0
+# HELP memra_prefix_cache_hits_total Prefix-cache hit probes since process start.
+# TYPE memra_prefix_cache_hits_total counter
+memra_prefix_cache_hits_total 0
+# HELP memra_prefix_cache_misses_total Prefix-cache miss probes since process start.
+# TYPE memra_prefix_cache_misses_total counter
+memra_prefix_cache_misses_total 0
+# HELP memra_prefix_cache_inserts_total Prefix-cache insertions since process start.
+# TYPE memra_prefix_cache_inserts_total counter
+memra_prefix_cache_inserts_total 0
+# HELP memra_prefix_cache_evictions_total Prefix-cache evictions since process start.
+# TYPE memra_prefix_cache_evictions_total counter
+memra_prefix_cache_evictions_total 0
+# HELP memra_prefix_cache_hit_tokens_total Tokens restored by prefix-cache hits since process start.
+# TYPE memra_prefix_cache_hit_tokens_total counter
+memra_prefix_cache_hit_tokens_total 0
+# HELP memra_request_faults_total Guarded worker calls that failed with a request-scoped fault.
+# TYPE memra_request_faults_total counter
+memra_request_faults_total 0
+# HELP memra_worker_respawns_total Worker thread respawn attempts since process start.
+# TYPE memra_worker_respawns_total counter
+memra_worker_respawns_total 0
+# HELP memra_cache_hit_token_ratio Fraction of all prompt tokens restored from cache since process start.
+# TYPE memra_cache_hit_token_ratio gauge
+memra_cache_hit_token_ratio 0
+# HELP memra_prefix_cache_bytes Current device prefix-cache bytes.
+# TYPE memra_prefix_cache_bytes gauge
+memra_prefix_cache_bytes 0
+# HELP memra_route_requests_total Dedicated-route requests by terminal outcome since process start.
+# TYPE memra_route_requests_total counter
+# HELP memra_route_tokens_out_total Dedicated-route output tokens since process start.
+# TYPE memra_route_tokens_out_total counter
+# HELP memra_route_waiting Dedicated-route requests waiting for service.
+# TYPE memra_route_waiting gauge
+# HELP memra_route_running Dedicated-route requests running.
+# TYPE memra_route_running gauge
+# HELP memra_route_capacity Dedicated-route concurrent service capacity.
+# TYPE memra_route_capacity gauge
+# HELP memra_route_queue_wait_seconds Dedicated-route reservation to dequeue latency; cumulative, unsampled.
+# TYPE memra_route_queue_wait_seconds histogram
+# HELP memra_route_e2e_seconds Successful dedicated-route admission to completion latency; cumulative, unsampled.
+# TYPE memra_route_e2e_seconds histogram
+# HELP memra_route_round_seconds Dedicated-route compute-round latency; not an emitted-token-gap metric.
+# TYPE memra_route_round_seconds histogram

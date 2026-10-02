@@ -1,0 +1,28 @@
+[
+  {
+    "phase": "plain",
+    "gate": "cache-meter",
+    "exit": 1
+  },
+  {
+    "phase": "plain",
+    "gate": "lifecycle",
+    "exit": 1
+  },
+  {
+    "phase": "mtp",
+    "gate": "lifecycle",
+    "exit": 1
+  },
+  {
+    "phase": "queued",
+    "gate": "lifecycle",
+    "exit": 1
+  },
+  {
+    "gate": "plain-mtp-greedy-text-identity",
+    "exit": 1,
+    "plain_sha256": "605ada875848be082a9f6c0da4e29e2c70887e290b1cec6d51eec8f865a78a48",
+    "mtp_sha256": "5e770ec2c0253be0e76c02eda92f95234c2a981f3946e816008eb5689682d1e0"
+  }
+]

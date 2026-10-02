@@ -1,0 +1,445 @@
+diff --git a/crates/memra-server/examples/background_accounting_gate.rs b/crates/memra-server/examples/background_accounting_gate.rs
+index c575010aed..9e520cc999 100644
+--- a/crates/memra-server/examples/background_accounting_gate.rs
++++ b/crates/memra-server/examples/background_accounting_gate.rs
+@@ -5,6 +5,39 @@ use serde_json::json;
+ use std::sync::Arc;
+ 
+ struct Counts;
++
++/// Test-only store observer. Publish after the successful state write so a collector
++/// can wait on an event instead of polling a background job for completion.
++struct ObservedStore(memra_server::job_store::InMemoryJobStore);
++impl JobStore for ObservedStore {
++    fn put(&self, key: &str, record: JobRecord) -> Result<(), JobStoreError> {
++        let terminal = record.status.is_terminal();
++        let status = format!("{:?}", record.status);
++        let id = record
++            .output
++            .as_ref()
++            .and_then(|v| v.get("id"))
++            .and_then(|v| v.as_str())
++            .map(str::to_owned);
++        self.0.put(key, record)?;
++        if terminal {
++            println!("GATE_STORED {}", json!({"id":id,"status":status}));
++        }
++        Ok(())
++    }
++    fn get(&self, key: &str) -> Option<JobRecord> {
++        self.0.get(key)
++    }
++    fn take(&self, key: &str) -> Option<JobRecord> {
++        self.0.take(key)
++    }
++    fn cancel(&self, key: &str) -> Result<(), JobStoreError> {
++        self.0.cancel(key)
++    }
++    fn sweep(&self) -> usize {
++        self.0.sweep()
++    }
++}
+ struct Row {
+     id: String,
+     tenant: String,
+@@ -76,6 +109,12 @@ impl Receipt for Row {
+     }
+     fn record_completion_token(&mut self) -> Result<(), String> {
+         self.usage.completion_tokens += 1;
++        if self.usage.completion_tokens == 32 {
++            println!(
++                "GATE_PROGRESS {}",
++                json!({"id":self.id,"completion_tokens":32})
++            );
++        }
+         Ok(())
+     }
+     fn complete(&mut self, usage: UsageCounts, _: f64) -> Result<(), String> {
+@@ -98,7 +137,9 @@ impl Receipt for Row {
+ }
+ #[tokio::main]
+ async fn main() -> Result<(), Box<dyn std::error::Error>> {
+-    let store = Arc::new(memra_server::job_store::InMemoryJobStore::from_env());
++    let store = Arc::new(ObservedStore(
++        memra_server::job_store::InMemoryJobStore::from_env(),
++    ));
+     let wiring =
+         memra_server::ServerWiring::with_metering(Box::new(|_| Ok(Some(Arc::new(Counts)))))
+             .with_job_store(store);
+diff --git a/crates/memra-server/src/lib.rs b/crates/memra-server/src/lib.rs
+index a3368f47bc..da828cb023 100644
+--- a/crates/memra-server/src/lib.rs
++++ b/crates/memra-server/src/lib.rs
+@@ -17684,7 +17684,7 @@ default_reasoning_effort = "always"
+     #[allow(clippy::await_holding_lock)] // allow: serializes the existing process-wide admission counters
+     async fn http_metrics_observe_preheader_deadline_body_limit_and_worker_refusals() {
+         use tower::ServiceExt;
+-        let _counters = admission_counters_guard();
++        let _drain = drain_lock();
+         for code in [408u16, 429, 503] {
+             let model = format!("http-refusal-{code}");
+             let mut st = fake_worker_state();
+@@ -17763,7 +17763,7 @@ default_reasoning_effort = "always"
+     #[allow(clippy::await_holding_lock)] // allow: serializes the existing process-wide admission counters
+     async fn http_metrics_cover_real_generation_surfaces_and_early_refusals() {
+         use tower::ServiceExt;
+-        let _counters = admission_counters_guard();
++        let _drain = drain_lock();
+         let model = "http-metrics-surfaces";
+         let mut st = fake_worker_state_with_steps(2, std::time::Duration::ZERO);
+         st.models = Arc::new(vec![model.into()]);
+@@ -17833,7 +17833,7 @@ default_reasoning_effort = "always"
+     #[allow(clippy::await_holding_lock)] // allow: serializes process-wide admission counters
+     async fn http_metrics_count_cancelled_and_truncated_real_sse_responses() {
+         use tower::ServiceExt;
+-        let _counters = admission_counters_guard();
++        let _drain = drain_lock();
+         for (model, action) in [
+             ("http-metrics-cancel", "cancel"),
+             ("http-metrics-truncate", "drain"),
+@@ -23224,6 +23224,345 @@ temperature = 0.6
+         guard
+     }
+ 
++    #[tokio::test]
++    #[allow(clippy::await_holding_lock)] // allow: existing drain/env guards serialize handler tests against global writers
++    async fn background_http_ack_is_separate_from_generation_and_polling() {
++        use metering::{JobRecord, JobStore, JobStoreError, Metering, Receipt, UsageCounts};
++        use tower::ServiceExt;
++        struct Store {
++            inner: job_store::InMemoryJobStore,
++            terminal: Arc<tokio::sync::Notify>,
++        }
++        impl JobStore for Store {
++            fn put(&self, key: &str, record: JobRecord) -> Result<(), JobStoreError> {
++                let terminal = record.status.is_terminal();
++                self.inner.put(key, record)?;
++                if terminal {
++                    self.terminal.notify_one();
++                }
++                Ok(())
++            }
++            fn get(&self, key: &str) -> Option<JobRecord> {
++                self.inner.get(key)
++            }
++            fn take(&self, key: &str) -> Option<JobRecord> {
++                self.inner.take(key)
++            }
++            fn cancel(&self, key: &str) -> Result<(), JobStoreError> {
++                self.inner.cancel(key)
++            }
++            fn sweep(&self) -> usize {
++                self.inner.sweep()
++            }
++        }
++        struct Meter {
++            inner: Arc<MockMetering>,
++            token: Arc<tokio::sync::Notify>,
++        }
++        struct ObservedReceipt {
++            inner: Box<dyn Receipt>,
++            token: Arc<tokio::sync::Notify>,
++        }
++        impl Metering for Meter {
++            fn enforces_limits(&self) -> bool {
++                self.inner.enforces_limits()
++            }
++            fn is_limited(&self, tenant: &str) -> Result<bool, metering::AdmitError> {
++                self.inner.is_limited(tenant)
++            }
++            fn reserve(
++                &self,
++                tenant: &str,
++                principal: Option<&str>,
++                model: &str,
++                prompt: u64,
++                output: u64,
++            ) -> Result<Option<metering::Permit>, metering::AdmitError> {
++                self.inner.reserve(tenant, principal, model, prompt, output)
++            }
++            fn open(
++                &self,
++                meta: &metering::RequestMeta<'_>,
++                permit: Option<metering::Permit>,
++            ) -> Box<dyn Receipt> {
++                Box::new(ObservedReceipt {
++                    inner: self.inner.open(meta, permit),
++                    token: self.token.clone(),
++                })
++            }
++            fn limits_health(&self) -> Option<metering::LimitsHealth> {
++                self.inner.limits_health()
++            }
++        }
++        impl Receipt for ObservedReceipt {
++            fn wants_capture(&self) -> bool {
++                self.inner.wants_capture()
++            }
++            fn arm_capture(&mut self, prompt: serde_json::Value) {
++                self.inner.arm_capture(prompt);
++            }
++            fn capture_completion_delta(&mut self, delta: &str) {
++                self.inner.capture_completion_delta(delta);
++            }
++            fn record_prompt_usage(&mut self, prompt: u64, cached: u64) -> Result<(), String> {
++                self.inner.record_prompt_usage(prompt, cached)
++            }
++            fn record_completion_token(&mut self) -> Result<(), String> {
++                self.inner.record_completion_token()?;
++                self.token.notify_one();
++                Ok(())
++            }
++            fn complete(&mut self, usage: UsageCounts, elapsed: f64) -> Result<(), String> {
++                self.inner.complete(usage, elapsed)
++            }
++            fn complete_deadline_partial(
++                &mut self,
++                usage: UsageCounts,
++                elapsed: f64,
++            ) -> Result<(), String> {
++                self.inner.complete_deadline_partial(usage, elapsed)
++            }
++            fn reject(&mut self, status: u16, code: &str) -> Result<(), String> {
++                self.inner.reject(status, code)
++            }
++            fn settle_unbilled(
++                &mut self,
++                outcome: &'static str,
++                status: u16,
++                code: &str,
++            ) -> Result<(), String> {
++                self.inner.settle_unbilled(outcome, status, code)
++            }
++        }
++        fn generation(model: &str, name: &str) -> f64 {
++            let prefix =
++                format!("{name}{{model=\"{model}\",route=\"hybrid\",lane=\"interactive\"}} ");
++            request_metrics::render()
++                .lines()
++                .find_map(|line| line.strip_prefix(&prefix).map(|v| v.parse().unwrap()))
++                .unwrap_or(0.0)
++        }
++        let _drain = drain_lock();
++        let _env = background_env_lock();
++        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
++        for cancelled in [false, true] {
++            let model = if cancelled {
++                "metrics-background-cancel"
++            } else {
++                "metrics-background-complete"
++            };
++            let mut state = fake_worker_state();
++            state.models = Arc::new(vec![model.into()]);
++            state.health = health::WorkerHealth::new();
++            state.health.mark_ready();
++            let (tx, rx) = std::sync::mpsc::channel();
++            state.cmd_tx = tx;
++            let terminal = Arc::new(tokio::sync::Notify::new());
++            state.job_store = Arc::new(Store {
++                inner: job_store::InMemoryJobStore::new(
++                    std::time::Duration::from_secs(60),
++                    1 << 20,
++                ),
++                terminal: terminal.clone(),
++            });
++            let token = Arc::new(tokio::sync::Notify::new());
++            let mock = MockMetering::admit_all();
++            state.metering = Some(Arc::new(Meter {
++                inner: mock.clone(),
++                token: token.clone(),
++            }));
++            let app = Router::new()
++                .route("/v1/responses", post(responses_api::responses_admitted))
++                .route("/v1/responses/:id", get(responses_api::poll_admitted))
++                .route(
++                    "/v1/responses/:id/cancel",
++                    post(responses_api::cancel_admitted),
++                )
++                .with_state(state)
++                .layer(middleware::from_fn(http_metrics::observe));
++            let body = json!({"model":model,"input":"hi","background":true,"max_output_tokens":8});
++            let post = tokio::spawn(
++                app.clone().oneshot(
++                    axum::http::Request::builder()
++                        .method("POST")
++                        .uri("/v1/responses")
++                        .header("content-type", "application/json")
++                        .body(Body::from(body.to_string()))
++                        .unwrap(),
++                ),
++            );
++            let Cmd::Generate(mut request) = tokio::task::spawn_blocking(move || {
++                rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap()
++            })
++            .await
++            .unwrap() else {
++                panic!("missing worker request")
++            };
++            worker::release_pending_admit();
++            worker::release_request_reservation(&mut request);
++            let mut clock = request_metrics::Clock::admitted(
++                model,
++                request_metrics::Backend::Hybrid,
++                request.lane,
++                request.queued_at,
++                std::time::Instant::now(),
++            );
++            clock.prompt(1, 0);
++            request
++                .tx
++                .send(Event::PromptUsage {
++                    n_prompt: 1,
++                    n_cached: 0,
++                })
++                .unwrap();
++            let response = post.await.unwrap().unwrap();
++            assert_eq!(response.status(), StatusCode::OK);
++            let acknowledged = body_value(response).await;
++            assert_eq!(acknowledged["status"], "queued");
++            let id = acknowledged["id"].as_str().unwrap();
++            let http_row = format!(
++                "memra_requests_total{{model=\"{model}\",route=\"hybrid\",lane=\"interactive\",code=\"200\"}} 1\n"
++            );
++            assert!(http_metrics::render().contains(&http_row));
++            assert_eq!(generation(model, "memra_e2e_seconds_count"), 0.0);
++            assert_eq!(generation(model, "memra_ttft_seconds_count"), 0.0);
++            for _ in 0..3 {
++                let response = app
++                    .clone()
++                    .oneshot(
++                        axum::http::Request::builder()
++                            .uri(format!("/v1/responses/{id}"))
++                            .body(Body::empty())
++                            .unwrap(),
++                    )
++                    .await
++                    .unwrap();
++                let value = body_value(response).await;
++                assert!(matches!(
++                    value["status"].as_str(),
++                    Some("queued" | "in_progress")
++                ));
++            }
++            assert!(http_metrics::render().contains(&http_row));
++            assert_eq!(generation(model, "memra_e2e_seconds_count"), 0.0);
++            request
++                .tx
++                .send(Event::Token {
++                    id: 1,
++                    text: "x".into(),
++                })
++                .unwrap();
++            clock.sent();
++            tokio::time::timeout(std::time::Duration::from_secs(1), token.notified())
++                .await
++                .unwrap();
++            if cancelled {
++                let response = app
++                    .clone()
++                    .oneshot(
++                        axum::http::Request::builder()
++                            .method("POST")
++                            .uri(format!("/v1/responses/{id}/cancel"))
++                            .body(Body::empty())
++                            .unwrap(),
++                    )
++                    .await
++                    .unwrap();
++                assert_eq!(body_value(response).await["status"], "cancelled");
++                tokio::time::timeout(std::time::Duration::from_secs(1), request.tx.closed())
++                    .await
++                    .unwrap();
++            } else {
++                request
++                    .tx
++                    .send(Event::Token {
++                        id: 2,
++                        text: "y".into(),
++                    })
++                    .unwrap();
++                clock.sent();
++                request
++                    .tx
++                    .send(Event::Done {
++                        stop_reason: "Eos".into(),
++                        n_tokens: 2,
++                        n_prompt: 1,
++                        n_cached: 0,
++                        elapsed_s: 0.1,
++                        spec: None,
++                    })
++                    .unwrap();
++                clock.finished(2);
++            }
++            tokio::time::timeout(std::time::Duration::from_secs(1), terminal.notified())
++                .await
++                .unwrap();
++            drop(request);
++            drop(clock);
++            let expected = if cancelled { "cancelled" } else { "completed" };
++            let mut first = None;
++            for _ in 0..3 {
++                let response = app
++                    .clone()
++                    .oneshot(
++                        axum::http::Request::builder()
++                            .uri(format!("/v1/responses/{id}"))
++                            .body(Body::empty())
++                            .unwrap(),
++                    )
++                    .await
++                    .unwrap();
++                let value = body_value(response).await;
++                assert_eq!(value["status"], expected);
++                if let Some(first) = &first {
++                    assert_eq!(&value, first);
++                } else {
++                    first = Some(value);
++                }
++            }
++            assert!(http_metrics::render().contains(&http_row));
++            let events = mock.events();
++            let terminal_rows: Vec<_> = events
++                .iter()
++                .filter(|e| {
++                    matches!(
++                        e,
++                        MeterEvent::Complete { .. }
++                            | MeterEvent::DeadlinePartial { .. }
++                            | MeterEvent::Reject { .. }
++                            | MeterEvent::Unbilled { .. }
++                            | MeterEvent::Dropped { .. }
++                    )
++                })
++                .collect();
++            assert_eq!(terminal_rows.len(), 1, "{events:?}");
++            if cancelled {
++                assert!(matches!(
++                    terminal_rows[0],
++                    MeterEvent::DeadlinePartial { completion: 1, .. }
++                ));
++            } else {
++                assert!(matches!(
++                    terminal_rows[0],
++                    MeterEvent::Complete { completion: 2, .. }
++                ));
++            }
++            assert_eq!(
++                generation(model, "memra_e2e_seconds_count"),
++                if cancelled { 0.0 } else { 1.0 }
++            );
++            assert_eq!(
++                generation(model, "memra_completion_tokens_sum"),
++                if cancelled { 0.0 } else { 2.0 }
++            );
++            assert_eq!(
++                generation(model, "memra_emitted_token_events_total"),
++                if cancelled { 1.0 } else { 2.0 }
++            );
++        }
++        unsafe { std::env::remove_var(responses_api::BACKGROUND_RESPONSES_ENV) };
++    }
++
+     /// Door OFF: a route-level `background: true` request refuses exactly like before this
+     /// lane, and never reaches the JobStore (no id is created, so a follow-up poll on any id
+     /// this request could plausibly have gotten is still a 404, not a stale record).

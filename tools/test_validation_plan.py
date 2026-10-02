@@ -106,6 +106,51 @@ class ValidationPlanTests(unittest.TestCase):
         self.assertEqual(p['native']['scope'], 'harness')
         self.assertTrue(p['native']['requirements'])
 
+    def test_metrics_collectors_select_separate_floors_and_keep_native_obligations(self):
+        for name in ('cache-meter', 'metrics-live'):
+            for path in vp.TOOL_CONTRACTS[name]['inputs']:
+                self.put(path, '# fixture\n')
+        self.commit()
+        for name, path, floor in [('cache-meter', 'tools/cache-meter-gate.py', '3'),
+                                  ('metrics-live', 'tools/metrics-live-gate.py', '7')]:
+            with self.subTest(name=name):
+                plan = self.plan([path])
+                self.assertEqual([c['id'] for c in plan['cpu_contracts']], [name])
+                self.assertEqual(plan['cpu_contracts'][0]['cpu'][-1], floor)
+                self.assertFalse(any(plan['jobs'].values()))
+                self.assertTrue(plan['native']['requirements'])
+                self.assertFalse(plan['native']['qualification'])
+
+    def test_shared_metrics_parser_selects_both_collectors(self):
+        for name in ('cache-meter', 'metrics-live'):
+            for path in vp.TOOL_CONTRACTS[name]['inputs']:
+                self.put(path, '# fixture\n')
+        self.commit()
+        plan = self.plan(['tools/prometheus_metrics.py'])
+        self.assertEqual({c['id'] for c in plan['cpu_contracts']}, {'cache-meter', 'metrics-live'})
+        self.assertFalse(any(plan['jobs'].values()))
+        self.assertEqual(len(plan['native']['requirements']), 2)
+
+    def test_shared_metrics_parser_does_not_invent_an_absent_collector(self):
+        for path in vp.TOOL_CONTRACTS['cache-meter']['inputs']:
+            self.put(path, '# fixture\n')
+        self.commit()
+        plan = self.plan(['tools/prometheus_metrics.py'])
+        self.assertEqual([c['id'] for c in plan['cpu_contracts']], ['cache-meter'])
+        self.assertFalse(any(plan['jobs'].values()))
+
+    def test_partial_metrics_contract_cannot_silently_skip_its_test_or_parser(self):
+        contract = vp.TOOL_CONTRACTS['metrics-live']
+        for path in contract['inputs']:
+            self.put(path, '# fixture\n')
+        self.assertEqual(vp.cpu_contract_names(self.repo, 'metrics-live'), ['metrics-live'])
+        for path in ('tools/test_prometheus_metrics.py', 'tools/prometheus_metrics.py'):
+            with self.subTest(missing=path):
+                (self.repo / path).unlink()
+                with self.assertRaisesRegex(vp.Refused, 'metrics-live'):
+                    vp.cpu_contract_names(self.repo, 'metrics-live')
+                self.put(path, '# fixture\n')
+
     def test_shared_collector_selects_sampled_tests_only_when_present(self):
         paths = ['tools/collect-serving-qualification.py']
         self.assertEqual([c['id'] for c in self.plan(paths)['cpu_contracts']], ['serving-qualification'])

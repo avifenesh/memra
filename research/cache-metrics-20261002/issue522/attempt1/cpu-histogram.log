@@ -1,0 +1,27 @@
+   Compiling tokio v1.52.3
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+   Compiling tokio-util v0.7.19
+   Compiling h2 v0.4.19
+   Compiling hyper v1.10.1
+   Compiling hyper-util v0.1.20
+   Compiling tower v0.5.3
+   Compiling axum v0.7.9
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-memra-rig-cache-20261002/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 1m 09s
+     Running unittests src/lib.rs (target/release/deps/memra_server-37c911a5442b05cf)
+
+running 11 tests
+test histogram::tests::buckets_are_cumulative_and_every_sample_lands_somewhere ... ok
+test histogram::tests::prometheus_rendering_is_well_formed_and_ends_in_inf ... ok
+test histogram::tests::record_ms_matches_record_seconds ... ok
+test hybrid_telemetry::tests::a_request_that_never_reaches_record_e2e_leaves_the_e2e_histogram_untouched ... ok
+test histogram::tests::negative_and_nan_samples_are_dropped ... ok
+test tests::a_fake_hybrid_request_moves_its_histograms_and_the_prometheus_exposition ... ok
+test route_telemetry::tests::histograms_record_queue_wait_e2e_and_rounds_on_the_success_path_only ... ok
+test worker::emission_metrics_tests::only_accepted_token_events_advance_emitted_gap_histograms ... ok
+test tests::a_fake_route_request_moves_its_histograms_and_the_prometheus_exposition ... ok
+test worker::tests::lcp_histogram_buckets_are_lower_edge_and_record_samples ... ok
+test worker::tests::hybrid_lane_histograms_use_the_single_choke_points ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 1042 filtered out; finished in 0.02s
+

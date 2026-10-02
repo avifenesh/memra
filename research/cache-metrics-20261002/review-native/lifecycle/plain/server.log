@@ -1,0 +1,39 @@
+[server] build: memra-0.138.0-fb485dfcbb76 (id: source-tree, git: bef76711297e)
+[env-audit] warning: 3 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: MEMRA_CI_LOCK, MEMRA_CI_LOCK_HELD, MEMRA_RIG_LOCK_FD. Left alone: launchers and gate scripts own names outside the engine's families.
+[server] starting; models config = [("metrics-q9", "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "metrics-q9" <- /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+[worker]   loaded "metrics-q9": 33 layers, eos=248046, stop=[248046]
+[worker] metrics-q9: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="metrics-q9" route=hybrid-worker capacity=8 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] metrics-q9: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 537MB (536870912 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "metrics-q9": plain 14848 B/token, spec 16704 B/token; fixed residual learns from effective-free deltas
+[admit-cal] boot calibration skipped: spec serving disabled (static floor; the plain transient class is chunk-bounded)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[server] worker ready; serving models: ["metrics-q9"]
+[server] listening on http://127.0.0.1:18111
+[meter] admit id=cmpl-67e8b4972e303236765525352a1f178a tenant=default lane=interactive model="metrics-q9"
+[admission] request cost: model="metrics-q9" ctx=92 path=plain = 14848 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 6MB
+[spec-k] model="metrics-q9" tenant="metric-clean" K=0 source=eligibility-fallback prompt=12 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="metrics-q9" 103MB (observed 104MB at ctx 36 path=plain)
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+[meter] admit id=cmpl-cc64cab93f515c4f7ffd5caaeab70f4e tenant=default lane=interactive model="metrics-q9"
+[admission] request cost: model="metrics-q9" ctx=1104 path=plain = 14848 B/token x ctx + 6MB prefill-workspace + 103MB fixed = 125MB
+[spec-k] model="metrics-q9" tenant="metric-cancelled" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="metrics-q9" 105MB (observed 121MB at ctx 1048 path=plain)
+[meter] admit id=cmpl-96107e6c2a4482c69d2fb4d191f60d37 tenant=default lane=interactive model="metrics-q9"
+[admission] request cost: model="metrics-q9" ctx=84 path=plain = 14848 B/token x ctx + 4MB prefill-workspace + 105MB fixed = 111MB
+[spec-k] model="metrics-q9" tenant="metric-recovery" K=0 source=eligibility-fallback prompt=12 cached=0 lcp=0 active=2 wave=2 placement=single-or-non-pp2
+[abort] client disconnected: model "metrics-q9", prompt 16 (0 cached, 17 fed), 1 generated — billed to abort point, 0.10s
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

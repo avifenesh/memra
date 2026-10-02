@@ -1,0 +1,172 @@
+[
+  {
+    "name": "missing credential text/plain: HTTP 401",
+    "ok": true,
+    "detail": "{\"error\":{\"message\":\"invalid api key\",\"type\":\"authentication_error\",\"param\":null,\"code\":null}}"
+  },
+  {
+    "name": "missing credential application/json: HTTP 401",
+    "ok": true,
+    "detail": "{\"error\":{\"message\":\"invalid api key\",\"type\":\"authentication_error\",\"param\":null,\"code\":null}}"
+  },
+  {
+    "name": "wrong credential text/plain: HTTP 401",
+    "ok": true,
+    "detail": "{\"error\":{\"message\":\"invalid api key\",\"type\":\"authentication_error\",\"param\":null,\"code\":null}}"
+  },
+  {
+    "name": "wrong credential application/json: HTTP 401",
+    "ok": true,
+    "detail": "{\"error\":{\"message\":\"invalid api key\",\"type\":\"authentication_error\",\"param\":null,\"code\":null}}"
+  },
+  {
+    "name": "completion credential text/plain: HTTP 403",
+    "ok": true,
+    "detail": "{\"error\":{\"message\":\"completion api keys do not authorize metrics while MEMRA_METRICS_TOKEN is configured\",\"type\":\"authentication_error\",\"param\":null,\"code\":null}}"
+  },
+  {
+    "name": "completion credential application/json: HTTP 403",
+    "ok": true,
+    "detail": "{\"error\":{\"message\":\"completion api keys do not authorize metrics while MEMRA_METRICS_TOKEN is configured\",\"type\":\"authentication_error\",\"param\":null,\"code\":null}}"
+  },
+  {
+    "name": "default metrics remains JSON",
+    "ok": true,
+    "detail": null
+  },
+  {
+    "name": "before-clean metrics HTTP 200",
+    "ok": true,
+    "detail": null
+  },
+  {
+    "name": "before-clean promtool",
+    "ok": false,
+    "detail": "memra_step_latency_seconds non-summary metrics should not have \"quantile\" label\nmemra_step_latency_seconds non-summary metrics should not have \"quantile\" label\n"
+  },
+  {
+    "name": "clean stream has terminal success and DONE",
+    "ok": true,
+    "detail": null
+  },
+  {
+    "name": "clean stream generated tokens",
+    "ok": true,
+    "detail": 16
+  },
+  {
+    "name": "after-clean metrics HTTP 200",
+    "ok": true,
+    "detail": null
+  },
+  {
+    "name": "after-clean promtool",
+    "ok": false,
+    "detail": "memra_step_latency_seconds non-summary metrics should not have \"quantile\" label\nmemra_step_latency_seconds non-summary metrics should not have \"quantile\" label\n"
+  },
+  {
+    "name": "queue_wait records clean session exactly once",
+    "ok": true,
+    "detail": null
+  },
+  {
+    "name": "ttft records clean session exactly once",
+    "ok": true,
+    "detail": null
+  },
+  {
+    "name": "e2e records clean session exactly once",
+    "ok": true,
+    "detail": null
+  },
+  {
+    "name": "clean emitted-gap count is output tokens minus one",
+    "ok": true,
+    "detail": null
+  },
+  {
+    "name": "unknown model rejected 0",
+    "ok": true,
+    "detail": 400
+  },
+  {
+    "name": "unknown model rejected 1",
+    "ok": true,
+    "detail": 400
+  },
+  {
+    "name": "unknown model rejected 2",
+    "ok": true,
+    "detail": 400
+  },
+  {
+    "name": "after-rejected metrics HTTP 200",
+    "ok": true,
+    "detail": null
+  },
+  {
+    "name": "after-rejected promtool",
+    "ok": false,
+    "detail": "memra_step_latency_seconds non-summary metrics should not have \"quantile\" label\nmemra_step_latency_seconds non-summary metrics should not have \"quantile\" label\n"
+  },
+  {
+    "name": "rejected model names do not create metric series",
+    "ok": true,
+    "detail": null
+  },
+  {
+    "name": "queue_wait unchanged after pre-admission rejection",
+    "ok": true,
+    "detail": null
+  },
+  {
+    "name": "ttft unchanged after pre-admission rejection",
+    "ok": true,
+    "detail": null
+  },
+  {
+    "name": "e2e unchanged after pre-admission rejection",
+    "ok": true,
+    "detail": null
+  },
+  {
+    "name": "client cancelled before terminal frame",
+    "ok": true,
+    "detail": null
+  },
+  {
+    "name": "request after cancellation completes",
+    "ok": true,
+    "detail": null
+  },
+  {
+    "name": "after-cancel-and-recovery metrics HTTP 200",
+    "ok": true,
+    "detail": null
+  },
+  {
+    "name": "after-cancel-and-recovery promtool",
+    "ok": false,
+    "detail": "memra_step_latency_seconds non-summary metrics should not have \"quantile\" label\nmemra_step_latency_seconds non-summary metrics should not have \"quantile\" label\n"
+  },
+  {
+    "name": "cancelled session excluded from success E2E",
+    "ok": true,
+    "detail": null
+  },
+  {
+    "name": "cancel and recovery each admitted",
+    "ok": true,
+    "detail": null
+  },
+  {
+    "name": "model labels remain bounded",
+    "ok": true,
+    "detail": null
+  },
+  {
+    "name": "JSON negotiation/schema remains compatible",
+    "ok": true,
+    "detail": null
+  }
+]

@@ -1,0 +1,367 @@
+{
+  "request": {
+    "model": "metrics-q9",
+    "prompt": "Count from one to twenty in words, separated by commas.",
+    "max_tokens": 16,
+    "temperature": 0,
+    "stream": true,
+    "stream_options": {
+      "include_usage": true
+    },
+    "cache_salt": "metric-clean"
+  },
+  "events": [
+    {
+      "elapsed_seconds": 0.11223790398798883,
+      "event": {
+        "object": "text_completion",
+        "model": "metrics-q9",
+        "choices": [
+          {
+            "index": 0,
+            "text": "\n\n",
+            "finish_reason": null
+          }
+        ],
+        "id": "cmpl-225f5bd09782d4a5a0ef3c4d0dc7b349",
+        "created": 1790942855,
+        "system_fingerprint": "memra-0.138.0-5b9a2eaf6d8b",
+        "usage": null
+      }
+    },
+    {
+      "elapsed_seconds": 0.1273817609762773,
+      "event": {
+        "object": "text_completion",
+        "model": "metrics-q9",
+        "choices": [
+          {
+            "index": 0,
+            "text": "one",
+            "finish_reason": null
+          }
+        ],
+        "id": "cmpl-225f5bd09782d4a5a0ef3c4d0dc7b349",
+        "created": 1790942855,
+        "system_fingerprint": "memra-0.138.0-5b9a2eaf6d8b",
+        "usage": null
+      }
+    },
+    {
+      "elapsed_seconds": 0.14493298798333853,
+      "event": {
+        "object": "text_completion",
+        "model": "metrics-q9",
+        "choices": [
+          {
+            "index": 0,
+            "text": ",",
+            "finish_reason": null
+          }
+        ],
+        "id": "cmpl-225f5bd09782d4a5a0ef3c4d0dc7b349",
+        "created": 1790942855,
+        "system_fingerprint": "memra-0.138.0-5b9a2eaf6d8b",
+        "usage": null
+      }
+    },
+    {
+      "elapsed_seconds": 0.14495450898539275,
+      "event": {
+        "object": "text_completion",
+        "model": "metrics-q9",
+        "choices": [
+          {
+            "index": 0,
+            "text": " two",
+            "finish_reason": null
+          }
+        ],
+        "id": "cmpl-225f5bd09782d4a5a0ef3c4d0dc7b349",
+        "created": 1790942855,
+        "system_fingerprint": "memra-0.138.0-5b9a2eaf6d8b",
+        "usage": null
+      }
+    },
+    {
+      "elapsed_seconds": 0.14496349706314504,
+      "event": {
+        "object": "text_completion",
+        "model": "metrics-q9",
+        "choices": [
+          {
+            "index": 0,
+            "text": ",",
+            "finish_reason": null
+          }
+        ],
+        "id": "cmpl-225f5bd09782d4a5a0ef3c4d0dc7b349",
+        "created": 1790942855,
+        "system_fingerprint": "memra-0.138.0-5b9a2eaf6d8b",
+        "usage": null
+      }
+    },
+    {
+      "elapsed_seconds": 0.1449711030581966,
+      "event": {
+        "object": "text_completion",
+        "model": "metrics-q9",
+        "choices": [
+          {
+            "index": 0,
+            "text": " three",
+            "finish_reason": null
+          }
+        ],
+        "id": "cmpl-225f5bd09782d4a5a0ef3c4d0dc7b349",
+        "created": 1790942855,
+        "system_fingerprint": "memra-0.138.0-5b9a2eaf6d8b",
+        "usage": null
+      }
+    },
+    {
+      "elapsed_seconds": 0.16074252303224057,
+      "event": {
+        "object": "text_completion",
+        "model": "metrics-q9",
+        "choices": [
+          {
+            "index": 0,
+            "text": ",",
+            "finish_reason": null
+          }
+        ],
+        "id": "cmpl-225f5bd09782d4a5a0ef3c4d0dc7b349",
+        "created": 1790942855,
+        "system_fingerprint": "memra-0.138.0-5b9a2eaf6d8b",
+        "usage": null
+      }
+    },
+    {
+      "elapsed_seconds": 0.16075627401005477,
+      "event": {
+        "object": "text_completion",
+        "model": "metrics-q9",
+        "choices": [
+          {
+            "index": 0,
+            "text": " four",
+            "finish_reason": null
+          }
+        ],
+        "id": "cmpl-225f5bd09782d4a5a0ef3c4d0dc7b349",
+        "created": 1790942855,
+        "system_fingerprint": "memra-0.138.0-5b9a2eaf6d8b",
+        "usage": null
+      }
+    },
+    {
+      "elapsed_seconds": 0.16076368803624064,
+      "event": {
+        "object": "text_completion",
+        "model": "metrics-q9",
+        "choices": [
+          {
+            "index": 0,
+            "text": ",",
+            "finish_reason": null
+          }
+        ],
+        "id": "cmpl-225f5bd09782d4a5a0ef3c4d0dc7b349",
+        "created": 1790942855,
+        "system_fingerprint": "memra-0.138.0-5b9a2eaf6d8b",
+        "usage": null
+      }
+    },
+    {
+      "elapsed_seconds": 0.160770318005234,
+      "event": {
+        "object": "text_completion",
+        "model": "metrics-q9",
+        "choices": [
+          {
+            "index": 0,
+            "text": " five",
+            "finish_reason": null
+          }
+        ],
+        "id": "cmpl-225f5bd09782d4a5a0ef3c4d0dc7b349",
+        "created": 1790942855,
+        "system_fingerprint": "memra-0.138.0-5b9a2eaf6d8b",
+        "usage": null
+      }
+    },
+    {
+      "elapsed_seconds": 0.1770666060037911,
+      "event": {
+        "object": "text_completion",
+        "model": "metrics-q9",
+        "choices": [
+          {
+            "index": 0,
+            "text": ",",
+            "finish_reason": null
+          }
+        ],
+        "id": "cmpl-225f5bd09782d4a5a0ef3c4d0dc7b349",
+        "created": 1790942855,
+        "system_fingerprint": "memra-0.138.0-5b9a2eaf6d8b",
+        "usage": null
+      }
+    },
+    {
+      "elapsed_seconds": 0.17708274303004146,
+      "event": {
+        "object": "text_completion",
+        "model": "metrics-q9",
+        "choices": [
+          {
+            "index": 0,
+            "text": " six",
+            "finish_reason": null
+          }
+        ],
+        "id": "cmpl-225f5bd09782d4a5a0ef3c4d0dc7b349",
+        "created": 1790942855,
+        "system_fingerprint": "memra-0.138.0-5b9a2eaf6d8b",
+        "usage": null
+      }
+    },
+    {
+      "elapsed_seconds": 0.17709531402215362,
+      "event": {
+        "object": "text_completion",
+        "model": "metrics-q9",
+        "choices": [
+          {
+            "index": 0,
+            "text": ",",
+            "finish_reason": null
+          }
+        ],
+        "id": "cmpl-225f5bd09782d4a5a0ef3c4d0dc7b349",
+        "created": 1790942855,
+        "system_fingerprint": "memra-0.138.0-5b9a2eaf6d8b",
+        "usage": null
+      }
+    },
+    {
+      "elapsed_seconds": 0.17710432200692594,
+      "event": {
+        "object": "text_completion",
+        "model": "metrics-q9",
+        "choices": [
+          {
+            "index": 0,
+            "text": " seven",
+            "finish_reason": null
+          }
+        ],
+        "id": "cmpl-225f5bd09782d4a5a0ef3c4d0dc7b349",
+        "created": 1790942855,
+        "system_fingerprint": "memra-0.138.0-5b9a2eaf6d8b",
+        "usage": null
+      }
+    },
+    {
+      "elapsed_seconds": 0.1935180730652064,
+      "event": {
+        "object": "text_completion",
+        "model": "metrics-q9",
+        "choices": [
+          {
+            "index": 0,
+            "text": ",",
+            "finish_reason": null
+          }
+        ],
+        "id": "cmpl-225f5bd09782d4a5a0ef3c4d0dc7b349",
+        "created": 1790942855,
+        "system_fingerprint": "memra-0.138.0-5b9a2eaf6d8b",
+        "usage": null
+      }
+    },
+    {
+      "elapsed_seconds": 0.19353172997944057,
+      "event": {
+        "object": "text_completion",
+        "model": "metrics-q9",
+        "choices": [
+          {
+            "index": 0,
+            "text": " eight",
+            "finish_reason": null
+          }
+        ],
+        "id": "cmpl-225f5bd09782d4a5a0ef3c4d0dc7b349",
+        "created": 1790942855,
+        "system_fingerprint": "memra-0.138.0-5b9a2eaf6d8b",
+        "usage": null
+      }
+    },
+    {
+      "elapsed_seconds": 0.1935395960463211,
+      "event": {
+        "object": "text_completion",
+        "model": "metrics-q9",
+        "choices": [
+          {
+            "index": 0,
+            "text": "",
+            "finish_reason": "length"
+          }
+        ],
+        "usage": null,
+        "id": "cmpl-225f5bd09782d4a5a0ef3c4d0dc7b349",
+        "created": 1790942855,
+        "system_fingerprint": "memra-0.138.0-5b9a2eaf6d8b"
+      }
+    },
+    {
+      "elapsed_seconds": 0.19355789001565427,
+      "event": {
+        "object": "text_completion",
+        "model": "metrics-q9",
+        "choices": [],
+        "usage": {
+          "prompt_tokens": 12,
+          "completion_tokens": 16,
+          "total_tokens": 28,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "elapsed_s": 0.18754448,
+          "spec": {
+            "rounds": 5,
+            "drafted": 15,
+            "accepted": 12,
+            "acceptance_rate": 0.8
+          }
+        },
+        "id": "cmpl-225f5bd09782d4a5a0ef3c4d0dc7b349",
+        "created": 1790942855,
+        "system_fingerprint": "memra-0.138.0-5b9a2eaf6d8b"
+      }
+    }
+  ],
+  "done": true,
+  "cancelled_by_client": false,
+  "status": 200,
+  "finish_reason": "length",
+  "usage": {
+    "prompt_tokens": 12,
+    "completion_tokens": 16,
+    "total_tokens": 28,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "elapsed_s": 0.18754448,
+    "spec": {
+      "rounds": 5,
+      "drafted": 15,
+      "accepted": 12,
+      "acceptance_rate": 0.8
+    }
+  },
+  "elapsed_seconds": 0.19363465800415725
+}

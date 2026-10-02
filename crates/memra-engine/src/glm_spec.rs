@@ -4442,6 +4442,15 @@ pub struct Glm5SpecSession {
 }
 
 impl Glm5SpecSession {
+    /// Canonical trunk and optional DFlash draft state planes, excluding rollback copies.
+    pub fn kv_plane_bytes(&self) -> (usize, usize) {
+        let (used, capacity) = self.cache.kv_plane_bytes();
+        let draft = match &self.draft {
+            Glm5DraftState::NativeMtp => 0,
+            Glm5DraftState::Dflash2 { kv, .. } => kv.kv_plane_bytes(),
+        };
+        (used + draft, capacity + draft)
+    }
     /// The depth log, for the worker's `[spec-prof-rounds]` / `[spec-prof-summary]` lines.
     pub fn round_log_mut(&mut self) -> Option<&mut SpecRoundsLog> {
         self.prof_rounds.as_mut()

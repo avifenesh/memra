@@ -83,7 +83,13 @@ fn plain_oracle(
     } else {
         let mut row = Vec::new();
         for &token in prompt {
-            row = if batched_class {
+            // The live GDN worker primes cold sub-floor prompts eagerly even though
+            // generated tokens use the batched serving class (#918). Keep the oracle
+            // tied to that request program, rather than copying the speculative prime.
+            row = if batched_class
+                && !(memra_engine::plan_backend::gdn_dspark_compatible(&model.plan)
+                    && prompt.len() < memra_engine::hybrid_forward::PRIME_MIN_T)
+            {
                 let mut caches = [&mut cache];
                 model.decode_step_batch(e, &[token], &mut caches)?.remove(0)
             } else {

@@ -512,6 +512,15 @@ pub struct KvLayer {
 }
 
 impl KvLayer {
+    /// Backed and reserved bytes of the canonical K/V data planes, including VMM
+    /// allocation granularity. Read-only;
+    /// excludes length metadata, graph workspace and rollback snapshots.
+    pub fn kv_plane_bytes(&self) -> (usize, usize) {
+        (
+            self.k.physical_bytes() + self.v.physical_bytes(),
+            self.k.reserved_bytes() + self.v.reserved_bytes(),
+        )
+    }
     pub fn physical_rows(
         &self,
         start: usize,
@@ -2753,6 +2762,50 @@ pub struct CacheSnapshot {
 }
 
 impl Cache {
+    /// Resident and addressable canonical state-plane bytes, including recurrent,
+    /// latent/indexer and TP replicas. Prefix and rollback snapshots are separate owners.
+    /// No device read, synchronization, allocation or change to cache state occurs.
+    pub fn kv_plane_bytes(&self) -> (usize, usize) {
+        let mut bytes = (0, 0);
+        for layer in self.kv.iter().flatten() {
+            let (used, capacity) = layer.kv_plane_bytes();
+            bytes.0 += used;
+            bytes.1 += capacity;
+        }
+        let recurrent = |layer: &RecurLayer| {
+            (layer.conv_state.len() + layer.ssm_state.len() + layer.ssm_state_alt.len()) * 4
+        };
+        let latent = |layer: &LatentKvLayer| {
+            (layer.rows.len()
+                + layer.index_rows.as_ref().map_or(0, |p| p.len())
+                + layer.index_pool_keys.as_ref().map_or(0, |p| p.len()))
+                * 4
+        };
+        let fixed = self.recur.iter().flatten().map(recurrent).sum::<usize>()
+            + self
+                .glm5_tp_recur
+                .iter()
+                .flatten()
+                .flatten()
+                .map(recurrent)
+                .sum::<usize>()
+            + self.latent.iter().flatten().map(latent).sum::<usize>()
+            + self
+                .glm5_tp_latent_peer
+                .iter()
+                .flatten()
+                .flatten()
+                .map(latent)
+                .sum::<usize>()
+            + self
+                .tp_kv
+                .iter()
+                .flatten()
+                .flat_map(|layer| layer.ranks())
+                .map(|rank| rank.k().len() + rank.v().len())
+                .sum::<usize>();
+        (bytes.0 + fixed, bytes.1 + fixed)
+    }
     /// The continuation gate. Every decode and prime entry asks it first. Refuses a tainted
     /// cache (one-way) and, under day-11 rule 2, a cache with any suspended layer, with the
     /// typed [`ContinuationRefused`] naming the layers, until the caller restores them.

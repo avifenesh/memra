@@ -1,0 +1,36 @@
+{
+  "request": {
+    "model": "metrics-q9",
+    "prompt": "Write at least two thousand words explaining how a database works, with detailed examples.",
+    "max_tokens": 1024,
+    "temperature": 0,
+    "stream": true,
+    "stream_options": {
+      "include_usage": true
+    },
+    "cache_salt": "metric-cancelled"
+  },
+  "events": [
+    {
+      "elapsed_seconds": 0.04453309706877917,
+      "event": {
+        "object": "text_completion",
+        "model": "metrics-q9",
+        "choices": [
+          {
+            "index": 0,
+            "text": "\n\n",
+            "finish_reason": null
+          }
+        ],
+        "id": "cmpl-203a79b414920876d428654ddc8182ae",
+        "created": 1790942072,
+        "system_fingerprint": "memra-0.138.0-a22131fc0549",
+        "usage": null
+      }
+    }
+  ],
+  "done": false,
+  "cancelled_by_client": true,
+  "status": 200
+}

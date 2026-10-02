@@ -1,0 +1,21 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 0.07s
+     Running unittests src/lib.rs (target/release/deps/memra_server-37c911a5442b05cf)
+
+running 13 tests
+test tests::configured_metrics_token_is_exclusive_and_sees_all_tenants ... ok
+test tests::keyed_metrics_require_and_accept_api_bearer ... ok
+test tests::keyring_metrics_bearer_sees_only_its_tenant_rows ... ok
+test tests::metrics_token_protects_public_override_without_api_keys ... ok
+test tests::peer_probe_metrics_are_operator_only ... ok
+test tests::populated_dual_pp_metrics_are_operator_only ... ok
+test tests::populated_pp_wave_metrics_are_operator_only ... ok
+test tests::populated_spec_acceptance_metrics_are_operator_only ... ok
+test tests::no_key_loopback_metrics_remain_open_for_development ... ok
+test tests::tenant_metrics_hide_capacity_and_aggregate_spec ... ok
+test worker::emission_metrics_tests::only_accepted_token_events_advance_emitted_gap_histograms ... ok
+test tests::prefix_aggregate_metrics_are_operator_only_but_tenant_ratio_remains ... ok
+test worker::tests::host_telemetry_dirty_forces_the_metrics_publish ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 1040 filtered out; finished in 0.01s
+

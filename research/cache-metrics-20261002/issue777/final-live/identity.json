@@ -1,0 +1,35 @@
+{
+  "source": "bef76711297eaf86fe8aef51c8fb2d8e8d968b6b",
+  "source_diff_sha256": "ed3e2a9827fc263cb4ac196d62966f85f46f432b63fcda5ef2f7fa90feb86c23",
+  "binary_sha256": "8e429786f245fc0f5dbd54719b6a1c7cb966f4bdcd1588a9a4d581eae4cc4ac1",
+  "artifact_sha256": "df27a780435b7b45c2597536112ea3cb091f8544c3d0c3318d9f4258b31f7adf",
+  "artifact_revision": "5bc3e238d916f48a861bac2f8a1990a0e9b7e98d",
+  "artifact_bytes": 18209036576,
+  "env": {
+    "MEMRA_RIG_LOCK_FD": "9",
+    "MEMRA_CI_LOCK": "/tmp/memra-5090.lock",
+    "MEMRA_CI_LOCK_HELD": "1",
+    "MEMRA_GPU_LOCK": "/tmp/memra-5090.lock",
+    "MEMRA_COMPAT": "openai",
+    "MEMRA_MODELS": "q35-coldfix=/data/ai-ml/hf-models/qwen36-35b-a3b-mtp-gguf-5bc3e238/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf",
+    "MEMRA_ADDR": "127.0.0.1:18110",
+    "MEMRA_SERVE_SPEC": "0",
+    "MEMRA_CTX": "8192",
+    "MEMRA_PREFIX_CACHE_MB": "4096",
+    "MEMRA_REUSE_POOL": "0",
+    "MEMRA_AFFINITY": "0",
+    "MEMRA_MAX_SESSIONS": "96",
+    "MEMRA_GDN_CHUNK": "32"
+  },
+  "request_shape": {
+    "concurrency": 4,
+    "requests": 20,
+    "hits": 18,
+    "misses": 2,
+    "prompt_tokens": 4860,
+    "completion_tokens": 60,
+    "temperature": 0
+  },
+  "timeout_seconds": 1200,
+  "minimum_free_vram_mib": 21000
+}

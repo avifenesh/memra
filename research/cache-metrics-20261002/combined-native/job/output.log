@@ -1,0 +1,57 @@
+Running as unit: memra-rig-job-1d051ea29b31.service; invocation ID: 0ea5e2d7d4cb4ab69938f0b39faf5b8f
+WAITING canonical GPU lock /tmp/memra-5090.lock
+ACQUIRED canonical GPU lock on inherited FD9
+uuid, name, memory.total [MiB], memory.free [MiB], driver_version
+GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, NVIDIA GeForce RTX 5090 Laptop GPU, 24463 MiB, 23899 MiB, 595.91.07
+
+{"partial_tokens_before_fault": true, "typed_error_after_200": true, "no_successful_finish": true, "one_truncated_stream": true, "one_incomplete_stream": true, "one_failed_response": true, "worker_respawn_counted": true, "kv_gauges_cleared_after_panic": true, "partial_work_counted": true, "no_client_cancellation": true, "promtool": true}
+[
+  {
+    "phase": "cache",
+    "gate": "cache-meter",
+    "exit": 0
+  },
+  {
+    "phase": "plain",
+    "gate": "lifecycle",
+    "exit": 0
+  },
+  {
+    "phase": "plain",
+    "gate": "live-capacity",
+    "exit": 0
+  },
+  {
+    "phase": "mtp",
+    "gate": "lifecycle",
+    "exit": 0
+  },
+  {
+    "phase": "mtp",
+    "gate": "live-capacity",
+    "exit": 0
+  },
+  {
+    "phase": "queued",
+    "gate": "lifecycle",
+    "exit": 0
+  },
+  {
+    "phase": "fault",
+    "gate": "native-worker-fault",
+    "exit": 0
+  },
+  {
+    "gate": "plain-mtp-greedy-text-identity",
+    "exit": 0,
+    "plain_sha256": "605ada875848be082a9f6c0da4e29e2c70887e290b1cec6d51eec8f865a78a48",
+    "mtp_sha256": "605ada875848be082a9f6c0da4e29e2c70887e290b1cec6d51eec8f865a78a48"
+  }
+]
+[{"format": "native", "gate_exit": 0}, {"format": "openai", "gate_exit": 0}]
+{"queued_ack_counts_once": true, "generation_success_counts_once": true, "polls_do_not_count_http_or_generation": true, "completion_tokens_match_callback": true, "cancel_callback_once_and_partial": true, "cancel_excluded_from_generation_success": true, "only_three_generation_http_requests": true, "completion_histogram_excludes_cancelled_partial": true, "partial_native_work_observed": true, "acknowledgements_are_not_http_cancellations": true, "no_unsettled_receipts": true}
+          Finished with result: success
+Main processes terminated with: code=exited, status=0/SUCCESS
+               Service runtime: 1min 25.806s
+             CPU time consumed: 1min 21.870s
+                   Memory peak: 9.5G (swap: 0B)

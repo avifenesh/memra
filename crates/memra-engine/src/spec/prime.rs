@@ -89,17 +89,17 @@ pub struct MtpPrimeWalker<'a> {
 /// prefix-cache hit's queued suffix, a turn continuation). A carried suffix follows the plain
 /// prefill tick's arms EXACTLY, the program law `spec_session_from_restored` documents: eager
 /// `decode_step_h` below `PRIME_MIN_T`, `prime_cache` at or above it, tokenwise everywhere
-/// under the override. The cold prime keeps its legacy program (`spec_target_step_h` for an
-/// unsegmented sub-floor prompt, batched non-final segments under the override). Routing the
-/// carried sub-floor suffix through the cold program is the two-programs class the
-/// spec-on-cache-hit gate measures as a near-tie flip on qwen r3/g2 (2026-08-18, again
-/// 2026-09-20 after #379 queued the suffix here).
+/// under the override. GDN cold sub-floor prompts use the same eager program: the GDN
+/// `spec_target_step_h` call uses batched T=1 math, which changes the initial cache/logits
+/// and can flip greedy output before verification (#918). Longer cold primes retain the
+/// legacy override program (target steps without stops, batched non-final segments).
 fn trunk_schedule(
     tp: usize,
     prime_split: Option<usize>,
     ckpt_rel: Option<usize>,
     tokenwise: bool,
     carried: bool,
+    eager_cold_short: bool,
     mut ranges: impl FnMut(usize) -> Vec<(usize, usize)>,
 ) -> Vec<TrunkChunk> {
     let mut stops: Vec<_> = [prime_split, ckpt_rel].into_iter().flatten().collect();
@@ -127,15 +127,17 @@ fn trunk_schedule(
                 });
             }
         } else {
-            // Sub-floor segments retain their original tokenwise numerical calls: the cold
-            // unsegmented prime's `spec_target_step_h`, eager `decode_step_h` otherwise.
+            // Match plain prefill for qualified GDN short cold prompts and carried suffixes.
+            // The target-step override is retained only for longer unsegmented primes.
             chunks.push(TrunkChunk {
                 start: lo,
                 end: hi,
                 segment_start: lo,
                 segment_end: hi,
                 batched,
-                target_step: !segmented && !carried,
+                target_step: !segmented
+                    && !carried
+                    && (tp >= crate::hybrid_forward::PRIME_MIN_T || !eager_cold_short),
             });
         }
         lo = hi;
@@ -318,13 +320,21 @@ impl HybridModel {
         }
         let tokenwise = std::env::var("MEMRA_PRIME_TOKENWISE").is_ok()
             || e.frozen_cpu_experts_prefer_tokenwise_prime();
-        let chunks = trunk_schedule(tp, prime_split, ckpt_rel, tokenwise, base > 0, |len| {
-            crate::hybrid_forward::prime_chunk_ranges(
-                len,
-                self.layers.len(),
-                self.gdn_prime_grid_on(),
-            )
-        });
+        let chunks = trunk_schedule(
+            tp,
+            prime_split,
+            ckpt_rel,
+            tokenwise,
+            base > 0,
+            crate::plan_backend::gdn_dspark_compatible(&self.plan),
+            |len| {
+                crate::hybrid_forward::prime_chunk_ranges(
+                    len,
+                    self.layers.len(),
+                    self.gdn_prime_grid_on(),
+                )
+            },
+        );
         let fill_chunk = if crate::cache::swa_ring_on() {
             crate::hybrid_forward::prime_chunk_tokens(tp, self.layers.len())
         } else {
@@ -788,7 +798,7 @@ mod tests {
         let state = |ckpt_rel: Option<usize>, cursor: usize| MtpPrimeState {
             prompt: vec![0; 2061],
             base: 0,
-            chunks: trunk_schedule(2061, None, Some(1024), false, false, |n| vec![(0, n)]),
+            chunks: trunk_schedule(2061, None, Some(1024), false, false, true, |n| vec![(0, n)]),
             cursor,
             fill_cursor: 0,
             fill_chunk: 4096,
@@ -824,7 +834,9 @@ mod tests {
 
     #[test]
     fn stable_captures_preserve_segment_local_ranges_and_tiny_tail_program() {
-        let chunks = trunk_schedule(2061, Some(1024), Some(2048), false, false, |n| vec![(0, n)]);
+        let chunks = trunk_schedule(2061, Some(1024), Some(2048), false, false, true, |n| {
+            vec![(0, n)]
+        });
         assert_eq!(
             chunks
                 .iter()
@@ -845,40 +857,82 @@ mod tests {
 
     #[test]
     fn tokenwise_override_retains_the_legacy_segment_program() {
-        let cold = trunk_schedule(2048, None, None, true, false, |_| {
+        let cold = trunk_schedule(2048, None, None, true, false, true, |_| {
             panic!("batched cold tokenwise")
         });
         assert_eq!(cold.len(), 1);
         assert!(!cold[0].batched && cold[0].target_step);
-        let split = trunk_schedule(2048, Some(1024), Some(1024), true, false, |n| vec![(0, n)]);
+        let split = trunk_schedule(2048, Some(1024), Some(1024), true, false, true, |n| {
+            vec![(0, n)]
+        });
         assert_eq!(split.len(), 2);
         assert!(split[0].batched);
         assert!(!split[1].batched && !split[1].target_step);
     }
 
     /// The prefix-cache hit shape of the spec-on-cache-hit gate (qwen r3/g2: 106 of 119
-    /// restored, 13 queued): a carried sub-floor suffix is eager `decode_step_h`, never the
-    /// cold prime's `spec_target_step_h`, with or without a stable-boundary stop.
+    /// restored, 13 queued): cold and carried sub-floor primes both use eager
+    /// `decode_step_h`, with or without a stable-boundary stop.
     #[test]
     fn carried_sub_floor_suffix_keeps_the_plain_eager_program() {
-        let queued = trunk_schedule(13, None, None, false, true, |_| panic!("batched sub-floor"));
-        assert_eq!(queued.len(), 1);
-        assert!(!queued[0].batched && !queued[0].target_step);
-        let cold = trunk_schedule(13, None, None, false, false, |_| {
+        let queued = trunk_schedule(13, None, None, false, true, true, |_| {
             panic!("batched sub-floor")
         });
-        assert!(!cold[0].batched && cold[0].target_step);
-        let split = trunk_schedule(29, Some(16), None, false, true, |n| vec![(0, n)]);
+        assert_eq!(queued.len(), 1);
+        assert!(!queued[0].batched && !queued[0].target_step);
+        let cold = trunk_schedule(13, None, None, false, false, true, |_| {
+            panic!("batched sub-floor")
+        });
+        assert!(!cold[0].batched && !cold[0].target_step);
+        let split = trunk_schedule(29, Some(16), None, false, true, true, |n| vec![(0, n)]);
         assert_eq!(split.len(), 2);
         assert!(split[0].batched);
         assert!(!split[1].batched && !split[1].target_step);
+    }
+
+    #[test]
+    fn cold_short_prime_matches_plain_prefill_across_the_batch_floor() {
+        for tp in 1..=crate::hybrid_forward::PRIME_MIN_T {
+            for tokenwise in [false, true] {
+                let chunks =
+                    trunk_schedule(tp, None, None, tokenwise, false, true, |n| vec![(0, n)]);
+                assert_eq!(chunks.len(), 1);
+                let chunk = chunks[0];
+                assert_eq!((chunk.start, chunk.end), (0, tp));
+                assert_eq!(
+                    chunk.batched,
+                    tp >= crate::hybrid_forward::PRIME_MIN_T && !tokenwise
+                );
+                assert_eq!(
+                    chunk.target_step,
+                    tp >= crate::hybrid_forward::PRIME_MIN_T && tokenwise
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn non_gdn_short_prime_retains_its_existing_target_program() {
+        for tokens in 1..crate::hybrid_forward::PRIME_MIN_T {
+            for tokenwise in [false, true] {
+                let chunks = trunk_schedule(tokens, None, None, tokenwise, false, false, |_| {
+                    panic!("batched short prime")
+                });
+                assert_eq!(chunks.len(), 1);
+                assert!(!chunks[0].batched);
+                assert!(
+                    chunks[0].target_step,
+                    "non-GDN/Step35 cold prime must retain its target class"
+                );
+            }
+        }
     }
 
     /// Under the tokenwise override a carried suffix mirrors the fed path: every segment is
     /// eager, including non-final ones the cold program would still batch.
     #[test]
     fn carried_tokenwise_override_is_eager_on_every_segment() {
-        let carried = trunk_schedule(2048, Some(1024), None, true, true, |_| {
+        let carried = trunk_schedule(2048, Some(1024), None, true, true, true, |_| {
             panic!("batched carried tokenwise")
         });
         assert_eq!(carried.len(), 2);

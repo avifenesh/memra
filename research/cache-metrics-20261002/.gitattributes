@@ -1,0 +1,11 @@
+# Retain captured NVIDIA output bytes, including its timestamp padding.
+issue*/**/gpu-*.txt -text whitespace=-blank-at-eol
+issue*/**/*.log -text whitespace=-blank-at-eol,-blank-at-eof
+
+# Raw scientific receipts retain exact log, patch and device-output bytes.
+*.log -text -whitespace
+*.diff -text -whitespace
+*.txt -text -whitespace
+*.csv -text -whitespace
+
+*.sse -text -whitespace
