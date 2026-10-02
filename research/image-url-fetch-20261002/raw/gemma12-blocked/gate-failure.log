@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "$WORKTREE/tools/image-url-fetch-gate.py", line 200, in <module>
+    assert ready.wait(180) and listening.is_set() and server.poll() is None, 'model startup failed; inspect server.log'
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: model startup failed; inspect server.log

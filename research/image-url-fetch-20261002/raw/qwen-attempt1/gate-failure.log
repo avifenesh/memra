@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "$WORKTREE/tools/image-url-fetch-gate.py", line 247, in <module>
+    refuse(case, [url_root + '/' + case], 'image_url_blocked')
+    ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "$WORKTREE/tools/image-url-fetch-gate.py", line 216, in refuse
+    assert value['error'].get('code') == code, (case, value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ('redirect-scheme', {'error': {'message': 'image_url fetch failed: http status 302 Found', 'type': 'invalid_request_error', 'param': 'messages', 'code': 'image_url_unreachable'}})
