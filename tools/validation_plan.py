@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 from collections import defaultdict
 import fnmatch
+import glob
 import hashlib
 import importlib.util
 import json
@@ -223,7 +224,11 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
     source_consumers = defaultdict(set)
     links = tree.symlinks()
     def linked_input(path):
+        fixed_prefix = re.split(r'[\[{}*?]', path, maxsplit=1)[0].rstrip('/')
         return any(path == alias or path.startswith(alias + '/')
+                   or alias.startswith(path.rstrip('/') + '/')
+                   or (fixed_prefix != path and
+                       (alias.startswith(fixed_prefix) or fixed_prefix.startswith(alias + '/')))
                    or fnmatch.fnmatchcase(alias, path)
                    or fnmatch.fnmatchcase(alias, path.rstrip('/') + '/**') for alias in links)
 
@@ -349,9 +354,9 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
                 # fixed prefix. This can select extra work, never omit a consumer.
                 match = re.search(r'(?:research|docs)/', value)
                 rooted = value[match.start():]
-                rooted = re.sub(r'\{[^}]*\}', '*', rooted)
                 if linked_input(rooted):
                     raise Refused('runtime fixture symlink needs an input contract: ' + rooted)
+                rooted = re.sub(r'\{[^}]*\}', '*', glob.escape(rooted))
                 inputs[rooted].add(package)
                 # A literal may be a directory later extended with join()/read_dir().
                 # Cover descendants even when the directory name contains a dot.
@@ -370,9 +375,16 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
     return inputs
 
 
+def matches_input(path, pattern):
+    # Literal filenames may contain glob metacharacters. Also keep literal
+    # directory descendants while supporting explicitly conservative glob rules.
+    return (path == pattern or fnmatch.fnmatchcase(path, pattern)
+            or (pattern.endswith('/**') and path.startswith(pattern[:-3] + '/')))
+
+
 def input_consumers(path, inputs):
     return set().union(*(packages for pattern, packages in inputs.items()
-                         if fnmatch.fnmatchcase(path, pattern))) if inputs else set()
+                         if matches_input(path, pattern))) if inputs else set()
 
 
 def closure(direct, graph):
@@ -478,7 +490,7 @@ def make_plan(paths, base_tree, head_tree):
             probe_inputs[pattern].update(probes)
         for path in paths:
             for pattern, probes in probe_inputs.items():
-                if fnmatch.fnmatchcase(path, pattern):
+                if matches_input(path, pattern):
                     native_requirements.add('Changed native probe input ' + path + ': rerun pinned assertions for ' + ', '.join(sorted(probes)))
             package = owner(path, owners)
             if package:

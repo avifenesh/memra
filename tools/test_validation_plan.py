@@ -186,6 +186,24 @@ class ValidationPlanTests(unittest.TestCase):
         self.commit()
         self.assertEqual(self.plan(['research/sample/input.json'])['packages'], ['memra-server'])
 
+    def test_literal_glob_characters_cannot_hide_input_or_directory(self):
+        for source, path in (
+                ('include_str!("../../../research/input[1].txt");', 'research/input[1].txt'),
+                ('let p = root.join("research/fixtures[1]");', 'research/fixtures[1]/input.json'),
+                ('let p = format!("research/fixtures[1]/{case}/input.json");', 'research/fixtures[1]/a/input.json')):
+            with self.subTest(path=path):
+                self.put('crates/memra-server/src/lib.rs', source)
+                self.commit()
+                self.assertEqual(self.plan([path])['packages'], ['memra-server'])
+
+    def test_literal_directory_glob_characters_do_not_hide_symlink(self):
+        self.put('crates/memra-server/src/lib.rs', 'let p = root.join("research/fixtures[1]");')
+        self.put('docs/real.md', 'fixture')
+        (self.repo / 'research/fixtures[1]').mkdir(parents=True)
+        (self.repo / 'research/fixtures[1]/alias.md').symlink_to('../../docs/real.md')
+        self.commit()
+        self.assertEqual(self.plan(['docs/real.md'])['mode'], 'full')
+
     def test_dynamic_research_directory_keeps_all_receipts_affected(self):
         self.put('crates/memra-server/src/lib.rs', 'let p = root.join("research");')
         self.commit()
