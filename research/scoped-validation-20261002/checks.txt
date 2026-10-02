@@ -1,3 +1,9 @@
+Revuto repair (2026-10-02):
+- 85 planner/coverage tests,39 fast-gate tests and18 classifier scenarios passed.
+- Changed Gemma and chunk-invariance prompt paths retain native expansion and name registry
+  consumers. Mixed CPU/oracle changes cannot take the CPU-only shortcut. No native job ran.
+- The sampled Python environment caps OpenBLAS and OMP threads at1; its focused test passes.
+
 Review repairs (2026-10-02):
 - 84 planner/coverage tests passed; 18 classifier arms passed including real-tree63-path census.
 - External compiled Rust and referenced symlinks expand. Cross-crate textual consumers inherit

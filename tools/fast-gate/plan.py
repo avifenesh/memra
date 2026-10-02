@@ -196,8 +196,14 @@ def summary(plan):
 def attach_validation(plan, validation, explicit_probes=False, context_changes=()):
     """Known CPU/harness contracts need no engine build; native pruning stays separate."""
     plan["validation"] = validation
+    declared_inputs = {path for contract in validation["cpu_contracts"]
+                       for path in contract.get("inputs", [])}
+    def cpu_input(path):
+        return (path in declared_inputs or
+                (path.endswith(".md") and not path.startswith(("crates/", "research/", "probe/"))))
+    explicit_cpu_scope = bool(plan["changed"]) and all(cpu_input(path) for path in plan["changed"])
     if (validation["mode"] == "scoped" and not validation["packages"]
-            and not explicit_probes and not context_changes):
+            and explicit_cpu_scope and not explicit_probes and not context_changes):
         plan.update(decision="cpu-only", kernel_scope="none", kernel_sections=[], probes=[], spec_probes=[],
                     expansion=[], required_unregistered=[])
         plan["cpu_contracts"] = [c["id"] for c in validation["cpu_contracts"]]

@@ -437,6 +437,21 @@ def native_scope(paths, native_requirements, packages):
     return {'scope': scope, 'requirements': requirements + sorted(native_requirements), 'qualification': False}
 
 
+def native_probe_inputs(tree):
+    inputs = defaultdict(set)
+    paths = set(tree.paths('tools/fast-gate'))
+    for registry in ('tools/fast-gate/models.tsv', 'tools/fast-gate/accept-cells.tsv'):
+        if registry not in paths:
+            continue
+        for line in tree.read(registry).splitlines():
+            if not line.strip() or line.lstrip().startswith('#'):
+                continue
+            probe = line.split('\t', 1)[0]
+            for path in re.findall(r'(?:research|probe)/[^\s\x22\x27;]+', line):
+                inputs[path].add(registry + ':' + probe)
+    return inputs
+
+
 def make_plan(paths, base_tree, head_tree):
     paths = sorted(set(paths))
     if not paths:
@@ -458,7 +473,13 @@ def make_plan(paths, base_tree, head_tree):
             includes[path].update(packages)
         direct, contracts, native_requirements = set(), set(), set()
         contract_paths = set(base_tree.paths('tools')) | set(head_tree.paths('tools'))
+        probe_inputs = native_probe_inputs(head_tree)
+        for pattern, probes in native_probe_inputs(base_tree).items():
+            probe_inputs[pattern].update(probes)
         for path in paths:
+            for pattern, probes in probe_inputs.items():
+                if fnmatch.fnmatchcase(path, pattern):
+                    native_requirements.add('Changed native probe input ' + path + ': rerun pinned assertions for ' + ', '.join(sorted(probes)))
             package = owner(path, owners)
             if package:
                 direct.add(package)
@@ -630,7 +651,8 @@ def run_cpu_contract(contract, root):
         python = str(Path(directory) / 'bin/python')
         subprocess.run([python, '-m', 'pip', 'install', '--disable-pip-version-check',
                         '-r', str(root / requirements)], check=True)
-        env = dict(os.environ, PATH=str(Path(directory) / 'bin') + os.pathsep + os.environ.get('PATH', ''))
+        env = dict(os.environ, PATH=str(Path(directory) / 'bin') + os.pathsep + os.environ.get('PATH', ''),
+                   OPENBLAS_NUM_THREADS='1', OMP_NUM_THREADS='1')
         subprocess.run(contract['cpu'], cwd=root, env=env, check=True)
 
 

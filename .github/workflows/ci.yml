@@ -87,7 +87,7 @@ jobs:
         run: |
           python3 tools/validation_plan.py check-registry
           tools/test_ci_change_class.sh
-          tools/unittest-floor.sh tools 'test_validation_*.py' 84
+          tools/unittest-floor.sh tools 'test_validation_*.py' 85
 
       - name: Declared changed-input CPU contracts (missing selection runs all available)
         run: python3 tools/validation_plan.py contracts
@@ -135,7 +135,7 @@ jobs:
         run: |
           tools/unittest-floor.sh tools test_local_build_cache.py 48
           tools/unittest-floor.sh tools test_build_measurement.py 2
-          tools/unittest-floor.sh tools/fast-gate test_plan.py 36
+          tools/unittest-floor.sh tools/fast-gate test_plan.py 39
           tools/unittest-floor.sh tools/fast-gate test_component.py 4
 
       - name: Cache qualification harness regressions (unittest floor 15; 16 measured 2026-09-21)

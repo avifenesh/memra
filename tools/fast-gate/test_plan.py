@@ -31,7 +31,7 @@ class PlannerTests(unittest.TestCase):
     def test_declared_cpu_input_does_not_compile_or_load_models(self):
         p = plan.make_plan(["tools/q35-cold-mixed-gate.py"])
         validation = {"mode": "scoped", "packages": [], "jobs": {},
-                      "cpu_contracts": [{"id": "q35-cache"}],
+                      "cpu_contracts": [{"id": "q35-cache", "inputs": ["tools/q35-cold-mixed-gate.py"]}],
                       "native": {"requirements": ["live evidence still required for the issue"]}}
         plan.attach_validation(p, validation)
         self.assertEqual(p["decision"], "cpu-only")
@@ -40,6 +40,32 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(p["cpu_contracts"], ["q35-cache"])
         self.assertTrue(p["native_evidence_obligations"])
         self.assert_development_only(p)
+
+    def test_research_oracle_inputs_keep_native_expansion(self):
+        validation = {"mode": "scoped", "packages": [], "cpu_contracts": [], "native": {"requirements": []}}
+        for path in ("research/gemma4-bringup/e4b-chat-watercycle-ids.txt",
+                     "research/gemma4-bringup/depth-prompt-1736-ids.txt",
+                     "research/chunk-invariance-20260805/prompt-pp6257.txt",
+                     "research/e2e/prompts/short.txt", "research/campaign/fixture.md"):
+            with self.subTest(path=path):
+                p = plan.make_plan([path])
+                original = {key: p[key] for key in ("decision", "expansion", "required_unregistered", "probes")}
+                plan.attach_validation(p, validation)
+                self.assertEqual(p['decision'], 'expand')
+                self.assertEqual({key: p[key] for key in original}, original)
+
+    def test_plain_docs_can_use_cpu_content_checks(self):
+        p = plan.make_plan(["docs/TESTING.md"])
+        plan.attach_validation(p, {"mode": "scoped", "packages": [], "cpu_contracts": [], "native": {"requirements": []}})
+        self.assertEqual(p['decision'], 'cpu-only')
+
+    def test_mixed_cpu_contract_and_oracle_cannot_hide_native_work(self):
+        p = plan.make_plan(["tools/q35-cold-mixed-gate.py", "research/e2e/prompts/short.txt"])
+        plan.attach_validation(p, {"mode": "scoped", "packages": [],
+                                  "cpu_contracts": [{"id": "q35-cache", "inputs": ["tools/q35-cold-mixed-gate.py"]}],
+                                  "native": {"requirements": ["live evidence"]}})
+        self.assertEqual(p['decision'], 'expand')
+        self.assertTrue(p['required_unregistered'])
 
     def test_explicit_native_probe_or_context_prevents_cpu_shortcut(self):
         validation = {"mode": "scoped", "packages": [], "cpu_contracts": [], "native": {"requirements": []}}

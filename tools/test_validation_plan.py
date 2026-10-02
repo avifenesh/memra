@@ -145,6 +145,8 @@ class ValidationPlanTests(unittest.TestCase):
         self.assertEqual(install.args[0][-2:], ['-r', str(self.repo / contract['python_requirements'])])
         self.assertEqual(check.args[0], contract['cpu'])
         self.assertEqual(check.kwargs['env']['PATH'].split(os.pathsep)[0], str(directory / 'bin'))
+        self.assertEqual(check.kwargs['env']['OPENBLAS_NUM_THREADS'], '1')
+        self.assertEqual(check.kwargs['env']['OMP_NUM_THREADS'], '1')
         self.assertFalse(directory.exists())
 
     def test_dependency_failure_cannot_pass_or_leave_environment(self):
@@ -162,6 +164,17 @@ class ValidationPlanTests(unittest.TestCase):
     def test_unreferenced_research_receipt_is_not_an_engine_build(self):
         p = self.plan(['research/new-campaign/receipts/output.json'])
         self.assertFalse(any(p['jobs'].values()))
+
+    def test_native_probe_registry_input_keeps_native_obligation(self):
+        self.put('tools/fast-gate/models.tsv', 'g12\targmax\t/model\tresearch/prompt-ids.txt\t20\t-\n')
+        self.put('tools/fast-gate/accept-cells.tsv', 'accept\tresearch/e2e/prompts/*.txt\n')
+        self.commit()
+        for path in ('research/prompt-ids.txt', 'research/e2e/prompts/short.txt'):
+            with self.subTest(path=path):
+                p = self.plan([path])
+                self.assertFalse(any(p['jobs'].values()))
+                self.assertEqual(p['native']['scope'], 'harness')
+                self.assertIn(path, ' '.join(p['native']['requirements']))
 
     def test_runtime_research_fixture_selects_its_reader(self):
         self.put('crates/memra-server/src/lib.rs', 'let x = std::fs::read_to_string("research/fixture.json");')

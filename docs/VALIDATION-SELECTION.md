@@ -66,6 +66,9 @@ compiled suite is omitted. A malformed skip declaration cannot hide behind a ski
 
 Known Python contract changes run their actual tests without Cargo or GPU loading. Fast-gate
 reports that CPU result separately from any live-evidence campaign the issue still owes.
+Its CPU shortcut requires every changed input to be a declared CPU contract or plain docs.
+Research/oracle inputs retain fast-gate's native expansion even when they do not rebuild a
+Cargo package; an absent compiler dependency does not prove an absent native probe dependency.
 The serving collector also selects its sampled-MTP consumer when that collector is present.
 Sampled collector dependencies install from its tracked requirements into a temporary private
 Python environment, which is removed on success or failure. The network-guard crate belongs to
