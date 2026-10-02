@@ -388,12 +388,63 @@ class ValidationPlanTests(unittest.TestCase):
         with self.assertRaisesRegex(vp.Refused, 'physical-gpu'):
             vp.cpu_contract_names(self.repo, '')
 
-    def test_source_symlink_target_is_a_real_input(self):
+    def test_source_symlink_target_expands_for_transitive_module_resolution(self):
         self.put('research/source.rs', 'pub fn f() {}\n')
         link = self.repo / 'crates/memra-server/src/linked.rs'
         link.symlink_to('../../../research/source.rs')
         self.commit()
-        self.assertEqual(self.plan(['research/source.rs'])['packages'], ['memra-server'])
+        self.assertEqual(self.plan(['research/source.rs'])['mode'], 'full')
+
+    def test_nested_external_rust_sources_expand(self):
+        self.put('crates/memra-server/src/lib.rs', 'include!("../../../research/outer.rs");')
+        self.put('research/outer.rs', 'include!("inner.rs");')
+        self.put('research/inner.rs', 'pub const ANSWER: u8 = 42;')
+        before = self.commit()
+        self.put('research/inner.rs', 'pub const ANSWER: u8 = ;')
+        after = self.commit()
+        plan = vp.event_plan(self.repo, 'push', '', before, after)
+        self.assertEqual(plan['mode'], 'full')
+        self.assertTrue(plan['jobs']['server'])
+
+    def test_cross_crate_compiled_include_propagates_transitive_inputs(self):
+        self.put('crates/memra-server/src/lib.rs', 'include!("../../memra-probe/src/helper.rs");')
+        self.put('crates/memra-probe/src/helper.rs', 'include_str!("../../../research/input.txt");')
+        self.commit()
+        self.assertEqual(self.plan(['research/input.txt'])['packages'], ['memra-probe', 'memra-server'])
+        self.assertEqual(self.plan(['crates/memra-probe/src/nested.rs'])['packages'], ['memra-probe', 'memra-server'])
+
+    def test_cross_crate_source_consumer_chain_reaches_the_final_reader(self):
+        self.put('crates/memra-server/src/lib.rs', 'include!("../../memra-probe/src/helper.rs");')
+        self.put('crates/memra-probe/src/helper.rs', '#[path="../../memra-lanes/src/lib.rs"] mod helpers;')
+        self.put('crates/memra-lanes/src/lib.rs', 'include_str!("../../../research/input.txt");')
+        self.commit()
+        self.assertEqual(self.plan(['research/input.txt'])['packages'], ['memra-lanes', 'memra-probe', 'memra-server'])
+
+    def test_external_data_symlink_and_runtime_alias_expand(self):
+        self.put('research/real.md', 'fixture')
+        (self.repo / 'research/alias.md').symlink_to('real.md')
+        for reader in ('include_str!("../../../research/alias.md");',
+                       'let s = std::fs::read_to_string("research/alias.md");'):
+            with self.subTest(reader=reader):
+                self.put('crates/memra-server/src/lib.rs', reader)
+                self.commit()
+                self.assertEqual(self.plan(['research/real.md'])['mode'], 'full')
+
+    def test_include_tokens_can_be_separated_by_whitespace_and_comments(self):
+        for separator in (' ', '\n', ' /* note */ '):
+            with self.subTest(separator=separator):
+                self.put('crates/memra-server/src/lib.rs', f'include_str{separator}! ("../../../research/input.txt");')
+                self.commit()
+                self.assertEqual(self.plan(['research/input.txt'])['packages'], ['memra-server'])
+
+    def test_module_path_whitespace_comments_and_escapes_expand(self):
+        for attribute in ('# [ path = "../../../research/outer.rs" ]',
+                          '#[ /* note */ path = r#"../../../research/outer.rs"# ]',
+                          '#[path = "../../../research/outer\\x2ers"]'):
+            with self.subTest(attribute=attribute):
+                self.put('crates/memra-server/src/lib.rs', attribute + ' mod outer;')
+                self.commit()
+                self.assertEqual(self.plan(['research/outer.rs'])['mode'], 'full')
 
     def test_external_source_symlink_expands(self):
         link = self.repo / 'crates/memra-server/src/linked.rs'

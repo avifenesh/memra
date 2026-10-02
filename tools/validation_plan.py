@@ -220,20 +220,20 @@ The census does not exempt arbitrary research data. Unknown non-document inputs 
 expand to all jobs. Build-generated flag data is explicitly registered below.
 """
     inputs = defaultdict(set)
-    links = tree.symlinks('crates')
-    for path, target in links.items():
+    source_consumers = defaultdict(set)
+    links = tree.symlinks()
+    def linked_input(path):
+        return any(path == alias or path.startswith(alias + '/')
+                   or fnmatch.fnmatchcase(alias, path)
+                   or fnmatch.fnmatchcase(alias, path.rstrip('/') + '/**') for alias in links)
+
+    for path in links:
         package = owner(path, owners)
-        seen = {path}
-        resolved = posixpath.normpath(posixpath.join(posixpath.dirname(path), target))
-        while resolved in links:
-            if resolved in seen:
-                raise Refused('source symlink cycle')
-            seen.add(resolved)
-            resolved = posixpath.normpath(posixpath.join(posixpath.dirname(resolved), links[resolved]))
-        if resolved.startswith(('/', '../')) or package is None:
-            raise Refused('source symlink is outside the declared workspace')
-        inputs[resolved].add(package)
-        inputs[resolved.rstrip('/') + '/**'].add(package)
+        if package is None:
+            continue
+        # Source module resolution through symlinks depends on both lexical and
+        # physical locations. Until that transitive graph is modelled, expand.
+        raise Refused('crate symlink needs a transitive input contract: ' + path)
     contracts = json.loads(Path(__file__).with_name('validation_inputs.json').read_text())
     if contracts.get('schema') != 'memra-validation-build-inputs-v1':
         raise Refused('unrecognized build input contracts')
@@ -259,11 +259,11 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
     options = ['--untracked'] if isinstance(tree, LocalTree) else []
     refs = [] if isinstance(tree, LocalTree) else [tree.ref]
     result = subprocess.run(['git', '-C', str(tree.repo), 'grep', '-l', '-z', *options, '-E',
-                             r'include(_str|_bytes)?!|#\[path|research/|docs/|"research"|"docs"', *refs, '--', 'crates'],
+                             r'include|path|research|docs', *refs, '--', 'crates'],
                             capture_output=True, check=False)
     if result.returncode not in (0, 1):
         raise Refused('include census failed')
-    pattern = re.compile(r'include(?:_str|_bytes)?!\s*\(')
+    pattern = re.compile(r'\b(include(?:_str|_bytes)?)\s*!\s*\(')
     for raw in result.stdout.split(b'\0'):
         if not raw:
             continue
@@ -297,11 +297,15 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
                 raise Refused(f'{path}:{source.count(chr(10), 0, start) + 1}: {error}') from error
             if literal.startswith('\0GENERATED'):
                 continue  # the build-script contract below owns these inputs
-            literals.append(literal)
-        for match in re.finditer(r'#\[\s*path\s*=\s*(?:r\#*)?"([^"\n]+)"', source):
-            if code[match.start():match.start() + 2] == '#[':
-                literals.append(match.group(1))
-        for literal in literals:
+            literals.append((literal, match.group(1) == 'include'))
+        for match in re.finditer(r'#\s*\[\s*path\s*=', code):
+            spans = [(start, end) for start, end in string_spans
+                     if start >= match.end() and not code[match.end():start].strip()]
+            if not spans:
+                raise Refused('unresolved Rust module path attribute')
+            start, end = spans[0]
+            literals.append((include_argument(source[start:end], prefix, generated[package]), True))
+        for literal, compiled_source in literals:
             if literal.startswith('\0REPO/'):
                 target = posixpath.normpath(literal[len('\0REPO/'):])
             elif literal.startswith('/'):
@@ -310,6 +314,19 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
                 target = posixpath.normpath(posixpath.join(posixpath.dirname(path), literal))
             if target.startswith('../') or '\0' in target:
                 raise Refused('include escapes repository')
+            if linked_input(target):
+                raise Refused('included symlink needs a transitive input contract: ' + target)
+            if compiled_source:
+                target_owner = owner(target, owners)
+                if target_owner is None:
+                    raise Refused('external Rust source needs a transitive input contract: ' + target)
+                if target_owner != package:
+                    # The complete source-owning crate is scanned below. Treat all its
+                    # source and external inputs as dependencies of the textual reader,
+                    # even without a Cargo dependency declaration.
+                    target_prefix = next(k for k, v in owners.items() if v == target_owner)
+                    inputs[target_prefix + '/**'].add(package)
+                    source_consumers[target_owner].add(package)
             inputs[target].add(package)
         # Runtime test/fixture readers also matter even when they do not use include!.
         # Rooted literals and formatted prefixes conservatively reach their package.
@@ -324,6 +341,8 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
             except Refused:
                 continue
             if value in ('research', 'docs'):
+                if linked_input(value):
+                    raise Refused('runtime fixture subtree contains a symlink: ' + value)
                 inputs[value + '/**'].add(package)
             elif '://' not in value and re.search(r'(?:^|/)(?:research|docs)/', value):
                 # A format parameter cannot establish a narrower dependency than its
@@ -331,6 +350,8 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
                 match = re.search(r'(?:research|docs)/', value)
                 rooted = value[match.start():]
                 rooted = re.sub(r'\{[^}]*\}', '*', rooted)
+                if linked_input(rooted):
+                    raise Refused('runtime fixture symlink needs an input contract: ' + rooted)
                 inputs[rooted].add(package)
                 # A literal may be a directory later extended with join()/read_dir().
                 # Cover descendants even when the directory name contains a dot.
@@ -338,6 +359,14 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
     # memra-engine/build.rs emits the boot-audit registry from this source.
     if 'memra-engine' in owners.values():
         inputs['docs/FLAGS.md'].add('memra-engine')
+    while True:
+        additions = 0
+        for packages in inputs.values():
+            readers = set().union(*(source_consumers[p] for p in packages))
+            additions += len(readers - packages)
+            packages.update(readers)
+        if not additions:
+            break
     return inputs
 
 

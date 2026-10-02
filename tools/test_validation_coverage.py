@@ -51,6 +51,16 @@ class CoverageTests(unittest.TestCase):
         case['scope'] = {'model': 'other-model', 'hardware': 'cpu'}
         self.assertEqual(self.plan(['a'], [case])['decision'], 'expand')
 
+    def test_native_identity_values_must_be_present_and_nonempty(self):
+        keys = ('model', 'artifact', 'hardware', 'numeric_program')
+        for value in (None, '', ' ', False, 0, [], {}):
+            for absent in (False, True):
+                with self.subTest(value=value, absent=absent):
+                    case = self.case('native', ['a'], kind='gpu')
+                    case['scope'] = dict.fromkeys(keys, value)
+                    context = {} if absent else dict(case['scope'])
+                    self.assertEqual(vc.select(['a'], [case], context, self.root)['decision'], 'expand')
+
     def test_changed_harness_invalidates_coverage_claim(self):
         (self.root / 'harness.py').write_text('pass\n')
         p = self.plan(['a'], [self.case('stale', ['a'])])

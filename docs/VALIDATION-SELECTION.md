@@ -26,7 +26,11 @@ An edit to `memra-gguf` reaches its consumers. Cargo manifests, toolchains, work
 unresolved input expressions and unregistered inputs select the complete CI plan.
 
 Inputs outside a crate are real dependencies. The census reads both sides of the change,
-including literal/raw/multiline/concatenated Rust includes and runtime fixture paths. The
+including literal/raw/multiline/concatenated Rust includes and runtime fixture paths. Textual
+Rust includes across crates inherit all source and external inputs from the source-owning
+crate, transitively. Rust source outside crates and referenced symlinks expand validation
+until their module-resolution graph has an explicit contract. Whitespace and comments between
+macro tokens do not hide an include. The
 reviewed build-script and dynamic-include contracts in `tools/validation_inputs.json` are
 source-hash bound. For example, `docs/FLAGS.md` generates engine code and is not merely prose.
 A producer edit invalidates its declaration until the changed dependency is reviewed.
@@ -80,6 +84,7 @@ Each test declares:
 - A stable ID and the independently asserted edges it covers.
 - Hashes for every harness, oracle and helper input supporting that coverage claim.
 - Its model, artifact, hardware and numerical-program scope for native execution.
+  Each native identity must be a nonempty string in both the contract and execution context.
 - A positive cost, whose unit is stated by the manifest author.
 - Mandatory regressions and required red-control test IDs.
 

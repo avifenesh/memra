@@ -44,8 +44,13 @@ def select(required, tests, context, root):
             reasons.append('model/hardware/numeric/request scope mismatch')
         if test.get('kind', 'cpu') not in ('cpu', 'gpu'):
             raise ValueError('unknown test execution kind')
-        if test.get('kind') == 'gpu' and not {'model', 'artifact', 'hardware', 'numeric_program'} <= scope.keys():
-            reasons.append('native coverage requires model/artifact/hardware/numeric identity')
+        if test.get('kind') == 'gpu':
+            identities = ('model', 'artifact', 'hardware', 'numeric_program')
+            if not isinstance(scope, dict) or any(
+                    not isinstance(scope.get(key), str) or not scope[key].strip()
+                    or not isinstance(context.get(key), str) or not context[key].strip()
+                    for key in identities):
+                reasons.append('native coverage requires nonempty model/artifact/hardware/numeric identity')
         inputs = test.get('inputs', {})
         if not inputs:
             reasons.append('no source-bound coverage contract')

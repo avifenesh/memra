@@ -1,3 +1,10 @@
+Review repairs (2026-10-02):
+- 84 planner/coverage tests passed; 18 classifier arms passed including real-tree63-path census.
+- External compiled Rust and referenced symlinks expand. Cross-crate textual consumers inherit
+  source and external-input reach transitively; whitespace/comment-separated tokens are recognized.
+- Native model/artifact/hardware/numeric identity requires nonempty values in both scope and context.
+- Workflow syntax and git diff checks passed. Review reproductions are represented by regression tests.
+
 $ tools/unittest-floor.sh tools 'test_validation_*.py' 70
 ......................................................................
 ----------------------------------------------------------------------
