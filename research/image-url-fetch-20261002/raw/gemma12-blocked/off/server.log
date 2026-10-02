@@ -1,0 +1,27 @@
+[server] build: memra-0.138.0-41185b613356 (id: source-tree, git: 1fbe8bfc592d)
+[env-audit] warning: 3 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: MEMRA_CI_LOCK, MEMRA_CI_LOCK_HELD, MEMRA_RIG_LOCK_FD. Left alone: launchers and gate scripts own names outside the engine's families.
+[server] starting; models config = [("g12", "$MODEL_DIR/gemma4-12b-it-qat-29d0977/gemma-4-12b-it-qat-q4_0.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "g12" <- $MODEL_DIR/gemma4-12b-it-qat-29d0977/gemma-4-12b-it-qat-q4_0.gguf
+[tensor-contract] bound 667 semantic tensors (pack gemma4_dense, Gguf, output head TiedToEmbedding); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[gemma4] suppress_tokens: 2 ids masked at sampling
+[q8rp] split-plane decode mirrors built: 1 tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: capacity-keyed auto REFUSED (UNPINNED)); free 16147 MiB, mirror mass 20820 MiB, capacity threshold 29012 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[q4rp] split-plane IN-PLACE swap: 336 dense trunk tensors
+[worker]   loaded "g12": 48 layers, eos=1, stop=[1, 106]
+[worker] g12: template caps tools=true think=false think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=true dsv4=false glm5=false ctx=262144 tok="gemma4" instruct=None chat_defaults=None/None
+[route-contract] model="g12" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] g12: decode wave cap 8; scheduler tick cap 8
+[worker] g12: BATCHED DECODE (gemma4 dense arm, default-on; MEMRA_GEMMA4_BATCH=0 = eager kill switch): batched decode chunks; monolithic prefill, no graph promotion, no prime batching (eager-only for every non-decode entry point)
+
+thread 'memra-gpu-worker' (3143902) panicked at crates/memra-server/src/worker.rs:26762:33:
+MEMRA_GEMMA_MMPROJ=$MODEL_DIR/gemma4-12b-it-qat-29d0977/mmproj-gemma-4-12b-it-qat-q4_0.gguf: gemma tower load failed: mmproj "$MODEL_DIR/gemma4-12b-it-qat-29d0977/mmproj-gemma-4-12b-it-qat-q4_0.gguf" projector_type "gemma4uv" is not gemma4v — this loader refuses other families by design (no generic support claims)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+[server] FATAL: worker init failed: worker died during init
+[worker] PANIC in the GPU worker thread: MEMRA_GEMMA_MMPROJ=$MODEL_DIR/gemma4-12b-it-qat-29d0977/mmproj-gemma-4-12b-it-qat-q4_0.gguf: gemma tower load failed: mmproj "$MODEL_DIR/gemma4-12b-it-qat-29d0977/mmproj-gemma-4-12b-it-qat-q4_0.gguf" projector_type "gemma4uv" is not gemma4v — this loader refuses other families by design (no generic support claims)
+[worker] respawn attempt 1/1 in 2s (reloading weights)

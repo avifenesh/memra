@@ -102,10 +102,11 @@ pub(crate) async fn admit_translated(
     headers: &HeaderMap,
     env: &Envelope,
     tenant: &auth::TenantCtx,
-    req: ChatCompletionReq,
+    mut req: ChatCompletionReq,
     route: &'static str,
     ttft: Option<std::sync::Arc<crate::ttft::Trace>>,
     body_admission: Option<&crate::BodyAdmissionGuard>,
+    wire_bytes: usize,
     background: bool,
 ) -> Result<Admission, Response> {
     let cache_ns = match crate::tenant_namespace(tenant, &req.cache_salt) {
@@ -149,6 +150,14 @@ pub(crate) async fn admit_translated(
     // caller-DECLARED max_tokens (an omitted one is resolved downstream to the model max,
     // which is not a number the caller chose).
     let declared_max_tokens = req.max_tokens.is_some();
+    let vision_preprocess_permit = crate::try_vision_preprocess(crate::request_has_vision(&req))?;
+    crate::image_fetch::resolve_remote_image_urls_in_messages(
+        &mut req.messages,
+        wire_bytes,
+        deadline.remaining(),
+    )
+    .await
+    .map_err(crate::image_fetch::FetchError::into_response)?;
     // Capture snapshot BEFORE the plan build consumes the request — same posture as the
     // chat surface: only marked tenants pay for the copy. What is captured is the
     // TRANSLATED messages array (the internal chat shape), documented in
@@ -158,7 +167,6 @@ pub(crate) async fn admit_translated(
         .as_ref()
         .filter(|m| m.captures(&tenant.tenant))
         .map(|_| crate::capture_chat_messages(&req.messages));
-    let vision_preprocess_permit = crate::try_vision_preprocess(crate::request_has_vision(&req))?;
     let (tx, rx) = worker::event_channel();
     let affinity = crate::affinity_key(&req.session_id, &req.user, headers)
         .map_err(|message| crate::bad_request(&message, Some("session_id")))?;

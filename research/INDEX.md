@@ -691,3 +691,4 @@ modelplan-onboarding-20261002-qwen35-9b | All five scoped serving cells passed o
 
 sampled-mtp-pmin-20261002 | Positive-PMIN single-head graph/eager and zero-draft probes passed; 3072 requests found no detected difference in 40 registered token marginals; pinned vendor-profile chat/cache/concurrency/rollback passed. PMIN default unchanged. | sampled-mtp-pmin-20261002/RESULTS.md
 background-responses-20261002 | "PASS for the recorded local API scope." | background-responses-20261002/RESULTS.md
+image-url-fetch-20261002 | "PASS on the existing Qwen3.8-27B vision path." | image-url-fetch-20261002/RESULTS.md

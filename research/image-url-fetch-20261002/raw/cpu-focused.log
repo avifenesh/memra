@@ -1,0 +1,31 @@
+   Compiling memra-engine v0.138.0 ($WORKTREE/crates/memra-engine)
+   Compiling memra-server v0.138.0 ($WORKTREE/crates/memra-server)
+warning: memra-engine@0.138.0: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 4m 17s
+feb22f491c3aff8b6f342c6b945b051c713f80a6f1f68a3286b39fe30cb535d5  target-image-api/release/memra-server
+warning: memra-engine@0.138.0: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.138.0 ($WORKTREE/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 1m 00s
+     Running unittests src/lib.rs (target-image-api/release/deps/memra_server-18a72fda78e92499)
+
+running 17 tests
+test image_fetch::tests::allowed_hosts_parses_csv_case_insensitively ... ok
+test image_fetch::tests::count_image_urls_counts_inline_and_remote_parts_across_all_messages ... ok
+test image_fetch::tests::count_image_urls_is_zero_with_no_image_parts ... ok
+test image_fetch::tests::expanded_request_budget_accounts_for_base64_and_prior_images ... ok
+test image_fetch::tests::fetch_error_maps_to_named_400_codes ... ok
+test image_fetch::tests::fetch_urls_enabled_defaults_off ... ok
+test image_fetch::tests::filter_resolved_catches_a_rebound_answer_with_no_memory_of_the_prior_lookup ... ok
+test image_fetch::tests::filter_resolved_drops_only_the_blocked_addresses_in_a_mixed_answer ... ok
+test image_fetch::tests::literal_aliases_require_explicit_allowlisting ... ok
+test image_fetch::tests::literal_ip_pre_check_refuses_each_named_range ... ok
+test image_fetch::tests::literal_ip_pre_check_respects_allowlist ... ok
+test image_fetch::tests::mixed_inline_and_remote_images_refuse_before_any_fetch ... ok
+test image_fetch::tests::per_image_cap_and_total_request_cap_have_the_same_named_error ... ok
+test image_fetch::tests::redirect_policy_refuses_a_redirect_to_a_blocked_literal_ip ... ok
+test image_fetch::tests::too_many_error_has_no_image_url_code_and_names_the_cap ... ok
+test image_fetch_body_bytes_tests::admitted_json_counts_actual_chunked_json_bytes ... ok
+test image_fetch_body_bytes_tests::byte_accounting_preserves_json_content_type_rejection ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 1049 filtered out; finished in 0.00s
+

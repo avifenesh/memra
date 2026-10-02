@@ -106,6 +106,7 @@ mod embed_api;
 mod handoff_io;
 mod histogram;
 mod hybrid_telemetry;
+mod image_fetch;
 /// In-memory reference implementation of `metering::JobStore` (memra#550,
 /// `docs/decisions/COMPLETE-RESULT-PATH-V1.md`): the bounded, TTL'd buffer a background
 /// (`background: true`) job's output would live in between the worker finishing and the
@@ -246,7 +247,7 @@ impl BodyAdmissionGuard {
     }
 }
 
-pub(crate) struct BodyAdmissionLease(Option<BodyAdmissionGuard>);
+pub(crate) struct BodyAdmissionLease(Option<BodyAdmissionGuard>, usize);
 
 impl BodyAdmissionLease {
     fn release(&mut self) {
@@ -278,8 +279,25 @@ where
 
     async fn from_request(req: AxumRequest, state: &S) -> Result<Self, Self::Rejection> {
         let admission = req.extensions().get::<BodyAdmissionGuard>().cloned();
+        // Count actual bytes, including chunked bodies. Content-Length is not a
+        // trustworthy budget for later server-side image expansion.
+        let bytes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = bytes.clone();
+        let (parts, body) = req.into_parts();
+        let stream = futures_util::StreamExt::map(body.into_data_stream(), move |chunk| {
+            if let Ok(data) = &chunk {
+                counted.fetch_add(data.len(), std::sync::atomic::Ordering::Relaxed);
+            }
+            chunk
+        });
+        let req = AxumRequest::from_parts(parts, Body::from_stream(stream));
         let parsed = Json::<T>::from_request(req, state).await;
-        parsed.map(|Json(value)| Self(value, BodyAdmissionLease(admission)))
+        parsed.map(|Json(value)| {
+            Self(
+                value,
+                BodyAdmissionLease(admission, bytes.load(std::sync::atomic::Ordering::Relaxed)),
+            )
+        })
     }
 }
 
@@ -10712,13 +10730,6 @@ async fn chat_completions_with_admission(
         .as_ref()
         .and_then(|o| o.include_usage)
         .unwrap_or(false);
-    // Snapshot the capture payload BEFORE the plan build consumes the request. Only
-    // marked tenants pay for the copy; everyone else gets a lock-read and a None.
-    let capture_prompt = st
-        .metering
-        .as_ref()
-        .filter(|m| m.captures(&tenant.tenant))
-        .map(|_| capture_chat_messages(&req.messages));
     // Read BEFORE the plan build consumes `req`: the feasibility gate judges only a
     // caller-DECLARED max_tokens (an omitted one is resolved to the model max downstream,
     // which is not a number the caller chose).
@@ -10730,6 +10741,25 @@ async fn chat_completions_with_admission(
         Ok(permit) => permit,
         Err(response) => return with_request_id(&env.id, response),
     };
+    // Remote bytes share the same preprocessing permit as inline images. Charge
+    // replacement growth against the actual received body, before allocating base64.
+    let wire_bytes = body_admission.as_ref().map_or(0, |lease| lease.1);
+    if let Err(err) = image_fetch::resolve_remote_image_urls_in_messages(
+        &mut req.messages,
+        wire_bytes,
+        deadline.remaining(),
+    )
+    .await
+    {
+        return with_request_id(&env.id, err.into_response());
+    }
+    // Snapshot the capture payload BEFORE the plan build consumes the request. Only
+    // marked tenants pay for the copy; everyone else gets a lock-read and a None.
+    let capture_prompt = st
+        .metering
+        .as_ref()
+        .filter(|m| m.captures(&tenant.tenant))
+        .map(|_| capture_chat_messages(&req.messages));
     let (tx, rx) = worker::event_channel();
     let affinity = match affinity_key(&req.session_id, &req.user, &headers) {
         Ok(affinity) => affinity,
@@ -25011,7 +25041,7 @@ temperature = 0.6
             HeaderMap::new(),
             AdmittedJson(
                 serde_json::from_value(json!({"model": "m", "input": ["a", "bb", "ccc"]})).unwrap(),
-                BodyAdmissionLease(None),
+                BodyAdmissionLease(None, 0),
             ),
         )
         .await;
@@ -25064,7 +25094,7 @@ temperature = 0.6
                     json!({"model": "m", "query": "q", "documents": ["d0", "d1"]}),
                 )
                 .unwrap(),
-                BodyAdmissionLease(None),
+                BodyAdmissionLease(None, 0),
             ),
         )
         .await;
@@ -27389,5 +27419,40 @@ mod vision_placement_gate_tests {
         // The live wrapper feeds the worker's published decision to the pure gate.
         let gate = item_body(&live, "fn vision_placement_admits(");
         assert!(gate.contains("vision_media_admissible(vision_placement_serving(), kind)"));
+    }
+}
+
+#[cfg(test)]
+mod image_fetch_body_bytes_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn admitted_json_counts_actual_chunked_json_bytes() {
+        let raw = " {\"value\":\"\\u00e9\"} ";
+        let chunks = vec![
+            Ok::<_, std::io::Error>(axum::body::Bytes::copy_from_slice(&raw.as_bytes()[..5])),
+            Ok(axum::body::Bytes::copy_from_slice(&raw.as_bytes()[5..])),
+        ];
+        let request = AxumRequest::builder()
+            .header("content-type", "application/json")
+            .header("transfer-encoding", "chunked")
+            .body(Body::from_stream(futures_util::stream::iter(chunks)))
+            .unwrap();
+        let AdmittedJson(value, lease) =
+            AdmittedJson::<serde_json::Value>::from_request(request, &())
+                .await
+                .unwrap();
+        assert_eq!(value["value"], "é");
+        assert_eq!(lease.1, raw.len());
+    }
+
+    #[tokio::test]
+    async fn byte_accounting_preserves_json_content_type_rejection() {
+        let request = AxumRequest::builder().body(Body::from("{}")).unwrap();
+        let error = AdmittedJson::<serde_json::Value>::from_request(request, &())
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(error.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
     }
 }

@@ -737,6 +737,7 @@ async fn messages_with_admission(
         body_admission
             .as_ref()
             .map(|Extension(admission)| admission),
+        body.len(),
         false, // /v1/messages has no background delivery mode (memra#550: /v1/responses only)
     )
     .await;

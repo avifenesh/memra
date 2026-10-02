@@ -709,6 +709,7 @@ async fn responses_with_admission(
         body_admission
             .as_ref()
             .map(|Extension(admission)| admission),
+        body.len(),
         background_requested,
     )
     .await;

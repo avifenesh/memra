@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 
 p = argparse.ArgumentParser()
 p.add_argument('--source', type=Path, default=Path('crates/memra-server/src/dsv4_serve.rs'))
@@ -264,20 +265,29 @@ for name, implementation, shim, tests, expected in variants:
     rs = a.out / (name + '.rs')
     rs.write_text('#![allow(dead_code)]\nextern crate std as real_std;\nmod contract {\n' + shim + common + implementation + tests + '\n}\n')
     binary = a.out / name
-    with (a.out / (name + '-build.log')).open('w') as log:
-        build = subprocess.run(['rustc', '--edition=2024', '--test', '-C', 'codegen-units=1', str(rs), '-o', str(binary)], stdout=log, stderr=subprocess.STDOUT, timeout=60, preexec_fn=pin)
-    assert build.returncode == 0, f'{name}: compilation failed'
-    with (a.out / (name + '.log')).open('w') as log:
-        run = subprocess.run([str(binary), '--test-threads=1', '--nocapture'], stdout=log, stderr=subprocess.STDOUT, timeout=15, preexec_fn=pin)
-    assert run.returncode == (0 if expected else 101), f'{name}: unexpected verdict {run.returncode}'
-    output = (a.out / (name + '.log')).read_text()
-    counts = re.findall(r'test result: (?:ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out;', output)
-    assert len(counts) == 1, f'{name}: missing or ambiguous test summary'
-    passed, failed, ignored, measured, filtered = map(int, counts[0])
-    total = 2 if not shim else 4
-    assert (passed + failed, failed, ignored, measured, filtered) == (total, len(expected_failures[name]), 0, 0, 0), f'{name}: wrong executed/failed/skip count'
-    failed_names = set(re.findall(r'^    contract::contracts::(\w+)$', output, re.M))
-    assert failed_names == expected_failures[name], f'{name}: unrelated failure {failed_names}'
+    attempted_logs = []
+    try:
+        attempted_logs.append(a.out / (name + '-build.log'))
+        with attempted_logs[-1].open('w') as log:
+            build = subprocess.run(['rustc', '--edition=2024', '--test', '-C', 'codegen-units=1', str(rs), '-o', str(binary)], stdout=log, stderr=subprocess.STDOUT, timeout=60, preexec_fn=pin)
+        assert build.returncode == 0, f'{name}: compilation failed'
+        attempted_logs.append(a.out / (name + '.log'))
+        with attempted_logs[-1].open('w') as log:
+            run = subprocess.run([str(binary), '--test-threads=1', '--nocapture'], stdout=log, stderr=subprocess.STDOUT, timeout=15, preexec_fn=pin)
+        assert run.returncode == (0 if expected else 101), f'{name}: unexpected verdict {run.returncode}'
+        output = (a.out / (name + '.log')).read_text()
+        counts = re.findall(r'test result: (?:ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out;', output)
+        assert len(counts) == 1, f'{name}: missing or ambiguous test summary'
+        passed, failed, ignored, measured, filtered = map(int, counts[0])
+        total = 2 if not shim else 4
+        assert (passed + failed, failed, ignored, measured, filtered) == (total, len(expected_failures[name]), 0, 0, 0), f'{name}: wrong executed/failed/skip count'
+        failed_names = set(re.findall(r'^    contract::contracts::(\w+)$', output, re.M))
+        assert failed_names == expected_failures[name], f'{name}: unrelated failure {failed_names}'
+    except (AssertionError, subprocess.TimeoutExpired):
+        for log_path in attempted_logs:
+            print(f'{name}: captured {log_path.name}', file=sys.stderr)
+            print(log_path.read_text(errors='replace'), file=sys.stderr)
+        raise
     results.append({'case': name, 'exit_code': run.returncode, 'expected_pass': expected, 'source_sha256': hashlib.sha256(rs.read_bytes()).hexdigest()})
     print(json.dumps(results[-1]), flush=True)
 (a.out/'results.json').write_text(json.dumps({'binding': binding, 'results': results, 'pass': True}, indent=2))
