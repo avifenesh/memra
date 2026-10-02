@@ -17400,6 +17400,8 @@ default_reasoning_effort = "always"
                         cached: 0,
                         completion: 0,
                         finalized: false,
+
+                        token_observed: None,
                     };
                     let env = Envelope::new(chat);
                     let lines = sse_data_lines(
@@ -18997,6 +18999,8 @@ default_reasoning_effort = "always"
             cached: 0,
             completion: 0,
             finalized: false,
+
+            token_observed: None,
         });
         let (tx, rx) = worker::event_channel();
         tx.send(Event::PromptUsage {
@@ -19046,6 +19050,8 @@ default_reasoning_effort = "always"
             cached: 0,
             completion: 0,
             finalized: false,
+
+            token_observed: None,
         }));
         let shared = prefill_receipt::SharedReceipt::wrap(&mut receipt);
         let (tx, rx) = worker::event_channel();
@@ -19111,6 +19117,8 @@ default_reasoning_effort = "always"
             cached: 0,
             completion: 0,
             finalized: false,
+
+            token_observed: None,
         }));
         let shared = prefill_receipt::SharedReceipt::wrap(&mut receipt);
         let (tx, rx) = worker::event_channel();
