@@ -25248,7 +25248,7 @@ temperature = 0.6
                         arguments: "{}".into(),
                     }],
                     tokens: vec![7, 8],
-                    stop_reason: "Length".into(),
+                    stop_reason: "MaxNew".into(),
                     n_prompt: 3,
                     n_tokens: 2,
                     n_cached: 1,
