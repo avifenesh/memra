@@ -26,3 +26,6 @@ original failed attempt is retained. No native result is replaced by a CPU claim
 B independently reviewed both fixes and closed the two P2 findings after inspecting
 the CPU results and frozen source hashes. Final published-source identity and CI
 remain separate requirements.
+
+The two lifecycle source-patch fields have an explicit metadata correction in
+`PROVENANCE-AMENDMENT.md`. Original captures and driver hashes are preserved; no new native execution is implied.

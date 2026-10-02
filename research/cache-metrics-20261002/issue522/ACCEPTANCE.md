@@ -27,3 +27,6 @@ in this directory. The numerical cause and passing controls are in
 and `../review-native/`, with original source/binary identities retained. They include
 actual background acknowledgement/terminal accounting and repeated-read checks.
 #522 remains partial because dedicated-route native integration is deferred.
+
+The two lifecycle source-patch fields have an explicit metadata correction in
+`../review-native/PROVENANCE-AMENDMENT.md`. Original captures and driver hashes are preserved; no new native execution is implied.
