@@ -1,0 +1,26 @@
+
+running 3 tests
+test contract::contracts::multiple_workspace_uses_base_window ... multiple workspaces: wait=500us, one row once
+ok
+test contract::contracts::publication_restarts_the_wait_origin ... 
+thread 'contract::contracts::publication_restarts_the_wait_origin' (412157) panicked at target/coalescer-contract/red-adaptive.rs:316:9:
+assertion `left == right` failed
+  left: 200500000
+ right: 400000000
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test contract::contracts::serial_adaptive_window ... 
+thread 'contract::contracts::serial_adaptive_window' (412159) panicked at target/coalescer-contract/red-adaptive.rs:290:9:
+assertion `left == right` failed
+  left: 500000
+ right: 200000000
+FAILED
+
+failures:
+
+failures:
+    contract::contracts::publication_restarts_the_wait_origin
+    contract::contracts::serial_adaptive_window
+
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

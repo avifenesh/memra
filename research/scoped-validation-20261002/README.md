@@ -19,6 +19,11 @@ default, qualification tolerance or release/tag battery.
   requests and deliberately aborted one. These are bounded greedy serving observations.
 - `composite-harness-drift.json`: the later collector revision does not match the captured
   coverage binding, so the reduced plan expands instead of borrowing that pass.
+- `coalescer/`: two real-thread membership checks and three virtual-clock wait-policy checks
+  pass against the unchanged server implementation. Three independently compiled mutations
+  fail the exact expected assertions. The source-integrity record proves the Rust edit only
+  replaces the jitter-rate unit test. Its original 8/14 and 7/13 full-batch failures remain
+  recorded; the new tests assert coordination behavior without a scheduler timing assumption.
 
 The composite producer belongs to PR #915. The receipt binds the captured harness revision
 and runtime binary separately. It is not evidence for a different collector revision, sampled

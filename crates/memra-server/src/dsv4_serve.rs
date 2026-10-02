@@ -3941,59 +3941,10 @@ mod c4_host_budget_tests {
         );
     }
 
-    /// memra #667: with one workspace, lanes whose host work between steps outlasts the base
-    /// window still ride full batches. Sixteen lanes, a 20 ms step, up to 1.5 ms of jittered host
-    /// work per lane per step: a row that deposits while a batch runs waits for that batch and its
-    /// lanes, and a partial batch waits up to a tenth of the last step, so the lanes never split
-    /// into phases.
-    #[test]
-    fn one_workspace_keeps_jittered_lanes_in_full_batches() {
-        use super::{Coalescer, RowOut};
-        use std::sync::{Arc, Mutex};
-        let (lanes, steps) = (16usize, 12usize);
-        let core = Arc::new(Coalescer::<u32>::new(16, 1));
-        let widths = Arc::new(Mutex::new(Vec::new()));
-        let barrier = Arc::new(std::sync::Barrier::new(lanes));
-        let handles: Vec<_> = (0..lanes)
-            .map(|lane| {
-                let (core, widths, barrier) = (core.clone(), widths.clone(), barrier.clone());
-                std::thread::spawn(move || {
-                    core.join();
-                    barrier.wait();
-                    let mut state = 0u32;
-                    for step in 0..steps {
-                        let r = core.step(step as u32, false, &mut state, &mut |toks, _, _| {
-                            widths.lock().unwrap().push(toks.len());
-                            std::thread::sleep(std::time::Duration::from_millis(20));
-                            Ok(toks
-                                .iter()
-                                .map(|&tok| RowOut { tok, logits: None })
-                                .collect())
-                        });
-                        assert!(r.is_ok());
-                        let jitter = ((lane * 7 + step * 3) % 16) as u64 * 100;
-                        std::thread::sleep(std::time::Duration::from_micros(jitter));
-                    }
-                    core.leave();
-                })
-            })
-            .collect();
-        for h in handles {
-            h.join().unwrap();
-        }
-        let widths = widths.lock().unwrap().clone();
-        assert_eq!(widths.iter().sum::<usize>(), lanes * steps);
-        let full = widths.iter().filter(|&&w| w == lanes).count();
-        eprintln!(
-            "jittered lanes: {full} of {} batches full, widths {widths:?}",
-            widths.len()
-        );
-        // The first step has no last run to size the window, so it may split once.
-        assert!(
-            widths.len() <= steps + 2 && full + 2 >= steps,
-            "the lanes split: widths {widths:?}"
-        );
-    }
+    // The #667 single-workspace membership and adaptive-window contracts run against
+    // this exact Coalescer source in tools/check-coalescer-contract.py. Channel
+    // handshakes and a virtual clock replace a batch-rate assertion whose requested
+    // 1.5 ms sleep did not bound scheduler wake-up time on a loaded host.
 
     /// WP-A day 55 (T-e): a full batch does not wait for its window. Three members all deposit with
     /// a 10 s window: one batch of three rows, well inside the window.

@@ -1,0 +1,44 @@
+{
+  "binding": {
+    "source": "crates/memra-server/src/dsv4_serve.rs",
+    "source_sha256": "7b4cbe225c70432aaec4923a0faf044ffadce21976f822afc00abf980f9a0527",
+    "core_sha256": "93ac864c1bab32b40efc19a5c880d07e3f48c421f64b087dec221601542ad002",
+    "begin_marker": "struct Coalescer<S, A = bool> {",
+    "end_marker": "/// What a row asks of a B-row step besides its device argmax.",
+    "cpu_affinity": 0,
+    "production_edits": false
+  },
+  "results": [
+    {
+      "case": "real-green",
+      "exit_code": 0,
+      "expected_pass": true,
+      "source_sha256": "180838dce51b0ea32090690e17d709056c2af36714ad666b58f768dce048b2b9"
+    },
+    {
+      "case": "virtual-green",
+      "exit_code": 0,
+      "expected_pass": true,
+      "source_sha256": "3aab533197c93567df3db5ccb5db3a3d27c9bcdf4d6731567bfe53c0d94cef8d"
+    },
+    {
+      "case": "red-inflight",
+      "exit_code": 101,
+      "expected_pass": false,
+      "source_sha256": "df6b932877aaab6db946e2e18e16f590dc7764553df6af907c22f8777dca73a4"
+    },
+    {
+      "case": "red-adaptive",
+      "exit_code": 101,
+      "expected_pass": false,
+      "source_sha256": "24b42f25a9dc8f27e924d8b115a185ca465097e9a57feef3d267a07b3bd41c90"
+    },
+    {
+      "case": "red-publication",
+      "exit_code": 101,
+      "expected_pass": false,
+      "source_sha256": "6ebe6223b9fcdc8af726b54648b25fd514adabdd41f6ce44c695597fe967719c"
+    }
+  ],
+  "pass": true
+}

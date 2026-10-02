@@ -95,6 +95,11 @@ flags-row-shape: 1080 rows within 4000 chars, default cells within 300, one deci
 
 exit=0
 Follow-up integration checks (2026-10-02):
+- final planner/coverage suite: 77 tests passed. Explicit unaffected contracts skip dependency
+  installation; missing selection still runs all available contracts.
+- exact-source coalescer: 5 positive tests passed; each of 3 independent mutants failed its
+  exact expected assertions with no missing/ignored/filtered tests. Rust production core bytes
+  are unchanged. cargo fmt, global skip census, workflow syntax and shell syntax passed.
 - validation planner/coverage: 75 tests passed, including optional collector dependency selection,
   network-guard reverse reach, private Python environment cleanup and failed dependency install.
 - classifier: 18 arms passed; workflow duplicate-key and immutable action-pin checks passed.
@@ -102,4 +107,3 @@ Follow-up integration checks (2026-10-02):
   sampled MTP 7 tests passed using a newly created, then removed private NumPy 2.3.5 environment.
   Snapshot contained the shared cache_qualification.py helper. The first isolated snapshot omitted
   that helper and failed import; the corrected snapshot passed both real test commands.
-

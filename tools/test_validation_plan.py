@@ -360,6 +360,23 @@ class ValidationPlanTests(unittest.TestCase):
         p = vp.event_plan(self.repo, 'push', '', 'unknown', 'unknown')
         self.assertTrue({'q35-cache', 'physical-gpu', 'support-records'} <= {x['id'] for x in p['cpu_contracts']})
 
+    def test_explicit_unaffected_contracts_do_not_install_dependencies(self):
+        stream = io.StringIO()
+        with contextlib.redirect_stdout(stream):
+            vp.emit(self.plan(['README.md']))
+        values = dict(line.split('=', 1) for line in stream.getvalue().splitlines())
+        self.assertEqual(values['contracts'], 'none')
+        self.assertEqual(vp.cpu_contract_names(self.repo, values['contracts']), [])
+
+    def test_missing_contract_selection_still_runs_all_available(self):
+        expected = []
+        for name, contract in vp.TOOL_CONTRACTS.items():
+            if contract.get('required'):
+                expected.append(name)
+                for path in contract['inputs']:
+                    self.put(path, '# fixture\n')
+        self.assertEqual(vp.cpu_contract_names(self.repo, ''), expected)
+
     def test_default_contract_runner_refuses_partial_or_deleted_required_inputs(self):
         for c in vp.TOOL_CONTRACTS.values():
             if c.get('required'):

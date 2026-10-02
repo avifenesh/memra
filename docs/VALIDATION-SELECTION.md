@@ -42,6 +42,8 @@ unobserved edge cannot run.
 
 The existing check names remain stable. Each job uses its own affected-component decision.
 Missing outputs or a failed classifier select the full job and clear partial package lists.
+An explicit `contracts=none` skips unaffected Python contracts; a missing contract output runs
+all available contracts. Thus a documentation-only change does not install sampled-test dependencies.
 `validation-plan.json` is retained with the run, including the omission explanations.
 
 Builds filter binary targets while retaining workspace feature unification. Clippy targets
@@ -110,3 +112,16 @@ raw evidence separately visible, even when one invocation covers several edges.
 The scoped-validation research receipt demonstrates selection and result checking against a
 real composite run. It records the exact candidate context and the remaining qualification
 limits; it does not infer savings against an unmeasured alternative run schedule.
+
+## Deterministic scheduling contracts
+
+`python3 tools/check-coalescer-contract.py --out target/coalescer-contract` extracts the exact
+server Coalescer implementation, records its hash, and compiles CPU-only fixtures with `rustc`.
+Channel handshakes assert pending membership and one-workspace serialization. A virtual clock
+asserts adaptive timeout and publication-origin behavior without assuming an OS wake-up time.
+Both positive fixtures and all three independently mutated controls must match their exact
+test counts and expected failing assertions. CI and local-ci run the same entry point.
+
+These replace the jittered full-batch-rate unit verdict, whose requested 1.5 ms sleep did not
+bound actual scheduling delay. They do not establish a batching performance guarantee under
+arbitrary host load. The observed failed batch widths remain in the research receipt.

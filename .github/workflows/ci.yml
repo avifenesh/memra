@@ -87,12 +87,16 @@ jobs:
         run: |
           python3 tools/validation_plan.py check-registry
           tools/test_ci_change_class.sh
-          tools/unittest-floor.sh tools 'test_validation_*.py' 75
+          tools/unittest-floor.sh tools 'test_validation_*.py' 77
 
       - name: Declared changed-input CPU contracts (missing selection runs all available)
         run: python3 tools/validation_plan.py contracts
         env:
           CI_VALIDATION_CONTRACTS: ${{ needs.changes.result == 'success' && needs.changes.outputs.contracts || '' }}
+
+      - name: Exact-source coalescer membership and wait contracts (CPU-only)
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.server != 'false' }}
+        run: python3 tools/check-coalescer-contract.py --out "$RUNNER_TEMP/coalescer-contract"
 
       # Duplicate mapping keys: GitHub refuses the whole workflow file and runs ZERO jobs (main at
       # 34ed99dfc, 2026-09-21: two portable-suites jobs from #592 and #590). This step can only

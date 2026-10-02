@@ -543,7 +543,7 @@ def emit(plan):
     print('packages=' + ','.join(plan['packages']))
     print('requires_cuda=' + str(plan['requires_cuda']).lower())
     print('mode=' + plan['mode'])
-    print('contracts=' + ','.join(item['id'] for item in plan['cpu_contracts']))
+    print('contracts=' + (','.join(item['id'] for item in plan['cpu_contracts']) or 'none'))
 
 
 def cargo_packages(value, root):
@@ -574,6 +574,10 @@ def publish_packages(value, root):
 
 
 def cpu_contract_names(root, selected):
+    # A successful classifier explicitly distinguishes no affected contracts from
+    # missing/failed selection, which must still run all available contracts.
+    if selected == 'none':
+        return []
     names = selected.split(',') if selected else []
     if names and (len(set(names)) != len(names) or any(n not in TOOL_CONTRACTS for n in names)):
         raise Refused('unknown or duplicated CPU contract')

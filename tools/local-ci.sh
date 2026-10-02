@@ -133,6 +133,10 @@ cpu_chain() {
     else
         echo "local-ci: clippy gate SKIPPED (MEMRA_CI_CLIPPY=0)" >&2
     fi
+    echo "== local-ci: exact-source coalescer contracts and mutation controls =="
+    if ! python3 tools/check-coalescer-contract.py --out target/coalescer-contract; then
+        echo "local-ci: coalescer contracts FAILED"; return 1
+    fi
     echo "== local-ci: memra-server HTTP-surface unit suite =="
     if ! cargo test --release -p memra-server -j8; then
         echo "local-ci: memra-server unit suite FAILED"; return 1
