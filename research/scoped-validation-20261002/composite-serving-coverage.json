@@ -1,0 +1,188 @@
+{
+  "selection": {
+    "decision": "scoped",
+    "selected": [
+      "qwen35-serving-composite"
+    ],
+    "context": {
+      "model": "Qwen3.5-9B",
+      "artifact": "52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de",
+      "hardware": "RTX 5090 Laptop 24463MiB sm120",
+      "numeric_program": "NVFP4-MTP-GGUF greedy temperature0 seed7",
+      "source": "2873dd4ca37faa15cd4261e7b398926cced30106",
+      "server": "eaa0afa71439143ae6c05455d85dd42097053b91dc5fb4e520e639b91d143529",
+      "context_tokens": 8192,
+      "offered_concurrency": 4
+    },
+    "contract": {
+      "schema": "memra-edge-contract-v1",
+      "required_edges": [
+        "context.6k-to-8k-cold-warm",
+        "control.bad_usage",
+        "control.real_cache_disabled",
+        "control.stream_missing_done",
+        "control.stub_http",
+        "http.disconnect-abort-recovery",
+        "http.four-offered-clients-vs-serial",
+        "http.stream-terminal-and-usage",
+        "prefix.sequential-cold-warm-grid"
+      ],
+      "context": {
+        "model": "Qwen3.5-9B",
+        "artifact": "52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de",
+        "hardware": "RTX 5090 Laptop 24463MiB sm120",
+        "numeric_program": "NVFP4-MTP-GGUF greedy temperature0 seed7",
+        "source": "2873dd4ca37faa15cd4261e7b398926cced30106",
+        "server": "eaa0afa71439143ae6c05455d85dd42097053b91dc5fb4e520e639b91d143529",
+        "context_tokens": 8192,
+        "offered_concurrency": 4
+      },
+      "tests": {
+        "qwen35-serving-composite": {
+          "id": "qwen35-serving-composite",
+          "kind": "gpu",
+          "covers": [
+            "http.stream-terminal-and-usage",
+            "prefix.sequential-cold-warm-grid",
+            "http.four-offered-clients-vs-serial",
+            "http.disconnect-abort-recovery",
+            "context.6k-to-8k-cold-warm",
+            "control.bad_usage",
+            "control.real_cache_disabled",
+            "control.stream_missing_done",
+            "control.stub_http"
+          ],
+          "cost": 1,
+          "scope": {
+            "model": "Qwen3.5-9B",
+            "artifact": "52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de",
+            "hardware": "RTX 5090 Laptop 24463MiB sm120",
+            "numeric_program": "NVFP4-MTP-GGUF greedy temperature0 seed7",
+            "source": "2873dd4ca37faa15cd4261e7b398926cced30106",
+            "server": "eaa0afa71439143ae6c05455d85dd42097053b91dc5fb4e520e639b91d143529",
+            "context_tokens": 8192,
+            "offered_concurrency": 4
+          },
+          "inputs": {
+            "tools/collect-serving-qualification.py": "5bcc471c923f3b041eda3344b959712f5b4a2fe913aaeb98e9b231761c52f57a"
+          },
+          "isolation": "cache-on boot followed by separate cache-off red boot"
+        }
+      }
+    },
+    "contract_id": "26b1f06c57543b9d30617e92cc37cd1dbf37db2623b7791b608f2e8fcac1472e",
+    "uncovered": [],
+    "ineligible": {},
+    "choices": [
+      {
+        "test": "qwen35-serving-composite",
+        "adds": [
+          "qwen35-serving-composite"
+        ],
+        "new_edges": [
+          "context.6k-to-8k-cold-warm",
+          "control.bad_usage",
+          "control.real_cache_disabled",
+          "control.stream_missing_done",
+          "control.stub_http",
+          "http.disconnect-abort-recovery",
+          "http.four-offered-clients-vs-serial",
+          "http.stream-terminal-and-usage",
+          "prefix.sequential-cold-warm-grid"
+        ],
+        "cost": 1
+      }
+    ],
+    "edge_decisions": [
+      {
+        "edge": "context.6k-to-8k-cold-warm",
+        "covered": true,
+        "tests": [
+          "qwen35-serving-composite"
+        ]
+      },
+      {
+        "edge": "control.bad_usage",
+        "covered": true,
+        "tests": [
+          "qwen35-serving-composite"
+        ]
+      },
+      {
+        "edge": "control.real_cache_disabled",
+        "covered": true,
+        "tests": [
+          "qwen35-serving-composite"
+        ]
+      },
+      {
+        "edge": "control.stream_missing_done",
+        "covered": true,
+        "tests": [
+          "qwen35-serving-composite"
+        ]
+      },
+      {
+        "edge": "control.stub_http",
+        "covered": true,
+        "tests": [
+          "qwen35-serving-composite"
+        ]
+      },
+      {
+        "edge": "http.disconnect-abort-recovery",
+        "covered": true,
+        "tests": [
+          "qwen35-serving-composite"
+        ]
+      },
+      {
+        "edge": "http.four-offered-clients-vs-serial",
+        "covered": true,
+        "tests": [
+          "qwen35-serving-composite"
+        ]
+      },
+      {
+        "edge": "http.stream-terminal-and-usage",
+        "covered": true,
+        "tests": [
+          "qwen35-serving-composite"
+        ]
+      },
+      {
+        "edge": "prefix.sequential-cold-warm-grid",
+        "covered": true,
+        "tests": [
+          "qwen35-serving-composite"
+        ]
+      }
+    ],
+    "cost": 1,
+    "optimization": "deterministic greedy set cover, not a claimed global optimum",
+    "isolation": "test boot/reset contracts are unchanged; selection never merges process state",
+    "qualification": false
+  },
+  "validated_assertions": {
+    "status": "passed",
+    "edges": 9,
+    "contract_id": "26b1f06c57543b9d30617e92cc37cd1dbf37db2623b7791b608f2e8fcac1472e",
+    "qualification": false,
+    "scope": "declared behavior assertions only; native receipt admission remains separate"
+  },
+  "source_context": {
+    "model": "Qwen3.5-9B",
+    "artifact": "52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de",
+    "hardware": "RTX 5090 Laptop 24463MiB sm120",
+    "numeric_program": "NVFP4-MTP-GGUF greedy temperature0 seed7",
+    "source": "2873dd4ca37faa15cd4261e7b398926cced30106",
+    "server": "eaa0afa71439143ae6c05455d85dd42097053b91dc5fb4e520e639b91d143529",
+    "context_tokens": 8192,
+    "offered_concurrency": 4
+  },
+  "harness_commit": "6788ff7312",
+  "unique_raw_files_verified": 60,
+  "native_scope": "Captured greedy serving mechanics only; no checkpoint or model-support promotion",
+  "execution_seconds": 29.60621166229248,
+  "result_binding": "Historical raw receipt rechecked against its frozen producer; normalized to the current edge contract, not presented as execution by a later producer"
+}

@@ -92,7 +92,7 @@ all_probe_ids() { awk -F'\t' '$0 !~ /^#/ && NF >= 5 { print $1 }' "$MODELS_TSV";
 # ---------- audited diff -> plan ----------
 python3 "$FG_DIR/plan.py" --diff "$DIFF_REF" --probes "$PROBES_OVERRIDE" \
     --out "$LOGDIR/plan.json" || exit 2
-KC_SCOPE=none KC_CSV="" PLAN_PROBES="" PLAN_SPEC="" PLAN_DECISION=""
+KC_SCOPE=none KC_CSV="" PLAN_PROBES="" PLAN_SPEC="" PLAN_DECISION="" PLAN_CONTRACTS=""
 while IFS=$'\t' read -r key value; do
     case "$key" in
         scope) KC_SCOPE="$value" ;;
@@ -100,11 +100,29 @@ while IFS=$'\t' read -r key value; do
         probes) PLAN_PROBES="$value" ;;
         spec) PLAN_SPEC="$value" ;;
         decision) PLAN_DECISION="$value" ;;
+        contracts) PLAN_CONTRACTS="$value" ;;
     esac
 done < <(python3 "$FG_DIR/plan.py" --fields "$LOGDIR/plan.json")
 [ -n "$PLAN_DECISION" ] || { echo "fast-gate: REFUSED missing plan"; exit 2; }
 if [ "$PLAN_DECISION" = no-change ] && [ "$REFRESH" = 0 ]; then
     echo "fast-gate: no changes; NO VALIDATION performed. Use --probes to check a clean tree."
+    exit 0
+fi
+if [ "$PLAN_DECISION" = cpu-only ] && [ "$REFRESH" = 0 ]; then
+    # No Cargo/CUDA/model loading for a proven non-compiled input contract. A collector's
+    # requested live-evidence campaign is a separate obligation, not proof supplied here.
+    if [ -n "$PLAN_CONTRACTS" ]; then
+        python3 tools/validation_plan.py contracts --selected "$PLAN_CONTRACTS" > "$LOGDIR/cpu-contracts.log" 2>&1 || {
+            cat "$LOGDIR/cpu-contracts.log"; exit 1;
+        }
+        cat "$LOGDIR/cpu-contracts.log"
+    else
+        tools/docs-registry-census.sh > "$LOGDIR/docs.log" 2>&1 || { cat "$LOGDIR/docs.log"; exit 1; }
+        python3 tools/check-support-states.py >> "$LOGDIR/docs.log" 2>&1 || { cat "$LOGDIR/docs.log"; exit 1; }
+    fi
+    git diff --check || exit 1
+    echo "fast-gate: CPU/content contracts PASS; no native execution or model qualification."
+    echo "  Native evidence obligations, if any, remain in $LOGDIR/plan.json."
     exit 0
 fi
 # This map is a development diagnostic, not an admitted model dependency closure.

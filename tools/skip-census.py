@@ -112,7 +112,7 @@ class CensusError(RuntimeError):
     """The census cannot be trusted, so it refuses rather than reporting a number."""
 
 
-def rust_code_view(text: str) -> str:
+def rust_code_view(text: str, string_spans: list[tuple[int, int]] | None = None) -> str:
     """Mask strings/chars/comments without moving source positions or line breaks.
 
     This is a scope lexer, not a Rust parser. Lifetimes remain code. Nested block
@@ -153,6 +153,8 @@ def rust_code_view(text: str) -> str:
                 if end < 0:
                     raise CensusError("unterminated Rust raw string")
                 i = end + len(terminator)
+                if string_spans is not None:
+                    string_spans.append((start, i))
             elif text[i] == '"':
                 i += 1
                 while i < length:
@@ -165,6 +167,8 @@ def rust_code_view(text: str) -> str:
                         i += 1
                 else:
                     raise CensusError("unterminated Rust string")
+                if string_spans is not None:
+                    string_spans.append((start, i))
             elif text[i] == "'":
                 char = char_pattern.match(text, i)
                 if char:

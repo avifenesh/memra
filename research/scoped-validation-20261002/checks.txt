@@ -1,0 +1,97 @@
+$ tools/unittest-floor.sh tools 'test_validation_*.py' 70
+......................................................................
+----------------------------------------------------------------------
+Ran 70 tests in 5.107s
+
+OK
+unittest-floor: OK: ran 70 tests (floor 70) for tools (test_validation_*.py)
+
+exit=0
+
+$ tools/unittest-floor.sh tools/fast-gate test_plan.py 36
+....................................
+----------------------------------------------------------------------
+Ran 36 tests in 4.393s
+
+OK
+unittest-floor: OK: ran 36 tests (floor 36) for tools/fast-gate (test_plan.py)
+
+exit=0
+
+$ python3 tools/test_skip_census.py
+..................
+----------------------------------------------------------------------
+Ran 18 tests in 1.191s
+
+OK
+
+exit=0
+
+$ bash tools/test_ci_change_class.sh
+ok   arm1 docs-only pull_request (reason=dependency closure plus declared input contracts)
+ok   arm2 docs-only push (reason=dependency closure plus declared input contracts)
+ok   arm3 source file (reason=dependency closure plus declared input contracts)
+ok   arm4 docs+tools (reason=unmodelled input: tools/thing.sh)
+ok   arm5 crate README (reason=unmodelled input: crates/memra-gguf/README.md)
+ok   arm6 workflow file (reason=compiler/build/workflow/dependency input changed)
+ok   arm7 Cargo.toml (reason=dependency/input analysis unavailable: Expected '=' after a key in a key/value pair (at line 3, column 6))
+ok   arm8 zero before (reason=missing event base/head)
+ok   arm9 unreachable base (reason=Git change set unavailable: Command '['git', '-C', '/tmp/tmp.Swd6wkzamC/repo', 'rev-parse', '--verify', 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef^{commit}']' returned non-zero exit status 128.)
+ok   arm10 empty diff (reason=empty or unavailable change set)
+ok   arm11 unknown event (reason=unrecognized event)
+ok   arm12 missing args
+ok   arm13 non-repo dir
+ok   arm15 included research file (reason=dependency closure plus declared input contracts)
+ok   arm16 non-included research file beside an include (reason=dependency closure plus declared input contracts)
+ok   arm17 multi-line included research file (reason=dependency closure plus declared input contracts)
+ok   arm18 real-tree census (63 paths, none unresolved)
+ok   arm14 per-component CI selection fails closed
+test_ci_change_class: 18 arms PASS
+
+exit=0
+
+$ python3 tools/check-workflow-keys.py
+check-workflow-keys: .github/workflows/boundary-refs.yml: jobs refs
+check-workflow-keys: .github/workflows/ci.yml: jobs changes, gates, boundary, build, clippy, server-tests, portable-suites, engine-tests, arch-coverage, publish-dryrun
+check-workflow-keys: .github/workflows/gpu-ci.yml: jobs build, build-feedback-measurement, gpu, qualification-result
+check-workflow-keys: .github/workflows/mtp-context-receipts.yml: jobs reproduce
+check-workflow-keys: .github/workflows/mtp-depth-receipts.yml: jobs reproduce
+check-workflow-keys: .github/workflows/prompt-depth-router.yml: jobs classifier, native-build, native-receipts, upcoming-format, prefix-study
+check-workflow-keys: .github/workflows/prompt-prefix-depth.yml: jobs prefix-policy, native-build, prefix-v2-replay, confidence-replay, confidence-v3-cpu, confidence-v3-replay, joint-v4-history-pilot, joint-v4-native-cpu, joint-v4-native-release, joint-v5-native, joint-v6-draft-only-native, joint-v8-prime-probability-native, joint-v8-sealed-replay
+check-workflow-keys: .github/workflows/publish.yml: jobs publish
+check-workflow-keys: .github/workflows/release.yml: jobs guard, build, release
+check-workflow-keys: OK: 9 workflow files, no duplicate mapping keys (stdlib walker)
+
+exit=0
+
+$ tools/check-action-pins.sh
+
+exit=0
+
+$ tools/docs-registry-census.sh
+docs-registry-census: KERNELS.md file references=132, all resolve
+docs-registry-census: MODELS.md support-state tokens=4, all in the three-state vocabulary
+docs-registry-census: ROUTER.md lines=47 (cap 60)
+docs-registry-census: check-flags --list answered with 885 runtime names (coverage enforced by check-flags.sh itself)
+docs-registry-census: flags-table-census: docs/FLAGS.md tables=60 rows=938, every row matches its header
+
+exit=0
+
+$ python3 tools/check-support-states.py
+check-support-states: 20 packs (12 with a support state), 14 records, 40 doc lines, all backed
+
+exit=0
+
+$ tools/check-conflict-markers.sh
+check-conflict-markers: OK (no conflict marker line in tracked source or docs)
+
+exit=0
+
+$ tools/check-flags.sh
+check-flags: runtime literal reads=885
+check-flags: no uncovered runtime names
+check-flags: every runtime MEMRA_* name resolves against 'docs/FLAGS.md' (no grandfather list)
+flags-row-shape: 1080 rows within 4000 chars, default cells within 300, one decide-by each, 47 history sections all linked
+
+exit=0
+

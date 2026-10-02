@@ -25,6 +25,11 @@ serving binary.
 
 ## Plan and reuse development feedback
 
+[Validation selection](VALIDATION-SELECTION.md) defines the changed-input graph, per-component
+CI decisions and source-bound edge-cover planner. It keeps CPU checks, native evidence and
+qualification admission separate. Unknown dependencies expand, and mandatory regression/red
+controls cannot be optimized away.
+
 Start with `tools/fast-gate/fast-gate.sh --plan --diff origin/main`. The plan names
 matching legacy probes, transitive dependencies, missing model coverage and
 conservative expansion. Native selection remains in shadow mode. An expanded

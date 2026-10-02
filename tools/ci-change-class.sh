@@ -1,122 +1,19 @@
 #!/usr/bin/env bash
-# ci-change-class.sh: does this CI trigger's change set touch anything a compiler, linker or
-# packager reads? Prints two GITHUB_OUTPUT lines, `code=true|false` and `reason=<why>`.
-# ci.yml gates its compile jobs (build, clippy, server-tests, engine-tests, the arch mirrors,
-# the publish dry-run) on the answer; the text gates and the boundary check run regardless.
-#
-# WHY (2026-09-02). ci.yml wall time was 42 min per push (run 33582547232), and a large share
-# of pushes on this repo change only research receipts, docs and corpus text: a lane banking a
-# cell result paid a full CUDA build of every arch to learn that nothing it touched compiles.
-# The text gates already answer every question a docs change can raise (flags census, docs
-# registry census, public boundary, allowlist drift); the compile jobs answer nothing for it.
-#
-# FAIL CLOSED. Every doubt is code=true: unknown event, unreachable or zero base (first push
-# of a branch, force-push), empty diff, bad arguments, any git error. The ONLY way to skip a
-# compile is a non-empty diff made solely of documentation paths. This script never exits
-# non-zero: a red classification step would make the compile jobs' `needs` fail and skip them,
-# which is the fail-open shape; ci.yml additionally gates on `code != 'false'` (not `== 'true'`)
-# so a missing output still compiles. Teeth: tools/test_ci_change_class.sh.
-#
-# DOCUMENTATION PATHS (everything else is code):
-#   docs/**            registry text; docs/FLAGS.md and docs/KERNELS.md are read by the text
-#                      gates, which always run
-#   research/**        lane receipts and tune data, EXCEPT a research file that a crate pulls in
-#                      with include_str!/include_bytes! (a compile input; the set is derived at
-#                      classify time from the head tree, so a new include is covered the commit it
-#                      lands; multi-line forms included). 2026-09-21: six included paths exist
-#                      (memra-kv and memra-engine test fixtures, memra-engine ep_map, memra-server
-#                      and memra-tokenizer chat templates); the 2026-09-02 "zero research/
-#                      literals" note was stale (lane D day 13, revuto on #611). Tools that read
-#                      research/ at run time (check-flags,
-#                      update-perf-board, local-ci) are text gates or local batteries, not
-#                      compile jobs.
-#   agent-knowledge/** corpus text
-#   *.md               anywhere EXCEPT under crates/ (a crate README is a cargo package input)
-#   LICENSE, .github/ISSUE_TEMPLATE/**
-#
-# Usage: ci-change-class.sh <event_name> <pr_base_sha> <push_before_sha> <head_sha> [repo_dir]
+# Compatibility entry point: changed-input and dependency-aware CI selection.
+# Missing Python, a broken planner, or malformed output must never suppress checks.
 set -u
-
-event=${1:-}
-pr_base=${2:-}
-push_before=${3:-}
-head=${4:-}
-repo=${5:-.}
-
-emit() { printf 'code=%s\nreason=%s\n' "$1" "$2"; exit 0; }
-
-# include_census <rev>: every research/ path a crate pulls in with include_str!/include_bytes!
-# at <rev>, repo-relative, one per line. Multi-line forms count (the macro name and the literal
-# on different lines: grep -z reads each file as one record; revuto on #611 found three such
-# sites). A row that cannot be resolved prints "?" so the caller fails closed.
-include_census() {
-  local rev=$1 f lit
-  git grep -l -E 'include_(str|bytes)!' "$rev" -- crates 2>/dev/null | sed -E 's/^[^:]*://' \
-  | while IFS= read -r f; do
-      [ -n "$f" ] || continue
-      git show "$rev:$f" 2>/dev/null \
-      | grep -Pzo 'include_(str|bytes)!\(\s*"[^"]*research/[^"]+"\s*\)' | tr '\0' '\n' \
-      | grep -oE '"[^"]+"' | tr -d '"' \
-      | while IFS= read -r lit; do
-          [ -n "$lit" ] || { echo "?"; continue; }
-          realpath -m --relative-to=. "$(dirname "$f")/$lit" 2>/dev/null || echo "?"
-        done
-    done | sort -u
-}
-
-# `ci-change-class.sh census <rev> [repo_dir]` prints the census and exits 0 (teeth and humans).
+HERE=$(cd "$(dirname "$0")" && pwd)
 if [ "${1:-}" = census ]; then
-  cd "${3:-.}" 2>/dev/null || { echo "?"; exit 0; }
-  include_census "${2:-HEAD}"
+  shift
+  python3 "$HERE/validation_plan.py" census "$@" || printf '?\n'
   exit 0
 fi
-
-[ -n "$event" ] && [ -n "$head" ] || emit true "missing-args"
-cd "$repo" 2>/dev/null || emit true "repo-dir-unreadable"
-git rev-parse --is-inside-work-tree >/dev/null 2>&1 || emit true "not-a-git-repo"
-
-case "$event" in
-  pull_request)
-    base=$pr_base
-    [ -n "$base" ] || emit true "pull_request-without-base"
-    git cat-file -e "$base^{commit}" 2>/dev/null || emit true "pr-base-unreachable"
-    git cat-file -e "$head^{commit}" 2>/dev/null || emit true "head-unreachable"
-    # Three-dot: files changed on the PR side since the merge base, never the base's own drift.
-    files=$(git diff --name-only "$base...$head" 2>/dev/null) || emit true "diff-failed"
-    ;;
-  push)
-    base=$push_before
-    case "$base" in
-      ''|0000000000000000000000000000000000000000) emit true "push-without-before" ;;
-    esac
-    git cat-file -e "$base^{commit}" 2>/dev/null || emit true "push-before-unreachable"
-    git cat-file -e "$head^{commit}" 2>/dev/null || emit true "head-unreachable"
-    files=$(git diff --name-only "$base" "$head" 2>/dev/null) || emit true "diff-failed"
-    ;;
-  *)
-    emit true "event-$event"
-    ;;
-esac
-
-[ -n "$files" ] || emit true "empty-diff"
-
-# research/ files a crate includes at compile time, as repo-relative paths, read from the head
-# tree. Any failure to derive the set is a doubt and classifies as code.
-included=$(include_census "$head") || emit true "include-census-failed"
-case "$included" in *"?"*) emit true "include-census-unresolved" ;; esac
-
-while IFS= read -r f; do
-  [ -n "$f" ] || continue
-  case "$f" in
-    crates/*) emit true "code-path:$f" ;;
-  esac
-  if [ -n "$included" ] && printf '%s\n' "$included" | grep -qxF "$f"; then
-    emit true "compile-input:$f"
-  fi
-  if printf '%s\n' "$f" | grep -qE '^(docs/|research/|agent-knowledge/|\.github/ISSUE_TEMPLATE/)|\.md$|^LICENSE$'; then
-    continue
-  fi
-  emit true "code-path:$f"
-done <<< "$files"
-
-emit false "docs-only:$(printf '%s\n' "$files" | grep -c .)-files"
+if out=$(python3 "$HERE/validation_plan.py" ci "$@"); then
+  printf '%s\n' "$out"
+else
+  printf 'code=true\nreason=validation-planner-unavailable\n'
+  for job in build clippy server engine portable core lanes arch publish; do
+    printf '%s=true\n' "$job"
+  done
+  printf 'packages=\nrequires_cuda=true\nmode=full\ncontracts=\n'
+fi

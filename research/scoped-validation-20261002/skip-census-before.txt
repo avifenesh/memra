@@ -1,0 +1,147 @@
+FFFFFFFFFF
+======================================================================
+FAIL: test_noncode_braces_cannot_nest_a_later_test_module (__main__.SourceScopes.test_noncode_braces_cannot_nest_a_later_test_module) (expression='        assert!(source.contains("plan.request.wire_deadline = if background {"));')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-scoped-validation-20261002/tools/test_skip_census.py", line 364, in test_noncode_braces_cannot_nest_a_later_test_module
+    self.assertEqual(rc, 0, out)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+AssertionError: 1 != 0 : skip-census: FAIL: memra-x first::later::gated (crates/memra-x/src/lib.rs) prints 'SKIP[/nope]: real assertion not run' and returns, and is NOT in skip-census.tsv.
+  A new artifact-gated test must be declared, or it is born invisible: the suite reports it green on every executor that lacks the artifact.
+skip-census: FAIL: skip-census.tsv declares memra-x later::gated / 'SKIP[/nope]: real assertion not run', which no longer exists in the source.
+  A stale row inflates the budget: the executor is allowed a skip that can no longer happen, which silently permits a different one.
+skip-census: memra-x: 1 protocol skip row(s), 0 unstructured
+skip-census: VERIFY FAIL (2 disagreement(s))
+
+
+======================================================================
+FAIL: test_noncode_braces_cannot_nest_a_later_test_module (__main__.SourceScopes.test_noncode_braces_cannot_nest_a_later_test_module) (expression='        let text = "escaped quote \\\\"; let brace = "{";')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-scoped-validation-20261002/tools/test_skip_census.py", line 364, in test_noncode_braces_cannot_nest_a_later_test_module
+    self.assertEqual(rc, 0, out)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+AssertionError: 1 != 0 : skip-census: FAIL: memra-x first::later::gated (crates/memra-x/src/lib.rs) prints 'SKIP[/nope]: real assertion not run' and returns, and is NOT in skip-census.tsv.
+  A new artifact-gated test must be declared, or it is born invisible: the suite reports it green on every executor that lacks the artifact.
+skip-census: FAIL: skip-census.tsv declares memra-x later::gated / 'SKIP[/nope]: real assertion not run', which no longer exists in the source.
+  A stale row inflates the budget: the executor is allowed a skip that can no longer happen, which silently permits a different one.
+skip-census: memra-x: 1 protocol skip row(s), 0 unstructured
+skip-census: VERIFY FAIL (2 disagreement(s))
+
+
+======================================================================
+FAIL: test_noncode_braces_cannot_nest_a_later_test_module (__main__.SourceScopes.test_noncode_braces_cannot_nest_a_later_test_module) (expression='        let text = r#"a raw { string with a quote " inside"#;')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-scoped-validation-20261002/tools/test_skip_census.py", line 364, in test_noncode_braces_cannot_nest_a_later_test_module
+    self.assertEqual(rc, 0, out)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+AssertionError: 1 != 0 : skip-census: FAIL: memra-x first::later::gated (crates/memra-x/src/lib.rs) prints 'SKIP[/nope]: real assertion not run' and returns, and is NOT in skip-census.tsv.
+  A new artifact-gated test must be declared, or it is born invisible: the suite reports it green on every executor that lacks the artifact.
+skip-census: FAIL: skip-census.tsv declares memra-x later::gated / 'SKIP[/nope]: real assertion not run', which no longer exists in the source.
+  A stale row inflates the budget: the executor is allowed a skip that can no longer happen, which silently permits a different one.
+skip-census: memra-x: 1 protocol skip row(s), 0 unstructured
+skip-census: VERIFY FAIL (2 disagreement(s))
+
+
+======================================================================
+FAIL: test_noncode_braces_cannot_nest_a_later_test_module (__main__.SourceScopes.test_noncode_braces_cannot_nest_a_later_test_module) (expression='        let text = br###"a byte raw { string"###;')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-scoped-validation-20261002/tools/test_skip_census.py", line 364, in test_noncode_braces_cannot_nest_a_later_test_module
+    self.assertEqual(rc, 0, out)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+AssertionError: 1 != 0 : skip-census: FAIL: memra-x first::later::gated (crates/memra-x/src/lib.rs) prints 'SKIP[/nope]: real assertion not run' and returns, and is NOT in skip-census.tsv.
+  A new artifact-gated test must be declared, or it is born invisible: the suite reports it green on every executor that lacks the artifact.
+skip-census: FAIL: skip-census.tsv declares memra-x later::gated / 'SKIP[/nope]: real assertion not run', which no longer exists in the source.
+  A stale row inflates the budget: the executor is allowed a skip that can no longer happen, which silently permits a different one.
+skip-census: memra-x: 1 protocol skip row(s), 0 unstructured
+skip-census: VERIFY FAIL (2 disagreement(s))
+
+
+======================================================================
+FAIL: test_noncode_braces_cannot_nest_a_later_test_module (__main__.SourceScopes.test_noncode_braces_cannot_nest_a_later_test_module) (expression='        // a comment with {')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-scoped-validation-20261002/tools/test_skip_census.py", line 364, in test_noncode_braces_cannot_nest_a_later_test_module
+    self.assertEqual(rc, 0, out)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+AssertionError: 1 != 0 : skip-census: FAIL: memra-x first::later::gated (crates/memra-x/src/lib.rs) prints 'SKIP[/nope]: real assertion not run' and returns, and is NOT in skip-census.tsv.
+  A new artifact-gated test must be declared, or it is born invisible: the suite reports it green on every executor that lacks the artifact.
+skip-census: FAIL: skip-census.tsv declares memra-x later::gated / 'SKIP[/nope]: real assertion not run', which no longer exists in the source.
+  A stale row inflates the budget: the executor is allowed a skip that can no longer happen, which silently permits a different one.
+skip-census: memra-x: 1 protocol skip row(s), 0 unstructured
+skip-census: VERIFY FAIL (2 disagreement(s))
+
+
+======================================================================
+FAIL: test_noncode_braces_cannot_nest_a_later_test_module (__main__.SourceScopes.test_noncode_braces_cannot_nest_a_later_test_module) (expression='        /* outer { /* nested { */ still outer */')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-scoped-validation-20261002/tools/test_skip_census.py", line 364, in test_noncode_braces_cannot_nest_a_later_test_module
+    self.assertEqual(rc, 0, out)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+AssertionError: 1 != 0 : skip-census: FAIL: memra-x first::later::gated (crates/memra-x/src/lib.rs) prints 'SKIP[/nope]: real assertion not run' and returns, and is NOT in skip-census.tsv.
+  A new artifact-gated test must be declared, or it is born invisible: the suite reports it green on every executor that lacks the artifact.
+skip-census: FAIL: skip-census.tsv declares memra-x later::gated / 'SKIP[/nope]: real assertion not run', which no longer exists in the source.
+  A stale row inflates the budget: the executor is allowed a skip that can no longer happen, which silently permits a different one.
+skip-census: memra-x: 1 protocol skip row(s), 0 unstructured
+skip-census: VERIFY FAIL (2 disagreement(s))
+
+
+======================================================================
+FAIL: test_noncode_braces_cannot_nest_a_later_test_module (__main__.SourceScopes.test_noncode_braces_cannot_nest_a_later_test_module) (expression='        let ch = \'{\'; let reference: &\'static str = "x";')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-scoped-validation-20261002/tools/test_skip_census.py", line 364, in test_noncode_braces_cannot_nest_a_later_test_module
+    self.assertEqual(rc, 0, out)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+AssertionError: 1 != 0 : skip-census: FAIL: memra-x first::later::gated (crates/memra-x/src/lib.rs) prints 'SKIP[/nope]: real assertion not run' and returns, and is NOT in skip-census.tsv.
+  A new artifact-gated test must be declared, or it is born invisible: the suite reports it green on every executor that lacks the artifact.
+skip-census: FAIL: skip-census.tsv declares memra-x later::gated / 'SKIP[/nope]: real assertion not run', which no longer exists in the source.
+  A stale row inflates the budget: the executor is allowed a skip that can no longer happen, which silently permits a different one.
+skip-census: memra-x: 1 protocol skip row(s), 0 unstructured
+skip-census: VERIFY FAIL (2 disagreement(s))
+
+
+======================================================================
+FAIL: test_skip_print_inside_block_comment_is_not_a_row (__main__.SourceScopes.test_skip_print_inside_block_comment_is_not_a_row)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-scoped-validation-20261002/tools/test_skip_census.py", line 381, in test_skip_print_inside_block_comment_is_not_a_row
+    self.assertEqual(rc, 0, out)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+AssertionError: 1 != 0 : skip-census: FAIL: memra-x first::assertion (crates/memra-x/src/lib.rs) prints 'SKIP[/fake]: not executable' and returns, and is NOT in skip-census.tsv.
+  A new artifact-gated test must be declared, or it is born invisible: the suite reports it green on every executor that lacks the artifact.
+skip-census: memra-x: 2 protocol skip row(s), 0 unstructured
+skip-census: VERIFY FAIL (1 disagreement(s))
+
+
+======================================================================
+FAIL: test_skip_print_inside_raw_fixture_is_not_an_executed_skip (__main__.SourceScopes.test_skip_print_inside_raw_fixture_is_not_an_executed_skip)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-scoped-validation-20261002/tools/test_skip_census.py", line 374, in test_skip_print_inside_raw_fixture_is_not_an_executed_skip
+    self.assertEqual(rc, 0, out)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+AssertionError: 1 != 0 : skip-census: FAIL: memra-x first::fake (crates/memra-x/src/lib.rs) prints 'SKIP[/fake]: this is fixture text' and returns, and is NOT in skip-census.tsv.
+  A new artifact-gated test must be declared, or it is born invisible: the suite reports it green on every executor that lacks the artifact.
+skip-census: memra-x: 2 protocol skip row(s), 0 unstructured
+skip-census: VERIFY FAIL (1 disagreement(s))
+
+
+======================================================================
+FAIL: test_unterminated_literal_refuses_instead_of_guessing_scope (__main__.SourceScopes.test_unterminated_literal_refuses_instead_of_guessing_scope)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-scoped-validation-20261002/tools/test_skip_census.py", line 386, in test_unterminated_literal_refuses_instead_of_guessing_scope
+    self.assertNotEqual(rc, 0, out)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+AssertionError: 0 == 0 : skip-census: memra-x: 1 protocol skip row(s), 0 unstructured
+skip-census: VERIFY OK (1 declared skip row(s) across 1 crate(s))
+
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.404s
+
+FAILED (failures=10)
