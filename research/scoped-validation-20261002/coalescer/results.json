@@ -19,7 +19,7 @@
       "case": "virtual-green",
       "exit_code": 0,
       "expected_pass": true,
-      "source_sha256": "3aab533197c93567df3db5ccb5db3a3d27c9bcdf4d6731567bfe53c0d94cef8d"
+      "source_sha256": "133f8651f321257b0067986781a29188c65cdff7bc16c4aa6ebe388f27e3922b"
     },
     {
       "case": "red-inflight",
@@ -31,13 +31,25 @@
       "case": "red-adaptive",
       "exit_code": 101,
       "expected_pass": false,
-      "source_sha256": "24b42f25a9dc8f27e924d8b115a185ca465097e9a57feef3d267a07b3bd41c90"
+      "source_sha256": "ed997b448daa6f4de981c603390833759358266a7cf7bc22ca59191738e32bab"
     },
     {
       "case": "red-publication",
       "exit_code": 101,
       "expected_pass": false,
-      "source_sha256": "6ebe6223b9fcdc8af726b54648b25fd514adabdd41f6ce44c695597fe967719c"
+      "source_sha256": "af332e8ec5c47707e819deed09e1f59f85e5dcdaaff66adb6d67c710b7ab98cf"
+    },
+    {
+      "case": "red-duration-write",
+      "exit_code": 101,
+      "expected_pass": false,
+      "source_sha256": "56e83ac43b68d146b26a048cdee943720926ddf8ed146b7e12a68bddab97de73"
+    },
+    {
+      "case": "red-publication-write",
+      "exit_code": 101,
+      "expected_pass": false,
+      "source_sha256": "a13ed5ce2ba340a13aabc759e60364253a05ffdfdd787b2146d3376619a4d17a"
     }
   ],
   "pass": true

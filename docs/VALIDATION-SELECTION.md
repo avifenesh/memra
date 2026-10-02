@@ -127,7 +127,9 @@ limits; it does not infer savings against an unmeasured alternative run schedule
 server Coalescer implementation, records its hash, and compiles CPU-only fixtures with `rustc`.
 Channel handshakes assert pending membership and one-workspace serialization. A virtual clock
 asserts adaptive timeout and publication-origin behavior without assuming an OS wake-up time.
-Both positive fixtures and all three independently mutated controls must match their exact
+A real callback advances virtual time, publishes through production code, and drives a pending
+row. Removing either duration or publication writes must fail that assertion.
+Both positive fixtures and all five independently mutated controls must match their exact
 test counts and expected failing assertions. CI and local-ci run the same entry point.
 
 These replace the jittered full-batch-rate unit verdict, whose requested 1.5 ms sleep did not

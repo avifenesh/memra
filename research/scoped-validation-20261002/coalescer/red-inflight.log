@@ -4,7 +4,7 @@ test contract::contracts::multiple_workspace_control ... groups=2 snapshot=(4, 4
 ok
 test contract::contracts::single_workspace_retains_pending_members ... groups=1 snapshot=(4, 4, 0) widths=[2,2] rows=4 once=true
 
-thread 'contract::contracts::single_workspace_retains_pending_members' (412108) panicked at target/coalescer-contract/red-inflight.rs:281:9:
+thread 'contract::contracts::single_workspace_retains_pending_members' (1831052) panicked at target/coalescer-contract/red-inflight.rs:281:9:
 assertion `left == right` failed
   left: (4, 4, 0)
  right: (4, 2, 2)

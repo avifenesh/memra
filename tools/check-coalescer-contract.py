@@ -18,7 +18,7 @@ begin = 'struct Coalescer<S, A = bool> {'
 end = '/// What a row asks of a B-row step besides its device argmax.'
 assert s.count(begin) == s.count(end) == 1
 core = s[s.index(begin):s.index(end)]
-for marker in ('if serial && g.in_flight > 0 {', 'self.window.max(g.last_run / 10)', 't0.max(g.published)'):
+for marker in ('if serial && g.in_flight > 0 {', 'self.window.max(g.last_run / 10)', 't0.max(g.published)', 'g.last_run = ran.elapsed();', 'g.published = std::time::Instant::now();'):
     assert core.count(marker) == 1, marker
 binding = {'source': str(a.source), 'source_sha256': hashlib.sha256(a.source.read_bytes()).hexdigest(), 'core_sha256': hashlib.sha256(core.encode()).hexdigest(), 'begin_marker': begin, 'end_marker': end, 'cpu_affinity': min(os.sched_getaffinity(0)), 'production_edits': False}
 (a.out/'binding.json').write_text(json.dumps(binding, indent=2))
@@ -134,6 +134,74 @@ virtual_tests = r'''
         assert_eq!(state, 1);
         (state, at)
     }
+    #[test] fn callback_publication_drives_next_wait() {
+        reset();
+        let core = Arc::new(Coalescer::<u32>::with_window(4, 1, Duration::from_micros(500)));
+        // One member makes the first batch full without consuming a timeout.
+        core.join();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let first_core = core.clone();
+        let first = real_std::thread::spawn(move || {
+            let mut state = 0;
+            let result = first_core.step(7, false, &mut state, &mut |toks, _, states| {
+                assert_eq!(toks, &[7]);
+                started_tx.send(()).unwrap();
+                release_rx.recv_timeout(Duration::from_secs(5)).expect("first callback release deadline");
+                std::time::advance(Duration::from_secs(2));
+                for s in states { **s += 1; }
+                Ok(vec![RowOut { tok: 14, logits: None }])
+            });
+            (result, state)
+        });
+        started_rx.recv_timeout(Duration::from_secs(3)).expect("first callback started");
+        for _ in 0..3 { core.join(); }
+        let (deposit_tx, deposit_rx) = mpsc::channel();
+        *DEPOSITS.lock().unwrap() = Some(deposit_tx);
+        let pending_core = core.clone();
+        let observed_core = core.clone();
+        let pending = real_std::thread::spawn(move || {
+            let mut state = 0;
+            let mut at = 0;
+            let result = pending_core.step(9, false, &mut state, &mut |toks, _, states| {
+                at = std::time::nanos();
+                assert_eq!(toks, &[9]);
+                {
+                    // Observe the first callback's writes before this callback can
+                    // replace them. Nothing in the fixture writes either field.
+                    let g = observed_core.lock();
+                    assert_eq!(g.last_run, Duration::from_secs(2), "production must record callback duration");
+                    assert_eq!(g.published.elapsed(), Duration::from_millis(200), "production must record publication time");
+                }
+                for s in states { **s += 1; }
+                Ok(vec![RowOut { tok: 16, logits: None }])
+            });
+            (result, state, at)
+        });
+        deposit_rx.recv_timeout(Duration::from_secs(3)).expect("pending deposit");
+        {
+            let g = core.lock();
+            assert_eq!((g.in_flight, g.waiting.len()), (1, 1));
+            assert_eq!(std::time::nanos(), 0, "pending row must arrive before publication");
+        }
+        release_tx.send(()).unwrap();
+        let first_result = first.join();
+        let pending_result = pending.join();
+        *DEPOSITS.lock().unwrap() = None;
+        let (result, count) = first_result.expect("first callback worker");
+        assert_eq!(result, Ok(RowOut { tok: 14, logits: None }));
+        assert_eq!(count, 1);
+        let (result, count, at) = pending_result.expect("pending callback worker");
+        assert_eq!(result, Ok(RowOut { tok: 16, logits: None }));
+        assert_eq!(count, 1);
+        assert_eq!(at, 2_200_000_000, "pending wait must consume the actual publication and duration");
+        let waits = std::sync::WAITS.lock().unwrap().clone();
+        assert_eq!(waits, vec![Duration::from_millis(200)]);
+        let g = core.lock();
+        assert_eq!(g.in_flight, 0);
+        assert!(g.waiting.is_empty() && g.done.is_empty());
+        println!("actual callback: duration=2s, publication=2s, pending callback=2.2s, both rows once");
+    }
     #[test] fn serial_adaptive_window() {
         reset();
         let core = Coalescer::<u32>::with_window(4, 1, Duration::from_micros(500));
@@ -177,13 +245,17 @@ variants = [
     ('red-inflight', core.replace('if serial && g.in_flight > 0 {', 'if false && g.in_flight > 0 {'), '', real_tests, False),
     ('red-adaptive', core.replace('self.window.max(g.last_run / 10)', 'self.window'), virtual_std, virtual_tests, False),
     ('red-publication', core.replace('t0.max(g.published)', 't0'), virtual_std, virtual_tests, False),
+    ('red-duration-write', core.replace('g.last_run = ran.elapsed();', ''), virtual_std, virtual_tests, False),
+    ('red-publication-write', core.replace('g.published = std::time::Instant::now();', ''), virtual_std, virtual_tests, False),
 ]
 expected_failures = {
     'real-green': set(),
     'virtual-green': set(),
     'red-inflight': {'single_workspace_retains_pending_members'},
-    'red-adaptive': {'serial_adaptive_window', 'publication_restarts_the_wait_origin'},
-    'red-publication': {'publication_restarts_the_wait_origin'},
+    'red-adaptive': {'serial_adaptive_window', 'publication_restarts_the_wait_origin', 'callback_publication_drives_next_wait'},
+    'red-publication': {'publication_restarts_the_wait_origin', 'callback_publication_drives_next_wait'},
+    'red-duration-write': {'callback_publication_drives_next_wait'},
+    'red-publication-write': {'callback_publication_drives_next_wait'},
 }
 def pin():
     os.sched_setaffinity(0, {binding['cpu_affinity']})
@@ -202,7 +274,7 @@ for name, implementation, shim, tests, expected in variants:
     counts = re.findall(r'test result: (?:ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out;', output)
     assert len(counts) == 1, f'{name}: missing or ambiguous test summary'
     passed, failed, ignored, measured, filtered = map(int, counts[0])
-    total = 2 if not shim else 3
+    total = 2 if not shim else 4
     assert (passed + failed, failed, ignored, measured, filtered) == (total, len(expected_failures[name]), 0, 0, 0), f'{name}: wrong executed/failed/skip count'
     failed_names = set(re.findall(r'^    contract::contracts::(\w+)$', output, re.M))
     assert failed_names == expected_failures[name], f'{name}: unrelated failure {failed_names}'

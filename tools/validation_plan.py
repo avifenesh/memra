@@ -356,11 +356,13 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
                 rooted = value[match.start():]
                 if linked_input(rooted):
                     raise Refused('runtime fixture symlink needs an input contract: ' + rooted)
-                rooted = re.sub(r'\{[^}]*\}', '*', glob.escape(rooted))
-                inputs[rooted].add(package)
-                # A literal may be a directory later extended with join()/read_dir().
-                # Cover descendants even when the directory name contains a dot.
-                inputs[rooted.rstrip('/') + '/**'].add(package)
+                # A string can be a literal path or a pattern consumed by a reader.
+                # Retain both interpretations; escaping must never drop glob reach.
+                for input_pattern in {re.sub(r'\{[^}]*\}', '*', rooted),
+                                      re.sub(r'\{[^}]*\}', '*', glob.escape(rooted))}:
+                    inputs[input_pattern].add(package)
+                    # A literal may be a directory later extended with join()/read_dir().
+                    inputs[input_pattern.rstrip('/') + '/**'].add(package)
     # memra-engine/build.rs emits the boot-audit registry from this source.
     if 'memra-engine' in owners.values():
         inputs['docs/FLAGS.md'].add('memra-engine')

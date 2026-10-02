@@ -204,6 +204,11 @@ class ValidationPlanTests(unittest.TestCase):
         self.commit()
         self.assertEqual(self.plan(['docs/real.md'])['mode'], 'full')
 
+    def test_runtime_pattern_keeps_its_glob_interpretation(self):
+        self.put('crates/memra-server/src/lib.rs', 'let pattern = "research/fixtures/*.json"; let dir = Path::new(pattern).parent().unwrap(); std::fs::read_dir(dir);')
+        self.commit()
+        self.assertEqual(self.plan(['research/fixtures/input.json'])['packages'], ['memra-server'])
+
     def test_dynamic_research_directory_keeps_all_receipts_affected(self):
         self.put('crates/memra-server/src/lib.rs', 'let p = root.join("research");')
         self.commit()

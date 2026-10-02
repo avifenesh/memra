@@ -1,3 +1,16 @@
+Final review closure (2026-10-02):
+- 88 planner/coverage tests and18 classifier arms passed after retaining both literal and glob
+  interpretations. Independent recheck is clean for the exact planner source hash.
+- Independent coalescer producer-state finding is addressed; reviewed checker bytes match the
+  parent6-positive/5-mutant run. Runtime core bytes remain unchanged.
+
+Final integration on main c08582ae (2026-10-02):
+- 87 planner/coverage tests,39 fast-gate tests,18 skip-census tests and workflow syntax passed.
+- The old input matcher fails4 literal-path assertions; the current matcher passes them.
+- Coalescer:6 positive checks pass and5 independent mutants fail their precise expected tests.
+  Actual callback writes now feed a waiting row; no seeded duration/publication fields in that case.
+- Existing real native-probe input witnesses were replayed and producer hashes refreshed.
+
 Revuto repair (2026-10-02):
 - 85 planner/coverage tests,39 fast-gate tests and18 classifier scenarios passed.
 - Changed Gemma and chunk-invariance prompt paths retain native expansion and name registry
