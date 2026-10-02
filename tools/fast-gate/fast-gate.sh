@@ -38,7 +38,6 @@ FG_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$FG_DIR/../.." && pwd)"
 cd "$ROOT"
 
-MAP="$FG_DIR/map.tsv"
 MODELS_TSV="$FG_DIR/models.tsv"
 GOLDENS="$FG_DIR/goldens"
 # MEMRA_GPU_LOCK, not MEMRA_GATE_LOCK: the v0.96.0 train standardised every gate on the one

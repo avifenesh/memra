@@ -15,8 +15,6 @@ probe/bw_bench
 probe/tc_peak
 probe/lowbit_peak
 probe/epilogue_hoist_equiv
-probe/int8_swizzle_aload
-probe/*.o
 tools/llama_logits
 tools/ggml_dequant_ref
 tools/ggml_list_tensors
@@ -30,7 +28,6 @@ lane/
 # such files into a commit and the pre-push public-boundary check caught it (sev4,
 # secret_pattern rented_ipv4,ssh_destination).
 .lane/
-*.nsys-rep
 *.ncu-rep
 *.sqlite
 probe/mxf4_transient_repack

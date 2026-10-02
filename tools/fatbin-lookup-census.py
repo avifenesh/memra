@@ -36,12 +36,8 @@ REFUSALS (all fail-closed; the empty cases are refusals, not passes)
      (remediated, so the grant is dead) or whose symbol no longer appears in the Rust sources
      (renamed or deleted, so the grant now excuses whatever next occupies the name)
 
-Refusal 6 exists because of a measured precedent, not a hunch. tools/check-flags.sh has the same
-grandfather-list shape (research/docsync3-20260811/flags-drift.txt, 75 names) and nothing checks
-its entries are still meaningful: all 75 are documented in docs/FLAGS.md today, every exemption
-is dead, and a probe confirms that DELETING a documented row for one of those names keeps the
-census GREEN (exit 0, name printed under "uncovered runtime names" as a non-fatal line). A
-grandfather list without a drift check silently absorbs findings it was never granted for.
+For the measured grandfather-list failure behind refusal 6, see the
+retired-grandfather note in tools/check-flags.sh.
 
 Usage: tools/fatbin-lookup-census.py --arch <120a|100a|90a|89> [--out-dir DIR] [--crate DIR]
   --out-dir defaults to the newest target/*/build/memra-engine-*/out containing fatbins.
