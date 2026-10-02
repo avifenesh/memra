@@ -445,10 +445,11 @@ class ValidationPlanTests(unittest.TestCase):
 
     def test_include_tokens_can_be_separated_by_whitespace_and_comments(self):
         for separator in (' ', '\n', ' /* note */ '):
-            with self.subTest(separator=separator):
-                self.put('crates/memra-server/src/lib.rs', f'include_str{separator}! ("../../../research/input.txt");')
-                self.commit()
-                self.assertEqual(self.plan(['research/input.txt'])['packages'], ['memra-server'])
+            for path in ('README.md', 'research/input.txt'):
+                with self.subTest(separator=separator, path=path):
+                    self.put('crates/memra-server/src/lib.rs', f'include_str{separator}! ("../../../{path}");')
+                    self.commit()
+                    self.assertEqual(self.plan([path])['packages'], ['memra-server'])
 
     def test_module_path_whitespace_comments_and_escapes_expand(self):
         for attribute in ('# [ path = "../../../research/outer.rs" ]',
