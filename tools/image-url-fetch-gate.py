@@ -29,6 +29,7 @@ p.add_argument('--fixture-port', type=int, required=True)
 p.add_argument('--external-lock', type=int, required=True)
 p.add_argument('--door-off', action='store_true')
 p.add_argument('--vision-kind', choices=('gemma', 'qwen'), default='gemma')
+p.add_argument('--context', type=int, default=8192)
 p.add_argument('--transport-only', action='store_true', help='No vision qualification; test HTTP controls with the text-only trunk')
 p.add_argument('--test-binary', type=Path)
 a = p.parse_args()
@@ -135,10 +136,10 @@ fixture = FixtureServer(('127.0.0.1', a.fixture_port), Fixture)
 fixture_thread = threading.Thread(target=fixture.serve_forever, daemon=True)
 fixture_thread.start()
 url_root = f'http://127.0.0.1:{a.fixture_port}'
-manifest = {'source': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(), 'binary_sha256': sha(a.binary), 'model': str(a.model), 'model_sha256': sha(a.model), 'mmproj': str(a.mmproj), 'mmproj_sha256': sha(a.mmproj), 'gpu': subprocess.check_output(['nvidia-smi', '--query-gpu=name,uuid,driver_version,memory.total', '--format=csv,noheader'], text=True), 'context': 8192, 'temperature': 0, 'cache': 'prefix cache disabled', 'door': 'off' if a.door_off else 'on', 'vision_kind': a.vision_kind, 'spec': 'plain', 'scope': 'http_transport_only' if a.transport_only else 'native_vision', 'fixture_sha256': {k: hashlib.sha256(v).hexdigest() for k, v in images.items()}}
+manifest = {'source': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(), 'binary_sha256': sha(a.binary), 'model': str(a.model), 'model_sha256': sha(a.model), 'mmproj': str(a.mmproj), 'mmproj_sha256': sha(a.mmproj), 'gpu': subprocess.check_output(['nvidia-smi', '--query-gpu=name,uuid,driver_version,memory.total', '--format=csv,noheader'], text=True), 'context': a.context, 'temperature': 0, 'cache': 'prefix cache disabled', 'door': 'off' if a.door_off else 'on', 'vision_kind': a.vision_kind, 'spec': 'plain', 'scope': 'http_transport_only' if a.transport_only else 'native_vision', 'fixture_sha256': {k: hashlib.sha256(v).hexdigest() for k, v in images.items()}}
 (a.out / 'manifest.json').write_text(json.dumps(manifest, indent=2))
 env = {k: v for k, v in os.environ.items() if not k.startswith('MEMRA_') or k in {'MEMRA_GPU_LOCK', 'MEMRA_CI_LOCK', 'MEMRA_CI_LOCK_HELD', 'MEMRA_RIG_LOCK_FD'}}
-env.update(MEMRA_MODELS='vision=' + str(a.model), MEMRA_GEMMA_VISION='1', MEMRA_GEMMA_MMPROJ=str(a.mmproj), MEMRA_CTX='8192', MEMRA_ADDR=f'127.0.0.1:{a.server_port}', MEMRA_PREFIX_CACHE_MB='0', MEMRA_FETCH_URLS='0' if a.door_off else '1', MEMRA_FETCH_URLS_ALLOWED_HOSTS='127.0.0.1', MEMRA_API_KEY='image-gate-token')
+env.update(MEMRA_MODELS='vision=' + str(a.model), MEMRA_GEMMA_VISION='1', MEMRA_GEMMA_MMPROJ=str(a.mmproj), MEMRA_CTX=str(a.context), MEMRA_ADDR=f'127.0.0.1:{a.server_port}', MEMRA_PREFIX_CACHE_MB='0', MEMRA_FETCH_URLS='0' if a.door_off else '1', MEMRA_FETCH_URLS_ALLOWED_HOSTS='127.0.0.1', MEMRA_API_KEY='image-gate-token')
 env['MEMRA_SPEC'] = '0'
 if a.vision_kind == 'qwen':
     env.pop('MEMRA_GEMMA_VISION', None)
@@ -148,15 +149,14 @@ if a.transport_only:
     env.pop('MEMRA_VISION_DIR', None)
     env['MEMRA_GEMMA_VISION'] = '0'
     env.pop('MEMRA_GEMMA_MMPROJ', None)
-    if not a.door_off:
-        assert a.test_binary is not None
-        test_env = env.copy()
-        test_env.update(IMAGE_FETCH_FIXTURE_URL=url_root, IMAGE_FETCH_FIXTURE_DIR=str(a.out))
-        with (a.out / 'transport-unit.log').open('w') as log:
-            result = subprocess.run([str(a.test_binary), '--ignored', '--exact', 'image_fetch::tests::controlled_http_fixture_rewrites_exact_image_bytes', '--nocapture'], env=test_env, stdout=log, stderr=subprocess.STDOUT, timeout=60, pass_fds=(a.external_lock,))
-        assert result.returncode == 0, 'transport byte fixture failed; inspect transport-unit.log'
-        report = (a.out / 'transport-unit.log').read_text()
-        assert 'IMAGE_FETCH_FIXTURE_PASS' in report and '1 passed' in report, 'fixture must execute, not filter out'
+if not a.door_off and a.test_binary is not None:
+    test_env = env.copy()
+    test_env.update(IMAGE_FETCH_FIXTURE_URL=url_root, IMAGE_FETCH_FIXTURE_DIR=str(a.out))
+    with (a.out / 'transport-unit.log').open('w') as log:
+        result = subprocess.run([str(a.test_binary), '--ignored', '--exact', 'image_fetch::tests::controlled_http_fixture_rewrites_exact_image_bytes', '--nocapture'], env=test_env, stdout=log, stderr=subprocess.STDOUT, timeout=60, pass_fds=(a.external_lock,))
+    assert result.returncode == 0, 'transport byte fixture failed; inspect transport-unit.log'
+    report = (a.out / 'transport-unit.log').read_text()
+    assert 'IMAGE_FETCH_FIXTURE_PASS' in report and '1 passed' in report, 'fixture must execute, not filter out'
 server = subprocess.Popen([str(a.binary)], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, pass_fds=(a.external_lock,))
 ready, listening = threading.Event(), threading.Event()
 def reader():
