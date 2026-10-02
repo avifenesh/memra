@@ -851,4 +851,49 @@ mod tests {
         assert!(is_fetchable_url("HTTP://example.com/a.png"));
         assert!(is_fetchable_url("HTTPS://example.com/a.png"));
     }
+    /// Runs only against the controlled loopback fixture in image-url-fetch-gate.py.
+    /// This proves transport/rewriting bytes, not a model's vision implementation.
+    #[tokio::test]
+    #[ignore = "requires the controlled image URL HTTP fixture"]
+    #[allow(clippy::await_holding_lock)] // allow: isolate fetch env while the one explicit fixture test awaits HTTP
+    async fn controlled_http_fixture_rewrites_exact_image_bytes() {
+        let _lock = FETCH_ENV_LOCK.lock().unwrap();
+        let root = std::env::var("IMAGE_FETCH_FIXTURE_URL").expect("fixture URL required");
+        assert!(root.starts_with("http://127.0.0.1:"));
+        let dir = std::path::PathBuf::from(
+            std::env::var("IMAGE_FETCH_FIXTURE_DIR").expect("fixture directory required"),
+        );
+        unsafe {
+            std::env::set_var("MEMRA_FETCH_URLS", "1");
+            std::env::set_var("MEMRA_FETCH_URLS_ALLOWED_HOSTS", "127.0.0.1");
+        }
+        for (colour, suffix) in [
+            ("red", "/red.png"),
+            ("red", "/chain/5"),
+            ("blue", "/blue.png"),
+        ] {
+            let bytes = std::fs::read(dir.join(format!("{colour}.png"))).unwrap();
+            let expected = format!(
+                "data:image/png;base64,{}",
+                base64::engine::general_purpose::STANDARD.encode(bytes)
+            );
+            let mut messages = vec![msg(json!([
+                {"type":"text", "text":"unchanged"},
+                {"type":"image_url", "image_url":{"url":format!("{root}{suffix}"), "detail":"low"}}
+            ]))];
+            resolve_remote_image_urls_in_messages(&mut messages, 1024, Duration::from_secs(20))
+                .await
+                .unwrap();
+            assert_eq!(messages[0].content[1]["image_url"]["url"], expected);
+            assert_eq!(messages[0].content[1]["image_url"]["detail"], "low");
+            assert_eq!(messages[0].content[0]["text"], "unchanged");
+        }
+        unsafe {
+            std::env::remove_var("MEMRA_FETCH_URLS");
+            std::env::remove_var("MEMRA_FETCH_URLS_ALLOWED_HOSTS");
+        }
+        println!(
+            "IMAGE_FETCH_FIXTURE_PASS exact red/blue bytes, five redirects, metadata retained"
+        );
+    }
 }

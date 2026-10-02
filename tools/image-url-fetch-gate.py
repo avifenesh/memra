@@ -28,6 +28,8 @@ p.add_argument('--server-port', type=int, required=True)
 p.add_argument('--fixture-port', type=int, required=True)
 p.add_argument('--external-lock', type=int, required=True)
 p.add_argument('--door-off', action='store_true')
+p.add_argument('--transport-only', action='store_true', help='No vision qualification; test HTTP controls with the text-only trunk')
+p.add_argument('--test-binary', type=Path)
 a = p.parse_args()
 a.out.mkdir(parents=True, exist_ok=True)
 assert os.path.samefile(f'/proc/self/fd/{a.external_lock}', os.environ['MEMRA_GPU_LOCK'])
@@ -132,10 +134,22 @@ fixture = FixtureServer(('127.0.0.1', a.fixture_port), Fixture)
 fixture_thread = threading.Thread(target=fixture.serve_forever, daemon=True)
 fixture_thread.start()
 url_root = f'http://127.0.0.1:{a.fixture_port}'
-manifest = {'source': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(), 'binary_sha256': sha(a.binary), 'model': str(a.model), 'model_sha256': sha(a.model), 'mmproj': str(a.mmproj), 'mmproj_sha256': sha(a.mmproj), 'gpu': subprocess.check_output(['nvidia-smi', '--query-gpu=name,uuid,driver_version,memory.total', '--format=csv,noheader'], text=True), 'context': 8192, 'temperature': 0, 'cache': 'prefix cache disabled', 'door': 'off' if a.door_off else 'on', 'fixture_sha256': {k: hashlib.sha256(v).hexdigest() for k, v in images.items()}}
+manifest = {'source': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(), 'binary_sha256': sha(a.binary), 'model': str(a.model), 'model_sha256': sha(a.model), 'mmproj': str(a.mmproj), 'mmproj_sha256': sha(a.mmproj), 'gpu': subprocess.check_output(['nvidia-smi', '--query-gpu=name,uuid,driver_version,memory.total', '--format=csv,noheader'], text=True), 'context': 8192, 'temperature': 0, 'cache': 'prefix cache disabled', 'door': 'off' if a.door_off else 'on', 'scope': 'http_transport_only' if a.transport_only else 'native_vision', 'fixture_sha256': {k: hashlib.sha256(v).hexdigest() for k, v in images.items()}}
 (a.out / 'manifest.json').write_text(json.dumps(manifest, indent=2))
 env = {k: v for k, v in os.environ.items() if not k.startswith('MEMRA_') or k in {'MEMRA_GPU_LOCK', 'MEMRA_CI_LOCK', 'MEMRA_CI_LOCK_HELD', 'MEMRA_RIG_LOCK_FD'}}
 env.update(MEMRA_MODELS='g12=' + str(a.model), MEMRA_GEMMA_VISION='1', MEMRA_GEMMA_MMPROJ=str(a.mmproj), MEMRA_CTX='8192', MEMRA_ADDR=f'127.0.0.1:{a.server_port}', MEMRA_PREFIX_CACHE_MB='0', MEMRA_FETCH_URLS='0' if a.door_off else '1', MEMRA_FETCH_URLS_ALLOWED_HOSTS='127.0.0.1', MEMRA_API_KEY='image-gate-token')
+if a.transport_only:
+    env['MEMRA_GEMMA_VISION'] = '0'
+    env.pop('MEMRA_GEMMA_MMPROJ', None)
+    if not a.door_off:
+        assert a.test_binary is not None
+        test_env = env.copy()
+        test_env.update(IMAGE_FETCH_FIXTURE_URL=url_root, IMAGE_FETCH_FIXTURE_DIR=str(a.out))
+        with (a.out / 'transport-unit.log').open('w') as log:
+            result = subprocess.run([str(a.test_binary), '--ignored', '--exact', 'image_fetch::tests::controlled_http_fixture_rewrites_exact_image_bytes', '--nocapture'], env=test_env, stdout=log, stderr=subprocess.STDOUT, timeout=60, pass_fds=(a.external_lock,))
+        assert result.returncode == 0, 'transport byte fixture failed; inspect transport-unit.log'
+        report = (a.out / 'transport-unit.log').read_text()
+        assert 'IMAGE_FETCH_FIXTURE_PASS' in report and '1 passed' in report, 'fixture must execute, not filter out'
 server = subprocess.Popen([str(a.binary)], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, pass_fds=(a.external_lock,))
 ready, listening = threading.Event(), threading.Event()
 def reader():
@@ -199,13 +213,20 @@ def refuse(case, urls, code, response=False, **extra):
 try:
     assert ready.wait(180) and listening.is_set() and server.poll() is None, 'model startup failed; inspect server.log'
     red_uri = 'data:image/png;base64,' + base64.b64encode(images['red']).decode()
-    inline = request('inline-red-control', payload([red_uri]))
-    inline_text = successful(inline)
+    if a.transport_only:
+        status, control, _ = request('text-only-control', {'model':'g12', 'messages':[{'role':'user','content':'Reply OK.'}], 'temperature':0, 'reasoning_effort':'none', 'max_tokens':32})
+        assert status == 200, (status, control)
+        verdicts['text_only_endpoint_control'] = {'pass': True}
+    else:
+        inline = request('inline-red-control', payload([red_uri]))
+        inline_text = successful(inline)
     if a.door_off:
         before = len(hits)
         for response in (False, True):
             status, value, _ = request('door-off-' + str(response), payload([url_root + '/red.png'], response), response)
-            assert status == 400 and 'disabled' in value['error']['message'], value
+            assert status == 400, value
+            if not a.transport_only:
+                assert 'disabled' in value['error']['message'], value
         assert len(hits) == before, hits
         verdicts['door_off_no_fetch'] = {'pass': True}
     else:
@@ -226,17 +247,20 @@ try:
         for route in ('bad-mime', 'status', 'truncated'):
             refuse(route, [url_root + '/' + route], 'image_url_unreachable')
         refuse('redirect-cap', [url_root + '/chain/6'], 'image_url_blocked')
-        redirected = request('five-redirect-control', payload([url_root + '/chain/5']))
-        assert successful(redirected) == inline_text
-        verdicts['five_redirects_and_cap'] = {'pass': True}
-        for response in (False, True):
-            remote = request('remote-red-' + str(response), payload([url_root + '/red.png'], response), response)
-            assert successful(remote, response) == inline_text
-        blue_uri = 'data:image/png;base64,' + base64.b64encode(images['blue']).decode()
-        blue_inline = successful(request('inline-blue-control', payload([blue_uri])), colour='blue')
-        blue_remote = successful(request('remote-blue-control', payload([url_root + '/blue.png'])), colour='blue')
-        assert blue_inline == blue_remote
-        verdicts['native_vision_and_inline_url_identity'] = {'pass': True}
+        if a.transport_only:
+            verdicts['production_fetch_exact_bytes_and_five_redirects'] = {'pass': True, 'evidence': 'transport-unit.log'}
+        else:
+            redirected = request('five-redirect-control', payload([url_root + '/chain/5']))
+            assert successful(redirected) == inline_text
+            verdicts['five_redirects_and_cap'] = {'pass': True}
+            for response in (False, True):
+                remote = request('remote-red-' + str(response), payload([url_root + '/red.png'], response), response)
+                assert successful(remote, response) == inline_text
+            blue_uri = 'data:image/png;base64,' + base64.b64encode(images['blue']).decode()
+            blue_inline = successful(request('inline-blue-control', payload([blue_uri])), colour='blue')
+            blue_remote = successful(request('remote-blue-control', payload([url_root + '/blue.png'])), colour='blue')
+            assert blue_inline == blue_remote
+            verdicts['native_vision_and_inline_url_identity'] = {'pass': True}
         for response in (False, True):
             refuse('whole-byte-budget-' + str(response), [url_root + '/budget-header'], 'image_url_too_large', response=response, _padding='x' * (192 * 1024 * 1024 - 1024 * 1024 - 4096))
         elapsed = refuse('per-image-timeout', [url_root + '/slow-header'], 'image_url_unreachable')
@@ -245,6 +269,8 @@ try:
         assert 0.7 <= elapsed <= 4, elapsed
         elapsed = refuse('whole-pass-timeout', [url_root + f'/slow-pass/{i}' for i in range(3)], 'image_url_unreachable')
         assert 19 <= elapsed <= 24, elapsed
+    verdicts['scope'] = 'http_transport_only' if a.transport_only else 'native_vision'
+    verdicts['vision_acceptance'] = 'blocked: gemma4uv front end is unimplemented' if a.transport_only else 'passed'
     verdicts['pass'] = True
     (a.out / 'summary.json').write_text(json.dumps(verdicts, indent=2))
     print(json.dumps(verdicts), flush=True)
