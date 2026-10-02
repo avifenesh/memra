@@ -1,0 +1,38 @@
+{
+  "arms": {
+    "plain": {
+      "MEMRA_SERVE_SPEC": "0"
+    },
+    "pmin0": {},
+    "positive_eager": {
+      "MEMRA_SPEC_NOGRAPH": "1",
+      "MEMRA_SPEC_PMIN": "0.5"
+    },
+    "positive_graph": {
+      "MEMRA_SPEC_PMIN": "0.5"
+    },
+    "zero_eager": {
+      "MEMRA_SPEC_NOGRAPH": "1",
+      "MEMRA_SPEC_PMIN": "1.1",
+      "MEMRA_SPEC_PMIN0": "1"
+    },
+    "zero_graph": {
+      "MEMRA_SPEC_PMIN": "1.1",
+      "MEMRA_SPEC_PMIN0": "1"
+    }
+  },
+  "collector_sha256": "63c20926907bff4c0dd1b0ed1e009267e18b63c67a23037427e6926eec0bb28d",
+  "familywise_alpha": 0.05,
+  "model_sha256": "52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de",
+  "permutations": 1999,
+  "run_spec_sha256": "310e00e4ada94dc196223025ebf881b8faa32922c2bb9f92899857b12d088619",
+  "runtime_source": "2873dd4ca37faa15cd4261e7b398926cced30106",
+  "samples_per_arm": 512,
+  "server_sha256": "eaa0afa71439143ae6c05455d85dd42097053b91dc5fb4e520e639b91d143529",
+  "token_positions": 8,
+  "uncovered": [
+    "multi-head MTP chain",
+    "other model families/topologies",
+    "independent confidence-read clock"
+  ]
+}

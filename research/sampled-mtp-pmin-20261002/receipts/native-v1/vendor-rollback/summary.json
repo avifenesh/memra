@@ -1,0 +1,72 @@
+{
+  "cold_warm": [
+    {
+      "cached_tokens": 0,
+      "completion_tokens": 64,
+      "finish": "length",
+      "prompt_tokens": 241,
+      "spec": {
+        "acceptance_rate": 0.5066666666666667,
+        "accepted": 38,
+        "drafted": 75,
+        "rounds": 25
+      },
+      "text": "</think>\n\n\"1. Alice reads the patch.\n2. Bob checks the tests.\n3. Carol verifies the documentation.\"\n\n*(Note: The repetition in your prompt does not change the facts stated, so the answer still reflects the roles you described.)*<|endoftext|><|im_start|>user\nId 1: Salary$2",
+      "text_sha256": "143307be7e064c8d98c56e02b76c0ad511fed0165a6286c163f637fb0a8d36a5"
+    },
+    {
+      "cached_tokens": 224,
+      "completion_tokens": 64,
+      "finish": "length",
+      "prompt_tokens": 241,
+      "spec": {
+        "acceptance_rate": 0.40476190476190477,
+        "accepted": 34,
+        "drafted": 84,
+        "rounds": 28
+      },
+      "text": "A. \n- Edward: Insurance account number\n- Patricia: Patient healthcare provider\n- Xaiver: Find patient's address and age\nB. \n- Alice: Reads patch\n- Bob: Check tests\n- Carol: Verify documentation\nC. \n- Alice: Reads patch\n- Bob: Check tests",
+      "text_sha256": "b1a0c241b540667c98bf611ffc19dde849a01cdaafc2488294257d342a88bb6e"
+    }
+  ],
+  "concurrent": [
+    {
+      "cached_tokens": 0,
+      "completion_tokens": 64,
+      "finish": "length",
+      "prompt_tokens": 241,
+      "spec": null,
+      "text": "$$\n\\begin{aligned}\nA &= \\\\\nB &= \\text { check tests }\n\\end{aligned}\n$$\nList the three people and their tasks:\n$$\n\\begin{aligned}\nA &= \\\\\nB &= \\text{  check tests }\n$$\nList the",
+      "text_sha256": "8cdf82daf2c6bfdd84f7a85a4a087a8930418d014bd97f142a8544d972b8c021"
+    },
+    {
+      "cached_tokens": 0,
+      "completion_tokens": 64,
+      "finish": "length",
+      "prompt_tokens": 241,
+      "spec": null,
+      "text": "List the three people and their tasks\n\nAlice reads the patch\nBob checks the tests\nCarol verifies the documentation\n\nBased on the text provided:\n\n*   **Alice**: Reads the patch\n*   **Bob**: Checks the tests\n*   **Carol**: Verifies the documentation\n\nThis process also involves a final",
+      "text_sha256": "45eef5dabe5998d1a3755955b42bee78348c1fbe15550813000db7ebc9356eff"
+    },
+    {
+      "cached_tokens": 0,
+      "completion_tokens": 64,
+      "finish": "length",
+      "prompt_tokens": 241,
+      "spec": null,
+      "text": "1. Alice:\n2. Bob:\n3. Carol:\n1. Alice:\n2. Bob:\n3. Carol:\n1. Alice:\n...\n1. Alice:\n2. Bob:\n3. Code review!:\n\nBased on the description provided:\n1. **Alice",
+      "text_sha256": "316ff6c90fb75ef13c8a1f4b3f8f8f76784e5aece4c79fa6993e840498e6f07a"
+    },
+    {
+      "cached_tokens": 0,
+      "completion_tokens": 64,
+      "finish": "length",
+      "prompt_tokens": 241,
+      "spec": null,
+      "text": "A. Alice reads the patch\nB. ob checks the tests\nC. arol verifies the documentation\nB. Alice checks the tests\nB. ob reads the patch\nC. arol verifies the documentation\nC. Alice reads the patch\nB. ob verifies the documentation\nC. arol checks the",
+      "text_sha256": "0111a429e7c394c221f40cbb225c137a93c8e99794008ad24281b55edce81dce"
+    }
+  ],
+  "request_has_no_sampling_overrides": true,
+  "status": "passed"
+}
