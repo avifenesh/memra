@@ -130,20 +130,22 @@ pub(crate) enum FetchError {
     /// timeout, DNS failure, non-2xx status, TLS failure, or a Content-Type outside the
     /// allowlist.
     Unreachable(String),
-    /// More `http(s)` `image_url` parts than `VISION_MAX_IMAGES` (PR #904 review): checked
+    /// More `image_url` parts than `VISION_MAX_IMAGES` (PR #904 review): checked
     /// BEFORE any fetch starts, not after, so a small request body can never make this
     /// module fetch an unbounded number of images. Carries no `image_url_*` code: this is
     /// the exact "too many images" shape the vision content walkers already produce for
     /// `data:` images (`lib.rs` `VISION_MAX_IMAGES` checks), so a caller sees the identical
     /// error whether the images were inline or fetched.
     TooMany(usize),
+    /// Fetched base64 would exceed the original request body budget.
+    RequestTooLarge,
 }
 
 impl FetchError {
     fn code(&self) -> Option<&'static str> {
         match self {
             FetchError::Blocked(_) => Some("image_url_blocked"),
-            FetchError::TooLarge(_) => Some("image_url_too_large"),
+            FetchError::TooLarge(_) | FetchError::RequestTooLarge => Some("image_url_too_large"),
             FetchError::Unreachable(_) => Some("image_url_unreachable"),
             FetchError::TooMany(_) => None,
         }
@@ -156,9 +158,13 @@ impl FetchError {
                 "image_url response is {n} bytes, over the {FETCH_MAX_BYTES}-byte per-image cap"
             ),
             FetchError::Unreachable(detail) => format!("image_url fetch failed: {detail}"),
+            FetchError::RequestTooLarge => format!(
+                "expanded image request exceeds the {}-byte request budget",
+                crate::MAX_BODY_BYTES
+            ),
             FetchError::TooMany(n) => {
                 let max = crate::VISION_MAX_IMAGES;
-                format!("too many images (max {max}): {n} http(s) image_url parts requested")
+                format!("too many images (max {max}): {n} image_url parts requested")
             }
         }
     }
@@ -262,10 +268,9 @@ fn check_literal_ip(ip: IpAddr, allowed: &[String]) -> Result<(), FetchError> {
     if host_is_allowed(allowed, &ip.to_string()) {
         return Ok(());
     }
-    if let Some(reason) = memra_net_guard::classify_ip(ip) {
-        return Err(FetchError::Blocked(format!("{ip} is a {reason} address")));
-    }
-    Ok(())
+    Err(FetchError::Blocked(format!(
+        "literal IP {ip} requires an explicit host allowlist entry"
+    )))
 }
 
 fn redirect_policy(allowed: Arc<Vec<String>>) -> reqwest::redirect::Policy {
@@ -313,7 +318,7 @@ fn build_client(allowed: Arc<Vec<String>>) -> Result<reqwest::Client, FetchError
 
 /// Fetch one `http(s)` URL, bounded and guarded, returning raw bytes plus the response's
 /// `Content-Type` (validated against `FETCH_ALLOWED_CONTENT_TYPES`).
-pub(crate) async fn fetch_remote_image(url: &str) -> Result<(Vec<u8>, String), FetchError> {
+async fn fetch_remote_image(url: &str, max_bytes: usize) -> Result<(Vec<u8>, String), FetchError> {
     let parsed = reqwest::Url::parse(url)
         .map_err(|e| FetchError::Unreachable(format!("malformed url: {e}")))?;
     if parsed.scheme() != "http" && parsed.scheme() != "https" {
@@ -348,9 +353,9 @@ pub(crate) async fn fetch_remote_image(url: &str) -> Result<(Vec<u8>, String), F
         )));
     }
     if let Some(len) = resp.content_length()
-        && len as usize > FETCH_MAX_BYTES
+        && len as usize > max_bytes
     {
-        return Err(FetchError::TooLarge(len as usize));
+        return Err(size_error(len as usize, max_bytes));
     }
     let content_type = resp
         .headers()
@@ -370,19 +375,59 @@ pub(crate) async fn fetch_remote_image(url: &str) -> Result<(Vec<u8>, String), F
     let mut stream = resp.bytes_stream();
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| FetchError::Unreachable(format!("body read: {e}")))?;
-        if buf.len() + chunk.len() > FETCH_MAX_BYTES {
-            return Err(FetchError::TooLarge(buf.len() + chunk.len()));
+        if buf.len().saturating_add(chunk.len()) > max_bytes {
+            return Err(size_error(buf.len().saturating_add(chunk.len()), max_bytes));
         }
         buf.extend_from_slice(&chunk);
     }
     Ok((buf, content_type))
 }
 
+fn size_error(bytes: usize, limit: usize) -> FetchError {
+    if limit < FETCH_MAX_BYTES {
+        FetchError::RequestTooLarge
+    } else {
+        FetchError::TooLarge(bytes)
+    }
+}
+
+/// The received JSON byte count is a conservative starting budget. Replacing a URL
+/// subtracts its decoded length (never more than its wire length) and adds the data
+/// URI's exact ASCII length. Text, inline images and other request fields keep their
+/// original charge. Each fetch is capped before allocation, including base64 growth.
+struct WireBudget {
+    used: usize,
+    max: usize,
+}
+impl WireBudget {
+    fn raw_limit(&self, old_url_bytes: usize) -> Result<usize, FetchError> {
+        let remaining = self
+            .max
+            .checked_sub(self.used.saturating_sub(old_url_bytes))
+            .and_then(|n| n.checked_sub("data:image/jpeg;base64,".len()))
+            .ok_or(FetchError::RequestTooLarge)?;
+        let raw = (remaining / 4) * 3;
+        if raw == 0 {
+            return Err(FetchError::RequestTooLarge);
+        }
+        Ok(raw.min(FETCH_MAX_BYTES))
+    }
+    fn replace(&mut self, old_url_bytes: usize, new_bytes: usize) -> Result<(), FetchError> {
+        let next = self
+            .used
+            .saturating_sub(old_url_bytes)
+            .saturating_add(new_bytes);
+        if next > self.max {
+            return Err(FetchError::RequestTooLarge);
+        }
+        self.used = next;
+        Ok(())
+    }
+}
+
 /// One content part's `image_url` string, if the part's type is `image_url` and the value
 /// takes either OpenAI shape (a bare string, or `{"url": "..."}`). Read-only: both the
-/// pre-fetch counter (`count_fetchable_image_urls`) and the fetch-and-rewrite pass
-/// (`resolve_content_image_urls`) use this so "which part carries a URL" can never drift
-/// between the two.
+/// fetch-and-rewrite pass uses this for both supported content shapes.
 fn image_url_str(part: &serde_json::Value) -> Option<&str> {
     if part.get("type").and_then(|t| t.as_str()) != Some("image_url") {
         return None;
@@ -396,17 +441,16 @@ fn image_url_str(part: &serde_json::Value) -> Option<&str> {
 }
 
 fn is_fetchable_url(url: &str) -> bool {
-    url.starts_with("http://") || url.starts_with("https://")
+    url.get(..7)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("http://"))
+        || url
+            .get(..8)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("https://"))
 }
 
-/// Count `http(s)` `image_url` parts across every message, BEFORE any fetch starts (PR
-/// #904 review). Without this, a request of a few KB could list an unbounded number of
-/// `image_url` parts and this module would fetch every one of them sequentially, well
-/// past the per-image budgets `FETCH_MAX_BYTES`/`FETCH_TOTAL_TIMEOUT` bound only a SINGLE
-/// fetch to. `data:` URIs never reach `fetch_remote_image`, so they are not counted here;
-/// the pre-existing per-family walker cap (`VISION_MAX_IMAGES` at the decode site in
-/// `lib.rs`) still bounds the total image count exactly as before this module existed.
-pub(crate) fn count_fetchable_image_urls(messages: &[crate::ChatMessage]) -> usize {
+/// Count all image parts before any fetch, including inline images and malformed
+/// image values. Mixing data URIs with remote URLs must not evade the total cap.
+pub(crate) fn count_image_urls(messages: &[crate::ChatMessage]) -> usize {
     messages
         .iter()
         .filter_map(|msg| match &msg.content {
@@ -414,7 +458,7 @@ pub(crate) fn count_fetchable_image_urls(messages: &[crate::ChatMessage]) -> usi
             _ => None,
         })
         .flatten()
-        .filter(|part| image_url_str(part).is_some_and(is_fetchable_url))
+        .filter(|part| part.get("type").and_then(|t| t.as_str()) == Some("image_url"))
         .count()
 }
 
@@ -424,7 +468,10 @@ pub(crate) fn count_fetchable_image_urls(messages: &[crate::ChatMessage]) -> usi
 /// malformed shape with their own named error). Only fires when `fetch_urls_enabled()`;
 /// callers check that once, up front, and skip this entirely when it is false so an
 /// `http(s)` URL reaches the walker's existing "http(s) fetch is disabled" 400 unchanged.
-async fn resolve_content_image_urls(content: &mut serde_json::Value) -> Result<(), FetchError> {
+async fn resolve_content_image_urls(
+    content: &mut serde_json::Value,
+    budget: &mut WireBudget,
+) -> Result<(), FetchError> {
     let serde_json::Value::Array(parts) = content else {
         return Ok(());
     };
@@ -436,9 +483,11 @@ async fn resolve_content_image_urls(content: &mut serde_json::Value) -> Result<(
             continue;
         }
         let url_owned = url.to_string();
-        let (bytes, content_type) = fetch_remote_image(&url_owned).await?;
+        let limit = budget.raw_limit(url_owned.len())?;
+        let (bytes, content_type) = fetch_remote_image(&url_owned, limit).await?;
         let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
         let data_uri = format!("data:{content_type};base64,{encoded}");
+        budget.replace(url_owned.len(), data_uri.len())?;
         let image_url = part
             .get_mut("image_url")
             .expect("image_url_str just confirmed this part carries an image_url value");
@@ -457,23 +506,30 @@ async fn resolve_content_image_urls(content: &mut serde_json::Value) -> Result<(
 /// module existed.
 ///
 /// Two bounds sit above the per-image ones in `fetch_remote_image` (PR #904 review): the
-/// TOTAL fetched-image count never exceeds `VISION_MAX_IMAGES`, checked before any fetch
+/// TOTAL image count never exceeds `VISION_MAX_IMAGES`, checked before any fetch
 /// starts, and the WHOLE pass carries one overall deadline (`FETCH_URLS_TOTAL_BUDGET`)
-/// rather than only a per-image one, so a slow multi-image request cannot run out
+/// (also capped by the caller deadline), so a slow multi-image request cannot run out
 /// `VISION_MAX_IMAGES` individual timeouts back to back.
 pub(crate) async fn resolve_remote_image_urls_in_messages(
     messages: &mut [crate::ChatMessage],
+    wire_bytes: usize,
+    remaining: Duration,
 ) -> Result<(), FetchError> {
     if !fetch_urls_enabled() {
         return Ok(());
     }
-    let requested = count_fetchable_image_urls(messages);
+    let requested = count_image_urls(messages);
     if requested > crate::VISION_MAX_IMAGES {
         return Err(FetchError::TooMany(requested));
     }
-    match tokio::time::timeout(FETCH_URLS_TOTAL_BUDGET, async {
+    let mut budget = WireBudget {
+        used: wire_bytes,
+        max: crate::MAX_BODY_BYTES,
+    };
+    let timeout = FETCH_URLS_TOTAL_BUDGET.min(remaining);
+    match tokio::time::timeout(timeout, async {
         for msg in messages.iter_mut() {
-            resolve_content_image_urls(&mut msg.content).await?;
+            resolve_content_image_urls(&mut msg.content, &mut budget).await?;
         }
         Ok(())
     })
@@ -482,7 +538,7 @@ pub(crate) async fn resolve_remote_image_urls_in_messages(
         Ok(result) => result,
         Err(_) => Err(FetchError::Unreachable(format!(
             "image_url fetch pass exceeded the {}s overall deadline for {requested} image(s)",
-            FETCH_URLS_TOTAL_BUDGET.as_secs()
+            timeout.as_secs_f64()
         ))),
     }
 }
@@ -492,8 +548,11 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    static FETCH_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn fetch_urls_enabled_defaults_off() {
+        let _lock = FETCH_ENV_LOCK.lock().unwrap();
         // SAFETY (test-only): no other test in this process touches this exact var, and
         // std::env mutation in a `#[test]` is the established pattern this crate's other
         // flag tests use (see `vision_placement_gate_tests`).
@@ -516,6 +575,7 @@ mod tests {
 
     #[test]
     fn allowed_hosts_parses_csv_case_insensitively() {
+        let _lock = FETCH_ENV_LOCK.lock().unwrap();
         unsafe {
             std::env::set_var(
                 "MEMRA_FETCH_URLS_ALLOWED_HOSTS",
@@ -549,7 +609,7 @@ mod tests {
             ("http://169.254.169.254/latest/meta-data/", true), // cloud metadata
             ("http://[::1]/x", true),
             ("http://[fc00::1]/x", true),
-            ("http://8.8.8.8/x", false),
+            ("http://8.8.8.8/x", true),
             ("http://example.com/x", false), // hostname: not this check's job
         ] {
             let parsed = reqwest::Url::parse(url).unwrap();
@@ -593,6 +653,7 @@ mod tests {
         for err in [
             FetchError::Blocked("x".into()),
             FetchError::TooLarge(1),
+            FetchError::RequestTooLarge,
             FetchError::Unreachable("x".into()),
         ] {
             assert_eq!(err.into_response().status(), StatusCode::BAD_REQUEST);
@@ -657,12 +718,9 @@ mod tests {
         }
     }
 
-    /// PR #904 review: the count must see `http(s)` parts across EVERY message, both
-    /// content shapes (bare-string and `{"url": ...}`), and must NOT count `data:` URIs
-    /// (they never reach `fetch_remote_image`, so they carry none of the risk this count
-    /// bounds).
+    /// Inline and remote images share one request-wide count across message boundaries.
     #[test]
-    fn count_fetchable_image_urls_counts_only_http_parts_across_all_messages() {
+    fn count_image_urls_counts_inline_and_remote_parts_across_all_messages() {
         let messages = vec![
             msg(json!([
                 {"type": "text", "text": "look"},
@@ -675,13 +733,13 @@ mod tests {
             ])),
             msg(json!("plain string content, no parts at all")),
         ];
-        assert_eq!(count_fetchable_image_urls(&messages), 3);
+        assert_eq!(count_image_urls(&messages), 4);
     }
 
     #[test]
-    fn count_fetchable_image_urls_is_zero_with_no_image_parts() {
+    fn count_image_urls_is_zero_with_no_image_parts() {
         let messages = vec![msg(json!([{"type": "text", "text": "hi"}]))];
-        assert_eq!(count_fetchable_image_urls(&messages), 0);
+        assert_eq!(count_image_urls(&messages), 0);
     }
 
     /// The over-cap error carries no `image_url_*` code (PR #904 review): it is the exact
@@ -694,5 +752,102 @@ mod tests {
         let msg = err.message();
         assert!(msg.contains("too many images"));
         assert!(msg.contains(&crate::VISION_MAX_IMAGES.to_string()));
+    }
+    #[test]
+    fn expanded_request_budget_accounts_for_base64_and_prior_images() {
+        let mut budget = WireBudget { used: 60, max: 100 };
+        let old_url = 20;
+        let limit = budget.raw_limit(old_url).unwrap();
+        let encode = |n| {
+            format!(
+                "data:image/jpeg;base64,{}",
+                base64::engine::general_purpose::STANDARD.encode(vec![0; n])
+            )
+        };
+        let fits = encode(limit);
+        let too_big = encode(limit + 1);
+        assert!(budget.used - old_url + fits.len() <= budget.max);
+        assert!(budget.used - old_url + too_big.len() > budget.max);
+        assert!(matches!(
+            budget.replace(old_url, too_big.len()),
+            Err(FetchError::RequestTooLarge)
+        ));
+        assert_eq!(
+            budget.used, 60,
+            "a refused replacement must not change the budget"
+        );
+        budget.replace(old_url, fits.len()).unwrap();
+        assert!(
+            matches!(budget.raw_limit(old_url), Err(FetchError::RequestTooLarge)),
+            "the next image cannot reuse bytes spent by the first"
+        );
+    }
+
+    #[test]
+    fn per_image_cap_and_total_request_cap_have_the_same_named_error() {
+        let roomy = WireBudget {
+            used: 100,
+            max: crate::MAX_BODY_BYTES,
+        };
+        assert_eq!(roomy.raw_limit(20).unwrap(), FETCH_MAX_BYTES);
+        assert!(matches!(
+            size_error(FETCH_MAX_BYTES + 1, FETCH_MAX_BYTES),
+            FetchError::TooLarge(_)
+        ));
+        assert!(matches!(size_error(101, 100), FetchError::RequestTooLarge));
+        assert_eq!(
+            FetchError::RequestTooLarge.code(),
+            Some("image_url_too_large")
+        );
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: isolate the process-global fetch switch while awaiting the preflight refusal
+    async fn mixed_inline_and_remote_images_refuse_before_any_fetch() {
+        let _lock = FETCH_ENV_LOCK.lock().unwrap();
+        unsafe {
+            std::env::set_var("MEMRA_FETCH_URLS", "1");
+        }
+        let mut images = vec![
+            json!({"type":"image_url", "image_url":"data:image/png;base64,AAAA"});
+            crate::VISION_MAX_IMAGES
+        ];
+        images.push(json!({"type":"image_url", "image_url":"http://127.0.0.1/never-connect"}));
+        let mut messages = vec![msg(json!(images))];
+        let result =
+            resolve_remote_image_urls_in_messages(&mut messages, 1024, Duration::from_secs(20))
+                .await;
+        unsafe {
+            std::env::remove_var("MEMRA_FETCH_URLS");
+        }
+        assert!(matches!(result, Err(FetchError::TooMany(n)) if n == crate::VISION_MAX_IMAGES + 1));
+    }
+
+    #[test]
+    fn literal_aliases_require_explicit_allowlisting() {
+        for input in [
+            "http://2130706433/x",
+            "http://0x7f000001/x",
+            "http://[::ffff:127.0.0.1]/x",
+            "http://8.8.8.8/x",
+        ] {
+            let url = reqwest::Url::parse(input).unwrap();
+            assert!(
+                matches!(
+                    check_literal_ip_host(&url, &[]),
+                    Err(FetchError::Blocked(_))
+                ),
+                "{input}"
+            );
+        }
+        assert!(
+            check_literal_ip_host(
+                &reqwest::Url::parse("http://8.8.8.8/x").unwrap(),
+                &["8.8.8.8".into()]
+            )
+            .is_ok()
+        );
+        assert!(is_fetchable_url("HTTP://example.com/a.png"));
+        assert!(is_fetchable_url("HTTPS://example.com/a.png"));
     }
 }

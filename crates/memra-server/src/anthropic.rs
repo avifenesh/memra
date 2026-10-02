@@ -737,6 +737,7 @@ async fn messages_with_admission(
         body_admission
             .as_ref()
             .map(|Extension(admission)| admission),
+        body.len(),
     )
     .await;
     let admission = match admitted {
