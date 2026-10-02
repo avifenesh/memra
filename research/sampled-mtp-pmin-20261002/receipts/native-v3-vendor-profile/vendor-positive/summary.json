@@ -1,0 +1,110 @@
+{
+  "cold_warm": [
+    {
+      "cached_tokens": 0,
+      "completion_tokens": 64,
+      "content_chars": 0,
+      "finish": "length",
+      "prompt_tokens": 250,
+      "reasoning_chars": 276,
+      "spec": {
+        "acceptance_rate": 0.9375,
+        "accepted": 45,
+        "drafted": 48,
+        "rounds": 17
+      },
+      "surface": "chat/completions",
+      "text": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Input: A repeated text block (\"During a code review, Alice reads the patch, Bob checks the tests, and Carol verifies the documentation. They record each result before the release.\") repeated six times.\n    *   Task: List",
+      "text_sha256": "3d47161cc90b492de723b75e521480bc51e2c0ad0a5cee18bcfae9edaafa5ea2"
+    },
+    {
+      "cached_tokens": 224,
+      "completion_tokens": 64,
+      "content_chars": 0,
+      "finish": "length",
+      "prompt_tokens": 250,
+      "reasoning_chars": 299,
+      "spec": {
+        "acceptance_rate": 0.86,
+        "accepted": 43,
+        "drafted": 50,
+        "rounds": 19
+      },
+      "surface": "chat/completions",
+      "text": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Input text: A repetitive paragraph describing a scenario involving three people (Alice, Bob, Carol) and their respective tasks during a code review process. The text is repeated multiple times (\"During a code review, Alice reads the patch, Bob",
+      "text_sha256": "cdac765cb4c86d851d23ed05ca112b001bbcced04e4468eb1a6676acc49fc827"
+    }
+  ],
+  "concurrent": [
+    {
+      "cached_tokens": 0,
+      "completion_tokens": 64,
+      "content_chars": 0,
+      "finish": "length",
+      "prompt_tokens": 250,
+      "reasoning_chars": 284,
+      "spec": null,
+      "surface": "chat/completions",
+      "text": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Input text: A repeated sentence (\"During a code review, Alice reads the patch, Bob checks the tests, and Carol verifies the documentation. They record each result before the release.\") repeated multiple times.\n    *   Task: List",
+      "text_sha256": "9b6a9f0fabe6162984aaa6e7eeffc8e1a59ca491dad28a1f28baa693d755b248"
+    },
+    {
+      "cached_tokens": 0,
+      "completion_tokens": 64,
+      "content_chars": 0,
+      "finish": "length",
+      "prompt_tokens": 250,
+      "reasoning_chars": 307,
+      "spec": null,
+      "surface": "chat/completions",
+      "text": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Input text: A repetitive paragraph describing a scenario involving three people (Alice, Bob, Carol) performing specific tasks during a code review process. The text is repeated multiple times in the prompt (\"During a code review, Alice reads the patch",
+      "text_sha256": "03f21545df7db83256fbc58c4c5dd48e49ccf4cec10ddea55053b9f344200f9a"
+    },
+    {
+      "cached_tokens": 0,
+      "completion_tokens": 64,
+      "content_chars": 0,
+      "finish": "length",
+      "prompt_tokens": 250,
+      "reasoning_chars": 286,
+      "spec": null,
+      "surface": "chat/completions",
+      "text": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Input text: A repeated sentence (\"During a code review, Alice reads the patch, Bob checks the tests, and Carol verifies the documentation. They record each result before the release.\") repeated multiple times (looks like 7-8 times",
+      "text_sha256": "c6a6cb01a40e681ecebac01e3e39de8b6f6134b60e1d428319666dded83c67e6"
+    },
+    {
+      "cached_tokens": 0,
+      "completion_tokens": 64,
+      "content_chars": 0,
+      "finish": "length",
+      "prompt_tokens": 250,
+      "reasoning_chars": 291,
+      "spec": null,
+      "surface": "chat/completions",
+      "text": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Input text: A repeated paragraph (\"During a code review, Alice reads the patch, Bob checks the tests, and Carol verifies the documentation. They record each result before the release.\") repeated multiple times (6 times in the prompt).\n",
+      "text_sha256": "954d6081e519377bb5e082c80136f06014e5f6f723dccf228b20007630bfdaf5"
+    }
+  ],
+  "profile": {
+    "default_min_p": 0.0,
+    "default_presence_penalty": 1.5,
+    "default_repetition_penalty": 1.0,
+    "default_temperature": 1.0,
+    "default_top_k": 20,
+    "default_top_p": 0.95
+  },
+  "profile_sha256": "f8363f31c18a7227af37d51ed801c7c5da3237c35351f50c05512027e732de71",
+  "request_has_no_sampling_overrides": true,
+  "status": "passed",
+  "trace": {
+    "burst_count": 4,
+    "expected": {
+      "min_p": 0.0,
+      "pen_on": 1,
+      "temp": 1.0,
+      "top_k": 20,
+      "top_p": 0.95
+    },
+    "first_http_burst": "[skey] burst sampled=1 pure_temp=0 capturable=0 temp=1 top_k=20 top_p=0.95 min_p=0 pen_on=1 k=3 graph_draft=1 graph_s_parked=0 chain_s_parked=0 s_key_parked=None"
+  }
+}

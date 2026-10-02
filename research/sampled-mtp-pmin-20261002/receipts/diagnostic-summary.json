@@ -1,0 +1,104 @@
+{
+  "scope": "Completed native diagnostics from initial attempt; statistical part incomplete",
+  "arms": [
+    {
+      "arm": "pmin0",
+      "rounds": 18,
+      "drafted": 54,
+      "accepted": 45,
+      "residual_rounds": 5,
+      "nonempty_full_accept_rounds": 13,
+      "zero_draft_rounds": 0,
+      "returncode": 0,
+      "phase_lines": [
+        "[spec-phase] draft=90.4ms (27.1%) verify-issue=214.6ms (64.4%) verify-wait=0.0ms (0.0%) commit-host=28.4ms (8.5%) rounds=18",
+        "[spec-phase] draft=94.3ms (28.0%) verify-issue=218.4ms (64.9%) verify-wait=0.0ms (0.0%) commit-host=23.6ms (7.0%) rounds=18"
+      ]
+    },
+    {
+      "arm": "positive_eager",
+      "rounds": 25,
+      "drafted": 56,
+      "accepted": 41,
+      "residual_rounds": 9,
+      "nonempty_full_accept_rounds": 16,
+      "zero_draft_rounds": 0,
+      "returncode": 0,
+      "phase_lines": [
+        "[spec-phase] draft=112.1ms (26.7%) verify-issue=277.5ms (66.1%) verify-wait=0.0ms (0.0%) commit-host=30.5ms (7.3%) rounds=25",
+        "[spec-phase] draft=119.3ms (26.9%) verify-issue=293.9ms (66.4%) verify-wait=0.0ms (0.0%) commit-host=29.7ms (6.7%) rounds=25"
+      ]
+    },
+    {
+      "arm": "positive_graph",
+      "rounds": 25,
+      "drafted": 56,
+      "accepted": 41,
+      "residual_rounds": 9,
+      "nonempty_full_accept_rounds": 16,
+      "zero_draft_rounds": 0,
+      "returncode": 0,
+      "phase_lines": [
+        "[spec-phase] draft=114.7ms (26.6%) verify-issue=279.2ms (64.8%) verify-wait=0.0ms (0.0%) commit-host=37.1ms (8.6%) rounds=25",
+        "[spec-phase] draft=119.5ms (26.3%) verify-issue=303.5ms (66.8%) verify-wait=0.0ms (0.0%) commit-host=31.4ms (6.9%) rounds=25"
+      ]
+    },
+    {
+      "arm": "zero_eager",
+      "rounds": 62,
+      "drafted": 1,
+      "accepted": 1,
+      "residual_rounds": 0,
+      "nonempty_full_accept_rounds": 1,
+      "zero_draft_rounds": 61,
+      "returncode": 0,
+      "phase_lines": [
+        "[spec-phase] draft=112.9ms (17.3%) verify-issue=505.3ms (77.3%) verify-wait=0.0ms (0.0%) commit-host=35.7ms (5.5%) rounds=62",
+        "[spec-phase] draft=125.1ms (17.5%) verify-issue=548.6ms (76.8%) verify-wait=0.0ms (0.0%) commit-host=41.0ms (5.7%) rounds=62"
+      ]
+    },
+    {
+      "arm": "zero_graph",
+      "rounds": 62,
+      "drafted": 1,
+      "accepted": 1,
+      "residual_rounds": 0,
+      "nonempty_full_accept_rounds": 1,
+      "zero_draft_rounds": 61,
+      "returncode": 0,
+      "phase_lines": [
+        "[spec-phase] draft=107.2ms (16.4%) verify-issue=507.9ms (77.5%) verify-wait=0.0ms (0.0%) commit-host=40.3ms (6.2%) rounds=62",
+        "[spec-phase] draft=118.9ms (16.8%) verify-issue=547.4ms (77.1%) verify-wait=0.0ms (0.0%) commit-host=43.3ms (6.1%) rounds=62"
+      ]
+    }
+  ],
+  "matched_cutoff": {
+    "control": {
+      "accepted": 1,
+      "bonus": 13358,
+      "draft": [
+        11,
+        2438,
+        11
+      ],
+      "last": 5983,
+      "out_len": 1,
+      "pos": 28,
+      "round": 0
+    },
+    "positive": {
+      "accepted": 1,
+      "bonus": 13358,
+      "draft": [
+        11
+      ],
+      "last": 5983,
+      "out_len": 1,
+      "pos": 28,
+      "round": 0
+    },
+    "shared_emitted_prefix": [
+      5983
+    ]
+  }
+}

@@ -1,0 +1,289 @@
+[server] build: memra-0.138.0-5b9a2eaf6d8b (id: source-tree, git: 2873dd4ca37f)
+[server] starting; models config = [("gate", "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "gate" <- /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+[worker]   loaded "gate": 33 layers, eos=248046, stop=[248046]
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="gate" route=hybrid-worker capacity=4 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 537MB (536870912 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "gate": plain 14848 B/token, spec 16704 B/token; fixed residual learns from effective-free deltas
+[prime-walk] model="gate" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[fa-pool] grow #0 dev=0 o_len 0 -> 266240 ml_len 0 -> 1040 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q8_0_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[fa-pool] grow #1 dev=0 o_len 266240 -> 532480 ml_len 1040 -> 2080 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[spec] draft-session state high-water: 41MB (max of parked delta 41MB and capture-time pool peak 9MB; charged per spec admission and gating future captures)
+[skey] burst sampled=1 pure_temp=0 capturable=1 temp=0.7 top_k=0 top_p=0.9 min_p=0 pen_on=0 k=3 graph_draft=1 graph_s_parked=1 chain_s_parked=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[spec] stream_on=false env=false samp=true dg=false captured=false active=false session=true replay=false
+[skey] chain=graph_s round=0 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[fa-pool] grow #2 dev=0 o_len 532480 -> 1064960 ml_len 2080 -> 4160 (retired kept, zero=false)
+[R0] pos=4097 out_len=1 last_tok=279 draft=[15217, 5388, 13] n_acc=3 bonus=561 t_pred0=15217
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=1 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R1] pos=4100 out_len=5 last_tok=561 draft=[3841, 13477, 37550] n_acc=3 bonus=33075 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=2 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R2] pos=4104 out_len=9 last_tok=33075 draft=[888, 279, 15217] n_acc=3 bonus=5388 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=3 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R3] pos=4108 out_len=13 last_tok=5388 draft=[13, 561, 3841] n_acc=3 bonus=13477 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=4 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R4] pos=4112 out_len=17 last_tok=13477 draft=[37550, 33075, 888] n_acc=3 bonus=279 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=5 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R5] pos=4116 out_len=21 last_tok=279 draft=[15217, 5388, 13] n_acc=3 bonus=561 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=6 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R6] pos=4120 out_len=25 last_tok=561 draft=[3841, 13477, 37550] n_acc=3 bonus=33075 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=7 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R7] pos=4124 out_len=29 last_tok=33075 draft=[888, 279, 15217] n_acc=3 bonus=5388 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=8 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R8] pos=4128 out_len=33 last_tok=5388 draft=[13, 561, 3841] n_acc=3 bonus=13477 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=9 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R9] pos=4132 out_len=37 last_tok=13477 draft=[37550, 33075, 33075] n_acc=2 bonus=888 t_pred0=n/a
+  -> PARTIAL(replay-free j=3, bonus pending, prev-h seed)
+[skey] chain=graph_s round=10 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R10] pos=4135 out_len=40 last_tok=888 draft=[279, 15217, 5388] n_acc=3 bonus=13 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=11 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R11] pos=4139 out_len=44 last_tok=13 draft=[561, 3841, 13477] n_acc=3 bonus=37550 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=12 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R12] pos=4143 out_len=48 last_tok=37550 draft=[33075, 888, 279] n_acc=3 bonus=15217 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=13 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R13] pos=4147 out_len=52 last_tok=15217 draft=[5388, 13, 561] n_acc=3 bonus=3841 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=14 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R14] pos=4151 out_len=56 last_tok=3841 draft=[13477, 37550, 33075] n_acc=3 bonus=888 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=15 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R15] pos=4155 out_len=60 last_tok=888 draft=[279, 15217, 5388] n_acc=3 bonus=13 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[spec-stats] rounds=16 full_accept=15 len_hist=[0, 0, 0, 16] per_slot=[16/16=1.000 16/16=1.000 15/16=0.938] total=47/48=0.979 tok_per_round=3.938
+[spec-phase] draft=87.6ms (29.1%) verify-issue=189.0ms (62.8%) verify-wait=0.0ms (0.0%) commit-host=24.3ms (8.1%) rounds=16
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1442840576,"still_owned_bytes":8327347072,"pool_reserved_bytes":8455716864,"pool_cached_bytes":128369792,"driver_free_bytes":16294805504,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1376MB cached back to the driver
+[admit-cal] boot calibration done: model="gate" route=mtp transient floor 1536MB (static was 1536MB; measured 1266MB; probe kv charge 67MB, draft-state 41MB, drafted 48 accepted 47; [dev0 peak-mapped 9440MB rest-mapped 8064MB charged 109MB -> 1266MB]; 1.3s)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[server] worker ready; serving models: ["gate"]
+[server] listening on http://127.0.0.1:18121
+[meter] admit id=cmpl-c504abef0ddd1af492b4097837358ebc tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +44MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=369 path=spec = 16704 B/token x ctx + 87MB prefill-workspace + 0MB fixed = 93MB
+[spec-k] model="gate" tenant="vendor-default" K=3 source=cold-short prompt=241 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 104MB (observed 109MB at ctx 313 path=spec)
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_ctr_f32
+[skey] burst sampled=1 pure_temp=1 capturable=1 temp=1 top_k=0 top_p=1 min_p=0 pen_on=0 k=3 graph_draft=1 graph_s_parked=1 chain_s_parked=0 s_key_parked=Some(SampledGraphKey { seed: 7902033794257121421, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[spec] stream_on=false env=false samp=true dg=false captured=false active=false session=true replay=false
+[skey] chain=graph_s round=0 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7902033794257121421, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R0] pos=242 out_len=1 last_tok=32 draft=[198, 33, 198] n_acc=0 bonus=13 t_pred0=13
+  -> ZERO-ROUND FOLD (bonus pending, fill_prev seed)
+[skey] chain=graph_s round=1 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7902033794257121421, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R1] pos=242 out_len=2 last_tok=13 draft=[28445, 15339, 279] n_acc=1 bonus=11988 t_pred0=n/a
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[skey] chain=graph_s round=2 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7902033794257121421, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R2] pos=244 out_len=4 last_tok=11988 draft=[279, 10582, 11] n_acc=0 bonus=6813 t_pred0=n/a
+  -> PARTIAL(replay-free j=1, bonus pending, prev-h seed)
+[skey] chain=graph_s round=3 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7902033794257121421, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R3] pos=245 out_len=5 last_tok=6813 draft=[26, 13853, 11988] n_acc=2 bonus=84828 t_pred0=n/a
+  -> PARTIAL(replay-free j=3, bonus pending, prev-h seed)
+[skey] chain=graph_s round=4 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7902033794257121421, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R4] pos=248 out_len=8 last_tok=84828 draft=[279, 10582, 26] n_acc=0 bonus=9417 t_pred0=n/a
+  -> PARTIAL(replay-free j=1, bonus pending, prev-h seed)
+[skey] chain=graph_s round=5 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7902033794257121421, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R5] pos=249 out_len=9 last_tok=9417 draft=[26, 9946, 84828] n_acc=2 bonus=15339 t_pred0=n/a
+  -> PARTIAL(replay-free j=3, bonus pending, prev-h seed)
+[skey] chain=graph_s round=6 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7902033794257121421, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R6] pos=252 out_len=12 last_tok=15339 draft=[279, 10582, 13] n_acc=2 bonus=198 t_pred0=n/a
+  -> PARTIAL(replay-free j=3, bonus pending, prev-h seed)
+[skey] chain=graph_s round=7 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7902033794257121421, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R7] pos=255 out_len=15 last_tok=198 draft=[33, 13, 42980] n_acc=2 bonus=28445 t_pred0=n/a
+  -> PARTIAL(replay-free j=3, bonus pending, prev-h seed)
+[skey] chain=graph_s round=8 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7902033794257121421, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R8] pos=258 out_len=18 last_tok=28445 draft=[15339, 279, 10582] n_acc=3 bonus=26 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=9 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7902033794257121421, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R9] pos=262 out_len=22 last_tok=26 draft=[13853, 11988, 279] n_acc=2 bonus=6813 t_pred0=n/a
+  -> PARTIAL(replay-free j=3, bonus pending, prev-h seed)
+[skey] chain=graph_s round=10 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7902033794257121421, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R10] pos=265 out_len=25 last_tok=6813 draft=[26, 9946, 84828] n_acc=3 bonus=9417 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=11 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7902033794257121421, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R11] pos=269 out_len=29 last_tok=9417 draft=[198, 34, 13] n_acc=3 bonus=28445 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[spec-stats] rounds=12 full_accept=3 len_hist=[0, 0, 0, 12] per_slot=[9/12=0.750 8/12=0.667 3/12=0.250] total=20/36=0.556 tok_per_round=2.667
+[spec-phase] draft=58.4ms (30.3%) verify-issue=121.5ms (63.1%) verify-wait=0.0ms (0.0%) commit-host=12.6ms (6.5%) rounds=12
+[spec-acc] ctx=241 burst=20/36 cum=20/36=0.556
+[prefix-cache] insert (spec-boundary): 224 tokens, 56.4MB (resident 56.4MB / 537MB, model gate, ns "vendor-default")
+[skey] burst sampled=1 pure_temp=1 capturable=1 temp=1 top_k=0 top_p=1 min_p=0 pen_on=0 k=3 graph_draft=1 graph_s_parked=1 chain_s_parked=0 s_key_parked=Some(SampledGraphKey { seed: 7902033794257121421, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[spec] stream_on=false env=false samp=true dg=false captured=false active=false session=true replay=false
+[skey] chain=graph_s round=0 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7902033794257121421, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R0] pos=275 out_len=1 last_tok=84828 draft=[15339, 26, 9946] n_acc=0 bonus=9417 t_pred0=9417
+  -> ZERO-ROUND FOLD (bonus pending, fill_prev seed)
+[skey] chain=graph_s round=1 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7902033794257121421, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R1] pos=275 out_len=2 last_tok=9417 draft=[26, 9946, 84828] n_acc=1 bonus=13853 t_pred0=n/a
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[skey] chain=graph_s round=2 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7902033794257121421, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R2] pos=277 out_len=4 last_tok=13853 draft=[11988, 6813, 198] n_acc=0 bonus=15339 t_pred0=n/a
+  -> PARTIAL(replay-free j=1, bonus pending, prev-h seed)
+[skey] chain=graph_s round=3 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7902033794257121421, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R3] pos=278 out_len=5 last_tok=15339 draft=[279, 10582, 26] n_acc=3 bonus=9946 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=4 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7902033794257121421, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R4] pos=282 out_len=9 last_tok=9946 draft=[11988, 4644, 19965] n_acc=1 bonus=6813 t_pred0=n/a
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[skey] chain=graph_s round=5 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7902033794257121421, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R5] pos=284 out_len=11 last_tok=6813 draft=[198, 35, 13] n_acc=3 bonus=28445 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=6 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7902033794257121421, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R6] pos=288 out_len=15 last_tok=28445 draft=[321, 417, 3256] n_acc=0 bonus=11988 t_pred0=n/a
+  -> PARTIAL(replay-free j=1, bonus pending, prev-h seed)
+[skey] chain=graph_s round=7 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7902033794257121421, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R7] pos=289 out_len=16 last_tok=11988 draft=[6813, 26, 9946] n_acc=2 bonus=13853 t_pred0=n/a
+  -> PARTIAL(replay-free j=3, bonus pending, prev-h seed)
+[skey] chain=graph_s round=8 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7902033794257121421, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R8] pos=292 out_len=19 last_tok=13853 draft=[15339, 279, 10582] n_acc=3 bonus=26 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=9 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7902033794257121421, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R9] pos=296 out_len=23 last_tok=26 draft=[9946, 84828, 271] n_acc=2 bonus=9417 t_pred0=n/a
+  -> PARTIAL(replay-free j=3, bonus pending, prev-h seed)
+[skey] chain=graph_s round=10 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7902033794257121421, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R10] pos=299 out_len=26 last_tok=9417 draft=[198, 15666, 25] n_acc=3 bonus=198 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=11 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7902033794257121421, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R11] pos=303 out_len=30 last_tok=198 draft=[33, 271, 59605] n_acc=2 bonus=4199 t_pred0=n/a
+  -> PARTIAL(replay-free j=3, bonus pending, prev-h seed)
+[spec-stats] rounds=12 full_accept=4 len_hist=[0, 0, 0, 12] per_slot=[9/12=0.750 7/12=0.583 4/12=0.333] total=20/36=0.556 tok_per_round=2.667
+[spec-phase] draft=54.1ms (28.1%) verify-issue=124.6ms (64.6%) verify-wait=0.0ms (0.0%) commit-host=14.1ms (7.3%) rounds=12
+[spec-acc] ctx=274 burst=20/36 cum=40/72=0.556
+[meter] admit id=cmpl-ecc876304a3bd9d95009f148ad7100eb tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +44MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=369 path=spec = 16704 B/token x ctx + 87MB prefill-workspace + 104MB fixed = 197MB
+[prefix-cache] hit: 224 of 241 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 224 of 241 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="vendor-default" K=3 source=cold-short prompt=241 cached=224 lcp=224 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 104MB (observed 109MB at ctx 313 path=spec)
+[skey] burst sampled=1 pure_temp=1 capturable=1 temp=1 top_k=0 top_p=1 min_p=0 pen_on=0 k=3 graph_draft=1 graph_s_parked=1 chain_s_parked=0 s_key_parked=Some(SampledGraphKey { seed: 7022000765399557874, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[spec] stream_on=false env=false samp=true dg=false captured=false active=false session=true replay=false
+[skey] chain=graph_s round=0 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7022000765399557874, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R0] pos=242 out_len=1 last_tok=52681 draft=[695, 1787, 2185] n_acc=0 bonus=12076 t_pred0=15339
+  -> ZERO-ROUND FOLD (bonus pending, fill_prev seed)
+[skey] chain=graph_s round=1 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7022000765399557874, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R1] pos=242 out_len=2 last_tok=12076 draft=[1411, 20541, 198] n_acc=0 bonus=1083 t_pred0=n/a
+  -> PARTIAL(replay-free j=1, bonus pending, prev-h seed)
+[skey] chain=graph_s round=2 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7022000765399557874, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R2] pos=243 out_len=3 last_tok=1083 draft=[264, 2128, 11] n_acc=2 bonus=421 t_pred0=n/a
+  -> PARTIAL(replay-free j=3, bonus pending, prev-h seed)
+[skey] chain=graph_s round=3 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7022000765399557874, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R3] pos=246 out_len=6 last_tok=421 draft=[781, 6052, 279] n_acc=0 bonus=9711 t_pred0=n/a
+  -> PARTIAL(replay-free j=1, bonus pending, prev-h seed)
+[skey] chain=graph_s round=4 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7022000765399557874, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R4] pos=247 out_len=7 last_tok=9711 draft=[279, 8806, 506] n_acc=2 bonus=12244 t_pred0=n/a
+  -> PARTIAL(replay-free j=3, bonus pending, prev-h seed)
+[skey] chain=graph_s round=5 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7022000765399557874, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R5] pos=250 out_len=10 last_tok=12244 draft=[310, 279, 2250] n_acc=1 bonus=28445 t_pred0=n/a
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[skey] chain=graph_s round=6 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7022000765399557874, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R6] pos=252 out_len=12 last_tok=28445 draft=[11, 28445, 11] n_acc=1 bonus=198 t_pred0=n/a
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[skey] chain=graph_s round=7 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7022000765399557874, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R7] pos=254 out_len=14 last_tok=198 draft=[15666, 75512, 25] n_acc=1 bonus=279 t_pred0=n/a
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[skey] chain=graph_s round=8 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7022000765399557874, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R8] pos=256 out_len=16 last_tok=279 draft=[3296, 25, 271] n_acc=1 bonus=13 t_pred0=n/a
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[skey] chain=graph_s round=9 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7022000765399557874, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R9] pos=258 out_len=18 last_tok=13 draft=[1368, 279, 4087] n_acc=0 bonus=271 t_pred0=n/a
+  -> PARTIAL(replay-free j=1, bonus pending, prev-h seed)
+[skey] chain=graph_s round=10 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7022000765399557874, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R10] pos=259 out_len=19 last_tok=271 draft=[248069, 271, 760] n_acc=0 bonus=15666 t_pred0=n/a
+  -> PARTIAL(replay-free j=1, bonus pending, prev-h seed)
+[skey] chain=graph_s round=11 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7022000765399557874, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R11] pos=260 out_len=20 last_tok=15666 draft=[279, 1156, 579] n_acc=1 bonus=3296 t_pred0=n/a
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[skey] chain=graph_s round=12 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7022000765399557874, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R12] pos=262 out_len=22 last_tok=3296 draft=[198, 760, 1156] n_acc=0 bonus=13 t_pred0=n/a
+  -> PARTIAL(replay-free j=1, bonus pending, prev-h seed)
+[skey] chain=graph_s round=13 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7022000765399557874, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R13] pos=263 out_len=23 last_tok=13 draft=[271, 332, 8944] n_acc=0 bonus=198 t_pred0=n/a
+  -> PARTIAL(replay-free j=1, bonus pending, prev-h seed)
+[skey] chain=graph_s round=14 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7022000765399557874, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R14] pos=264 out_len=24 last_tok=198 draft=[15666, 279, 3296] n_acc=0 bonus=52681 t_pred0=n/a
+  -> PARTIAL(replay-free j=1, bonus pending, prev-h seed)
+[skey] chain=graph_s round=15 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7022000765399557874, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R15] pos=265 out_len=25 last_tok=52681 draft=[12076, 1083, 264] n_acc=3 bonus=2128 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=16 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7022000765399557874, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R16] pos=269 out_len=29 last_tok=2128 draft=[421, 9711, 279] n_acc=3 bonus=8806 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[spec-stats] rounds=17 full_accept=2 len_hist=[0, 0, 0, 17] per_slot=[9/17=0.529 4/17=0.235 2/17=0.118] total=15/51=0.294 tok_per_round=1.882
+[spec-phase] draft=83.0ms (28.6%) verify-issue=180.8ms (62.3%) verify-wait=0.0ms (0.0%) commit-host=26.2ms (9.0%) rounds=17
+[spec-acc] ctx=17 burst=15/51 cum=15/51=0.294
+[skey] burst sampled=1 pure_temp=1 capturable=1 temp=1 top_k=0 top_p=1 min_p=0 pen_on=0 k=3 graph_draft=1 graph_s_parked=1 chain_s_parked=0 s_key_parked=Some(SampledGraphKey { seed: 7022000765399557874, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[spec] stream_on=false env=false samp=true dg=false captured=false active=false session=true replay=false
+[skey] chain=graph_s round=0 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7022000765399557874, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R0] pos=275 out_len=1 last_tok=12244 draft=[310, 28445, 11] n_acc=3 bonus=271 t_pred0=310
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=1 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7022000765399557874, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R1] pos=278 out_len=5 last_tok=271 draft=[52681, 12076, 1083] n_acc=3 bonus=264 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=2 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7022000765399557874, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R2] pos=282 out_len=9 last_tok=264 draft=[2128, 421, 9711] n_acc=3 bonus=279 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=3 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7022000765399557874, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R3] pos=286 out_len=13 last_tok=279 draft=[8806, 12244, 310] n_acc=3 bonus=28445 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=4 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7022000765399557874, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R4] pos=290 out_len=17 last_tok=28445 draft=[25, 271, 15666] n_acc=2 bonus=59605 t_pred0=n/a
+  -> PARTIAL(replay-free j=3, bonus pending, prev-h seed)
+[skey] chain=graph_s round=5 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7022000765399557874, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R5] pos=293 out_len=20 last_tok=59605 draft=[25, 29802, 444] n_acc=2 bonus=5122 t_pred0=n/a
+  -> PARTIAL(replay-free j=3, bonus pending, prev-h seed)
+[skey] chain=graph_s round=6 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7022000765399557874, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R6] pos=296 out_len=23 last_tok=5122 draft=[279, 10582, 11] n_acc=3 bonus=28445 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=7 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7022000765399557874, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R7] pos=300 out_len=27 last_tok=28445 draft=[1220, 599, 9770] n_acc=0 bonus=1189 t_pred0=n/a
+  -> PARTIAL(replay-free j=1, bonus pending, prev-h seed)
+[skey] chain=graph_s round=8 pure_temp=1 capturable=1 top_k=0 top_p=1 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 7022000765399557874, temp_bits: 1065353216, k: 3, top_k: 0, top_p_bits: 1065353216, min_p_bits: 0, pen_on: false })
+[R8] pos=301 out_len=28 last_tok=1189 draft=[1048, 599, 978] n_acc=3 bonus=6197 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[spec-stats] rounds=9 full_accept=6 len_hist=[0, 0, 0, 9] per_slot=[8/9=0.889 8/9=0.889 6/9=0.667] total=22/27=0.815 tok_per_round=3.444
+[spec-phase] draft=42.0ms (28.3%) verify-issue=95.1ms (64.0%) verify-wait=0.0ms (0.0%) commit-host=11.5ms (7.7%) rounds=9
+[spec-acc] ctx=50 burst=22/27 cum=37/78=0.474
+[meter] admit id=cmpl-baccaac0918133443e9863676c2e32db tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-548317f8dbcfb7c59f4809362f742521 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-6cd827dabc363680f67cc56fccfd7f08 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-9efe673d8058f867378a046bc63bff2a tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=369 path=plain = 14848 B/token x ctx + 87MB prefill-workspace + 104MB fixed = 196MB
+[spec-k] model="gate" tenant="vendor-c2" K=0 source=concurrency prompt=241 cached=0 lcp=0 active=1 wave=4 placement=single-or-non-pp2
+[spec-k] model="gate" tenant="vendor-c1" K=0 source=concurrency prompt=241 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[spec-k] model="gate" tenant="vendor-c3" K=0 source=concurrency prompt=241 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[spec-k] model="gate" tenant="vendor-c0" K=0 source=concurrency prompt=241 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 224 tokens, 56.0MB (resident 112.5MB / 537MB, model gate, ns "vendor-c2")
+[prefix-cache] insert (seed): 224 tokens, 56.0MB (resident 168.5MB / 537MB, model gate, ns "vendor-c1")
+[prefix-cache] insert (seed): 224 tokens, 56.0MB (resident 224.5MB / 537MB, model gate, ns "vendor-c3")
+[prefix-cache] insert (seed): 224 tokens, 56.0MB (resident 280.5MB / 537MB, model gate, ns "vendor-c0")
+[prime-batch] B=3 tokens=51 carried=3 partial=0 in 51.9ms
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

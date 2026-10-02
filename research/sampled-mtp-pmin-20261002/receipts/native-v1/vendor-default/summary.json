@@ -1,0 +1,72 @@
+{
+  "cold_warm": [
+    {
+      "cached_tokens": 0,
+      "completion_tokens": 64,
+      "finish": "length",
+      "prompt_tokens": 241,
+      "spec": {
+        "acceptance_rate": 0.5555555555555556,
+        "accepted": 40,
+        "drafted": 72,
+        "rounds": 24
+      },
+      "text": "A. Alice checks tests; Bob verifies documentation; Carol reads the patch\nB. Alice reads the patch; Bob checks tests; Carol verifies documentation\nC. Alice verifies documentation; Bob reads the patch; Carol checks tests\nD. Alice checks tests; Bob reads the patch; Carol verifies documentation\nAnswer:\nB",
+      "text_sha256": "c006629213f8bb34543efc1f3804f1736ba94bde7d120a325fc19a5f39efdb05"
+    },
+    {
+      "cached_tokens": 224,
+      "completion_tokens": 64,
+      "finish": "length",
+      "prompt_tokens": 241,
+      "spec": {
+        "acceptance_rate": 0.47435897435897434,
+        "accepted": 37,
+        "drafted": 78,
+        "rounds": 26
+      },
+      "text": "Someone recorded into a document that listed the tasks assigned to Alice,\nAnswer the question.\n\nAnswer the question.\nSomeone recorded into a document that listed the tasks assigned to Alice,\n\nSomeone recorded into a document that listed the tasks assigned to Alice:\n\nAlice: Besides reading the patch, Alice may also have been",
+      "text_sha256": "e7d5adb829097d6990df97db6876e42b30888e255fe296cb8694fe050b81fd6e"
+    }
+  ],
+  "concurrent": [
+    {
+      "cached_tokens": 0,
+      "completion_tokens": 64,
+      "finish": "length",
+      "prompt_tokens": 241,
+      "spec": null,
+      "text": "A. Alice: read the patch\nB. Bob: check the tests\nC. Carol: verify the documentation\nD. Alice: check the tests\nAnswer: A,B,C\n\nTrue or False:\\n\\nHangman Game\\n\\n1. Is a variable used to data storage?\\n2. Is a",
+      "text_sha256": "2209072dc7b3a38da8861f962f9e8f61fbce5d681f84aa7fdfc1955a4f779dc2"
+    },
+    {
+      "cached_tokens": 0,
+      "completion_tokens": 64,
+      "finish": "length",
+      "prompt_tokens": 241,
+      "spec": null,
+      "text": "1. **Alice** - Role: Code Reviewer - Task: Reads the code patch.\n2. **Bob** - Role: Test Checker - Task: Checks the tests.\n3. **Carol** - Role: Documentation Verifier - Task: Verifies the documentation.\nWait the above steps are common",
+      "text_sha256": "81371d5070770cfd370992dc96a5fcf91b1719f22dda8c4f9b411953882f326e"
+    },
+    {
+      "cached_tokens": 0,
+      "completion_tokens": 64,
+      "finish": "length",
+      "prompt_tokens": 241,
+      "spec": null,
+      "text": "A. Alice reads the patch, Bob checks the tests, and Carol verifies the documentation.\nB. Alice checks the tests, Bob reads the patch, and Carol verifies the documentation.\nC. Alice reads the patch, Bob verifies the documentation, and Carol checks the tests.\nD. Alice verifies the documentation,",
+      "text_sha256": "43c3cc2c4e59e1e0e67167d9028b032fe748da4941ee45939d3a77ab27de1c69"
+    },
+    {
+      "cached_tokens": 0,
+      "completion_tokens": 64,
+      "finish": "length",
+      "prompt_tokens": 241,
+      "spec": null,
+      "text": "1. Alice: Reads the patch\n2. Bob: Checks the tests\n3. Carol: Verifies the documentation\n\nBased on the code review scenario provided, here are the three people and their specific tasks:\n\n1.  **Alice**: Reads the patch\n2.  **Bob**: Checks the tests\n",
+      "text_sha256": "db8a011b9277fe1d2c096c8499a8d50b72c381e4cdec49a085d2217fd164704e"
+    }
+  ],
+  "request_has_no_sampling_overrides": true,
+  "status": "passed"
+}
