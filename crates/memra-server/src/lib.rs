@@ -24771,11 +24771,14 @@ temperature = 0.6
             for invalid in [json!("true"), json!(1), serde_json::Value::Null] {
                 let mut body = bg914_body(chat);
                 body["background"] = invalid;
-                assert_eq!(
-                    bg914_http(app.clone(), "POST", path, Some("owner-key"), body)
-                        .await
-                        .status(),
-                    StatusCode::BAD_REQUEST
+                let response = bg914_http(app.clone(), "POST", path, Some("owner-key"), body).await;
+                // Preserve AdmittedJson's existing typed-body refusal contract.
+                assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+                assert!(
+                    body_value(response).await["error"]["message"]
+                        .as_str()
+                        .unwrap()
+                        .contains("background")
                 );
             }
             assert!(rx.try_recv().is_err());
