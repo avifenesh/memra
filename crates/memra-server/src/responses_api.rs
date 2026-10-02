@@ -1282,14 +1282,17 @@ async fn run_background_job(
                                 crate::engine_error_code(err.class),
                             );
                         }
+                        let message = match publication.reserve_delta(&err.message, 0) {
+                            Ok(()) => err.message.clone(),
+                            Err(error) => {
+                                publication.fail_storage(error);
+                                "background error could not be buffered by the configured store".into()
+                            }
+                        };
                         finalize_terminal_job(
                             &guarded_store,
                             &id,
-                            JobRecord {
-                                status: JobStatus::Failed,
-                                output: None,
-                                error: Some(err.message.clone()),
-                            },
+                            JobRecord { status: JobStatus::Failed, output: None, error: Some(message) },
                         );
                         drop(guard);
                         return;

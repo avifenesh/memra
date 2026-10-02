@@ -11962,6 +11962,25 @@ fn buffered_json<T: serde::Serialize>(
     }
 }
 
+fn buffered_engine_error(
+    e: &worker::EngineError,
+    output: Option<&job_publication::Publication>,
+) -> Response {
+    if let Some(output) = output
+        && let Err(error) = output.reserve_delta(&e.message, 0)
+    {
+        return output.storage_response(error);
+    }
+    let mut response = buffered_json(&engine_error_body(e), output);
+    if response.status().is_success() {
+        *response.status_mut() = class_http(e.class).0;
+    }
+    retry_contract_response(
+        response,
+        e.retry_after_s.or_else(|| class_retry_after_s(e.class)),
+    )
+}
+
 /// Collect a complete non-streaming response.
 ///
 /// `receipt` is BORROWED (lane/deadline-billing): it outlives this future so a deadline can
@@ -12331,7 +12350,7 @@ pub(crate) async fn collect_blocking_response(
                     );
                     return request_ledger_error_response();
                 }
-                return engine_error_response(&err);
+                return buffered_engine_error(&err, output);
             }
         }
     }
@@ -12352,7 +12371,7 @@ pub(crate) async fn collect_blocking_response(
         );
         return request_ledger_error_response();
     }
-    engine_error_response(&e)
+    buffered_engine_error(&e, output)
 }
 
 #[cfg(test)]
@@ -25148,6 +25167,52 @@ temperature = 0.6
                     }
                 ));
             }
+        }
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // shared drain/env guards serialize real handlers
+    async fn background_chat_text_oversized_worker_errors_are_bounded_and_unbilled() {
+        let _drain = drain_lock();
+        let _env = background_env_lock();
+        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
+        for chat in [false, true] {
+            let (st, mock, _, rx) = bg914_fixture(Some(1024));
+            let app = bg914_router(st.clone());
+            let (response, request) = bg914_submit(app.clone(), chat, bg914_body(chat), rx).await;
+            let ack = body_value(response).await;
+            let id = ack["id"].as_str().unwrap();
+            let control = st.background_cancel.lock().unwrap()
+                [&responses_api::background_store_key("acme", id)]
+                .clone();
+            request
+                .tx
+                .send(Event::Error(worker::EngineError::engine("x".repeat(16384))))
+                .unwrap();
+            control.wait_terminal().await;
+            let result = body_value(
+                bg914_http(
+                    app,
+                    "GET",
+                    &format!("/v1/jobs/{id}"),
+                    Some("owner-key"),
+                    serde_json::Value::Null,
+                )
+                .await,
+            )
+            .await;
+            assert_eq!(result["status"], "failed");
+            assert!(
+                result.to_string().len() < 1024,
+                "an oversized engine diagnostic must not be retained or encoded"
+            );
+            assert_eq!(
+                bg914_terminal_events(&mock),
+                vec![MeterEvent::Reject {
+                    status: 500,
+                    code: "engine_error".into()
+                }]
+            );
         }
     }
 

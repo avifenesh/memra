@@ -177,7 +177,7 @@ def main(args):
     profile=tomllib.loads(args.metadata.read_text())['models']['q9']
     require(profile['non_thinking_sampling']=={'temperature':0.7,'top_p':0.8,'top_k':20,'min_p':0.0,'presence_penalty':1.5,'repetition_penalty':1.0},'non-thinking profile absent/wrong')
     out=args.out;out.mkdir(parents=True,exist_ok=True)
-    manifest={'head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'tracked_diff_sha256':hashlib.sha256(subprocess.check_output(['git','diff','HEAD','--binary'])).hexdigest(),'binary_sha256':digest(args.binary),'model_sha256':args.model_sha,'metadata_sha256':digest(args.metadata),'collector_sha256':digest(Path(__file__)),'context':32768,'phase':args.phase,'gpu':subprocess.check_output(['nvidia-smi','-i',os.environ['CUDA_VISIBLE_DEVICES'],'--query-gpu=name,uuid,driver_version,memory.total','--format=csv,noheader'],text=True)}
+    manifest={'head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'tracked_diff_sha256':hashlib.sha256(subprocess.check_output(['git','diff','HEAD','--binary'])).hexdigest(),'binary_sha256':digest(args.binary),'model_sha256':args.model_sha,'metadata_sha256':digest(args.metadata),'collector_sha256':digest(Path(__file__)),'context':8192 if args.phase=='short' else 32768,'phase':args.phase,'gpu':subprocess.check_output(['nvidia-smi','-i',os.environ['CUDA_VISIBLE_DEVICES'],'--query-gpu=name,uuid,driver_version,memory.total','--format=csv,noheader'],text=True)}
     (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
     summary=[]
     if args.phase=='short':
