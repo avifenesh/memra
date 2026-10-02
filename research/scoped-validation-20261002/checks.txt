@@ -94,4 +94,12 @@ check-flags: every runtime MEMRA_* name resolves against 'docs/FLAGS.md' (no gra
 flags-row-shape: 1080 rows within 4000 chars, default cells within 300, one decide-by each, 47 history sections all linked
 
 exit=0
+Follow-up integration checks (2026-10-02):
+- validation planner/coverage: 75 tests passed, including optional collector dependency selection,
+  network-guard reverse reach, private Python environment cleanup and failed dependency install.
+- classifier: 18 arms passed; workflow duplicate-key and immutable action-pin checks passed.
+- frozen collectors from 0638e4317a10f65bb233d679dd73cfa1241a499d: serving 8 tests passed;
+  sampled MTP 7 tests passed using a newly created, then removed private NumPy 2.3.5 environment.
+  Snapshot contained the shared cache_qualification.py helper. The first isolated snapshot omitted
+  that helper and failed import; the corrected snapshot passed both real test commands.
 

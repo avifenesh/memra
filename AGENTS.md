@@ -574,8 +574,9 @@ parallel; version numbers are a shared resource. Before tagging vX.Y.Z:
 
 ## Match validation to the changed behavior
 
-GitHub runners have no GPU. `.github/workflows/ci.yml` builds every target (nvcc compiles fine
-GPU-less) and runs every CPU suite, so it is the CPU gate. The GPU battery is chosen from the
+GitHub runners have no GPU. `.github/workflows/ci.yml` selects affected build targets and CPU
+suite groups through `tools/validation_plan.py`; unknown impact runs the complete CPU gate.
+nvcc compilation needs no GPU. The GPU battery is chosen from the
 change's content and what it reaches; it is not run whole on every merge. Owner, 2026-09-27:
 "we dont need to run full battery on every change, its depend on change content and what it
 touces."

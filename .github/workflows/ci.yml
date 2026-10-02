@@ -87,7 +87,7 @@ jobs:
         run: |
           python3 tools/validation_plan.py check-registry
           tools/test_ci_change_class.sh
-          tools/unittest-floor.sh tools 'test_validation_*.py' 70
+          tools/unittest-floor.sh tools 'test_validation_*.py' 75
 
       - name: Declared changed-input CPU contracts (missing selection runs all available)
         run: python3 tools/validation_plan.py contracts
@@ -293,6 +293,14 @@ jobs:
           cargo test -p memra-gguf --test canonical_config
           cargo test -p memra-gguf --features serde_json/preserve_order --test canonical_config
           cargo test -p memra-gguf --features serde_json/preserve_order --lib strict_json::tests
+      - name: Network guard address classification contracts (CPU-only)
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.core != 'false' }}
+        run: |
+          if [ -f crates/memra-net-guard/Cargo.toml ]; then
+            MEMRA_SKIP_BUDGET=0 python3 tools/skip-census.py run \
+              --budget-var MEMRA_SKIP_BUDGET --min-passed 15 \
+              -- cargo test -p memra-net-guard
+          fi
       - name: Indexed MLA and KDA memory fixture contracts (CPU-only)
         run: tools/test-model-memory-fixture.sh
 

@@ -18,10 +18,11 @@ import posixpath
 import re
 import subprocess
 import sys
+import tempfile
 import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
-CORE = {'memra-gguf', 'memra-reference', 'memra-tokenizer', 'memra-validate', 'memra-sampling'}
+CORE = {'memra-gguf', 'memra-reference', 'memra-tokenizer', 'memra-validate', 'memra-sampling', 'memra-net-guard'}
 PORTABLE = {'memra-tier', 'memra-kv', 'memra-cli'}
 NATIVE = {'memra-engine', 'memra-server', 'memra-probe'}
 JOBS = ('build', 'clippy', 'server', 'engine', 'portable', 'core', 'lanes', 'arch', 'publish')
@@ -50,8 +51,17 @@ TOOL_CONTRACTS = {
     },
     'serving-qualification': {
         'inputs': ['tools/collect-serving-qualification.py', 'tools/test_collect_serving_qualification.py'],
-        'cpu': ['tools/unittest-floor.sh', 'tools', 'test_collect_serving_qualification.py', '7'],
+        'cpu': ['tools/unittest-floor.sh', 'tools', 'test_collect_serving_qualification.py', '8'],
         'native': ['Source-bound composite streaming/cache/offered-concurrency/cancellation/context collector, with the separate cache-disabled red boot'],
+    },
+    'sampled-mtp': {
+        'presence': ['tools/collect-sampled-mtp.py', 'tools/test_collect_sampled_mtp.py',
+                     'tools/sampled-mtp-requirements.txt'],
+        'inputs': ['tools/collect-sampled-mtp.py', 'tools/test_collect_sampled_mtp.py',
+                   'tools/sampled-mtp-requirements.txt', 'tools/collect-serving-qualification.py'],
+        'cpu': ['tools/unittest-floor.sh', 'tools', 'test_collect_sampled_mtp.py', '7'],
+        'python_requirements': 'tools/sampled-mtp-requirements.txt',
+        'native': ['Pinned positive-PMIN eager/graph/residual/bonus/zero-draft probes, distribution controls and vendor-default serving checks'],
     },
 }
 
@@ -418,6 +428,7 @@ def make_plan(paths, base_tree, head_tree):
         for path, packages in included_inputs(base_tree, base_owners).items():
             includes[path].update(packages)
         direct, contracts, native_requirements = set(), set(), set()
+        contract_paths = set(base_tree.paths('tools')) | set(head_tree.paths('tools'))
         for path in paths:
             package = owner(path, owners)
             if package:
@@ -428,7 +439,8 @@ def make_plan(paths, base_tree, head_tree):
             if consumers:
                 direct.update(consumers)
                 continue
-            matches = [name for name, c in TOOL_CONTRACTS.items() if path in c['inputs']]
+            matches = [name for name, c in TOOL_CONTRACTS.items() if path in c['inputs']
+                       and ('presence' not in c or any(p in contract_paths for p in c['presence']))]
             if matches:
                 contracts.update(matches)
                 for name in matches:
@@ -519,7 +531,7 @@ def preserve_contract_obligations(plan, before, after):
     existing = {c['id'] for c in plan['cpu_contracts']}
     paths = set(before.paths('tools', 'research', 'docs')) | set(after.paths('tools', 'research', 'docs'))
     for name, contract in TOOL_CONTRACTS.items():
-        if name not in existing and any(p in paths for p in contract['inputs']):
+        if name not in existing and any(p in paths for p in contract.get('presence', contract['inputs'])):
             plan['cpu_contracts'].append({'id': name, **contract})
 
 
@@ -566,11 +578,27 @@ def cpu_contract_names(root, selected):
     if names and (len(set(names)) != len(names) or any(n not in TOOL_CONTRACTS for n in names)):
         raise Refused('unknown or duplicated CPU contract')
     names = names or [n for n, c in TOOL_CONTRACTS.items()
-                     if c.get('required') or any((root / p).exists() for p in c['inputs'])]
+                     if c.get('required') or any((root / p).exists() for p in c.get('presence', c['inputs']))]
     for name in names:
         if not all((root / p).is_file() for p in TOOL_CONTRACTS[name]['inputs']):
             raise Refused('selected contract input is missing: ' + name)
     return names
+
+
+def run_cpu_contract(contract, root):
+    requirements = contract.get('python_requirements')
+    if not requirements:
+        subprocess.run(contract['cpu'], cwd=root, check=True)
+        return
+    # Keep third-party test dependencies out of the caller's Python environment.
+    # Cleanup also happens when installation or the actual test command fails.
+    with tempfile.TemporaryDirectory(prefix='memra-validation-python-') as directory:
+        subprocess.run([sys.executable, '-m', 'venv', directory], check=True)
+        python = str(Path(directory) / 'bin/python')
+        subprocess.run([python, '-m', 'pip', 'install', '--disable-pip-version-check',
+                        '-r', str(root / requirements)], check=True)
+        env = dict(os.environ, PATH=str(Path(directory) / 'bin') + os.pathsep + os.environ.get('PATH', ''))
+        subprocess.run(contract['cpu'], cwd=root, env=env, check=True)
 
 
 def scoped_bin_targets(value, root):
@@ -658,7 +686,7 @@ def main():
         for name in names:
             contract = TOOL_CONTRACTS[name]
             print('CPU contract: ' + name, flush=True)
-            subprocess.run(contract['cpu'], cwd=ROOT, check=True)
+            run_cpu_contract(contract, ROOT)
     elif args.command == 'local':
         print(json.dumps(local_plan(args.repo, args.base), indent=2))
     elif args.command == 'ci':

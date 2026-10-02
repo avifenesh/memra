@@ -60,6 +60,10 @@ compiled suite is omitted. A malformed skip declaration cannot hide behind a ski
 
 Known Python contract changes run their actual tests without Cargo or GPU loading. Fast-gate
 reports that CPU result separately from any live-evidence campaign the issue still owes.
+The serving collector also selects its sampled-MTP consumer when that collector is present.
+Sampled collector dependencies install from its tracked requirements into a temporary private
+Python environment, which is removed on success or failure. The network-guard crate belongs to
+the CPU core component and keeps its own zero-skip test floor when present in the workspace.
 Tier 2 and release/tag qualification are unchanged. Native diagnostic selection remains
 shadow-only until its own selected/full and failure-control evidence admits a narrower class.
 

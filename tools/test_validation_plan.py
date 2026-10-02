@@ -106,6 +106,54 @@ class ValidationPlanTests(unittest.TestCase):
         self.assertEqual(p['native']['scope'], 'harness')
         self.assertTrue(p['native']['requirements'])
 
+    def test_shared_collector_selects_sampled_tests_only_when_present(self):
+        paths = ['tools/collect-serving-qualification.py']
+        self.assertEqual([c['id'] for c in self.plan(paths)['cpu_contracts']], ['serving-qualification'])
+        self.put('tools/collect-sampled-mtp.py', '# imports serving collector\n')
+        self.commit()
+        p = self.plan(paths)
+        self.assertEqual({c['id'] for c in p['cpu_contracts']}, {'serving-qualification', 'sampled-mtp'})
+        self.assertFalse(any(p['jobs'].values()))
+
+    def test_sampled_dependency_pin_selects_its_contract(self):
+        self.put('tools/sampled-mtp-requirements.txt', 'numpy==2.3.5\n')
+        self.commit()
+        p = self.plan(['tools/sampled-mtp-requirements.txt'])
+        self.assertEqual([c['id'] for c in p['cpu_contracts']], ['sampled-mtp'])
+        self.assertFalse(any(p['jobs'].values()))
+
+    def test_network_guard_selects_core_and_its_server_consumer(self):
+        manifest = (self.repo / 'Cargo.toml').read_text().replace('members = [', 'members = ["crates/memra-net-guard", ')
+        self.put('Cargo.toml', manifest)
+        self.put('crates/memra-net-guard/Cargo.toml', '[package]\nname="memra-net-guard"\n')
+        server = 'crates/memra-server/Cargo.toml'
+        self.put(server, (self.repo / server).read_text() + 'memra-net-guard = {path="../memra-net-guard"}\n')
+        self.commit()
+        p = self.plan(['crates/memra-net-guard/src/lib.rs'])
+        self.assertEqual(p['packages'], ['memra-net-guard', 'memra-server'])
+        self.assertTrue(p['jobs']['core'])
+        self.assertTrue(p['jobs']['server'])
+        self.assertFalse(p['jobs']['engine'])
+
+    def test_python_contract_environment_is_private_and_cleaned(self):
+        contract = vp.TOOL_CONTRACTS['sampled-mtp']
+        with mock.patch.object(vp.subprocess, 'run') as run:
+            vp.run_cpu_contract(contract, self.repo)
+        setup, install, check = run.call_args_list
+        directory = Path(setup.args[0][-1])
+        self.assertEqual(setup.args[0][1:3], ['-m', 'venv'])
+        self.assertEqual(install.args[0][-2:], ['-r', str(self.repo / contract['python_requirements'])])
+        self.assertEqual(check.args[0], contract['cpu'])
+        self.assertEqual(check.kwargs['env']['PATH'].split(os.pathsep)[0], str(directory / 'bin'))
+        self.assertFalse(directory.exists())
+
+    def test_dependency_failure_cannot_pass_or_leave_environment(self):
+        with mock.patch.object(vp.subprocess, 'run', side_effect=[None, subprocess.CalledProcessError(1, 'pip')]) as run:
+            with self.assertRaises(subprocess.CalledProcessError):
+                vp.run_cpu_contract(vp.TOOL_CONTRACTS['sampled-mtp'], self.repo)
+        self.assertEqual(run.call_count, 2)
+        self.assertFalse(Path(run.call_args_list[0].args[0][-1]).exists())
+
     def test_unknown_tool_or_source_expands(self):
         for path in ('tools/new-builder.py', 'unknown.rs'):
             with self.subTest(path=path):
