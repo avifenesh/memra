@@ -1,0 +1,74 @@
+Clippy scope: resolved dependency feature programs match workspace
+["cargo", "clippy", "--release", "--all-targets", "-p", "memra-server", "--", "-D", "warnings"]
+    Checking zerofrom v0.1.8
+    Checking stable_deref_trait v1.2.1
+    Checking futures-core v0.3.34
+    Checking yoke v0.8.3
+    Checking tokio v1.52.3
+    Checking zerovec v0.11.8
+    Checking tinystr v0.8.4
+    Checking writeable v0.6.4
+    Checking zeroize v1.9.0
+    Checking litemap v0.8.3
+    Checking icu_locale_core v2.3.0
+    Checking potential_utf v0.1.6
+    Checking zerotrie v0.2.5
+    Checking utf8_iter v1.0.4
+    Checking futures-task v0.3.34
+    Checking futures-util v0.3.34
+    Checking icu_collections v2.3.0
+    Checking icu_provider v2.3.1
+    Checking rustls-pki-types v1.15.1
+    [dependency compilation progress omitted; raw log archived]
+    Checking tokio-util v0.7.19
+    [dependency compilation progress omitted; raw log archived]
+    Checking icu_properties_data v2.3.0
+    Checking icu_normalizer_data v2.3.0
+    Checking untrusted v0.9.0
+    Checking try-lock v0.2.5
+    Checking h2 v0.4.19
+    Checking rustls-webpki v0.103.15
+    Checking want v0.3.1
+    Checking memra-gguf v0.138.0 (/home/avifenesh/projects/wt-memra-rig-cache-20261002/crates/memra-gguf)
+    Checking icu_normalizer v2.3.0
+    Checking icu_properties v2.3.0
+    Checking sync_wrapper v1.0.2
+    Checking futures-channel v0.3.32
+    Checking subtle v2.6.1
+    Checking rustls v0.23.45
+    Checking hyper v1.10.1
+    Checking idna_adapter v1.2.2
+    Checking ipnet v2.12.2
+    Checking hyper-util v0.1.20
+    Checking ref-cast v1.0.26
+    Checking idna v1.1.0
+    Checking tower v0.5.3
+    Checking http-body-util v0.1.3
+    Checking openssl-probe v0.2.1
+    Checking fluent-uri v0.3.2
+    Checking rustls-native-certs v0.8.4
+    Checking memra-tokenizer v0.138.0 (/home/avifenesh/projects/wt-memra-rig-cache-20261002/crates/memra-tokenizer)
+    Checking url v2.5.8
+    Checking tokio-rustls v0.26.5
+    Checking memra-tier v0.138.0 (/home/avifenesh/projects/wt-memra-rig-cache-20261002/crates/memra-tier)
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-memra-rig-cache-20261002/crates/memra-engine)
+    Checking memra-kv v0.138.0 (/home/avifenesh/projects/wt-memra-rig-cache-20261002/crates/memra-kv)
+    Checking axum-core v0.4.5
+    Checking hyper-rustls v0.27.10
+    Checking memra-reference v0.138.0 (/home/avifenesh/projects/wt-memra-rig-cache-20261002/crates/memra-reference)
+    Checking tower-http v0.6.11
+    Checking referencing v0.29.1
+    Checking rustls-platform-verifier v0.7.1
+    Checking memra-runtime v0.138.0 (/home/avifenesh/projects/wt-memra-rig-cache-20261002/crates/memra-runtime)
+    Checking memra-validate v0.138.0 (/home/avifenesh/projects/wt-memra-rig-cache-20261002/crates/memra-validate)
+    Checking memra-sampling v0.138.0 (/home/avifenesh/projects/wt-memra-rig-cache-20261002/crates/memra-sampling)
+    Checking base64 v0.23.1
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-memra-rig-cache-20261002/crates/memra-server)
+    Checking reqwest v0.13.5
+    Checking axum v0.7.9
+    Checking async-stream v0.3.6
+    Checking llguidance v1.7.6
+    Checking memra-lanes v0.138.0 (/home/avifenesh/projects/wt-memra-rig-cache-20261002/crates/memra-lanes)
+    Checking memra-net-guard v0.138.0 (/home/avifenesh/projects/wt-memra-rig-cache-20261002/crates/memra-net-guard)
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 3m 29s

@@ -1,0 +1,8 @@
+[tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 24.28GB (expert budget 19.68GB) -> RESIDENT
+loaded qwen35moe (40 trunk layers; optional MTP skipped)
+prompt tokens: [55]
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+prefill argmax=1178  decode argmax=1178  logit maxdiff=5.258e-1  MATCH
+generated 32 tokens in 0.187s = 170.79 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.005s) [stop: MaxNew]
+tokens: [1178, 101696, 198, 55, 1178, 101696, 99151, 111427, 96580, 97327, 109007, 97039, 95865, 113009, 110863, 3709, 96580, 105821, 100572, 109966, 97598, 106342, 97082, 98874, 95839, 109007, 3709, 96402, 96244, 102173, 96172, 97328]

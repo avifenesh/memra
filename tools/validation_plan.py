@@ -37,6 +37,20 @@ TOOL_CONTRACTS = {
         'cpu': ['tools/unittest-floor.sh', 'tools', 'test_q35_cold_mixed_gate.py', '13'],
         'native': ['Qwen3.6 MoE mixed c=4 cache/usage/golden gate on the pinned artifact'],
     },
+    'cache-meter': {
+        'presence': ['tools/cache-meter-gate.py', 'tools/test_cache_meter_gate.py'],
+        'inputs': ['tools/cache-meter-gate.py', 'tools/prometheus_metrics.py',
+                   'tools/test_cache_meter_gate.py'],
+        'cpu': ['tools/unittest-floor.sh', 'tools', 'test_cache_meter_gate.py', '3'],
+        'native': ['Pinned local model cache-meter closed form, native/OpenAI format parity, authenticated Prometheus and exact usage/token distributions'],
+    },
+    'metrics-live': {
+        'presence': ['tools/metrics-live-gate.py', 'tools/test_prometheus_metrics.py'],
+        'inputs': ['tools/metrics-live-gate.py', 'tools/prometheus_metrics.py',
+                   'tools/test_prometheus_metrics.py'],
+        'cpu': ['tools/unittest-floor.sh', 'tools', 'test_prometheus_metrics.py', '7'],
+        'native': ['Pinned local plain/MTP lifecycle, real queue/cancellation, live capacity and owned-worker-fault assertions; CPU parser success does not qualify serving'],
+    },
     'physical-gpu': {
         'required': True,
         'inputs': ['tools/resolve-physical-gpu.py', 'tools/test_resolve_physical_gpu.py'],

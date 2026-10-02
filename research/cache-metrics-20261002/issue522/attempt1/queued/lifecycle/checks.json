@@ -1,0 +1,62 @@
+[
+  {
+    "name": "before-queue metrics HTTP 200",
+    "ok": true,
+    "detail": null
+  },
+  {
+    "name": "before-queue promtool",
+    "ok": false,
+    "detail": "memra_step_latency_seconds non-summary metrics should not have \"quantile\" label\nmemra_step_latency_seconds non-summary metrics should not have \"quantile\" label\n"
+  },
+  {
+    "name": "queued leader completes",
+    "ok": true,
+    "detail": null
+  },
+  {
+    "name": "queued follower completes",
+    "ok": true,
+    "detail": null
+  },
+  {
+    "name": "after-queue metrics HTTP 200",
+    "ok": true,
+    "detail": null
+  },
+  {
+    "name": "after-queue promtool",
+    "ok": false,
+    "detail": "memra_step_latency_seconds non-summary metrics should not have \"quantile\" label\nmemra_step_latency_seconds non-summary metrics should not have \"quantile\" label\n"
+  },
+  {
+    "name": "real queue pressure engaged session cap",
+    "ok": true,
+    "detail": 256
+  },
+  {
+    "name": "queue_wait counts both queued-cell requests",
+    "ok": true,
+    "detail": null
+  },
+  {
+    "name": "ttft counts both queued-cell requests",
+    "ok": true,
+    "detail": null
+  },
+  {
+    "name": "e2e counts both queued-cell requests",
+    "ok": true,
+    "detail": null
+  },
+  {
+    "name": "queue wait histogram records positive wait",
+    "ok": true,
+    "detail": 1.974981
+  },
+  {
+    "name": "queued-cell emitted gaps account for both streams",
+    "ok": true,
+    "detail": null
+  }
+]

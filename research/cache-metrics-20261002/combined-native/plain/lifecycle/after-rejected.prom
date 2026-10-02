@@ -1,0 +1,370 @@
+# HELP memra_requests_admitted_total Requests admitted since process start.
+# TYPE memra_requests_admitted_total counter
+memra_requests_admitted_total 1
+# HELP memra_requests_completed_total Worker request retirements since process start.
+# TYPE memra_requests_completed_total counter
+memra_requests_completed_total 1
+# HELP memra_tokens_out_total Output tokens since process start.
+# TYPE memra_tokens_out_total counter
+memra_tokens_out_total 16
+# HELP memra_prompt_tokens_in_total Prompt tokens including restored cache tokens since process start.
+# TYPE memra_prompt_tokens_in_total counter
+memra_prompt_tokens_in_total 12
+# HELP memra_cached_tokens_in_total Prompt tokens restored from cache since process start.
+# TYPE memra_cached_tokens_in_total counter
+memra_cached_tokens_in_total 0
+# HELP memra_computed_tokens_in_total Prompt tokens computed since process start.
+# TYPE memra_computed_tokens_in_total counter
+memra_computed_tokens_in_total 12
+# HELP memra_step_latency_p50_seconds Central-worker step latency percentile over its current window, in seconds.
+# TYPE memra_step_latency_p50_seconds gauge
+memra_step_latency_p50_seconds 0.007477753639221192
+# HELP memra_step_latency_p99_seconds Central-worker step latency percentile over its current window, in seconds.
+# TYPE memra_step_latency_p99_seconds gauge
+memra_step_latency_p99_seconds 0.009438040733337403
+# HELP memra_kv_used_bytes Backed canonical KV/recurrent/indexer/draft state-plane bytes in live and parked sessions; excludes prefix and rollback snapshots.
+# TYPE memra_kv_used_bytes gauge
+memra_kv_used_bytes{model="metrics-q9",route="hybrid"} 0
+# HELP memra_kv_capacity_bytes Reserved capacity of the canonical state planes counted by memra_kv_used_bytes, including VMM allocation granularity.
+# TYPE memra_kv_capacity_bytes gauge
+memra_kv_capacity_bytes{model="metrics-q9",route="hybrid"} 0
+# HELP memra_active_sessions Currently active hybrid sessions at the latest worker publication.
+# TYPE memra_active_sessions gauge
+memra_active_sessions{model="metrics-q9",route="hybrid"} 0
+# HELP memra_queued_sessions Hybrid sessions waiting for admission at the latest worker publication.
+# TYPE memra_queued_sessions gauge
+memra_queued_sessions{model="metrics-q9",route="hybrid"} 0
+# HELP memra_device_free_bytes Driver free bytes on each hybrid-model-owned CUDA device at its latest worker sample.
+# TYPE memra_device_free_bytes gauge
+memra_device_free_bytes{device="0"} 18072928256
+# HELP memra_device_memory_sample_age_seconds Age of the cached device-memory observation; no device query is issued by a metrics scrape.
+# TYPE memra_device_memory_sample_age_seconds gauge
+memra_device_memory_sample_age_seconds{device="0"} 0.024278714
+# HELP memra_backend_prefix_cache_hits_total Successful prefix lookup probes by backend and storage tier.
+# TYPE memra_backend_prefix_cache_hits_total counter
+memra_backend_prefix_cache_hits_total{route="hybrid",tier="device"} 0
+# HELP memra_backend_prefix_cache_misses_total Unsuccessful prefix lookup probes by backend and storage tier.
+# TYPE memra_backend_prefix_cache_misses_total counter
+memra_backend_prefix_cache_misses_total{route="hybrid",tier="device"} 1
+# HELP memra_backend_prefix_cache_inserts_total Prefix insertions by backend and storage tier.
+# TYPE memra_backend_prefix_cache_inserts_total counter
+memra_backend_prefix_cache_inserts_total{route="hybrid",tier="device"} 0
+# HELP memra_backend_prefix_cache_evictions_total Prefix evictions and superseded entries by backend and storage tier.
+# TYPE memra_backend_prefix_cache_evictions_total counter
+memra_backend_prefix_cache_evictions_total{route="hybrid",tier="device"} 0
+# HELP memra_backend_prefix_cache_bytes Currently retained prefix bytes by backend and storage tier.
+# TYPE memra_backend_prefix_cache_bytes gauge
+memra_backend_prefix_cache_bytes{route="hybrid",tier="device"} 0
+# HELP memra_queue_wait_seconds Worker submission to admission, per generation attempt, cumulative and unsampled.
+# TYPE memra_queue_wait_seconds histogram
+memra_queue_wait_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0.005"} 1
+memra_queue_wait_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0.01"} 1
+memra_queue_wait_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0.025"} 1
+memra_queue_wait_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0.05"} 1
+memra_queue_wait_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0.1"} 1
+memra_queue_wait_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0.25"} 1
+memra_queue_wait_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0.5"} 1
+memra_queue_wait_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="1"} 1
+memra_queue_wait_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="2.5"} 1
+memra_queue_wait_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="5"} 1
+memra_queue_wait_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="10"} 1
+memra_queue_wait_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="30"} 1
+memra_queue_wait_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="60"} 1
+memra_queue_wait_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="120"} 1
+memra_queue_wait_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="300"} 1
+memra_queue_wait_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="+Inf"} 1
+memra_queue_wait_seconds_sum{model="metrics-q9",route="hybrid",lane="interactive"} 0.000939
+memra_queue_wait_seconds_count{model="metrics-q9",route="hybrid",lane="interactive"} 1
+# HELP memra_ttft_seconds Worker submission to first accepted token event, including queue wait, cumulative and unsampled.
+# TYPE memra_ttft_seconds histogram
+memra_ttft_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0.005"} 0
+memra_ttft_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0.01"} 0
+memra_ttft_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0.025"} 0
+memra_ttft_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0.05"} 0
+memra_ttft_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0.1"} 1
+memra_ttft_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0.25"} 1
+memra_ttft_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0.5"} 1
+memra_ttft_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="1"} 1
+memra_ttft_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="2.5"} 1
+memra_ttft_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="5"} 1
+memra_ttft_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="10"} 1
+memra_ttft_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="30"} 1
+memra_ttft_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="60"} 1
+memra_ttft_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="120"} 1
+memra_ttft_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="300"} 1
+memra_ttft_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="+Inf"} 1
+memra_ttft_seconds_sum{model="metrics-q9",route="hybrid",lane="interactive"} 0.093464
+memra_ttft_seconds_count{model="metrics-q9",route="hybrid",lane="interactive"} 1
+# HELP memra_e2e_seconds Worker submission to successful generation finish, including queue wait, cumulative and unsampled.
+# TYPE memra_e2e_seconds histogram
+memra_e2e_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0.005"} 0
+memra_e2e_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0.01"} 0
+memra_e2e_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0.025"} 0
+memra_e2e_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0.05"} 0
+memra_e2e_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0.1"} 0
+memra_e2e_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0.25"} 1
+memra_e2e_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0.5"} 1
+memra_e2e_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="1"} 1
+memra_e2e_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="2.5"} 1
+memra_e2e_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="5"} 1
+memra_e2e_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="10"} 1
+memra_e2e_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="30"} 1
+memra_e2e_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="60"} 1
+memra_e2e_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="120"} 1
+memra_e2e_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="300"} 1
+memra_e2e_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="+Inf"} 1
+memra_e2e_seconds_sum{model="metrics-q9",route="hybrid",lane="interactive"} 0.218619
+memra_e2e_seconds_count{model="metrics-q9",route="hybrid",lane="interactive"} 1
+# HELP memra_tpot_seconds Intervals between accepted worker token events within one generation attempt, cumulative and unsampled.
+# TYPE memra_tpot_seconds histogram
+memra_tpot_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0.005"} 0
+memra_tpot_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0.01"} 15
+memra_tpot_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0.025"} 15
+memra_tpot_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0.05"} 15
+memra_tpot_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0.1"} 15
+memra_tpot_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0.25"} 15
+memra_tpot_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0.5"} 15
+memra_tpot_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="1"} 15
+memra_tpot_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="2.5"} 15
+memra_tpot_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="5"} 15
+memra_tpot_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="10"} 15
+memra_tpot_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="30"} 15
+memra_tpot_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="60"} 15
+memra_tpot_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="120"} 15
+memra_tpot_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="300"} 15
+memra_tpot_seconds_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="+Inf"} 15
+memra_tpot_seconds_sum{model="metrics-q9",route="hybrid",lane="interactive"} 0.117856
+memra_tpot_seconds_count{model="metrics-q9",route="hybrid",lane="interactive"} 15
+# HELP memra_prefill_tokens Prompt token count including cache reads, once per admitted generation attempt.
+# TYPE memra_prefill_tokens histogram
+memra_prefill_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0"} 0
+memra_prefill_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="16"} 1
+memra_prefill_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="32"} 1
+memra_prefill_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="64"} 1
+memra_prefill_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="128"} 1
+memra_prefill_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="256"} 1
+memra_prefill_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="512"} 1
+memra_prefill_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="1024"} 1
+memra_prefill_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="2048"} 1
+memra_prefill_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="4096"} 1
+memra_prefill_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="8192"} 1
+memra_prefill_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="16384"} 1
+memra_prefill_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="32768"} 1
+memra_prefill_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="65536"} 1
+memra_prefill_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="131072"} 1
+memra_prefill_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="+Inf"} 1
+memra_prefill_tokens_sum{model="metrics-q9",route="hybrid",lane="interactive"} 12
+memra_prefill_tokens_count{model="metrics-q9",route="hybrid",lane="interactive"} 1
+# HELP memra_completion_tokens Generated token count of successful generation attempts, including length-limited completions.
+# TYPE memra_completion_tokens histogram
+memra_completion_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="0"} 0
+memra_completion_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="16"} 1
+memra_completion_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="32"} 1
+memra_completion_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="64"} 1
+memra_completion_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="128"} 1
+memra_completion_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="256"} 1
+memra_completion_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="512"} 1
+memra_completion_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="1024"} 1
+memra_completion_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="2048"} 1
+memra_completion_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="4096"} 1
+memra_completion_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="8192"} 1
+memra_completion_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="16384"} 1
+memra_completion_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="32768"} 1
+memra_completion_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="65536"} 1
+memra_completion_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="131072"} 1
+memra_completion_tokens_bucket{model="metrics-q9",route="hybrid",lane="interactive",le="+Inf"} 1
+memra_completion_tokens_sum{model="metrics-q9",route="hybrid",lane="interactive"} 16
+memra_completion_tokens_count{model="metrics-q9",route="hybrid",lane="interactive"} 1
+# HELP memra_cached_tokens_total Prompt tokens restored from cache for admitted hybrid generation attempts.
+# TYPE memra_cached_tokens_total counter
+memra_cached_tokens_total{model="metrics-q9",route="hybrid",lane="interactive"} 0
+# HELP memra_emitted_token_events_total Accepted worker token-event sends, including partial and cancelled requests.
+# TYPE memra_emitted_token_events_total counter
+memra_emitted_token_events_total{model="metrics-q9",route="hybrid",lane="interactive"} 16
+# HELP memra_requests_total Logical generation HTTP outcomes by response code; 499 denotes client cancellation before a terminal response.
+# TYPE memra_requests_total counter
+memra_requests_total{model="metrics-q9",route="hybrid",lane="interactive",code="200"} 1
+memra_requests_total{model="unknown",route="unresolved",lane="interactive",code="400"} 3
+# HELP memra_requests_refused_total HTTP errors returned before a generation stream was opened, excluding client cancellations.
+# TYPE memra_requests_refused_total counter
+memra_requests_refused_total{model="metrics-q9",route="hybrid",lane="interactive"} 0
+memra_requests_refused_total{model="unknown",route="unresolved",lane="interactive"} 3
+# HELP memra_streams_incomplete_total Generation streams without a terminal completion, including client cancellations.
+# TYPE memra_streams_incomplete_total counter
+memra_streams_incomplete_total{model="metrics-q9",route="hybrid",lane="interactive"} 0
+memra_streams_incomplete_total{model="unknown",route="unresolved",lane="interactive"} 0
+# HELP memra_streams_truncated_total Generation streams that ended without a terminal completion, excluding client cancellations.
+# TYPE memra_streams_truncated_total counter
+memra_streams_truncated_total{model="metrics-q9",route="hybrid",lane="interactive"} 0
+memra_streams_truncated_total{model="unknown",route="unresolved",lane="interactive"} 0
+# HELP memra_requests_cancelled_total Client cancellations before a terminal generation response.
+# TYPE memra_requests_cancelled_total counter
+memra_requests_cancelled_total{model="metrics-q9",route="hybrid",lane="interactive"} 0
+memra_requests_cancelled_total{model="unknown",route="unresolved",lane="interactive"} 0
+# HELP memra_pre_header_deadline_total Generation requests answered with HTTP 408 before streaming headers.
+# TYPE memra_pre_header_deadline_total counter
+memra_pre_header_deadline_total{model="metrics-q9",route="hybrid",lane="interactive"} 0
+memra_pre_header_deadline_total{model="unknown",route="unresolved",lane="interactive"} 0
+# HELP memra_response_errors_total HTTP errors and failed generation responses, including errors carried inside HTTP 200 bodies.
+# TYPE memra_response_errors_total counter
+memra_response_errors_total{model="metrics-q9",route="hybrid",lane="interactive"} 0
+memra_response_errors_total{model="unknown",route="unresolved",lane="interactive"} 3
+# HELP memra_prefix_cache_hits_total Prefix-cache hit probes since process start.
+# TYPE memra_prefix_cache_hits_total counter
+memra_prefix_cache_hits_total 0
+# HELP memra_prefix_cache_misses_total Prefix-cache miss probes since process start.
+# TYPE memra_prefix_cache_misses_total counter
+memra_prefix_cache_misses_total 1
+# HELP memra_prefix_cache_inserts_total Prefix-cache insertions since process start.
+# TYPE memra_prefix_cache_inserts_total counter
+memra_prefix_cache_inserts_total 0
+# HELP memra_prefix_cache_evictions_total Prefix-cache evictions since process start.
+# TYPE memra_prefix_cache_evictions_total counter
+memra_prefix_cache_evictions_total 0
+# HELP memra_prefix_cache_hit_tokens_total Tokens restored by prefix-cache hits since process start.
+# TYPE memra_prefix_cache_hit_tokens_total counter
+memra_prefix_cache_hit_tokens_total 0
+# HELP memra_request_faults_total Guarded worker calls that failed with a request-scoped fault.
+# TYPE memra_request_faults_total counter
+memra_request_faults_total 0
+# HELP memra_worker_respawns_total Worker thread respawn attempts since process start.
+# TYPE memra_worker_respawns_total counter
+memra_worker_respawns_total 0
+# HELP memra_cache_hit_token_ratio Fraction of all prompt tokens restored from cache since process start.
+# TYPE memra_cache_hit_token_ratio gauge
+memra_cache_hit_token_ratio 0
+# HELP memra_prefix_cache_bytes Current device prefix-cache bytes.
+# TYPE memra_prefix_cache_bytes gauge
+memra_prefix_cache_bytes 0
+# HELP memra_route_requests_total Dedicated-route requests by terminal outcome since process start.
+# TYPE memra_route_requests_total counter
+# HELP memra_route_tokens_out_total Dedicated-route output tokens since process start.
+# TYPE memra_route_tokens_out_total counter
+# HELP memra_route_waiting Dedicated-route requests waiting for service.
+# TYPE memra_route_waiting gauge
+# HELP memra_route_running Dedicated-route requests running.
+# TYPE memra_route_running gauge
+# HELP memra_route_capacity Dedicated-route concurrent service capacity.
+# TYPE memra_route_capacity gauge
+# HELP memra_route_queue_wait_seconds Dedicated-route reservation to dequeue latency; cumulative, unsampled.
+# TYPE memra_route_queue_wait_seconds histogram
+# HELP memra_route_e2e_seconds Successful dedicated-route admission to completion latency; cumulative, unsampled.
+# TYPE memra_route_e2e_seconds histogram
+# HELP memra_route_round_seconds Dedicated-route compute-round latency; not an emitted-token-gap metric.
+# TYPE memra_route_round_seconds histogram
+# HELP memra_hybrid_queue_wait_seconds Hybrid request queue to admission latency per attempt; cumulative, unsampled.
+# TYPE memra_hybrid_queue_wait_seconds histogram
+memra_hybrid_queue_wait_seconds_bucket{model="metrics-q9",le="0.005"} 1
+memra_hybrid_queue_wait_seconds_bucket{model="metrics-q9",le="0.01"} 1
+memra_hybrid_queue_wait_seconds_bucket{model="metrics-q9",le="0.025"} 1
+memra_hybrid_queue_wait_seconds_bucket{model="metrics-q9",le="0.05"} 1
+memra_hybrid_queue_wait_seconds_bucket{model="metrics-q9",le="0.1"} 1
+memra_hybrid_queue_wait_seconds_bucket{model="metrics-q9",le="0.25"} 1
+memra_hybrid_queue_wait_seconds_bucket{model="metrics-q9",le="0.5"} 1
+memra_hybrid_queue_wait_seconds_bucket{model="metrics-q9",le="1"} 1
+memra_hybrid_queue_wait_seconds_bucket{model="metrics-q9",le="2.5"} 1
+memra_hybrid_queue_wait_seconds_bucket{model="metrics-q9",le="5"} 1
+memra_hybrid_queue_wait_seconds_bucket{model="metrics-q9",le="10"} 1
+memra_hybrid_queue_wait_seconds_bucket{model="metrics-q9",le="30"} 1
+memra_hybrid_queue_wait_seconds_bucket{model="metrics-q9",le="60"} 1
+memra_hybrid_queue_wait_seconds_bucket{model="metrics-q9",le="120"} 1
+memra_hybrid_queue_wait_seconds_bucket{model="metrics-q9",le="300"} 1
+memra_hybrid_queue_wait_seconds_bucket{model="metrics-q9",le="+Inf"} 1
+memra_hybrid_queue_wait_seconds_sum{model="metrics-q9"} 0.000939
+memra_hybrid_queue_wait_seconds_count{model="metrics-q9"} 1
+# HELP memra_hybrid_ttft_seconds Hybrid admission to first committed token latency per attempt; cumulative, unsampled.
+# TYPE memra_hybrid_ttft_seconds histogram
+memra_hybrid_ttft_seconds_bucket{model="metrics-q9",le="0.005"} 0
+memra_hybrid_ttft_seconds_bucket{model="metrics-q9",le="0.01"} 0
+memra_hybrid_ttft_seconds_bucket{model="metrics-q9",le="0.025"} 0
+memra_hybrid_ttft_seconds_bucket{model="metrics-q9",le="0.05"} 0
+memra_hybrid_ttft_seconds_bucket{model="metrics-q9",le="0.1"} 1
+memra_hybrid_ttft_seconds_bucket{model="metrics-q9",le="0.25"} 1
+memra_hybrid_ttft_seconds_bucket{model="metrics-q9",le="0.5"} 1
+memra_hybrid_ttft_seconds_bucket{model="metrics-q9",le="1"} 1
+memra_hybrid_ttft_seconds_bucket{model="metrics-q9",le="2.5"} 1
+memra_hybrid_ttft_seconds_bucket{model="metrics-q9",le="5"} 1
+memra_hybrid_ttft_seconds_bucket{model="metrics-q9",le="10"} 1
+memra_hybrid_ttft_seconds_bucket{model="metrics-q9",le="30"} 1
+memra_hybrid_ttft_seconds_bucket{model="metrics-q9",le="60"} 1
+memra_hybrid_ttft_seconds_bucket{model="metrics-q9",le="120"} 1
+memra_hybrid_ttft_seconds_bucket{model="metrics-q9",le="300"} 1
+memra_hybrid_ttft_seconds_bucket{model="metrics-q9",le="+Inf"} 1
+memra_hybrid_ttft_seconds_sum{model="metrics-q9"} 0.092515
+memra_hybrid_ttft_seconds_count{model="metrics-q9"} 1
+# HELP memra_hybrid_e2e_seconds Successful hybrid admission to completion latency per attempt; cumulative, unsampled.
+# TYPE memra_hybrid_e2e_seconds histogram
+memra_hybrid_e2e_seconds_bucket{model="metrics-q9",le="0.005"} 0
+memra_hybrid_e2e_seconds_bucket{model="metrics-q9",le="0.01"} 0
+memra_hybrid_e2e_seconds_bucket{model="metrics-q9",le="0.025"} 0
+memra_hybrid_e2e_seconds_bucket{model="metrics-q9",le="0.05"} 0
+memra_hybrid_e2e_seconds_bucket{model="metrics-q9",le="0.1"} 0
+memra_hybrid_e2e_seconds_bucket{model="metrics-q9",le="0.25"} 1
+memra_hybrid_e2e_seconds_bucket{model="metrics-q9",le="0.5"} 1
+memra_hybrid_e2e_seconds_bucket{model="metrics-q9",le="1"} 1
+memra_hybrid_e2e_seconds_bucket{model="metrics-q9",le="2.5"} 1
+memra_hybrid_e2e_seconds_bucket{model="metrics-q9",le="5"} 1
+memra_hybrid_e2e_seconds_bucket{model="metrics-q9",le="10"} 1
+memra_hybrid_e2e_seconds_bucket{model="metrics-q9",le="30"} 1
+memra_hybrid_e2e_seconds_bucket{model="metrics-q9",le="60"} 1
+memra_hybrid_e2e_seconds_bucket{model="metrics-q9",le="120"} 1
+memra_hybrid_e2e_seconds_bucket{model="metrics-q9",le="300"} 1
+memra_hybrid_e2e_seconds_bucket{model="metrics-q9",le="+Inf"} 1
+memra_hybrid_e2e_seconds_sum{model="metrics-q9"} 0.217681
+memra_hybrid_e2e_seconds_count{model="metrics-q9"} 1
+# HELP memra_hybrid_token_gap_seconds Intervals between accepted worker token events, including empty text and EOS IDs; N-1 per N events, cumulative and unsampled. Excludes queue and prefill; not network flush timing.
+# TYPE memra_hybrid_token_gap_seconds histogram
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="interactive",le="0.005"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="interactive",le="0.01"} 15
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="interactive",le="0.025"} 15
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="interactive",le="0.05"} 15
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="interactive",le="0.1"} 15
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="interactive",le="0.25"} 15
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="interactive",le="0.5"} 15
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="interactive",le="1"} 15
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="interactive",le="2.5"} 15
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="interactive",le="5"} 15
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="interactive",le="10"} 15
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="interactive",le="30"} 15
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="interactive",le="60"} 15
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="interactive",le="120"} 15
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="interactive",le="300"} 15
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="interactive",le="+Inf"} 15
+memra_hybrid_token_gap_seconds_sum{model="metrics-q9",lane="interactive"} 0.117855
+memra_hybrid_token_gap_seconds_count{model="metrics-q9",lane="interactive"} 15
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="judge",le="0.005"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="judge",le="0.01"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="judge",le="0.025"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="judge",le="0.05"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="judge",le="0.1"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="judge",le="0.25"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="judge",le="0.5"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="judge",le="1"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="judge",le="2.5"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="judge",le="5"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="judge",le="10"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="judge",le="30"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="judge",le="60"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="judge",le="120"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="judge",le="300"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="judge",le="+Inf"} 0
+memra_hybrid_token_gap_seconds_sum{model="metrics-q9",lane="judge"} 0
+memra_hybrid_token_gap_seconds_count{model="metrics-q9",lane="judge"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="harvest",le="0.005"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="harvest",le="0.01"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="harvest",le="0.025"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="harvest",le="0.05"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="harvest",le="0.1"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="harvest",le="0.25"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="harvest",le="0.5"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="harvest",le="1"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="harvest",le="2.5"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="harvest",le="5"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="harvest",le="10"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="harvest",le="30"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="harvest",le="60"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="harvest",le="120"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="harvest",le="300"} 0
+memra_hybrid_token_gap_seconds_bucket{model="metrics-q9",lane="harvest",le="+Inf"} 0
+memra_hybrid_token_gap_seconds_sum{model="metrics-q9",lane="harvest"} 0
+memra_hybrid_token_gap_seconds_count{model="metrics-q9",lane="harvest"} 0

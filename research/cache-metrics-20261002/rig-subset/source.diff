@@ -1,0 +1,1990 @@
+diff --git a/crates/memra-engine/src/dflash.rs b/crates/memra-engine/src/dflash.rs
+index 9047b2cd77..e1c5f449c1 100644
+--- a/crates/memra-engine/src/dflash.rs
++++ b/crates/memra-engine/src/dflash.rs
+@@ -3056,6 +3056,14 @@ impl DflashDraft {
+ }
+ 
+ impl DflashKv {
++    /// Allocated draft K/V data planes, including the reserved append window.
++    pub fn kv_plane_bytes(&self) -> usize {
++        self.k
++            .iter()
++            .chain(&self.v)
++            .map(|plane| plane.len() * 4)
++            .sum()
++    }
+     pub fn new(
+         e: &Engine,
+         cfg: &DflashCfg,
+@@ -4708,6 +4716,12 @@ fn dspark_commit_limit(
+ }
+ 
+ impl DsparkSpecSession {
++    /// Canonical trunk and draft state planes, without transient verification snapshots.
++    pub fn kv_plane_bytes(&self) -> (usize, usize) {
++        let (used, capacity) = self.cache.kv_plane_bytes();
++        let draft = self.dkv.kv_plane_bytes();
++        (used + draft, capacity + draft)
++    }
+     /// How many trailing draft-KV rows a restore must carry for the drafter to be
+     /// indistinguishable from one that cold-primed: the sliding window plus one block.
+     ///
+diff --git a/crates/memra-engine/src/glm_spec.rs b/crates/memra-engine/src/glm_spec.rs
+index b02f8e59bc..94bd02f40c 100644
+--- a/crates/memra-engine/src/glm_spec.rs
++++ b/crates/memra-engine/src/glm_spec.rs
+@@ -4442,6 +4442,15 @@ pub struct Glm5SpecSession {
+ }
+ 
+ impl Glm5SpecSession {
++    /// Canonical trunk and optional DFlash draft state planes, excluding rollback copies.
++    pub fn kv_plane_bytes(&self) -> (usize, usize) {
++        let (used, capacity) = self.cache.kv_plane_bytes();
++        let draft = match &self.draft {
++            Glm5DraftState::NativeMtp => 0,
++            Glm5DraftState::Dflash2 { kv, .. } => kv.kv_plane_bytes(),
++        };
++        (used + draft, capacity + draft)
++    }
+     /// The depth log, for the worker's `[spec-prof-rounds]` / `[spec-prof-summary]` lines.
+     pub fn round_log_mut(&mut self) -> Option<&mut SpecRoundsLog> {
+         self.prof_rounds.as_mut()
+diff --git a/crates/memra-engine/src/spec.rs b/crates/memra-engine/src/spec.rs
+index d3592a0d7f..f316ba4ed2 100644
+--- a/crates/memra-engine/src/spec.rs
++++ b/crates/memra-engine/src/spec.rs
+@@ -1661,6 +1661,14 @@ pub struct SpecSession {
+     pub capture_disabled: bool,
+ }
+ impl SpecSession {
++    /// Canonical trunk and draft K/V state planes; excludes rollback copies and workspaces.
++    pub fn kv_plane_bytes(&self) -> (usize, usize) {
++        self.scratch_layers()
++            .fold(self.cache.kv_plane_bytes(), |(u, c), layer| {
++                let (lu, lc) = layer.kv_plane_bytes();
++                (u + lu, c + lc)
++            })
++    }
+     /// Context capacity of the session's caches (the server's ContextFull guard).
+     pub fn cache_max_ctx(&self) -> usize {
+         self.cache.max_ctx
+diff --git a/crates/memra-kv/src/lib.rs b/crates/memra-kv/src/lib.rs
+index 51f4a68940..2dd7d65a9d 100644
+--- a/crates/memra-kv/src/lib.rs
++++ b/crates/memra-kv/src/lib.rs
+@@ -512,6 +512,15 @@ pub struct KvLayer {
+ }
+ 
+ impl KvLayer {
++    /// Backed and reserved bytes of the canonical K/V data planes, including VMM
++    /// allocation granularity. Read-only;
++    /// excludes length metadata, graph workspace and rollback snapshots.
++    pub fn kv_plane_bytes(&self) -> (usize, usize) {
++        (
++            self.k.physical_bytes() + self.v.physical_bytes(),
++            self.k.reserved_bytes() + self.v.reserved_bytes(),
++        )
++    }
+     pub fn physical_rows(
+         &self,
+         start: usize,
+@@ -2753,6 +2762,50 @@ pub struct CacheSnapshot {
+ }
+ 
+ impl Cache {
++    /// Resident and addressable canonical state-plane bytes, including recurrent,
++    /// latent/indexer and TP replicas. Prefix and rollback snapshots are separate owners.
++    /// No device read, synchronization, allocation or change to cache state occurs.
++    pub fn kv_plane_bytes(&self) -> (usize, usize) {
++        let mut bytes = (0, 0);
++        for layer in self.kv.iter().flatten() {
++            let (used, capacity) = layer.kv_plane_bytes();
++            bytes.0 += used;
++            bytes.1 += capacity;
++        }
++        let recurrent = |layer: &RecurLayer| {
++            (layer.conv_state.len() + layer.ssm_state.len() + layer.ssm_state_alt.len()) * 4
++        };
++        let latent = |layer: &LatentKvLayer| {
++            (layer.rows.len()
++                + layer.index_rows.as_ref().map_or(0, |p| p.len())
++                + layer.index_pool_keys.as_ref().map_or(0, |p| p.len()))
++                * 4
++        };
++        let fixed = self.recur.iter().flatten().map(recurrent).sum::<usize>()
++            + self
++                .glm5_tp_recur
++                .iter()
++                .flatten()
++                .flatten()
++                .map(recurrent)
++                .sum::<usize>()
++            + self.latent.iter().flatten().map(latent).sum::<usize>()
++            + self
++                .glm5_tp_latent_peer
++                .iter()
++                .flatten()
++                .flatten()
++                .map(latent)
++                .sum::<usize>()
++            + self
++                .tp_kv
++                .iter()
++                .flatten()
++                .flat_map(|layer| layer.ranks())
++                .map(|rank| rank.k().len() + rank.v().len())
++                .sum::<usize>();
++        (bytes.0 + fixed, bytes.1 + fixed)
++    }
+     /// The continuation gate. Every decode and prime entry asks it first. Refuses a tainted
+     /// cache (one-way) and, under day-11 rule 2, a cache with any suspended layer, with the
+     /// typed [`ContinuationRefused`] naming the layers, until the caller restores them.
+diff --git a/crates/memra-server/src/anthropic.rs b/crates/memra-server/src/anthropic.rs
+index 1c2969de0e..73021db488 100644
+--- a/crates/memra-server/src/anthropic.rs
++++ b/crates/memra-server/src/anthropic.rs
+@@ -678,6 +678,12 @@ async fn messages_with_admission(
+             );
+         }
+     };
++    crate::http_metrics::bind_model(
++        parsed
++            .get("model")
++            .and_then(|m| m.as_str())
++            .and_then(|m| crate::canonical_model_id(&st.models, m)),
++    );
+     let translated = match translate(&parsed) {
+         Ok(v) => v,
+         Err(msg) => return with_anthropic_request_id(&env.id, bad_request(&msg, &env.id)),
+@@ -880,6 +886,7 @@ fn messages_sse(
+     stop_strings: Vec<String>,
+     guard: Option<crate::InflightGuard>,
+ ) -> Sse<impl futures_core::Stream<Item = Result<SseEvent, std::convert::Infallible>>> {
++    let http_observation = crate::http_metrics::current();
+     let mut scrub = (!stop_strings.is_empty()).then(|| SurfaceScrubber::new(stop_strings.clone()));
+     let stream = async_stream::stream! {
+         let _guard = guard;
+@@ -989,6 +996,7 @@ fn messages_sse(
+         }
+         macro_rules! stream_fault {
+             ($etype:expr, $message:expr) => {
++                if let Some(observation) = &http_observation { observation.failed(); }
+                 yield Ok(frame(json!({
+                     "type": "error",
+                     "error": { "type": $etype, "message": $message },
+@@ -1130,6 +1138,7 @@ fn messages_sse(
+                         },
+                         "usage": usage_json(n_prompt, n_tokens, n_cached),
+                     })));
++                    if let Some(observation) = &http_observation { observation.terminal(); }
+                     yield Ok(frame(json!({ "type": "message_stop" })));
+                     terminal = true;
+                     break;
+@@ -1165,6 +1174,7 @@ fn messages_sse(
+             }
+         }
+         if !terminal {
++            if let Some(observation) = &http_observation { observation.failed(); }
+             // Channel closed without Done/Error: worker restart — OUR fault, settled
+             // rejected with debit ZERO (fault-attribution ruling 2026-08-23; this used to
+             // fall through to Drop and bill the partial stream as a client "abandon").
+diff --git a/crates/memra-server/src/capacity_metrics.rs b/crates/memra-server/src/capacity_metrics.rs
+new file mode 100644
+index 0000000000..1a58b0380c
+--- /dev/null
++++ b/crates/memra-server/src/capacity_metrics.rs
+@@ -0,0 +1,181 @@
++//! Read-only allocator observations. KV gauges cover canonical live and parked state
++//! planes, including recurrent/indexer/draft planes; prefix snapshots and transient
++//! rollback/graph workspace are separate allocations. Capacity is reserved plane
++//! bytes, not free GPU memory. Device samples are cached at the existing worker/admission
++//! cadence and carry an age so a quiescent worker never presents an old sample as fresh.
++use crate::request_metrics::Backend;
++use std::collections::BTreeMap;
++use std::sync::{Mutex, OnceLock};
++use std::time::Instant;
++
++#[derive(Clone, Copy, Default)]
++pub(crate) struct Snapshot {
++    pub used: u64,
++    pub capacity: u64,
++    pub active: u64,
++    pub queued: u64,
++}
++impl Snapshot {
++    pub(crate) fn add(&mut self, (used, capacity): (usize, usize)) {
++        self.used += used as u64;
++        self.capacity += capacity as u64;
++    }
++}
++#[derive(Default)]
++struct Registry {
++    models: BTreeMap<(String, Backend), Snapshot>,
++    devices: BTreeMap<usize, (u64, Instant)>,
++}
++fn registry() -> &'static Mutex<Registry> {
++    static R: OnceLock<Mutex<Registry>> = OnceLock::new();
++    R.get_or_init(Default::default)
++}
++pub(crate) struct HybridLifetime;
++impl Drop for HybridLifetime {
++    fn drop(&mut self) {
++        let mut r = registry().lock().unwrap_or_else(|e| e.into_inner());
++        for ((_, backend), row) in &mut r.models {
++            if *backend == Backend::Hybrid {
++                *row = Snapshot::default();
++            }
++        }
++    }
++}
++pub(crate) fn publish_hybrid(rows: BTreeMap<String, Snapshot>) {
++    let mut r = registry().lock().unwrap_or_else(|e| e.into_inner());
++    r.models
++        .retain(|(_, backend), _| *backend != Backend::Hybrid);
++    r.models.extend(
++        rows.into_iter()
++            .map(|(model, snapshot)| ((model, Backend::Hybrid), snapshot)),
++    );
++}
++pub(crate) fn device_free(device: usize, bytes: u64) {
++    registry()
++        .lock()
++        .unwrap_or_else(|e| e.into_inner())
++        .devices
++        .insert(device, (bytes, Instant::now()));
++}
++pub(crate) fn render(m: &crate::worker::Metrics) -> String {
++    let (rows, devices) = {
++        let r = registry().lock().unwrap_or_else(|e| e.into_inner());
++        (r.models.clone(), r.devices.clone())
++    };
++    let mut out = String::new();
++    for (index, (name, help)) in [
++        ("memra_kv_used_bytes", "Backed canonical KV/recurrent/indexer/draft state-plane bytes in live and parked sessions; excludes prefix and rollback snapshots."),
++        ("memra_kv_capacity_bytes", "Reserved capacity of the canonical state planes counted by memra_kv_used_bytes, including VMM allocation granularity."),
++        ("memra_active_sessions", "Currently active hybrid sessions at the latest worker publication."),
++        ("memra_queued_sessions", "Hybrid sessions waiting for admission at the latest worker publication."),
++    ].into_iter().enumerate() {
++        crate::prometheus_header(&mut out, name, "gauge", help);
++        for ((model, backend), row) in &rows {
++            let value = [row.used, row.capacity, row.active, row.queued][index];
++            out.push_str(&format!("{name}{{model=\"{}\",route=\"{}\"}} {value}\n", crate::prometheus_label(model), backend.as_str()));
++        }
++    }
++    crate::prometheus_header(
++        &mut out,
++        "memra_device_free_bytes",
++        "gauge",
++        "Driver free bytes on each hybrid-model-owned CUDA device at its latest worker sample.",
++    );
++    for (device, (bytes, _)) in &devices {
++        out.push_str(&format!(
++            "memra_device_free_bytes{{device=\"{device}\"}} {bytes}\n"
++        ));
++    }
++    crate::prometheus_header(
++        &mut out,
++        "memra_device_memory_sample_age_seconds",
++        "gauge",
++        "Age of the cached device-memory observation; no device query is issued by a metrics scrape.",
++    );
++    for (device, (_, at)) in &devices {
++        out.push_str(&format!(
++            "memra_device_memory_sample_age_seconds{{device=\"{device}\"}} {}\n",
++            at.elapsed().as_secs_f64()
++        ));
++    }
++    let prefix = [(
++        "hybrid",
++        "device",
++        [
++            m.prefix_hits,
++            m.prefix_misses,
++            m.prefix_inserts,
++            m.prefix_evictions,
++            m.prefix_bytes,
++        ],
++    )];
++    for (index, (name, kind, help)) in [
++        (
++            "memra_backend_prefix_cache_hits_total",
++            "counter",
++            "Successful prefix lookup probes by backend and storage tier.",
++        ),
++        (
++            "memra_backend_prefix_cache_misses_total",
++            "counter",
++            "Unsuccessful prefix lookup probes by backend and storage tier.",
++        ),
++        (
++            "memra_backend_prefix_cache_inserts_total",
++            "counter",
++            "Prefix insertions by backend and storage tier.",
++        ),
++        (
++            "memra_backend_prefix_cache_evictions_total",
++            "counter",
++            "Prefix evictions and superseded entries by backend and storage tier.",
++        ),
++        (
++            "memra_backend_prefix_cache_bytes",
++            "gauge",
++            "Currently retained prefix bytes by backend and storage tier.",
++        ),
++    ]
++    .into_iter()
++    .enumerate()
++    {
++        crate::prometheus_header(&mut out, name, kind, help);
++        for (backend, tier, values) in &prefix {
++            out.push_str(&format!(
++                "{name}{{route=\"{backend}\",tier=\"{tier}\"}} {}\n",
++                values[index]
++            ));
++        }
++    }
++    out
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    #[test]
++    fn worker_lifetime_clears_live_gauges_on_exit() {
++        let model = "capacity-worker-exit".to_string();
++        publish_hybrid(BTreeMap::from([(
++            model.clone(),
++            Snapshot {
++                used: 100,
++                capacity: 200,
++                active: 1,
++                queued: 2,
++            },
++        )]));
++        let lifetime = HybridLifetime;
++        assert_eq!(
++            registry().lock().unwrap().models[&(model.clone(), Backend::Hybrid)].active,
++            1
++        );
++        drop(lifetime);
++        let r = registry().lock().unwrap();
++        let row = r.models[&(model, Backend::Hybrid)];
++        assert_eq!(
++            (row.used, row.capacity, row.active, row.queued),
++            (0, 0, 0, 0)
++        );
++    }
++}
+diff --git a/crates/memra-server/src/http_metrics.rs b/crates/memra-server/src/http_metrics.rs
+new file mode 100644
+index 0000000000..db946ced18
+--- /dev/null
++++ b/crates/memra-server/src/http_metrics.rs
+@@ -0,0 +1,373 @@
++//! HTTP outcomes, distinct from worker attempts. Labels are canonical loaded models,
++//! fixed backend/lane names and bounded HTTP codes. Unparsed/refused model names collapse
++//! to one `unknown` row. A completed max_tokens response is a valid terminal response.
++//! Stream truncation means the body ended without its protocol's terminal completion;
++//! client drops are counted separately. No response bytes or request bodies are copied.
++use axum::body::{Body, Bytes};
++use axum::extract::Request;
++use axum::middleware::Next;
++use axum::response::Response;
++use hyper::body::{Body as HttpBody, Frame, SizeHint};
++use std::collections::BTreeMap;
++use std::pin::Pin;
++use std::sync::atomic::{AtomicU64, Ordering};
++use std::sync::{Arc, Mutex, OnceLock};
++use std::task::{Context, Poll};
++
++#[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
++struct Key {
++    model: String,
++    route: &'static str,
++    lane: &'static str,
++}
++struct Counts {
++    codes: [AtomicU64; 1000],
++    refusals: AtomicU64,
++    incomplete: AtomicU64,
++    truncated: AtomicU64,
++    cancelled: AtomicU64,
++    preheader: AtomicU64,
++    errors: AtomicU64,
++}
++impl Default for Counts {
++    fn default() -> Self {
++        Self {
++            codes: std::array::from_fn(|_| AtomicU64::new(0)),
++            refusals: AtomicU64::new(0),
++            incomplete: AtomicU64::new(0),
++            truncated: AtomicU64::new(0),
++            cancelled: AtomicU64::new(0),
++            preheader: AtomicU64::new(0),
++            errors: AtomicU64::new(0),
++        }
++    }
++}
++fn registry() -> &'static Mutex<BTreeMap<Key, Arc<Counts>>> {
++    static REGISTRY: OnceLock<Mutex<BTreeMap<Key, Arc<Counts>>>> = OnceLock::new();
++    REGISTRY.get_or_init(Default::default)
++}
++struct State {
++    key: Key,
++    status: Option<u16>,
++    stream: bool,
++    terminal: bool,
++    failed: bool,
++    recorded: bool,
++}
++#[derive(Clone)]
++pub(crate) struct Observation(Arc<Mutex<State>>);
++tokio::task_local! { static CURRENT: Observation; }
++impl Observation {
++    fn new(lane: &'static str) -> Self {
++        Self(Arc::new(Mutex::new(State {
++            key: Key {
++                model: "unknown".into(),
++                route: "unresolved",
++                lane,
++            },
++            status: None,
++            stream: false,
++            terminal: false,
++            failed: false,
++            recorded: false,
++        })))
++    }
++    pub(crate) fn terminal(&self) {
++        let ready = {
++            let mut state = self.0.lock().unwrap_or_else(|e| e.into_inner());
++            state.terminal = true;
++            state.status.is_some() && state.stream
++        };
++        // Publish before yielding the terminal frame: a client may close immediately
++        // after receiving it, without asking the body for another frame.
++        if ready {
++            self.finish(false);
++        }
++    }
++    pub(crate) fn failed(&self) {
++        let ready = {
++            let mut state = self.0.lock().unwrap_or_else(|e| e.into_inner());
++            if state.terminal {
++                return;
++            }
++            state.failed = true;
++            state.status.is_some() && state.stream
++        };
++        if ready {
++            self.finish(false);
++        }
++    }
++    fn finish(&self, dropped: bool) {
++        let mut state = self.0.lock().unwrap_or_else(|e| e.into_inner());
++        if state.recorded {
++            return;
++        }
++        state.recorded = true;
++        let cancelled = dropped && !std::thread::panicking() && !state.terminal && !state.failed;
++        let code = if cancelled {
++            499
++        } else {
++            state.status.unwrap_or(500)
++        };
++        let row = registry()
++            .lock()
++            .unwrap_or_else(|e| e.into_inner())
++            .entry(state.key.clone())
++            .or_default()
++            .clone();
++        row.codes[code as usize].fetch_add(1, Ordering::Relaxed);
++        if !cancelled && (code >= 400 || state.failed || (state.stream && !state.terminal)) {
++            row.errors.fetch_add(1, Ordering::Relaxed);
++        }
++        if cancelled {
++            row.cancelled.fetch_add(1, Ordering::Relaxed);
++        }
++        if !state.stream && code >= 400 && !cancelled {
++            row.refusals.fetch_add(1, Ordering::Relaxed);
++        }
++        if state.status == Some(408) && !state.stream {
++            row.preheader.fetch_add(1, Ordering::Relaxed);
++        }
++        if state.stream && !state.terminal {
++            row.incomplete.fetch_add(1, Ordering::Relaxed);
++            if !cancelled {
++                row.truncated.fetch_add(1, Ordering::Relaxed);
++            }
++        }
++    }
++}
++pub(crate) fn current() -> Option<Observation> {
++    CURRENT.try_with(Clone::clone).ok()
++}
++/// Call only with the result of canonical_model_id, never an unchecked request string.
++pub(crate) fn bind_model(model: Option<String>) {
++    if let Some(model) = model
++        && let Some(observation) = current()
++    {
++        let mut state = observation.0.lock().unwrap_or_else(|e| e.into_inner());
++        state.key.route = if crate::route_telemetry::lookup(&model).is_some() {
++            crate::request_metrics::Backend::Dsv4
++        } else {
++            crate::request_metrics::Backend::Hybrid
++        }
++        .as_str();
++        state.key.model = model;
++    }
++}
++
++struct Guard(Observation);
++impl Drop for Guard {
++    fn drop(&mut self) {
++        self.0.finish(true);
++    }
++}
++struct ObservedBody {
++    inner: Pin<Box<Body>>,
++    guard: Guard,
++}
++impl HttpBody for ObservedBody {
++    type Data = Bytes;
++    type Error = axum::Error;
++    fn poll_frame(
++        mut self: Pin<&mut Self>,
++        cx: &mut Context<'_>,
++    ) -> Poll<Option<Result<Frame<Bytes>, axum::Error>>> {
++        let next = self.inner.as_mut().poll_frame(cx);
++        if matches!(&next, Poll::Ready(None) | Poll::Ready(Some(Err(_)))) {
++            self.guard.0.finish(false);
++        }
++        next
++    }
++    fn is_end_stream(&self) -> bool {
++        self.inner.is_end_stream()
++    }
++    fn size_hint(&self) -> SizeHint {
++        self.inner.size_hint()
++    }
++}
++
++pub(crate) async fn observe(req: Request, next: Next) -> Response {
++    if req.method() != axum::http::Method::POST
++        || !matches!(
++            req.uri().path(),
++            "/v1/completions" | "/v1/chat/completions" | "/v1/responses" | "/v1/messages"
++        )
++    {
++        return next.run(req).await;
++    }
++    let lane = req
++        .headers()
++        .get("x-lane")
++        .and_then(|v| v.to_str().ok())
++        .and_then(crate::lanes::Lane::parse)
++        .unwrap_or(crate::lanes::Lane::Interactive);
++    let observation = Observation::new(lane.as_str());
++    let guard = Guard(observation.clone());
++    let response = CURRENT.scope(observation.clone(), next.run(req)).await;
++    let stream = response
++        .headers()
++        .get(axum::http::header::CONTENT_TYPE)
++        .and_then(|v| v.to_str().ok())
++        .is_some_and(|v| v.starts_with("text/event-stream"));
++    {
++        let mut state = observation.0.lock().unwrap_or_else(|e| e.into_inner());
++        state.status = Some(response.status().as_u16());
++        state.stream = stream;
++    }
++    if !stream {
++        observation.finish(false);
++        return response;
++    }
++    let (parts, body) = response.into_parts();
++    Response::from_parts(
++        parts,
++        Body::new(ObservedBody {
++            inner: Box::pin(body),
++            guard,
++        }),
++    )
++}
++
++pub(crate) fn render() -> String {
++    let registry: Vec<_> = registry()
++        .lock()
++        .unwrap_or_else(|e| e.into_inner())
++        .iter()
++        .map(|(key, row)| (key.clone(), row.clone()))
++        .collect();
++    let labels = |key: &Key| {
++        format!(
++            "model=\"{}\",route=\"{}\",lane=\"{}\"",
++            crate::prometheus_label(&key.model),
++            key.route,
++            key.lane
++        )
++    };
++    let mut out = String::new();
++    crate::prometheus_header(
++        &mut out,
++        "memra_requests_total",
++        "counter",
++        "Logical generation HTTP outcomes by response code; 499 denotes client cancellation before a terminal response.",
++    );
++    for (key, counts) in registry.iter() {
++        for (code, value) in counts.codes.iter().enumerate() {
++            let value = value.load(Ordering::Relaxed);
++            if value > 0 {
++                out.push_str(&format!(
++                    "memra_requests_total{{{},code=\"{code}\"}} {value}\n",
++                    labels(key)
++                ));
++            }
++        }
++    }
++    for (index, (name, help)) in [
++        ("memra_requests_refused_total", "HTTP errors returned before a generation stream was opened, excluding client cancellations."),
++        ("memra_streams_incomplete_total", "Generation streams without a terminal completion, including client cancellations."),
++        ("memra_streams_truncated_total", "Generation streams that ended without a terminal completion, excluding client cancellations."),
++        ("memra_requests_cancelled_total", "Client cancellations before a terminal generation response."),
++        ("memra_pre_header_deadline_total", "Generation requests answered with HTTP 408 before streaming headers."),
++        ("memra_response_errors_total", "HTTP errors and failed generation responses, including errors carried inside HTTP 200 bodies."),
++    ].into_iter().enumerate() {
++        crate::prometheus_header(&mut out, name, "counter", help);
++        for (key, counts) in registry.iter() {
++            let value = [&counts.refusals, &counts.incomplete, &counts.truncated, &counts.cancelled, &counts.preheader, &counts.errors][index].load(Ordering::Relaxed);
++            out.push_str(&format!("{name}{{{}}} {value}\n", labels(key)));
++        }
++    }
++    out
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    fn fixture(model: &str, code: u16, stream: bool) -> Observation {
++        let o = Observation::new("interactive");
++        {
++            let mut s = o.0.lock().unwrap();
++            s.key.model = model.into();
++            s.status = Some(code);
++            s.stream = stream;
++        }
++        o
++    }
++    fn row(o: &Observation) -> Arc<Counts> {
++        registry()
++            .lock()
++            .unwrap()
++            .get(&o.0.lock().unwrap().key)
++            .unwrap()
++            .clone()
++    }
++    #[test]
++    fn statuses_and_preheader_deadlines_are_separate_from_stream_failures() {
++        for code in [408, 413, 429, 503] {
++            let o = fixture(&format!("http-code-{code}"), code, false);
++            o.finish(false);
++            o.finish(true);
++            let row = row(&o);
++            assert_eq!(row.codes[code as usize].load(Ordering::Relaxed), 1);
++            assert_eq!(row.refusals.load(Ordering::Relaxed), 1);
++            assert_eq!(
++                row.preheader.load(Ordering::Relaxed),
++                u64::from(code == 408)
++            );
++            assert_eq!(row.incomplete.load(Ordering::Relaxed), 0);
++        }
++    }
++    #[tokio::test]
++    async fn registered_backend_binding_is_a_cpu_http_contract() {
++        let model = "http-registered-backend";
++        crate::route_telemetry::register(model, 1);
++        let observation = fixture(model, 503, false);
++        CURRENT
++            .scope(observation.clone(), async {
++                bind_model(Some(model.into()));
++            })
++            .await;
++        observation.finish(false);
++        assert_eq!(observation.0.lock().unwrap().key.route, "dsv4");
++        assert_eq!(row(&observation).codes[503].load(Ordering::Relaxed), 1);
++    }
++
++    #[test]
++    fn every_status_accepted_by_the_http_type_fits_the_counter_table() {
++        let code = axum::http::StatusCode::from_u16(999).unwrap();
++        let observation = fixture("http-extension-code", code.as_u16(), false);
++        observation.finish(false);
++        assert_eq!(row(&observation).codes[999].load(Ordering::Relaxed), 1);
++    }
++
++    #[test]
++    fn unwinding_a_handler_counts_a_server_error_instead_of_a_client_cancel() {
++        let observation = fixture("http-handler-panic", 500, false);
++        observation.0.lock().unwrap().status = None;
++        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
++            let _guard = Guard(observation.clone());
++            panic!("controlled handler failure");
++        }));
++        assert!(result.is_err());
++        let row = row(&observation);
++        assert_eq!(row.codes[500].load(Ordering::Relaxed), 1);
++        assert_eq!(row.errors.load(Ordering::Relaxed), 1);
++        assert_eq!(row.cancelled.load(Ordering::Relaxed), 0);
++    }
++
++    #[test]
++    fn completed_truncated_and_cancelled_streams_have_distinct_outcomes() {
++        let clean = fixture("http-stream-clean", 200, true);
++        clean.terminal();
++        clean.finish(true);
++        let truncated = fixture("http-stream-truncated", 200, true);
++        truncated.finish(false);
++        let cancelled = fixture("http-stream-cancelled", 200, true);
++        cancelled.finish(true);
++        assert_eq!(row(&clean).codes[200].load(Ordering::Relaxed), 1);
++        assert_eq!(row(&clean).incomplete.load(Ordering::Relaxed), 0);
++        assert_eq!(row(&truncated).codes[200].load(Ordering::Relaxed), 1);
++        assert_eq!(row(&truncated).truncated.load(Ordering::Relaxed), 1);
++        assert_eq!(row(&cancelled).codes[499].load(Ordering::Relaxed), 1);
++        assert_eq!(row(&cancelled).incomplete.load(Ordering::Relaxed), 1);
++        assert_eq!(row(&cancelled).truncated.load(Ordering::Relaxed), 0);
++    }
++}
+diff --git a/crates/memra-server/src/hybrid_telemetry.rs b/crates/memra-server/src/hybrid_telemetry.rs
+index e1f335c413..278d7053d0 100644
+--- a/crates/memra-server/src/hybrid_telemetry.rs
++++ b/crates/memra-server/src/hybrid_telemetry.rs
+@@ -100,11 +100,13 @@ pub(crate) fn record_e2e(model: &str, elapsed: Duration) {
+ /// Observations are cumulative and unsampled, with exactly three possible lane labels.
+ #[derive(Default)]
+ pub(crate) struct EmissionClock {
++    pub(crate) request: crate::request_metrics::Clock,
+     last: Option<std::time::Instant>,
+ }
+ 
+ impl EmissionClock {
+     pub(crate) fn sent(&mut self, model: &str, lane: crate::lanes::Lane) {
++        self.request.sent();
+         self.sent_at(model, lane, std::time::Instant::now());
+     }
+ 
+diff --git a/crates/memra-server/src/lib.rs b/crates/memra-server/src/lib.rs
+index 95a7508cbc..6017e24b17 100644
+--- a/crates/memra-server/src/lib.rs
++++ b/crates/memra-server/src/lib.rs
+@@ -100,11 +100,13 @@ mod audio_api;
+ /// the id from the working tree instead of pinning a second copy of the algorithm.
+ #[allow(dead_code)] // one implementation, two callers: each uses a subset.
+ mod build_id;
++mod capacity_metrics;
+ mod dsv4_admit;
+ mod dsv4_serve;
+ mod embed_api;
+ mod handoff_io;
+ mod histogram;
++mod http_metrics;
+ mod hybrid_telemetry;
+ /// In-memory reference implementation of `metering::JobStore` (memra#550,
+ /// `docs/decisions/COMPLETE-RESULT-PATH-V1.md`): the bounded, TTL'd buffer a background
+@@ -123,6 +125,7 @@ mod kv_vmm;
+ pub mod metering;
+ mod prefill_receipt;
+ pub mod prime_fairness;
++mod request_metrics;
+ mod responses_api;
+ pub mod route_contract;
+ mod route_telemetry;
+@@ -6267,6 +6270,7 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
+         state,
+         authenticate_inference_before_body,
+     ));
++    let app = app.layer(middleware::from_fn(http_metrics::observe));
+     let app = if ttft::enabled() {
+         app.layer(middleware::from_fn(ttft_request_start))
+     } else {
+@@ -6996,6 +7000,9 @@ fn render_prometheus_metrics(
+         }
+     }
+     if metrics_scope.operator() {
++        out.push_str(&capacity_metrics::render(m));
++        out.push_str(&request_metrics::render());
++        out.push_str(&http_metrics::render());
+         for (name, value, help) in [
+             (
+                 "memra_prefix_cache_hits_total",
+@@ -10178,6 +10185,7 @@ async fn completions_with_admission(
+     Json(mut req): Json<CompletionReq>,
+     mut body_admission: Option<BodyAdmissionLease>,
+ ) -> Response {
++    http_metrics::bind_model(canonical_model_id(&st.models, &req.model));
+     let env = Envelope::new(false);
+     if let Err(msg) = req.stop.validate() {
+         return with_request_id(&env.id, bad_request(&msg, Some("stop")));
+@@ -10765,6 +10773,7 @@ async fn chat_completions_with_admission(
+     Json(mut req): Json<ChatCompletionReq>,
+     mut body_admission: Option<BodyAdmissionLease>,
+ ) -> Response {
++    http_metrics::bind_model(canonical_model_id(&st.models, &req.model));
+     let env = Envelope::new(true);
+     // Canonicalize before ANY downstream use: metadata limits, caps, cache namespace, ledger
+     // pricing and the worker's roster all key off this id and must agree on one spelling.
+@@ -11225,6 +11234,7 @@ fn sse_response_for_format(
+     guard: Option<InflightGuard>,
+     mut receipt: Option<Box<dyn metering::Receipt>>,
+ ) -> Sse<impl futures_core::Stream<Item = Result<SseEvent, std::convert::Infallible>>> {
++    let http_observation = http_metrics::current();
+     let SseFormat {
+         chat,
+         openai,
+@@ -11319,6 +11329,7 @@ fn sse_response_for_format(
+                         // Settle as rejected (best effort) so Drop cannot classify OUR
+                         // bookkeeping failure as a billable client abandon.
+                         let _ = receipt.reject(500, "request_ledger_unavailable");
++                        if let Some(observation) = &http_observation { observation.failed(); }
+                         let payload = request_ledger_error_body().to_string();
+                         if openai {
+                             yield Ok(SseEvent::default().data(payload));
+@@ -11331,6 +11342,7 @@ fn sse_response_for_format(
+                     }
+                 }
+                 Event::DeadlineExceeded { ms } => {
++                    if let Some(observation) = &http_observation { observation.failed(); }
+                     let ledger_error = if let Some(receipt) = receipt.as_mut() {
+                         receipt
+                             .settle_unbilled(
+@@ -11365,6 +11377,7 @@ fn sse_response_for_format(
+                             env.id
+                         );
+                         let _ = receipt.reject(500, "request_ledger_unavailable");
++                        if let Some(observation) = &http_observation { observation.failed(); }
+                         let payload = request_ledger_error_body().to_string();
+                         if openai {
+                             yield Ok(SseEvent::default().data(payload));
+@@ -11454,6 +11467,7 @@ fn sse_response_for_format(
+                         // unfinalized; settle it rejected (best effort — a no-op when
+                         // the append itself already latched) so Drop cannot bill it.
+                         let _ = receipt.reject(500, "request_ledger_unavailable");
++                        if let Some(observation) = &http_observation { observation.failed(); }
+                         let payload = request_ledger_error_body().to_string();
+                         if openai {
+                             yield Ok(SseEvent::default().data(payload));
+@@ -11464,6 +11478,7 @@ fn sse_response_for_format(
+                         terminal = true;
+                         break;
+                     }
++                    if let Some(observation) = &http_observation { observation.terminal(); }
+                     if openai {
+                         let usage = usage_json(n_prompt, n_tokens, n_cached, elapsed_s, spec);
+                         let fin = if chat {
+@@ -11505,6 +11520,7 @@ fn sse_response_for_format(
+                     break;
+                 }
+                 Event::Error(err) => {
++                    if let Some(observation) = &http_observation { observation.failed(); }
+                     // MID-STREAM FAILURE (G6). The response status is already 200 and the
+                     // headers are gone, so there is no status code left to change: the ONLY
+                     // honest signal is an error object in the stream followed by closing the
+@@ -11548,6 +11564,7 @@ fn sse_response_for_format(
+             }
+         }
+         if !terminal {
++            if let Some(observation) = &http_observation { observation.failed(); }
+             // Channel closed without Done/Error: the worker thread is gone (panicked or
+             // restarting) — OUR fault, so the receipt settles rejected with debit ZERO
+             // (fault-attribution ruling 2026-08-23; this used to fall through to Drop and
+@@ -11701,6 +11718,11 @@ struct BlockingPayload<'a> {
+ }
+ 
+ fn blocking_payload(p: BlockingPayload<'_>) -> Response {
++    if p.deadline_error.is_some()
++        && let Some(observation) = http_metrics::current()
++    {
++        observation.failed();
++    }
+     let BlockingPayload {
+         env,
+         model,
+@@ -17588,6 +17610,252 @@ default_reasoning_effort = "always"
+         assert_eq!(lines.last(), Some(&"[DONE]"));
+     }
+ 
++    #[tokio::test]
++    #[allow(clippy::await_holding_lock)] // allow: serializes the existing process-wide admission counters
++    async fn http_metrics_observe_preheader_deadline_body_limit_and_worker_refusals() {
++        use tower::ServiceExt;
++        let _counters = admission_counters_guard();
++        for code in [408u16, 429, 503] {
++            let model = format!("http-refusal-{code}");
++            let mut st = fake_worker_state();
++            st.models = Arc::new(vec![model.clone()]);
++            let (tx, rx) = std::sync::mpsc::channel();
++            st.cmd_tx = tx;
++            let app = Router::new()
++                .route("/v1/completions", post(completions_admitted))
++                .with_state(st)
++                .layer(middleware::from_fn(http_metrics::observe));
++            let body =
++                json!({"model":model,"prompt":"x","stream":true,"max_tokens":8,"timeout_ms":1000});
++            let request = axum::http::Request::builder()
++                .method("POST")
++                .uri("/v1/completions")
++                .header("content-type", "application/json")
++                .body(Body::from(body.to_string()))
++                .unwrap();
++            let response = tokio::spawn(app.oneshot(request));
++            let Cmd::Generate(mut generated) =
++                tokio::task::spawn_blocking(move || rx.recv().unwrap())
++                    .await
++                    .unwrap()
++            else {
++                panic!("expected generate")
++            };
++            worker::release_pending_admit();
++            worker::release_request_reservation(&mut generated);
++            if code != 408 {
++                let error = if code == 429 {
++                    worker::EngineError::rate_limit("fixture")
++                } else {
++                    worker::EngineError::overloaded("fixture")
++                };
++                generated.tx.send(Event::Error(error)).unwrap();
++            }
++            // Holding the producer open without a verdict exercises the real 1s preheader deadline.
++            let response = response.await.unwrap().unwrap();
++            assert_eq!(response.status().as_u16(), code);
++            drop(generated);
++            let metrics = http_metrics::render();
++            let labels = format!("model=\"{model}\",route=\"hybrid\",lane=\"interactive\"");
++            assert!(metrics.contains(&format!(
++                "memra_requests_total{{{labels},code=\"{code}\"}} 1\n"
++            )));
++            assert!(metrics.contains(&format!("memra_response_errors_total{{{labels}}} 1\n")));
++            if code == 408 {
++                assert!(
++                    metrics.contains(&format!("memra_pre_header_deadline_total{{{labels}}} 1\n"))
++                );
++            }
++        }
++        let app = Router::new()
++            .route("/v1/completions", post(completions_admitted))
++            .with_state(fake_worker_state())
++            .layer(DefaultBodyLimit::max(8))
++            .layer(middleware::from_fn(http_metrics::observe));
++        let response = app
++            .oneshot(
++                axum::http::Request::builder()
++                    .method("POST")
++                    .uri("/v1/completions")
++                    .header("content-type", "application/json")
++                    .body(Body::from(
++                        "{\"prompt\":\"body larger than the fixture limit\"}",
++                    ))
++                    .unwrap(),
++            )
++            .await
++            .unwrap();
++        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
++        assert!(http_metrics::render().contains("memra_requests_total{model=\"unknown\",route=\"unresolved\",lane=\"interactive\",code=\"413\"} 1\n"));
++    }
++
++    #[tokio::test]
++    #[allow(clippy::await_holding_lock)] // allow: serializes the existing process-wide admission counters
++    async fn http_metrics_cover_real_generation_surfaces_and_early_refusals() {
++        use tower::ServiceExt;
++        let _counters = admission_counters_guard();
++        let model = "http-metrics-surfaces";
++        let mut st = fake_worker_state_with_steps(2, std::time::Duration::ZERO);
++        st.models = Arc::new(vec![model.into()]);
++        let app = Router::new()
++            .route("/v1/completions", post(completions_admitted))
++            .route("/v1/chat/completions", post(chat_completions_admitted))
++            .route("/v1/responses", post(responses_api::responses_admitted))
++            .route("/v1/messages", post(anthropic::messages_admitted))
++            .with_state(st)
++            .layer(middleware::from_fn(http_metrics::observe));
++        for (path, mut body) in [
++            ("/v1/completions", json!({"prompt":"hello", "max_tokens":2})),
++            (
++                "/v1/chat/completions",
++                json!({"messages":[{"role":"user", "content":"hello"}], "max_tokens":2}),
++            ),
++            (
++                "/v1/responses",
++                json!({"input":"hello", "max_output_tokens":2}),
++            ),
++            (
++                "/v1/messages",
++                json!({"messages":[{"role":"user", "content":"hello"}], "max_tokens":2}),
++            ),
++        ] {
++            body["model"] = json!(model);
++            body["stream"] = json!(true);
++            let response = app
++                .clone()
++                .oneshot(
++                    axum::http::Request::builder()
++                        .method("POST")
++                        .uri(path)
++                        .header("content-type", "application/json")
++                        .body(Body::from(body.to_string()))
++                        .unwrap(),
++                )
++                .await
++                .unwrap();
++            assert_eq!(response.status(), StatusCode::OK, "{path}");
++            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
++                .await
++                .unwrap();
++            assert!(!bytes.is_empty());
++        }
++        let text = http_metrics::render();
++        assert!(text.contains("memra_requests_total{model=\"http-metrics-surfaces\",route=\"hybrid\",lane=\"interactive\",code=\"200\"} 4\n"), "{text}");
++        assert!(text.contains("memra_streams_incomplete_total{model=\"http-metrics-surfaces\",route=\"hybrid\",lane=\"interactive\"} 0\n"));
++        let rejected = app
++            .oneshot(
++                axum::http::Request::builder()
++                    .method("POST")
++                    .uri("/v1/completions")
++                    .header("content-type", "application/json")
++                    .body(Body::from(
++                        json!({"model":model,"prompt":"hello","n":2}).to_string(),
++                    ))
++                    .unwrap(),
++            )
++            .await
++            .unwrap();
++        assert_eq!(rejected.status(), StatusCode::BAD_REQUEST);
++        assert!(http_metrics::render().contains("memra_requests_total{model=\"http-metrics-surfaces\",route=\"hybrid\",lane=\"interactive\",code=\"400\"} 1\n"));
++    }
++
++    #[tokio::test]
++    #[allow(clippy::await_holding_lock)] // allow: serializes process-wide admission counters
++    async fn http_metrics_count_cancelled_and_truncated_real_sse_responses() {
++        use tower::ServiceExt;
++        let _counters = admission_counters_guard();
++        for (model, action) in [
++            ("http-metrics-cancel", "cancel"),
++            ("http-metrics-truncate", "drain"),
++            ("http-metrics-read-error-close", "close-on-error"),
++        ] {
++            let cancel = action == "cancel";
++            let mut st = fake_worker_state();
++            st.models = Arc::new(vec![model.into()]);
++            let (tx, rx) = std::sync::mpsc::channel();
++            st.cmd_tx = tx;
++            let worker = std::thread::spawn(move || {
++                if let Ok(Cmd::Generate(mut request)) = rx.recv() {
++                    worker::release_pending_admit();
++                    worker::release_request_reservation(&mut request);
++                    request
++                        .tx
++                        .send(Event::PromptUsage {
++                            n_prompt: 1,
++                            n_cached: 0,
++                        })
++                        .unwrap();
++                    request
++                        .tx
++                        .send(Event::Token {
++                            id: 1,
++                            text: "partial".into(),
++                        })
++                        .unwrap();
++                    // The producer closes without Done, exercising the real SSE failure path.
++                }
++            });
++            let app = Router::new()
++                .route("/v1/completions", post(completions_admitted))
++                .with_state(st)
++                .layer(middleware::from_fn(http_metrics::observe));
++            let response = app
++                .oneshot(
++                    axum::http::Request::builder()
++                        .method("POST")
++                        .uri("/v1/completions")
++                        .header("content-type", "application/json")
++                        .body(Body::from(
++                            json!({"model":model,"prompt":"x","max_tokens":8,"stream":true})
++                                .to_string(),
++                        ))
++                        .unwrap(),
++                )
++                .await
++                .unwrap();
++            assert_eq!(response.status(), StatusCode::OK);
++            if cancel {
++                drop(response);
++            } else if action == "close-on-error" {
++                use futures_core::Stream;
++                let mut data = response.into_body().into_data_stream();
++                tokio::time::timeout(std::time::Duration::from_secs(1), async {
++                    while let Some(frame) =
++                        std::future::poll_fn(|cx| std::pin::Pin::new(&mut data).poll_next(cx)).await
++                    {
++                        if String::from_utf8_lossy(&frame.unwrap()).contains("overloaded") {
++                            return;
++                        }
++                    }
++                    panic!("missing terminal error frame");
++                })
++                .await
++                .unwrap();
++                drop(data); // the client does not ask for EOF or the following [DONE] frame
++            } else {
++                let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
++                    .await
++                    .unwrap();
++                assert!(String::from_utf8_lossy(&bytes).contains("overloaded"));
++            }
++            worker.join().unwrap();
++            let text = http_metrics::render();
++            let labels = format!("model=\"{model}\",route=\"hybrid\",lane=\"interactive\"");
++            let code = if cancel { 499 } else { 200 };
++            assert!(
++                text.contains(&format!(
++                    "memra_requests_total{{{labels},code=\"{code}\"}} 1\n"
++                )),
++                "{text}"
++            );
++            assert!(text.contains(&format!("memra_streams_incomplete_total{{{labels}}} 1\n")));
++            assert!(text.contains(&format!(
++                "memra_streams_truncated_total{{{labels}}} {}\n",
++                usize::from(!cancel)
++            )));
++        }
++    }
++
+     #[tokio::test]
+     async fn premature_stream_end_is_a_terminal_error_not_a_successful_finish() {
+         let (tx, rx) = worker::event_channel();
+diff --git a/crates/memra-server/src/request_metrics.rs b/crates/memra-server/src/request_metrics.rs
+new file mode 100644
+index 0000000000..71ea5ccdec
+--- /dev/null
++++ b/crates/memra-server/src/request_metrics.rs
+@@ -0,0 +1,321 @@
++//! Cumulative generation timing for the hybrid worker, with fixed backend/lane labels.
++//! Labels come from loaded models, two backend names and the three fixed scheduler lanes.
++//! TTFT and successful E2E start at worker submission, including queue wait. Token gaps
++//! measure successful worker token-event sends, not compute rounds or network flushes.
++
++use crate::histogram::{Histogram, HistogramSnapshot};
++use crate::lanes::Lane;
++use std::collections::BTreeMap;
++use std::sync::atomic::{AtomicU64, Ordering};
++use std::sync::{Arc, OnceLock, RwLock};
++use std::time::Instant;
++
++#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
++pub(crate) enum Backend {
++    Hybrid,
++    Dsv4,
++}
++impl Backend {
++    pub(crate) fn as_str(self) -> &'static str {
++        match self {
++            Self::Hybrid => "hybrid",
++            Self::Dsv4 => "dsv4",
++        }
++    }
++}
++
++const TOKEN_BUCKETS: [u64; 15] = [
++    0, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072,
++];
++#[derive(Default)]
++struct Tokens {
++    buckets: [AtomicU64; 16],
++    sum: AtomicU64,
++}
++impl Tokens {
++    fn record(&self, n: usize) {
++        let n = n as u64;
++        let bucket = TOKEN_BUCKETS
++            .iter()
++            .position(|&edge| n <= edge)
++            .unwrap_or(15);
++        self.buckets[bucket].fetch_add(1, Ordering::Relaxed);
++        self.sum.fetch_add(n, Ordering::Relaxed);
++    }
++    fn snapshot(&self) -> HistogramSnapshot {
++        let mut count = 0;
++        let cumulative = self
++            .buckets
++            .iter()
++            .enumerate()
++            .map(|(i, value)| {
++                count += value.load(Ordering::Relaxed);
++                (
++                    TOKEN_BUCKETS.get(i).map_or(f64::INFINITY, |&n| n as f64),
++                    count,
++                )
++            })
++            .collect();
++        HistogramSnapshot {
++            cumulative,
++            sum_seconds: self.sum.load(Ordering::Relaxed) as f64,
++            count,
++        }
++    }
++}
++
++#[derive(Default)]
++struct Series {
++    queue: Histogram,
++    ttft: Histogram,
++    e2e: Histogram,
++    gap: Histogram,
++    cached: AtomicU64,
++    emitted: AtomicU64,
++    prefill: Tokens,
++    completion: Tokens,
++}
++type Key = (String, Backend, usize);
++fn registry() -> &'static RwLock<BTreeMap<Key, Arc<Series>>> {
++    static REGISTRY: OnceLock<RwLock<BTreeMap<Key, Arc<Series>>>> = OnceLock::new();
++    REGISTRY.get_or_init(Default::default)
++}
++fn series(model: &str, backend: Backend, lane: Lane) -> Arc<Series> {
++    let key = (model.to_owned(), backend, lane.idx());
++    if let Some(row) = registry()
++        .read()
++        .unwrap_or_else(|e| e.into_inner())
++        .get(&key)
++    {
++        return row.clone();
++    }
++    registry()
++        .write()
++        .unwrap_or_else(|e| e.into_inner())
++        .entry(key)
++        .or_default()
++        .clone()
++}
++
++/// One admitted generation attempt. Internal worker retries are distinct attempts; the
++/// HTTP outcome counters separately count the logical request. Capture-only work is excluded.
++#[derive(Default)]
++pub(crate) struct Clock {
++    row: Option<Arc<Series>>,
++    queued: Option<Instant>,
++    last: Option<Instant>,
++}
++impl Clock {
++    pub(crate) fn admitted(
++        model: &str,
++        backend: Backend,
++        lane: Lane,
++        queued: Instant,
++        admitted: Instant,
++    ) -> Self {
++        let row = series(model, backend, lane);
++        row.queue
++            .record(admitted.saturating_duration_since(queued).as_secs_f64());
++        Self {
++            row: Some(row),
++            queued: Some(queued),
++            last: None,
++        }
++    }
++    pub(crate) fn prompt(&self, n: usize, cached: usize) {
++        if let Some(row) = &self.row {
++            row.prefill.record(n);
++            row.cached.fetch_add(cached as u64, Ordering::Relaxed);
++        }
++    }
++    pub(crate) fn cache_credit(&self, tokens: usize) {
++        if let Some(row) = &self.row {
++            row.cached.fetch_add(tokens as u64, Ordering::Relaxed);
++        }
++    }
++    pub(crate) fn sent(&mut self) {
++        self.sent_at(Instant::now());
++    }
++    fn sent_at(&mut self, now: Instant) {
++        if let Some(row) = &self.row {
++            row.emitted.fetch_add(1, Ordering::Relaxed);
++            if let Some(last) = self.last.replace(now) {
++                row.gap
++                    .record(now.saturating_duration_since(last).as_secs_f64());
++            } else if let Some(queued) = self.queued {
++                row.ttft
++                    .record(now.saturating_duration_since(queued).as_secs_f64());
++            }
++        }
++    }
++    pub(crate) fn finished(&mut self, tokens: usize) {
++        self.finished_at(tokens, Instant::now());
++    }
++    fn finished_at(&mut self, tokens: usize, now: Instant) {
++        if let Some(row) = self.row.take() {
++            row.completion.record(tokens);
++            if let Some(queued) = self.queued {
++                row.e2e
++                    .record(now.saturating_duration_since(queued).as_secs_f64());
++            }
++        }
++    }
++}
++
++pub(crate) fn render() -> String {
++    // Keep formatting and histogram loads outside the registry lock so scrapes do
++    // not hold up admission. Existing sessions record through their own Arc.
++    let registry: Vec<_> = registry()
++        .read()
++        .unwrap_or_else(|e| e.into_inner())
++        .iter()
++        .map(|(key, row)| (key.clone(), row.clone()))
++        .collect();
++    let rows: Vec<_> = registry
++        .iter()
++        .map(|((model, backend, lane), s)| {
++            let labels = format!(
++                "model=\"{}\",route=\"{}\",lane=\"{}\"",
++                crate::prometheus_label(model),
++                backend.as_str(),
++                ["interactive", "judge", "harvest"][*lane]
++            );
++            (
++                labels,
++                [
++                    s.queue.snapshot(),
++                    s.ttft.snapshot(),
++                    s.e2e.snapshot(),
++                    s.gap.snapshot(),
++                    s.prefill.snapshot(),
++                    s.completion.snapshot(),
++                ],
++            )
++        })
++        .collect();
++    let mut out = String::new();
++    for (i, (name, help)) in [
++        ("memra_queue_wait_seconds", "Worker submission to admission, per generation attempt, cumulative and unsampled."),
++        ("memra_ttft_seconds", "Worker submission to first accepted token event, including queue wait, cumulative and unsampled."),
++        ("memra_e2e_seconds", "Worker submission to successful generation finish, including queue wait, cumulative and unsampled."),
++        ("memra_tpot_seconds", "Intervals between accepted worker token events within one generation attempt, cumulative and unsampled."),
++        ("memra_prefill_tokens", "Prompt token count including cache reads, once per admitted generation attempt."),
++        ("memra_completion_tokens", "Generated token count of successful generation attempts, including length-limited completions."),
++    ].into_iter().enumerate() {
++        crate::prometheus_header(&mut out, name, "histogram", help);
++        for (labels, snapshots) in &rows { out.push_str(&snapshots[i].render_prometheus(name, labels)); }
++    }
++    crate::prometheus_header(
++        &mut out,
++        "memra_cached_tokens_total",
++        "counter",
++        "Prompt tokens restored from cache for admitted hybrid generation attempts.",
++    );
++    for ((model, backend, lane), row) in registry.iter() {
++        out.push_str(&format!(
++            "memra_cached_tokens_total{{model=\"{}\",route=\"{}\",lane=\"{}\"}} {}\n",
++            crate::prometheus_label(model),
++            backend.as_str(),
++            ["interactive", "judge", "harvest"][*lane],
++            row.cached.load(Ordering::Relaxed)
++        ));
++    }
++    crate::prometheus_header(
++        &mut out,
++        "memra_emitted_token_events_total",
++        "counter",
++        "Accepted worker token-event sends, including partial and cancelled requests.",
++    );
++    for ((model, backend, lane), row) in registry.iter() {
++        out.push_str(&format!(
++            "memra_emitted_token_events_total{{model=\"{}\",route=\"{}\",lane=\"{}\"}} {}\n",
++            crate::prometheus_label(model),
++            backend.as_str(),
++            ["interactive", "judge", "harvest"][*lane],
++            row.emitted.load(Ordering::Relaxed)
++        ));
++    }
++    out
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use std::time::Duration;
++    #[test]
++    fn route_and_lane_timings_measure_emission_and_include_queue() {
++        let now = Instant::now();
++        let mut clock = Clock::admitted(
++            "request-clock-a",
++            Backend::Dsv4,
++            Lane::Judge,
++            now,
++            now + Duration::from_secs(2),
++        );
++        clock.prompt(1000, 512);
++        clock.cache_credit(256);
++        clock.sent_at(now + Duration::from_secs(3));
++        clock.sent_at(now + Duration::from_secs(4));
++        clock.sent_at(now + Duration::from_secs(6));
++        clock.finished_at(3, now + Duration::from_secs(7));
++        clock.finished_at(3, now + Duration::from_secs(8));
++        let row = series("request-clock-a", Backend::Dsv4, Lane::Judge);
++        assert_eq!(row.queue.snapshot().sum_seconds, 2.0);
++        assert_eq!(row.ttft.snapshot().sum_seconds, 3.0);
++        assert_eq!(row.e2e.snapshot().sum_seconds, 7.0);
++        assert_eq!(row.e2e.snapshot().count, 1);
++        assert_eq!(row.gap.snapshot().count, 2);
++        assert_eq!(row.emitted.load(Ordering::Relaxed), 3);
++        assert_eq!(row.gap.snapshot().sum_seconds, 3.0);
++        assert_eq!(row.prefill.snapshot().sum_seconds, 1000.0);
++        assert_eq!(row.cached.load(Ordering::Relaxed), 768);
++        assert_eq!(row.completion.snapshot().sum_seconds, 3.0);
++        assert_eq!(
++            series("request-clock-a", Backend::Hybrid, Lane::Judge)
++                .queue
++                .snapshot()
++                .count,
++            0
++        );
++        assert_eq!(
++            series("request-clock-a", Backend::Dsv4, Lane::Interactive)
++                .queue
++                .snapshot()
++                .count,
++            0
++        );
++    }
++    #[test]
++    fn abandoned_attempt_excludes_success_histograms() {
++        let now = Instant::now();
++        let mut clock = Clock::admitted(
++            "request-clock-abort",
++            Backend::Hybrid,
++            Lane::Interactive,
++            now,
++            now,
++        );
++        clock.prompt(12, 0);
++        clock.sent_at(now);
++        drop(clock);
++        let row = series("request-clock-abort", Backend::Hybrid, Lane::Interactive);
++        assert_eq!(row.ttft.snapshot().count, 1);
++        assert_eq!(row.gap.snapshot().count, 0);
++        assert_eq!(row.e2e.snapshot().count, 0);
++        assert_eq!(row.completion.snapshot().count, 0);
++    }
++    #[test]
++    fn token_buckets_keep_exact_totals_and_infinite_tail() {
++        let tokens = Tokens::default();
++        for n in [0, 16, 17, 262144] {
++            tokens.record(n);
++        }
++        let snapshot = tokens.snapshot();
++        assert_eq!(snapshot.count, 4);
++        assert_eq!(snapshot.sum_seconds, 262177.0);
++        assert_eq!(snapshot.cumulative[0], (0.0, 1));
++        assert_eq!(snapshot.cumulative[1], (16.0, 2));
++        assert_eq!(snapshot.cumulative[2], (32.0, 3));
++        assert_eq!(snapshot.cumulative[15], (f64::INFINITY, 4));
++    }
++}
+diff --git a/crates/memra-server/src/responses_api.rs b/crates/memra-server/src/responses_api.rs
+index 23ae2ee5a2..24706e6ab0 100644
+--- a/crates/memra-server/src/responses_api.rs
++++ b/crates/memra-server/src/responses_api.rs
+@@ -659,6 +659,12 @@ async fn responses_with_admission(
+             );
+         }
+     };
++    crate::http_metrics::bind_model(
++        parsed
++            .get("model")
++            .and_then(|m| m.as_str())
++            .and_then(|m| crate::canonical_model_id(&st.models, m)),
++    );
+     let translated = match translate(&parsed) {
+         Ok(v) => v,
+         Err((msg, param)) => {
+@@ -856,6 +862,7 @@ fn responses_sse(
+     stop_strings: Vec<String>,
+     guard: Option<crate::InflightGuard>,
+ ) -> Sse<impl futures_core::Stream<Item = Result<SseEvent, std::convert::Infallible>>> {
++    let http_observation = crate::http_metrics::current();
+     let mut scrub = (!stop_strings.is_empty()).then(|| SurfaceScrubber::new(stop_strings.clone()));
+     let stream = async_stream::stream! {
+         let _guard = guard;
+@@ -1013,6 +1020,7 @@ fn responses_sse(
+         }
+         macro_rules! stream_fault {
+             ($code:expr, $message:expr) => {
++                if let Some(observation) = &http_observation { observation.failed(); }
+                 yield Ok(frame(json!({
+                     "type": "response.failed",
+                     "response": response_json(&env, &model, "failed", &output, None,
+@@ -1143,6 +1151,7 @@ fn responses_sse(
+                     close_item!();
+                     let _ = prompt_usage; // Done carries the authoritative counts
+                     let usage = Some(usage_json(n_prompt, n_tokens, n_cached));
++                    if let Some(observation) = &http_observation { observation.terminal(); }
+                     match incomplete_reason(&reason) {
+                         Some(cut) => {
+                             yield Ok(frame(json!({
+@@ -1193,6 +1202,7 @@ fn responses_sse(
+             }
+         }
+         if !terminal {
++            if let Some(observation) = &http_observation { observation.failed(); }
+             // Channel closed without Done/Error: worker restart — OUR fault, settled
+             // rejected with debit ZERO (fault-attribution ruling 2026-08-23; this used to
+             // fall through to Drop and bill the partial stream as a client "abandon").
+diff --git a/crates/memra-server/src/worker.rs b/crates/memra-server/src/worker.rs
+index 1f07e641d3..db8eb09449 100644
+--- a/crates/memra-server/src/worker.rs
++++ b/crates/memra-server/src/worker.rs
+@@ -25898,6 +25898,7 @@ pub fn run(
+     health: crate::health::SharedHealth,
+     tokenizer_snapshots: &tokenizers::TokenizerSnapshots,
+ ) {
++    let _metrics_lifetime = crate::capacity_metrics::HybridLifetime;
+     // ---- one-time init on the worker thread: Engine + all models resident ----
+     //
+     // CPU AFFINITY FIRST, BEFORE `Engine::new` (lane/glm5-host-audit, 2026-09-01). This is the
+@@ -27393,6 +27394,7 @@ pub fn run(
+     // decode tick inside the SLO age IS an SLO breach the percentile window can't see.
+     let mut last_interactive_decode = Instant::now();
+     let mut tick_n: u64 = 0;
++    let mut metrics_admitted_published = 0;
+     // HOST-TIER TELEMETRY FLUSH (lane/kv-battery-fixups-20260831, battery O6 finding):
+     // the `prefix_host_*` stamp as of the last snapshot publish. Host-tier events land on
+     // ticks the throttled publish usually skips: a promote fires at ADMIT (nothing
+@@ -27412,6 +27414,25 @@ pub fn run(
+     let mut n_demoted = 0u64;
+     let mut peer_probe_deferral = RuntimePeerProbeDeferralState::default();
+ 
++    crate::capacity_metrics::publish_hybrid(
++        loaded
++            .keys()
++            .map(|model| (model.clone(), Default::default()))
++            .collect(),
++    );
++    for_each_device_engine(&engine, &loaded, &mut |device, owner| {
++        if let Ok((free, _)) = owner.ctx().mem_get_info() {
++            crate::capacity_metrics::device_free(device, free as u64);
++        }
++    });
++    // mem_get_info binds each queried CUDA context. Restore the worker's primary
++    // before reporting readiness; a secondary device must not steer subsequent launches.
++    if let Err(error) = engine.ctx().bind_to_thread() {
++        let _ = ready_tx.send(Err(format!(
++            "restore primary context after metrics sampling: {error}"
++        )));
++        return;
++    }
+     let _ = ready_tx.send(Ok((order.clone(), caps)));
+     // INFERENCE LIVENESS (G5): trunk weights, configured drafters and vision towers are resident,
+     // scheduler state is initialized, and the loop is about to run. /health and /readyz go green
+@@ -29573,6 +29594,14 @@ pub fn run(
+                             &s.model,
+                             s.t0.saturating_duration_since(s.queued_at),
+                         );
++                        s.emission_clock.request = crate::request_metrics::Clock::admitted(
++                            &s.model,
++                            crate::request_metrics::Backend::Hybrid,
++                            s.lane,
++                            s.queued_at,
++                            s.t0,
++                        );
++                        s.emission_clock.request.prompt(s.n_prompt, s.n_cached);
+                     }
+                     // FAIL-SAFE (lane/step37-vram-admission-20260830): a step-OOM park REPLAY
+                     // must not re-enter the draft-capture path — the capture appetite is part
+@@ -31823,6 +31852,7 @@ pub fn run(
+                 // prefill-only and has no matching ttft sample, so an e2e sample from it
+                 // would pull the "total client latency for a generation" reading down.
+                 if !s.is_capture {
++                    s.emission_clock.request.finished(s.generated.len());
+                     crate::hybrid_telemetry::record_e2e(&s.model, s.t0.elapsed());
+                 }
+             }
+@@ -32517,6 +32547,7 @@ pub fn run(
+         tick_n = tick_n.wrapping_add(1);
+         let host_telem = hpx.telemetry_stamp();
+         if (tick_n.is_multiple_of(32)
++            || n_admitted != metrics_admitted_published
+             || spec_telem_dirty
+             || !finished.is_empty()
+             || host_telem != host_telem_published)
+@@ -32524,6 +32555,7 @@ pub fn run(
+         {
+             spec_telem_dirty = false;
+             host_telem_published = host_telem;
++            metrics_admitted_published = n_admitted;
+             m.admitted = n_admitted;
+             m.completed = n_completed;
+             m.tokens_out = n_tokens_out;
+@@ -32579,6 +32611,69 @@ pub fn run(
+             m.served_dspark = n_served_dspark;
+             m.served_spec = n_served_spec;
+             m.served_plain = n_served_plain;
++            let mut memory_rows: std::collections::BTreeMap<
++                String,
++                crate::capacity_metrics::Snapshot,
++            > = loaded
++                .keys()
++                .map(|model| (model.clone(), Default::default()))
++                .collect();
++            for session in &active {
++                let row = memory_rows.entry(session.model.clone()).or_default();
++                row.active += 1;
++                if let Some(cache) = &session.cache {
++                    row.add(cache.kv_plane_bytes());
++                }
++                if let Some(spec) = &session.spec {
++                    row.add(spec.kv_plane_bytes());
++                }
++                if let Some(spec) = &session.gspec {
++                    row.add(spec.cache.kv_plane_bytes());
++                }
++                if let Some(spec) = &session.dspark {
++                    row.add(spec.kv_plane_bytes());
++                }
++                if let Some(spec) = &session.glm5 {
++                    row.add(spec.kv_plane_bytes());
++                }
++                if let Some(draft) = &session.glm5_restored_dkv {
++                    let bytes = draft.kv_plane_bytes();
++                    row.add((bytes, bytes));
++                }
++            }
++            for request in queue.iter() {
++                memory_rows.entry(request.model.clone()).or_default().queued += 1;
++            }
++            for ((model, _), pool) in &reuse {
++                for entry in pool {
++                    memory_rows
++                        .entry(model.clone())
++                        .or_default()
++                        .add(entry.cache.kv_plane_bytes());
++                }
++            }
++            for ((model, _), pool) in &spec_reuse {
++                for entry in pool {
++                    memory_rows
++                        .entry(model.clone())
++                        .or_default()
++                        .add(entry.sess.kv_plane_bytes());
++                }
++            }
++            for ((model, _), pool) in &dspark_reuse {
++                for entry in pool {
++                    memory_rows
++                        .entry(model.clone())
++                        .or_default()
++                        .add(entry.sess.kv_plane_bytes());
++                }
++            }
++            crate::capacity_metrics::publish_hybrid(memory_rows);
++            for_each_device_engine(&engine, &loaded, &mut |device, owner| {
++                if let Ok((free, _)) = owner.ctx().mem_get_info() {
++                    crate::capacity_metrics::device_free(device, free as u64);
++                }
++            });
+             m.active_sessions = active.len() as u64;
+             m.queued_requests = queue.len() as u64;
+             m.continuation_pool_entries = reuse.values().map(|pool| pool.len() as u64).sum();
+@@ -37886,6 +37981,7 @@ fn dedup_interactive_prefixes(
+                 }
+                 s.prefill_done = s.prefill_queue.is_empty();
+                 s.n_cached += group.prefix_len;
++                s.emission_clock.request.cache_credit(group.prefix_len);
+                 s.seed_prefix = false;
+                 // BILLING: re-emit prompt usage after crediting the fanout prefix.
+                 // `Event::PromptUsage` is the ONLY pre-terminal usage event and its admission-time
+diff --git a/docs/SERVING.md b/docs/SERVING.md
+index 46f8ee5f3b..d369688a7d 100644
+--- a/docs/SERVING.md
++++ b/docs/SERVING.md
+@@ -1467,40 +1467,78 @@ selects Prometheus exposition under the same authorization rules. Equal JSON
+ and text preferences retain JSON. An exclusive `MEMRA_METRICS_TOKEN` grants
+ operator access; a completion credential cannot substitute for it.
+ 
+-Hybrid histograms are cumulative since process start and unsampled. Queue wait
+-ends at admission, TTFT runs from admission to the first committed token, and
+-E2E includes successful sessions only. An internal retry starts a new attempt,
+-as with the existing hybrid timing contract.
++The hybrid generation families use `{model,route,lane}` labels. Models come from
++loaded configuration, their `route` is `hybrid`, and lanes are the three fixed
++scheduler lanes: `interactive`, `judge`, and `harvest`. All histograms are
++cumulative and unsampled, with fixed buckets. Capture-only embedding/rerank
++work is excluded. An internal replay is a new worker attempt; HTTP outcome
++counters separately count logical HTTP requests.
+ 
+-`memra_hybrid_token_gap_seconds{model,lane}` measures intervals between accepted
+-worker token events. A session emitting N token IDs contributes N-1 samples.
+-Empty UTF-8 fragments and EOS IDs still count. These are server emission
+-intervals, not network flush timing or speculative compute-round duration.
+-Labels are restricted to loaded models and the three fixed lanes:
+-`interactive`, `judge`, and `harvest`. Request IDs, cache salts, and arbitrary
+-rejected model names are not labels. Histogram bucket boundaries are fixed.
++| Family | Observation |
++| --- | --- |
++| `memra_queue_wait_seconds` | Worker submission to backend admission |
++| `memra_ttft_seconds` | Worker submission to the first accepted token event, including queue wait |
++| `memra_e2e_seconds` | Worker submission through successful backend retirement, including queue wait |
++| `memra_tpot_seconds` | Intervals between successfully accepted worker token events; N events contribute N-1 samples |
++| `memra_prefill_tokens` | Prompt tokens, including cache reads, once per admitted attempt |
++| `memra_completion_tokens` | Generated tokens of successful attempts, including length-limited completions |
++| `memra_cached_tokens_total` | Cache-restored prompt tokens, including credit granted later to in-flight prefill followers |
++| `memra_emitted_token_events_total` | Accepted token events, including work emitted before cancellation or failure |
+ 
+-The operator text surface also exposes prefix hit/miss/insert/eviction and
+-hit-token counters, the cache-hit token ratio, prefix-cache bytes, guarded-call
+-faults, and worker respawn attempts. Computed prompt tokens are the same
+-prompt-minus-cached total used by JSON. These additions do not change JSON
+-field names or authorization scopes. Worker-step p50/p99 values use separate
+-`memra_step_latency_p50_seconds` and `memra_step_latency_p99_seconds` gauges;
+-the Prometheus-reserved `quantile` label belongs to summary metrics.
++The emission clock runs at the successful worker send, including empty UTF-8
++fragments. It does not time network flushes. Dedicated DSv4 emission-clock
++integration remains deferred; its existing round histogram remains a separate
++compute-round metric.
++The legacy `memra_hybrid_*` histograms retain their existing semantics, including
++admission-based committed-token TTFT and successful admission-to-retirement E2E.
+ 
+-On a fresh plain server, run the existing cache-meter workload with
++`memra_requests_total{model,route,lane,code}` counts generation HTTP outcomes on
++completions, chat completions, Responses and Messages. `499` means the client
++left before a terminal response. Unparsed bodies and unknown model names use a
++single `model="unknown",route="unresolved"` row. Arbitrary rejected names,
++request IDs and cache salts never become labels. `memra_requests_refused_total`
++counts pre-stream HTTP errors; `memra_pre_header_deadline_total` counts HTTP 408.
++`memra_response_errors_total` also exposes failures carried inside HTTP 200
++responses. A valid `max_tokens` finish is a completed stream.
++
++`memra_streams_incomplete_total` counts streams without terminal completion.
++`memra_streams_truncated_total` excludes client cancellations, which have their
++own `memra_requests_cancelled_total`. A typed terminal error is a failed response,
++including when the client closes immediately after reading that error. These
++observations do not alter response bytes or the JSON metrics schema.
++
++Operator gauges include `memra_active_sessions`, `memra_queued_sessions`,
++`memra_kv_used_bytes` and `memra_kv_capacity_bytes`, labelled by model/backend.
++The KV gauges count canonical live and parked KV, recurrent, indexer and draft
++state planes. Used bytes are backed allocation; capacity includes VMM reservation
++granularity. Prefix snapshots, rollback copies and graph workspace are excluded.
++Hybrid gauges publish on admission, retirement and every 32nd tick. Worker
++failure clears them. These new KV gauges do not claim dedicated-route allocation
++coverage.
++
++`memra_device_free_bytes{device}` reports each visible CUDA device's last driver
++reading. `memra_device_memory_sample_age_seconds` identifies stale observations;
++metrics scrapes do not query the device. `memra_backend_prefix_cache_*` exposes
++hybrid hit, miss, insertion, eviction and byte accounting with fixed labels
++(`route="hybrid",tier="device"`). Existing prefix-cache, computed-token,
++guarded-call fault and worker-respawn metrics remain available. JSON field names
++and authorization scopes are unchanged. Worker-step p50/p99 remain separate
++`memra_step_latency_p50_seconds` and `memra_step_latency_p99_seconds` gauges.
++
++On a fresh plain server, run `cache-meter-gate.py` with
+ `--prometheus --promtool /path/to/promtool`. Optional `--api-key-file` and
+ `--metrics-token-file` supply separate completion and operator credentials.
+-This arm checks the cache closed form in both formats, validates the actual
+-text with promtool, checks histogram counts and buckets, and retains JSON
+-compatibility. `--raw-out` also writes the text scrape and promtool output.
++This checks the cache closed form, token-volume histograms, capacity cleanup,
++label bounds, actual promtool parsing and JSON compatibility. `--raw-out` keeps
++the text scrape and validator output. `metrics-live-gate.py` adds native clean,
++queued, rejected and cancelled request checks. Raw local receipts also include
++an owned worker-panic control that interrupts a live stream after HTTP 200.
+ 
+-The native paired plain/MTP receipt and the CPU HTTP fixtures must be reported
+-separately. A normal `finish_reason: length` is a successful bounded
+-completion, not a prematurely terminated stream. Dedicated DSv4 route
+-qualification, its actual emitted-token-gap metric, and broader HTTP
+-status/incomplete-stream counters remain explicit whole-issue obligations;
+-the existing dedicated-route round histogram does not satisfy that gap metric.
++The common HTTP outcome counters use registered backend labels; CPU protocol
++tests cover that binding, including a registered dedicated route. This does not
++qualify DSv4 native timing, allocation or host-cache integration. Those changes
++and their target-specific acceptance remain deferred outside the rig-only PR.
++#522 stays open. See `research/cache-metrics-20261002/issue522/ACCEPTANCE.md`.
+ 
+ **`/health` == `/livez` — inference liveness, not process liveness.** The GPU worker is
+ ONE `std::thread` owning the CUDA context. `/health` used to answer `{"status":"ok"}` off
+diff --git a/research/cache-metrics-20261002/issue522/ACCEPTANCE.md b/research/cache-metrics-20261002/issue522/ACCEPTANCE.md
+index fdc7f46144..f2ed30e58e 100644
+--- a/research/cache-metrics-20261002/issue522/ACCEPTANCE.md
++++ b/research/cache-metrics-20261002/issue522/ACCEPTANCE.md
+@@ -1,19 +1,27 @@
+-# #522 acceptance audit
++# #522 acceptance and rig-only scope
+ 
+-This audit follows the issue body, including the original ask. The final two comments are narrower follow-up lists, not the whole acceptance.
+-The retained plain/MTP numerical failure is tracked with an owner in
+-[memra#918](https://github.com/avifenesh/memra/issues/918).
++The 2026-10-02 work is restricted to the local rig. PR #916 completes the cache
++regression, the #918 short-prime fix, and the local/shared metrics scope below.
++#522 remains open for dedicated DSv4 integration and native acceptance. No hardware
++question, rental, production access or off-rig work is required for today's PR.
+ 
+-| Property | Evidence in this change | Remaining scope |
+-|---|---|---|
+-| Hybrid queue, TTFT and E2E | Existing per-model histograms; selected CPU tests and live clean, concurrent and forced-queue cells | Broader per-lane decomposition and other model/route qualification are not inferred |
+-| Actual emitted-token intervals | New successful-token-send clock; fixed model/three-lane labels; native plain/MTP and queue counts must equal N-1 per stream | DSv4 still exposes compute-round timing, not this token-event metric |
+-| Cache accounting in both formats | Fresh N=5 fanout plus cross-namespace cold request, exact request usage, JSON totals/LCP/tenant checks, Prometheus scalar parity | Tenant rows and binned LCP shape remain JSON surfaces rather than unbounded Prometheus labels |
+-| Standard authenticated exposition | Real promtool, missing/wrong/completion credentials rejected, operator token accepted; HELP and step-gauge repair | No global/tenant authorization policy change |
+-| JSON compatibility | Existing default/negotiation CPU checks and quiescent live JSON views; no JSON builder changes | Traffic can legitimately add existing spec and tenant fields |
+-| Clean, queued, rejected and cancelled HTTP requests | Native loopback requests, forced session cap and actual deferral counter; cancellation excludes success E2E | This is server timing and outcome behavior, not delivery to a remote client |
+-| Premature stream termination after HTTP 200 | CPU test uses the real SSE response implementation with a producer that ends after a partial token; requires typed error and no successful finish or terminal usage | Native worker-fault/transport orchestration and aggregate HTTP status/truncated-stream counters remain owed |
+-| Original token-volume histogram and gauge inventory | Cache/computed counters and prefix-cache bytes are exposed here | Prefill/completion token distributions and the full hybrid KV/capacity/device gauge set from the original ask are not all implemented |
+-| Dedicated DSv4 route | Exposition shape checked in CPU fixtures; its existing round metric is explicitly named a round metric | Separate target hardware, route TTFT and true emission-gap/lifecycle qualification remain owed |
++| Property | Today's scope | Deferred #522 scope |
++| --- | --- | --- |
++| Queue, TTFT, E2E and emitted intervals | Hybrid model/lane histograms, cumulative and unsampled | Actual DSv4 emitter/route clock integration and native timing receipt |
++| Token distributions and cache credit | Hybrid prompt/completion histograms and late in-flight cache credit | DSv4 route usage/cache parity |
++| HTTP outcomes | Shared real HTTP/SSE contracts for four APIs; status/error/refusal/deadline/cancel/truncation counters, including HTTP 200 errors | No DSv4 native qualification inferred from shared HTTP tests |
++| Standard exposition | Auth, bounded labels, actual promtool and JSON compatibility on local native traffic | Dedicated-route scrape and lifecycle evidence |
++| KV/device gauges | Hybrid live/parked canonical state planes, reservation-aware capacity, active/queued state, cached device readings with age and worker-failure cleanup | DSv4 allocation leases and native release observations |
++| Prefix inventory | Existing hybrid counters, explicit backend/tier exposition and closed-form cache gate | DSv4 host lookup/insert/eviction/byte hooks and native restore cell |
++| Greedy identity | #918 before/after evidence: 24 HTTP comparisons, K=1..8, longer-prime/cache controls on the two local Qwen artifacts | No broad support promotion |
++| API integration | Preserve C's background/image changes and prove acknowledgement versus eventual generation accounting after rebase | No repeated long-deadline campaign when its behavior is unchanged |
+ 
+-No whole-issue closure or broad model support is implied. The local receipt records each independently checked property and retains failed attempts.
++The prepared DSv4-specific source and full-scope exploratory evidence were banked
++on the local `deferred/dsv4-metrics-20261002` branch. They are excluded from today's
++merge. Their future native cell remains named in that branch's DEFERRED.md; its
++requirements have not been weakened or relabelled as CPU evidence.
++
++The previous scoped raw receipt, including its original plain/MTP failure, remains
++in this directory. The numerical cause and passing controls are in
++`research/qwen9b-greedy-identity-20261002/`. Final rig-subset receipts must identify
++the reconciled source and binary after the background/image integration.
+diff --git a/tools/cache-meter-gate.py b/tools/cache-meter-gate.py
+index c0c0621d0f..fc581343d7 100644
+--- a/tools/cache-meter-gate.py
++++ b/tools/cache-meter-gate.py
+@@ -257,12 +257,24 @@ def main() -> None:
+             want = expected_gaps if lane == "interactive" else 0
+             check(f"emitted-token gaps for {lane} == {want}", h["count"] == want, f"got {h}")
+         bounded = all(
+-            set(dict(labels)) <= {"model", "lane", "le", "quantile"}
++            set(dict(labels)) <= {"model", "lane", "le", "route", "code", "device", "tier"}
+             and dict(labels).get("model", args.model) == args.model
+             and dict(labels).get("lane", "interactive") in {"interactive", "judge", "harvest"}
++            and dict(labels).get("route", "hybrid") == "hybrid"
++            and dict(labels).get("code", "200") == "200"
++            and dict(labels).get("device", "0").isdigit()
++            and 0 <= int(dict(labels).get("device", "0")) < 64
++            and dict(labels).get("tier", "device") == "device"
+             for _, labels in samples
+         )
+-        check("labels bounded to loaded model, three lanes and fixed buckets", bounded)
++        check("labels bounded to loaded model, backend, HTTP outcome, three lanes and fixed buckets", bounded)
++        shared = {"model": args.model, "route": "hybrid", "lane": "interactive"}
++        check("common cached-token counter matches request usage", scalar(samples, "memra_cached_tokens_total", **shared) == total_c)
++        check("prefill histogram matches prompt accounting", histogram(samples, "memra_prefill_tokens", **shared)["sum"] == total_p)
++        check("completion histogram matches output accounting", histogram(samples, "memra_completion_tokens", **shared)["sum"] == sum(output_tokens))
++        check("post-workload active sessions return to zero", scalar(samples, "memra_active_sessions", model=args.model, route="hybrid") == 0)
++        check("post-workload queued sessions return to zero", scalar(samples, "memra_queued_sessions", model=args.model, route="hybrid") == 0)
++        check("canonical KV backed bytes do not exceed capacity", scalar(samples, "memra_kv_used_bytes", model=args.model, route="hybrid") <= scalar(samples, "memra_kv_capacity_bytes", model=args.model, route="hybrid"))
+         # Existing consumers still receive JSON after a text scrape; no histogram fields leak.
+         after = scrape(args.base, metrics_headers)
+         check("JSON schema unchanged by Prometheus negotiation", set(after) == set(m))
+diff --git a/tools/metrics-live-gate.py b/tools/metrics-live-gate.py
+index 8de32fddb7..474bd1bd67 100644
+--- a/tools/metrics-live-gate.py
++++ b/tools/metrics-live-gate.py
+@@ -16,7 +16,7 @@ import time
+ import urllib.error
+ import urllib.request
+ 
+-from prometheus_metrics import histogram, parse_samples
++from prometheus_metrics import histogram, parse_samples, scalar
+ 
+ p = argparse.ArgumentParser()
+ p.add_argument('--base', required=True)
+@@ -118,6 +118,20 @@ def count(samples, metric, lane=None):
+         return 0
+ 
+ 
++def shared(samples, name):
++    try:
++        return histogram(samples, 'memra_' + name, model=a.model, route='hybrid', lane='interactive')
++    except KeyError:
++        return {'count': 0, 'sum': 0}
++
++
++def outcome(samples, name, model=None, route='hybrid', **labels):
++    try:
++        return scalar(samples, name, model=model or a.model, route=route, lane='interactive', **labels)
++    except KeyError:
++        return 0
++
++
+ if a.identity_only:
+     row = stream('clean')
+     check('baseline clean stream has terminal success', row.get('status') == 200 and row['done'] and row.get('finish_reason') in {'length', 'stop'})
+@@ -164,6 +178,8 @@ try:
+     before_json = json.loads(raw)
+     (a.out / 'default-metrics.json').write_bytes(raw)
+     check('default metrics remains JSON', status == 200 and 'json' in headers.get('Content-Type', headers.get('content-type', '')))
++    _, _, negotiated = get('/metrics', operator, 'application/json, text/plain, */*')
++    check('quiescent JSON is byte-identical under content negotiation', negotiated == raw)
+     before = snap('before-clean')
+     clean = stream('clean')
+     check('clean stream has terminal success and DONE', clean.get('status') == 200 and clean.get('finish_reason') in {'length', 'stop'} and clean['done'])
+@@ -176,12 +192,24 @@ try:
+     for metric in ('queue_wait', 'ttft', 'e2e'):
+         check(metric + ' records clean session exactly once', count(after, metric) - count(before, metric) == 1)
+     check('clean emitted-gap count is output tokens minus one', count(after, 'token_gap', 'interactive') - count(before, 'token_gap', 'interactive') == n - 1)
++    for metric in ('queue_wait_seconds', 'ttft_seconds', 'e2e_seconds', 'prefill_tokens', 'completion_tokens'):
++        check('shared ' + metric + ' records clean request once', shared(after, metric)['count'] - shared(before, metric)['count'] == 1)
++    check('shared token gaps count actual emitted events', shared(after, 'tpot_seconds')['count'] - shared(before, 'tpot_seconds')['count'] == n - 1)
++    check('completion histogram sums exact tokens', shared(after, 'completion_tokens')['sum'] - shared(before, 'completion_tokens')['sum'] == n)
++    check('prefill histogram sums worker prompt usage', shared(after, 'prefill_tokens')['sum'] - shared(before, 'prefill_tokens')['sum'] == clean['usage']['prompt_tokens'])
++    check('clean response does not count an error', outcome(after, 'memra_response_errors_total') - outcome(before, 'memra_response_errors_total') == 0)
++    check('HTTP clean outcome counted once', outcome(after, 'memra_requests_total', code='200') - outcome(before, 'memra_requests_total', code='200') == 1)
++    check('max_tokens finish is a complete stream', outcome(after, 'memra_streams_incomplete_total') == outcome(before, 'memra_streams_incomplete_total'))
+     before_bad = after
+     for i in range(3):
+         bad = stream('bad-model-' + str(i), model='unloaded-label-' + str(i))
+         check('unknown model rejected ' + str(i), bad.get('status') in {400, 404}, bad.get('status'))
+     after_bad = snap('after-rejected')
+-    check('rejected model names do not create metric series', set(after_bad) == set(before_bad))
++    added = set(after_bad) - set(before_bad)
++    check('rejected model names collapse to one fixed unknown row',
++          all(dict(labels).get('model') == 'unknown' and dict(labels).get('route') == 'unresolved' for _, labels in added))
++    check('all unknown-model refusals counted',
++          outcome(after_bad, 'memra_requests_refused_total', model='unknown', route='unresolved') - outcome(before_bad, 'memra_requests_refused_total', model='unknown', route='unresolved') == 3)
+     for metric in ('queue_wait', 'ttft', 'e2e'):
+         check(metric + ' unchanged after pre-admission rejection', count(after_bad, metric) == count(before_bad, metric))
+     cancelled = stream('cancelled', max_tokens=1024, cancel=True)
+@@ -192,7 +220,13 @@ try:
+     final = snap('after-cancel-and-recovery')
+     check('cancelled session excluded from success E2E', count(final, 'e2e') - count(after_bad, 'e2e') == 1)
+     check('cancel and recovery each admitted', count(final, 'queue_wait') - count(after_bad, 'queue_wait') == 2)
+-    check('model labels remain bounded', all(dict(labels).get('model', a.model) == a.model for _, labels in final))
++    check('model labels remain bounded', all(dict(labels).get('model', a.model) in {a.model, 'unknown'} for _, labels in final))
++    check('backend labels remain bounded', all(dict(labels).get('route', 'hybrid') in {'hybrid', 'dsv4', 'unresolved'} for _, labels in final))
++    check('lane labels remain bounded', all(dict(labels).get('lane', 'interactive') in {'interactive', 'judge', 'harvest'} for _, labels in final))
++    check('HTTP client cancellation counted as 499', outcome(final, 'memra_requests_total', code='499') - outcome(after_bad, 'memra_requests_total', code='499') == 1)
++    check('cancelled stream counted incomplete', outcome(final, 'memra_streams_incomplete_total') - outcome(after_bad, 'memra_streams_incomplete_total') == 1)
++    check('client cancellation is distinct from producer truncation', outcome(final, 'memra_streams_truncated_total') == outcome(after_bad, 'memra_streams_truncated_total'))
++    check('shared success E2E excludes client cancellation', shared(final, 'e2e_seconds')['count'] - shared(after_bad, 'e2e_seconds')['count'] == 1)
+     _, _, default_raw = get('/metrics', operator)
+     current_default = json.loads(default_raw)
+     status, _, raw = get('/metrics', operator, 'application/json, text/plain, */*')
+diff --git a/tools/public-boundary-allowlist.jsonl b/tools/public-boundary-allowlist.jsonl
+index 6b0c723458..123cc01532 100644
+--- a/tools/public-boundary-allowlist.jsonl
++++ b/tools/public-boundary-allowlist.jsonl
+@@ -21,7 +21,7 @@
+ {"category": "private_path", "path": "deploy/systemd/memra-fleet-meter.timer", "reason": "deploy_systemd", "rules": ["deploy_systemd"], "sha256": "bfbbb855c88ef1629eb164333f67c820973b41a6a9d78722021218bd63bf6c0d"}
+ {"category": "private_path", "path": "deploy/systemd/memra-server.service", "reason": "deploy_systemd", "rules": ["deploy_systemd"], "sha256": "665f7fbed5d2dcc3185b1460c24d380e0ef9adae9118bacd8c8e67021f10defc"}
+ {"category": "private_path", "path": "tools/apikeys-gate.sh", "reason": "apikeys_gate", "rules": ["apikeys_gate"], "sha256": "19865f2b3ad5e94f0e22e61860ba3ed79fa28f34487a1ac0c93932e780d58536"}
+-{"category": "private_path", "path": "tools/cache-meter-gate.py", "reason": "Reviewed #522 generic cache qualification: authenticated Prometheus checks and native/OpenAI token-count normalization. Existing economics unchanged; no credentials, customer facts, or deployment values added.", "rules": ["cache_meter_gate"], "sha256": "00d521ecdb074c07cc2c2515ca6e02bb2c75b60d0bae11852ec3c310f46b105c"}
++{"category": "private_path", "path": "tools/cache-meter-gate.py", "reason": "Reviewed full #522 generic cache qualification: bounded backend/status/device/tier labels, exact token histograms and canonical KV cleanup assertions. Existing economics unchanged; no credentials, customer facts or deployment values added.", "rules": ["cache_meter_gate"], "sha256": "b33d8564c2f4bdf7137d678e74c3f36394c9fba21ede1bbf76119195a1be9277"}
+ {"category": "private_path", "path": "tools/fleet-meter.sh", "reason": "fleet_meter", "rules": ["fleet_meter"], "sha256": "a033456066c9822614887e95b17daad678441bfe9e1d036e96eb053b1e290fcf"}
+ {"category": "private_path", "path": "tools/fleet-replay.py", "reason": "fleet_replay", "rules": ["fleet_replay"], "sha256": "51cf211369b9a6288e6761595686186d132638754ba3a15e7ee5922580ee36f4"}
+ {"category": "private_path", "path": "tools/fleet-report.py", "reason": "fleet_report", "rules": ["fleet_report"], "sha256": "7da139fe0801258ab3ea572a071d1f214c5067964608899144b8a6d3df02da9f"}

@@ -1,0 +1,34 @@
+{
+  "kind": "q35_cold_mixed_gate",
+  "schema": "memra.q35-cold-mixed-gate.v2",
+  "concurrency": 4,
+  "requests": 20,
+  "hit_requests": 18,
+  "cold_misses": 2,
+  "expected_completion_tokens": 60,
+  "gdn_grid": 32,
+  "expected_hit_cached_tokens": 4860,
+  "short_or_non_length": [],
+  "seed_failures": [],
+  "cell_clean": false,
+  "cell_integrity_failures": [
+    "usage_mismatch: 18 requests disagree with the usage expectation (cached_tokens 4832 != expected 4860)"
+  ],
+  "failure_classes": [
+    "usage_mismatch"
+  ],
+  "fail_lines": [
+    "Q35 mixed c=4 usage mismatch (prompt_tokens or cached_tokens against the grid-aligned entry; not a token regression)"
+  ],
+  "verdict": "FAIL",
+  "mode": "replay",
+  "replayed_log": "/home/avifenesh/projects/wt-memra-rig-cache-20261002/research/cache-metrics-20261002/issue777/live/gate.jsonl",
+  "banked_verdict": "PASS",
+  "banked_cell_integrity_failures": [],
+  "banked_expected_hit_cached_tokens": [
+    4832
+  ],
+  "reported_hit_cached_tokens": [
+    4832
+  ]
+}

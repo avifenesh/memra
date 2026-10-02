@@ -1,0 +1,34 @@
+{
+  "source": "2873dd4ca37faa15cd4261e7b398926cced30106",
+  "binary_sha256": "acd11f26f3f9c1241728b187a970e529fd1ca148fea331c2b757c0f6bbf80ab0",
+  "artifact_sha256": "df27a780435b7b45c2597536112ea3cb091f8544c3d0c3318d9f4258b31f7adf",
+  "artifact_revision": "5bc3e238d916f48a861bac2f8a1990a0e9b7e98d",
+  "artifact_bytes": 18209036576,
+  "env": {
+    "MEMRA_RIG_LOCK_FD": "9",
+    "MEMRA_CI_LOCK": "/tmp/memra-5090.lock",
+    "MEMRA_CI_LOCK_HELD": "1",
+    "MEMRA_GPU_LOCK": "/tmp/memra-5090.lock",
+    "MEMRA_COMPAT": "openai",
+    "MEMRA_MODELS": "q35-coldfix=/data/ai-ml/hf-models/qwen36-35b-a3b-mtp-gguf-5bc3e238/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf",
+    "MEMRA_ADDR": "127.0.0.1:18110",
+    "MEMRA_SERVE_SPEC": "0",
+    "MEMRA_CTX": "8192",
+    "MEMRA_PREFIX_CACHE_MB": "4096",
+    "MEMRA_REUSE_POOL": "0",
+    "MEMRA_AFFINITY": "0",
+    "MEMRA_MAX_SESSIONS": "96",
+    "MEMRA_GDN_CHUNK": "32"
+  },
+  "request_shape": {
+    "concurrency": 4,
+    "requests": 20,
+    "hits": 18,
+    "misses": 2,
+    "prompt_tokens": 4860,
+    "completion_tokens": 60,
+    "temperature": 0
+  },
+  "timeout_seconds": 1200,
+  "minimum_free_vram_mib": 21000
+}

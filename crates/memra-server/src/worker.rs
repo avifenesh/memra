@@ -25212,6 +25212,7 @@ struct Session {
     /// Successfully published `Event::Token` count. `finish` requires this to equal
     /// `generated.len()` before publishing the terminal usage/token snapshot receipt.
     tokens_emitted: usize,
+    emission_clock: crate::hybrid_telemetry::EmissionClock,
     /// A disconnected client is billed to the observed abort point but its generated KV is
     /// not a reusable conversation state. Abort retirement drops all session caches instead
     /// of publishing an implicit branch into affinity/prefix reuse.
@@ -25897,6 +25898,7 @@ pub fn run(
     health: crate::health::SharedHealth,
     tokenizer_snapshots: &tokenizers::TokenizerSnapshots,
 ) {
+    let _metrics_lifetime = crate::capacity_metrics::HybridLifetime;
     // ---- one-time init on the worker thread: Engine + all models resident ----
     //
     // CPU AFFINITY FIRST, BEFORE `Engine::new` (lane/glm5-host-audit, 2026-09-01). This is the
@@ -27392,6 +27394,7 @@ pub fn run(
     // decode tick inside the SLO age IS an SLO breach the percentile window can't see.
     let mut last_interactive_decode = Instant::now();
     let mut tick_n: u64 = 0;
+    let mut metrics_admitted_published = 0;
     // HOST-TIER TELEMETRY FLUSH (lane/kv-battery-fixups-20260831, battery O6 finding):
     // the `prefix_host_*` stamp as of the last snapshot publish. Host-tier events land on
     // ticks the throttled publish usually skips: a promote fires at ADMIT (nothing
@@ -27411,6 +27414,25 @@ pub fn run(
     let mut n_demoted = 0u64;
     let mut peer_probe_deferral = RuntimePeerProbeDeferralState::default();
 
+    crate::capacity_metrics::publish_hybrid(
+        loaded
+            .keys()
+            .map(|model| (model.clone(), Default::default()))
+            .collect(),
+    );
+    for_each_device_engine(&engine, &loaded, &mut |device, owner| {
+        if let Ok((free, _)) = owner.ctx().mem_get_info() {
+            crate::capacity_metrics::device_free(device, free as u64);
+        }
+    });
+    // mem_get_info binds each queried CUDA context. Restore the worker's primary
+    // before reporting readiness; a secondary device must not steer subsequent launches.
+    if let Err(error) = engine.ctx().bind_to_thread() {
+        let _ = ready_tx.send(Err(format!(
+            "restore primary context after metrics sampling: {error}"
+        )));
+        return;
+    }
     let _ = ready_tx.send(Ok((order.clone(), caps)));
     // INFERENCE LIVENESS (G5): trunk weights, configured drafters and vision towers are resident,
     // scheduler state is initialized, and the loop is about to run. /health and /readyz go green
@@ -29572,6 +29594,14 @@ pub fn run(
                             &s.model,
                             s.t0.saturating_duration_since(s.queued_at),
                         );
+                        s.emission_clock.request = crate::request_metrics::Clock::admitted(
+                            &s.model,
+                            crate::request_metrics::Backend::Hybrid,
+                            s.lane,
+                            s.queued_at,
+                            s.t0,
+                        );
+                        s.emission_clock.request.prompt(s.n_prompt, s.n_cached);
                     }
                     // FAIL-SAFE (lane/step37-vram-admission-20260830): a step-OOM park REPLAY
                     // must not re-enter the draft-capture path — the capture appetite is part
@@ -31822,6 +31852,7 @@ pub fn run(
                 // prefill-only and has no matching ttft sample, so an e2e sample from it
                 // would pull the "total client latency for a generation" reading down.
                 if !s.is_capture {
+                    s.emission_clock.request.finished(s.generated.len());
                     crate::hybrid_telemetry::record_e2e(&s.model, s.t0.elapsed());
                 }
             }
@@ -32516,6 +32547,7 @@ pub fn run(
         tick_n = tick_n.wrapping_add(1);
         let host_telem = hpx.telemetry_stamp();
         if (tick_n.is_multiple_of(32)
+            || n_admitted != metrics_admitted_published
             || spec_telem_dirty
             || !finished.is_empty()
             || host_telem != host_telem_published)
@@ -32523,6 +32555,7 @@ pub fn run(
         {
             spec_telem_dirty = false;
             host_telem_published = host_telem;
+            metrics_admitted_published = n_admitted;
             m.admitted = n_admitted;
             m.completed = n_completed;
             m.tokens_out = n_tokens_out;
@@ -32578,6 +32611,69 @@ pub fn run(
             m.served_dspark = n_served_dspark;
             m.served_spec = n_served_spec;
             m.served_plain = n_served_plain;
+            let mut memory_rows: std::collections::BTreeMap<
+                String,
+                crate::capacity_metrics::Snapshot,
+            > = loaded
+                .keys()
+                .map(|model| (model.clone(), Default::default()))
+                .collect();
+            for session in &active {
+                let row = memory_rows.entry(session.model.clone()).or_default();
+                row.active += 1;
+                if let Some(cache) = &session.cache {
+                    row.add(cache.kv_plane_bytes());
+                }
+                if let Some(spec) = &session.spec {
+                    row.add(spec.kv_plane_bytes());
+                }
+                if let Some(spec) = &session.gspec {
+                    row.add(spec.cache.kv_plane_bytes());
+                }
+                if let Some(spec) = &session.dspark {
+                    row.add(spec.kv_plane_bytes());
+                }
+                if let Some(spec) = &session.glm5 {
+                    row.add(spec.kv_plane_bytes());
+                }
+                if let Some(draft) = &session.glm5_restored_dkv {
+                    let bytes = draft.kv_plane_bytes();
+                    row.add((bytes, bytes));
+                }
+            }
+            for request in queue.iter() {
+                memory_rows.entry(request.model.clone()).or_default().queued += 1;
+            }
+            for ((model, _), pool) in &reuse {
+                for entry in pool {
+                    memory_rows
+                        .entry(model.clone())
+                        .or_default()
+                        .add(entry.cache.kv_plane_bytes());
+                }
+            }
+            for ((model, _), pool) in &spec_reuse {
+                for entry in pool {
+                    memory_rows
+                        .entry(model.clone())
+                        .or_default()
+                        .add(entry.sess.kv_plane_bytes());
+                }
+            }
+            for ((model, _), pool) in &dspark_reuse {
+                for entry in pool {
+                    memory_rows
+                        .entry(model.clone())
+                        .or_default()
+                        .add(entry.sess.kv_plane_bytes());
+                }
+            }
+            crate::capacity_metrics::publish_hybrid(memory_rows);
+            for_each_device_engine(&engine, &loaded, &mut |device, owner| {
+                if let Ok((free, _)) = owner.ctx().mem_get_info() {
+                    crate::capacity_metrics::device_free(device, free as u64);
+                }
+            });
             m.active_sessions = active.len() as u64;
             m.queued_requests = queue.len() as u64;
             m.continuation_pool_entries = reuse.values().map(|pool| pool.len() as u64).sum();
@@ -37291,6 +37387,7 @@ fn admit(
         prefill_done: prefill_done_at_admit,
         generated: Vec::new(),
         tokens_emitted: 0,
+        emission_clock: Default::default(),
         aborted: false,
         oom_teardown: false,
         params,
@@ -37512,10 +37609,35 @@ fn contains_stop_string(decoded: &[u8], stop_strings: &[String]) -> bool {
 
 /// Publish one token-id event and advance the receipt counter only after the channel accepted it.
 fn send_token_event(s: &mut Session, id: u32, text: String) -> bool {
-    if s.tx.send(Event::Token { id, text }).is_err() {
+    if !send_observed_event(
+        &s.tx,
+        &s.model,
+        s.lane,
+        &mut s.emission_clock,
+        Event::Token { id, text },
+    ) {
         return false;
     }
     s.tokens_emitted += 1;
+    true
+}
+
+/// Observe the worker's emission boundary, after the bounded queue accepts the event.
+/// Commitment and speculative-round timing are different from token emission timing.
+fn send_observed_event(
+    tx: &EventSender,
+    model: &str,
+    lane: crate::lanes::Lane,
+    clock: &mut crate::hybrid_telemetry::EmissionClock,
+    event: Event,
+) -> bool {
+    let token = matches!(&event, Event::Token { .. });
+    if tx.send(event).is_err() {
+        return false;
+    }
+    if token {
+        clock.sent(model, lane);
+    }
     true
 }
 
@@ -37859,6 +37981,7 @@ fn dedup_interactive_prefixes(
                 }
                 s.prefill_done = s.prefill_queue.is_empty();
                 s.n_cached += group.prefix_len;
+                s.emission_clock.request.cache_credit(group.prefix_len);
                 s.seed_prefix = false;
                 // BILLING: re-emit prompt usage after crediting the fanout prefix.
                 // `Event::PromptUsage` is the ONLY pre-terminal usage event and its admission-time
@@ -39403,7 +39526,9 @@ fn step_session(
                 &stop_ids,
                 &mut eos_seen,
                 |id| tok_ref.decode_bytes_special(&[id], true),
-                |event| flush_tx.send(event).is_ok(),
+                |event| {
+                    send_observed_event(&flush_tx, &s.model, s.lane, &mut s.emission_clock, event)
+                },
             );
             token_events += emitted.sent;
             // STREAMED MARKER (PR #93 review): the step-OOM park guard reads
@@ -39493,7 +39618,7 @@ fn step_session(
                 &stop_ids,
                 &mut eos_seen,
                 |id| tok_ref.decode_bytes_special(&[id], true),
-                |event| s.tx.send(event).is_ok(),
+                |event| send_observed_event(&s.tx, &s.model, s.lane, &mut s.emission_clock, event),
             );
             token_events += emitted.sent;
             s.tokens_emitted += emitted.sent;
@@ -40032,7 +40157,7 @@ fn step_gemma_spec(
         &stop_ids,
         &mut eos_seen,
         |id| tok_ref.decode_bytes_special(&[id], true),
-        |event| s.tx.send(event).is_ok(),
+        |event| send_observed_event(&s.tx, &s.model, s.lane, &mut s.emission_clock, event),
     );
     for &tok in public_burst {
         s.sampler.accept(tok);
@@ -40278,7 +40403,7 @@ fn step_dspark_spec(
             &stop_ids,
             &mut eos_seen,
             |id| tok_ref.decode_bytes_special(&[id], true),
-            |event| flush_tx.send(event).is_ok(),
+            |event| send_observed_event(&flush_tx, &s.model, s.lane, &mut s.emission_clock, event),
         );
         token_events += emitted.sent;
         // STREAMED MARKER (the glm5 twin's PR #93 review finding): the step-OOM park guard
@@ -40352,7 +40477,7 @@ fn step_dspark_spec(
             &stop_ids,
             &mut eos_seen,
             |id| tok_ref.decode_bytes_special(&[id], true),
-            |event| s.tx.send(event).is_ok(),
+            |event| send_observed_event(&s.tx, &s.model, s.lane, &mut s.emission_clock, event),
         )
     };
     for &tok in public_burst {
@@ -40555,7 +40680,7 @@ fn step_glm5_spec(
             &stop_ids,
             &mut eos_seen,
             |id| tok_ref.decode_bytes_special(&[id], true),
-            |event| flush_tx.send(event).is_ok(),
+            |event| send_observed_event(&flush_tx, &s.model, s.lane, &mut s.emission_clock, event),
         );
         if emitted.sent > 0 && first_emit_ms.is_none() && prof_on {
             first_emit_ms = Some(t_step.elapsed().as_secs_f64() * 1e3);
@@ -40633,7 +40758,7 @@ fn step_glm5_spec(
             &stop_ids,
             &mut eos_seen,
             |id| tok_ref.decode_bytes_special(&[id], true),
-            |event| s.tx.send(event).is_ok(),
+            |event| send_observed_event(&s.tx, &s.model, s.lane, &mut s.emission_clock, event),
         );
         if emitted.sent > 0 && prof_on {
             first_emit_ms = Some(t_step.elapsed().as_secs_f64() * 1e3);
@@ -63128,5 +63253,65 @@ mod glm5_prime_routing_tests {
         );
         assert!(glm5_prime_source(true, false).is_err());
         assert!(glm5_prime_source(false, true).is_err());
+    }
+}
+
+#[cfg(test)]
+mod emission_metrics_tests {
+    use super::*;
+
+    #[test]
+    fn only_accepted_token_events_advance_emitted_gap_histograms() {
+        let (tx, rx) = event_channel();
+        let mut clock = crate::hybrid_telemetry::EmissionClock::default();
+        let model = "t-accepted-token-events";
+        assert!(send_observed_event(
+            &tx,
+            model,
+            crate::lanes::Lane::Judge,
+            &mut clock,
+            Event::Token {
+                id: 1,
+                text: String::new()
+            }
+        ));
+        assert!(send_observed_event(
+            &tx,
+            model,
+            crate::lanes::Lane::Judge,
+            &mut clock,
+            Event::PromptUsage {
+                n_prompt: 3,
+                n_cached: 0
+            }
+        ));
+        assert!(send_observed_event(
+            &tx,
+            model,
+            crate::lanes::Lane::Judge,
+            &mut clock,
+            Event::Token {
+                id: 2,
+                text: "a".into()
+            }
+        ));
+        drop(rx);
+        assert!(!send_observed_event(
+            &tx,
+            model,
+            crate::lanes::Lane::Judge,
+            &mut clock,
+            Event::Token {
+                id: 3,
+                text: "b".into()
+            }
+        ));
+        let snap = crate::hybrid_telemetry::all()
+            .into_iter()
+            .find(|s| s.model == model)
+            .unwrap();
+        assert_eq!(snap.token_gap_hists[0].count, 0);
+        assert_eq!(snap.token_gap_hists[1].count, 1);
+        assert_eq!(snap.token_gap_hists[2].count, 0);
     }
 }

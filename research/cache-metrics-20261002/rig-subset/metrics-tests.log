@@ -1,0 +1,38 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-kv v0.138.0 (/home/avifenesh/projects/wt-memra-rig-cache-20261002/crates/memra-kv)
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-memra-rig-cache-20261002/crates/memra-server)
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-memra-rig-cache-20261002/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 2m 29s
+     Running unittests src/lib.rs (target/release/deps/memra_server-37c911a5442b05cf)
+
+running 27 tests
+test capacity_metrics::tests::worker_lifetime_clears_live_gauges_on_exit ... ok
+test http_metrics::tests::completed_truncated_and_cancelled_streams_have_distinct_outcomes ... ok
+test http_metrics::tests::every_status_accepted_by_the_http_type_fits_the_counter_table ... ok
+test http_metrics::tests::statuses_and_preheader_deadlines_are_separate_from_stream_failures ... ok
+test http_metrics::tests::unwinding_a_handler_counts_a_server_error_instead_of_a_client_cancel ... ok
+test request_metrics::tests::abandoned_attempt_excludes_success_histograms ... ok
+test http_metrics::tests::registered_backend_binding_is_a_cpu_http_contract ... ok
+test request_metrics::tests::token_buckets_keep_exact_totals_and_infinite_tail ... ok
+test request_metrics::tests::route_and_lane_timings_measure_emission_and_include_queue ... ok
+test tests::configured_metrics_token_is_exclusive_and_sees_all_tenants ... ok
+test tests::a_fake_route_serves_through_its_own_admission_and_books_its_metrics ... ok
+test tests::http_metrics_count_cancelled_and_truncated_real_sse_responses ... ok
+test tests::http_metrics_cover_real_generation_surfaces_and_early_refusals ... ok
+test tests::keyed_metrics_require_and_accept_api_bearer ... ok
+test tests::keyring_metrics_bearer_sees_only_its_tenant_rows ... ok
+test tests::metrics_token_protects_public_override_without_api_keys ... ok
+test tests::no_key_loopback_metrics_remain_open_for_development ... ok
+test tests::peer_probe_metrics_are_operator_only ... ok
+test tests::populated_dual_pp_metrics_are_operator_only ... ok
+test tests::populated_pp_wave_metrics_are_operator_only ... ok
+test tests::populated_spec_acceptance_metrics_are_operator_only ... ok
+test tests::prefix_aggregate_metrics_are_operator_only_but_tenant_ratio_remains ... ok
+test tests::tenant_metrics_hide_capacity_and_aggregate_spec ... ok
+test worker::emission_metrics_tests::only_accepted_token_events_advance_emitted_gap_histograms ... ok
+test worker::tests::host_telemetry_dirty_forces_the_metrics_publish ... ok
+test worker::tests::tenant_share_reclaim_is_wired_into_the_demote_hook_and_the_metrics ... ok
+test tests::http_metrics_observe_preheader_deadline_body_limit_and_worker_refusals ... ok
+
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 1038 filtered out; finished in 1.01s
+

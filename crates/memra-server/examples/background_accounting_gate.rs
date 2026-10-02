@@ -5,6 +5,39 @@ use serde_json::json;
 use std::sync::Arc;
 
 struct Counts;
+
+/// Test-only store observer. Publish after the successful state write so a collector
+/// can wait on an event instead of polling a background job for completion.
+struct ObservedStore(memra_server::job_store::InMemoryJobStore);
+impl JobStore for ObservedStore {
+    fn put(&self, key: &str, record: JobRecord) -> Result<(), JobStoreError> {
+        let terminal = record.status.is_terminal();
+        let status = format!("{:?}", record.status);
+        let id = record
+            .output
+            .as_ref()
+            .and_then(|v| v.get("id"))
+            .and_then(|v| v.as_str())
+            .map(str::to_owned);
+        self.0.put(key, record)?;
+        if terminal {
+            println!("GATE_STORED {}", json!({"id":id,"status":status}));
+        }
+        Ok(())
+    }
+    fn get(&self, key: &str) -> Option<JobRecord> {
+        self.0.get(key)
+    }
+    fn take(&self, key: &str) -> Option<JobRecord> {
+        self.0.take(key)
+    }
+    fn cancel(&self, key: &str) -> Result<(), JobStoreError> {
+        self.0.cancel(key)
+    }
+    fn sweep(&self) -> usize {
+        self.0.sweep()
+    }
+}
 struct Row {
     id: String,
     tenant: String,
@@ -76,6 +109,12 @@ impl Receipt for Row {
     }
     fn record_completion_token(&mut self) -> Result<(), String> {
         self.usage.completion_tokens += 1;
+        if self.usage.completion_tokens == 32 {
+            println!(
+                "GATE_PROGRESS {}",
+                json!({"id":self.id,"completion_tokens":32})
+            );
+        }
         Ok(())
     }
     fn complete(&mut self, usage: UsageCounts, _: f64) -> Result<(), String> {
@@ -98,7 +137,9 @@ impl Receipt for Row {
 }
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let store = Arc::new(memra_server::job_store::InMemoryJobStore::from_env());
+    let store = Arc::new(ObservedStore(
+        memra_server::job_store::InMemoryJobStore::from_env(),
+    ));
     let wiring =
         memra_server::ServerWiring::with_metering(Box::new(|_| Ok(Some(Arc::new(Counts)))))
             .with_job_store(store);

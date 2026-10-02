@@ -1,0 +1,10 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 0.08s
+     Running unittests src/lib.rs (target/release/deps/memra_server-37c911a5442b05cf)
+
+running 2 tests
+test hybrid_telemetry::tests::emitted_gaps_count_intervals_per_session_and_lane ... ok
+test worker::emission_metrics_tests::only_accepted_token_events_advance_emitted_gap_histograms ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 1051 filtered out; finished in 0.00s
+

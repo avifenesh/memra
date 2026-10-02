@@ -678,6 +678,12 @@ async fn messages_with_admission(
             );
         }
     };
+    crate::http_metrics::bind_model(
+        parsed
+            .get("model")
+            .and_then(|m| m.as_str())
+            .and_then(|m| crate::canonical_model_id(&st.models, m)),
+    );
     let translated = match translate(&parsed) {
         Ok(v) => v,
         Err(msg) => return with_anthropic_request_id(&env.id, bad_request(&msg, &env.id)),
@@ -882,6 +888,7 @@ fn messages_sse(
     stop_strings: Vec<String>,
     guard: Option<crate::InflightGuard>,
 ) -> Sse<impl futures_core::Stream<Item = Result<SseEvent, std::convert::Infallible>>> {
+    let http_observation = crate::http_metrics::current();
     let mut scrub = (!stop_strings.is_empty()).then(|| SurfaceScrubber::new(stop_strings.clone()));
     let stream = async_stream::stream! {
         let _guard = guard;
@@ -991,6 +998,7 @@ fn messages_sse(
         }
         macro_rules! stream_fault {
             ($etype:expr, $message:expr) => {
+                if let Some(observation) = &http_observation { observation.failed(); }
                 yield Ok(frame(json!({
                     "type": "error",
                     "error": { "type": $etype, "message": $message },
@@ -1132,6 +1140,7 @@ fn messages_sse(
                         },
                         "usage": usage_json(n_prompt, n_tokens, n_cached),
                     })));
+                    if let Some(observation) = &http_observation { observation.terminal(); }
                     yield Ok(frame(json!({ "type": "message_stop" })));
                     terminal = true;
                     break;
@@ -1167,6 +1176,7 @@ fn messages_sse(
             }
         }
         if !terminal {
+            if let Some(observation) = &http_observation { observation.failed(); }
             // Channel closed without Done/Error: worker restart — OUR fault, settled
             // rejected with debit ZERO (fault-attribution ruling 2026-08-23; this used to
             // fall through to Drop and bill the partial stream as a client "abandon").

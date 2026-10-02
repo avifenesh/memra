@@ -1,0 +1,124 @@
+diff --git a/crates/memra-engine/src/bin/run_spec.rs b/crates/memra-engine/src/bin/run_spec.rs
+index 1242f98174..a3cb325c02 100644
+--- a/crates/memra-engine/src/bin/run_spec.rs
++++ b/crates/memra-engine/src/bin/run_spec.rs
+@@ -83,7 +83,13 @@ fn plain_oracle(
+     } else {
+         let mut row = Vec::new();
+         for &token in prompt {
+-            row = if batched_class {
++            // The live GDN worker primes cold sub-floor prompts eagerly even though
++            // generated tokens use the batched serving class (#918). Keep the oracle
++            // tied to that request program, rather than copying the speculative prime.
++            row = if batched_class
++                && !(memra_engine::plan_backend::gdn_dspark_compatible(&model.plan)
++                    && prompt.len() < memra_engine::hybrid_forward::PRIME_MIN_T)
++            {
+                 let mut caches = [&mut cache];
+                 model.decode_step_batch(e, &[token], &mut caches)?.remove(0)
+             } else {
+diff --git a/crates/memra-engine/src/spec.rs b/crates/memra-engine/src/spec.rs
+index cd259bf5b9..d3592a0d7f 100644
+--- a/crates/memra-engine/src/spec.rs
++++ b/crates/memra-engine/src/spec.rs
+@@ -12016,7 +12016,14 @@ impl HybridModel {
+             prime_logits = Vec::new();
+             prompt_h = Some(e.uninit(prompt.len() * n_embd)?);
+             for (i, &tok) in prompt.iter().enumerate() {
+-                let (l, h) = self.spec_target_step_h(e, tok, &mut *cache)?;
++                // Cold short prompts must use the plain worker's eager prefill program.
++                // GDN target steps use batched T=1 math; priming through them changes the
++                // initial recurrent state and can flip greedy output (#918).
++                let (l, h) = if prompt.len() < crate::hybrid_forward::PRIME_MIN_T {
++                    self.decode_step_h(e, tok, &mut *cache)?
++                } else {
++                    self.spec_target_step_h(e, tok, &mut *cache)?
++                };
+                 if let Some(ph) = prompt_h.as_mut() {
+                     e.copy_into(ph, i * n_embd, &h, n_embd)?;
+                 }
+diff --git a/crates/memra-engine/src/spec/prime.rs b/crates/memra-engine/src/spec/prime.rs
+index f38be92ed9..00fdf7262a 100644
+--- a/crates/memra-engine/src/spec/prime.rs
++++ b/crates/memra-engine/src/spec/prime.rs
+@@ -89,11 +89,10 @@ pub struct MtpPrimeWalker<'a> {
+ /// prefix-cache hit's queued suffix, a turn continuation). A carried suffix follows the plain
+ /// prefill tick's arms EXACTLY, the program law `spec_session_from_restored` documents: eager
+ /// `decode_step_h` below `PRIME_MIN_T`, `prime_cache` at or above it, tokenwise everywhere
+-/// under the override. The cold prime keeps its legacy program (`spec_target_step_h` for an
+-/// unsegmented sub-floor prompt, batched non-final segments under the override). Routing the
+-/// carried sub-floor suffix through the cold program is the two-programs class the
+-/// spec-on-cache-hit gate measures as a near-tie flip on qwen r3/g2 (2026-08-18, again
+-/// 2026-09-20 after #379 queued the suffix here).
++/// under the override. Cold sub-floor prompts use the same eager program: the GDN
++/// `spec_target_step_h` call uses batched T=1 math, which changes the initial cache/logits
++/// and can flip greedy output before verification (#918). Longer cold primes retain the
++/// legacy override program (target steps without stops, batched non-final segments).
+ fn trunk_schedule(
+     tp: usize,
+     prime_split: Option<usize>,
+@@ -127,15 +126,15 @@ fn trunk_schedule(
+                 });
+             }
+         } else {
+-            // Sub-floor segments retain their original tokenwise numerical calls: the cold
+-            // unsegmented prime's `spec_target_step_h`, eager `decode_step_h` otherwise.
++            // Match plain prefill for short cold prompts as well as carried suffixes.
++            // The target-step override is retained only for longer unsegmented primes.
+             chunks.push(TrunkChunk {
+                 start: lo,
+                 end: hi,
+                 segment_start: lo,
+                 segment_end: hi,
+                 batched,
+-                target_step: !segmented && !carried,
++                target_step: !segmented && !carried && tp >= crate::hybrid_forward::PRIME_MIN_T,
+             });
+         }
+         lo = hi;
+@@ -857,8 +856,8 @@ mod tests {
+     }
+ 
+     /// The prefix-cache hit shape of the spec-on-cache-hit gate (qwen r3/g2: 106 of 119
+-    /// restored, 13 queued): a carried sub-floor suffix is eager `decode_step_h`, never the
+-    /// cold prime's `spec_target_step_h`, with or without a stable-boundary stop.
++    /// restored, 13 queued): cold and carried sub-floor primes both use eager
++    /// `decode_step_h`, with or without a stable-boundary stop.
+     #[test]
+     fn carried_sub_floor_suffix_keeps_the_plain_eager_program() {
+         let queued = trunk_schedule(13, None, None, false, true, |_| panic!("batched sub-floor"));
+@@ -867,13 +866,33 @@ mod tests {
+         let cold = trunk_schedule(13, None, None, false, false, |_| {
+             panic!("batched sub-floor")
+         });
+-        assert!(!cold[0].batched && cold[0].target_step);
++        assert!(!cold[0].batched && !cold[0].target_step);
+         let split = trunk_schedule(29, Some(16), None, false, true, |n| vec![(0, n)]);
+         assert_eq!(split.len(), 2);
+         assert!(split[0].batched);
+         assert!(!split[1].batched && !split[1].target_step);
+     }
+ 
++    #[test]
++    fn cold_short_prime_matches_plain_prefill_across_the_batch_floor() {
++        for tp in 1..=crate::hybrid_forward::PRIME_MIN_T {
++            for tokenwise in [false, true] {
++                let chunks = trunk_schedule(tp, None, None, tokenwise, false, |n| vec![(0, n)]);
++                assert_eq!(chunks.len(), 1);
++                let chunk = chunks[0];
++                assert_eq!((chunk.start, chunk.end), (0, tp));
++                assert_eq!(
++                    chunk.batched,
++                    tp >= crate::hybrid_forward::PRIME_MIN_T && !tokenwise
++                );
++                assert_eq!(
++                    chunk.target_step,
++                    tp >= crate::hybrid_forward::PRIME_MIN_T && tokenwise
++                );
++            }
++        }
++    }
++
+     /// Under the tokenwise override a carried suffix mirrors the fed path: every segment is
+     /// eager, including non-final ones the cold program would still batch.
+     #[test]

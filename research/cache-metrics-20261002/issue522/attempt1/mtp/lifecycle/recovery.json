@@ -1,0 +1,223 @@
+{
+  "request": {
+    "model": "metrics-q9",
+    "prompt": "Count from one to twenty in words, separated by commas.",
+    "max_tokens": 8,
+    "temperature": 0,
+    "stream": true,
+    "stream_options": {
+      "include_usage": true
+    },
+    "cache_salt": "metric-recovery"
+  },
+  "events": [
+    {
+      "elapsed_seconds": 0.1163781009381637,
+      "event": {
+        "object": "text_completion",
+        "model": "metrics-q9",
+        "choices": [
+          {
+            "index": 0,
+            "text": "\n\n",
+            "finish_reason": null
+          }
+        ],
+        "id": "cmpl-d28db1fc52999859cf18969e2c3a8213",
+        "created": 1790942072,
+        "system_fingerprint": "memra-0.138.0-a22131fc0549",
+        "usage": null
+      }
+    },
+    {
+      "elapsed_seconds": 0.12996301800012589,
+      "event": {
+        "object": "text_completion",
+        "model": "metrics-q9",
+        "choices": [
+          {
+            "index": 0,
+            "text": "one",
+            "finish_reason": null
+          }
+        ],
+        "id": "cmpl-d28db1fc52999859cf18969e2c3a8213",
+        "created": 1790942072,
+        "system_fingerprint": "memra-0.138.0-a22131fc0549",
+        "usage": null
+      }
+    },
+    {
+      "elapsed_seconds": 0.14572367200162262,
+      "event": {
+        "object": "text_completion",
+        "model": "metrics-q9",
+        "choices": [
+          {
+            "index": 0,
+            "text": ",",
+            "finish_reason": null
+          }
+        ],
+        "id": "cmpl-d28db1fc52999859cf18969e2c3a8213",
+        "created": 1790942072,
+        "system_fingerprint": "memra-0.138.0-a22131fc0549",
+        "usage": null
+      }
+    },
+    {
+      "elapsed_seconds": 0.14576871099416167,
+      "event": {
+        "object": "text_completion",
+        "model": "metrics-q9",
+        "choices": [
+          {
+            "index": 0,
+            "text": " two",
+            "finish_reason": null
+          }
+        ],
+        "id": "cmpl-d28db1fc52999859cf18969e2c3a8213",
+        "created": 1790942072,
+        "system_fingerprint": "memra-0.138.0-a22131fc0549",
+        "usage": null
+      }
+    },
+    {
+      "elapsed_seconds": 0.1457894139457494,
+      "event": {
+        "object": "text_completion",
+        "model": "metrics-q9",
+        "choices": [
+          {
+            "index": 0,
+            "text": ",",
+            "finish_reason": null
+          }
+        ],
+        "id": "cmpl-d28db1fc52999859cf18969e2c3a8213",
+        "created": 1790942072,
+        "system_fingerprint": "memra-0.138.0-a22131fc0549",
+        "usage": null
+      }
+    },
+    {
+      "elapsed_seconds": 0.14580625703092664,
+      "event": {
+        "object": "text_completion",
+        "model": "metrics-q9",
+        "choices": [
+          {
+            "index": 0,
+            "text": " three",
+            "finish_reason": null
+          }
+        ],
+        "id": "cmpl-d28db1fc52999859cf18969e2c3a8213",
+        "created": 1790942072,
+        "system_fingerprint": "memra-0.138.0-a22131fc0549",
+        "usage": null
+      }
+    },
+    {
+      "elapsed_seconds": 0.15949375997297466,
+      "event": {
+        "object": "text_completion",
+        "model": "metrics-q9",
+        "choices": [
+          {
+            "index": 0,
+            "text": ",",
+            "finish_reason": null
+          }
+        ],
+        "id": "cmpl-d28db1fc52999859cf18969e2c3a8213",
+        "created": 1790942072,
+        "system_fingerprint": "memra-0.138.0-a22131fc0549",
+        "usage": null
+      }
+    },
+    {
+      "elapsed_seconds": 0.15951058897189796,
+      "event": {
+        "object": "text_completion",
+        "model": "metrics-q9",
+        "choices": [
+          {
+            "index": 0,
+            "text": " four",
+            "finish_reason": null
+          }
+        ],
+        "id": "cmpl-d28db1fc52999859cf18969e2c3a8213",
+        "created": 1790942072,
+        "system_fingerprint": "memra-0.138.0-a22131fc0549",
+        "usage": null
+      }
+    },
+    {
+      "elapsed_seconds": 0.15951824898365885,
+      "event": {
+        "object": "text_completion",
+        "model": "metrics-q9",
+        "choices": [
+          {
+            "index": 0,
+            "text": "",
+            "finish_reason": "length"
+          }
+        ],
+        "usage": null,
+        "id": "cmpl-d28db1fc52999859cf18969e2c3a8213",
+        "created": 1790942072,
+        "system_fingerprint": "memra-0.138.0-a22131fc0549"
+      }
+    },
+    {
+      "elapsed_seconds": 0.1595339459599927,
+      "event": {
+        "object": "text_completion",
+        "model": "metrics-q9",
+        "choices": [],
+        "usage": {
+          "prompt_tokens": 12,
+          "completion_tokens": 8,
+          "total_tokens": 20,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "elapsed_s": 0.144809697,
+          "spec": {
+            "rounds": 3,
+            "drafted": 9,
+            "accepted": 6,
+            "acceptance_rate": 0.6666666666666666
+          }
+        },
+        "id": "cmpl-d28db1fc52999859cf18969e2c3a8213",
+        "created": 1790942072,
+        "system_fingerprint": "memra-0.138.0-a22131fc0549"
+      }
+    }
+  ],
+  "done": true,
+  "cancelled_by_client": false,
+  "status": 200,
+  "finish_reason": "length",
+  "usage": {
+    "prompt_tokens": 12,
+    "completion_tokens": 8,
+    "total_tokens": 20,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "elapsed_s": 0.144809697,
+    "spec": {
+      "rounds": 3,
+      "drafted": 9,
+      "accepted": 6,
+      "acceptance_rate": 0.6666666666666666
+    }
+  },
+  "elapsed_seconds": 0.15958071302156895
+}

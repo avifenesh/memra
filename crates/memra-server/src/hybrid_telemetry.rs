@@ -8,7 +8,7 @@
 //! distinct model names the operator has loaded, the same bound `route_telemetry` relies
 //! on for its own per-route histograms.
 //!
-//! Three histograms per model:
+//! Queue, TTFT and E2E histograms per model:
 //!   * `queue_wait`: time between a request entering the worker's admission queue
 //!     (`Request::queued_at`, stamped by the HTTP handler at submission, or reset at
 //!     construction for every internally-built request (a step-OOM park replay, a test)
@@ -25,6 +25,11 @@
 //!     reads). Recorded once per session, at retire, gated on the same
 //!     `!oom_teardown && !aborted && !errored` predicate the completion-history record
 //!     already uses.
+//!
+//! Emitted-token gaps use three fixed lane rows per model. They record every interval
+//! between successfully accepted worker token events, including empty UTF-8 fragments
+//! and EOS IDs. A session emitting N token IDs contributes N-1 samples. This is server
+//! event emission timing, not network flush timing or a compute-round proxy.
 //!
 //! KNOWN IMPRECISION (documented, not silently accepted): a step-OOM park replay rebuilds
 //! a fresh `Session` (`generated: Vec::new()`), so if the original attempt had already
@@ -43,6 +48,7 @@ struct ModelHist {
     queue_wait: Histogram,
     ttft: Histogram,
     e2e: Histogram,
+    token_gap: [Histogram; 3],
 }
 
 /// The published view of one model's hybrid-lane histograms (the /metrics Prometheus
@@ -54,6 +60,7 @@ pub(crate) struct HybridSnapshot {
     pub queue_wait_hist: HistogramSnapshot,
     pub ttft_hist: HistogramSnapshot,
     pub e2e_hist: HistogramSnapshot,
+    pub token_gap_hists: [HistogramSnapshot; 3],
 }
 
 fn registry() -> &'static RwLock<HashMap<String, ModelHist>> {
@@ -88,6 +95,31 @@ pub(crate) fn record_e2e(model: &str, elapsed: Duration) {
     with_model(model, |h| h.e2e.record(elapsed.as_secs_f64()));
 }
 
+/// A per-session clock for accepted worker token events. UTF-8 fragments and EOS
+/// still represent token IDs; the first event starts the clock without a gap sample.
+/// Observations are cumulative and unsampled, with exactly three possible lane labels.
+#[derive(Default)]
+pub(crate) struct EmissionClock {
+    pub(crate) request: crate::request_metrics::Clock,
+    last: Option<std::time::Instant>,
+}
+
+impl EmissionClock {
+    pub(crate) fn sent(&mut self, model: &str, lane: crate::lanes::Lane) {
+        self.request.sent();
+        self.sent_at(model, lane, std::time::Instant::now());
+    }
+
+    fn sent_at(&mut self, model: &str, lane: crate::lanes::Lane, now: std::time::Instant) {
+        if let Some(previous) = self.last.replace(now) {
+            with_model(model, |h| {
+                h.token_gap[lane.idx()]
+                    .record(now.saturating_duration_since(previous).as_secs_f64());
+            });
+        }
+    }
+}
+
 /// Every registered model's snapshot, sorted by name (a stable /metrics order, same
 /// convention as `route_telemetry::all`).
 pub(crate) fn all() -> Vec<HybridSnapshot> {
@@ -99,6 +131,7 @@ pub(crate) fn all() -> Vec<HybridSnapshot> {
             queue_wait_hist: h.queue_wait.snapshot(),
             ttft_hist: h.ttft.snapshot(),
             e2e_hist: h.e2e.snapshot(),
+            token_gap_hists: std::array::from_fn(|i| h.token_gap[i].snapshot()),
         })
         .collect();
     v.sort_by(|a, b| a.model.cmp(&b.model));
@@ -108,6 +141,41 @@ pub(crate) fn all() -> Vec<HybridSnapshot> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn emitted_gaps_count_intervals_per_session_and_lane() {
+        let now = std::time::Instant::now();
+        let model = "t-emitted-gaps";
+        let mut clock = EmissionClock::default();
+        clock.sent_at(model, crate::lanes::Lane::Interactive, now);
+        clock.sent_at(
+            model,
+            crate::lanes::Lane::Interactive,
+            now + Duration::from_millis(20),
+        );
+        clock.sent_at(
+            model,
+            crate::lanes::Lane::Interactive,
+            now + Duration::from_millis(50),
+        );
+        let mut next = EmissionClock::default();
+        next.sent_at(
+            model,
+            crate::lanes::Lane::Harvest,
+            now + Duration::from_secs(1),
+        );
+        next.sent_at(
+            model,
+            crate::lanes::Lane::Harvest,
+            now + Duration::from_millis(1010),
+        );
+        let snap = all().into_iter().find(|s| s.model == model).unwrap();
+        assert_eq!(snap.token_gap_hists[0].count, 2);
+        assert!((snap.token_gap_hists[0].sum_seconds - 0.05).abs() < 1e-9);
+        assert_eq!(snap.token_gap_hists[1].count, 0);
+        assert_eq!(snap.token_gap_hists[2].count, 1);
+        assert!((snap.token_gap_hists[2].sum_seconds - 0.01).abs() < 1e-9);
+    }
 
     /// Registration is get-or-create and lookups are by model name, mirroring
     /// `route_telemetry`'s own registry test.

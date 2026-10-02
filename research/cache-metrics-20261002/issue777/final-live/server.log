@@ -1,0 +1,138 @@
+[server] build: memra-0.138.0-292436629f95 (id: source-tree, git: bef76711297e)
+[env-audit] warning: 3 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: MEMRA_CI_LOCK, MEMRA_CI_LOCK_HELD, MEMRA_RIG_LOCK_FD. Left alone: launchers and gate scripts own names outside the engine's families.
+[server] starting; models config = [("q35-coldfix", "/data/ai-ml/hf-models/qwen36-35b-a3b-mtp-gguf-5bc3e238/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "q35-coldfix" <- /data/ai-ml/hf-models/qwen36-35b-a3b-mtp-gguf-5bc3e238/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+[tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 24.28GB (expert budget 19.68GB) -> RESIDENT
+[worker]   loaded "q35-coldfix": 41 layers, eos=248046, stop=[248046]
+[worker] q35-coldfix: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="q35-coldfix" route=hybrid-worker capacity=96 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] q35-coldfix: decode wave cap 8; scheduler tick cap 8
+[prefix-cache] on: budget 4295MB (4294967296 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "q35-coldfix": plain 9280 B/token, spec 10208 B/token; fixed residual learns from effective-free deltas
+[admit-cal] boot calibration skipped: spec serving disabled (static floor; the plain transient class is chunk-bounded)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[server] worker ready; serving models: ["q35-coldfix"]
+[server] listening on http://127.0.0.1:18110
+[meter] admit id=cmpl-6a0f54e0b0337ab9b9a41575f6ebea78 tenant=default lane=interactive model="q35-coldfix"
+[admission] request cost: model="q35-coldfix" ctx=4984 path=plain = 9280 B/token x ctx + 1416MB prefill-workspace + 0MB fixed = 1462MB
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q35-coldfix" 133MB (observed 179MB at ctx 4928 path=plain)
+[moe-sk-form] dev=0 qt=6 sms=82 occ128=1 occ32=6 occt=3 cross=64 xcross=64 bdb=0 in_f=2048 out_f=512 n_active=244 max_m=1408
+[moe-sk-form] dev=0 qt=5 sms=82 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=512 out_f=2048 n_active=244 max_m=1408
+[moe-sk-form] dev=0 qt=2 sms=82 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=512 out_f=2048 n_active=226 max_m=3432
+[prefix-cache] insert (seed): 4832 tokens, 110.7MB (resident 110.7MB / 4295MB, model q35-coldfix, ns "serve-smoke-q35-coldfix-q35-hot-0")
+[fa-pool] grow #0 dev=0 o_len 0 -> 311296 ml_len 0 -> 1216 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 311296 -> 622592 ml_len 1216 -> 2432 (retired kept, zero=false)
+[meter] admit id=cmpl-d089f155a95d562f1d917fcdeb371071 tenant=default lane=interactive model="q35-coldfix"
+[admission] request cost: model="q35-coldfix" ctx=4984 path=plain = 9280 B/token x ctx + 1416MB prefill-workspace + 133MB fixed = 1595MB
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-1" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4832 tokens, 110.7MB (resident 221.4MB / 4295MB, model q35-coldfix, ns "serve-smoke-q35-coldfix-q35-hot-1")
+[meter] admit id=cmpl-97840144d1d249161cc48b55c00ddaba tenant=default lane=interactive model="q35-coldfix"
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-2" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4832 tokens, 110.7MB (resident 332.1MB / 4295MB, model q35-coldfix, ns "serve-smoke-q35-coldfix-q35-hot-2")
+[meter] admit id=cmpl-f89633c9458a3593de93e7f184efeb2a tenant=default lane=interactive model="q35-coldfix"
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-3" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4832 tokens, 110.7MB (resident 442.8MB / 4295MB, model q35-coldfix, ns "serve-smoke-q35-coldfix-q35-hot-3")
+[meter] admit id=cmpl-a4c62e87796d133bfbeeff7ac130f1a5 tenant=default lane=interactive model="q35-coldfix"
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-4" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4832 tokens, 110.7MB (resident 553.5MB / 4295MB, model q35-coldfix, ns "serve-smoke-q35-coldfix-q35-hot-4")
+[meter] admit id=cmpl-14ddc0c2fc50c1d6fee82fb904c2a05e tenant=default lane=interactive model="q35-coldfix"
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-5" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4832 tokens, 110.7MB (resident 664.2MB / 4295MB, model q35-coldfix, ns "serve-smoke-q35-coldfix-q35-hot-5")
+[meter] admit id=cmpl-98fccd6bb81e393878016bf344c185f4 tenant=default lane=interactive model="q35-coldfix"
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-6" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4832 tokens, 110.7MB (resident 774.9MB / 4295MB, model q35-coldfix, ns "serve-smoke-q35-coldfix-q35-hot-6")
+[meter] admit id=cmpl-3d6969e204b5e728659bdacf47dd23e4 tenant=default lane=interactive model="q35-coldfix"
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-7" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4832 tokens, 110.7MB (resident 885.6MB / 4295MB, model q35-coldfix, ns "serve-smoke-q35-coldfix-q35-hot-7")
+[meter] admit id=cmpl-bc7b57e50b89c0fcf291588df7388217 tenant=default lane=interactive model="q35-coldfix"
+[meter] admit id=cmpl-4353d8cfa1c07e036e8ef748232b08dc tenant=default lane=interactive model="q35-coldfix"
+[meter] admit id=cmpl-9de8ba4808603c8d8ed35e9bf243e599 tenant=default lane=interactive model="q35-coldfix"
+[meter] admit id=cmpl-422dc86ec8d86759b7f9af15d1f395d4 tenant=default lane=interactive model="q35-coldfix"
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-mixed90-r1-c4-i1" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=1 wave=4 placement=single-or-non-pp2
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-mixed90-r1-c4-i3" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[prefix-cache] hit: 4832 of 4860 prompt tokens from cache (model q35-coldfix)
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-1" K=0 source=concurrency prompt=4860 cached=4832 lcp=4832 active=3 wave=4 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 4832 tokens, model q35-coldfix)
+[prefix-cache] hit: 4832 of 4860 prompt tokens from cache (model q35-coldfix)
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-0" K=0 source=concurrency prompt=4860 cached=4832 lcp=4832 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 4832 tokens, model q35-coldfix)
+[fa-pool] grow #2 dev=0 o_len 622592 -> 1245184 ml_len 2432 -> 4864 (retired kept, zero=false)
+[prefix-cache] insert (seed): 4832 tokens, 110.7MB (resident 996.3MB / 4295MB, model q35-coldfix, ns "serve-smoke-q35-coldfix-q35-mixed90-r1-c4-i1")
+[prefix-cache] insert (seed): 4832 tokens, 110.7MB (resident 1107.0MB / 4295MB, model q35-coldfix, ns "serve-smoke-q35-coldfix-q35-mixed90-r1-c4-i3")
+[fa-pool] grow #3 dev=0 o_len 1245184 -> 2490368 ml_len 4864 -> 9728 (retired kept, zero=false)
+[meter] admit id=cmpl-b7d59ec786c6e0c1f5275d0eb9c1c5de tenant=default lane=interactive model="q35-coldfix"
+[meter] admit id=cmpl-7a4c156c46740dfb70147f74b61f41f7 tenant=default lane=interactive model="q35-coldfix"
+[prefix-cache] hit: 4832 of 4860 prompt tokens from cache (model q35-coldfix)
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-2" K=0 source=concurrency prompt=4860 cached=4832 lcp=4832 active=3 wave=4 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 4832 tokens, model q35-coldfix)
+[prefix-cache] hit: 4832 of 4860 prompt tokens from cache (model q35-coldfix)
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-3" K=0 source=concurrency prompt=4860 cached=4832 lcp=4832 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 4832 tokens, model q35-coldfix)
+[meter] admit id=cmpl-0dbb7ea48cf186d7968e159f78638bb6 tenant=default lane=interactive model="q35-coldfix"
+[meter] admit id=cmpl-8f8057d0c4c3b59d8c34f1bc81561520 tenant=default lane=interactive model="q35-coldfix"
+[prefix-cache] hit: 4832 of 4860 prompt tokens from cache (model q35-coldfix)
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-4" K=0 source=concurrency prompt=4860 cached=4832 lcp=4832 active=3 wave=4 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 4832 tokens, model q35-coldfix)
+[prefix-cache] hit: 4832 of 4860 prompt tokens from cache (model q35-coldfix)
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-5" K=0 source=concurrency prompt=4860 cached=4832 lcp=4832 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 4832 tokens, model q35-coldfix)
+[meter] admit id=cmpl-6ffc788747d453c75fb21a6fa13dff22 tenant=default lane=interactive model="q35-coldfix"
+[meter] admit id=cmpl-681b3fc026475cb5876d55bc5016beee tenant=default lane=interactive model="q35-coldfix"
+[prefix-cache] hit: 4832 of 4860 prompt tokens from cache (model q35-coldfix)
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-6" K=0 source=concurrency prompt=4860 cached=4832 lcp=4832 active=3 wave=4 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 4832 tokens, model q35-coldfix)
+[prefix-cache] hit: 4832 of 4860 prompt tokens from cache (model q35-coldfix)
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-7" K=0 source=concurrency prompt=4860 cached=4832 lcp=4832 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 4832 tokens, model q35-coldfix)
+[meter] admit id=cmpl-9bbf56f26333884e7b9c65289c8eb866 tenant=default lane=interactive model="q35-coldfix"
+[meter] admit id=cmpl-78787d15d88ab46a9556509345260756 tenant=default lane=interactive model="q35-coldfix"
+[prefix-cache] hit: 4832 of 4860 prompt tokens from cache (model q35-coldfix)
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-0" K=0 source=concurrency prompt=4860 cached=4832 lcp=4832 active=3 wave=4 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 4832 tokens, model q35-coldfix)
+[prefix-cache] hit: 4832 of 4860 prompt tokens from cache (model q35-coldfix)
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-1" K=0 source=concurrency prompt=4860 cached=4832 lcp=4832 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 4832 tokens, model q35-coldfix)
+[meter] admit id=cmpl-4e91a5f2cefe0f7993633e1a946a11f8 tenant=default lane=interactive model="q35-coldfix"
+[meter] admit id=cmpl-11a5ba28bca6d51c0f95135f326b73f1 tenant=default lane=interactive model="q35-coldfix"
+[prefix-cache] hit: 4832 of 4860 prompt tokens from cache (model q35-coldfix)
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-2" K=0 source=concurrency prompt=4860 cached=4832 lcp=4832 active=3 wave=4 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 4832 tokens, model q35-coldfix)
+[prefix-cache] hit: 4832 of 4860 prompt tokens from cache (model q35-coldfix)
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-3" K=0 source=concurrency prompt=4860 cached=4832 lcp=4832 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 4832 tokens, model q35-coldfix)
+[meter] admit id=cmpl-a904cde0ec9c8d46491a2e9b4da50ae1 tenant=default lane=interactive model="q35-coldfix"
+[meter] admit id=cmpl-5069c71517a5109582e604e2d972a4b9 tenant=default lane=interactive model="q35-coldfix"
+[prefix-cache] hit: 4832 of 4860 prompt tokens from cache (model q35-coldfix)
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-5" K=0 source=concurrency prompt=4860 cached=4832 lcp=4832 active=3 wave=4 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 4832 tokens, model q35-coldfix)
+[prefix-cache] hit: 4832 of 4860 prompt tokens from cache (model q35-coldfix)
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-4" K=0 source=concurrency prompt=4860 cached=4832 lcp=4832 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 4832 tokens, model q35-coldfix)
+[meter] admit id=cmpl-26b16996eb1ca2aafcf0f772e6494fe4 tenant=default lane=interactive model="q35-coldfix"
+[meter] admit id=cmpl-ce6c3f3670435ecc2ab6a04d847945e0 tenant=default lane=interactive model="q35-coldfix"
+[prefix-cache] hit: 4832 of 4860 prompt tokens from cache (model q35-coldfix)
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-6" K=0 source=concurrency prompt=4860 cached=4832 lcp=4832 active=3 wave=4 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 4832 tokens, model q35-coldfix)
+[prefix-cache] hit: 4832 of 4860 prompt tokens from cache (model q35-coldfix)
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-7" K=0 source=concurrency prompt=4860 cached=4832 lcp=4832 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 4832 tokens, model q35-coldfix)
+[meter] admit id=cmpl-c02096c96c744605a92d428f96160e4e tenant=default lane=interactive model="q35-coldfix"
+[meter] admit id=cmpl-d050950e85006eb90526da91f4e14e00 tenant=default lane=interactive model="q35-coldfix"
+[prefix-cache] hit: 4832 of 4860 prompt tokens from cache (model q35-coldfix)
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-0" K=0 source=concurrency prompt=4860 cached=4832 lcp=4832 active=3 wave=4 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 4832 tokens, model q35-coldfix)
+[prefix-cache] hit: 4832 of 4860 prompt tokens from cache (model q35-coldfix)
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-1" K=0 source=concurrency prompt=4860 cached=4832 lcp=4832 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 4832 tokens, model q35-coldfix)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

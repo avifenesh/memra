@@ -1,0 +1,879 @@
+diff --git a/crates/memra-engine/src/spec.rs b/crates/memra-engine/src/spec.rs
+index f316ba4ed2..be4e2dfc7f 100644
+--- a/crates/memra-engine/src/spec.rs
++++ b/crates/memra-engine/src/spec.rs
+@@ -12027,7 +12027,9 @@ impl HybridModel {
+                 // Cold short prompts must use the plain worker's eager prefill program.
+                 // GDN target steps use batched T=1 math; priming through them changes the
+                 // initial recurrent state and can flip greedy output (#918).
+-                let (l, h) = if prompt.len() < crate::hybrid_forward::PRIME_MIN_T {
++                let (l, h) = if prompt.len() < crate::hybrid_forward::PRIME_MIN_T
++                    && crate::plan_backend::gdn_dspark_compatible(&self.plan)
++                {
+                     self.decode_step_h(e, tok, &mut *cache)?
+                 } else {
+                     self.spec_target_step_h(e, tok, &mut *cache)?
+diff --git a/crates/memra-engine/src/spec/prime.rs b/crates/memra-engine/src/spec/prime.rs
+index 00fdf7262a..9f804e9b7b 100644
+--- a/crates/memra-engine/src/spec/prime.rs
++++ b/crates/memra-engine/src/spec/prime.rs
+@@ -89,7 +89,7 @@ pub struct MtpPrimeWalker<'a> {
+ /// prefix-cache hit's queued suffix, a turn continuation). A carried suffix follows the plain
+ /// prefill tick's arms EXACTLY, the program law `spec_session_from_restored` documents: eager
+ /// `decode_step_h` below `PRIME_MIN_T`, `prime_cache` at or above it, tokenwise everywhere
+-/// under the override. Cold sub-floor prompts use the same eager program: the GDN
++/// under the override. GDN cold sub-floor prompts use the same eager program: the GDN
+ /// `spec_target_step_h` call uses batched T=1 math, which changes the initial cache/logits
+ /// and can flip greedy output before verification (#918). Longer cold primes retain the
+ /// legacy override program (target steps without stops, batched non-final segments).
+@@ -99,6 +99,7 @@ fn trunk_schedule(
+     ckpt_rel: Option<usize>,
+     tokenwise: bool,
+     carried: bool,
++    eager_cold_short: bool,
+     mut ranges: impl FnMut(usize) -> Vec<(usize, usize)>,
+ ) -> Vec<TrunkChunk> {
+     let mut stops: Vec<_> = [prime_split, ckpt_rel].into_iter().flatten().collect();
+@@ -126,7 +127,7 @@ fn trunk_schedule(
+                 });
+             }
+         } else {
+-            // Match plain prefill for short cold prompts as well as carried suffixes.
++            // Match plain prefill for qualified GDN short cold prompts and carried suffixes.
+             // The target-step override is retained only for longer unsegmented primes.
+             chunks.push(TrunkChunk {
+                 start: lo,
+@@ -134,7 +135,9 @@ fn trunk_schedule(
+                 segment_start: lo,
+                 segment_end: hi,
+                 batched,
+-                target_step: !segmented && !carried && tp >= crate::hybrid_forward::PRIME_MIN_T,
++                target_step: !segmented
++                    && !carried
++                    && (tp >= crate::hybrid_forward::PRIME_MIN_T || !eager_cold_short),
+             });
+         }
+         lo = hi;
+@@ -317,13 +320,21 @@ impl HybridModel {
+         }
+         let tokenwise = std::env::var("MEMRA_PRIME_TOKENWISE").is_ok()
+             || e.frozen_cpu_experts_prefer_tokenwise_prime();
+-        let chunks = trunk_schedule(tp, prime_split, ckpt_rel, tokenwise, base > 0, |len| {
+-            crate::hybrid_forward::prime_chunk_ranges(
+-                len,
+-                self.layers.len(),
+-                self.gdn_prime_grid_on(),
+-            )
+-        });
++        let chunks = trunk_schedule(
++            tp,
++            prime_split,
++            ckpt_rel,
++            tokenwise,
++            base > 0,
++            crate::plan_backend::gdn_dspark_compatible(&self.plan),
++            |len| {
++                crate::hybrid_forward::prime_chunk_ranges(
++                    len,
++                    self.layers.len(),
++                    self.gdn_prime_grid_on(),
++                )
++            },
++        );
+         let fill_chunk = if crate::cache::swa_ring_on() {
+             crate::hybrid_forward::prime_chunk_tokens(tp, self.layers.len())
+         } else {
+@@ -787,7 +798,7 @@ mod tests {
+         let state = |ckpt_rel: Option<usize>, cursor: usize| MtpPrimeState {
+             prompt: vec![0; 2061],
+             base: 0,
+-            chunks: trunk_schedule(2061, None, Some(1024), false, false, |n| vec![(0, n)]),
++            chunks: trunk_schedule(2061, None, Some(1024), false, false, true, |n| vec![(0, n)]),
+             cursor,
+             fill_cursor: 0,
+             fill_chunk: 4096,
+@@ -823,7 +834,9 @@ mod tests {
+ 
+     #[test]
+     fn stable_captures_preserve_segment_local_ranges_and_tiny_tail_program() {
+-        let chunks = trunk_schedule(2061, Some(1024), Some(2048), false, false, |n| vec![(0, n)]);
++        let chunks = trunk_schedule(2061, Some(1024), Some(2048), false, false, true, |n| {
++            vec![(0, n)]
++        });
+         assert_eq!(
+             chunks
+                 .iter()
+@@ -844,12 +857,14 @@ mod tests {
+ 
+     #[test]
+     fn tokenwise_override_retains_the_legacy_segment_program() {
+-        let cold = trunk_schedule(2048, None, None, true, false, |_| {
++        let cold = trunk_schedule(2048, None, None, true, false, true, |_| {
+             panic!("batched cold tokenwise")
+         });
+         assert_eq!(cold.len(), 1);
+         assert!(!cold[0].batched && cold[0].target_step);
+-        let split = trunk_schedule(2048, Some(1024), Some(1024), true, false, |n| vec![(0, n)]);
++        let split = trunk_schedule(2048, Some(1024), Some(1024), true, false, true, |n| {
++            vec![(0, n)]
++        });
+         assert_eq!(split.len(), 2);
+         assert!(split[0].batched);
+         assert!(!split[1].batched && !split[1].target_step);
+@@ -860,14 +875,16 @@ mod tests {
+     /// `decode_step_h`, with or without a stable-boundary stop.
+     #[test]
+     fn carried_sub_floor_suffix_keeps_the_plain_eager_program() {
+-        let queued = trunk_schedule(13, None, None, false, true, |_| panic!("batched sub-floor"));
++        let queued = trunk_schedule(13, None, None, false, true, true, |_| {
++            panic!("batched sub-floor")
++        });
+         assert_eq!(queued.len(), 1);
+         assert!(!queued[0].batched && !queued[0].target_step);
+-        let cold = trunk_schedule(13, None, None, false, false, |_| {
++        let cold = trunk_schedule(13, None, None, false, false, true, |_| {
+             panic!("batched sub-floor")
+         });
+         assert!(!cold[0].batched && !cold[0].target_step);
+-        let split = trunk_schedule(29, Some(16), None, false, true, |n| vec![(0, n)]);
++        let split = trunk_schedule(29, Some(16), None, false, true, true, |n| vec![(0, n)]);
+         assert_eq!(split.len(), 2);
+         assert!(split[0].batched);
+         assert!(!split[1].batched && !split[1].target_step);
+@@ -877,7 +894,8 @@ mod tests {
+     fn cold_short_prime_matches_plain_prefill_across_the_batch_floor() {
+         for tp in 1..=crate::hybrid_forward::PRIME_MIN_T {
+             for tokenwise in [false, true] {
+-                let chunks = trunk_schedule(tp, None, None, tokenwise, false, |n| vec![(0, n)]);
++                let chunks =
++                    trunk_schedule(tp, None, None, tokenwise, false, true, |n| vec![(0, n)]);
+                 assert_eq!(chunks.len(), 1);
+                 let chunk = chunks[0];
+                 assert_eq!((chunk.start, chunk.end), (0, tp));
+@@ -893,11 +911,28 @@ mod tests {
+         }
+     }
+ 
++    #[test]
++    fn non_gdn_short_prime_retains_its_existing_target_program() {
++        for tokens in 1..crate::hybrid_forward::PRIME_MIN_T {
++            for tokenwise in [false, true] {
++                let chunks = trunk_schedule(tokens, None, None, tokenwise, false, false, |_| {
++                    panic!("batched short prime")
++                });
++                assert_eq!(chunks.len(), 1);
++                assert!(!chunks[0].batched);
++                assert!(
++                    chunks[0].target_step,
++                    "non-GDN/Step35 cold prime must retain its target class"
++                );
++            }
++        }
++    }
++
+     /// Under the tokenwise override a carried suffix mirrors the fed path: every segment is
+     /// eager, including non-final ones the cold program would still batch.
+     #[test]
+     fn carried_tokenwise_override_is_eager_on_every_segment() {
+-        let carried = trunk_schedule(2048, Some(1024), None, true, true, |_| {
++        let carried = trunk_schedule(2048, Some(1024), None, true, true, true, |_| {
+             panic!("batched carried tokenwise")
+         });
+         assert_eq!(carried.len(), 2);
+diff --git a/crates/memra-server/examples/background_accounting_gate.rs b/crates/memra-server/examples/background_accounting_gate.rs
+index c575010aed..9e520cc999 100644
+--- a/crates/memra-server/examples/background_accounting_gate.rs
++++ b/crates/memra-server/examples/background_accounting_gate.rs
+@@ -5,6 +5,39 @@ use serde_json::json;
+ use std::sync::Arc;
+ 
+ struct Counts;
++
++/// Test-only store observer. Publish after the successful state write so a collector
++/// can wait on an event instead of polling a background job for completion.
++struct ObservedStore(memra_server::job_store::InMemoryJobStore);
++impl JobStore for ObservedStore {
++    fn put(&self, key: &str, record: JobRecord) -> Result<(), JobStoreError> {
++        let terminal = record.status.is_terminal();
++        let status = format!("{:?}", record.status);
++        let id = record
++            .output
++            .as_ref()
++            .and_then(|v| v.get("id"))
++            .and_then(|v| v.as_str())
++            .map(str::to_owned);
++        self.0.put(key, record)?;
++        if terminal {
++            println!("GATE_STORED {}", json!({"id":id,"status":status}));
++        }
++        Ok(())
++    }
++    fn get(&self, key: &str) -> Option<JobRecord> {
++        self.0.get(key)
++    }
++    fn take(&self, key: &str) -> Option<JobRecord> {
++        self.0.take(key)
++    }
++    fn cancel(&self, key: &str) -> Result<(), JobStoreError> {
++        self.0.cancel(key)
++    }
++    fn sweep(&self) -> usize {
++        self.0.sweep()
++    }
++}
+ struct Row {
+     id: String,
+     tenant: String,
+@@ -76,6 +109,12 @@ impl Receipt for Row {
+     }
+     fn record_completion_token(&mut self) -> Result<(), String> {
+         self.usage.completion_tokens += 1;
++        if self.usage.completion_tokens == 32 {
++            println!(
++                "GATE_PROGRESS {}",
++                json!({"id":self.id,"completion_tokens":32})
++            );
++        }
+         Ok(())
+     }
+     fn complete(&mut self, usage: UsageCounts, _: f64) -> Result<(), String> {
+@@ -98,7 +137,9 @@ impl Receipt for Row {
+ }
+ #[tokio::main]
+ async fn main() -> Result<(), Box<dyn std::error::Error>> {
+-    let store = Arc::new(memra_server::job_store::InMemoryJobStore::from_env());
++    let store = Arc::new(ObservedStore(
++        memra_server::job_store::InMemoryJobStore::from_env(),
++    ));
+     let wiring =
+         memra_server::ServerWiring::with_metering(Box::new(|_| Ok(Some(Arc::new(Counts)))))
+             .with_job_store(store);
+diff --git a/crates/memra-server/src/http_metrics.rs b/crates/memra-server/src/http_metrics.rs
+index db946ced18..ab2f04f3b9 100644
+--- a/crates/memra-server/src/http_metrics.rs
++++ b/crates/memra-server/src/http_metrics.rs
+@@ -155,6 +155,18 @@ pub(crate) fn bind_model(model: Option<String>) {
+     }
+ }
+ 
++/// Replace the bounded pre-authentication lane hint with the scheduler's resolved lane.
++pub(crate) fn bind_lane(lane: crate::lanes::Lane) {
++    if let Some(observation) = current() {
++        observation
++            .0
++            .lock()
++            .unwrap_or_else(|e| e.into_inner())
++            .key
++            .lane = lane.as_str();
++    }
++}
++
+ struct Guard(Observation);
+ impl Drop for Guard {
+     fn drop(&mut self) {
+diff --git a/crates/memra-server/src/lib.rs b/crates/memra-server/src/lib.rs
+index a3368f47bc..3dd80b6652 100644
+--- a/crates/memra-server/src/lib.rs
++++ b/crates/memra-server/src/lib.rs
+@@ -9479,7 +9479,7 @@ fn lane_for_tenant(
+             )
+         })?),
+     };
+-    match tenant.lane_class {
++    let resolved = match tenant.lane_class {
+         auth::LaneClass::Interactive => Ok(requested.unwrap_or(lanes::Lane::Interactive)),
+         auth::LaneClass::Batch => match requested {
+             None => Ok(lanes::Lane::Harvest),
+@@ -9492,7 +9492,11 @@ fn lane_for_tenant(
+             )),
+             Some(l) => Ok(l),
+         },
++    };
++    if let Ok(lane) = &resolved {
++        http_metrics::bind_lane(*lane);
+     }
++    resolved
+ }
+ 
+ /// The tenant-scoped PC-ISO namespace: keyring configured -> `t:<tenant>\x1f<salt>`
+@@ -17680,11 +17684,90 @@ default_reasoning_effort = "always"
+         assert_eq!(lines.last(), Some(&"[DONE]"));
+     }
+ 
++    #[tokio::test]
++    #[allow(clippy::await_holding_lock)] // allow: drain guard serializes real handlers against global counter writers
++    async fn http_metrics_use_the_authenticated_batch_lane_on_every_api() {
++        use tower::ServiceExt;
++        let _drain = drain_lock();
++        let model = "metrics-authenticated-batch";
++        let key = "metrics-batch-fixture-key";
++        let mut st = fake_worker_state_with_steps(2, std::time::Duration::ZERO);
++        st.models = Arc::new(vec![model.into()]);
++        let spec = format!("bulk:{}:batch", auth::sha256_hex(key));
++        st.api_auth.keyring = Some(Box::leak(Box::new(
++            auth::KeyStore::from_spec(&spec).unwrap(),
++        )));
++        let app = Router::new()
++            .route("/v1/completions", post(completions_admitted))
++            .route("/v1/chat/completions", post(chat_completions_admitted))
++            .route("/v1/responses", post(responses_api::responses_admitted))
++            .route("/v1/messages", post(anthropic::messages_admitted))
++            .with_state(st)
++            .layer(middleware::from_fn(http_metrics::observe));
++        for (path, mut body) in [
++            ("/v1/completions", json!({"prompt":"hi","max_tokens":2})),
++            (
++                "/v1/chat/completions",
++                json!({"messages":[{"role":"user","content":"hi"}],"max_tokens":2}),
++            ),
++            ("/v1/responses", json!({"input":"hi","max_output_tokens":2})),
++            (
++                "/v1/messages",
++                json!({"messages":[{"role":"user","content":"hi"}],"max_tokens":2}),
++            ),
++        ] {
++            body["model"] = json!(model);
++            body["stream"] = json!(true);
++            let response = app
++                .clone()
++                .oneshot(
++                    axum::http::Request::builder()
++                        .method("POST")
++                        .uri(path)
++                        .header("content-type", "application/json")
++                        .header("authorization", format!("Bearer {key}"))
++                        .body(Body::from(body.to_string()))
++                        .unwrap(),
++                )
++                .await
++                .unwrap();
++            assert_eq!(response.status(), StatusCode::OK, "{path}");
++            axum::body::to_bytes(response.into_body(), usize::MAX)
++                .await
++                .unwrap();
++        }
++        for (lane, code) in [("judge", 200), ("harvest", 200), ("interactive", 403)] {
++            let body = json!({"model":model,"prompt":"hi","max_tokens":2});
++            let response = app
++                .clone()
++                .oneshot(
++                    axum::http::Request::builder()
++                        .method("POST")
++                        .uri("/v1/completions")
++                        .header("content-type", "application/json")
++                        .header("authorization", format!("Bearer {key}"))
++                        .header("x-lane", lane)
++                        .body(Body::from(body.to_string()))
++                        .unwrap(),
++                )
++                .await
++                .unwrap();
++            assert_eq!(response.status().as_u16(), code);
++            axum::body::to_bytes(response.into_body(), usize::MAX)
++                .await
++                .unwrap();
++        }
++        let metrics = http_metrics::render();
++        assert!(metrics.contains("memra_requests_total{model=\"metrics-authenticated-batch\",route=\"hybrid\",lane=\"harvest\",code=\"200\"} 5\n"),"{metrics}");
++        assert!(metrics.contains("memra_requests_total{model=\"metrics-authenticated-batch\",route=\"hybrid\",lane=\"judge\",code=\"200\"} 1\n"));
++        assert!(!metrics.contains("memra_requests_total{model=\"metrics-authenticated-batch\",route=\"hybrid\",lane=\"interactive\",code=\"200\"}"));
++    }
++
+     #[tokio::test]
+     #[allow(clippy::await_holding_lock)] // allow: serializes the existing process-wide admission counters
+     async fn http_metrics_observe_preheader_deadline_body_limit_and_worker_refusals() {
+         use tower::ServiceExt;
+-        let _counters = admission_counters_guard();
++        let _drain = drain_lock();
+         for code in [408u16, 429, 503] {
+             let model = format!("http-refusal-{code}");
+             let mut st = fake_worker_state();
+@@ -17763,7 +17846,7 @@ default_reasoning_effort = "always"
+     #[allow(clippy::await_holding_lock)] // allow: serializes the existing process-wide admission counters
+     async fn http_metrics_cover_real_generation_surfaces_and_early_refusals() {
+         use tower::ServiceExt;
+-        let _counters = admission_counters_guard();
++        let _drain = drain_lock();
+         let model = "http-metrics-surfaces";
+         let mut st = fake_worker_state_with_steps(2, std::time::Duration::ZERO);
+         st.models = Arc::new(vec![model.into()]);
+@@ -17833,7 +17916,7 @@ default_reasoning_effort = "always"
+     #[allow(clippy::await_holding_lock)] // allow: serializes process-wide admission counters
+     async fn http_metrics_count_cancelled_and_truncated_real_sse_responses() {
+         use tower::ServiceExt;
+-        let _counters = admission_counters_guard();
++        let _drain = drain_lock();
+         for (model, action) in [
+             ("http-metrics-cancel", "cancel"),
+             ("http-metrics-truncate", "drain"),
+@@ -23224,6 +23307,345 @@ temperature = 0.6
+         guard
+     }
+ 
++    #[tokio::test]
++    #[allow(clippy::await_holding_lock)] // allow: existing drain/env guards serialize handler tests against global writers
++    async fn background_http_ack_is_separate_from_generation_and_polling() {
++        use metering::{JobRecord, JobStore, JobStoreError, Metering, Receipt, UsageCounts};
++        use tower::ServiceExt;
++        struct Store {
++            inner: job_store::InMemoryJobStore,
++            terminal: Arc<tokio::sync::Notify>,
++        }
++        impl JobStore for Store {
++            fn put(&self, key: &str, record: JobRecord) -> Result<(), JobStoreError> {
++                let terminal = record.status.is_terminal();
++                self.inner.put(key, record)?;
++                if terminal {
++                    self.terminal.notify_one();
++                }
++                Ok(())
++            }
++            fn get(&self, key: &str) -> Option<JobRecord> {
++                self.inner.get(key)
++            }
++            fn take(&self, key: &str) -> Option<JobRecord> {
++                self.inner.take(key)
++            }
++            fn cancel(&self, key: &str) -> Result<(), JobStoreError> {
++                self.inner.cancel(key)
++            }
++            fn sweep(&self) -> usize {
++                self.inner.sweep()
++            }
++        }
++        struct Meter {
++            inner: Arc<MockMetering>,
++            token: Arc<tokio::sync::Notify>,
++        }
++        struct ObservedReceipt {
++            inner: Box<dyn Receipt>,
++            token: Arc<tokio::sync::Notify>,
++        }
++        impl Metering for Meter {
++            fn enforces_limits(&self) -> bool {
++                self.inner.enforces_limits()
++            }
++            fn is_limited(&self, tenant: &str) -> Result<bool, metering::AdmitError> {
++                self.inner.is_limited(tenant)
++            }
++            fn reserve(
++                &self,
++                tenant: &str,
++                principal: Option<&str>,
++                model: &str,
++                prompt: u64,
++                output: u64,
++            ) -> Result<Option<metering::Permit>, metering::AdmitError> {
++                self.inner.reserve(tenant, principal, model, prompt, output)
++            }
++            fn open(
++                &self,
++                meta: &metering::RequestMeta<'_>,
++                permit: Option<metering::Permit>,
++            ) -> Box<dyn Receipt> {
++                Box::new(ObservedReceipt {
++                    inner: self.inner.open(meta, permit),
++                    token: self.token.clone(),
++                })
++            }
++            fn limits_health(&self) -> Option<metering::LimitsHealth> {
++                self.inner.limits_health()
++            }
++        }
++        impl Receipt for ObservedReceipt {
++            fn wants_capture(&self) -> bool {
++                self.inner.wants_capture()
++            }
++            fn arm_capture(&mut self, prompt: serde_json::Value) {
++                self.inner.arm_capture(prompt);
++            }
++            fn capture_completion_delta(&mut self, delta: &str) {
++                self.inner.capture_completion_delta(delta);
++            }
++            fn record_prompt_usage(&mut self, prompt: u64, cached: u64) -> Result<(), String> {
++                self.inner.record_prompt_usage(prompt, cached)
++            }
++            fn record_completion_token(&mut self) -> Result<(), String> {
++                self.inner.record_completion_token()?;
++                self.token.notify_one();
++                Ok(())
++            }
++            fn complete(&mut self, usage: UsageCounts, elapsed: f64) -> Result<(), String> {
++                self.inner.complete(usage, elapsed)
++            }
++            fn complete_deadline_partial(
++                &mut self,
++                usage: UsageCounts,
++                elapsed: f64,
++            ) -> Result<(), String> {
++                self.inner.complete_deadline_partial(usage, elapsed)
++            }
++            fn reject(&mut self, status: u16, code: &str) -> Result<(), String> {
++                self.inner.reject(status, code)
++            }
++            fn settle_unbilled(
++                &mut self,
++                outcome: &'static str,
++                status: u16,
++                code: &str,
++            ) -> Result<(), String> {
++                self.inner.settle_unbilled(outcome, status, code)
++            }
++        }
++        fn generation(model: &str, name: &str) -> f64 {
++            let prefix =
++                format!("{name}{{model=\"{model}\",route=\"hybrid\",lane=\"interactive\"}} ");
++            request_metrics::render()
++                .lines()
++                .find_map(|line| line.strip_prefix(&prefix).map(|v| v.parse().unwrap()))
++                .unwrap_or(0.0)
++        }
++        let _drain = drain_lock();
++        let _env = background_env_lock();
++        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
++        for cancelled in [false, true] {
++            let model = if cancelled {
++                "metrics-background-cancel"
++            } else {
++                "metrics-background-complete"
++            };
++            let mut state = fake_worker_state();
++            state.models = Arc::new(vec![model.into()]);
++            state.health = health::WorkerHealth::new();
++            state.health.mark_ready();
++            let (tx, rx) = std::sync::mpsc::channel();
++            state.cmd_tx = tx;
++            let terminal = Arc::new(tokio::sync::Notify::new());
++            state.job_store = Arc::new(Store {
++                inner: job_store::InMemoryJobStore::new(
++                    std::time::Duration::from_secs(60),
++                    1 << 20,
++                ),
++                terminal: terminal.clone(),
++            });
++            let token = Arc::new(tokio::sync::Notify::new());
++            let mock = MockMetering::admit_all();
++            state.metering = Some(Arc::new(Meter {
++                inner: mock.clone(),
++                token: token.clone(),
++            }));
++            let app = Router::new()
++                .route("/v1/responses", post(responses_api::responses_admitted))
++                .route("/v1/responses/:id", get(responses_api::poll_admitted))
++                .route(
++                    "/v1/responses/:id/cancel",
++                    post(responses_api::cancel_admitted),
++                )
++                .with_state(state)
++                .layer(middleware::from_fn(http_metrics::observe));
++            let body = json!({"model":model,"input":"hi","background":true,"max_output_tokens":8});
++            let post = tokio::spawn(
++                app.clone().oneshot(
++                    axum::http::Request::builder()
++                        .method("POST")
++                        .uri("/v1/responses")
++                        .header("content-type", "application/json")
++                        .body(Body::from(body.to_string()))
++                        .unwrap(),
++                ),
++            );
++            let Cmd::Generate(mut request) = tokio::task::spawn_blocking(move || {
++                rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap()
++            })
++            .await
++            .unwrap() else {
++                panic!("missing worker request")
++            };
++            worker::release_pending_admit();
++            worker::release_request_reservation(&mut request);
++            let mut clock = request_metrics::Clock::admitted(
++                model,
++                request_metrics::Backend::Hybrid,
++                request.lane,
++                request.queued_at,
++                std::time::Instant::now(),
++            );
++            clock.prompt(1, 0);
++            request
++                .tx
++                .send(Event::PromptUsage {
++                    n_prompt: 1,
++                    n_cached: 0,
++                })
++                .unwrap();
++            let response = post.await.unwrap().unwrap();
++            assert_eq!(response.status(), StatusCode::OK);
++            let acknowledged = body_value(response).await;
++            assert_eq!(acknowledged["status"], "queued");
++            let id = acknowledged["id"].as_str().unwrap();
++            let http_row = format!(
++                "memra_requests_total{{model=\"{model}\",route=\"hybrid\",lane=\"interactive\",code=\"200\"}} 1\n"
++            );
++            assert!(http_metrics::render().contains(&http_row));
++            assert_eq!(generation(model, "memra_e2e_seconds_count"), 0.0);
++            assert_eq!(generation(model, "memra_ttft_seconds_count"), 0.0);
++            for _ in 0..3 {
++                let response = app
++                    .clone()
++                    .oneshot(
++                        axum::http::Request::builder()
++                            .uri(format!("/v1/responses/{id}"))
++                            .body(Body::empty())
++                            .unwrap(),
++                    )
++                    .await
++                    .unwrap();
++                let value = body_value(response).await;
++                assert!(matches!(
++                    value["status"].as_str(),
++                    Some("queued" | "in_progress")
++                ));
++            }
++            assert!(http_metrics::render().contains(&http_row));
++            assert_eq!(generation(model, "memra_e2e_seconds_count"), 0.0);
++            request
++                .tx
++                .send(Event::Token {
++                    id: 1,
++                    text: "x".into(),
++                })
++                .unwrap();
++            clock.sent();
++            tokio::time::timeout(std::time::Duration::from_secs(1), token.notified())
++                .await
++                .unwrap();
++            if cancelled {
++                let response = app
++                    .clone()
++                    .oneshot(
++                        axum::http::Request::builder()
++                            .method("POST")
++                            .uri(format!("/v1/responses/{id}/cancel"))
++                            .body(Body::empty())
++                            .unwrap(),
++                    )
++                    .await
++                    .unwrap();
++                assert_eq!(body_value(response).await["status"], "cancelled");
++                tokio::time::timeout(std::time::Duration::from_secs(1), request.tx.closed())
++                    .await
++                    .unwrap();
++            } else {
++                request
++                    .tx
++                    .send(Event::Token {
++                        id: 2,
++                        text: "y".into(),
++                    })
++                    .unwrap();
++                clock.sent();
++                request
++                    .tx
++                    .send(Event::Done {
++                        stop_reason: "Eos".into(),
++                        n_tokens: 2,
++                        n_prompt: 1,
++                        n_cached: 0,
++                        elapsed_s: 0.1,
++                        spec: None,
++                    })
++                    .unwrap();
++                clock.finished(2);
++            }
++            tokio::time::timeout(std::time::Duration::from_secs(1), terminal.notified())
++                .await
++                .unwrap();
++            drop(request);
++            drop(clock);
++            let expected = if cancelled { "cancelled" } else { "completed" };
++            let mut first = None;
++            for _ in 0..3 {
++                let response = app
++                    .clone()
++                    .oneshot(
++                        axum::http::Request::builder()
++                            .uri(format!("/v1/responses/{id}"))
++                            .body(Body::empty())
++                            .unwrap(),
++                    )
++                    .await
++                    .unwrap();
++                let value = body_value(response).await;
++                assert_eq!(value["status"], expected);
++                if let Some(first) = &first {
++                    assert_eq!(&value, first);
++                } else {
++                    first = Some(value);
++                }
++            }
++            assert!(http_metrics::render().contains(&http_row));
++            let events = mock.events();
++            let terminal_rows: Vec<_> = events
++                .iter()
++                .filter(|e| {
++                    matches!(
++                        e,
++                        MeterEvent::Complete { .. }
++                            | MeterEvent::DeadlinePartial { .. }
++                            | MeterEvent::Reject { .. }
++                            | MeterEvent::Unbilled { .. }
++                            | MeterEvent::Dropped { .. }
++                    )
++                })
++                .collect();
++            assert_eq!(terminal_rows.len(), 1, "{events:?}");
++            if cancelled {
++                assert!(matches!(
++                    terminal_rows[0],
++                    MeterEvent::DeadlinePartial { completion: 1, .. }
++                ));
++            } else {
++                assert!(matches!(
++                    terminal_rows[0],
++                    MeterEvent::Complete { completion: 2, .. }
++                ));
++            }
++            assert_eq!(
++                generation(model, "memra_e2e_seconds_count"),
++                if cancelled { 0.0 } else { 1.0 }
++            );
++            assert_eq!(
++                generation(model, "memra_completion_tokens_sum"),
++                if cancelled { 0.0 } else { 2.0 }
++            );
++            assert_eq!(
++                generation(model, "memra_emitted_token_events_total"),
++                if cancelled { 1.0 } else { 2.0 }
++            );
++        }
++        unsafe { std::env::remove_var(responses_api::BACKGROUND_RESPONSES_ENV) };
++    }
++
+     /// Door OFF: a route-level `background: true` request refuses exactly like before this
+     /// lane, and never reaches the JobStore (no id is created, so a follow-up poll on any id
+     /// this request could plausibly have gotten is still a 404, not a stale record).
+diff --git a/docs/SERVING.md b/docs/SERVING.md
+index 3803e543e8..54403d4033 100644
+--- a/docs/SERVING.md
++++ b/docs/SERVING.md
+@@ -1542,7 +1542,10 @@ admission-based committed-token TTFT and successful admission-to-retirement E2E.
+ `memra_requests_total{model,route,lane,code}` counts generation HTTP outcomes on
+ completions, chat completions, Responses and Messages. `499` means the client
+ left before a terminal response. Unparsed bodies and unknown model names use a
+-single `model="unknown",route="unresolved"` row. Arbitrary rejected names,
++single `model="unknown",route="unresolved"` row. Successful lane resolution binds
++the authenticated tenant lane, including batch keys defaulting to harvest. A
++request refused before lane resolution retains its bounded header/default hint.
++Arbitrary rejected names,
+ request IDs and cache salts never become labels. `memra_requests_refused_total`
+ counts pre-stream HTTP errors; `memra_pre_header_deadline_total` counts HTTP 408.
+ `memra_response_errors_total` also exposes failures carried inside HTTP 200
+diff --git a/tools/metrics-background-gate.py b/tools/metrics-background-gate.py
+new file mode 100644
+index 0000000000..aca7ce956d
+--- /dev/null
++++ b/tools/metrics-background-gate.py
+@@ -0,0 +1,103 @@
++#!/usr/bin/env python3
++"""Short native composition check: HTTP acknowledgement, job terminal callbacks and metrics."""
++import argparse, hashlib, json, os, secrets, subprocess, sys, threading, urllib.error, urllib.request
++from pathlib import Path
++sys.path.insert(0,str(Path.cwd()/'tools'))
++from prometheus_metrics import parse_samples,scalar
++p=argparse.ArgumentParser();p.add_argument('--binary',type=Path,required=True);p.add_argument('--model',type=Path,required=True);p.add_argument('--out',type=Path,required=True);p.add_argument('--port',type=int,default=18118);p.add_argument('--promtool',required=True);p.add_argument('--external-lock',type=int,required=True)
++a=p.parse_args();a.out.mkdir(parents=True,exist_ok=True)
++assert os.path.samefile(f'/proc/self/fd/{a.external_lock}',os.environ['MEMRA_GPU_LOCK'])
++subprocess.run(['bash','tools/port-guard.sh','check','metrics-background',str(a.port)],check=True)
++def sha(path):
++ with open(path,'rb') as f:return hashlib.file_digest(f,'sha256').hexdigest()
++(a.out/'identity.json').write_text(json.dumps({'source':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'source_diff_sha256':hashlib.sha256(subprocess.check_output(['git','diff','HEAD','--binary'])).hexdigest(),'binary_sha256':sha(a.binary),'model_sha256':sha(a.model),'driver_sha256':sha(__file__),'model_bytes':a.model.stat().st_size,'context':8192,'sampling':'explicit temperature 0','cache':'disabled; reuse and affinity disabled','external_lock':a.external_lock},indent=2))
++api,operator=secrets.token_hex(24),secrets.token_hex(24);model='metrics-bg';base=f'http://127.0.0.1:{a.port}'
++env={k:v for k,v in os.environ.items() if not k.startswith('MEMRA_') or k in {'MEMRA_GPU_LOCK','MEMRA_CI_LOCK','MEMRA_CI_LOCK_HELD','MEMRA_RIG_LOCK_FD'}}
++env.update(MEMRA_MODELS=model+'='+str(a.model.resolve()),MEMRA_ADDR=f'127.0.0.1:{a.port}',MEMRA_CTX='8192',MEMRA_MAX_SESSIONS='1',MEMRA_PREFIX_CACHE_MB='0',MEMRA_REUSE_POOL='0',MEMRA_AFFINITY='0',MEMRA_BACKGROUND_RESPONSES='1',MEMRA_API_KEY=api,MEMRA_METRICS_TOKEN=operator)
++(a.out/'environment.json').write_text(json.dumps({k:('fixture credential omitted' if k in {'MEMRA_API_KEY','MEMRA_METRICS_TOKEN'} else v) for k,v in env.items() if k.startswith('MEMRA_')},indent=2))
++condition=threading.Condition();records={};progress=set();stored={};unsettled=[];listening=False;ended=False
++log=open(a.out/'server.log','w');telemetry=open(a.out/'gpu-250ms.csv','w')
++monitor=subprocess.Popen(['nvidia-smi','--query-gpu=timestamp,uuid,name,memory.used,memory.free,utilization.gpu,temperature.gpu','--format=csv','--loop-ms=250'],stdout=telemetry,stderr=subprocess.STDOUT,pass_fds=(a.external_lock,))
++server=subprocess.Popen([str(a.binary.resolve())],env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,bufsize=1,pass_fds=(a.external_lock,))
++def read_log():
++ global listening,ended
++ for line in server.stdout:
++  log.write(line);log.flush()
++  with condition:
++   if '[server] listening on '+base in line:listening=True
++   if line.startswith('GATE_RECEIPT '):
++    row=json.loads(line.split(' ',1)[1]);records.setdefault(row['id'],[]).append(row)
++   elif line.startswith('GATE_STORED '):
++    row=json.loads(line.split(' ',1)[1]);stored[row['id']]=row
++   elif line.startswith('GATE_PROGRESS '):progress.add(json.loads(line.split(' ',1)[1])['id'])
++   elif line.startswith('GATE_UNSETTLED '):unsettled.append(line.strip())
++   condition.notify_all()
++ with condition:ended=True;condition.notify_all()
++reader=threading.Thread(target=read_log);reader.start();http=[];checks={}
++def wait_event(predicate,timeout):
++ with condition:
++  assert condition.wait_for(lambda:predicate() or ended,timeout) and predicate(),'native event deadline; inspect server.log'
++def request(method,path,body=None):
++ req=urllib.request.Request(base+path,method=method,data=None if body is None else json.dumps(body).encode(),headers={'Authorization':'Bearer '+api,'Content-Type':'application/json'})
++ try:
++  with urllib.request.urlopen(req,timeout=60) as r:status,value=r.status,json.loads(r.read())
++ except urllib.error.HTTPError as r:status,value=r.code,json.loads(r.read())
++ http.append({'method':method,'path':path,'status':status,'body':value});assert status==200,(status,value);return value
++def snap(label):
++ req=urllib.request.Request(base+'/metrics',headers={'Authorization':'Bearer '+operator,'Accept':'text/plain'})
++ with urllib.request.urlopen(req,timeout=15) as r:text=r.read().decode()
++ (a.out/(label+'.prom')).write_text(text)
++ result=subprocess.run([a.promtool,'check','metrics'],input=text,text=True,capture_output=True,timeout=30)
++ (a.out/(label+'.promtool.log')).write_text(result.stdout+result.stderr);assert result.returncode==0,result.stdout+result.stderr
++ return parse_samples(text)
++labels={'model':model,'route':'hybrid','lane':'interactive'}
++def value(samples,name,**extra):
++ try:return scalar(samples,name,**labels,**extra)
++ except KeyError:return 0
++try:
++ wait_event(lambda:listening,180)
++ before=snap('before')
++ short={'model':model,'input':'What is two plus two? Answer with one number.','max_output_tokens':64,'temperature':0,'reasoning':{'effort':'none'}}
++ ack=request('POST','/v1/responses',dict(short,background=True));assert ack['status']=='queued'
++ ident=ack['id'];wait_event(lambda:ident in stored,60)
++ complete=request('GET','/v1/responses/'+ident);assert complete['status']=='completed',complete
++ after_complete=snap('after-complete')
++ assert len(records.get(ident,[]))==1 and records[ident][0]['outcome']=='complete'
++ for _ in range(3):assert request('GET','/v1/responses/'+ident)==complete
++ after_polls=snap('after-polls')
++ checks['queued_ack_counts_once']=value(after_complete,'memra_requests_total',code='200')-value(before,'memra_requests_total',code='200')==1
++ checks['generation_success_counts_once']=value(after_complete,'memra_e2e_seconds_count')-value(before,'memra_e2e_seconds_count')==1
++ checks['polls_do_not_count_http_or_generation']=value(after_polls,'memra_requests_total',code='200')==value(after_complete,'memra_requests_total',code='200') and value(after_polls,'memra_e2e_seconds_count')==value(after_complete,'memra_e2e_seconds_count')
++ checks['completion_tokens_match_callback']=records[ident][0]['completion_tokens']==complete['usage']['output_tokens']==value(after_complete,'memra_completion_tokens_sum')-value(before,'memra_completion_tokens_sum')
++ phrase='The quick brown fox jumps over the lazy dog while a quiet river flows past the old stone bridge.'
++ long={'model':model,'input':'Return the requested JSON array exactly. No commentary.','background':True,'max_output_tokens':2048,'temperature':0,'reasoning':{'effort':'none'},'text':{'format':{'type':'json_schema','name':'metrics_partial','strict':True,'schema':{'type':'array','items':{'type':'string','const':phrase},'minItems':80,'maxItems':80}}}}
++ ack2=request('POST','/v1/responses',long);assert ack2['status']=='queued';cancel_id=ack2['id']
++ wait_event(lambda:cancel_id in progress,60)
++ cancelled=request('POST','/v1/responses/'+cancel_id+'/cancel');assert cancelled['status']=='cancelled',cancelled
++ wait_event(lambda:cancel_id in stored,30)
++ assert len(records.get(cancel_id,[]))==1 and records[cancel_id][0]['outcome']=='cancel_partial'
++ for _ in range(3):assert request('GET','/v1/responses/'+cancel_id)==cancelled
++ # With one worker slot, completion of this request is a release/progress barrier.
++ barrier=request('POST','/v1/responses',short);assert barrier['status']=='completed',barrier
++ final=snap('final')
++ checks['cancel_callback_once_and_partial']=len(records[cancel_id])==1 and 0<records[cancel_id][0]['completion_tokens']==cancelled['usage']['output_tokens']<2048
++ checks['cancel_excluded_from_generation_success']=value(final,'memra_e2e_seconds_count')-value(after_complete,'memra_e2e_seconds_count')==1
++ checks['only_three_generation_http_requests']=value(final,'memra_requests_total',code='200')-value(before,'memra_requests_total',code='200')==3
++ checks['completion_histogram_excludes_cancelled_partial']=value(final,'memra_completion_tokens_sum')-value(before,'memra_completion_tokens_sum')==complete['usage']['output_tokens']+barrier['usage']['output_tokens']
++ checks['partial_native_work_observed']=value(final,'memra_emitted_token_events_total')>=complete['usage']['output_tokens']+cancelled['usage']['output_tokens']+barrier['usage']['output_tokens']
++ checks['acknowledgements_are_not_http_cancellations']=value(final,'memra_requests_cancelled_total')==0
++ checks['no_unsettled_receipts']=not unsettled
++ (a.out/'checks.json').write_text(json.dumps(checks,indent=2));print(json.dumps(checks),flush=True)
++finally:
++ (a.out/'http.jsonl').write_text(''.join(json.dumps(row)+'\n' for row in http));(a.out/'callbacks.json').write_text(json.dumps({'receipts':records,'stored':stored,'unsettled':unsettled},indent=2))
++ if server.poll() is None:
++  server.terminate()
++  try:server.wait(30)
++  except subprocess.TimeoutExpired:server.kill();server.wait()
++ reader.join();log.close();monitor.terminate();monitor.wait();telemetry.close()
++ checks['no_unsettled_receipts']=not unsettled
++ checks['one_callback_for_each_of_three_requests']=len(records)==3 and all(len(v)==1 for v in records.values())
++ (a.out/'checks.json').write_text(json.dumps(checks,indent=2))
++ (a.out/'callbacks.json').write_text(json.dumps({'receipts':records,'stored':stored,'unsettled':unsettled},indent=2))
++ (a.out/'gpu-after-cleanup.txt').write_bytes(subprocess.check_output(['nvidia-smi']))
++raise SystemExit(0 if checks and all(checks.values()) else 1)

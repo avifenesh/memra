@@ -1,0 +1,61 @@
+Running as unit: memra-rig-job-02a9b8212b57.service; invocation ID: 2f3d13cc67bd4465abadd0400472bd32
+WAITING canonical GPU lock /tmp/memra-5090.lock
+ACQUIRED canonical GPU lock on inherited FD9
+uuid, name, memory.total [MiB], memory.free [MiB], driver_version
+GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, NVIDIA GeForce RTX 5090 Laptop GPU, 24463 MiB, 23899 MiB, 595.91.07
+
+{"model": "q9", "gate": "run-gen", "exit": 0}
+{"model": "q9", "gate": "run-spec-short", "exit": 0}
+{"model": "q9", "gate": "run-spec-long", "exit": 0}
+{"model": "q9", "gate": "spec-on-cache-hit", "exit": 0}
+{"model": "q35", "gate": "run-gen", "exit": 0}
+{"model": "q35", "gate": "run-spec-short", "exit": 0}
+{"model": "q35", "gate": "run-spec-long", "exit": 0}
+{"model": "q35", "gate": "spec-on-cache-hit", "exit": 0}
+[
+  {
+    "model": "q9",
+    "gate": "run-gen",
+    "exit": 0
+  },
+  {
+    "model": "q9",
+    "gate": "run-spec-short",
+    "exit": 0
+  },
+  {
+    "model": "q9",
+    "gate": "run-spec-long",
+    "exit": 0
+  },
+  {
+    "model": "q9",
+    "gate": "spec-on-cache-hit",
+    "exit": 0
+  },
+  {
+    "model": "q35",
+    "gate": "run-gen",
+    "exit": 0
+  },
+  {
+    "model": "q35",
+    "gate": "run-spec-short",
+    "exit": 0
+  },
+  {
+    "model": "q35",
+    "gate": "run-spec-long",
+    "exit": 0
+  },
+  {
+    "model": "q35",
+    "gate": "spec-on-cache-hit",
+    "exit": 0
+  }
+]
+          Finished with result: success
+Main processes terminated with: code=exited, status=0/SUCCESS
+               Service runtime: 2min 10.354s
+             CPU time consumed: 1min 52.739s
+                   Memory peak: 18.1G (swap: 0B)

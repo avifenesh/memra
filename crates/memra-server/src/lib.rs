@@ -100,11 +100,13 @@ mod audio_api;
 /// the id from the working tree instead of pinning a second copy of the algorithm.
 #[allow(dead_code)] // one implementation, two callers: each uses a subset.
 mod build_id;
+mod capacity_metrics;
 mod dsv4_admit;
 mod dsv4_serve;
 mod embed_api;
 mod handoff_io;
 mod histogram;
+mod http_metrics;
 mod hybrid_telemetry;
 mod image_fetch;
 /// In-memory reference implementation of `metering::JobStore` (memra#550,
@@ -124,6 +126,7 @@ mod kv_vmm;
 pub mod metering;
 mod prefill_receipt;
 pub mod prime_fairness;
+mod request_metrics;
 mod responses_api;
 pub mod route_contract;
 mod route_telemetry;
@@ -6325,6 +6328,7 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
         state,
         authenticate_inference_before_body,
     ));
+    let app = app.layer(middleware::from_fn(http_metrics::observe));
     let app = if ttft::enabled() {
         app.layer(middleware::from_fn(ttft_request_start))
     } else {
@@ -6976,6 +6980,17 @@ enum HybridSample {
     E2e,
 }
 
+fn prometheus_header(out: &mut String, name: &str, kind: &str, help: &str) {
+    out.push_str(&format!("# HELP {name} {help}\n# TYPE {name} {kind}\n"));
+}
+
+fn prometheus_label(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+}
+
 /// Render the Prometheus text exposition (memra#522) from the same authorized snapshot the
 /// JSON body reads. Gated identically: process-wide counters only with
 /// [`MetricsScope::process_wide`], per-route detail only with [`MetricsScope::operator`] (the
@@ -6988,40 +7003,136 @@ fn render_prometheus_metrics(
 ) -> String {
     let mut out = String::new();
     if metrics_scope.process_wide() {
-        out.push_str("# TYPE memra_requests_admitted_total counter\n");
-        out.push_str(&format!("memra_requests_admitted_total {}\n", m.admitted));
-        out.push_str("# TYPE memra_requests_completed_total counter\n");
-        out.push_str(&format!("memra_requests_completed_total {}\n", m.completed));
-        out.push_str("# TYPE memra_tokens_out_total counter\n");
-        out.push_str(&format!("memra_tokens_out_total {}\n", m.tokens_out));
-        out.push_str("# TYPE memra_prompt_tokens_in_total counter\n");
-        out.push_str(&format!(
-            "memra_prompt_tokens_in_total {}\n",
-            m.prompt_tokens_in
-        ));
-        out.push_str("# TYPE memra_cached_tokens_in_total counter\n");
-        out.push_str(&format!(
-            "memra_cached_tokens_in_total {}\n",
-            m.cached_tokens_in
-        ));
-        out.push_str("# TYPE memra_step_latency_seconds gauge\n");
-        out.push_str(&format!(
-            "memra_step_latency_seconds{{quantile=\"0.5\"}} {}\n",
-            m.step_p50_ms as f64 / 1000.0
-        ));
-        out.push_str(&format!(
-            "memra_step_latency_seconds{{quantile=\"0.99\"}} {}\n",
-            m.step_p99_ms as f64 / 1000.0
-        ));
+        for (name, value, help) in [
+            (
+                "memra_requests_admitted_total",
+                m.admitted,
+                "Requests admitted since process start.",
+            ),
+            (
+                "memra_requests_completed_total",
+                m.completed,
+                "Worker request retirements since process start.",
+            ),
+            (
+                "memra_tokens_out_total",
+                m.tokens_out,
+                "Output tokens since process start.",
+            ),
+            (
+                "memra_prompt_tokens_in_total",
+                m.prompt_tokens_in,
+                "Prompt tokens including restored cache tokens since process start.",
+            ),
+            (
+                "memra_cached_tokens_in_total",
+                m.cached_tokens_in,
+                "Prompt tokens restored from cache since process start.",
+            ),
+            (
+                "memra_computed_tokens_in_total",
+                m.prompt_tokens_in.saturating_sub(m.cached_tokens_in),
+                "Prompt tokens computed since process start.",
+            ),
+        ] {
+            prometheus_header(&mut out, name, "counter", help);
+            out.push_str(&format!("{name} {value}\n"));
+        }
+        for (name, value) in [
+            (
+                "memra_step_latency_p50_seconds",
+                m.step_p50_ms as f64 / 1000.0,
+            ),
+            (
+                "memra_step_latency_p99_seconds",
+                m.step_p99_ms as f64 / 1000.0,
+            ),
+        ] {
+            prometheus_header(
+                &mut out,
+                name,
+                "gauge",
+                "Central-worker step latency percentile over its current window, in seconds.",
+            );
+            out.push_str(&format!("{name} {value}\n"));
+        }
     }
     if metrics_scope.operator() {
+        out.push_str(&capacity_metrics::render(m));
+        out.push_str(&request_metrics::render());
+        out.push_str(&http_metrics::render());
+        for (name, value, help) in [
+            (
+                "memra_prefix_cache_hits_total",
+                m.prefix_hits,
+                "Prefix-cache hit probes since process start.",
+            ),
+            (
+                "memra_prefix_cache_misses_total",
+                m.prefix_misses,
+                "Prefix-cache miss probes since process start.",
+            ),
+            (
+                "memra_prefix_cache_inserts_total",
+                m.prefix_inserts,
+                "Prefix-cache insertions since process start.",
+            ),
+            (
+                "memra_prefix_cache_evictions_total",
+                m.prefix_evictions,
+                "Prefix-cache evictions since process start.",
+            ),
+            (
+                "memra_prefix_cache_hit_tokens_total",
+                m.prefix_hit_tokens,
+                "Tokens restored by prefix-cache hits since process start.",
+            ),
+            (
+                "memra_request_faults_total",
+                worker::request_faults_total(),
+                "Guarded worker calls that failed with a request-scoped fault.",
+            ),
+            (
+                "memra_worker_respawns_total",
+                worker::worker_respawns_total(),
+                "Worker thread respawn attempts since process start.",
+            ),
+        ] {
+            prometheus_header(&mut out, name, "counter", help);
+            out.push_str(&format!("{name} {value}\n"));
+        }
+        prometheus_header(
+            &mut out,
+            "memra_cache_hit_token_ratio",
+            "gauge",
+            "Fraction of all prompt tokens restored from cache since process start.",
+        );
+        let ratio = if m.prompt_tokens_in == 0 {
+            0.0
+        } else {
+            m.cached_tokens_in as f64 / m.prompt_tokens_in as f64
+        };
+        out.push_str(&format!("memra_cache_hit_token_ratio {ratio}\n"));
+        prometheus_header(
+            &mut out,
+            "memra_prefix_cache_bytes",
+            "gauge",
+            "Current device prefix-cache bytes.",
+        );
+        out.push_str(&format!("memra_prefix_cache_bytes {}\n", m.prefix_bytes));
+
         // The Prometheus text format (0.0.4) requires every line of one metric family to
         // appear together, after that family's one `# TYPE` line (revuto finding on PR #908,
         // the hybrid block's twin of this bug). One route is registered in practice today
         // (dsv4), but a route-outer loop would split each family across the output the moment
         // a second one registers and trip a strict parser (promtool, OpenMetrics, the Go
         // expfmt text parser). Loop the family on the outside, the route on the inside.
-        out.push_str("# TYPE memra_route_requests_total counter\n");
+        prometheus_header(
+            &mut out,
+            "memra_route_requests_total",
+            "counter",
+            "Dedicated-route requests by terminal outcome since process start.",
+        );
         for r in routes {
             for (code, count) in [
                 ("completed", r.completed),
@@ -7031,21 +7142,37 @@ fn render_prometheus_metrics(
             ] {
                 out.push_str(&format!(
                     "memra_route_requests_total{{route=\"{}\",code=\"{code}\"}} {count}\n",
-                    r.name
+                    prometheus_label(&r.name)
                 ));
             }
         }
-        for (name, kind, sample) in [
+        for (name, kind, sample, help) in [
             (
                 "memra_route_tokens_out_total",
                 "counter",
                 RouteSample::TokensOut,
+                "Dedicated-route output tokens since process start.",
             ),
-            ("memra_route_waiting", "gauge", RouteSample::Waiting),
-            ("memra_route_running", "gauge", RouteSample::Running),
-            ("memra_route_capacity", "gauge", RouteSample::Capacity),
+            (
+                "memra_route_waiting",
+                "gauge",
+                RouteSample::Waiting,
+                "Dedicated-route requests waiting for service.",
+            ),
+            (
+                "memra_route_running",
+                "gauge",
+                RouteSample::Running,
+                "Dedicated-route requests running.",
+            ),
+            (
+                "memra_route_capacity",
+                "gauge",
+                RouteSample::Capacity,
+                "Dedicated-route concurrent service capacity.",
+            ),
         ] {
-            out.push_str(&format!("# TYPE {name} {kind}\n"));
+            prometheus_header(&mut out, name, kind, help);
             for r in routes {
                 let value = match sample {
                     RouteSample::TokensOut => r.tokens_out,
@@ -7053,17 +7180,32 @@ fn render_prometheus_metrics(
                     RouteSample::Running => r.running as u64,
                     RouteSample::Capacity => r.capacity as u64,
                 };
-                out.push_str(&format!("{name}{{route=\"{}\"}} {value}\n", r.name));
+                out.push_str(&format!(
+                    "{name}{{route=\"{}\"}} {value}\n",
+                    prometheus_label(&r.name)
+                ));
             }
         }
-        for (name, hist) in [
-            ("memra_route_queue_wait_seconds", RouteHist::QueueWait),
-            ("memra_route_e2e_seconds", RouteHist::E2e),
-            ("memra_route_round_seconds", RouteHist::Round),
+        for (name, hist, help) in [
+            (
+                "memra_route_queue_wait_seconds",
+                RouteHist::QueueWait,
+                "Dedicated-route reservation to dequeue latency; cumulative, unsampled.",
+            ),
+            (
+                "memra_route_e2e_seconds",
+                RouteHist::E2e,
+                "Successful dedicated-route admission to completion latency; cumulative, unsampled.",
+            ),
+            (
+                "memra_route_round_seconds",
+                RouteHist::Round,
+                "Dedicated-route compute-round latency; not an emitted-token-gap metric.",
+            ),
         ] {
-            out.push_str(&format!("# TYPE {name} histogram\n"));
+            prometheus_header(&mut out, name, "histogram", help);
             for r in routes {
-                let labels = format!("route=\"{}\"", r.name);
+                let labels = format!("route=\"{}\"", prometheus_label(&r.name));
                 let h = match hist {
                     RouteHist::QueueWait => &r.queue_wait_hist,
                     RouteHist::E2e => &r.e2e_hist,
@@ -7086,20 +7228,51 @@ fn render_prometheus_metrics(
         // trip a strict parser (promtool, OpenMetrics, the Go expfmt text parser). Loop
         // the metric name on the outside, the model on the inside, so each family's lines
         // stay contiguous.
-        for (name, sample) in [
-            ("memra_hybrid_queue_wait_seconds", HybridSample::QueueWait),
-            ("memra_hybrid_ttft_seconds", HybridSample::Ttft),
-            ("memra_hybrid_e2e_seconds", HybridSample::E2e),
+        for (name, sample, help) in [
+            (
+                "memra_hybrid_queue_wait_seconds",
+                HybridSample::QueueWait,
+                "Hybrid request queue to admission latency per attempt; cumulative, unsampled.",
+            ),
+            (
+                "memra_hybrid_ttft_seconds",
+                HybridSample::Ttft,
+                "Hybrid admission to first committed token latency per attempt; cumulative, unsampled.",
+            ),
+            (
+                "memra_hybrid_e2e_seconds",
+                HybridSample::E2e,
+                "Successful hybrid admission to completion latency per attempt; cumulative, unsampled.",
+            ),
         ] {
-            out.push_str(&format!("# TYPE {name} histogram\n"));
+            prometheus_header(&mut out, name, "histogram", help);
             for h in hybrid {
-                let labels = format!("model=\"{}\"", h.model);
+                let labels = format!("model=\"{}\"", prometheus_label(&h.model));
                 let hist = match sample {
                     HybridSample::QueueWait => &h.queue_wait_hist,
                     HybridSample::Ttft => &h.ttft_hist,
                     HybridSample::E2e => &h.e2e_hist,
                 };
                 out.push_str(&hist.render_prometheus(name, &labels));
+            }
+        }
+    }
+    if metrics_scope.operator() && !hybrid.is_empty() {
+        let name = "memra_hybrid_token_gap_seconds";
+        prometheus_header(
+            &mut out,
+            name,
+            "histogram",
+            "Intervals between accepted worker token events, including empty text and EOS IDs; N-1 per N events, cumulative and unsampled. Excludes queue and prefill; not network flush timing.",
+        );
+        for h in hybrid {
+            for lane in crate::lanes::Lane::ALL {
+                let labels = format!(
+                    "model=\"{}\",lane=\"{}\"",
+                    prometheus_label(&h.model),
+                    lane.as_str()
+                );
+                out.push_str(&h.token_gap_hists[lane.idx()].render_prometheus(name, &labels));
             }
         }
     }
@@ -9306,7 +9479,7 @@ fn lane_for_tenant(
             )
         })?),
     };
-    match tenant.lane_class {
+    let resolved = match tenant.lane_class {
         auth::LaneClass::Interactive => Ok(requested.unwrap_or(lanes::Lane::Interactive)),
         auth::LaneClass::Batch => match requested {
             None => Ok(lanes::Lane::Harvest),
@@ -9319,7 +9492,11 @@ fn lane_for_tenant(
             )),
             Some(l) => Ok(l),
         },
+    };
+    if let Ok(lane) = &resolved {
+        http_metrics::bind_lane(*lane);
     }
+    resolved
 }
 
 /// The tenant-scoped PC-ISO namespace: keyring configured -> `t:<tenant>\x1f<salt>`
@@ -10070,6 +10247,7 @@ async fn completions_with_admission(
     Json(mut req): Json<CompletionReq>,
     mut body_admission: Option<BodyAdmissionLease>,
 ) -> Response {
+    http_metrics::bind_model(canonical_model_id(&st.models, &req.model));
     let env = Envelope::new(false);
     if let Err(msg) = req.stop.validate() {
         return with_request_id(&env.id, bad_request(&msg, Some("stop")));
@@ -10657,6 +10835,7 @@ async fn chat_completions_with_admission(
     Json(mut req): Json<ChatCompletionReq>,
     mut body_admission: Option<BodyAdmissionLease>,
 ) -> Response {
+    http_metrics::bind_model(canonical_model_id(&st.models, &req.model));
     let env = Envelope::new(true);
     // Canonicalize before ANY downstream use: metadata limits, caps, cache namespace, ledger
     // pricing and the worker's roster all key off this id and must agree on one spelling.
@@ -11129,6 +11308,7 @@ fn sse_response_for_format(
     guard: Option<InflightGuard>,
     mut receipt: Option<Box<dyn metering::Receipt>>,
 ) -> Sse<impl futures_core::Stream<Item = Result<SseEvent, std::convert::Infallible>>> {
+    let http_observation = http_metrics::current();
     let SseFormat {
         chat,
         openai,
@@ -11223,6 +11403,7 @@ fn sse_response_for_format(
                         // Settle as rejected (best effort) so Drop cannot classify OUR
                         // bookkeeping failure as a billable client abandon.
                         let _ = receipt.reject(500, "request_ledger_unavailable");
+                        if let Some(observation) = &http_observation { observation.failed(); }
                         let payload = request_ledger_error_body().to_string();
                         if openai {
                             yield Ok(SseEvent::default().data(payload));
@@ -11235,6 +11416,7 @@ fn sse_response_for_format(
                     }
                 }
                 Event::DeadlineExceeded { ms } => {
+                    if let Some(observation) = &http_observation { observation.failed(); }
                     let ledger_error = if let Some(receipt) = receipt.as_mut() {
                         receipt
                             .settle_unbilled(
@@ -11269,6 +11451,7 @@ fn sse_response_for_format(
                             env.id
                         );
                         let _ = receipt.reject(500, "request_ledger_unavailable");
+                        if let Some(observation) = &http_observation { observation.failed(); }
                         let payload = request_ledger_error_body().to_string();
                         if openai {
                             yield Ok(SseEvent::default().data(payload));
@@ -11358,6 +11541,7 @@ fn sse_response_for_format(
                         // unfinalized; settle it rejected (best effort — a no-op when
                         // the append itself already latched) so Drop cannot bill it.
                         let _ = receipt.reject(500, "request_ledger_unavailable");
+                        if let Some(observation) = &http_observation { observation.failed(); }
                         let payload = request_ledger_error_body().to_string();
                         if openai {
                             yield Ok(SseEvent::default().data(payload));
@@ -11368,6 +11552,7 @@ fn sse_response_for_format(
                         terminal = true;
                         break;
                     }
+                    if let Some(observation) = &http_observation { observation.terminal(); }
                     if openai {
                         let usage = usage_json(n_prompt, n_tokens, n_cached, elapsed_s, spec);
                         let fin = if chat {
@@ -11409,6 +11594,7 @@ fn sse_response_for_format(
                     break;
                 }
                 Event::Error(err) => {
+                    if let Some(observation) = &http_observation { observation.failed(); }
                     // MID-STREAM FAILURE (G6). The response status is already 200 and the
                     // headers are gone, so there is no status code left to change: the ONLY
                     // honest signal is an error object in the stream followed by closing the
@@ -11452,6 +11638,7 @@ fn sse_response_for_format(
             }
         }
         if !terminal {
+            if let Some(observation) = &http_observation { observation.failed(); }
             // Channel closed without Done/Error: the worker thread is gone (panicked or
             // restarting) — OUR fault, so the receipt settles rejected with debit ZERO
             // (fault-attribution ruling 2026-08-23; this used to fall through to Drop and
@@ -11605,6 +11792,11 @@ struct BlockingPayload<'a> {
 }
 
 fn blocking_payload(p: BlockingPayload<'_>) -> Response {
+    if p.deadline_error.is_some()
+        && let Some(observation) = http_metrics::current()
+    {
+        observation.failed();
+    }
     let BlockingPayload {
         env,
         model,
@@ -17492,6 +17684,379 @@ default_reasoning_effort = "always"
         assert_eq!(lines.last(), Some(&"[DONE]"));
     }
 
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: drain guard serializes real handlers against global counter writers
+    async fn http_metrics_use_the_authenticated_batch_lane_on_every_api() {
+        use tower::ServiceExt;
+        let _drain = drain_lock();
+        let model = "metrics-authenticated-batch";
+        let key = "metrics-batch-fixture-key";
+        let mut st = fake_worker_state_with_steps(2, std::time::Duration::ZERO);
+        st.models = Arc::new(vec![model.into()]);
+        let spec = format!("bulk:{}:batch", auth::sha256_hex(key));
+        st.api_auth.keyring = Some(Box::leak(Box::new(
+            auth::KeyStore::from_spec(&spec).unwrap(),
+        )));
+        let app = Router::new()
+            .route("/v1/completions", post(completions_admitted))
+            .route("/v1/chat/completions", post(chat_completions_admitted))
+            .route("/v1/responses", post(responses_api::responses_admitted))
+            .route("/v1/messages", post(anthropic::messages_admitted))
+            .with_state(st)
+            .layer(middleware::from_fn(http_metrics::observe));
+        for (path, mut body) in [
+            ("/v1/completions", json!({"prompt":"hi","max_tokens":2})),
+            (
+                "/v1/chat/completions",
+                json!({"messages":[{"role":"user","content":"hi"}],"max_tokens":2}),
+            ),
+            ("/v1/responses", json!({"input":"hi","max_output_tokens":2})),
+            (
+                "/v1/messages",
+                json!({"messages":[{"role":"user","content":"hi"}],"max_tokens":2}),
+            ),
+        ] {
+            body["model"] = json!(model);
+            body["stream"] = json!(true);
+            let response = app
+                .clone()
+                .oneshot(
+                    axum::http::Request::builder()
+                        .method("POST")
+                        .uri(path)
+                        .header("content-type", "application/json")
+                        .header("authorization", format!("Bearer {key}"))
+                        .body(Body::from(body.to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{path}");
+            axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+        }
+        for (lane, code) in [("judge", 200), ("harvest", 200), ("interactive", 403)] {
+            let body = json!({"model":model,"prompt":"hi","max_tokens":2});
+            let response = app
+                .clone()
+                .oneshot(
+                    axum::http::Request::builder()
+                        .method("POST")
+                        .uri("/v1/completions")
+                        .header("content-type", "application/json")
+                        .header("authorization", format!("Bearer {key}"))
+                        .header("x-lane", lane)
+                        .body(Body::from(body.to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status().as_u16(), code);
+            axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+        }
+        let metrics = http_metrics::render();
+        assert!(metrics.contains("memra_requests_total{model=\"metrics-authenticated-batch\",route=\"hybrid\",lane=\"harvest\",code=\"200\"} 5\n"),"{metrics}");
+        assert!(metrics.contains("memra_requests_total{model=\"metrics-authenticated-batch\",route=\"hybrid\",lane=\"judge\",code=\"200\"} 1\n"));
+        assert!(!metrics.contains("memra_requests_total{model=\"metrics-authenticated-batch\",route=\"hybrid\",lane=\"interactive\",code=\"200\"}"));
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: serializes the existing process-wide admission counters
+    async fn http_metrics_observe_preheader_deadline_body_limit_and_worker_refusals() {
+        use tower::ServiceExt;
+        let _drain = drain_lock();
+        for code in [408u16, 429, 503] {
+            let model = format!("http-refusal-{code}");
+            let mut st = fake_worker_state();
+            st.models = Arc::new(vec![model.clone()]);
+            let (tx, rx) = std::sync::mpsc::channel();
+            st.cmd_tx = tx;
+            let app = Router::new()
+                .route("/v1/completions", post(completions_admitted))
+                .with_state(st)
+                .layer(middleware::from_fn(http_metrics::observe));
+            let body =
+                json!({"model":model,"prompt":"x","stream":true,"max_tokens":8,"timeout_ms":1000});
+            let request = axum::http::Request::builder()
+                .method("POST")
+                .uri("/v1/completions")
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap();
+            let response = tokio::spawn(app.oneshot(request));
+            let Cmd::Generate(mut generated) =
+                tokio::task::spawn_blocking(move || rx.recv().unwrap())
+                    .await
+                    .unwrap()
+            else {
+                panic!("expected generate")
+            };
+            worker::release_pending_admit();
+            worker::release_request_reservation(&mut generated);
+            if code != 408 {
+                let error = if code == 429 {
+                    worker::EngineError::rate_limit("fixture")
+                } else {
+                    worker::EngineError::overloaded("fixture")
+                };
+                generated.tx.send(Event::Error(error)).unwrap();
+            }
+            // Holding the producer open without a verdict exercises the real 1s preheader deadline.
+            let response = response.await.unwrap().unwrap();
+            assert_eq!(response.status().as_u16(), code);
+            drop(generated);
+            let metrics = http_metrics::render();
+            let labels = format!("model=\"{model}\",route=\"hybrid\",lane=\"interactive\"");
+            assert!(metrics.contains(&format!(
+                "memra_requests_total{{{labels},code=\"{code}\"}} 1\n"
+            )));
+            assert!(metrics.contains(&format!("memra_response_errors_total{{{labels}}} 1\n")));
+            if code == 408 {
+                assert!(
+                    metrics.contains(&format!("memra_pre_header_deadline_total{{{labels}}} 1\n"))
+                );
+            }
+        }
+        let app = Router::new()
+            .route("/v1/completions", post(completions_admitted))
+            .with_state(fake_worker_state())
+            .layer(DefaultBodyLimit::max(8))
+            .layer(middleware::from_fn(http_metrics::observe));
+        let response = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/v1/completions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        "{\"prompt\":\"body larger than the fixture limit\"}",
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        assert!(http_metrics::render().contains("memra_requests_total{model=\"unknown\",route=\"unresolved\",lane=\"interactive\",code=\"413\"} 1\n"));
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: serializes the existing process-wide admission counters
+    async fn http_metrics_cover_real_generation_surfaces_and_early_refusals() {
+        use tower::ServiceExt;
+        let _drain = drain_lock();
+        let model = "http-metrics-surfaces";
+        let mut st = fake_worker_state_with_steps(2, std::time::Duration::ZERO);
+        st.models = Arc::new(vec![model.into()]);
+        let app = Router::new()
+            .route("/v1/completions", post(completions_admitted))
+            .route("/v1/chat/completions", post(chat_completions_admitted))
+            .route("/v1/responses", post(responses_api::responses_admitted))
+            .route("/v1/messages", post(anthropic::messages_admitted))
+            .with_state(st)
+            .layer(middleware::from_fn(http_metrics::observe));
+        for (path, mut body) in [
+            ("/v1/completions", json!({"prompt":"hello", "max_tokens":2})),
+            (
+                "/v1/chat/completions",
+                json!({"messages":[{"role":"user", "content":"hello"}], "max_tokens":2}),
+            ),
+            (
+                "/v1/responses",
+                json!({"input":"hello", "max_output_tokens":2}),
+            ),
+            (
+                "/v1/messages",
+                json!({"messages":[{"role":"user", "content":"hello"}], "max_tokens":2}),
+            ),
+        ] {
+            body["model"] = json!(model);
+            body["stream"] = json!(true);
+            let response = app
+                .clone()
+                .oneshot(
+                    axum::http::Request::builder()
+                        .method("POST")
+                        .uri(path)
+                        .header("content-type", "application/json")
+                        .body(Body::from(body.to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{path}");
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            assert!(!bytes.is_empty());
+        }
+        let text = http_metrics::render();
+        assert!(text.contains("memra_requests_total{model=\"http-metrics-surfaces\",route=\"hybrid\",lane=\"interactive\",code=\"200\"} 4\n"), "{text}");
+        assert!(text.contains("memra_streams_incomplete_total{model=\"http-metrics-surfaces\",route=\"hybrid\",lane=\"interactive\"} 0\n"));
+        let rejected = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/v1/completions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"model":model,"prompt":"hello","n":2}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(rejected.status(), StatusCode::BAD_REQUEST);
+        assert!(http_metrics::render().contains("memra_requests_total{model=\"http-metrics-surfaces\",route=\"hybrid\",lane=\"interactive\",code=\"400\"} 1\n"));
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: serializes process-wide admission counters
+    async fn http_metrics_count_cancelled_and_truncated_real_sse_responses() {
+        use tower::ServiceExt;
+        let _drain = drain_lock();
+        for (model, action) in [
+            ("http-metrics-cancel", "cancel"),
+            ("http-metrics-truncate", "drain"),
+            ("http-metrics-read-error-close", "close-on-error"),
+        ] {
+            let cancel = action == "cancel";
+            let mut st = fake_worker_state();
+            st.models = Arc::new(vec![model.into()]);
+            let (tx, rx) = std::sync::mpsc::channel();
+            st.cmd_tx = tx;
+            let worker = std::thread::spawn(move || {
+                if let Ok(Cmd::Generate(mut request)) = rx.recv() {
+                    worker::release_pending_admit();
+                    worker::release_request_reservation(&mut request);
+                    request
+                        .tx
+                        .send(Event::PromptUsage {
+                            n_prompt: 1,
+                            n_cached: 0,
+                        })
+                        .unwrap();
+                    request
+                        .tx
+                        .send(Event::Token {
+                            id: 1,
+                            text: "partial".into(),
+                        })
+                        .unwrap();
+                    // The producer closes without Done, exercising the real SSE failure path.
+                }
+            });
+            let app = Router::new()
+                .route("/v1/completions", post(completions_admitted))
+                .with_state(st)
+                .layer(middleware::from_fn(http_metrics::observe));
+            let response = app
+                .oneshot(
+                    axum::http::Request::builder()
+                        .method("POST")
+                        .uri("/v1/completions")
+                        .header("content-type", "application/json")
+                        .body(Body::from(
+                            json!({"model":model,"prompt":"x","max_tokens":8,"stream":true})
+                                .to_string(),
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            if cancel {
+                drop(response);
+            } else if action == "close-on-error" {
+                use futures_core::Stream;
+                let mut data = response.into_body().into_data_stream();
+                tokio::time::timeout(std::time::Duration::from_secs(1), async {
+                    while let Some(frame) =
+                        std::future::poll_fn(|cx| std::pin::Pin::new(&mut data).poll_next(cx)).await
+                    {
+                        if String::from_utf8_lossy(&frame.unwrap()).contains("overloaded") {
+                            return;
+                        }
+                    }
+                    panic!("missing terminal error frame");
+                })
+                .await
+                .unwrap();
+                drop(data); // the client does not ask for EOF or the following [DONE] frame
+            } else {
+                let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .unwrap();
+                assert!(String::from_utf8_lossy(&bytes).contains("overloaded"));
+            }
+            worker.join().unwrap();
+            let text = http_metrics::render();
+            let labels = format!("model=\"{model}\",route=\"hybrid\",lane=\"interactive\"");
+            let code = if cancel { 499 } else { 200 };
+            assert!(
+                text.contains(&format!(
+                    "memra_requests_total{{{labels},code=\"{code}\"}} 1\n"
+                )),
+                "{text}"
+            );
+            assert!(text.contains(&format!("memra_streams_incomplete_total{{{labels}}} 1\n")));
+            assert!(text.contains(&format!(
+                "memra_streams_truncated_total{{{labels}}} {}\n",
+                usize::from(!cancel)
+            )));
+        }
+    }
+
+    #[tokio::test]
+    async fn premature_stream_end_is_a_terminal_error_not_a_successful_finish() {
+        let (tx, rx) = worker::event_channel();
+        tx.send(Event::Token {
+            id: 1,
+            text: "partial".into(),
+        })
+        .unwrap();
+        drop(tx);
+        let response = sse_response(
+            rx,
+            "m".into(),
+            true,
+            None,
+            Envelope::new(true),
+            Vec::new(),
+            None,
+        )
+        .into_response();
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body = String::from_utf8(bytes.to_vec()).unwrap();
+        let events = body
+            .lines()
+            .filter_map(|line| line.strip_prefix("data: "))
+            .filter(|line| *line != "[DONE]")
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .collect::<Vec<_>>();
+        assert!(
+            events
+                .iter()
+                .any(|event| event["choices"][0]["delta"]["content"] == "partial")
+        );
+        assert!(
+            events
+                .iter()
+                .any(|event| event["error"]["code"] == "overloaded")
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|event| event["choices"][0]["finish_reason"].is_string())
+        );
+        assert!(!events.iter().any(|event| event["usage"].is_object()));
+    }
+
     #[test]
     fn ttft_sse_marker_ignores_keepalive_comments() {
         assert!(!is_sse_data_frame(b": keep-alive\n\n"));
@@ -19610,6 +20175,46 @@ default_reasoning_effort = "always"
         );
     }
 
+    #[test]
+    fn prometheus_exposition_has_help_escaped_labels_and_cache_totals() {
+        let name = "loaded\"model\\name\nline";
+        hybrid_telemetry::record_queue_wait(name, std::time::Duration::ZERO);
+        let rows = hybrid_telemetry::all()
+            .into_iter()
+            .filter(|h| h.model == name)
+            .collect::<Vec<_>>();
+        let m = worker::Metrics {
+            prompt_tokens_in: 1632,
+            cached_tokens_in: 1024,
+            prefix_hits: 4,
+            prefix_misses: 2,
+            prefix_inserts: 2,
+            prefix_hit_tokens: 1024,
+            ..Default::default()
+        };
+        let text = render_prometheus_metrics(&m, &[], &rows, &MetricsScope::All);
+        for decl in text.lines().filter_map(|line| line.strip_prefix("# TYPE ")) {
+            let family = decl.split_once(' ').unwrap().0;
+            assert_eq!(text.matches(&format!("# HELP {family} ")).count(), 1);
+        }
+        assert!(text.contains("memra_computed_tokens_in_total 608\n"));
+        assert!(text.contains("# TYPE memra_step_latency_p50_seconds gauge\n"));
+        assert!(text.contains("# TYPE memra_step_latency_p99_seconds gauge\n"));
+        assert!(!text.contains("{quantile="));
+        assert!(text.contains("memra_prefix_cache_hits_total 4\n"));
+        assert!(text.contains(&format!(
+            "model=\"{}\",lane=\"interactive\"",
+            prometheus_label(name)
+        )));
+        assert_eq!(prometheus_label(name), "loaded\\\"model\\\\name\\nline");
+        let tenant = render_prometheus_metrics(&m, &[], &rows, &MetricsScope::Tenant("t:a".into()));
+        assert!(tenant.is_empty());
+        let completion = render_prometheus_metrics(&m, &[], &rows, &MetricsScope::CompletionDomain);
+        assert!(completion.contains("memra_computed_tokens_in_total 608"));
+        assert!(!completion.contains("memra_prefix_cache_hits_total"));
+        assert!(!completion.contains("memra_hybrid_token_gap_seconds"));
+    }
+
     /// The Prometheus text format (0.0.4) requires every line of one metric family to appear
     /// together (revuto finding on PR #908, the hybrid block's twin of this bug). A route-outer
     /// render loop would split each family's lines apart the moment TWO dedicated routes are
@@ -19675,6 +20280,9 @@ default_reasoning_effort = "always"
         let mut seen = Vec::new();
         let mut current = None;
         for line in route_block.lines() {
+            if line.starts_with("# HELP ") {
+                continue;
+            }
             if let Some(decl) = line.strip_prefix("# TYPE ") {
                 let (name, kind) = decl.split_once(' ').unwrap();
                 assert!(
@@ -19806,12 +20414,14 @@ default_reasoning_effort = "always"
                 queue_wait_hist: sample(5),
                 ttft_hist: sample(50),
                 e2e_hist: sample(500),
+                token_gap_hists: std::array::from_fn(|_| sample(10)),
             },
             hybrid_telemetry::HybridSnapshot {
                 model: "model-b".into(),
                 queue_wait_hist: sample(6),
                 ttft_hist: sample(60),
                 e2e_hist: sample(600),
+                token_gap_hists: std::array::from_fn(|_| sample(20)),
             },
         ];
         let text = render_prometheus_metrics(
@@ -19834,7 +20444,7 @@ default_reasoning_effort = "always"
                 .unwrap_or_else(|| panic!("family {family} missing its TYPE line: {text}"))
                 + type_line.len();
             let rest = &text[start..];
-            let end = rest.find("# TYPE ").unwrap_or(rest.len());
+            let end = rest.find("# HELP ").unwrap_or(rest.len());
             let block = &rest[..end];
             assert!(
                 block.contains("model=\"model-a\""),
@@ -22695,6 +23305,345 @@ temperature = 0.6
         });
         unsafe { std::env::remove_var(responses_api::BACKGROUND_RESPONSES_ENV) };
         guard
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: existing drain/env guards serialize handler tests against global writers
+    async fn background_http_ack_is_separate_from_generation_and_polling() {
+        use metering::{JobRecord, JobStore, JobStoreError, Metering, Receipt, UsageCounts};
+        use tower::ServiceExt;
+        struct Store {
+            inner: job_store::InMemoryJobStore,
+            terminal: Arc<tokio::sync::Notify>,
+        }
+        impl JobStore for Store {
+            fn put(&self, key: &str, record: JobRecord) -> Result<(), JobStoreError> {
+                let terminal = record.status.is_terminal();
+                self.inner.put(key, record)?;
+                if terminal {
+                    self.terminal.notify_one();
+                }
+                Ok(())
+            }
+            fn get(&self, key: &str) -> Option<JobRecord> {
+                self.inner.get(key)
+            }
+            fn take(&self, key: &str) -> Option<JobRecord> {
+                self.inner.take(key)
+            }
+            fn cancel(&self, key: &str) -> Result<(), JobStoreError> {
+                self.inner.cancel(key)
+            }
+            fn sweep(&self) -> usize {
+                self.inner.sweep()
+            }
+        }
+        struct Meter {
+            inner: Arc<MockMetering>,
+            token: Arc<tokio::sync::Notify>,
+        }
+        struct ObservedReceipt {
+            inner: Box<dyn Receipt>,
+            token: Arc<tokio::sync::Notify>,
+        }
+        impl Metering for Meter {
+            fn enforces_limits(&self) -> bool {
+                self.inner.enforces_limits()
+            }
+            fn is_limited(&self, tenant: &str) -> Result<bool, metering::AdmitError> {
+                self.inner.is_limited(tenant)
+            }
+            fn reserve(
+                &self,
+                tenant: &str,
+                principal: Option<&str>,
+                model: &str,
+                prompt: u64,
+                output: u64,
+            ) -> Result<Option<metering::Permit>, metering::AdmitError> {
+                self.inner.reserve(tenant, principal, model, prompt, output)
+            }
+            fn open(
+                &self,
+                meta: &metering::RequestMeta<'_>,
+                permit: Option<metering::Permit>,
+            ) -> Box<dyn Receipt> {
+                Box::new(ObservedReceipt {
+                    inner: self.inner.open(meta, permit),
+                    token: self.token.clone(),
+                })
+            }
+            fn limits_health(&self) -> Option<metering::LimitsHealth> {
+                self.inner.limits_health()
+            }
+        }
+        impl Receipt for ObservedReceipt {
+            fn wants_capture(&self) -> bool {
+                self.inner.wants_capture()
+            }
+            fn arm_capture(&mut self, prompt: serde_json::Value) {
+                self.inner.arm_capture(prompt);
+            }
+            fn capture_completion_delta(&mut self, delta: &str) {
+                self.inner.capture_completion_delta(delta);
+            }
+            fn record_prompt_usage(&mut self, prompt: u64, cached: u64) -> Result<(), String> {
+                self.inner.record_prompt_usage(prompt, cached)
+            }
+            fn record_completion_token(&mut self) -> Result<(), String> {
+                self.inner.record_completion_token()?;
+                self.token.notify_one();
+                Ok(())
+            }
+            fn complete(&mut self, usage: UsageCounts, elapsed: f64) -> Result<(), String> {
+                self.inner.complete(usage, elapsed)
+            }
+            fn complete_deadline_partial(
+                &mut self,
+                usage: UsageCounts,
+                elapsed: f64,
+            ) -> Result<(), String> {
+                self.inner.complete_deadline_partial(usage, elapsed)
+            }
+            fn reject(&mut self, status: u16, code: &str) -> Result<(), String> {
+                self.inner.reject(status, code)
+            }
+            fn settle_unbilled(
+                &mut self,
+                outcome: &'static str,
+                status: u16,
+                code: &str,
+            ) -> Result<(), String> {
+                self.inner.settle_unbilled(outcome, status, code)
+            }
+        }
+        fn generation(model: &str, name: &str) -> f64 {
+            let prefix =
+                format!("{name}{{model=\"{model}\",route=\"hybrid\",lane=\"interactive\"}} ");
+            request_metrics::render()
+                .lines()
+                .find_map(|line| line.strip_prefix(&prefix).map(|v| v.parse().unwrap()))
+                .unwrap_or(0.0)
+        }
+        let _drain = drain_lock();
+        let _env = background_env_lock();
+        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
+        for cancelled in [false, true] {
+            let model = if cancelled {
+                "metrics-background-cancel"
+            } else {
+                "metrics-background-complete"
+            };
+            let mut state = fake_worker_state();
+            state.models = Arc::new(vec![model.into()]);
+            state.health = health::WorkerHealth::new();
+            state.health.mark_ready();
+            let (tx, rx) = std::sync::mpsc::channel();
+            state.cmd_tx = tx;
+            let terminal = Arc::new(tokio::sync::Notify::new());
+            state.job_store = Arc::new(Store {
+                inner: job_store::InMemoryJobStore::new(
+                    std::time::Duration::from_secs(60),
+                    1 << 20,
+                ),
+                terminal: terminal.clone(),
+            });
+            let token = Arc::new(tokio::sync::Notify::new());
+            let mock = MockMetering::admit_all();
+            state.metering = Some(Arc::new(Meter {
+                inner: mock.clone(),
+                token: token.clone(),
+            }));
+            let app = Router::new()
+                .route("/v1/responses", post(responses_api::responses_admitted))
+                .route("/v1/responses/:id", get(responses_api::poll_admitted))
+                .route(
+                    "/v1/responses/:id/cancel",
+                    post(responses_api::cancel_admitted),
+                )
+                .with_state(state)
+                .layer(middleware::from_fn(http_metrics::observe));
+            let body = json!({"model":model,"input":"hi","background":true,"max_output_tokens":8});
+            let post = tokio::spawn(
+                app.clone().oneshot(
+                    axum::http::Request::builder()
+                        .method("POST")
+                        .uri("/v1/responses")
+                        .header("content-type", "application/json")
+                        .body(Body::from(body.to_string()))
+                        .unwrap(),
+                ),
+            );
+            let Cmd::Generate(mut request) = tokio::task::spawn_blocking(move || {
+                rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap()
+            })
+            .await
+            .unwrap() else {
+                panic!("missing worker request")
+            };
+            worker::release_pending_admit();
+            worker::release_request_reservation(&mut request);
+            let mut clock = request_metrics::Clock::admitted(
+                model,
+                request_metrics::Backend::Hybrid,
+                request.lane,
+                request.queued_at,
+                std::time::Instant::now(),
+            );
+            clock.prompt(1, 0);
+            request
+                .tx
+                .send(Event::PromptUsage {
+                    n_prompt: 1,
+                    n_cached: 0,
+                })
+                .unwrap();
+            let response = post.await.unwrap().unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let acknowledged = body_value(response).await;
+            assert_eq!(acknowledged["status"], "queued");
+            let id = acknowledged["id"].as_str().unwrap();
+            let http_row = format!(
+                "memra_requests_total{{model=\"{model}\",route=\"hybrid\",lane=\"interactive\",code=\"200\"}} 1\n"
+            );
+            assert!(http_metrics::render().contains(&http_row));
+            assert_eq!(generation(model, "memra_e2e_seconds_count"), 0.0);
+            assert_eq!(generation(model, "memra_ttft_seconds_count"), 0.0);
+            for _ in 0..3 {
+                let response = app
+                    .clone()
+                    .oneshot(
+                        axum::http::Request::builder()
+                            .uri(format!("/v1/responses/{id}"))
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                let value = body_value(response).await;
+                assert!(matches!(
+                    value["status"].as_str(),
+                    Some("queued" | "in_progress")
+                ));
+            }
+            assert!(http_metrics::render().contains(&http_row));
+            assert_eq!(generation(model, "memra_e2e_seconds_count"), 0.0);
+            request
+                .tx
+                .send(Event::Token {
+                    id: 1,
+                    text: "x".into(),
+                })
+                .unwrap();
+            clock.sent();
+            tokio::time::timeout(std::time::Duration::from_secs(1), token.notified())
+                .await
+                .unwrap();
+            if cancelled {
+                let response = app
+                    .clone()
+                    .oneshot(
+                        axum::http::Request::builder()
+                            .method("POST")
+                            .uri(format!("/v1/responses/{id}/cancel"))
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(body_value(response).await["status"], "cancelled");
+                tokio::time::timeout(std::time::Duration::from_secs(1), request.tx.closed())
+                    .await
+                    .unwrap();
+            } else {
+                request
+                    .tx
+                    .send(Event::Token {
+                        id: 2,
+                        text: "y".into(),
+                    })
+                    .unwrap();
+                clock.sent();
+                request
+                    .tx
+                    .send(Event::Done {
+                        stop_reason: "Eos".into(),
+                        n_tokens: 2,
+                        n_prompt: 1,
+                        n_cached: 0,
+                        elapsed_s: 0.1,
+                        spec: None,
+                    })
+                    .unwrap();
+                clock.finished(2);
+            }
+            tokio::time::timeout(std::time::Duration::from_secs(1), terminal.notified())
+                .await
+                .unwrap();
+            drop(request);
+            drop(clock);
+            let expected = if cancelled { "cancelled" } else { "completed" };
+            let mut first = None;
+            for _ in 0..3 {
+                let response = app
+                    .clone()
+                    .oneshot(
+                        axum::http::Request::builder()
+                            .uri(format!("/v1/responses/{id}"))
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                let value = body_value(response).await;
+                assert_eq!(value["status"], expected);
+                if let Some(first) = &first {
+                    assert_eq!(&value, first);
+                } else {
+                    first = Some(value);
+                }
+            }
+            assert!(http_metrics::render().contains(&http_row));
+            let events = mock.events();
+            let terminal_rows: Vec<_> = events
+                .iter()
+                .filter(|e| {
+                    matches!(
+                        e,
+                        MeterEvent::Complete { .. }
+                            | MeterEvent::DeadlinePartial { .. }
+                            | MeterEvent::Reject { .. }
+                            | MeterEvent::Unbilled { .. }
+                            | MeterEvent::Dropped { .. }
+                    )
+                })
+                .collect();
+            assert_eq!(terminal_rows.len(), 1, "{events:?}");
+            if cancelled {
+                assert!(matches!(
+                    terminal_rows[0],
+                    MeterEvent::DeadlinePartial { completion: 1, .. }
+                ));
+            } else {
+                assert!(matches!(
+                    terminal_rows[0],
+                    MeterEvent::Complete { completion: 2, .. }
+                ));
+            }
+            assert_eq!(
+                generation(model, "memra_e2e_seconds_count"),
+                if cancelled { 0.0 } else { 1.0 }
+            );
+            assert_eq!(
+                generation(model, "memra_completion_tokens_sum"),
+                if cancelled { 0.0 } else { 2.0 }
+            );
+            assert_eq!(
+                generation(model, "memra_emitted_token_events_total"),
+                if cancelled { 1.0 } else { 2.0 }
+            );
+        }
+        unsafe { std::env::remove_var(responses_api::BACKGROUND_RESPONSES_ENV) };
     }
 
     /// Door OFF: a route-level `background: true` request refuses exactly like before this

@@ -1,0 +1,59 @@
+[server] build: memra-0.138.0-3e5e83b98e64 (id: source-tree, git: a9ee8e59b9ed)
+[env-audit] warning: 3 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: MEMRA_CI_LOCK, MEMRA_CI_LOCK_HELD, MEMRA_RIG_LOCK_FD. Left alone: launchers and gate scripts own names outside the engine's families.
+[server] starting; models config = [("gate", "/data/ai-ml/hf-models/qwen36-35b-a3b-mtp-gguf-5bc3e238/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "gate" <- /data/ai-ml/hf-models/qwen36-35b-a3b-mtp-gguf-5bc3e238/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+[tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 24.28GB (expert budget 19.68GB) -> RESIDENT
+[worker]   loaded "gate": 41 layers, eos=248046, stop=[248046]
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="gate" route=hybrid-worker capacity=4 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] gate: decode wave cap 8; scheduler tick cap 8
+[prefix-cache] on: budget 2147MB (2147483648 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "gate": plain 9280 B/token, spec 10208 B/token; fixed residual learns from effective-free deltas
+[admit-cal] boot calibration skipped: spec serving disabled (static floor; the plain transient class is chunk-bounded)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[server] worker ready; serving models: ["gate"]
+[server] listening on http://127.0.0.1:18112
+[meter] admit id=cmpl-7457db510974416d0051fed7a5d64f05 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=218 path=plain = 9280 B/token x ctx + 36MB prefill-workspace + 0MB fixed = 38MB
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 129MB (observed 130MB at ctx 162 path=plain)
+[moe-sk-form] dev=0 qt=6 sms=82 occ128=1 occ32=6 occt=3 cross=64 xcross=64 bdb=0 in_f=2048 out_f=512 n_active=136 max_m=14
+[moe-sk-form] dev=0 qt=5 sms=82 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=512 out_f=2048 n_active=136 max_m=14
+[moe-sk-form] dev=0 qt=2 sms=82 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=512 out_f=2048 n_active=93 max_m=36
+[prefix-cache] insert (seed): 64 tokens, 66.5MB (resident 66.5MB / 2147MB, model gate)
+[fa-pool] grow #0 dev=0 o_len 0 -> 57344 ml_len 0 -> 224 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 57344 -> 114688 ml_len 224 -> 448 (retired kept, zero=false)
+[meter] admit id=cmpl-2d067321e16c8285f7f0f0bcbdff86aa tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=218 path=plain = 9280 B/token x ctx + 36MB prefill-workspace + 129MB fixed = 167MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 106 prompt tokens; model gate)
+[prefix-cache] hit: 64 of 106 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=106 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 64 tokens, model gate)
+[meter] admit id=cmpl-558ff4cab0855973dc80c3842a14c44b tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=231 path=plain = 9280 B/token x ctx + 41MB prefill-workspace + 129MB fixed = 172MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 119 prompt tokens; model gate)
+[prefix-cache] hit: 64 of 119 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=119 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 64 tokens, model gate)
+[admission] fixed residual high-water: model="gate" 129MB (observed 131MB at ctx 175 path=plain)
+[meter] admit id=cmpl-8339b666d96db13c64c28a21116eb9bc tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=218 path=plain = 9280 B/token x ctx + 36MB prefill-workspace + 129MB fixed = 167MB
+[spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 64 tokens, 66.5MB (resident 132.9MB / 2147MB, model gate, ns "grow")
+[meter] admit id=cmpl-29a67c0ab121bec39298f9b186c5c3e2 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=231 path=plain = 9280 B/token x ctx + 41MB prefill-workspace + 129MB fixed = 172MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 119 prompt tokens; model gate)
+[prefix-cache] hit: 64 of 119 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=119 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 64 tokens, model gate)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

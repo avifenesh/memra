@@ -1,0 +1,33 @@
+{
+  "request": {
+    "model": "metrics-q9",
+    "prompt": "Count from one to twenty in words, separated by commas.",
+    "max_tokens": 1,
+    "stream": false,
+    "temperature": 0,
+    "cache_salt": "fault-trigger"
+  },
+  "response": {
+    "object": "text_completion",
+    "model": "metrics-q9",
+    "choices": [
+      {
+        "index": 0,
+        "text": "\n\n",
+        "finish_reason": "length"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 12,
+      "completion_tokens": 1,
+      "total_tokens": 13,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "elapsed_s": 0.190770799
+    },
+    "id": "cmpl-be0ce609369bde64101f7c8e01ff254d",
+    "created": 1790961453,
+    "system_fingerprint": "memra-0.138.0-292436629f95"
+  }
+}

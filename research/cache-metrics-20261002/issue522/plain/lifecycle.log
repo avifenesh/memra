@@ -1,0 +1,36 @@
+PASS missing credential text/plain: HTTP 401
+PASS missing credential application/json: HTTP 401
+PASS wrong credential text/plain: HTTP 401
+PASS wrong credential application/json: HTTP 401
+PASS completion credential text/plain: HTTP 403
+PASS completion credential application/json: HTTP 403
+PASS default metrics remains JSON
+PASS before-clean metrics HTTP 200
+PASS before-clean promtool
+PASS clean stream has terminal success and DONE
+PASS clean stream generated tokens
+PASS after-clean metrics HTTP 200
+PASS after-clean promtool
+PASS queue_wait records clean session exactly once
+PASS ttft records clean session exactly once
+PASS e2e records clean session exactly once
+PASS clean emitted-gap count is output tokens minus one
+PASS unknown model rejected 0
+PASS unknown model rejected 1
+PASS unknown model rejected 2
+PASS after-rejected metrics HTTP 200
+PASS after-rejected promtool
+PASS rejected model names do not create metric series
+PASS queue_wait unchanged after pre-admission rejection
+PASS ttft unchanged after pre-admission rejection
+PASS e2e unchanged after pre-admission rejection
+PASS client cancelled before terminal frame
+PASS request after cancellation completes
+PASS after-cancel-and-recovery metrics HTTP 200
+PASS after-cancel-and-recovery promtool
+PASS cancelled session excluded from success E2E
+PASS cancel and recovery each admitted
+PASS model labels remain bounded
+PASS JSON negotiation/schema remains compatible
+PASS JSON has no Prometheus histogram fields
+{"passed": 35, "failed": 0}

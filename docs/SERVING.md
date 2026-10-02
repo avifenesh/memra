@@ -1507,6 +1507,89 @@ memory/scheduler state used to time a [Fill-and-Squeeze attack](https://arxiv.or
 No-key loopback development remains unauthenticated and unchanged. A configured metrics
 token never authorizes completion routes.
 
+### Prometheus metrics
+
+`GET /metrics` returns JSON by default. `Accept: text/plain;version=0.0.4`
+selects Prometheus exposition under the same authorization rules. Equal JSON
+and text preferences retain JSON. An exclusive `MEMRA_METRICS_TOKEN` grants
+operator access; a completion credential cannot substitute for it.
+
+The hybrid generation families use `{model,route,lane}` labels. Models come from
+loaded configuration, their `route` is `hybrid`, and lanes are the three fixed
+scheduler lanes: `interactive`, `judge`, and `harvest`. All histograms are
+cumulative and unsampled, with fixed buckets. Capture-only embedding/rerank
+work is excluded. An internal replay is a new worker attempt; HTTP outcome
+counters separately count logical HTTP requests.
+
+| Family | Observation |
+| --- | --- |
+| `memra_queue_wait_seconds` | Worker submission to backend admission |
+| `memra_ttft_seconds` | Worker submission to the first accepted token event, including queue wait |
+| `memra_e2e_seconds` | Worker submission through successful backend retirement, including queue wait |
+| `memra_tpot_seconds` | Intervals between successfully accepted worker token events; N events contribute N-1 samples |
+| `memra_prefill_tokens` | Prompt tokens, including cache reads, once per admitted attempt |
+| `memra_completion_tokens` | Generated tokens of successful attempts, including length-limited completions |
+| `memra_cached_tokens_total` | Cache-restored prompt tokens, including credit granted later to in-flight prefill followers |
+| `memra_emitted_token_events_total` | Accepted token events, including work emitted before cancellation or failure |
+
+The emission clock runs at the successful worker send, including empty UTF-8
+fragments. It does not time network flushes. Dedicated DSv4 emission-clock
+integration remains deferred; its existing round histogram remains a separate
+compute-round metric.
+The legacy `memra_hybrid_*` histograms retain their existing semantics, including
+admission-based committed-token TTFT and successful admission-to-retirement E2E.
+
+`memra_requests_total{model,route,lane,code}` counts generation HTTP outcomes on
+completions, chat completions, Responses and Messages. `499` means the client
+left before a terminal response. Unparsed bodies and unknown model names use a
+single `model="unknown",route="unresolved"` row. Successful lane resolution binds
+the authenticated tenant lane, including batch keys defaulting to harvest. A
+request refused before lane resolution retains its bounded header/default hint.
+Arbitrary rejected names,
+request IDs and cache salts never become labels. `memra_requests_refused_total`
+counts pre-stream HTTP errors; `memra_pre_header_deadline_total` counts HTTP 408.
+`memra_response_errors_total` also exposes failures carried inside HTTP 200
+responses. A valid `max_tokens` finish is a completed stream.
+
+`memra_streams_incomplete_total` counts streams without terminal completion.
+`memra_streams_truncated_total` excludes client cancellations, which have their
+own `memra_requests_cancelled_total`. A typed terminal error is a failed response,
+including when the client closes immediately after reading that error. These
+observations do not alter response bytes or the JSON metrics schema.
+
+Operator gauges include `memra_active_sessions`, `memra_queued_sessions`,
+`memra_kv_used_bytes` and `memra_kv_capacity_bytes`, labelled by model/backend.
+The KV gauges count canonical live and parked KV, recurrent, indexer and draft
+state planes. Used bytes are backed allocation; capacity includes VMM reservation
+granularity. Prefix snapshots, rollback copies and graph workspace are excluded.
+Hybrid gauges publish on admission, retirement and every 32nd tick. Worker
+failure clears them. These new KV gauges do not claim dedicated-route allocation
+coverage.
+
+`memra_device_free_bytes{device}` reports each visible CUDA device's last driver
+reading. `memra_device_memory_sample_age_seconds` identifies stale observations;
+metrics scrapes do not query the device. `memra_backend_prefix_cache_*` exposes
+hybrid hit, miss, insertion, eviction and byte accounting with fixed labels
+(`route="hybrid",tier="device"`). Existing prefix-cache, computed-token,
+guarded-call fault and worker-respawn metrics remain available. JSON field names
+and authorization scopes are unchanged. Worker-step p50/p99 remain separate
+`memra_step_latency_p50_seconds` and `memra_step_latency_p99_seconds` gauges.
+
+On a fresh plain server, run `cache-meter-gate.py` with
+`--prometheus --promtool /path/to/promtool`. Optional `--api-key-file` and
+`--metrics-token-file` supply separate completion and operator credentials.
+This checks the cache closed form, token-volume histograms, capacity cleanup,
+label bounds, actual promtool parsing and JSON compatibility. `--raw-out` keeps
+the text scrape and validator output. `metrics-live-gate.py` adds native clean,
+queued, rejected and cancelled request checks. Raw local receipts also include
+an owned worker-panic control that interrupts a live stream after HTTP 200.
+
+The common HTTP outcome counters use registered backend labels; CPU protocol
+tests cover that binding, including a registered dedicated route. This does not
+qualify DSv4 native timing, allocation or host-cache integration. Those changes
+and their target-specific acceptance remain deferred outside the rig-only PR.
+#522 stays open. See `research/cache-metrics-20261002/issue522/ACCEPTANCE.md`.
+
 **`/health` == `/livez` — inference liveness, not process liveness.** The GPU worker is
 ONE `std::thread` owning the CUDA context. `/health` used to answer `{"status":"ok"}` off
 the axum task, so a worker panic or a wedged card left a permanently green health check in

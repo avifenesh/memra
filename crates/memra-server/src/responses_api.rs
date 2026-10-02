@@ -655,11 +655,17 @@ async fn responses_with_admission(
             );
         }
     };
-    // Captured from the RAW request before `translate` strips the field (memra#550): the
-    // door-open check here mirrors `translate`'s own gate exactly, so this can only be true
-    // when `translate` is about to accept `background: true` rather than refuse it below.
+    crate::http_metrics::bind_model(
+        parsed
+            .get("model")
+            .and_then(|m| m.as_str())
+            .and_then(|m| crate::canonical_model_id(&st.models, m)),
+    );
+    // Captured from the raw request before translation strips the field. Preserve
+    // background admission policy independently of its HTTP acknowledgement metrics.
     let background_requested =
         background_door_open() && parsed.get("background").and_then(|b| b.as_bool()) == Some(true);
+
     let translated = match translate(&parsed) {
         Ok(v) => v,
         Err((msg, param)) => {
@@ -1483,6 +1489,7 @@ fn responses_sse(
     stop_strings: Vec<String>,
     guard: Option<crate::InflightGuard>,
 ) -> Sse<impl futures_core::Stream<Item = Result<SseEvent, std::convert::Infallible>>> {
+    let http_observation = crate::http_metrics::current();
     let mut scrub = (!stop_strings.is_empty()).then(|| SurfaceScrubber::new(stop_strings.clone()));
     let stream = async_stream::stream! {
         let _guard = guard;
@@ -1640,6 +1647,7 @@ fn responses_sse(
         }
         macro_rules! stream_fault {
             ($code:expr, $message:expr) => {
+                if let Some(observation) = &http_observation { observation.failed(); }
                 yield Ok(frame(json!({
                     "type": "response.failed",
                     "response": response_json(&env, &model, "failed", &output, None,
@@ -1770,6 +1778,7 @@ fn responses_sse(
                     close_item!();
                     let _ = prompt_usage; // Done carries the authoritative counts
                     let usage = Some(usage_json(n_prompt, n_tokens, n_cached));
+                    if let Some(observation) = &http_observation { observation.terminal(); }
                     match incomplete_reason(&reason) {
                         Some(cut) => {
                             yield Ok(frame(json!({
@@ -1820,6 +1829,7 @@ fn responses_sse(
             }
         }
         if !terminal {
+            if let Some(observation) = &http_observation { observation.failed(); }
             // Channel closed without Done/Error: worker restart — OUR fault, settled
             // rejected with debit ZERO (fault-attribution ruling 2026-08-23; this used to
             // fall through to Drop and bill the partial stream as a client "abandon").
