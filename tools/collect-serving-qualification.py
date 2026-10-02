@@ -20,7 +20,7 @@ import threading
 import time
 import traceback
 
-from cache_qualification import capture_len
+from cache_qualification import capture_len, gdn_grid
 
 
 def digest(path):
@@ -198,9 +198,14 @@ def body(prompt=PROMPT, salt="qualification", maximum=64, **kwargs):
             "temperature": 0, "seed": 7, "cache_salt": salt, **kwargs}
 
 
+def server_capture_len(prompt_tokens):
+    # The child strips inherited MEMRA_* settings, including MEMRA_GDN_CHUNK.
+    return capture_len(prompt_tokens, gdn_grid({}))
+
+
 def cache_check(cold, warm):
     require(cold["cached_tokens"] == 0, "cold request restored cache")
-    require(warm["cached_tokens"] == capture_len(cold["prompt_tokens"]), "cache grid accounting differs")
+    require(warm["cached_tokens"] == server_capture_len(cold["prompt_tokens"]), "cache grid accounting differs")
     require(warm["cached_tokens"] > 0, "warm request did not restore cache")
     same_completion(cold, warm, "cold/warm")
 
@@ -281,7 +286,7 @@ def collect(args):
             cold, _ = req("cache-cold", body(salt="cache"))
             warm, _ = req("cache-warm", body(salt="cache"))
             cache_check(cold, warm)
-            return {"cold": cold, "warm": warm, "expected_cached": capture_len(cold["prompt_tokens"])}
+            return {"cold": cold, "warm": warm, "expected_cached": server_capture_len(cold["prompt_tokens"])}
         cell("cache", cache)
 
         def concurrency():

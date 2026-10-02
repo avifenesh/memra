@@ -73,6 +73,15 @@ class RefusalChecks(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "incorrectly accepted"):
             collector.rejected(lambda: collector.completion(response(), 64))
 
+    def test_parent_grid_override_does_not_change_child_grid_assertions(self):
+        document = response()
+        document["usage"].update(prompt_tokens=241, total_tokens=243)
+        cold = collector.completion(document, 64)
+        warm = {**cold, "cached_tokens": 224}
+        with mock.patch.dict(collector.os.environ, {"MEMRA_GDN_CHUNK": "64"}):
+            self.assertEqual(collector.server_capture_len(241), 224)
+            collector.cache_check(cold, warm)
+
     def test_transport_failure_preserves_partial_stream_and_request(self):
         first = b'data: {"choices":[{"text":"partial"}]}\n'
         connection = mock.Mock()
