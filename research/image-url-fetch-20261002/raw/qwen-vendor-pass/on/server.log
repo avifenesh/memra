@@ -1,0 +1,63 @@
+[server] build: memra-0.138.0-e2f0ee76610f (id: source-tree, git: a6138b306c82)
+[env-audit] warning: 3 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: MEMRA_CI_LOCK, MEMRA_CI_LOCK_HELD, MEMRA_RIG_LOCK_FD. Left alone: launchers and gate scripts own names outside the engine's families.
+[server] starting; models config = [("vision", "$MODEL_DIR/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "vision" <- $MODEL_DIR/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "vision": 65 layers, eos=248046, stop=[248046]
+[worker] vision: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="vision" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] vision: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[vision] tower loaded from $MODEL_DIR/q38-vision (27 blocks, out_width 5120, f32-resident)
+[vision] overlay intake: tower dev0 -> intake dev0 (cross_context=false) publish=Auto servable=true
+[admission] "vision": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+[prime-walk] model="vision" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[fa-pool] grow #0 dev=0 o_len 0 -> 399360 ml_len 0 -> 1560 (retired kept, zero=false)
+[spec] pre-capture pool trim: released 1792MB cached back to the driver (driver free 2931MB < required 3209MB; instantiate allocates from the driver)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[fa-pool] grow #1 dev=0 o_len 399360 -> 798720 ml_len 1560 -> 3120 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[spec] draft-session state high-water: 44MB (max of parked delta 44MB and capture-time pool peak 12MB; charged per spec admission and gating future captures)
+[fa-pool] grow #2 dev=0 o_len 798720 -> 1597440 ml_len 3120 -> 6240 (retired kept, zero=false)
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1275068416,"still_owned_bytes":19115559168,"pool_reserved_bytes":19293798400,"pool_cached_bytes":178239232,"driver_free_bytes":5456461824,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1216MB cached back to the driver
+[admit-cal] boot calibration done: model="vision" route=mtp transient floor 1536MB (static was 1536MB; measured 1044MB; probe kv charge 127MB, draft-state 44MB, drafted 63 accepted 42; [dev0 peak-mapped 19616MB rest-mapped 18400MB charged 171MB -> 1044MB]; 4.4s)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[server] worker ready; serving models: ["vision"]
+[server] listening on http://127.0.0.1:18133
+[meter] admit id=chatcmpl-a3b0ecf6940f7f3f4aeb19fb8d9809c8 tenant=default lane=interactive model="vision"
+[admission] per-session draft-state charge: model="vision" +46MB (measured capture high-water)
+[admission] request cost: model="vision" ctx=210 path=spec = 31552 B/token x ctx + 47MB prefill-workspace + 0MB fixed = 54MB
+[spec-k] model="vision" tenant="" K=0 source=eligibility-fallback prompt=98 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="vision" 308MB (observed 313MB at ctx 154 path=plain)
+[meter] admit id=chatcmpl-fa4c670e95fe6ff7302941692297897b tenant=default lane=interactive model="vision"
+[admission] per-session draft-state charge: model="vision" +46MB (measured capture high-water)
+[admission] request cost: model="vision" ctx=210 path=spec = 31552 B/token x ctx + 47MB prefill-workspace + 308MB fixed = 362MB
+[spec-k] model="vision" tenant="" K=0 source=eligibility-fallback prompt=98 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-46d563f740782209b56dbc4d3b2e78a9 tenant=default lane=interactive model="vision"
+[spec-k] model="vision" tenant="" K=0 source=eligibility-fallback prompt=98 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=resp_4d8c9aa8ef2c6ed8a860031ad8965baa tenant=default lane=interactive model="vision"
+[spec-k] model="vision" tenant="" K=0 source=eligibility-fallback prompt=98 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-f412d88395e7ee33cc8dd57e5c76b3ba tenant=default lane=interactive model="vision"
+[spec-k] model="vision" tenant="" K=0 source=eligibility-fallback prompt=98 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-59ff0790d0097a73e6b8389d986c177f tenant=default lane=interactive model="vision"
+[spec-k] model="vision" tenant="" K=0 source=eligibility-fallback prompt=98 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-811999f2456a8c6acc4918f6f7bdc284 tenant=default lane=interactive model="vision"
+[admission] per-session draft-state charge: model="vision" +46MB (measured capture high-water)
+[admission] request cost: model="vision" ctx=2112 path=spec = 31552 B/token x ctx + 66MB prefill-workspace + 308MB fixed = 441MB
+[spec-k] model="vision" tenant="" K=0 source=eligibility-fallback prompt=138 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="vision" 312MB (observed 373MB at ctx 2048 path=plain)
+[meter] admit id=resp_b2a50c79d4f494b39bd42198f777432e tenant=default lane=interactive model="vision"
+[admission] per-session draft-state charge: model="vision" +46MB (measured capture high-water)
+[admission] request cost: model="vision" ctx=2112 path=spec = 31552 B/token x ctx + 66MB prefill-workspace + 312MB fixed = 444MB
+[spec-k] model="vision" tenant="" K=0 source=eligibility-fallback prompt=138 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2

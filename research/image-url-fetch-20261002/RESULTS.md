@@ -46,7 +46,7 @@ selected from cached assets and the existing vision path; no model code changed.
 | Failure mapping | Unsupported MIME, non-success HTTP status and a truncated body return `image_url_unreachable`. |
 | Deadlines | Per-image refusal at 10.004 s, caller's one-second deadline at 1.003 s, and the multi-image pass at 20.002 s. Every failure is a named 400. |
 
-The ON arm contains 24 HTTP cases, including six successful native image generations.
+The first passing ON arm contains 24 HTTP cases, including six successful native image generations.
 The OFF arm adds one successful inline generation and two remote refusals. All raw
 responses, elapsed times, fixture hits, server logs and fixture pixels are retained.
 `verify.py` rechecks the persisted verdicts without starting a model.
@@ -82,3 +82,15 @@ Local artifact-directory prefixes and the device UUID are normalized in public
 copies. Device identity remains hash-bound. Request/result bytes, errors, counts and
 timings are unchanged. Original queue and native receipts remain in the private dated
 archive.
+
+## Mandatory vendor-default requests
+
+A final fresh OFF/ON cell at collector source
+`b6d1fe685b5451720765932c22b6027ff1cc7821` repeated the complete fixture on the same
+runtime binary and added bare requests on both APIs. Their exact saved JSON contains
+only `model` plus `messages` or `input`: no token budget, temperature, sampling,
+reasoning or other decode field. Both completed with the correct red image answer.
+The final ON arm has 26 HTTP cases and eight successful native generations; all
+prior controls passed again. The OFF arm remains one inline generation and two
+remote refusals. Evidence: `raw/qwen-vendor-pass/`, including the two request files,
+HTTP responses and server path-engagement log.
