@@ -11904,6 +11904,13 @@ fn blocking_payload(
                           "finish_reason": finish }],
             "usage": usage_json(n_prompt, n_tokens, n_cached, elapsed_s, spec)
         });
+        if output.is_some() {
+            body["status"] = json!(if stop_reason_to_finish(&stop_reason) == "length" {
+                "incomplete"
+            } else {
+                "completed"
+            });
+        }
         if let Some(err) = deadline_error {
             body["choices"][0]["native_finish_reason"] = err
                 .get("code")
@@ -25213,6 +25220,57 @@ temperature = 0.6
                     code: "engine_error".into()
                 }]
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn background_chat_text_tool_call_budget_cut_keeps_incomplete_status() {
+        let env = Envelope::new(true);
+        let store = Arc::new(job_store::InMemoryJobStore::new(
+            std::time::Duration::from_secs(60),
+            65536,
+        ));
+        store.put("job", metering::JobRecord::queued()).unwrap();
+        let (publication, _) = job_publication::Publication::new(store, "job".into(), None);
+        for background in [false, true] {
+            let body = body_value(blocking_payload(
+                BlockingPayload {
+                    env: &env,
+                    model: "bg914".into(),
+                    chat: true,
+                    finish: "tool_calls",
+                    text: String::new(),
+                    reasoning: String::new(),
+                    calls: vec![ParsedToolCall {
+                        id: "call-1".into(),
+                        name: "weather".into(),
+                        arguments: "{}".into(),
+                    }],
+                    tokens: vec![7, 8],
+                    stop_reason: "Length".into(),
+                    n_prompt: 3,
+                    n_tokens: 2,
+                    n_cached: 1,
+                    elapsed_s: 1.0,
+                    spec: None,
+                    deadline_error: None,
+                },
+                background.then_some(&publication),
+            ))
+            .await;
+            assert_eq!(body["choices"][0]["finish_reason"], "tool_calls");
+            assert_eq!(
+                body["choices"][0]["message"]["tool_calls"][0]["function"]["name"],
+                "weather"
+            );
+            if background {
+                assert_eq!(body["status"], "incomplete");
+            } else {
+                assert!(
+                    body.get("status").is_none(),
+                    "synchronous native envelope stays unchanged"
+                );
+            }
         }
     }
 

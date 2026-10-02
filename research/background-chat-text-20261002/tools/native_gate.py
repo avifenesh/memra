@@ -193,6 +193,7 @@ def main(args):
                     status,ack,id,_=server.request('POST',path,short_body(chat,True));require(status==200 and ack['status']=='queued','background acknowledgement failed')
                     result=server.result(id);verify_receipt(result,server.event(server.receipts,id),chat,'complete')
                     require(content(sync,chat)==content(result,chat) and usage(sync)==usage(result),'sync/background result identity failed')
+                    if not chat and compat=='native':require(sync['tokens']==result['tokens'],'native token identities differ from synchronous reference')
                     for method,suffix in [('GET',''),('POST','/cancel')]:
                         require(server.request(method,'/v1/jobs/'+id+suffix,key='foreign')[0]==404,'foreign terminal ownership leak')
                     require(server.request('POST','/v1/jobs/'+id+'/cancel')[0]==409,'terminal cancel was not refused')
@@ -218,13 +219,15 @@ def main(args):
             else:body['prompt']='Write a JSON array containing exactly 600 copies of this string, without abbreviating or skipping any copy: '+json.dumps(PHRASE)+'. Return only the array. Start now: ['
             # Streaming is the independent complete-result path, outside background delivery.
             status,golden,gid,_=server.request('POST',path,{**body,'stream':True},timeout=1000,stream=True);require(status==200,'streaming reference failed')
-            server.event(server.receipts,gid)
+            golden_rows=server.event(server.receipts,gid)
+            require(len(golden_rows)==1 and golden_rows[0]['outcome']=='complete','streaming reference accounting failed')
             status,ack,id,started=server.request('POST',path,{**body,'background':True});require(status==200 and ack['status']=='queued','long acknowledgement failed')
             require(time.monotonic()-started<30,'queued acknowledgement took synchronous-length time')
             for method,suffix in [('GET',''),('POST','/cancel')]:require(server.request(method,'/v1/jobs/'+id+suffix,key='foreign')[0]==404,'foreign running ownership leak')
             result=server.result(id);rows=server.event(server.receipts,id)
             verify_receipt(result,rows,chat,'complete')
             verify_deadline(started,rows)
+            require(usage(result)=={k:golden_rows[0][k] for k in usage(result)},'long stream/background worker-truth usage differs')
             require(content(result,chat)==golden['text'],'stored result differs from independent streaming reference')
             require(server.request('GET','/v1/jobs/'+id,key='rotated')[1]==result,'terminal result changed')
             if chat:require(json.loads(content(result,True))==[PHRASE]*600,'accepted long schema result was not preserved')
@@ -233,6 +236,7 @@ def main(args):
             status,ack,cid,_=server.request('POST',path,{**body,'background':True});require(status==200,'cancel submission failed')
             progress=server.event(server.progress,cid,timeout=120);verify_progress(cid,progress)
             status,cancelled,_,_=server.request('POST','/v1/jobs/'+cid+'/cancel');require(status==200 and cancelled['status']=='cancelled','live cancel did not settle')
+            require(cancelled.get('error',{}).get('code')=='cancelled','cancel partial lost its explicit error')
             server.event(server.stored,cid);verify_receipt(cancelled,server.event(server.receipts,cid),chat,'cancel_partial')
             require(usage(cancelled)['completion_tokens']>=32,'cancel ran before observed native progress')
             require(content(result,chat).startswith(content(cancelled,chat)),'cancel lost original generated prefix')

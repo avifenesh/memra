@@ -214,7 +214,9 @@ pub(crate) async fn submit(
                     JobStatus::Cancelled
                 } else if failed {
                     JobStatus::Failed
-                } else if finish == Some("length") {
+                } else if finish == Some("length")
+                    || body.get("status").and_then(Value::as_str) == Some("incomplete")
+                {
                     JobStatus::Incomplete
                 } else {
                     JobStatus::Completed
