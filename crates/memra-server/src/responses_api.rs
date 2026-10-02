@@ -146,13 +146,9 @@ pub(crate) fn translate(v: &Value) -> Result<Value, (String, Option<String>)> {
 /// server already owns this one request; the only ask is where its own result is held until
 /// collected) and is refused only while the door is closed.
 ///
-/// With the door open, `background: true` is accepted by this translation step: the field
-/// passes validation and is not carried into the internal chat request (the same
-/// accepted-and-ignored treatment already given to `include`, `parallel_tool_calls`, and
-/// friends). Accepting it here is NOT the same as delivering it: no route yet creates a
-/// queued job, polls one, or cancels one in flight for this field. That wiring is still owed
-/// (memra#550); until it lands, a request that sets `background: true` with the door open
-/// runs exactly like one that never set it, translated and served synchronously.
+/// With the door open, `background: true` is accepted by this translation step. The
+/// caller reads the delivery mode before translation and sends the admitted worker stream
+/// to the background task. Cross-request conversation state remains refused.
 fn translate_with_door(
     v: &Value,
     background_door_open: bool,

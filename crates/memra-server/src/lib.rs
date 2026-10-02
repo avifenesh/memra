@@ -2072,9 +2072,9 @@ struct AppState {
     /// Background job buffered-output store (memra#550,
     /// `docs/decisions/COMPLETE-RESULT-PATH-V1.md`). Always present, the same way `metrics`
     /// always exists: the stock binary wires the in-memory reference implementation
-    /// (`job_store::InMemoryJobStore::from_env`). A deployment that needs a job to survive a
-    /// restart or a store shared across replicas has no wiring hook for that yet (unlike
-    /// `metering`, this is not deployment-pluggable today; owed follow-up). Only reachable
+    /// (`job_store::InMemoryJobStore::from_env`). A deployment can replace it through
+    /// `ServerWiring::with_job_store`. Stored keys include authenticated tenant ownership.
+    /// Only reachable
     /// when MEMRA_BACKGROUND_RESPONSES is on: with the door closed, `responses_api::translate`
     /// refuses `background: true` before any handler touches this.
     job_store: Arc<dyn metering::JobStore>,

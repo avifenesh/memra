@@ -48,17 +48,18 @@ receive its complete output without holding one HTTP connection open for the ent
   remember nothing about any other request. Splitting this refusal into two is the core
   move of this design.
 
-## Contract (frozen shape, not yet built)
+## Contract and implementation scope
 
-1. **Opt-in per request, not a global mode.** On any generation surface, `background:
-   true` selects this delivery mode. `stream: true` and `background: true` together is a
+1. **Opt-in per request, not a global mode.** On `/v1/responses`, `background:
+   true` selects this delivery mode. Chat and text completion delivery remains a
+   separate follow-up #914. `stream: true` and `background: true` together is a
    400: background exists so the caller does not have to hold a connection open, and
    streaming is the mode that keeps one open, so combining them is a contradiction, not a
    feature.
-2. **Admission is unchanged.** Budget, capacity, and deadline-feasibility gates run
-   exactly as they do for a synchronous request. `timeout_ms` stops bounding total wall
-   time and instead becomes the polled status object's own field (see 3): background is a
-   delivery-mode switch on the existing pipeline, not a second pipeline.
+2. **Normal admission with a background deadline policy.** Authentication, budget,
+   capacity, queue and model limits still apply. Background delivery bypasses the
+   synchronous deadline-feasibility gate and does not set a wire deadline.
+   `timeout_ms` does not bound background generation or become a status field.
 3. **Immediate response.** Once the worker is admitted, the handler returns the same
    Responses-vocabulary envelope already implemented (`responses_api.rs:484`-`536`) with
    `status: "queued"` and no `output`, plus the request id. No new object shape on the
@@ -165,14 +166,16 @@ rather than hardwiring storage into the handler:
    produced, `settle_unbilled("cancelled", ...)` with none) when the cancel signal fires,
    then writes the one terminal `JobStore` row. Chat-dialect job polling (the `GET
    /v1/jobs/{id}` shape named in the Contract section's point 4, above) is NOT built;
-   only `/v1/responses` is wired. Poll and cancel have no per-tenant ownership check on
-   the job id yet.
+   only `/v1/responses` is wired. Poll and cancel use authenticated tenant-scoped
+   storage keys. Deployment binaries can inject their store with
+   `ServerWiring::with_job_store`. Shared results do not transfer live cancellation
+   across processes; that routing remains deployment-owned.
 2. DONE (PR #905): `MEMRA_BACKGROUND_RESPONSES`, `MEMRA_BACKGROUND_JOB_TTL_SECS`, and
    `MEMRA_BACKGROUND_JOB_MAX_BYTES`, all in `docs/FLAGS.md`.
 3. A box run: a real generation submitted with `background: true` that legitimately
    exceeds 90 s, polled through to completion; a second one cancelled mid-generation; and
-   a terminal usage row inspected in the ledger for both. Requires a GPU box; not
-   runnable in this CPU-only lane. Still owed.
+   a terminal usage row inspected in the ledger for both. The local endpoint run is tracked in the PR receipt;
+   this does not qualify another model or hardware target.
 4. An owner decision on the in-memory `JobStore`'s default TTL and default max resident
    bytes. PR #905 shipped conservative placeholders (900 s, 64 MiB), both
    env-configurable and explicitly not measured numbers; the owner may change either
