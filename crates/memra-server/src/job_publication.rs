@@ -134,7 +134,7 @@ impl Publication {
         } else {
             "background_job_store_unavailable"
         };
-        let mut state = self.settlement.lock().unwrap();
+        let mut state = self.settlement.lock().unwrap_or_else(|e| e.into_inner());
         state.pending = None;
         if !state.settled {
             if let Some(receipt) = state.receipt.as_mut() {
@@ -161,7 +161,7 @@ impl Publication {
             }
         }
         let result = self.store.publish_terminal(&self.key, record, &mut || {
-            let mut state = self.settlement.lock().unwrap();
+            let mut state = self.settlement.lock().unwrap_or_else(|e| e.into_inner());
             if state.settled {
                 return Ok(());
             }
@@ -180,7 +180,7 @@ impl Publication {
         });
         if let Err(error) = &result {
             if *error == JobStoreError::SettlementFailed {
-                let mut state = self.settlement.lock().unwrap();
+                let mut state = self.settlement.lock().unwrap_or_else(|e| e.into_inner());
                 if let Some(receipt) = state.receipt.as_mut() {
                     let _ = receipt.reject(500, "request_ledger_unavailable");
                 }
@@ -264,29 +264,61 @@ impl Receipt for DeferredReceipt {
             .is_some_and(|r| r.wants_capture())
     }
     fn arm_capture(&mut self, prompt: serde_json::Value) {
-        if let Some(r) = self.0.settlement.lock().unwrap().receipt.as_mut() {
+        if let Some(r) = self
+            .0
+            .settlement
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .receipt
+            .as_mut()
+        {
             r.arm_capture(prompt);
         }
     }
     fn capture_completion_delta(&mut self, text: &str) {
-        if let Some(r) = self.0.settlement.lock().unwrap().receipt.as_mut() {
+        if let Some(r) = self
+            .0
+            .settlement
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .receipt
+            .as_mut()
+        {
             r.capture_completion_delta(text);
         }
     }
     fn record_prompt_usage(&mut self, prompt: u64, cached: u64) -> Result<(), String> {
-        match self.0.settlement.lock().unwrap().receipt.as_mut() {
+        match self
+            .0
+            .settlement
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .receipt
+            .as_mut()
+        {
             Some(r) => r.record_prompt_usage(prompt, cached),
             None => Ok(()),
         }
     }
     fn record_completion_token(&mut self) -> Result<(), String> {
-        match self.0.settlement.lock().unwrap().receipt.as_mut() {
+        match self
+            .0
+            .settlement
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .receipt
+            .as_mut()
+        {
             Some(r) => r.record_completion_token(),
             None => Ok(()),
         }
     }
     fn complete(&mut self, usage: UsageCounts, elapsed: f64) -> Result<(), String> {
-        self.0.settlement.lock().unwrap().pending = Some(Pending::Complete(usage, elapsed));
+        self.0
+            .settlement
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .pending = Some(Pending::Complete(usage, elapsed));
         Ok(())
     }
     fn complete_deadline_partial(
@@ -294,11 +326,15 @@ impl Receipt for DeferredReceipt {
         usage: UsageCounts,
         elapsed: f64,
     ) -> Result<(), String> {
-        self.0.settlement.lock().unwrap().pending = Some(Pending::Partial(usage, elapsed));
+        self.0
+            .settlement
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .pending = Some(Pending::Partial(usage, elapsed));
         Ok(())
     }
     fn reject(&mut self, status: u16, code: &str) -> Result<(), String> {
-        let mut state = self.0.settlement.lock().unwrap();
+        let mut state = self.0.settlement.lock().unwrap_or_else(|e| e.into_inner());
         if state.settled {
             return Ok(());
         }
@@ -318,7 +354,7 @@ impl Receipt for DeferredReceipt {
         status: u16,
         code: &str,
     ) -> Result<(), String> {
-        let mut state = self.0.settlement.lock().unwrap();
+        let mut state = self.0.settlement.lock().unwrap_or_else(|e| e.into_inner());
         if state.settled {
             return Ok(());
         }
@@ -331,5 +367,54 @@ impl Receipt for DeferredReceipt {
             state.settled = true;
         }
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::job_store::InMemoryJobStore;
+    use std::time::Duration;
+
+    #[test]
+    fn incremental_output_cannot_retain_an_over_cap_delta_or_snapshot() {
+        let store = Arc::new(InMemoryJobStore::new(Duration::from_secs(60), 1024));
+        store.put("job", JobRecord::queued()).unwrap();
+        let (publication, _) = Publication::new(store.clone(), "job".into(), None);
+        publication.reserve_delta("hello", 1).unwrap();
+        assert_eq!(publication.body_limit(), 704);
+        assert_eq!(
+            publication.reserve_delta(&"x".repeat(1000), 1),
+            Err(JobStoreError::CapacityExceeded)
+        );
+        assert_eq!(
+            publication.body_limit(),
+            704,
+            "refused bytes were never retained"
+        );
+        assert_eq!(
+            publication.reserve_snapshot(1000),
+            Err(JobStoreError::CapacityExceeded)
+        );
+        assert_eq!(publication.body_limit(), 704);
+        assert!(store.get("job").unwrap().output.is_none());
+    }
+
+    #[test]
+    fn encoding_reserves_escaped_size_before_allocating_the_body() {
+        let store = Arc::new(InMemoryJobStore::new(Duration::from_secs(60), 1024));
+        store.put("job", JobRecord::queued()).unwrap();
+        let (publication, _) = Publication::new(store, "job".into(), None);
+        let encoded = publication
+            .encode(&serde_json::json!({"text":"hello"}))
+            .unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&encoded).unwrap()["text"],
+            "hello"
+        );
+        assert_eq!(
+            publication.encode(&"\u{0000}".repeat(100)),
+            Err(JobStoreError::CapacityExceeded)
+        );
     }
 }

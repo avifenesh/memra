@@ -24171,6 +24171,8 @@ temperature = 0.6
         let h = health.clone();
         let worker_saw_cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let worker_saw_cancel2 = worker_saw_cancel.clone();
+        let cancelled = Arc::new(tokio::sync::Notify::new());
+        let cancelled2 = cancelled.clone();
         std::thread::spawn(move || {
             h.mark_ready();
             while let Ok(Cmd::Generate(req)) = cmd_rx.recv() {
@@ -24187,13 +24189,12 @@ temperature = 0.6
                 // Never sends Done: this job is cancelled before the worker would finish.
                 // The cancel signal is `rx` being dropped on the consumer side; this loop
                 // proves it happened by watching the sender's own channel close.
-                for _ in 0..5_000 {
-                    if req.tx.is_closed() {
-                        worker_saw_cancel2.store(true, std::sync::atomic::Ordering::SeqCst);
-                        break;
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(1));
-                }
+                tokio::runtime::Builder::new_current_thread()
+                    .build()
+                    .unwrap()
+                    .block_on(req.tx.closed());
+                worker_saw_cancel2.store(true, std::sync::atomic::Ordering::SeqCst);
+                cancelled2.notify_one();
             }
         });
         for _ in 0..2_000 {
@@ -24239,6 +24240,9 @@ temperature = 0.6
             "the partial output actually produced must be preserved, never dropped: {cb}"
         );
 
+        tokio::time::timeout(std::time::Duration::from_secs(1), cancelled.notified())
+            .await
+            .unwrap();
         assert!(
             worker_saw_cancel.load(std::sync::atomic::Ordering::SeqCst),
             "the worker must observe its event channel close: cancel did not stop generation"

@@ -49071,7 +49071,7 @@ mod tests {
             "the refusal logs a joined receipt line"
         );
         // The deadline is stamped at every handler submission seam beside the receipt
-        // identity: the two lib.rs handlers unconditionally, plus the shared surfaces
+        // identity: the two lib.rs handlers for synchronous requests, plus the shared surfaces
         // body.
         let lib_stripped: String = include_str!("lib.rs")
             .lines()
@@ -49080,10 +49080,10 @@ mod tests {
             .join("\n");
         assert_eq!(
             lib_stripped
-                .matches("wire_deadline = Some(deadline.at.into_std());")
+                .matches("wire_deadline = if background {\n        None\n    } else {\n        Some(deadline.at.into_std())\n    };")
                 .count(),
             2,
-            "every handler submission stamps the wire deadline"
+            "both handlers stamp the synchronous deadline and exempt background delivery"
         );
         // surfaces.rs's stamp (memra#550, docs/decisions/COMPLETE-RESULT-PATH-V1.md) is
         // conditional on `background`: a background delivery submission leaves this
