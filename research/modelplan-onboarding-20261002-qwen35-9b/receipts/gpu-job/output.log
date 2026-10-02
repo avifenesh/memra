@@ -1,0 +1,20 @@
+WAITING canonical GPU lock /tmp/memra-5090.lock
+ACQUIRED canonical GPU lock on inherited FD9
+uuid, name, memory.total [MiB], memory.free [MiB], driver_version
+GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, NVIDIA GeForce RTX 5090 Laptop GPU, 24463 MiB, 23899 MiB, 595.91.07
+
+target/release/memra: OK
+target/release/memra-server: OK
+target/release/run-spec: OK
+target/release/run-gen: OK
+/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf: OK
+streaming: passed
+cache: passed
+concurrency: passed
+cancellation: passed
+long_context: passed
+          Finished with result: success
+Main processes terminated with: code=exited, status=0/SUCCESS
+               Service runtime: 29.910s
+             CPU time consumed: 28.524s
+                   Memory peak: 6.7G (swap: 0B)
