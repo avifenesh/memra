@@ -191,10 +191,9 @@ pub type MeteringFactory = Box<
 // purpose, same reasoning: what "hold this job" means (in-process map, a shared store behind
 // a router, a database row) is a deployment decision, not a decision this crate makes for it.
 //
-// This trait and its stock in-memory implementation (`crate::job_store::InMemoryJobStore`)
-// exist and are tested by this change. They are NOT yet wired to a live generation: no route
-// creates a job, polls it through a running worker, or cancels one in flight. That wiring, and
-// a real over-90s background generation run against a GPU box, are still owed (memra#550).
+// Responses routes use this trait for tenant-scoped background result delivery. The stock
+// implementation is `crate::job_store::InMemoryJobStore`; deployment binaries can replace
+// it through `ServerWiring::with_job_store`. See docs/SERVING.md for the supported scope.
 
 /// Terminal and non-terminal states one background job can be in. Named to match the census
 /// vocabulary the design doc uses for the synchronous path (`docs/SERVING.md`): `Completed`
@@ -273,6 +272,9 @@ pub enum JobStoreError {
 /// The stock implementation makes no promise beyond one process's own lifetime, matching the
 /// existing statelessness claim in `docs/API-SURFACES.md`: this buffers one in-flight
 /// request's own output, never a CONVERSATION, and only until collected or expired.
+/// Server routes pass opaque tenant-scoped keys, not public response ids. Implementations
+/// must preserve the complete key. A shared store does not transfer a live generation or
+/// cancellation handle to another process; deployments must route cancellation to its owner.
 pub trait JobStore: Send + Sync {
     /// Insert or update a job's record. A brand-new id may only be admitted as `Queued`
     /// (`Err(NotFound)` for any other status on an id the store does not already hold): a

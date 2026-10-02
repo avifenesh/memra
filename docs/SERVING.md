@@ -1102,6 +1102,53 @@ response you abandon is billed for what was generated.* A client that walks away
 mid-stream after receiving tokens is the existing `abandoned` path — user fault, partial
 billed. Everything that is OUR fault bills zero (the census below).
 
+### Background delivery for long non-streaming requests (`background: true`)
+
+`MEMRA_BACKGROUND_RESPONSES` (default OFF) enables background delivery on
+`POST /v1/responses`. Set `background: true` and omit `stream` or set it to false.
+The response returns a `queued` envelope with an id. Poll `GET /v1/responses/{id}`
+for the original output. Terminal states are `completed`, `incomplete`, `cancelled`
+and `failed`; an output-token or context limit remains an explicit incomplete result.
+
+Background requests keep normal authentication, budget, capacity, queue and model
+limits. They bypass synchronous deadline feasibility and have no wire deadline or
+90-second wall-clock limit. `timeout_ms` does not limit background generation.
+`stream: true` together with `background: true` is a 400. The default-OFF control
+still refuses background requests before job creation.
+
+Poll and cancel resolve the authenticated tenant on every request. A different tenant
+gets the same 404 as an unknown or expired id, including after the job finishes.
+Keys for the same tenant share access. The open-server and single-key modes retain
+their existing `default` tenant. Storage keys are opaque, length-prefixed tenant/id
+pairs; clients continue to use the public response id.
+
+`POST /v1/responses/{id}/cancel` signals the owning task, which closes its worker
+channel and preserves the produced partial output. A terminal job returns 409.
+The task settles one receipt: `complete` for a normal finish,
+`complete_deadline_partial` for cancellation after tokens, or the named unbilled
+`cancelled` callback before tokens. A deployment owns pricing. Ledger failures and
+worker errors remain failures rather than successful empty responses.
+
+The stock result store is in-memory and process-local. Terminal results expire after
+`MEMRA_BACKGROUND_JOB_TTL_SECS` (default 900 seconds). The approximate resident cap
+is `MEMRA_BACKGROUND_JOB_MAX_BYTES` (default 64 MiB). Each admitted record reserves
+at least 256 bytes, enough for the fixed terminal storage-failure record. If a final
+output exceeds the available cap, polling reports failure; accounting may already
+have settled, so this is not a promise of a refund. The TTL starts at terminal state,
+not submission. Polls do not consume results.
+
+Deployment binaries can pass their own `Arc<dyn JobStore>` through
+`ServerWiring::stock().with_job_store(store)` or combine it with `with_metering`.
+A custom store must retain the complete opaque key and implement the documented
+terminal-write and capacity semantics. Shared durable results do not transfer a
+live worker or its cancellation signal. Route in-flight cancellation to the process
+that owns generation; restart recovery is deployment-owned.
+
+The initial implementation covers the Responses dialect only. The design's
+`/v1/jobs/{id}` routes and background delivery for `/v1/chat/completions` and
+`/v1/completions` remain a separate follow-up #914. Clients needing this mode
+must use `/v1/responses`. No model support state or serving default changes here.
+
 ### Fault attribution: which outcomes may bill
 
 Every request ends with exactly one ledger `outcome`, and only the outcomes in
