@@ -3,6 +3,8 @@
 What runs, on which path, on which card. The README links to one concise
 [card per model](models/); this file remains the complete support matrix and reasoning.
 
+Work admission follows the [project scope](../README.md#project-status). Support records below remain unchanged.
+
 The generated support table at the bottom is written by `tools/update-perf-board.py` from
 `research/tune-data/current-board.json` — edit the board, not this file.
 
@@ -22,7 +24,7 @@ source. memra repacks those tensors once into measured rig-native layouts; safet
 internal compute format. GGUF remains a fully supported, self-contained portable import and
 distribution format.
 
-**safetensors is the tuned path from here on.** New work goes there — NVFP4 and FP8 trunks,
+**safetensors remains the preferred path for admitted native work.** This covers NVFP4 and FP8 trunks,
 with load-time head trimming instead of a separate pre-trimmed draft file.
 
 **GGUF stays supported.** Many models are served through it today and those paths are not going
@@ -34,9 +36,9 @@ the tuned path.
 Where each family actually sits right now:
 
 Supported on both paths means both, and where the tuning is happening is a separate
-question from what is supported:
+question from what is supported. The last recorded tuning directions are retained below:
 
-| Family | Supported on | Tuning now |
+| Family | Supported on | Recorded tuning direction |
 |---|---|---|
 | Qwen3.8-27B | **both**, both tuned — safetensors NVFP4 and NVFP4+Q5_K GGUF | done. Performance defaults stay artifact-specific |
 | Gemma-4 31B | **GGUF** (QAT Q4_0), supported and tuned | NVFP4 safetensors |
@@ -52,12 +54,12 @@ Nothing above is a roadmap. It is where the code is, and it changes by decision.
 from one path to another does not retire the old one: when a model is supported on both, both
 keep working.
 
-### In progress
+### Unfinished native work
 
 Whisper large-v3 has a [native speech plan and metadata pack skeleton](../ASR-MODALITY-PLAN.md).
 The source census is bound, and native CPU mel and encoder stages have passed a 2-second
 HF oracle gate in their documented numeric classes. The complete speech program has no native
-support state. Decoder policy and FastConformer/RNNT remain in progress; neither path is
+support state. Decoder policy and FastConformer/RNNT remain unfinished; neither path is
 admitted for serving.
 
 The speech capability as a program, which families are in scope, what each support state means
@@ -65,16 +67,14 @@ for a speech model, the repeatable onboarding path for a new one, the gate set a
 performance thesis with its kill criteria, is [docs/SPEECH.md](SPEECH.md). There is no GPU
 execution path and no audio endpoint yet, so no speech model has a speed number of any kind.
 
-Tensor parallel, P2P and 3-stage pipeline parallel are being built now and are close, which is
-exactly why they are named here as unfinished rather than listed as features. When each one has
-its gates it moves into the table.
+Tensor parallel, P2P and 3-stage pipeline parallel were recorded here as unfinished. This record
+does not schedule their completion; any support change still requires its applicable gates.
 
 ### Which models should be next?
 
-This is an engine anyone can run, and the support list is a series of decisions rather than a
-plan — so the most useful thing a reader can send is which model they want served, and on what
-card. Open an issue or a discussion. Requests with a concrete checkpoint and a reason carry more
-weight than a wishlist, and they are read.
+There is no next-model roadmap during the pause. An issue may propose a concrete research
+question with a checkpoint, target card, baseline, and reason to use Memra. Such a proposal does
+not create a support commitment; admitted work follows the project scope above.
 
 - **RTX PRO 6000 Blackwell (`sm_120a`) — co-primary target.** Workstation and Server Edition, 96 GB.
   Carries verification, final tuning, and serving, single-card and as PP-2 pairs.

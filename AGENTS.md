@@ -32,12 +32,18 @@ Do not make local RTX 5090 evidence a blocking release gate for Step-3.7 multi-c
 Feature and research work MUST happen on a dedicated branch/worktree, never directly on `main`.
 Preserve unrelated dirty work and stage only the intended lane.
 
+## Current scope
+
+Follow the [project status](README.md#project-status). General development and routine
+bring-ups are paused; older plans do not authorize new work or spending.
+
 ## Model onboarding: compile a native plan, not a new engine path (owner call 2026-08-22)
 
-Memra is the only runtime engine. External implementations may be read and may produce pinned,
-offline correctness-oracle captures, but they are never runtime dependencies, compatibility
-backends, serving fallbacks, or a way to claim support. Unknown math remains unsupported until it
-is implemented and qualified natively in Memra.
+For an admitted Memra experiment, the engine's own support claims require native implementation
+and qualification. External engines may run experiments, baselines, or pinned correctness-oracle
+captures. Their results do not establish Memra support, and an external fallback must not be
+presented as a native capability. Unknown math remains unsupported in Memra until implemented
+and qualified here.
 
 The model-onboarding structure is authoritative:
 
@@ -68,7 +74,7 @@ state named in the docs must match a record in `docs/support-records.toml`
 tracked gate receipts in the same PR. "Loads", "shares an architecture
 name", and "works through another engine" are not support states.
 
-### Bring up a model from now on
+### Procedure for an admitted native model experiment
 
 1. Start from an immutable artifact (`hf-id@40-character-revision` or a local artifact plus its
    byte manifest) in an isolated owner/worktree/branch/receipt namespace.
@@ -447,11 +453,12 @@ Consequences for how we work:
 
 ## Additional accelerator backends
 
-Blackwell remains memra's primary optimized target. When research or deployment needs another
-accelerator, prefer an explicitly gated memra backend over changing the model or quantization
-artifact. Secondary backends must preserve the model bytes, default off at build time, document
-disabled target-specific kernels, and pass a same-prompt golden-output gate before producing
-scored evidence. They do not change the naked sm_120a build or its performance defaults.
+Blackwell remains memra's primary optimized target. When an admitted experiment needs another
+accelerator, choose its runtime under the project status above; a new Memra backend is not the
+default requirement. Any admitted secondary backend must preserve the model bytes, default off
+at build time, document disabled target-specific kernels, and pass a same-prompt golden-output
+gate before producing scored evidence. They do not change the naked sm_120a build or its
+performance defaults.
 
 ### The sm_90a (Hopper/H100) lane — merged into main 2026-07-30
 

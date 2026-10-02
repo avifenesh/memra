@@ -7,6 +7,13 @@
 
 Rust + CUDA LLM inference engine for Blackwell (Tuned specifically on RTX PRO 6000, RTX 5090, B200): OpenAI-compatible (+converse and ant) serving, per-model X hardware exactness gates. NVFP4/mixed (fp8 hybrid, 4o6, etc - correctness, performance, hardware specific adapted) main quant support.
 
+## Project status
+
+General engine development and routine model bring-ups are paused. Work is limited
+to specific research questions with an owner, baseline, authorized budget and stopping
+criteria, plus maintenance required by existing commitments. Choose the runtime for
+the question; results need no automatic Memra port. Existing qualification rules apply.
+
 [Install](docs/INSTALLATION.md) · [Models](docs/MODELS.md) ·
 [Serving](docs/SERVING.md) · [Performance](docs/PERFORMANCE.md) ·
 [Hosted API](https://inference.tiyuvta.ai/model?c=github-memra-readme)
@@ -62,7 +69,9 @@ or one default supports everything. A fast path is promoted only when its own co
 performance evidence is current.
 
 The project favors explicit support, reproducible receipts, and useful failures over silent
-fallbacks. Issues, model requests, hardware reports, and evidence-backed pull requests are welcome.
+fallbacks. Research uses the runtime that best fits the question, including established engines
+or offline harnesses. A result need not be ported into Memra. Issues, hardware reports, and
+evidence-backed pull requests within the current research scope are welcome.
 Look elsewhere if you need broad hardware coverage, a large architecture catalog, or a Python
 library embedded in your application.
 
@@ -191,7 +200,8 @@ Issues and requests are welcome:
 - [Report a vulnerability privately](SECURITY.md)
 
 For a model request, include the exact checkpoint, quantization, target GPU, and why the model is
-useful. For a performance report, include the command, model artifact, hardware, and raw output.
+useful. Requests do not create a bring-up commitment while general development is paused.
+For a performance report, include the command, model artifact, hardware, and raw output.
 
 ## Contributing
 
