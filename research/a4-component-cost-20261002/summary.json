@@ -1,0 +1,905 @@
+{
+  "schema": "a4-component-cost-v1",
+  "measurement_scope": "Resident real weights and synthetic activations; quantization plus GEMM; no model quality or wall-prefill claim",
+  "samples": 600,
+  "rounds_per_arm": 10,
+  "rounds_per_order": 5,
+  "launches_per_sample": 64,
+  "macs_per_token": {
+    "input_272": 16609443840,
+    "all_400": 24326963200
+  },
+  "input_mac_fraction": 0.6827586206896552,
+  "per_class": [
+    {
+      "projection": "attn_gate",
+      "rows": 512,
+      "slots": 48,
+      "input_group": true,
+      "k": 5120,
+      "n": 6144,
+      "gpu_ms": {
+        "int8": {
+          "median": 0.406400502,
+          "minimum": 0.359185487,
+          "maximum": 0.409873009,
+          "spread_percent": 12.472307920525154
+        },
+        "fp4": {
+          "median": 0.165118754,
+          "minimum": 0.161164507,
+          "maximum": 0.182683498,
+          "spread_percent": 13.032433008790743
+        }
+      },
+      "ratio_of_medians": 2.461261923039947,
+      "paired_ratio_median": 2.4514752982159056,
+      "paired_ratio_min": 2.1251755098317635,
+      "paired_ratio_max": 2.496304510271
+    },
+    {
+      "projection": "attn_k",
+      "rows": 512,
+      "slots": 16,
+      "input_group": true,
+      "k": 5120,
+      "n": 1024,
+      "gpu_ms": {
+        "int8": {
+          "median": 0.1126644985,
+          "minimum": 0.109508999,
+          "maximum": 0.128273994,
+          "spread_percent": 16.655641528462496
+        },
+        "fp4": {
+          "median": 0.054754750500000005,
+          "minimum": 0.051950999,
+          "maximum": 0.074408501,
+          "spread_percent": 41.014709764771915
+        }
+      },
+      "ratio_of_medians": 2.057620525546911,
+      "paired_ratio_median": 2.0596446485616404,
+      "paired_ratio_min": 1.535946853706944,
+      "paired_ratio_max": 2.436840810037693
+    },
+    {
+      "projection": "attn_output",
+      "rows": 512,
+      "slots": 16,
+      "input_group": false,
+      "k": 6144,
+      "n": 5120,
+      "gpu_ms": {
+        "int8": {
+          "median": 0.374350756,
+          "minimum": 0.309678495,
+          "maximum": 0.421034008,
+          "spread_percent": 29.746303757965432
+        },
+        "fp4": {
+          "median": 0.1671357525,
+          "minimum": 0.143406004,
+          "maximum": 0.181878,
+          "spread_percent": 23.018411934334637
+        }
+      },
+      "ratio_of_medians": 2.2398005836602795,
+      "paired_ratio_median": 2.2914983179339883,
+      "paired_ratio_min": 2.011590236312253,
+      "paired_ratio_max": 2.431754639441963
+    },
+    {
+      "projection": "attn_q",
+      "rows": 512,
+      "slots": 16,
+      "input_group": true,
+      "k": 5120,
+      "n": 12288,
+      "gpu_ms": {
+        "int8": {
+          "median": 0.71761027,
+          "minimum": 0.698445499,
+          "maximum": 0.730982482,
+          "spread_percent": 4.53407432421502
+        },
+        "fp4": {
+          "median": 0.310951501,
+          "minimum": 0.290717006,
+          "maximum": 0.323376,
+          "spread_percent": 10.502922126109947
+        }
+      },
+      "ratio_of_medians": 2.3077884097430355,
+      "paired_ratio_median": 2.3183371763964296,
+      "paired_ratio_min": 2.1897697262629263,
+      "paired_ratio_max": 2.4700636914236798
+    },
+    {
+      "projection": "attn_qkv",
+      "rows": 512,
+      "slots": 48,
+      "input_group": true,
+      "k": 5120,
+      "n": 10240,
+      "gpu_ms": {
+        "int8": {
+          "median": 0.5769547525000001,
+          "minimum": 0.516586483,
+          "maximum": 0.601753473,
+          "spread_percent": 14.761467798118199
+        },
+        "fp4": {
+          "median": 0.2577177435,
+          "minimum": 0.2400015,
+          "maximum": 0.287321001,
+          "spread_percent": 18.360979091841234
+        }
+      },
+      "ratio_of_medians": 2.23870791612763,
+      "paired_ratio_median": 2.1919680207781984,
+      "paired_ratio_min": 2.0937701332047154,
+      "paired_ratio_max": 2.4080302548011976
+    },
+    {
+      "projection": "attn_v",
+      "rows": 512,
+      "slots": 16,
+      "input_group": true,
+      "k": 5120,
+      "n": 1024,
+      "gpu_ms": {
+        "int8": {
+          "median": 0.111873999,
+          "minimum": 0.110996999,
+          "maximum": 0.134474993,
+          "spread_percent": 20.986104197455198
+        },
+        "fp4": {
+          "median": 0.054064,
+          "minimum": 0.051291,
+          "maximum": 0.054642498,
+          "spread_percent": 6.199130659958557
+        }
+      },
+      "ratio_of_medians": 2.0692882324652264,
+      "paired_ratio_median": 2.069055805189299,
+      "paired_ratio_min": 2.0397036387318894,
+      "paired_ratio_max": 2.474650687326328
+    },
+    {
+      "projection": "ffn_down",
+      "rows": 512,
+      "slots": 64,
+      "input_group": false,
+      "k": 17408,
+      "n": 5120,
+      "gpu_ms": {
+        "int8": {
+          "median": 1.0592055325,
+          "minimum": 1.024997473,
+          "maximum": 1.282667518,
+          "spread_percent": 24.326727636309812
+        },
+        "fp4": {
+          "median": 0.4814172535,
+          "minimum": 0.469736487,
+          "maximum": 0.590952516,
+          "spread_percent": 25.17899558412898
+        }
+      },
+      "ratio_of_medians": 2.2001819103893006,
+      "paired_ratio_median": 2.1868383922480383,
+      "paired_ratio_min": 2.110695532727494,
+      "paired_ratio_max": 2.2629388567490554
+    },
+    {
+      "projection": "ffn_gate",
+      "rows": 512,
+      "slots": 64,
+      "input_group": true,
+      "k": 5120,
+      "n": 17408,
+      "gpu_ms": {
+        "int8": {
+          "median": 1.151532471,
+          "minimum": 1.021599054,
+          "maximum": 1.194643497,
+          "spread_percent": 15.027317714256624
+        },
+        "fp4": {
+          "median": 0.4851997495,
+          "minimum": 0.429729998,
+          "maximum": 0.529862523,
+          "spread_percent": 20.63738184184698
+        }
+      },
+      "ratio_of_medians": 2.3733162933135437,
+      "paired_ratio_median": 2.3579510339252856,
+      "paired_ratio_min": 2.22183675368186,
+      "paired_ratio_max": 2.469494036660986
+    },
+    {
+      "projection": "ffn_up",
+      "rows": 512,
+      "slots": 64,
+      "input_group": true,
+      "k": 5120,
+      "n": 17408,
+      "gpu_ms": {
+        "int8": {
+          "median": 1.1528702375,
+          "minimum": 1.015982032,
+          "maximum": 1.178605556,
+          "spread_percent": 14.105969493379346
+        },
+        "fp4": {
+          "median": 0.48085624,
+          "minimum": 0.438825995,
+          "maximum": 0.51058352,
+          "spread_percent": 14.922864471926149
+        }
+      },
+      "ratio_of_medians": 2.397536189818396,
+      "paired_ratio_median": 2.3554435002519347,
+      "paired_ratio_min": 2.2499872827660083,
+      "paired_ratio_max": 2.4908682409423433
+    },
+    {
+      "projection": "ssm_out",
+      "rows": 512,
+      "slots": 48,
+      "input_group": false,
+      "k": 6144,
+      "n": 5120,
+      "gpu_ms": {
+        "int8": {
+          "median": 0.3489967435,
+          "minimum": 0.310936004,
+          "maximum": 0.371605992,
+          "spread_percent": 17.384112926543686
+        },
+        "fp4": {
+          "median": 0.1577069985,
+          "minimum": 0.136723995,
+          "maximum": 0.173435003,
+          "spread_percent": 23.277982809367852
+        }
+      },
+      "ratio_of_medians": 2.2129439201773913,
+      "paired_ratio_median": 2.266568589154712,
+      "paired_ratio_min": 1.8636386586558382,
+      "paired_ratio_max": 2.3906963474809375
+    },
+    {
+      "projection": "attn_gate",
+      "rows": 2048,
+      "slots": 48,
+      "input_group": true,
+      "k": 5120,
+      "n": 6144,
+      "gpu_ms": {
+        "int8": {
+          "median": 1.497046232,
+          "minimum": 1.468394041,
+          "maximum": 1.888772488,
+          "spread_percent": 28.080525371510376
+        },
+        "fp4": {
+          "median": 0.6564799845,
+          "minimum": 0.628190517,
+          "maximum": 0.7631495,
+          "spread_percent": 20.557973767134722
+        }
+      },
+      "ratio_of_medians": 2.2804141289093636,
+      "paired_ratio_median": 2.3290467468042686,
+      "paired_ratio_min": 2.1590514681422737,
+      "paired_ratio_max": 2.728012890250868
+    },
+    {
+      "projection": "attn_k",
+      "rows": 2048,
+      "slots": 16,
+      "input_group": true,
+      "k": 5120,
+      "n": 1024,
+      "gpu_ms": {
+        "int8": {
+          "median": 0.312285751,
+          "minimum": 0.251830488,
+          "maximum": 0.32069701,
+          "spread_percent": 22.052406099053808
+        },
+        "fp4": {
+          "median": 0.139857255,
+          "minimum": 0.137937501,
+          "maximum": 0.155492499,
+          "spread_percent": 12.552082478667279
+        }
+      },
+      "ratio_of_medians": 2.2328891768968293,
+      "paired_ratio_median": 2.25525791387049,
+      "paired_ratio_min": 1.6595855907549475,
+      "paired_ratio_max": 2.280357906754706
+    },
+    {
+      "projection": "attn_output",
+      "rows": 2048,
+      "slots": 16,
+      "input_group": false,
+      "k": 6144,
+      "n": 5120,
+      "gpu_ms": {
+        "int8": {
+          "median": 1.5008519885,
+          "minimum": 1.445338964,
+          "maximum": 1.879588485,
+          "spread_percent": 28.933534041155045
+        },
+        "fp4": {
+          "median": 0.6566694975,
+          "minimum": 0.616827011,
+          "maximum": 0.764317989,
+          "spread_percent": 22.460458200283618
+        }
+      },
+      "ratio_of_medians": 2.2855515509916007,
+      "paired_ratio_median": 2.319749192967973,
+      "paired_ratio_min": 2.1263024856702732,
+      "paired_ratio_max": 2.544566419308819
+    },
+    {
+      "projection": "attn_q",
+      "rows": 2048,
+      "slots": 16,
+      "input_group": true,
+      "k": 5120,
+      "n": 12288,
+      "gpu_ms": {
+        "int8": {
+          "median": 3.013069391,
+          "minimum": 2.878074408,
+          "maximum": 3.394443512,
+          "spread_percent": 17.13764394349457
+        },
+        "fp4": {
+          "median": 1.2366254925,
+          "minimum": 1.181743979,
+          "maximum": 1.55025804,
+          "spread_percent": 29.799972848287368
+        }
+      },
+      "ratio_of_medians": 2.436525374314164,
+      "paired_ratio_median": 2.3704386990923054,
+      "paired_ratio_min": 2.0379147457579045,
+      "paired_ratio_max": 2.6127605588587475
+    },
+    {
+      "projection": "attn_qkv",
+      "rows": 2048,
+      "slots": 48,
+      "input_group": true,
+      "k": 5120,
+      "n": 10240,
+      "gpu_ms": {
+        "int8": {
+          "median": 2.4747965335,
+          "minimum": 2.441113949,
+          "maximum": 3.106582403,
+          "spread_percent": 26.88982488022383
+        },
+        "fp4": {
+          "median": 1.0576757195000002,
+          "minimum": 1.023910522,
+          "maximum": 1.293049455,
+          "spread_percent": 25.446261839803913
+        }
+      },
+      "ratio_of_medians": 2.3398443283447237,
+      "paired_ratio_median": 2.3890647648660295,
+      "paired_ratio_min": 2.243257338389286,
+      "paired_ratio_max": 2.503183411752638
+    },
+    {
+      "projection": "attn_v",
+      "rows": 2048,
+      "slots": 16,
+      "input_group": true,
+      "k": 5120,
+      "n": 1024,
+      "gpu_ms": {
+        "int8": {
+          "median": 0.30078549649999997,
+          "minimum": 0.261204988,
+          "maximum": 0.31150049,
+          "spread_percent": 16.721385367728328
+        },
+        "fp4": {
+          "median": 0.1366927475,
+          "minimum": 0.130154505,
+          "maximum": 0.154525504,
+          "spread_percent": 17.829035882097553
+        }
+      },
+      "ratio_of_medians": 2.2004495629879703,
+      "paired_ratio_median": 2.0663178042828134,
+      "paired_ratio_min": 1.831830388335119,
+      "paired_ratio_max": 2.2891318949426065
+    },
+    {
+      "projection": "ffn_down",
+      "rows": 2048,
+      "slots": 64,
+      "input_group": false,
+      "k": 17408,
+      "n": 5120,
+      "gpu_ms": {
+        "int8": {
+          "median": 4.480438471,
+          "minimum": 4.119532108,
+          "maximum": 4.682630062,
+          "spread_percent": 12.567920698938233
+        },
+        "fp4": {
+          "median": 1.861376226,
+          "minimum": 1.721768975,
+          "maximum": 1.974318504,
+          "spread_percent": 13.567892695326599
+        }
+      },
+      "ratio_of_medians": 2.407056890711572,
+      "paired_ratio_median": 2.374618481450225,
+      "paired_ratio_min": 2.262921917587417,
+      "paired_ratio_max": 2.6054552150354553
+    },
+    {
+      "projection": "ffn_gate",
+      "rows": 2048,
+      "slots": 64,
+      "input_group": true,
+      "k": 5120,
+      "n": 17408,
+      "gpu_ms": {
+        "int8": {
+          "median": 4.746201514999999,
+          "minimum": 4.130094051,
+          "maximum": 4.962684631,
+          "spread_percent": 17.54225094254136
+        },
+        "fp4": {
+          "median": 1.8977127075,
+          "minimum": 1.755202532,
+          "maximum": 1.992194057,
+          "spread_percent": 12.488272016274102
+        }
+      },
+      "ratio_of_medians": 2.501011610578573,
+      "paired_ratio_median": 2.484865728324128,
+      "paired_ratio_min": 2.353058393947212,
+      "paired_ratio_max": 2.5850148573240737
+    },
+    {
+      "projection": "ffn_up",
+      "rows": 2048,
+      "slots": 64,
+      "input_group": true,
+      "k": 5120,
+      "n": 17408,
+      "gpu_ms": {
+        "int8": {
+          "median": 4.851770162499999,
+          "minimum": 4.226648808,
+          "maximum": 4.953281879,
+          "spread_percent": 14.976658964932994
+        },
+        "fp4": {
+          "median": 1.939310968,
+          "minimum": 1.861817002,
+          "maximum": 2.023186922,
+          "spread_percent": 8.320992489740812
+        }
+      },
+      "ratio_of_medians": 2.5018010224031277,
+      "paired_ratio_median": 2.472356894870021,
+      "paired_ratio_min": 2.2701741381992173,
+      "paired_ratio_max": 2.5999113161264678
+    },
+    {
+      "projection": "ssm_out",
+      "rows": 2048,
+      "slots": 48,
+      "input_group": false,
+      "k": 6144,
+      "n": 5120,
+      "gpu_ms": {
+        "int8": {
+          "median": 1.725168228,
+          "minimum": 1.500956535,
+          "maximum": 1.785960555,
+          "spread_percent": 16.520361050841235
+        },
+        "fp4": {
+          "median": 0.7547042669999999,
+          "minimum": 0.63558799,
+          "maximum": 0.802313507,
+          "spread_percent": 22.091503160932845
+        }
+      },
+      "ratio_of_medians": 2.2858864106567984,
+      "paired_ratio_median": 2.2992377601617573,
+      "paired_ratio_min": 2.170075749498647,
+      "paired_ratio_max": 2.5423506240261085
+    },
+    {
+      "projection": "attn_gate",
+      "rows": 4096,
+      "slots": 48,
+      "input_group": true,
+      "k": 5120,
+      "n": 6144,
+      "gpu_ms": {
+        "int8": {
+          "median": 3.0628734829999997,
+          "minimum": 2.923624992,
+          "maximum": 3.466669559,
+          "spread_percent": 17.72990526752358
+        },
+        "fp4": {
+          "median": 1.3215914965,
+          "minimum": 1.242588997,
+          "maximum": 1.595517039,
+          "spread_percent": 26.7047754873323
+        }
+      },
+      "ratio_of_medians": 2.317564460055528,
+      "paired_ratio_median": 2.3103789108291046,
+      "paired_ratio_min": 1.9663604018709573,
+      "paired_ratio_max": 2.567047445384883
+    },
+    {
+      "projection": "attn_k",
+      "rows": 4096,
+      "slots": 16,
+      "input_group": true,
+      "k": 5120,
+      "n": 1024,
+      "gpu_ms": {
+        "int8": {
+          "median": 0.681675762,
+          "minimum": 0.64903301,
+          "maximum": 0.717515528,
+          "spread_percent": 10.046201114599691
+        },
+        "fp4": {
+          "median": 0.3532050105,
+          "minimum": 0.3342475,
+          "maximum": 0.356186986,
+          "spread_percent": 6.211544385778186
+        }
+      },
+      "ratio_of_medians": 1.929971947552539,
+      "paired_ratio_median": 1.9254713626169537,
+      "paired_ratio_min": 1.891662341644341,
+      "paired_ratio_max": 2.075498324106811
+    },
+    {
+      "projection": "attn_output",
+      "rows": 4096,
+      "slots": 16,
+      "input_group": false,
+      "k": 6144,
+      "n": 5120,
+      "gpu_ms": {
+        "int8": {
+          "median": 3.0834745165,
+          "minimum": 2.942080975,
+          "maximum": 3.570250511,
+          "spread_percent": 20.372133210071876
+        },
+        "fp4": {
+          "median": 1.3087852595,
+          "minimum": 1.268319964,
+          "maximum": 1.663048983,
+          "spread_percent": 30.159952989598892
+        }
+      },
+      "ratio_of_medians": 2.3559820024852596,
+      "paired_ratio_median": 2.3087134771536615,
+      "paired_ratio_min": 2.0033832070236746,
+      "paired_ratio_max": 2.5307479099177845
+    },
+    {
+      "projection": "attn_q",
+      "rows": 4096,
+      "slots": 16,
+      "input_group": true,
+      "k": 5120,
+      "n": 12288,
+      "gpu_ms": {
+        "int8": {
+          "median": 6.039613247,
+          "minimum": 5.569186687,
+          "maximum": 6.480661869,
+          "spread_percent": 15.091615054204814
+        },
+        "fp4": {
+          "median": 2.611144543,
+          "minimum": 2.283967018,
+          "maximum": 2.749362946,
+          "spread_percent": 17.823445632209122
+        }
+      },
+      "ratio_of_medians": 2.3130137560523396,
+      "paired_ratio_median": 2.3227988658169867,
+      "paired_ratio_min": 2.211247222868479,
+      "paired_ratio_max": 2.502606795018382
+    },
+    {
+      "projection": "attn_qkv",
+      "rows": 4096,
+      "slots": 48,
+      "input_group": true,
+      "k": 5120,
+      "n": 10240,
+      "gpu_ms": {
+        "int8": {
+          "median": 5.066115379499999,
+          "minimum": 4.746230602,
+          "maximum": 5.611812592,
+          "spread_percent": 17.085714105576265
+        },
+        "fp4": {
+          "median": 2.00867033,
+          "minimum": 1.942380548,
+          "maximum": 2.124223471,
+          "spread_percent": 9.052900333326475
+        }
+      },
+      "ratio_of_medians": 2.522123866637687,
+      "paired_ratio_median": 2.4873411563466163,
+      "paired_ratio_min": 2.4086104058714497,
+      "paired_ratio_max": 2.8479469657295704
+    },
+    {
+      "projection": "attn_v",
+      "rows": 4096,
+      "slots": 16,
+      "input_group": true,
+      "k": 5120,
+      "n": 1024,
+      "gpu_ms": {
+        "int8": {
+          "median": 0.674262762,
+          "minimum": 0.649418473,
+          "maximum": 0.695046484,
+          "spread_percent": 6.7670963860821995
+        },
+        "fp4": {
+          "median": 0.352480263,
+          "minimum": 0.330920994,
+          "maximum": 0.361435503,
+          "spread_percent": 8.657083020844196
+        }
+      },
+      "ratio_of_medians": 1.9129092683410758,
+      "paired_ratio_median": 1.9311532824116422,
+      "paired_ratio_min": 1.8465618082903164,
+      "paired_ratio_max": 2.0648635062169314
+    },
+    {
+      "projection": "ffn_down",
+      "rows": 4096,
+      "slots": 64,
+      "input_group": false,
+      "k": 17408,
+      "n": 5120,
+      "gpu_ms": {
+        "int8": {
+          "median": 9.367975712,
+          "minimum": 8.882884026,
+          "maximum": 9.624292374,
+          "spread_percent": 7.914285548907711
+        },
+        "fp4": {
+          "median": 3.9021674395000003,
+          "minimum": 3.54026103,
+          "maximum": 4.246090889,
+          "spread_percent": 18.08814895678698
+        }
+      },
+      "ratio_of_medians": 2.4007108503781565,
+      "paired_ratio_median": 2.43247452546285,
+      "paired_ratio_min": 2.092014574867476,
+      "paired_ratio_max": 2.602711804841125
+    },
+    {
+      "projection": "ffn_gate",
+      "rows": 4096,
+      "slots": 64,
+      "input_group": true,
+      "k": 5120,
+      "n": 17408,
+      "gpu_ms": {
+        "int8": {
+          "median": 9.617082595500001,
+          "minimum": 9.171772003,
+          "maximum": 9.845454216,
+          "spread_percent": 7.005057992485461
+        },
+        "fp4": {
+          "median": 3.7644540070000003,
+          "minimum": 3.694797993,
+          "maximum": 3.913833618,
+          "spread_percent": 5.8185230738030915
+        }
+      },
+      "ratio_of_medians": 2.554708485644144,
+      "paired_ratio_median": 2.560710067083103,
+      "paired_ratio_min": 2.3434240946826064,
+      "paired_ratio_max": 2.607261514354083
+    },
+    {
+      "projection": "ffn_up",
+      "rows": 4096,
+      "slots": 64,
+      "input_group": true,
+      "k": 5120,
+      "n": 17408,
+      "gpu_ms": {
+        "int8": {
+          "median": 9.7485880855,
+          "minimum": 9.125356674,
+          "maximum": 9.902164459,
+          "spread_percent": 7.968413253150156
+        },
+        "fp4": {
+          "median": 3.832005739,
+          "minimum": 3.673442602,
+          "maximum": 3.890731096,
+          "spread_percent": 5.670359305273471
+        }
+      },
+      "ratio_of_medians": 2.543990993093865,
+      "paired_ratio_median": 2.544717000931147,
+      "paired_ratio_min": 2.3927369907075295,
+      "paired_ratio_max": 2.578726910360504
+    },
+    {
+      "projection": "ssm_out",
+      "rows": 4096,
+      "slots": 48,
+      "input_group": false,
+      "k": 6144,
+      "n": 5120,
+      "gpu_ms": {
+        "int8": {
+          "median": 3.5101312399999998,
+          "minimum": 3.003498077,
+          "maximum": 3.570123434,
+          "spread_percent": 16.14256898838916
+        },
+        "fp4": {
+          "median": 1.4886090159999998,
+          "minimum": 1.313094974,
+          "maximum": 1.513715506,
+          "spread_percent": 13.477046682081905
+        }
+      },
+      "ratio_of_medians": 2.357994075188377,
+      "paired_ratio_median": 2.369515174595292,
+      "paired_ratio_min": 2.181437601084659,
+      "paired_ratio_max": 2.5501189771517625
+    }
+  ],
+  "aggregates": [
+    {
+      "rows": 512,
+      "group": "input_272",
+      "slot_count": 272,
+      "weighted_gpu_ms": {
+        "int8": 209.75720583999998,
+        "fp4": 88.840059232
+      },
+      "ratio": 2.3610655784484877,
+      "observed_extreme_ratio_bounds": [
+        1.9415928846629795,
+        2.6660996881176473
+      ],
+      "order_ratios": {
+        "AB": 2.351087981436603,
+        "BA": 2.3675306813378234
+      }
+    },
+    {
+      "rows": 512,
+      "group": "all_400",
+      "slot_count": 400,
+      "weighted_gpu_ms": {
+        "int8": 300.287815704,
+        "fp4": 129.894871424
+      },
+      "ratio": 2.3117757646012604,
+      "observed_extreme_ratio_bounds": [
+        1.8744400448350051,
+        2.690242251892872
+      ],
+      "order_ratios": {
+        "AB": 2.2967627219984483,
+        "BA": 2.3081366649276673
+      }
+    },
+    {
+      "rows": 2048,
+      "group": "input_272",
+      "slot_count": 272,
+      "weighted_gpu_ms": {
+        "int8": 862.93689032,
+        "fp4": 352.059796944
+      },
+      "ratio": 2.4511088678985464,
+      "observed_extreme_ratio_bounds": [
+        2.015184957087779,
+        2.810959139496908
+      ],
+      "order_ratios": {
+        "AB": 2.4227860958917153,
+        "BA": 2.4535418490532015
+      }
+    },
+    {
+      "rows": 2048,
+      "group": "all_400",
+      "slot_count": 400,
+      "weighted_gpu_ms": {
+        "int8": 1256.506659224,
+        "fp4": 517.920392184
+      },
+      "ratio": 2.4260613758139202,
+      "observed_extreme_ratio_bounds": [
+        2.018632068811845,
+        2.7949442299465845
+      ],
+      "order_ratios": {
+        "AB": 2.396148046193061,
+        "BA": 2.435858303085237
+      }
+    },
+    {
+      "rows": 4096,
+      "group": "input_272",
+      "slot_count": 272,
+      "weighted_gpu_ms": {
+        "int8": 1747.92321732,
+        "fp4": 699.0952684800001
+      },
+      "ratio": 2.5002646937096316,
+      "observed_extreme_ratio_bounds": [
+        2.248160553607948,
+        2.71861084140427
+      ],
+      "order_ratios": {
+        "AB": 2.4751931742647706,
+        "BA": 2.5089412911970284
+      }
+    },
+    {
+      "rows": 4096,
+      "group": "all_400",
+      "slot_count": 400,
+      "weighted_gpu_ms": {
+        "int8": 2565.295554672,
+        "fp4": 1041.2277815280002
+      },
+      "ratio": 2.4637217717216813,
+      "observed_extreme_ratio_bounds": [
+        2.1808378125695955,
+        2.720599101809585
+      ],
+      "order_ratios": {
+        "AB": 2.442192582418286,
+        "BA": 2.479727166806707
+      }
+    }
+  ]
+}
