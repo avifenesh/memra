@@ -32911,9 +32911,15 @@ fn resolve_constraint_compiles(
                 queue.push_back(pending_compile.request);
             }
             Err(crate::constrained::ConstraintCompileFailure::Invalid(err)) => {
+                let param = pending_compile
+                    .request
+                    .grammar
+                    .as_ref()
+                    .expect("completed compile retains its spec")
+                    .parameter();
                 fail_request(
                     pending_compile.request,
-                    EngineError::invalid_param(err, "response_format"),
+                    EngineError::invalid_param(err, param),
                 );
             }
             Err(crate::constrained::ConstraintCompileFailure::Internal(err)) => {

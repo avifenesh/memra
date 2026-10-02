@@ -13,7 +13,7 @@
 //! clear 400 — `previous_response_id`, `store: true`, `conversation`, `background`,
 //! `item_reference` input items, `truncation: "auto"`. A stateless client that resends
 //! full context each turn (`store: false`, the Codex custom-provider posture) is fully
-//! supported. Accepted-and-ignored (non-semantic here): `include`, `parallel_tool_calls`,
+//! supported. Accepted-and-ignored (non-semantic here): `include`,
 //! `reasoning.summary`, `stream_options`, `client_metadata`, `metadata`, `service_tier`,
 //! `text.verbosity`. Non-function TOOL types (`web_search`, `namespace`, `custom`) are
 //! dropped from the toolset with a log line — stock clients send them unconditionally,
@@ -359,14 +359,36 @@ fn translate_with_door(
 
     let tool_choice = match obj.get("tool_choice") {
         None | Some(Value::Null) => Value::Null,
-        Some(Value::String(s)) if s == "auto" || s == "none" => json!(s),
+        Some(Value::String(s)) if matches!(s.as_str(), "auto" | "none" | "required") => json!(s),
+        Some(Value::Object(value))
+            if value.get("type").and_then(Value::as_str) == Some("function") =>
+        {
+            let name = value
+                .get("name")
+                .or_else(|| value.get("function").and_then(|f| f.get("name")))
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    (
+                        "tool_choice function needs name".into(),
+                        Some("tool_choice".into()),
+                    )
+                })?;
+            json!({"type":"function","function":{"name":name}})
+        }
         Some(other) => {
             return Err((
-                format!(
-                    "tool_choice {other} is not supported (forcing a tool call needs \
-                     constrained decoding); use \"auto\" or \"none\""
-                ),
-                Some("tool_choice".to_string()),
+                format!("bad tool_choice {other}"),
+                Some("tool_choice".into()),
+            ));
+        }
+    };
+    let parallel_tool_calls = match obj.get("parallel_tool_calls") {
+        None | Some(Value::Null) => None,
+        Some(Value::Bool(value)) => Some(*value),
+        Some(_) => {
+            return Err((
+                "parallel_tool_calls must be a boolean".into(),
+                Some("parallel_tool_calls".into()),
             ));
         }
     };
@@ -488,6 +510,9 @@ fn translate_with_door(
     }
     if !tool_choice.is_null() {
         out["tool_choice"] = tool_choice;
+    }
+    if let Some(value) = parallel_tool_calls {
+        out["parallel_tool_calls"] = json!(value);
     }
     if !reasoning_effort.is_null() {
         out["reasoning_effort"] = reasoning_effort;
@@ -1904,6 +1929,31 @@ mod tests {
     /// The Codex-shaped request (instructions, typed input items, flattened function
     /// tools, store:false, include, prompt_cache_key, client_metadata) translates into
     /// the exact internal chat shape and deserializes as ChatCompletionReq.
+    #[test]
+    fn translate_forced_tool_selection_and_parallel_policy() {
+        let tool = json!({"type":"function","name":"weather","parameters":{"type":"object"}});
+        for choice in [
+            json!("required"),
+            json!({"type":"function","name":"weather"}),
+        ] {
+            let request = translate(&json!({"model":"m","input":"x","tools":[tool.clone()],
+                "tool_choice":choice,"parallel_tool_calls":false}))
+            .unwrap();
+            assert_eq!(request["parallel_tool_calls"], false);
+            if choice.is_object() {
+                assert_eq!(request["tool_choice"]["function"]["name"], "weather");
+            } else {
+                assert_eq!(request["tool_choice"], "required");
+            }
+        }
+        let error =
+            translate(&json!({"model":"m","input":"x","parallel_tool_calls":"false"})).unwrap_err();
+        assert_eq!(error.1.as_deref(), Some("parallel_tool_calls"));
+        assert!(
+            translate(&json!({"model":"m","input":"x","tool_choice":{"type":"function"}})).is_err()
+        );
+    }
+
     #[test]
     fn translate_maps_the_codex_request_shape() {
         let translated = translate(&json!({
