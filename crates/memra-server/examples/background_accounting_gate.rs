@@ -10,6 +10,30 @@ struct Counts;
 /// can wait on an event instead of polling a background job for completion.
 struct ObservedStore(memra_server::job_store::InMemoryJobStore);
 impl JobStore for ObservedStore {
+    fn reserve_output(&self, id: &str, bytes: usize) -> Result<(), JobStoreError> {
+        self.0.reserve_output(id, bytes)
+    }
+    fn publish_terminal(
+        &self,
+        id: &str,
+        record: JobRecord,
+        settle: &mut dyn FnMut() -> Result<(), String>,
+    ) -> Result<(), JobStoreError> {
+        let terminal = record.status.is_terminal();
+        let status = format!("{:?}", record.status);
+        let public_id = record
+            .output
+            .as_ref()
+            .and_then(|v| v.get("id"))
+            .and_then(|v| v.as_str())
+            .map(str::to_owned);
+        self.0.publish_terminal(id, record, settle)?;
+        if terminal {
+            println!("GATE_STORED {}", json!({"id":public_id,"status":status}));
+        }
+        Ok(())
+    }
+
     fn put(&self, key: &str, record: JobRecord) -> Result<(), JobStoreError> {
         let terminal = record.status.is_terminal();
         let status = format!("{:?}", record.status);

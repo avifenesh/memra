@@ -110,6 +110,7 @@ mod histogram;
 mod http_metrics;
 mod hybrid_telemetry;
 mod image_fetch;
+mod job_publication;
 /// In-memory reference implementation of `metering::JobStore` (memra#550,
 /// `docs/decisions/COMPLETE-RESULT-PATH-V1.md`): the bounded, TTL'd buffer a background
 /// (`background: true`) job's output would live in between the worker finishing and the
@@ -3316,8 +3317,8 @@ struct StreamOptions {
 struct CompletionReq {
     model: String,
     /// Buffered complete-result delivery. Uses the default-OFF background door.
-    #[serde(default)]
-    background: bool,
+    #[serde(default = "background_jobs::default_background")]
+    background: serde_json::Value,
     #[serde(default)]
     prompt: String,
     /// raw token-id prompt (the exact-token validation-gate path; bypasses the tokenizer).
@@ -3526,8 +3527,8 @@ impl StopSequences {
 struct ChatCompletionReq {
     model: String,
     /// Buffered complete-result delivery. Incompatible with streaming.
-    #[serde(default)]
-    background: bool,
+    #[serde(default = "background_jobs::default_background")]
+    background: serde_json::Value,
     messages: Vec<ChatMessage>,
     /// Omitted (gap-scan F2) => context-bounded (session ctx - prompt, model-capped), never a
     /// silent 128-token truncation. Under `MEMRA_ADMIT_BY_MEMORY=1` the bound is the charged open
@@ -10261,10 +10262,10 @@ async fn completions_with_admission(
 ) -> Response {
     http_metrics::bind_model(canonical_model_id(&st.models, &req.model));
     let env = Envelope::new(false);
-    if let Err(message) = background_jobs::validate(req.background, req.stream) {
+    if let Err(message) = background_jobs::validate(&req.background, req.stream) {
         return with_request_id(&env.id, bad_request(message, Some("background")));
     }
-    let background = req.background;
+    let background = req.background == serde_json::Value::Bool(true);
     if let Err(msg) = req.stop.validate() {
         return with_request_id(&env.id, bad_request(&msg, Some("stop")));
     }
@@ -10873,10 +10874,10 @@ async fn chat_completions_with_admission(
 ) -> Response {
     http_metrics::bind_model(canonical_model_id(&st.models, &req.model));
     let env = Envelope::new(true);
-    if let Err(message) = background_jobs::validate(req.background, req.stream) {
+    if let Err(message) = background_jobs::validate(&req.background, req.stream) {
         return with_request_id(&env.id, bad_request(message, Some("background")));
     }
-    let background = req.background;
+    let background = req.background == serde_json::Value::Bool(true);
     // Canonicalize before ANY downstream use: metadata limits, caps, cache namespace, ledger
     // pricing and the worker's roster all key off this id and must agree on one spelling.
     // An id that resolves to nothing refuses HERE — before budget admission (see
@@ -11851,7 +11852,10 @@ struct BlockingPayload<'a> {
     deadline_error: Option<serde_json::Value>,
 }
 
-fn blocking_payload(p: BlockingPayload<'_>) -> Response {
+fn blocking_payload(
+    p: BlockingPayload<'_>,
+    output: Option<&job_publication::Publication>,
+) -> Response {
     if p.deadline_error.is_some()
         && let Some(observation) = http_metrics::current()
     {
@@ -11907,7 +11911,7 @@ fn blocking_payload(p: BlockingPayload<'_>) -> Response {
                 .unwrap_or_else(|| json!("deadline_exceeded"));
             body["error"] = err;
         }
-        return Json(env.stamp(body)).into_response();
+        return buffered_json(&env.stamp(body), output);
     }
     if openai_compat() {
         let mut body = json!({
@@ -11923,20 +11927,39 @@ fn blocking_payload(p: BlockingPayload<'_>) -> Response {
                 .unwrap_or_else(|| json!("deadline_exceeded"));
             body["error"] = err;
         }
-        return Json(env.stamp(body)).into_response();
+        return buffered_json(&env.stamp(body), output);
     }
-    Json(CompletionResp {
-        model,
-        text,
-        tokens,
-        stop_reason,
-        error: deadline_error,
-        n_tokens,
-        prompt_tokens: n_prompt,
-        cached_tokens: n_cached,
-        elapsed_s,
-    })
-    .into_response()
+    buffered_json(
+        &CompletionResp {
+            model,
+            text,
+            tokens,
+            stop_reason,
+            error: deadline_error,
+            n_tokens,
+            prompt_tokens: n_prompt,
+            cached_tokens: n_cached,
+            elapsed_s,
+        },
+        output,
+    )
+}
+
+fn buffered_json<T: serde::Serialize>(
+    value: &T,
+    output: Option<&job_publication::Publication>,
+) -> Response {
+    match output {
+        Some(output) => match output.encode(value) {
+            Ok(bytes) => (
+                [(axum::http::header::CONTENT_TYPE, "application/json")],
+                bytes,
+            )
+                .into_response(),
+            Err(error) => output.storage_response(error),
+        },
+        None => Json(value).into_response(),
+    }
 }
 
 /// Collect a complete non-streaming response.
@@ -11984,6 +12007,7 @@ async fn blocking_response_with_receipt(
         receipt,
         deadline,
         None,
+        None,
     )
     .await
 }
@@ -12001,6 +12025,7 @@ pub(crate) async fn collect_blocking_response(
     receipt: &mut Option<Box<dyn metering::Receipt>>,
     deadline: Option<RequestDeadline>,
     cancel: Option<Arc<tokio::sync::Notify>>,
+    output: Option<&job_publication::Publication>,
 ) -> Response {
     let mut text = String::new();
     let mut reasoning = String::new();
@@ -12107,7 +12132,7 @@ pub(crate) async fn collect_blocking_response(
                         elapsed_s,
                         spec: None,
                         deadline_error: Some(err_obj),
-                    });
+                    }, output);
                 }
             },
             None => match cancel.as_ref() {
@@ -12157,7 +12182,7 @@ pub(crate) async fn collect_blocking_response(
                                 "code": "cancelled",
                                 "metadata": {"error_type": "cancelled", "provider_name": "memra"},
                             })),
-                        });
+                        }, output);
                     }
                     ev = rx.recv() => ev,
                 },
@@ -12183,6 +12208,11 @@ pub(crate) async fn collect_blocking_response(
                 seen_cached = n_cached;
             }
             Event::Token { id, text: delta } => {
+                if let Some(output) = output.as_ref()
+                    && let Err(error) = output.reserve_delta(&delta, 1)
+                {
+                    return output.storage_response(error);
+                }
                 if let Some(receipt) = receipt.as_mut()
                     && let Err(err) = receipt.record_completion_token()
                 {
@@ -12204,7 +12234,14 @@ pub(crate) async fn collect_blocking_response(
                     None => text.push_str(&delta),
                 }
             }
-            Event::TokenSnapshot(ids) => tokens = ids,
+            Event::TokenSnapshot(ids) => {
+                if let Some(output) = output
+                    && let Err(error) = output.reserve_snapshot(ids.len())
+                {
+                    return output.storage_response(error);
+                }
+                tokens = ids;
+            }
             Event::DeadlineExceeded { ms } => {
                 if let Some(receipt) = receipt.as_mut()
                     && let Err(ledger_err) = receipt.settle_unbilled(
@@ -12257,23 +12294,26 @@ pub(crate) async fn collect_blocking_response(
                     let _ = receipt.reject(500, "request_ledger_unavailable");
                     return request_ledger_error_response();
                 }
-                return blocking_payload(BlockingPayload {
-                    env: &env,
-                    model,
-                    chat,
-                    finish,
-                    text,
-                    reasoning,
-                    calls,
-                    tokens,
-                    stop_reason,
-                    n_prompt,
-                    n_tokens,
-                    n_cached,
-                    elapsed_s,
-                    spec,
-                    deadline_error: None,
-                });
+                return blocking_payload(
+                    BlockingPayload {
+                        env: &env,
+                        model,
+                        chat,
+                        finish,
+                        text,
+                        reasoning,
+                        calls,
+                        tokens,
+                        stop_reason,
+                        n_prompt,
+                        n_tokens,
+                        n_cached,
+                        elapsed_s,
+                        spec,
+                        deadline_error: None,
+                    },
+                    output,
+                );
             }
             Event::Error(err) => {
                 // G6: the class decides the status. This single line used to be
@@ -23479,6 +23519,23 @@ temperature = 0.6
             terminal: Arc<tokio::sync::Notify>,
         }
         impl JobStore for Store {
+            fn reserve_output(&self, id: &str, bytes: usize) -> Result<(), JobStoreError> {
+                self.inner.reserve_output(id, bytes)
+            }
+            fn publish_terminal(
+                &self,
+                id: &str,
+                record: JobRecord,
+                settle: &mut dyn FnMut() -> Result<(), String>,
+            ) -> Result<(), JobStoreError> {
+                let terminal = record.status.is_terminal();
+                self.inner.publish_terminal(id, record, settle)?;
+                if terminal {
+                    self.terminal.notify_one();
+                }
+                Ok(())
+            }
+
             fn put(&self, key: &str, record: JobRecord) -> Result<(), JobStoreError> {
                 let terminal = record.status.is_terminal();
                 self.inner.put(key, record)?;
@@ -24454,6 +24511,8 @@ temperature = 0.6
         unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
 
         let mut st = fake_worker_state_with_steps(50, std::time::Duration::from_millis(1));
+        let mock = MockMetering::admit_all();
+        st.metering = Some(mock.clone());
         // Exactly fills the placeholder reservation, but cannot hold a completed
         // envelope. The fallback must still fit with no spare capacity.
         st.job_store = Arc::new(job_store::InMemoryJobStore::new(
@@ -24498,6 +24557,14 @@ temperature = 0.6
                 .unwrap()
                 .contains("could not be buffered"),
             "the fallback record must say why the real output is missing: {b}"
+        );
+        assert_eq!(
+            bg914_terminal_events(&mock),
+            vec![MeterEvent::Unbilled {
+                outcome: "background_storage_failed",
+                status: 503,
+                code: "background_job_store_capacity_exceeded".into(),
+            }]
         );
     }
 
@@ -24772,8 +24839,7 @@ temperature = 0.6
                 let mut body = bg914_body(chat);
                 body["background"] = invalid;
                 let response = bg914_http(app.clone(), "POST", path, Some("owner-key"), body).await;
-                // Preserve AdmittedJson's existing typed-body refusal contract.
-                assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+                assert_eq!(response.status(), StatusCode::BAD_REQUEST);
                 assert!(
                     body_value(response).await["error"]["message"]
                         .as_str()

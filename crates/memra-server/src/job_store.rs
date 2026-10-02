@@ -58,15 +58,32 @@ pub fn max_bytes_from_env() -> usize {
 /// store's aggregate bounded, not to bill anyone.
 fn record_size_bytes(record: &JobRecord) -> usize {
     const BOOKKEEPING_OVERHEAD: usize = 96;
-    let output_len = record
-        .output
-        .as_ref()
-        .and_then(|v| serde_json::to_vec(v).ok())
-        .map(|b| b.len())
-        .unwrap_or(0);
+    struct Count(usize);
+    impl std::io::Write for Count {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0 = self
+                .0
+                .checked_add(bytes.len())
+                .ok_or_else(|| std::io::Error::other("job size overflow"))?;
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut count = Count(0);
+    if let Some(output) = &record.output {
+        if serde_json::to_writer(&mut count, output).is_err() {
+            return usize::MAX;
+        }
+    }
+    let output_len = count.0;
     let error_len = record.error.as_ref().map(|e| e.len()).unwrap_or(0);
     // Reserve enough space at admission for the fixed terminal storage-failure record.
-    (output_len + error_len + BOOKKEEPING_OVERHEAD).max(256)
+    output_len
+        .saturating_add(error_len)
+        .saturating_add(BOOKKEEPING_OVERHEAD)
+        .max(256)
 }
 
 struct Entry {
@@ -76,6 +93,9 @@ struct Entry {
     /// the record's creation time, so a long-running in-progress job is never evicted for
     /// simply taking a while.
     finished_at: Option<Instant>,
+    /// Complete output held during settlement, invisible to readers. Mutation,
+    /// cancellation and collection refuse while publication owns this reservation.
+    pending: Option<JobRecord>,
 }
 
 struct Inner {
@@ -128,12 +148,85 @@ impl InMemoryJobStore {
 }
 
 impl JobStore for InMemoryJobStore {
+    fn reserve_output(&self, id: &str, bytes: usize) -> Result<(), JobStoreError> {
+        let mut inner = self.inner.lock().unwrap();
+        let entry = inner.map.get(id).ok_or(JobStoreError::NotFound)?;
+        if entry.record.status.is_terminal() || entry.pending.is_some() {
+            return Err(JobStoreError::AlreadyTerminal);
+        }
+        let old = entry.size_bytes;
+        let size = old.max(bytes);
+        let projected = inner
+            .total_bytes
+            .saturating_sub(old)
+            .checked_add(size)
+            .ok_or(JobStoreError::CapacityExceeded)?;
+        if projected > self.max_bytes {
+            return Err(JobStoreError::CapacityExceeded);
+        }
+        inner.total_bytes = projected;
+        inner.map.get_mut(id).unwrap().size_bytes = size;
+        Ok(())
+    }
+
+    fn publish_terminal(
+        &self,
+        id: &str,
+        record: JobRecord,
+        settle: &mut dyn FnMut() -> Result<(), String>,
+    ) -> Result<(), JobStoreError> {
+        if !record.status.is_terminal() {
+            return Err(JobStoreError::PublicationUnsupported);
+        }
+        let size = record_size_bytes(&record);
+        {
+            let mut inner = self.inner.lock().unwrap();
+            let entry = inner.map.get(id).ok_or(JobStoreError::NotFound)?;
+            if entry.record.status.is_terminal() || entry.pending.is_some() {
+                return Err(JobStoreError::AlreadyTerminal);
+            }
+            let held = entry.size_bytes.max(size);
+            let projected = inner
+                .total_bytes
+                .saturating_sub(entry.size_bytes)
+                .checked_add(held)
+                .ok_or(JobStoreError::CapacityExceeded)?;
+            if projected > self.max_bytes {
+                return Err(JobStoreError::CapacityExceeded);
+            }
+            inner.total_bytes = projected;
+            let entry = inner.map.get_mut(id).unwrap();
+            entry.size_bytes = held;
+            entry.pending = Some(record);
+        }
+        // The callback may read the store. No store lock is held, and the pending
+        // reservation prevents mutation/take/cancel from invalidating the commit.
+        let settled = std::panic::catch_unwind(std::panic::AssertUnwindSafe(settle));
+        let mut inner = self.inner.lock().unwrap();
+        let entry = inner
+            .map
+            .get_mut(id)
+            .expect("pending publication owns its entry");
+        let pending = entry.pending.take().expect("pending record is retained");
+        if !matches!(settled, Ok(Ok(()))) {
+            return Err(JobStoreError::SettlementFailed);
+        }
+        let old = entry.size_bytes;
+        entry.record = pending;
+        entry.finished_at = Some(Instant::now());
+        entry.size_bytes = size;
+        inner.total_bytes = inner.total_bytes.saturating_sub(old) + size;
+        Ok(())
+    }
+
     fn put(&self, id: &str, record: JobRecord) -> Result<(), JobStoreError> {
         let mut inner = self.inner.lock().unwrap();
         self.sweep_locked(&mut inner);
 
         match inner.map.get(id) {
-            Some(existing) if existing.record.status.is_terminal() => {
+            Some(existing)
+                if existing.record.status.is_terminal() || existing.pending.is_some() =>
+            {
                 return Err(JobStoreError::AlreadyTerminal);
             }
             None if record.status != JobStatus::Queued => {
@@ -149,10 +242,18 @@ impl JobStore for InMemoryJobStore {
             _ => {}
         }
 
-        let size = record_size_bytes(&record);
+        let size = record_size_bytes(&record).max(if record.status.is_terminal() {
+            0
+        } else {
+            inner.map.get(id).map(|e| e.size_bytes).unwrap_or(0)
+        });
         let finished_at = record.status.is_terminal().then(Instant::now);
         let existing_size = inner.map.get(id).map(|e| e.size_bytes).unwrap_or(0);
-        let projected = inner.total_bytes.saturating_sub(existing_size) + size;
+        let projected = inner
+            .total_bytes
+            .saturating_sub(existing_size)
+            .checked_add(size)
+            .ok_or(JobStoreError::CapacityExceeded)?;
         if projected > self.max_bytes {
             return Err(JobStoreError::CapacityExceeded);
         }
@@ -164,6 +265,7 @@ impl JobStore for InMemoryJobStore {
                 record,
                 size_bytes: size,
                 finished_at,
+                pending: None,
             },
         );
         Ok(())
@@ -178,6 +280,13 @@ impl JobStore for InMemoryJobStore {
     fn take(&self, id: &str) -> Option<JobRecord> {
         let mut inner = self.inner.lock().unwrap();
         self.sweep_locked(&mut inner);
+        if inner
+            .map
+            .get(id)
+            .is_some_and(|entry| entry.pending.is_some())
+        {
+            return None;
+        }
         inner.map.remove(id).map(|e| {
             inner.total_bytes = inner.total_bytes.saturating_sub(e.size_bytes);
             e.record
@@ -189,7 +298,9 @@ impl JobStore for InMemoryJobStore {
         self.sweep_locked(&mut inner);
         match inner.map.get_mut(id) {
             None => Err(JobStoreError::NotFound),
-            Some(e) if e.record.status.is_terminal() => Err(JobStoreError::AlreadyTerminal),
+            Some(e) if e.record.status.is_terminal() || e.pending.is_some() => {
+                Err(JobStoreError::AlreadyTerminal)
+            }
             Some(e) => {
                 e.record.status = JobStatus::Cancelled;
                 e.finished_at = Some(Instant::now());
@@ -484,6 +595,105 @@ mod tests {
         .unwrap();
         let rec = s.get("job-5").unwrap();
         assert_eq!(rec.status, JobStatus::InProgress);
+    }
+
+    #[test]
+    fn publication_capacity_failure_never_calls_settlement() {
+        let s = store(Duration::from_secs(60), 256);
+        s.put("job", JobRecord::queued()).unwrap();
+        let mut calls = 0;
+        let result = s.publish_terminal(
+            "job",
+            JobRecord {
+                status: JobStatus::Completed,
+                output: Some(json!({"text": "x".repeat(4096)})),
+                error: None,
+            },
+            &mut || {
+                calls += 1;
+                Ok(())
+            },
+        );
+        assert_eq!(result, Err(JobStoreError::CapacityExceeded));
+        assert_eq!(calls, 0);
+        assert_eq!(s.get("job").unwrap().status, JobStatus::Queued);
+    }
+
+    #[test]
+    fn publication_is_hidden_and_protected_until_settlement_commits() {
+        let s = store(Duration::from_secs(60), 1024);
+        s.put("job", JobRecord::queued()).unwrap();
+        s.reserve_output("job", 800).unwrap();
+        // Non-terminal updates cannot release the working reservation.
+        s.put(
+            "job",
+            JobRecord {
+                status: JobStatus::InProgress,
+                output: None,
+                error: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            s.put("peer", JobRecord::queued()),
+            Err(JobStoreError::CapacityExceeded)
+        );
+        let record = JobRecord {
+            status: JobStatus::Completed,
+            output: Some(json!({"text":"done"})),
+            error: None,
+        };
+        let mut calls = 0;
+        s.publish_terminal("job", record.clone(), &mut || {
+            calls += 1;
+            assert_eq!(s.get("job").unwrap().status, JobStatus::InProgress);
+            assert!(s.take("job").is_none());
+            assert_eq!(s.cancel("job"), Err(JobStoreError::AlreadyTerminal));
+            assert_eq!(
+                s.put("job", JobRecord::queued()),
+                Err(JobStoreError::AlreadyTerminal)
+            );
+            assert_eq!(s.sweep(), 0);
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(calls, 1);
+        assert_eq!(s.get("job"), Some(record));
+        s.put("peer", JobRecord::queued()).unwrap();
+    }
+
+    #[test]
+    fn failed_or_panicked_settlement_does_not_expose_output() {
+        for panic in [false, true] {
+            let s = store(Duration::from_secs(60), 1024);
+            s.put("job", JobRecord::queued()).unwrap();
+            let result = s.publish_terminal(
+                "job",
+                JobRecord {
+                    status: JobStatus::Completed,
+                    output: Some(json!({"text":"hidden"})),
+                    error: None,
+                },
+                &mut || {
+                    if panic {
+                        panic!("injected settlement panic");
+                    }
+                    Err("injected settlement failure".into())
+                },
+            );
+            assert_eq!(result, Err(JobStoreError::SettlementFailed));
+            assert!(s.get("job").unwrap().output.is_none());
+            s.put(
+                "job",
+                JobRecord {
+                    status: JobStatus::Failed,
+                    output: None,
+                    error: Some("ledger failure".into()),
+                },
+            )
+            .unwrap();
+            assert_eq!(s.get("job").unwrap().status, JobStatus::Failed);
+        }
     }
 
     #[test]

@@ -1052,17 +1052,18 @@ pub(crate) fn finalize_terminal_job(
     id: &str,
     record: crate::metering::JobRecord,
 ) {
-    if store.put(id, record).is_err() {
+    if let Err(error) = store.put(id, record) {
+        let message = if error == crate::metering::JobStoreError::SettlementFailed {
+            "request_ledger_unavailable"
+        } else {
+            "background job output could not be buffered; result is unavailable and completion is not billed"
+        };
         let _ = store.put(
             id,
             crate::metering::JobRecord {
                 status: crate::metering::JobStatus::Failed,
                 output: None,
-                error: Some(
-                    "background job output could not be buffered (store capacity); the \
-                     result may already be billed but is not retrievable"
-                        .to_string(),
-                ),
+                error: Some(message.to_string()),
             },
         );
     }
@@ -1072,7 +1073,7 @@ pub(crate) fn finalize_terminal_job(
 /// `put`, so a refused write (revuto's finding on the first version of this lane:
 /// `InMemoryJobStore::put` re-checks the byte cap on every update, so a large completed or
 /// cancelled body can be refused even though the `Queued` placeholder fit) cannot leave the
-/// job stuck `InProgress` forever: already billed, `GET` answering `in_progress` forever,
+/// job stuck `InProgress` forever: `GET` answering `in_progress` forever,
 /// never TTL-evicted because `finished_at` is only stamped on a SUCCESSFUL terminal put.
 #[allow(clippy::too_many_arguments)]
 async fn run_background_job(
@@ -1089,6 +1090,26 @@ async fn run_background_job(
 ) {
     use crate::metering::{JobRecord, JobStatus, UsageCounts};
 
+    let (publication, deferred) =
+        crate::job_publication::Publication::new(st.job_store.clone(), id.clone(), receipt);
+    receipt = deferred;
+    let guarded_store = crate::job_publication::PublishingStore(publication.clone());
+    if let Err(error) = publication.initial_reservation() {
+        publication.fail_storage(error);
+        finalize_terminal_job(
+            &guarded_store,
+            &id,
+            JobRecord {
+                status: JobStatus::Failed,
+                output: None,
+                error: Some(
+                    "background output could not be buffered by the configured store".into(),
+                ),
+            },
+        );
+        drop(guard);
+        return;
+    }
     let mut text = String::new();
     let mut reasoning = String::new();
     let mut calls: Vec<crate::toolcall::ParsedToolCall> = Vec::new();
@@ -1136,7 +1157,7 @@ async fn run_background_job(
                 };
                 if !ledger_ok {
                     finalize_terminal_job(
-                        &*st.job_store,
+                        &guarded_store,
                         &id,
                         JobRecord {
                             status: JobStatus::Failed,
@@ -1162,7 +1183,7 @@ async fn run_background_job(
                     Value::Null,
                 );
                 finalize_terminal_job(
-                    &*st.job_store,
+                    &guarded_store,
                     &id,
                     JobRecord { status: JobStatus::Cancelled, output: Some(body), error: None },
                 );
@@ -1175,7 +1196,7 @@ async fn run_background_job(
                         let _ = r.reject(500, "worker_channel_closed");
                     }
                     finalize_terminal_job(
-                        &*st.job_store,
+                        &guarded_store,
                         &id,
                         JobRecord {
                             status: JobStatus::Failed,
@@ -1199,7 +1220,7 @@ async fn run_background_job(
                             );
                             let _ = r.reject(500, "request_ledger_unavailable");
                             finalize_terminal_job(
-                                &*st.job_store,
+                                &guarded_store,
                                 &id,
                                 JobRecord {
                                     status: JobStatus::Failed,
@@ -1212,6 +1233,12 @@ async fn run_background_job(
                         }
                     }
                     Event::Token { text: delta, .. } => {
+                        if let Err(error) = publication.reserve_delta(&delta, 1) {
+                            publication.fail_storage(error);
+                            finalize_terminal_job(&guarded_store, &id, JobRecord { status: JobStatus::Failed, output: None, error: Some("background output could not be buffered by the configured store".into()) });
+                            drop(guard);
+                            return;
+                        }
                         n_completion_tokens += 1;
                         usage.completion_tokens = n_completion_tokens;
                         if let Some(r) = receipt.as_mut() {
@@ -1222,7 +1249,7 @@ async fn run_background_job(
                                 );
                                 let _ = r.reject(500, "request_ledger_unavailable");
                                 finalize_terminal_job(
-                                    &*st.job_store,
+                                    &guarded_store,
                                     &id,
                                     JobRecord {
                                         status: JobStatus::Failed,
@@ -1257,7 +1284,7 @@ async fn run_background_job(
                             );
                         }
                         finalize_terminal_job(
-                            &*st.job_store,
+                            &guarded_store,
                             &id,
                             JobRecord {
                                 status: JobStatus::Failed,
@@ -1277,7 +1304,7 @@ async fn run_background_job(
                             );
                         }
                         finalize_terminal_job(
-                            &*st.job_store,
+                            &guarded_store,
                             &id,
                             JobRecord {
                                 status: JobStatus::Failed,
@@ -1332,7 +1359,7 @@ async fn run_background_job(
                             // actually billed.
                             let _ = r.reject(500, "request_ledger_unavailable");
                             finalize_terminal_job(
-                                &*st.job_store,
+                                &guarded_store,
                                 &id,
                                 JobRecord {
                                     status: JobStatus::Failed,
@@ -1363,7 +1390,7 @@ async fn run_background_job(
                             incomplete,
                         );
                         finalize_terminal_job(
-                            &*st.job_store,
+                            &guarded_store,
                             &id,
                             JobRecord { status: job_status, output: Some(body), error: None },
                         );

@@ -45,7 +45,17 @@ impl Control {
     }
 }
 
-pub(crate) fn validate(background: bool, stream: bool) -> Result<(), &'static str> {
+pub(crate) fn default_background() -> Value {
+    Value::Bool(false)
+}
+
+pub(crate) fn validate(value: &Value, stream: bool) -> Result<(), &'static str> {
+    let background = match value {
+        Value::Bool(value) => *value,
+        // Serde's default for an omitted Value is null. Use a dedicated false
+        // default so an explicit null is distinguishable and refused.
+        _ => return Err("background must be a boolean"),
+    };
     if background && !crate::responses_api::background_door_open() {
         return Err("background delivery is disabled; MEMRA_BACKGROUND_RESPONSES is off");
     }
@@ -143,7 +153,26 @@ pub(crate) async fn submit(
                 error: None,
             },
         );
-        let mut receipt = receipt;
+        let (publication, mut receipt) =
+            crate::job_publication::Publication::new(st.job_store.clone(), key.clone(), receipt);
+        if let Err(error) = publication.initial_reservation() {
+            publication.fail_storage(error);
+            crate::responses_api::finalize_terminal_job(
+                &crate::job_publication::PublishingStore(publication),
+                &key,
+                JobRecord {
+                    status: JobStatus::Failed,
+                    output: None,
+                    error: Some(
+                        "background output could not be buffered by the configured store".into(),
+                    ),
+                },
+            );
+            let _ = terminal.send(true);
+            st.background_cancel.lock().unwrap().remove(&key);
+            drop(guard);
+            return;
+        }
         let response = crate::collect_blocking_response(
             rx,
             model,
@@ -154,13 +183,15 @@ pub(crate) async fn submit(
             &mut receipt,
             None,
             Some(control.cancel),
+            Some(&publication),
         )
         .await;
         let http_status = response.status();
-        let parsed = match axum::body::to_bytes(response.into_body(), usize::MAX).await {
-            Ok(bytes) => serde_json::from_slice::<Value>(&bytes).ok(),
-            Err(_) => None,
-        };
+        let parsed =
+            match axum::body::to_bytes(response.into_body(), publication.body_limit()).await {
+                Ok(bytes) => serde_json::from_slice::<Value>(&bytes).ok(),
+                Err(_) => None,
+            };
         let record = match parsed {
             Some(mut body) if body.is_object() => {
                 let code = body
@@ -202,7 +233,8 @@ pub(crate) async fn submit(
                 error: Some("background completion could not be encoded".into()),
             },
         };
-        crate::responses_api::finalize_terminal_job(&*st.job_store, &key, record);
+        let guarded = crate::job_publication::PublishingStore(publication);
+        crate::responses_api::finalize_terminal_job(&guarded, &key, record);
         let _ = terminal.send(true);
         st.background_cancel.lock().unwrap().remove(&key);
         drop(guard);
