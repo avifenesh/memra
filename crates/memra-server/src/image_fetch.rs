@@ -347,6 +347,21 @@ async fn fetch_remote_image(url: &str, max_bytes: usize) -> Result<(Vec<u8>, Str
             return Err(FetchError::Unreachable(err.to_string()));
         }
     };
+    // reqwest can decline a non-HTTP Location before invoking the custom policy.
+    // Preserve the same blocked classification for that un-followed redirect.
+    if resp.status().is_redirection()
+        && let Some(location) = resp
+            .headers()
+            .get(reqwest::header::LOCATION)
+            .and_then(|v| v.to_str().ok())
+        && let Ok(next) = resp.url().join(location)
+        && !matches!(next.scheme(), "http" | "https")
+    {
+        return Err(FetchError::Blocked(format!(
+            "redirect to non-http(s) scheme {:?}",
+            next.scheme()
+        )));
+    }
     if !resp.status().is_success() {
         return Err(FetchError::Unreachable(format!(
             "http status {}",
