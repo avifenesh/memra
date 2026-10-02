@@ -25151,10 +25151,10 @@ temperature = 0.6
                     );
                     assert_eq!(
                         bg914_terminal_events(&mock),
-                        vec![MeterEvent::Complete {
-                            prompt: 3,
-                            cached: 1,
-                            completion: 1
+                        vec![MeterEvent::Unbilled {
+                            outcome: "background_storage_failed",
+                            status: 503,
+                            code: "background_job_store_capacity_exceeded".into()
                         }]
                     );
                 }
