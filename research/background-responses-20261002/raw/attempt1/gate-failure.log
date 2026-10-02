@@ -1,0 +1,6 @@
+PASS door OFF refusal and synchronous control
+Traceback (most recent call last):
+  File "$WORKTREE/tools/background-responses-gate.py", line 22, in <module>
+    probe.bind(('127.0.0.1', args.port))
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: [Errno 98] Address already in use

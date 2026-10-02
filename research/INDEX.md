@@ -690,3 +690,4 @@ a4-component-cost-20261002 | Calibrated FP4 quantization plus GEMM is 2.500x INT
 modelplan-onboarding-20261002-qwen35-9b | All five scoped serving cells passed on the pinned Qwen3.5-9B artifact; checkpoint parity and strict runtime/rewrite prerequisites remain pending. | modelplan-onboarding-20261002-qwen35-9b/RESULTS.md
 
 sampled-mtp-pmin-20261002 | Positive-PMIN single-head graph/eager and zero-draft probes passed; 3072 requests found no detected difference in 40 registered token marginals; pinned vendor-profile chat/cache/concurrency/rollback passed. PMIN default unchanged. | sampled-mtp-pmin-20261002/RESULTS.md
+background-responses-20261002 | "PASS for the recorded local API scope." | background-responses-20261002/RESULTS.md

@@ -146,10 +146,10 @@ rather than hardwiring storage into the handler:
   including status/result retrieval or resume, cancellation, and terminal usage
   callbacks": routes, the `JobStore`, and worker-cancellation wiring are DONE on
   `/v1/responses` (route wiring lane, memra#550), covered by route-level tests against
-  the fake worker harness. **Still not satisfied**: a real over-90-second generation
-  exercised against a running `memra-server` on a GPU box. `memra-server` compiles CUDA
-  fatbins and is not buildable in a CPU-only lane; GitHub CI builds it but does not run a
-  live server end to end either.
+  the fake worker harness. The local native run is now recorded in
+  `research/background-responses-20261002/RESULTS.md`: one 246.917-second completed
+  request and one cancelled at 244 tokens, with terminal callbacks and all usage
+  fields checked. This is the named local model/hardware scope only.
 - "Keep partial/deadline failures explicit, and document deployment ownership of
   pricing/accounting policy": addressed by points 5-7 above, and by the three
   `docs/FLAGS.md` rows PR #905 added.
@@ -172,10 +172,10 @@ rather than hardwiring storage into the handler:
    across processes; that routing remains deployment-owned.
 2. DONE (PR #905): `MEMRA_BACKGROUND_RESPONSES`, `MEMRA_BACKGROUND_JOB_TTL_SECS`, and
    `MEMRA_BACKGROUND_JOB_MAX_BYTES`, all in `docs/FLAGS.md`.
-3. A box run: a real generation submitted with `background: true` that legitimately
-   exceeds 90 s, polled through to completion; a second one cancelled mid-generation; and
-   a terminal usage row inspected in the ledger for both. The local endpoint run is tracked in the PR receipt;
-   this does not qualify another model or hardware target.
+3. DONE for the named local scope: the native endpoint run in
+   `research/background-responses-20261002/RESULTS.md` covers completion beyond 90 s,
+   cancellation, tenant isolation and terminal accounting on Qwen3.5-9B Q8_0 and one
+   RTX 5090 Laptop GPU. It does not qualify another model or hardware target.
 4. An owner decision on the in-memory `JobStore`'s default TTL and default max resident
    bytes. PR #905 shipped conservative placeholders (900 s, 64 MiB), both
    env-configurable and explicitly not measured numbers; the owner may change either
