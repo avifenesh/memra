@@ -275,7 +275,8 @@ fn check_literal_ip(ip: IpAddr, allowed: &[String]) -> Result<(), FetchError> {
 
 fn redirect_policy(allowed: Arc<Vec<String>>) -> reqwest::redirect::Policy {
     reqwest::redirect::Policy::custom(move |attempt| {
-        if attempt.previous().len() >= FETCH_MAX_REDIRECTS {
+        // reqwest includes the initial URL in previous; it is not a redirect.
+        if attempt.previous().len() > FETCH_MAX_REDIRECTS {
             return attempt.error(SsrfBlocked(format!(
                 "more than {FETCH_MAX_REDIRECTS} redirects"
             )));
