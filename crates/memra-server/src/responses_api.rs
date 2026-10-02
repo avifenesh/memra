@@ -736,6 +736,7 @@ async fn responses_with_admission(
     if background_requested {
         return handle_background_submit(
             st.clone(),
+            tenant.tenant,
             env,
             model,
             rx,
@@ -949,6 +950,7 @@ fn job_record_response(id: &str, record: crate::metering::JobRecord) -> Response
 #[allow(clippy::too_many_arguments)]
 async fn handle_background_submit(
     st: AppState,
+    tenant: String,
     env: Envelope,
     model: String,
     rx: crate::worker::EventReceiver,
@@ -958,7 +960,7 @@ async fn handle_background_submit(
     parser: Option<crate::toolcall::ToolStreamParser>,
     stop_strings: Vec<String>,
 ) -> Response {
-    let id = env.id.clone();
+    let id = background_store_key(&tenant, &env.id);
     if let Err(err) = st.job_store.put(&id, crate::metering::JobRecord::queued()) {
         drop(guard);
         let code = match err {
@@ -1370,21 +1372,27 @@ async fn run_background_job(
     }
 }
 
-/// `GET /v1/responses/{id}`: poll a background job. Authenticates against the same tenant
-/// keyring as every other surface; does not (yet) check that the polling tenant is the one
-/// that submitted the job (memra#550 owed gap, named in the PR: any authenticated tenant
-/// that knows a job id can poll or cancel it).
+/// Tenant-scoped opaque storage identity. Length-prefixing makes separators in either
+/// component unambiguous. Never expose this key as the public response id. All store
+/// operations and live cancellation handles use the same key, including custom stores.
+pub(crate) fn background_store_key(tenant: &str, id: &str) -> String {
+    format!("{}:{tenant}{id}", tenant.len())
+}
+
+/// `GET /v1/responses/{id}` returns only the authenticated tenant's job. Foreign ids
+/// are indistinguishable from unknown or expired ids.
 pub(crate) async fn poll_admitted(
     State(st): State<AppState>,
     headers: axum::http::HeaderMap,
     axum::extract::Path(id): axum::extract::Path<String>,
 ) -> Response {
-    if let Err(why) =
-        surfaces::authenticate_candidates(&st.api_auth, &[crate::bearer_token(&headers)])
-    {
-        return crate::authentication_error(why);
-    }
-    match st.job_store.get(&id) {
+    let tenant =
+        match surfaces::authenticate_candidates(&st.api_auth, &[crate::bearer_token(&headers)]) {
+            Ok(tenant) => tenant,
+            Err(why) => return crate::authentication_error(why),
+        };
+    let key = background_store_key(&tenant.tenant, &id);
+    match st.job_store.get(&key) {
         None => crate::error_response(
             axum::http::StatusCode::NOT_FOUND,
             "no background job with this id",
@@ -1406,12 +1414,13 @@ pub(crate) async fn cancel_admitted(
     headers: axum::http::HeaderMap,
     axum::extract::Path(id): axum::extract::Path<String>,
 ) -> Response {
-    if let Err(why) =
-        surfaces::authenticate_candidates(&st.api_auth, &[crate::bearer_token(&headers)])
-    {
-        return crate::authentication_error(why);
-    }
-    let record = match st.job_store.get(&id) {
+    let tenant =
+        match surfaces::authenticate_candidates(&st.api_auth, &[crate::bearer_token(&headers)]) {
+            Ok(tenant) => tenant,
+            Err(why) => return crate::authentication_error(why),
+        };
+    let key = background_store_key(&tenant.tenant, &id);
+    let record = match st.job_store.get(&key) {
         None => {
             return crate::error_response(
                 axum::http::StatusCode::NOT_FOUND,
@@ -1431,7 +1440,7 @@ pub(crate) async fn cancel_admitted(
             Some("background_job_already_terminal"),
         );
     }
-    let notify = st.background_cancel.lock().unwrap().get(&id).cloned();
+    let notify = st.background_cancel.lock().unwrap().get(&key).cloned();
     if let Some(n) = notify {
         n.notify_one();
     }
@@ -1440,14 +1449,14 @@ pub(crate) async fn cancel_admitted(
     // signal cannot hold this handler open indefinitely; a real GPU worker's next tick is the
     // same order of magnitude the existing deadline-miss cancel path already assumes.
     for _ in 0..200 {
-        if let Some(r) = st.job_store.get(&id)
+        if let Some(r) = st.job_store.get(&key)
             && r.status.is_terminal()
         {
             return job_record_response(&id, r);
         }
         tokio::time::sleep(std::time::Duration::from_millis(5)).await;
     }
-    match st.job_store.get(&id) {
+    match st.job_store.get(&key) {
         Some(r) => job_record_response(&id, r),
         None => crate::error_response(
             axum::http::StatusCode::NOT_FOUND,

@@ -5808,6 +5808,7 @@ enum MeteringWiring {
 /// its own metering and hooks the runtime handles it needs.
 pub struct ServerWiring {
     metering: MeteringWiring,
+    job_store: Option<Arc<dyn metering::JobStore>>,
     /// Called once, when the worker is live (models loaded, commands accepted),
     /// with the runtime handles a deployment-side surface needs. Not awaited.
     on_ready: Option<Box<dyn FnOnce(RuntimeHandles) + Send>>,
@@ -5822,6 +5823,7 @@ impl ServerWiring {
     pub fn stock() -> Self {
         ServerWiring {
             metering: MeteringWiring::Stock,
+            job_store: None,
             on_ready: None,
             claimed_env: Vec::new(),
         }
@@ -5832,9 +5834,18 @@ impl ServerWiring {
     pub fn with_metering(factory: metering::MeteringFactory) -> Self {
         ServerWiring {
             metering: MeteringWiring::Custom(factory),
+            job_store: None,
             on_ready: None,
             claimed_env: Vec::new(),
         }
+    }
+
+    /// Use a deployment-owned result store. Keys are opaque tenant-scoped identities;
+    /// retain the complete key on every operation. Sharing stored results does not move
+    /// live worker cancellation across processes; route cancellation to the owning worker.
+    pub fn with_job_store(mut self, store: Arc<dyn metering::JobStore>) -> Self {
+        self.job_store = Some(store);
+        self
     }
 
     /// Declare that the deployment consumes this reference-only env var itself
@@ -6217,7 +6228,9 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
         // No speech pack can be resident yet: no speech operation has a CUDA kernel
         // (docs/SPEECH.md §1). The surface exists and fails closed.
         audio: audio_api::shared_audio(false),
-        job_store: Arc::new(job_store::InMemoryJobStore::from_env()),
+        job_store: wiring
+            .job_store
+            .unwrap_or_else(|| Arc::new(job_store::InMemoryJobStore::from_env())),
         background_cancel: Arc::new(Mutex::new(HashMap::new())),
     };
     let inflight_handle = state.inflight.clone();
@@ -22723,6 +22736,153 @@ temperature = 0.6
         assert_eq!(b["usage"]["output_tokens"], 3);
     }
 
+    #[test]
+    fn background_storage_keys_are_unambiguous() {
+        assert_ne!(
+            responses_api::background_store_key("a", "bc"),
+            responses_api::background_store_key("ab", "c")
+        );
+        assert_ne!(
+            responses_api::background_store_key("a:1", "x"),
+            responses_api::background_store_key("a", ":1x")
+        );
+        assert_ne!(
+            responses_api::background_store_key("blue", "4:acmeresp_x"),
+            responses_api::background_store_key("acme", "resp_x")
+        );
+    }
+
+    #[test]
+    fn deployment_job_store_is_retained_by_wiring() {
+        let store: Arc<dyn metering::JobStore> = Arc::new(job_store::InMemoryJobStore::new(
+            std::time::Duration::from_secs(60),
+            4096,
+        ));
+        let wiring = ServerWiring::stock().with_job_store(store.clone());
+        assert!(Arc::ptr_eq(wiring.job_store.as_ref().unwrap(), &store));
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: shared drain/env controls must remain held through handler awaits
+    async fn background_tenant_isolation_on_submit_poll_and_cancel() {
+        let _l = drain_lock();
+        let _env_lock = background_env_lock();
+        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
+        let mut st = fake_worker_state_with_steps(100, std::time::Duration::from_millis(2));
+        let spec = format!(
+            "acme:{},acme:{},blue:{}",
+            auth::sha256_hex("owner-key"),
+            auth::sha256_hex("rotated-key"),
+            auth::sha256_hex("foreign-key")
+        );
+        st.api_auth.keyring = Some(Box::leak(Box::new(
+            auth::KeyStore::from_spec(&spec).unwrap(),
+        )));
+        let headers = |key: &str| {
+            let mut h = HeaderMap::new();
+            h.insert("authorization", format!("Bearer {key}").parse().unwrap());
+            h
+        };
+        let response = responses_api::responses(
+            State(st.clone()),
+            headers("owner-key"),
+            None,
+            axum::body::Bytes::from(
+                json!({"model":"m", "input":"hi", "background":true}).to_string(),
+            ),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_value(response).await;
+        let id = body["id"].as_str().unwrap().to_string();
+        assert!(
+            !id.contains("acme"),
+            "storage tenant must not leak into the public id"
+        );
+        let key = responses_api::background_store_key("acme", &id);
+        let notify = st
+            .background_cancel
+            .lock()
+            .unwrap()
+            .get(&key)
+            .unwrap()
+            .clone();
+        for candidate in [id.clone(), key] {
+            let poll = responses_api::poll_admitted(
+                State(st.clone()),
+                headers("foreign-key"),
+                Path(candidate.clone()),
+            )
+            .await;
+            let cancel = responses_api::cancel_admitted(
+                State(st.clone()),
+                headers("foreign-key"),
+                Path(candidate),
+            )
+            .await;
+            assert_eq!(poll.status(), StatusCode::NOT_FOUND);
+            assert_eq!(cancel.status(), StatusCode::NOT_FOUND);
+            assert_eq!(body_value(poll).await, body_value(cancel).await);
+        }
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(1), notify.notified())
+                .await
+                .is_err(),
+            "foreign cancel must never signal the task"
+        );
+        assert_eq!(
+            responses_api::poll_admitted(State(st.clone()), HeaderMap::new(), Path(id.clone()))
+                .await
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+        let owner_poll = responses_api::poll_admitted(
+            State(st.clone()),
+            headers("rotated-key"),
+            Path(id.clone()),
+        )
+        .await;
+        assert_eq!(
+            owner_poll.status(),
+            StatusCode::OK,
+            "ownership is per tenant, not per API key"
+        );
+        let cancel = responses_api::cancel_admitted(
+            State(st.clone()),
+            headers("rotated-key"),
+            Path(id.clone()),
+        )
+        .await;
+        assert_eq!(cancel.status(), StatusCode::OK);
+        assert_eq!(body_value(cancel).await["status"], "cancelled");
+        assert_eq!(
+            responses_api::poll_admitted(
+                State(st.clone()),
+                headers("foreign-key"),
+                Path(id.clone())
+            )
+            .await
+            .status(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            responses_api::cancel_admitted(
+                State(st.clone()),
+                headers("foreign-key"),
+                Path(id.clone())
+            )
+            .await
+            .status(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            responses_api::cancel_admitted(State(st), headers("owner-key"), Path(id))
+                .await
+                .status(),
+            StatusCode::CONFLICT
+        );
+    }
+
     /// `GET` on an id the store never admitted (never submitted, or a typo) is a plain 404,
     /// not a 500 or an empty 200. The same answer applies whether the id never existed or existed
     /// and was TTL-evicted (the sweep just removes the record; there is no tombstone).
@@ -23153,11 +23313,11 @@ temperature = 0.6
         unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
 
         let mut st = fake_worker_state_with_steps(50, std::time::Duration::from_millis(1));
-        // Fits the placeholders (well under 100 bytes each) but not a 50-token completed
-        // envelope.
+        // Exactly fills the placeholder reservation, but cannot hold a completed
+        // envelope. The fallback must still fit with no spare capacity.
         st.job_store = Arc::new(job_store::InMemoryJobStore::new(
             std::time::Duration::from_secs(60),
-            300,
+            256,
         ));
         let resp = responses_api::responses(
             State(st.clone()),
@@ -23209,12 +23369,13 @@ temperature = 0.6
             std::time::Duration::from_millis(10),
             job_store::DEFAULT_MAX_BYTES,
         ));
+        let key = responses_api::background_store_key("default", "resp_ttl");
         st.job_store
-            .put("resp_ttl", metering::JobRecord::queued())
+            .put(&key, metering::JobRecord::queued())
             .unwrap();
         st.job_store
             .put(
-                "resp_ttl",
+                &key,
                 metering::JobRecord {
                     status: metering::JobStatus::Completed,
                     output: Some(json!({"id": "resp_ttl", "status": "completed"})),

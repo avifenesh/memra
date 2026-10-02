@@ -65,7 +65,8 @@ fn record_size_bytes(record: &JobRecord) -> usize {
         .map(|b| b.len())
         .unwrap_or(0);
     let error_len = record.error.as_ref().map(|e| e.len()).unwrap_or(0);
-    output_len + error_len + BOOKKEEPING_OVERHEAD
+    // Reserve enough space at admission for the fixed terminal storage-failure record.
+    (output_len + error_len + BOOKKEEPING_OVERHEAD).max(256)
 }
 
 struct Entry {
@@ -384,7 +385,7 @@ mod tests {
     fn byte_cap_refuses_a_record_that_would_exceed_it() {
         // A cap that admits the initial Queued placeholder (the only way to mint an id) but
         // is far too small for the real (large) completed output that follows it.
-        let s = store(Duration::from_secs(60), 200);
+        let s = store(Duration::from_secs(60), 256);
         s.put("too-big", JobRecord::queued()).unwrap();
         let big_output = json!({"text": "x".repeat(1024)});
         let attempt = s.put(
