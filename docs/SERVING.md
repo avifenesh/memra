@@ -1139,7 +1139,8 @@ worker errors remain failures rather than successful empty responses.
 The stock result store is in-memory and process-local. Terminal results expire after
 `MEMRA_BACKGROUND_JOB_TTL_SECS` (default 900 seconds). The approximate resident cap
 is `MEMRA_BACKGROUND_JOB_MAX_BYTES` (default 64 MiB). Each admitted record reserves
-at least 256 bytes, enough for the fixed terminal storage-failure record. Working output reserves a conservative proportional budget before buffering, and
+at least 256 bytes, enough for the fixed terminal storage-failure record.
+Working output reserves a conservative proportional budget before buffering, and
 encoding uses a counted, capped writer. If output cannot fit, polling reports failure
 and the receipt settles `background_storage_failed` unbilled. Completed and partial
 usage settles only after the configured store reserves terminal publication. Custom

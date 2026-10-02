@@ -72,10 +72,10 @@ fn record_size_bytes(record: &JobRecord) -> usize {
         }
     }
     let mut count = Count(0);
-    if let Some(output) = &record.output {
-        if serde_json::to_writer(&mut count, output).is_err() {
-            return usize::MAX;
-        }
+    if let Some(output) = &record.output
+        && serde_json::to_writer(&mut count, output).is_err()
+    {
+        return usize::MAX;
     }
     let output_len = count.0;
     let error_len = record.error.as_ref().map(|e| e.len()).unwrap_or(0);

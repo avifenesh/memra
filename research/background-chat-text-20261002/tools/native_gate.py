@@ -70,7 +70,7 @@ class Server:
         self.args,self.out,self.port=args,Path(out),port;self.out.mkdir(parents=True)
         self.base=f'http://127.0.0.1:{port}'
         self.cv=threading.Condition();self.receipts={};self.stored={};self.progress={};self.unsettled=[];self.lines=[]
-        self.exited=False;self.listening=False;self.proc=None;self.monitor=None
+        self.exited=False;self.listening=False;self.proc=None;self.monitor=None;self.reader=None;self.log=None;self.telemetry=None
         self.keys={name:secrets.token_hex(24) for name in ['owner','rotated','foreign']}
         env={k:v for k,v in os.environ.items() if not k.startswith('MEMRA_') or k in {'MEMRA_GPU_LOCK','MEMRA_CI_LOCK','MEMRA_CI_LOCK_HELD','MEMRA_RIG_LOCK_FD'}}
         ring=','.join(('acme' if k!='foreign' else 'blue')+':'+hashlib.sha256(v.encode()).hexdigest() for k,v in self.keys.items())
@@ -80,11 +80,16 @@ class Server:
         (self.out/'environment.json').write_text(json.dumps(public,indent=2)+'\n')
         self.http=(self.out/'http.jsonl').open('w')
     def __enter__(self):
+        try:return self.start()
+        except BaseException:
+            self.__exit__(RuntimeError,None,None)
+            raise
+    def start(self):
         with socket.socket() as probe:
             probe.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);probe.bind(('127.0.0.1',self.port))
         subprocess.run(['bash','tools/port-guard.sh','check','background-chat-text',str(self.port)],check=True)
         self.log=(self.out/'server.log').open('w');self.telemetry=(self.out/'gpu-250ms.csv').open('w')
-        self.monitor=subprocess.Popen(['nvidia-smi','--query-gpu=timestamp,uuid,name,memory.total,memory.used,memory.free,utilization.gpu,temperature.gpu,power.draw','--format=csv','--loop-ms=250'],stdout=self.telemetry,stderr=subprocess.STDOUT,pass_fds=(9,))
+        self.monitor=subprocess.Popen(['nvidia-smi','-i',os.environ['CUDA_VISIBLE_DEVICES'],'--query-gpu=timestamp,uuid,name,memory.total,memory.used,memory.free,utilization.gpu,temperature.gpu,power.draw','--format=csv','--loop-ms=250'],stdout=self.telemetry,stderr=subprocess.STDOUT,pass_fds=(9,))
         self.proc=subprocess.Popen([str(self.args.binary.resolve())],env=self.env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,bufsize=1,pass_fds=(9,))
         def reader():
             with (self.out/'receipts.jsonl').open('w') as raw:
@@ -104,13 +109,12 @@ class Server:
         self.reader=threading.Thread(target=reader);self.reader.start()
         with self.cv:ready=self.cv.wait_for(lambda:self.listening or self.exited,timeout=180) and self.listening and not self.exited
         if not ready:
-            self.__exit__(RuntimeError,None,None)
             raise RuntimeError('server readiness failed')
         try:
             subprocess.run(['bash','-c','source tools/port-guard.sh; memra_port_owned background-chat-text "$1" "$2"','_',str(self.port),str(self.proc.pid)],check=True)
         except Exception:
-            self.__exit__(RuntimeError,None,None)
             raise
+        require(any('[server] OpenRouter metadata loaded: 1 model(s), sha256 '+digest(self.args.metadata) in line for line in self.lines), 'server did not load the sealed fixture metadata')
         return self
     def event(self,table,id,timeout=600):
         with self.cv:
@@ -148,11 +152,17 @@ class Server:
                 self.proc.terminate()
                 try:self.proc.wait(timeout=20)
                 except subprocess.TimeoutExpired:self.proc.kill();self.proc.wait()
-            self.reader.join(timeout=5);self.log.close()
-        if self.monitor:self.monitor.terminate();self.monitor.wait(timeout=5);self.telemetry.close()
+            if self.reader:self.reader.join(timeout=5)
+        if self.log:self.log.close()
+        if self.monitor:
+            if self.monitor.poll() is None:self.monitor.terminate()
+            self.monitor.wait(timeout=5)
+        if self.telemetry:self.telemetry.close()
         self.http.close()
-        (self.out/'final.json').write_text(json.dumps({'receipt_count':sum(map(len,self.receipts.values())),'unsettled':self.unsettled,'server_exit':self.proc.returncode if self.proc else None},indent=2))
-        if not _ or _[0] is None:require(not self.unsettled,'unsettled native receipt')
+        (self.out/'final.json').write_text(json.dumps({'receipt_count':sum(map(len,self.receipts.values())),'terminal_counts':{id:len(rows) for id,rows in self.receipts.items()},'unsettled':self.unsettled,'server_exit':self.proc.returncode if self.proc else None},indent=2))
+        if not _ or _[0] is None:
+            require(not self.unsettled,'unsettled native receipt')
+            require(all(len(rows)==1 for rows in self.receipts.values()),'late duplicate terminal callback')
 
 def short_body(chat,bg=False):
     body={'model':'q9','max_tokens':64,'temperature':0,'top_p':1,'top_k':0,'min_p':0,'presence_penalty':0,'frequency_penalty':0,'repetition_penalty':1,'seed':7}
@@ -167,7 +177,7 @@ def main(args):
     profile=tomllib.loads(args.metadata.read_text())['models']['q9']
     require(profile['non_thinking_sampling']=={'temperature':0.7,'top_p':0.8,'top_k':20,'min_p':0.0,'presence_penalty':1.5,'repetition_penalty':1.0},'non-thinking profile absent/wrong')
     out=args.out;out.mkdir(parents=True,exist_ok=True)
-    manifest={'head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'tracked_diff_sha256':hashlib.sha256(subprocess.check_output(['git','diff','HEAD','--binary'])).hexdigest(),'binary_sha256':digest(args.binary),'model_sha256':args.model_sha,'metadata_sha256':digest(args.metadata),'collector_sha256':digest(Path(__file__)),'context':32768,'phase':args.phase,'gpu':subprocess.check_output(['nvidia-smi','--query-gpu=name,uuid,driver_version,memory.total','--format=csv,noheader'],text=True)}
+    manifest={'head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'tracked_diff_sha256':hashlib.sha256(subprocess.check_output(['git','diff','HEAD','--binary'])).hexdigest(),'binary_sha256':digest(args.binary),'model_sha256':args.model_sha,'metadata_sha256':digest(args.metadata),'collector_sha256':digest(Path(__file__)),'context':32768,'phase':args.phase,'gpu':subprocess.check_output(['nvidia-smi','-i',os.environ['CUDA_VISIBLE_DEVICES'],'--query-gpu=name,uuid,driver_version,memory.total','--format=csv,noheader'],text=True)}
     (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
     summary=[]
     if args.phase=='short':

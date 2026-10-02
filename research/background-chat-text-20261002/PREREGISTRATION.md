@@ -4,11 +4,16 @@ Scope: Memra #914 on source base 42e9ed7447a19aa27d6be88b3341296b9ba16661.
 No native math, kernel, model artifact, sampling default, JobStore policy value or
 support declaration changes. The background switch remains OFF. #550 remains open.
 
-Cached artifact: qwen3.5-9b-judge-q8_0.gguf, expected SHA256
+Cached long-delivery artifact: qwen3.5-9b-judge-q8_0.gguf, expected SHA256
 0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c.
+Short/default probes use the separate cached NVFP4-MTP GGUF, SHA256
+52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de.
+The fixture metadata declares both vendor arms and preserves the artifact/template
+mode. Loaded metadata SHA and actual post-listener sampler bursts are required.
+
 All heavy work uses the shared broker, private target, compiler jobs two, four CPU,
 32 GiB host RAM and no swap. GPU cells use the inherited canonical FD9 lease on one
-RTX 5090 Laptop GPU. Build precedes GPU; no compilation inside GPU cells.
+leased local RTX 5090. Build precedes GPU; no compilation inside GPU cells.
 
 CPU contracts exercise real route/admission code with controlled worker events:
 OFF/stream/type refusals; omitted decoder defaults; success after a declared deadline;

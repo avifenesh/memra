@@ -137,13 +137,12 @@ impl Publication {
         let mut state = self.settlement.lock().unwrap_or_else(|e| e.into_inner());
         state.pending = None;
         if !state.settled {
-            if let Some(receipt) = state.receipt.as_mut() {
-                if receipt
+            if let Some(receipt) = state.receipt.as_mut()
+                && receipt
                     .settle_unbilled("background_storage_failed", 503, code)
                     .is_err()
-                {
-                    let _ = receipt.reject(500, "request_ledger_unavailable");
-                }
+            {
+                let _ = receipt.reject(500, "request_ledger_unavailable");
             }
             state.settled = true;
         }
@@ -154,11 +153,11 @@ impl Publication {
             self.fail_storage(JobStoreError::CapacityExceeded);
             return self.store.put(&self.key, record);
         }
-        if let Some(output) = &record.output {
-            if let Err(error) = self.encode(output) {
-                self.fail_storage(error);
-                return Err(error);
-            }
+        if let Some(output) = &record.output
+            && let Err(error) = self.encode(output)
+        {
+            self.fail_storage(error);
+            return Err(error);
         }
         let result = self.store.publish_terminal(&self.key, record, &mut || {
             let mut state = self.settlement.lock().unwrap_or_else(|e| e.into_inner());

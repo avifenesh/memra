@@ -947,8 +947,7 @@ fn job_record_response(id: &str, record: crate::metering::JobRecord) -> Response
 }
 
 /// Admit-then-answer-immediately half of a background submission: puts the job's `Queued`
-/// placeholder into the store (the write that mints the id there, and the only point a
-/// `CapacityExceeded` byte-cap refusal can land, before any worker time is spent), arms the
+/// placeholder into the store (the write that mints the id there), arms the
 /// cancel signal, answers the caller, then spawns [`run_background_job`] to drive the rest.
 #[allow(clippy::too_many_arguments)]
 async fn handle_background_submit(

@@ -30,7 +30,7 @@ as prompt tokens.
 `background` extension. It defaults to false. With the existing
 `MEMRA_BACKGROUND_RESPONSES` switch OFF, `background: true` is a named HTTP 400.
 Combining background and streaming is also a named HTTP 400; malformed boolean
-values are refused by the request parser. Existing decoding defaults still apply
+values return a named HTTP 400 for `background`. Existing decoding defaults still apply
 when the request omits decoding fields.
 
 An admitted background request returns `{id, status: "queued"}`. Retrieve the
