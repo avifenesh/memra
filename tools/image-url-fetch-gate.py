@@ -268,6 +268,16 @@ try:
             blue_remote = successful(request('remote-blue-control', payload([url_root + '/blue.png'])), colour='blue')
             assert blue_inline == blue_remote
             verdicts['native_vision_and_inline_url_identity'] = {'pass': True}
+        if not a.transport_only:
+            for response in (False, True):
+                naked = payload([url_root + '/red.png'], response)
+                for key in ('max_tokens', 'max_output_tokens', 'temperature', 'reasoning_effort', 'reasoning'):
+                    naked.pop(key, None)
+                assert set(naked) == ({'model', 'input'} if response else {'model', 'messages'})
+                (a.out / ('vendor-default-responses-request.json' if response else 'vendor-default-chat-request.json')).write_text(json.dumps(naked, indent=2))
+                result = request('vendor-default-' + str(response), naked, response)
+                successful(result, response)
+                verdicts['vendor_default_' + ('responses' if response else 'chat')] = {'pass': True, 'decode_fields': []}
         for response in (False, True):
             refuse('whole-byte-budget-' + str(response), [url_root + '/budget-header'], 'image_url_too_large', response=response, _padding='x' * (192 * 1024 * 1024 - 1024 * 1024 - 4096))
         elapsed = refuse('per-image-timeout', [url_root + '/slow-header'], 'image_url_unreachable')
