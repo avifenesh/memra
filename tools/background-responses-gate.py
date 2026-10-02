@@ -19,6 +19,7 @@ door = '0' if args.door_off else '1'
 lock = pathlib.Path(os.environ['MEMRA_GPU_LOCK'])
 assert os.path.samefile(f'/proc/self/fd/{args.external_lock}', lock), 'inherited lock must match MEMRA_GPU_LOCK'
 with socket.socket() as probe:
+    probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     probe.bind(('127.0.0.1', args.port))
 binary = args.binary.resolve()
 model = args.model.resolve()
