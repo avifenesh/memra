@@ -39,11 +39,15 @@ jobs:
       requires_cuda: ${{ steps.classify.outputs.requires_cuda }}
       contracts: ${{ steps.classify.outputs.contracts }}
     steps:
-      # fetch-depth 0 is cheap on this history (rebuilt 2026-09-01) and is what makes the PR
-      # base and the push `before` reachable for the diff.
+      # Keep history for PR/push diffs. The planner reads Git trees, so the selection
+      # checkout does not need to materialize the research receipt corpus.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          sparse-checkout: |
+            tools
+            crates
+          sparse-checkout-cone-mode: true
       - id: classify
         name: Plan affected checks (unknown dependencies expand to all jobs)
         run: |
