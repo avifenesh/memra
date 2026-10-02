@@ -477,6 +477,20 @@ jobs:
         run: cargo fetch --locked
       - name: Tier, KV and onboarding-CLI suites (CPU execution through the skip census; NOT GPU qualification)
         run: tools/portable-suites.sh
+      - name: Network address guard (CPU, minimum 15 tests, zero skips or ignored tests)
+        if: ${{ hashFiles('crates/memra-net-guard/Cargo.toml') != '' }}
+        env:
+          MEMRA_PORTABLE_SKIP_BUDGET: "0"
+        run: |
+          mkdir -p target
+          python3 tools/skip-census.py verify --crate memra-net-guard
+          python3 tools/skip-census.py run --budget-var MEMRA_PORTABLE_SKIP_BUDGET --min-passed 15 --log target/net-guard-tests.log -- cargo test -p memra-net-guard --offline --locked
+          python3 - <<'PYCODE'
+          import pathlib, re
+          text = pathlib.Path("target/net-guard-tests.log").read_text()
+          ignored = re.findall(r"test result: ok\. \d+ passed; 0 failed; (\d+) ignored;", text)
+          assert ignored and all(int(n) == 0 for n in ignored), "net-guard tests must execute without ignored cases"
+          PYCODE
       - name: Portable-suites teeth (planted tier/KV/CLI failures and an undeclared skip must red the same wrapper)
         run: tools/test_portable_suites.sh
       - name: Collector test suite with BOTH rig lock paths held (ruling 12; CPU tests, not qualification)

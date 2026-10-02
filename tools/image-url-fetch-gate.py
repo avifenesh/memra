@@ -28,6 +28,7 @@ p.add_argument('--server-port', type=int, required=True)
 p.add_argument('--fixture-port', type=int, required=True)
 p.add_argument('--external-lock', type=int, required=True)
 p.add_argument('--door-off', action='store_true')
+p.add_argument('--vision-kind', choices=('gemma', 'qwen'), default='gemma')
 p.add_argument('--transport-only', action='store_true', help='No vision qualification; test HTTP controls with the text-only trunk')
 p.add_argument('--test-binary', type=Path)
 a = p.parse_args()
@@ -134,11 +135,17 @@ fixture = FixtureServer(('127.0.0.1', a.fixture_port), Fixture)
 fixture_thread = threading.Thread(target=fixture.serve_forever, daemon=True)
 fixture_thread.start()
 url_root = f'http://127.0.0.1:{a.fixture_port}'
-manifest = {'source': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(), 'binary_sha256': sha(a.binary), 'model': str(a.model), 'model_sha256': sha(a.model), 'mmproj': str(a.mmproj), 'mmproj_sha256': sha(a.mmproj), 'gpu': subprocess.check_output(['nvidia-smi', '--query-gpu=name,uuid,driver_version,memory.total', '--format=csv,noheader'], text=True), 'context': 8192, 'temperature': 0, 'cache': 'prefix cache disabled', 'door': 'off' if a.door_off else 'on', 'scope': 'http_transport_only' if a.transport_only else 'native_vision', 'fixture_sha256': {k: hashlib.sha256(v).hexdigest() for k, v in images.items()}}
+manifest = {'source': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(), 'binary_sha256': sha(a.binary), 'model': str(a.model), 'model_sha256': sha(a.model), 'mmproj': str(a.mmproj), 'mmproj_sha256': sha(a.mmproj), 'gpu': subprocess.check_output(['nvidia-smi', '--query-gpu=name,uuid,driver_version,memory.total', '--format=csv,noheader'], text=True), 'context': 8192, 'temperature': 0, 'cache': 'prefix cache disabled', 'door': 'off' if a.door_off else 'on', 'vision_kind': a.vision_kind, 'spec': 'plain', 'scope': 'http_transport_only' if a.transport_only else 'native_vision', 'fixture_sha256': {k: hashlib.sha256(v).hexdigest() for k, v in images.items()}}
 (a.out / 'manifest.json').write_text(json.dumps(manifest, indent=2))
 env = {k: v for k, v in os.environ.items() if not k.startswith('MEMRA_') or k in {'MEMRA_GPU_LOCK', 'MEMRA_CI_LOCK', 'MEMRA_CI_LOCK_HELD', 'MEMRA_RIG_LOCK_FD'}}
-env.update(MEMRA_MODELS='g12=' + str(a.model), MEMRA_GEMMA_VISION='1', MEMRA_GEMMA_MMPROJ=str(a.mmproj), MEMRA_CTX='8192', MEMRA_ADDR=f'127.0.0.1:{a.server_port}', MEMRA_PREFIX_CACHE_MB='0', MEMRA_FETCH_URLS='0' if a.door_off else '1', MEMRA_FETCH_URLS_ALLOWED_HOSTS='127.0.0.1', MEMRA_API_KEY='image-gate-token')
+env.update(MEMRA_MODELS='vision=' + str(a.model), MEMRA_GEMMA_VISION='1', MEMRA_GEMMA_MMPROJ=str(a.mmproj), MEMRA_CTX='8192', MEMRA_ADDR=f'127.0.0.1:{a.server_port}', MEMRA_PREFIX_CACHE_MB='0', MEMRA_FETCH_URLS='0' if a.door_off else '1', MEMRA_FETCH_URLS_ALLOWED_HOSTS='127.0.0.1', MEMRA_API_KEY='image-gate-token')
+env['MEMRA_SPEC'] = '0'
+if a.vision_kind == 'qwen':
+    env.pop('MEMRA_GEMMA_VISION', None)
+    env.pop('MEMRA_GEMMA_MMPROJ', None)
+    env['MEMRA_VISION_DIR'] = str(a.mmproj.parent)
 if a.transport_only:
+    env.pop('MEMRA_VISION_DIR', None)
     env['MEMRA_GEMMA_VISION'] = '0'
     env.pop('MEMRA_GEMMA_MMPROJ', None)
     if not a.door_off:
@@ -169,9 +176,9 @@ prompt = 'Is the dominant color of this square red or blue? Answer with one word
 def payload(urls, response=False):
     if response:
         content = [{'type': 'input_text', 'text': prompt}] + [{'type': 'input_image', 'image_url': u} for u in urls]
-        return {'model': 'g12', 'input': [{'role': 'user', 'content': content}], 'max_output_tokens': 48, 'temperature': 0, 'reasoning': {'effort': 'none'}}
+        return {'model': 'vision', 'input': [{'role': 'user', 'content': content}], 'max_output_tokens': 48, 'temperature': 0, 'reasoning': {'effort': 'none'}}
     content = [{'type': 'text', 'text': prompt}] + [{'type': 'image_url', 'image_url': {'url': u}} for u in urls]
-    return {'model': 'g12', 'messages': [{'role': 'user', 'content': content}], 'max_tokens': 48, 'temperature': 0, 'reasoning_effort': 'none'}
+    return {'model': 'vision', 'messages': [{'role': 'user', 'content': content}], 'max_tokens': 48, 'temperature': 0, 'reasoning_effort': 'none'}
 def request(case, data, response=False):
     raw = json.dumps(data).encode()
     endpoint = '/v1/responses' if response else '/v1/chat/completions'
@@ -214,7 +221,7 @@ try:
     assert ready.wait(180) and listening.is_set() and server.poll() is None, 'model startup failed; inspect server.log'
     red_uri = 'data:image/png;base64,' + base64.b64encode(images['red']).decode()
     if a.transport_only:
-        status, control, _ = request('text-only-control', {'model':'g12', 'messages':[{'role':'user','content':'Reply OK.'}], 'temperature':0, 'reasoning_effort':'none', 'max_tokens':32})
+        status, control, _ = request('text-only-control', {'model':'vision', 'messages':[{'role':'user','content':'Reply OK.'}], 'temperature':0, 'reasoning_effort':'none', 'max_tokens':32})
         assert status == 200, (status, control)
         verdicts['text_only_endpoint_control'] = {'pass': True}
     else:
