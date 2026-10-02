@@ -24,6 +24,31 @@ surfaces** over a causal LM, with their own schemas, caps and worker semantics, 
 They share the accounting described below: one admitted worker request per input, billed
 as prompt tokens.
 
+## Buffered chat and text completion jobs
+
+`POST /v1/chat/completions` and `POST /v1/completions` accept the boolean
+`background` extension. It defaults to false. With the existing
+`MEMRA_BACKGROUND_RESPONSES` switch OFF, `background: true` is a named HTTP 400.
+Combining background and streaming is also a named HTTP 400; malformed boolean
+values are refused by the request parser. Existing decoding defaults still apply
+when the request omits decoding fields.
+
+An admitted background request returns `{id, status: "queued"}`. Retrieve the
+retained result using `GET /v1/jobs/{id}` and cancel through
+`POST /v1/jobs/{id}/cancel`. Both routes authenticate the current tenant; foreign
+and unknown ids return the same 404. Rotated keys for one tenant retain access.
+Pending jobs contain only identity/status. A terminal result keeps the original
+chat, OpenAI-text or native-text envelope, with job identity/status added. Status
+is completed, incomplete for a token/context cutoff, cancelled, or failed. A
+cancelled partial contains the produced output and an explicit cancelled error.
+Worker and ledger errors remain failed jobs. Repeated GETs retain the same body.
+
+Background delivery uses normal admission/model limits and the deployment's
+JobStore seam. It clears the worker wire deadline and bypasses the synchronous
+feasibility gate; `timeout_ms` does not bound generation. Synchronous requests
+retain their deadline and partial-error behavior. Retention/capacity and the
+background default remain unchanged. See the [delivery contract](SERVING.md#background-delivery-for-long-non-streaming-requests-background-true).
+
 ## OpenAI chat/completions streaming usage
 
 On `/v1/chat/completions` and OpenAI-mode `/v1/completions`,

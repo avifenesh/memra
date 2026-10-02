@@ -121,7 +121,7 @@ pub(crate) const BACKGROUND_RESPONSES_ENV: &str = "MEMRA_BACKGROUND_RESPONSES";
 
 /// Whether the `background: true` door is armed. Read once per call; cheap, and the flag is
 /// not on a hot path (it gates one field on one translation call per request).
-fn background_door_open() -> bool {
+pub(crate) fn background_door_open() -> bool {
     match std::env::var(BACKGROUND_RESPONSES_ENV) {
         Ok(v) => {
             let v = v.trim();
@@ -901,7 +901,7 @@ fn build_output_array(
     output
 }
 
-fn job_status_str(s: crate::metering::JobStatus) -> &'static str {
+pub(crate) fn job_status_str(s: crate::metering::JobStatus) -> &'static str {
     use crate::metering::JobStatus as S;
     match s {
         S::Queued => "queued",
@@ -985,7 +985,7 @@ async fn handle_background_submit(
         return rl.attach(crate::ledger_rejected(receipt, resp, code, &env.id));
     }
 
-    let notify = std::sync::Arc::new(tokio::sync::Notify::new());
+    let (notify, terminal) = crate::background_jobs::Control::new();
     st.background_cancel
         .lock()
         .unwrap()
@@ -1013,9 +1013,10 @@ async fn handle_background_submit(
             guard,
             parser,
             stop_strings,
-            notify,
+            notify.cancel,
         )
         .await;
+        let _ = terminal.send(true);
         // The task's own terminal write already landed; nothing left to signal.
         cleanup_state
             .background_cancel
@@ -1046,7 +1047,7 @@ async fn handle_background_submit(
 /// sweep never evicts it because `finished_at` is stamped only by a successful terminal
 /// write. The fallback record is small enough to always fit, so it keeps the "exactly one
 /// terminal `JobStore` row" guarantee even when the real output could not be buffered.
-fn finalize_terminal_job(
+pub(crate) fn finalize_terminal_job(
     store: &dyn crate::metering::JobStore,
     id: &str,
     record: crate::metering::JobRecord,
@@ -1389,6 +1390,15 @@ pub(crate) async fn poll_admitted(
     headers: axum::http::HeaderMap,
     axum::extract::Path(id): axum::extract::Path<String>,
 ) -> Response {
+    poll_record(st, headers, id, job_record_response).await
+}
+
+pub(crate) async fn poll_record(
+    st: AppState,
+    headers: axum::http::HeaderMap,
+    id: String,
+    render: fn(&str, crate::metering::JobRecord) -> Response,
+) -> Response {
     let tenant =
         match surfaces::authenticate_candidates(&st.api_auth, &[crate::bearer_token(&headers)]) {
             Ok(tenant) => tenant,
@@ -1402,7 +1412,7 @@ pub(crate) async fn poll_admitted(
             "invalid_request_error",
             None,
         ),
-        Some(record) => job_record_response(&id, record),
+        Some(record) => render(&id, record),
     }
 }
 
@@ -1416,6 +1426,15 @@ pub(crate) async fn cancel_admitted(
     State(st): State<AppState>,
     headers: axum::http::HeaderMap,
     axum::extract::Path(id): axum::extract::Path<String>,
+) -> Response {
+    cancel_record(st, headers, id, job_record_response).await
+}
+
+pub(crate) async fn cancel_record(
+    st: AppState,
+    headers: axum::http::HeaderMap,
+    id: String,
+    render: fn(&str, crate::metering::JobRecord) -> Response,
 ) -> Response {
     let tenant =
         match surfaces::authenticate_candidates(&st.api_auth, &[crate::bearer_token(&headers)]) {
@@ -1446,21 +1465,12 @@ pub(crate) async fn cancel_admitted(
     let notify = st.background_cancel.lock().unwrap().get(&key).cloned();
     if let Some(n) = notify {
         n.notify_one();
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(1), n.wait_terminal()).await;
     }
-    // Poll briefly for the background task's own terminal write (it is the only writer of a
-    // terminal state; see `run_background_job`). Bounded so a task that is slow to notice the
-    // signal cannot hold this handler open indefinitely; a real GPU worker's next tick is the
-    // same order of magnitude the existing deadline-miss cancel path already assumes.
-    for _ in 0..200 {
-        if let Some(r) = st.job_store.get(&key)
-            && r.status.is_terminal()
-        {
-            return job_record_response(&id, r);
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-    }
+    // The task publishes its terminal row before signaling. A remote store still
+    // requires deployment routing to the process that owns live cancellation.
     match st.job_store.get(&key) {
-        Some(r) => job_record_response(&id, r),
+        Some(r) => render(&id, r),
         None => crate::error_response(
             axum::http::StatusCode::NOT_FOUND,
             "no background job with this id",
