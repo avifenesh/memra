@@ -18,6 +18,10 @@ commit() { # commit <msg> <path>...
   for p in "$@"; do mkdir -p "$repo/$(dirname "$p")"; echo "$RANDOM" >> "$repo/$p"; done
   g add -A; g commit -q -m "$msg"
 }
+mkdir -p "$repo/crates/memra-engine" "$repo/crates/memra-kv"
+printf '[workspace]\nmembers = ["crates/memra-engine", "crates/memra-kv"]\n' > "$repo/Cargo.toml"
+printf '[package]\nname = "memra-engine"\n' > "$repo/crates/memra-engine/Cargo.toml"
+printf '[package]\nname = "memra-kv"\n' > "$repo/crates/memra-kv/Cargo.toml"
 commit root README.md crates/memra-engine/src/lib.rs
 base=$(g rev-parse HEAD)
 
@@ -79,7 +83,7 @@ echo "a,b,c" >> "$repo/research/lane/fixtures/load.csv"
 g add -A; g commit -q -m fixture-only
 expect true "arm15 included research file" -- pull_request "$base2" "" "$(g rev-parse HEAD)"
 out=$("$cls" pull_request "$base2" "" "$(g rev-parse HEAD)" "$repo")
-printf '%s\n' "$out" | grep -qx 'reason=compile-input:research/lane/fixtures/load.csv' || bad "arm15 reason: $out"
+printf '%s\n' "$out" | grep -qx 'packages=memra-kv' || bad "arm15 reason: $out"
 # arm 16: a sibling research file nobody includes is still docs-only, with the include present
 g reset -q --hard "$base2"; commit receipt research/lane/RESULTS.md
 expect false "arm16 non-included research file beside an include" -- pull_request "$base2" "" "$(g rev-parse HEAD)"
@@ -97,7 +101,7 @@ echo '{"a":1}' > "$repo/research/ep-map/example.json"
 g add -A; g commit -q -m multiline-fixture-only
 expect true "arm17 multi-line included research file" -- pull_request "$base3" "" "$(g rev-parse HEAD)"
 out=$("$cls" pull_request "$base3" "" "$(g rev-parse HEAD)" "$repo")
-printf '%s\n' "$out" | grep -qx 'reason=compile-input:research/ep-map/example.json' || bad "arm17 reason: $out"
+printf '%s\n' "$out" | grep -qx 'packages=memra-engine' || bad "arm17 reason: $out"
 g reset -q --hard "$base"
 
 # arm 18: the census on THIS repository's tree resolves every known include and nothing is left
@@ -115,19 +119,18 @@ for want in research/spill-b-20260919/fixtures/recompute-load.csv \
 done
 ok "arm18 real-tree census ($(printf '%s\n' "$census" | grep -c .) paths, none unresolved)"
 
-# arm 14: ci.yml wiring, in the fail-closed form. Every compile job must gate on
-# `code != 'false'` (a missing output compiles) and none on `== 'true'` (a missing output
-# would skip the compile). Comment lines stripped so this cannot be satisfied by prose.
+# arm 14: every selected job fails closed when its output is absent.
 ci=$here/.github/workflows/ci.yml
 live=$(grep -vE '^\s*#' "$ci")
-printf '%s\n' "$live" | grep -q 'tools/ci-change-class.sh' || bad "arm14: ci.yml does not run the classifier"
-printf '%s\n' "$live" | grep -q 'tools/test_ci_change_class.sh' || bad "arm14: ci.yml does not run this fixture"
-if printf '%s\n' "$live" | grep -q "outputs.code == 'true'"; then
-  bad "arm14: ci.yml gates a job on code == 'true' (fail-open: a missing output skips the compile)"
+grep -q 'tools/ci-change-class.sh' <<< "$live" || bad "arm14: missing planner caller"
+grep -q 'tools/test_ci_change_class.sh' <<< "$live" || bad "arm14: missing fixture caller"
+for job in build clippy server engine portable arch publish; do
+  grep -Fq "!cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.$job != 'false')" <<< "$live" || bad "arm14: $job does not fail closed"
+done
+if grep -Eq "needs.changes.outputs.(build|clippy|server|engine|portable|arch|publish) == 'true'" <<< "$live"; then
+  bad "arm14: fail-open positive comparison"
 fi
-gated=$(printf '%s\n' "$live" | grep -c "needs.changes.outputs.code != 'false'" || true)
-[ "$gated" -ge 6 ] || bad "arm14: expected at least 6 compile jobs gated on code != 'false', found $gated"
-printf '%s\n' "$live" | grep -q '!cancelled()' || bad "arm14: the gate must carry a status function (!cancelled()) or GitHub re-implies success() and a failed classifier skips every compile"
-ok "arm14 ci.yml wiring ($gated gated jobs, fail-closed form)"
+grep -Fq "needs.changes.result == 'success' && needs.changes.outputs.packages || ''" <<< "$live" || bad "arm14: failed planner can retain a partial package list"
+ok "arm14 per-component CI selection fails closed"
 
 echo "test_ci_change_class: $pass arms PASS"

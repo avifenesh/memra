@@ -325,5 +325,67 @@ class Run(Base):
         self.assertFails(rc, out, "hf::staged_cases")
 
 
+class SourceScopes(Base):
+    def fixture(self, expression: str) -> None:
+        self.t.write('crates/memra-x/src/lib.rs', '''
+#[cfg(test)]
+mod first {
+    #[test]
+    fn assertion() {
+EXPRESSION
+    }
+}
+#[cfg(test)]
+mod later {
+    #[test]
+    fn gated() {
+        eprintln!("SKIP[/nope]: real assertion not run");
+        return;
+    }
+}
+'''.replace('EXPRESSION', expression))
+        self.t.manifest(('memra-x', 'later::gated', 'crates/memra-x/src/lib.rs',
+                         'SKIP[/nope]: real assertion not run'))
+
+    def test_noncode_braces_cannot_nest_a_later_test_module(self):
+        expressions = [
+            '        assert!(source.contains("plan.request.wire_deadline = if background {"));',
+            r'        let text = "escaped quote \\"; let brace = "{";',
+            '        let text = r#"a raw { string with a quote " inside"#;',
+            '        let text = br###"a byte raw { string"###;',
+            '        // a comment with {',
+            '        /* outer { /* nested { */ still outer */',
+            "        let ch = '{'; let reference: &'static str = \"x\";",
+        ]
+        for expression in expressions:
+            with self.subTest(expression=expression):
+                self.fixture(expression)
+                rc, out = self.t.census('verify')
+                self.assertEqual(rc, 0, out)
+
+    def test_skip_print_inside_raw_fixture_is_not_an_executed_skip(self):
+        self.fixture('''        let generated = r#"
+    #[test]
+    fn fake() {
+        eprintln!("SKIP[/fake]: this is fixture text");
+    }
+"#;''')
+        rc, out = self.t.census('verify')
+        self.assertEqual(rc, 0, out)
+
+    def test_skip_print_inside_block_comment_is_not_a_row(self):
+        self.fixture('''        /*
+        eprintln!("SKIP[/fake]: not executable");
+        */''')
+        rc, out = self.t.census('verify')
+        self.assertEqual(rc, 0, out)
+
+    def test_unterminated_literal_refuses_instead_of_guessing_scope(self):
+        self.fixture('        let bad = r###"unterminated;')
+        rc, out = self.t.census('verify')
+        self.assertNotEqual(rc, 0, out)
+        self.assertIn('unterminated Rust raw string', out)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,109 @@
+{
+  "decision": "expand",
+  "selected": [],
+  "context": {
+    "model": "Qwen3.5-9B",
+    "artifact": "52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de",
+    "hardware": "RTX 5090 Laptop 24463MiB sm120",
+    "numeric_program": "NVFP4-MTP-GGUF greedy temperature0 seed7",
+    "source": "2873dd4ca37faa15cd4261e7b398926cced30106",
+    "server": "eaa0afa71439143ae6c05455d85dd42097053b91dc5fb4e520e639b91d143529",
+    "context_tokens": 8192,
+    "offered_concurrency": 4
+  },
+  "contract": {
+    "schema": "memra-edge-contract-v1",
+    "required_edges": [
+      "context.6k-to-8k-cold-warm",
+      "control.bad_usage",
+      "control.real_cache_disabled",
+      "control.stream_missing_done",
+      "control.stub_http",
+      "http.disconnect-abort-recovery",
+      "http.four-offered-clients-vs-serial",
+      "http.stream-terminal-and-usage",
+      "prefix.sequential-cold-warm-grid"
+    ],
+    "context": {
+      "model": "Qwen3.5-9B",
+      "artifact": "52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de",
+      "hardware": "RTX 5090 Laptop 24463MiB sm120",
+      "numeric_program": "NVFP4-MTP-GGUF greedy temperature0 seed7",
+      "source": "2873dd4ca37faa15cd4261e7b398926cced30106",
+      "server": "eaa0afa71439143ae6c05455d85dd42097053b91dc5fb4e520e639b91d143529",
+      "context_tokens": 8192,
+      "offered_concurrency": 4
+    },
+    "tests": {}
+  },
+  "contract_id": "93f8ba3f139cb440ea781d79374d0f5ac316d4b317bda53b7305271e1b39df23",
+  "uncovered": [
+    "context.6k-to-8k-cold-warm",
+    "control.bad_usage",
+    "control.real_cache_disabled",
+    "control.stream_missing_done",
+    "control.stub_http",
+    "http.disconnect-abort-recovery",
+    "http.four-offered-clients-vs-serial",
+    "http.stream-terminal-and-usage",
+    "prefix.sequential-cold-warm-grid"
+  ],
+  "ineligible": {
+    "qwen35-serving-composite": [
+      "coverage input changed: tools/collect-serving-qualification.py",
+      "ineligible required test/control: qwen35-serving-composite"
+    ]
+  },
+  "choices": [],
+  "edge_decisions": [
+    {
+      "edge": "context.6k-to-8k-cold-warm",
+      "covered": false,
+      "tests": []
+    },
+    {
+      "edge": "control.bad_usage",
+      "covered": false,
+      "tests": []
+    },
+    {
+      "edge": "control.real_cache_disabled",
+      "covered": false,
+      "tests": []
+    },
+    {
+      "edge": "control.stream_missing_done",
+      "covered": false,
+      "tests": []
+    },
+    {
+      "edge": "control.stub_http",
+      "covered": false,
+      "tests": []
+    },
+    {
+      "edge": "http.disconnect-abort-recovery",
+      "covered": false,
+      "tests": []
+    },
+    {
+      "edge": "http.four-offered-clients-vs-serial",
+      "covered": false,
+      "tests": []
+    },
+    {
+      "edge": "http.stream-terminal-and-usage",
+      "covered": false,
+      "tests": []
+    },
+    {
+      "edge": "prefix.sequential-cold-warm-grid",
+      "covered": false,
+      "tests": []
+    }
+  ],
+  "cost": 0,
+  "optimization": "deterministic greedy set cover, not a claimed global optimum",
+  "isolation": "test boot/reset contracts are unchanged; selection never merges process state",
+  "qualification": false
+}

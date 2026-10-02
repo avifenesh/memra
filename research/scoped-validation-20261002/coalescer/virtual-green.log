@@ -1,0 +1,13 @@
+
+running 4 tests
+test contract::contracts::callback_publication_drives_next_wait ... actual callback: duration=2s, publication=2s, pending callback=2.2s, both rows once
+ok
+test contract::contracts::multiple_workspace_uses_base_window ... multiple workspaces: wait=500us, one row once
+ok
+test contract::contracts::publication_restarts_the_wait_origin ... publication at 200ms: callback at 400ms, one row once
+ok
+test contract::contracts::serial_adaptive_window ... serial: wait=200ms, one row once
+ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

@@ -28,6 +28,52 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(value["gpu_selection"], "shadow-only")
         self.assertEqual(set(value["context_contract"]), CONTEXTS)
 
+    def test_declared_cpu_input_does_not_compile_or_load_models(self):
+        p = plan.make_plan(["tools/q35-cold-mixed-gate.py"])
+        validation = {"mode": "scoped", "packages": [], "jobs": {},
+                      "cpu_contracts": [{"id": "q35-cache", "inputs": ["tools/q35-cold-mixed-gate.py"]}],
+                      "native": {"requirements": ["live evidence still required for the issue"]}}
+        plan.attach_validation(p, validation)
+        self.assertEqual(p["decision"], "cpu-only")
+        self.assertEqual(p["kernel_scope"], "none")
+        self.assertEqual(p["probes"], [])
+        self.assertEqual(p["cpu_contracts"], ["q35-cache"])
+        self.assertTrue(p["native_evidence_obligations"])
+        self.assert_development_only(p)
+
+    def test_research_oracle_inputs_keep_native_expansion(self):
+        validation = {"mode": "scoped", "packages": [], "cpu_contracts": [], "native": {"requirements": []}}
+        for path in ("research/gemma4-bringup/e4b-chat-watercycle-ids.txt",
+                     "research/gemma4-bringup/depth-prompt-1736-ids.txt",
+                     "research/chunk-invariance-20260805/prompt-pp6257.txt",
+                     "research/e2e/prompts/short.txt", "research/campaign/fixture.md"):
+            with self.subTest(path=path):
+                p = plan.make_plan([path])
+                original = {key: p[key] for key in ("decision", "expansion", "required_unregistered", "probes")}
+                plan.attach_validation(p, validation)
+                self.assertEqual(p['decision'], 'expand')
+                self.assertEqual({key: p[key] for key in original}, original)
+
+    def test_plain_docs_can_use_cpu_content_checks(self):
+        p = plan.make_plan(["docs/TESTING.md"])
+        plan.attach_validation(p, {"mode": "scoped", "packages": [], "cpu_contracts": [], "native": {"requirements": []}})
+        self.assertEqual(p['decision'], 'cpu-only')
+
+    def test_mixed_cpu_contract_and_oracle_cannot_hide_native_work(self):
+        p = plan.make_plan(["tools/q35-cold-mixed-gate.py", "research/e2e/prompts/short.txt"])
+        plan.attach_validation(p, {"mode": "scoped", "packages": [],
+                                  "cpu_contracts": [{"id": "q35-cache", "inputs": ["tools/q35-cold-mixed-gate.py"]}],
+                                  "native": {"requirements": ["live evidence"]}})
+        self.assertEqual(p['decision'], 'expand')
+        self.assertTrue(p['required_unregistered'])
+
+    def test_explicit_native_probe_or_context_prevents_cpu_shortcut(self):
+        validation = {"mode": "scoped", "packages": [], "cpu_contracts": [], "native": {"requirements": []}}
+        for explicit, context in [(True, ()), (False, ("compiler",))]:
+            p = plan.make_plan(["tools/q35-cold-mixed-gate.py"])
+            plan.attach_validation(p, validation, explicit, context)
+            self.assertEqual(p["decision"], "expand")
+
     def test_sampled_cuda_selects_device_sampler_and_acceptance_oracles(self):
         value = plan.make_plan(["crates/memra-engine/cu/spec_sample.cu"])
         self.assertTrue({"samp", "accept"} <= set(value["probes"]))
@@ -244,6 +290,28 @@ class CheckoutAndWrapperTests(unittest.TestCase):
         value = json.loads(result.stdout)
         self.assertEqual(value["decision"], "expand")
         self.assertIs(value["qualification"], False)
+        self.assertFalse(self.calls.exists())
+
+    def test_declared_cpu_contract_runs_without_compiler_or_gpu(self):
+        tools = self.repo / 'tools'
+        for name in ('validation_plan.py', 'validation_inputs.json', 'skip-census.py',
+                     'resolve-physical-gpu.py', 'test_resolve_physical_gpu.py', 'unittest-floor.sh'):
+            shutil.copy2(HERE.parent / name, tools / name)
+        package = self.repo / 'crates/memra-server'
+        package.mkdir()
+        (package / 'Cargo.toml').write_text('[package]\nname="memra-server"\n')
+        (self.repo / 'Cargo.toml').write_text('[workspace]\nmembers=["crates/memra-server"]\n')
+        self.commit()
+        source = tools / 'resolve-physical-gpu.py'
+        source.write_text(source.read_text() + '\n# changed CPU contract fixture\n')
+        result = self.wrapper()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('CPU/content contracts PASS', result.stdout)
+        self.assertFalse(self.calls.exists(), 'CPU contract must not call cargo, a model, or flock')
+        # The same entry point must go red when its actual CPU contract fails.
+        source.write_text('raise RuntimeError("planted resolver failure")\n')
+        result = self.wrapper()
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse(self.calls.exists())
 
     def test_unknown_diff_ref_refuses_without_build(self):

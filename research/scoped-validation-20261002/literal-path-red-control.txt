@@ -1,0 +1,72 @@
+Local checkout root normalized in this public traceback.
+Old source: 143d5ea8cfd45e6ee2fa249a1f0fe434632a1614
+test_literal_glob_characters_cannot_hide_input_or_directory (test_validation_plan.ValidationPlanTests.test_literal_glob_characters_cannot_hide_input_or_directory) ... 
+  test_literal_glob_characters_cannot_hide_input_or_directory (test_validation_plan.ValidationPlanTests.test_literal_glob_characters_cannot_hide_input_or_directory) (path='research/input[1].txt') ... FAIL
+  test_literal_glob_characters_cannot_hide_input_or_directory (test_validation_plan.ValidationPlanTests.test_literal_glob_characters_cannot_hide_input_or_directory) (path='research/fixtures[1]/input.json') ... FAIL
+  test_literal_glob_characters_cannot_hide_input_or_directory (test_validation_plan.ValidationPlanTests.test_literal_glob_characters_cannot_hide_input_or_directory) (path='research/fixtures[1]/a/input.json') ... FAIL
+test_literal_directory_glob_characters_do_not_hide_symlink (test_validation_plan.ValidationPlanTests.test_literal_directory_glob_characters_do_not_hide_symlink) ... FAIL
+
+======================================================================
+FAIL: test_literal_glob_characters_cannot_hide_input_or_directory (test_validation_plan.ValidationPlanTests.test_literal_glob_characters_cannot_hide_input_or_directory) (path='research/input[1].txt')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "tools/test_validation_plan.py", line 197, in test_literal_glob_characters_cannot_hide_input_or_directory
+    self.assertEqual(self.plan([path])['packages'], ['memra-server'])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [] != ['memra-server']
+
+Second list contains 1 additional elements.
+First extra element 0:
+'memra-server'
+
+- []
++ ['memra-server']
+
+======================================================================
+FAIL: test_literal_glob_characters_cannot_hide_input_or_directory (test_validation_plan.ValidationPlanTests.test_literal_glob_characters_cannot_hide_input_or_directory) (path='research/fixtures[1]/input.json')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "tools/test_validation_plan.py", line 197, in test_literal_glob_characters_cannot_hide_input_or_directory
+    self.assertEqual(self.plan([path])['packages'], ['memra-server'])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [] != ['memra-server']
+
+Second list contains 1 additional elements.
+First extra element 0:
+'memra-server'
+
+- []
++ ['memra-server']
+
+======================================================================
+FAIL: test_literal_glob_characters_cannot_hide_input_or_directory (test_validation_plan.ValidationPlanTests.test_literal_glob_characters_cannot_hide_input_or_directory) (path='research/fixtures[1]/a/input.json')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "tools/test_validation_plan.py", line 197, in test_literal_glob_characters_cannot_hide_input_or_directory
+    self.assertEqual(self.plan([path])['packages'], ['memra-server'])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [] != ['memra-server']
+
+Second list contains 1 additional elements.
+First extra element 0:
+'memra-server'
+
+- []
++ ['memra-server']
+
+======================================================================
+FAIL: test_literal_directory_glob_characters_do_not_hide_symlink (test_validation_plan.ValidationPlanTests.test_literal_directory_glob_characters_do_not_hide_symlink)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "tools/test_validation_plan.py", line 205, in test_literal_directory_glob_characters_do_not_hide_symlink
+    self.assertEqual(self.plan(['docs/real.md'])['mode'], 'full')
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'scoped' != 'full'
+- scoped
++ full
+
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.304s
+
+FAILED (failures=4)

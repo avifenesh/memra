@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import atexit
 import fnmatch
+import importlib.util
 import json
 from pathlib import Path, PurePosixPath
 import re
@@ -185,6 +186,29 @@ def summary(plan):
         print("  EXPAND: " + why)
     for gate in plan["required_unregistered"]:
         print("  REQUIRED, not covered by legacy probes: " + gate)
+    if "validation" in plan:
+        scoped = plan["validation"]
+        print("  CPU CI components: " + (", ".join(k for k, v in scoped["jobs"].items() if v) or "none"))
+        for requirement in scoped["native"]["requirements"]:
+            print("  NATIVE EVIDENCE: " + requirement)
+
+
+def attach_validation(plan, validation, explicit_probes=False, context_changes=()):
+    """Known CPU/harness contracts need no engine build; native pruning stays separate."""
+    plan["validation"] = validation
+    declared_inputs = {path for contract in validation["cpu_contracts"]
+                       for path in contract.get("inputs", [])}
+    def cpu_input(path):
+        return (path in declared_inputs or
+                (path.endswith(".md") and not path.startswith(("crates/", "research/", "probe/"))))
+    explicit_cpu_scope = bool(plan["changed"]) and all(cpu_input(path) for path in plan["changed"])
+    if (validation["mode"] == "scoped" and not validation["packages"]
+            and explicit_cpu_scope and not explicit_probes and not context_changes):
+        plan.update(decision="cpu-only", kernel_scope="none", kernel_sections=[], probes=[], spec_probes=[],
+                    expansion=[], required_unregistered=[])
+        plan["cpu_contracts"] = [c["id"] for c in validation["cpu_contracts"]]
+        plan["native_evidence_obligations"] = validation["native"]["requirements"]
+    return plan
 
 
 def main():
@@ -204,7 +228,7 @@ def main():
             plan = json.loads(args.fields.read_text())
             for k, v in (("scope", plan["kernel_scope"]), ("sections", ",".join(plan["kernel_sections"])),
                          ("probes", ",".join(plan["probes"])), ("spec", ",".join(plan["spec_probes"])),
-                         ("decision", plan["decision"])):
+                         ("decision", plan["decision"]), ("contracts", ",".join(plan.get("cpu_contracts", [])))):
                 print(k + "\t" + v)
             return 0
         no_git_diagnostics = False
@@ -223,6 +247,12 @@ def main():
             else:
                 paths, hidden = changed_paths(args.repo, args.diff)
         plan = make_plan(paths, overrides=csv(args.probes), hidden=hidden, context_changes=args.context_changed)
+        validation_module = HERE.parent / "validation_plan.py"
+        if args.changed is None and not no_git_diagnostics and validation_module.is_file():
+            spec = importlib.util.spec_from_file_location("fast_gate_validation", validation_module)
+            validation = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(validation)
+            attach_validation(plan, validation.local_plan(args.repo, args.diff), bool(args.probes), args.context_changed)
         if no_git_diagnostics:
             plan["decision"] = "expand"
             plan["expansion"].append("Git metadata unavailable: explicit probe diagnostics only; change coverage unknown")

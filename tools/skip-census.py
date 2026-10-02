@@ -112,6 +112,77 @@ class CensusError(RuntimeError):
     """The census cannot be trusted, so it refuses rather than reporting a number."""
 
 
+def rust_code_view(text: str, string_spans: list[tuple[int, int]] | None = None) -> str:
+    """Mask strings/chars/comments without moving source positions or line breaks.
+
+    This is a scope lexer, not a Rust parser. Lifetimes remain code. Nested block
+    comments, escaped quotes and raw/byte strings cannot contribute fake braces.
+    """
+    result = list(text)
+    length, i = len(text), 0
+    raw_pattern = re.compile(r'(?:b|c)?r(\#{0,255})"')
+    char_pattern = re.compile(r"'(?:\\(?:u\{[0-9a-fA-F_]+\}|x[0-9a-fA-F]{2}|.)|[^'\\\n])'")
+
+    def mask(start: int, end: int) -> None:
+        for j in range(start, end):
+            if result[j] != "\n":
+                result[j] = " "
+
+    while i < length:
+        start = i
+        if text.startswith("//", i):
+            end = text.find("\n", i)
+            i = length if end < 0 else end
+        elif text.startswith("/*", i):
+            depth = 1
+            i += 2
+            while i < length and depth:
+                if text.startswith("/*", i):
+                    depth += 1; i += 2
+                elif text.startswith("*/", i):
+                    depth -= 1; i += 2
+                else:
+                    i += 1
+            if depth:
+                raise CensusError("unterminated Rust block comment")
+        else:
+            raw = raw_pattern.match(text, i) if text[i] in 'brc' else None
+            if raw and (i == 0 or not (text[i - 1].isalnum() or text[i - 1] == '_')):
+                terminator = '"' + raw.group(1)
+                end = text.find(terminator, raw.end())
+                if end < 0:
+                    raise CensusError("unterminated Rust raw string")
+                i = end + len(terminator)
+                if string_spans is not None:
+                    string_spans.append((start, i))
+            elif text[i] == '"':
+                i += 1
+                while i < length:
+                    if text[i] == '\\':
+                        i += 2
+                    elif text[i] == '"':
+                        i += 1
+                        break
+                    else:
+                        i += 1
+                else:
+                    raise CensusError("unterminated Rust string")
+                if string_spans is not None:
+                    string_spans.append((start, i))
+            elif text[i] == "'":
+                char = char_pattern.match(text, i)
+                if char:
+                    i = char.end()
+                else:
+                    i += 1
+                    continue  # lifetime/label, not a quoted character
+            else:
+                i += 1
+                continue
+        mask(start, i)
+    return ''.join(result)
+
+
 def rust_unescape(literal: str) -> str:
     """The subset of Rust string escapes a skip message uses."""
     # A backslash at the end of a line continues the literal and eats the next line's indent.
@@ -206,6 +277,8 @@ def _scan_file(crate: str, root: Path, path: Path, integration: bool, helpers: d
     file_mods = file_module_path(rel_root, integration)
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
+    code = rust_code_view(text)
+    code_lines = code.splitlines()
     line_starts = [0]
     for line in lines:
         line_starts.append(line_starts[-1] + len(line) + 1)
@@ -225,14 +298,14 @@ def _scan_file(crate: str, root: Path, path: Path, integration: bool, helpers: d
     test_scope_at_line: list[bool] = []
     stack: list[tuple[str, int, bool]] = []
     depth = 0
-    for index, line in enumerate(lines):
+    for index, line in enumerate(code_lines):
         while stack and stack[-1][1] >= depth:
             stack.pop()
         mod_at_line.append(tuple(name for name, _, _ in stack))
         test_scope_at_line.append(any(flag for _, _, flag in stack))
         mod_match = MOD_RE.match(line)
         if mod_match:
-            is_test = any(CFG_TEST_RE.search(a) for a in _attr_block(lines, index))
+            is_test = any(CFG_TEST_RE.search(a) for a in _attr_block(code_lines, index))
             stack.append((mod_match.group(1), depth, is_test))
         depth += line.count("{") - line.count("}")
 
@@ -241,19 +314,21 @@ def _scan_file(crate: str, root: Path, path: Path, integration: bool, helpers: d
 
     def enclosing_fn(index: int) -> tuple[str, int] | None:
         for back in range(index, -1, -1):
-            fn_match = FN_RE.match(lines[back])
+            fn_match = FN_RE.match(code_lines[back])
             if fn_match:
                 return fn_match.group(1), back
         return None
 
     def is_test_fn(fn_line: int) -> bool:
-        return any(TEST_ATTR_RE.search(a) for a in _attr_block(lines, fn_line))
+        return any(TEST_ATTR_RE.search(a) for a in _attr_block(code_lines, fn_line))
 
     rows: list[dict[str, str]] = []
     unstructured: list[dict[str, str]] = []
     helper_defs: dict[str, str] = {}
 
     for match in PRINT_RE.finditer(text):
+        if not re.match(r'(?:e?print(?:ln)?)!', code[match.start():]):
+            continue
         literal = match.group(1)
         if not SKIP_WORD_RE.search(literal):
             continue
@@ -315,7 +390,7 @@ def _scan_file(crate: str, root: Path, path: Path, integration: bool, helpers: d
     # #[test] fns that call a registered helper are rows with the helper's message.
     for name in SKIP_HELPERS:
         call = re.compile(rf"\b{re.escape(name)}\s*\(")
-        for index, line in enumerate(lines):
+        for index, line in enumerate(code_lines):
             if not call.search(line) or FN_RE.match(line) or line.lstrip().startswith("//"):
                 continue
             found = enclosing_fn(index)
