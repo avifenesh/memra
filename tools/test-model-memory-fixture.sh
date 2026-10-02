@@ -2,6 +2,9 @@
 # Compile the actual fixture/contract and arithmetic modules without the CUDA engine crate.
 set -eu
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+# This suite can run with every other compiled suite omitted. Warm the committed
+# dependency versions explicitly; an unrelated core test must not supply its cache.
+cargo fetch --manifest-path "$repo/Cargo.toml" --locked
 mkdir -p "$repo/target"
 scratch=$(mktemp -d "$repo/target/model-memory-fixture-src.XXXXXX")
 trap 'rm -rf "$scratch"' EXIT HUP INT TERM

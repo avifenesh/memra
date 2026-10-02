@@ -88,6 +88,7 @@ jobs:
           python3 tools/validation_plan.py check-registry
           tools/test_ci_change_class.sh
           tools/unittest-floor.sh tools 'test_validation_*.py' 88
+          tools/unittest-floor.sh tools test_model_memory_fixture.py 3
 
       - name: Declared changed-input CPU contracts (missing selection runs all available)
         run: python3 tools/validation_plan.py contracts
@@ -306,6 +307,7 @@ jobs:
               -- cargo test -p memra-net-guard
           fi
       - name: Indexed MLA and KDA memory fixture contracts (CPU-only)
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.engine != 'false' }}
         run: tools/test-model-memory-fixture.sh
 
       # memra-lanes is CUDA-free and was outside every unit suite, so the lane admission
