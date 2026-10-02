@@ -171,22 +171,26 @@ def short_body(chat,bg=False):
     if bg:body['background']=True
     return body
 
+def context_for_phase(phase):
+    return {'short':8192,'long-chat':32768,'long-text':32768}[phase]
+
 def main(args):
     os.fstat(9);require(os.path.samefile('/proc/self/fd/9',os.environ['MEMRA_GPU_LOCK']),'wrong inherited GPU lease')
     require(digest(args.model)==args.model_sha,'cached artifact hash changed')
     profile=tomllib.loads(args.metadata.read_text())['models']['q9']
     require(profile['non_thinking_sampling']=={'temperature':0.7,'top_p':0.8,'top_k':20,'min_p':0.0,'presence_penalty':1.5,'repetition_penalty':1.0},'non-thinking profile absent/wrong')
     out=args.out;out.mkdir(parents=True,exist_ok=True)
-    manifest={'head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'tracked_diff_sha256':hashlib.sha256(subprocess.check_output(['git','diff','HEAD','--binary'])).hexdigest(),'binary_sha256':digest(args.binary),'model_sha256':args.model_sha,'metadata_sha256':digest(args.metadata),'collector_sha256':digest(Path(__file__)),'context':8192 if args.phase=='short' else 32768,'phase':args.phase,'gpu':subprocess.check_output(['nvidia-smi','-i',os.environ['CUDA_VISIBLE_DEVICES'],'--query-gpu=name,uuid,driver_version,memory.total','--format=csv,noheader'],text=True)}
+    context=context_for_phase(args.phase)
+    manifest={'head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'tracked_diff_sha256':hashlib.sha256(subprocess.check_output(['git','diff','HEAD','--binary'])).hexdigest(),'binary_sha256':digest(args.binary),'model_sha256':args.model_sha,'metadata_sha256':digest(args.metadata),'collector_sha256':digest(Path(__file__)),'context':context,'phase':args.phase,'gpu':subprocess.check_output(['nvidia-smi','-i',os.environ['CUDA_VISIBLE_DEVICES'],'--query-gpu=name,uuid,driver_version,memory.total','--format=csv,noheader'],text=True)}
     (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
     summary=[]
     if args.phase=='short':
-        with Server(args,out/'off',args.port,door=False,context=8192) as server:
+        with Server(args,out/'off',args.port,door=False,context=context) as server:
             for chat in [False,True]:
                 path='/v1/chat/completions' if chat else '/v1/completions'
                 status,value,_,_=server.request('POST',path,short_body(chat,True));require(status==400 and value['error']['param']=='background','OFF did not explicitly refuse')
         for compat,offset in [('native',1),('openai',2)]:
-            with Server(args,out/compat,args.port+offset,compat=compat,context=8192) as server:
+            with Server(args,out/compat,args.port+offset,compat=compat,context=context) as server:
                 for chat in ([False,True] if compat=='native' else [False]):
                     path='/v1/chat/completions' if chat else '/v1/completions'
                     status,sync,id,_=server.request('POST',path,short_body(chat));require(status==200,'sync control failed');verify_receipt(sync,server.event(server.receipts,id),chat,'complete')
@@ -212,7 +216,7 @@ def main(args):
                     summary.append({'cell':'default-parameters','proof':vendor_trace(''.join(server.lines),profile),'metadata_sha256':digest(args.metadata)})
     else:
         chat=args.phase=='long-chat';path='/v1/chat/completions' if chat else '/v1/completions'
-        with Server(args,out/args.phase,args.port,context=32768) as server:
+        with Server(args,out/args.phase,args.port,context=context) as server:
             body={'model':'q9','max_tokens':24000,'temperature':0,'top_p':1,'top_k':0,'min_p':0,'presence_penalty':0,'frequency_penalty':0,'repetition_penalty':1,'seed':7}
             if chat:
                 body.update(messages=[{'role':'user','content':'Return the requested JSON array exactly. No commentary.'}],enable_thinking=False,response_format={'type':'json_schema','json_schema':{'name':'long_result','strict':True,'schema':{'type':'array','items':{'type':'string','const':PHRASE},'minItems':600,'maxItems':600}}})

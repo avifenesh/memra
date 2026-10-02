@@ -1,6 +1,7 @@
-import copy, importlib.util, unittest
+import copy, importlib.util, unittest, tempfile
+from types import SimpleNamespace
 from pathlib import Path
-spec=importlib.util.spec_from_file_location('bg914_gate',Path(__file__).with_name('native_gate.py'))
+spec=importlib.util.spec_from_file_location('bg914_gate',Path(__file__).with_name('background-chat-text-gate.py'))
 g=importlib.util.module_from_spec(spec);spec.loader.exec_module(g)
 class NativeJudge(unittest.TestCase):
     def setUp(self):
@@ -32,4 +33,14 @@ class NativeJudge(unittest.TestCase):
         self.assertEqual(g.vendor_trace('[server] listening on http://localhost\n'+trace,profile)['resolved_arm'],'primary_thinking')
         for log in [trace+'[server] listening on http://localhost\n','[server] listening on http://localhost\n'+trace.replace('top_k=20','top_k=0')]:
             with self.subTest(log=log),self.assertRaises(AssertionError):g.vendor_trace(log,profile)
+    def test_manifest_context_and_actual_server_context_share_the_phase_contract(self):
+        for phase,expected in [('short',8192),('long-chat',32768),('long-text',32768)]:
+            with self.subTest(phase=phase),tempfile.TemporaryDirectory() as directory:
+                context=g.context_for_phase(phase)
+                self.assertEqual(context,expected)
+                args=SimpleNamespace(model=Path(directory)/'model.gguf',metadata=Path(directory)/'metadata.toml')
+                server=g.Server(args,Path(directory)/'server',18120,context=context)
+                try:self.assertEqual(server.env['MEMRA_CTX'],str(expected))
+                finally:server.__exit__()
+        with self.assertRaises(KeyError):g.context_for_phase('unknown')
 if __name__=='__main__':unittest.main()

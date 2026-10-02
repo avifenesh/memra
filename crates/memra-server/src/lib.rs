@@ -25225,6 +25225,7 @@ temperature = 0.6
 
     #[tokio::test]
     async fn background_chat_text_tool_call_budget_cut_keeps_incomplete_status() {
+        use metering::JobStore;
         let env = Envelope::new(true);
         let store = Arc::new(job_store::InMemoryJobStore::new(
             std::time::Duration::from_secs(60),
