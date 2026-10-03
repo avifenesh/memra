@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import shutil
 import socket
+import stat
 import tempfile
 import unittest
 from unittest import mock
@@ -106,9 +107,23 @@ class LocalInputIO(unittest.TestCase):
 
     def test_unrelated_cargo_manifest_fifo_refuses_command_planning(self):
         path = self.root / 'crates/memra-server/Cargo.toml'; path.unlink(); os.mkfifo(path)
-        with mock.patch.object(vp.os, 'fdopen', side_effect=AssertionError('content engaged')):
-            with self.assertRaisesRegex(vp.Refused, 'regular'):
-                vp.cargo_packages('memra-lanes', self.root)
+        manifests = list((self.root / 'crates').glob('*/Cargo.toml'))
+        safe = [p for p in manifests if p != path]
+        real_fdopen = os.fdopen
+        for unsafe_first in (True, False):
+            with self.subTest(unsafe_first=unsafe_first):
+                content_reads = []
+                def observe(descriptor, *args, **kwargs):
+                    if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                        raise AssertionError('unsafe manifest content engaged')
+                    content_reads.append(descriptor)
+                    return real_fdopen(descriptor, *args, **kwargs)
+                ordered = [path, *safe] if unsafe_first else [*safe, path]
+                with mock.patch.object(Path, 'glob', return_value=iter(ordered)), \
+                        mock.patch.object(vp.os, 'fdopen', side_effect=observe):
+                    with self.assertRaisesRegex(vp.Refused, 'regular'):
+                        vp.cargo_packages('memra-lanes', self.root)
+                self.assertEqual(len(content_reads), 0 if unsafe_first else len(safe))
 
     def test_own_registry_fifo_refuses_real_include_reader(self):
         original = Path(vp.__file__).resolve()

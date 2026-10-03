@@ -52,3 +52,9 @@ bound 44-edge proof and all refusal controls pass. `COMPOSED.json` and
 bytes and every other A/B planner function match the merged base. The original
 A-only receipts remain unchanged. The first nonred prestat attempt is retained
 under `receipts/non-admitted/`.
+
+Hosted draft `0264a4515c` exposed an order-dependent test observer: a safe Cargo
+manifest read before the FIFO was rejected by the blanket fdopen mock. The failed
+186-test run is non-admitted history under `receipts/failed-hosted-A/`. The repaired
+test allows regular reads and refuses unsafe content, and explicitly executes both
+FIFO-first and FIFO-last manifest orders. Production enumeration is unchanged.
