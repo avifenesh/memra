@@ -85,6 +85,17 @@ Global integrity checks still run, including the public boundary, support/flag r
 workflow validity and static skip census. The latter must remain global even when an unrelated
 compiled suite is omitted. A malformed skip declaration cannot hide behind a skipped job.
 
+Boundary-only checker, test, policy and allowlist inputs select the public-boundary
+CPU contract. Its runner executes the real suite with a floor of 60 and refuses any skip or expected failure.
+Cargo owners and old/new include consumers are resolved first; a boundary input consumed
+by Rust keeps both its package/native obligations and the boundary CPU contract. Missing,
+nonregular or symlinked contract inputs expand planning or refuse execution.
+Staged and committed ancestor types are checked too: populated submodule directories
+do not become ordinary declared boundary inputs because their children exist on disk. Unmodelled
+inputs and readers retain conservative expansion. The unconditional CI boundary job still
+runs the full repository check and allowlist drift scan. Policy and allowlist edits do not
+exempt themselves from those scans; history and pre-push guards remain unchanged.
+
 Known Python contract changes run their actual tests without Cargo or GPU loading. Fast-gate
 reports that CPU result separately from any live-evidence campaign the issue still owes.
 The Q35 cache contract also includes its consumed `research/sellgate-20260812/workload.lock.json`

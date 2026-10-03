@@ -7,6 +7,8 @@ Check here BEFORE re-running an experiment; add your lane's row at close. Full r
 live in each dir (jsonl/logs are out of default rg via the repo .ignore — `rg -u` to
 include). `rg '<topic>' research/INDEX.md` = the fast path to any lane's verdict.
 
+boundary-cpu-contract-20261003 | Boundary-only inputs select their real CPU tests and omit unrelated Cargo jobs while owner/include obligations and unconditional security scans remain intact. | boundary-cpu-contract-20261003/LANE.md
+
 n-choices-528-20261003 | Current c6db runtime passed 16 native edges, 14 coherent controls, cache256 and 12 exact ledger-callback HTTP failure controls. | n-choices-528-20261003/RESULTS.md
 
 prompt-depth-router-20260922/joint-v10-rerun | Verdict: no code-trained controller transfer win over the best fixed control on either tested non-code workload. | prompt-depth-router-20260922/joint-v10-rerun/VERDICT.md

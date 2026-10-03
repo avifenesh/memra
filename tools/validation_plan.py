@@ -17,8 +17,8 @@ import os
 from pathlib import Path, PurePosixPath
 import posixpath
 import re
-import subprocess
 import stat
+import subprocess
 import sys
 import tempfile
 import tomllib
@@ -31,6 +31,14 @@ JOBS = ('build', 'clippy', 'server', 'engine', 'portable', 'core', 'lanes', 'arc
 # These are executable CPU/harness contracts, not a blanket tools/** exemption.
 # Their tests remain in the always-run gates job. Native reruns are named separately.
 TOOL_CONTRACTS = {
+    'public-boundary': {
+        'required': True,
+        'inputs': ['tools/check-public-boundary.py', 'tools/test_public_boundary.py',
+                   'tools/public-boundary-policy.toml', 'tools/public-boundary-allowlist.jsonl',
+                   'tools/run_public_boundary_contract.py'],
+        'cpu': ['python3', 'tools/run_public_boundary_contract.py'],
+        'native': [],
+    },
     'n-choice': {
         'required': True,
         'inputs': ['tools/native_choices.py', 'tools/choice_verifier.py',
@@ -997,6 +1005,58 @@ def native_probe_inputs(tree):
     return inputs
 
 
+def boundary_contract_inputs(tree, *, missing_ok=False, index_metadata=True):
+    """Admit exact regular inputs without following a symlink or opening a FIFO."""
+    inputs = TOOL_CONTRACTS['public-boundary']['inputs']
+    checked = set(inputs)
+    for name in inputs:
+        checked.update(str(p) for p in PurePosixPath(name).parents if str(p) != '.')
+    if isinstance(tree, LocalTree):
+        for name in inputs:
+            current = tree.repo
+            for part in PurePosixPath(name).parts:
+                current = current / part
+                try:
+                    mode = current.lstat().st_mode
+                except FileNotFoundError:
+                    if missing_ok:
+                        break
+                    raise Refused('public-boundary input is missing: ' + name)
+                expected = stat.S_ISREG if current == tree.repo / name else stat.S_ISDIR
+                if not expected(mode):
+                    raise Refused('public-boundary input has unsafe type: ' + name)
+        if index_metadata:
+            rows = git(tree.repo, '--literal-pathspecs', 'ls-files', '--stage', '-z',
+                       '--', *sorted(checked))
+            for row in rows.split(b'\0'):
+                if not row:
+                    continue
+                metadata, path = row.split(b'\t', 1)
+                name = path.decode()
+                if name in checked and (name not in inputs or
+                        metadata.split()[0] not in (b'100644', b'100755') or
+                        metadata.split()[2] != b'0'):
+                    raise Refused('public-boundary input has unsafe index metadata: ' + name)
+        return
+    if tree.symlinks_exact(checked):
+        raise Refused('public-boundary input contains a symlink')
+    rows = git(tree.repo, '--literal-pathspecs', 'ls-tree', '-z', tree.ref, '--', *sorted(checked))
+    regular = set()
+    for row in rows.split(b'\0'):
+        if row:
+            metadata, path = row.split(b'\t', 1)
+            name = path.decode()
+            mode = metadata.split()[0]
+            if name in inputs:
+                if mode not in (b'100644', b'100755'):
+                    raise Refused('public-boundary input has unsafe type: ' + name)
+                regular.add(name)
+            elif name in checked and mode != b'040000':
+                raise Refused('public-boundary ancestor has unsafe type: ' + name)
+    if not missing_ok and set(inputs) - regular:
+        raise Refused('public-boundary input is missing: ' + sorted(set(inputs) - regular)[0])
+
+
 def make_plan(paths, base_tree, head_tree):
     paths = sorted(set(paths))
     if not paths:
@@ -1038,16 +1098,19 @@ def make_plan(paths, base_tree, head_tree):
                 if matches_input(path, pattern):
                     native_requirements.add('Changed native probe input ' + path + ': rerun pinned assertions for ' + ', '.join(sorted(probes)))
             package = owner(path, owners)
+            consumers = input_consumers(path, includes)
             if package:
                 direct.add(package)
-                direct.update(input_consumers(path, includes))
-                continue
-            consumers = input_consumers(path, includes)
-            if consumers:
-                direct.update(consumers)
-                continue
+            direct.update(consumers)
             matches = [name for name, c in TOOL_CONTRACTS.items() if path in c['inputs']
                        and ('presence' not in c or any(p in contract_paths for p in c['presence']))]
+            # Resolve ownership first. Only this boundary contract is additive
+            # to a package/include collision; other tool contracts retain their policy.
+            if (package or consumers) and 'public-boundary' not in matches:
+                continue
+            if 'public-boundary' in matches:
+                boundary_contract_inputs(base_tree, missing_ok=True)
+                boundary_contract_inputs(head_tree)
             if matches:
                 contracts.update(matches)
                 for name in matches:
@@ -1203,6 +1266,8 @@ def cpu_contract_names(root, selected):
     else:
         names = names or available
     for name in names:
+        if name == 'public-boundary':
+            boundary_contract_inputs(LocalTree(root), index_metadata=False)
         if not all((root / p).is_file() for p in TOOL_CONTRACTS[name]['inputs']):
             raise Refused('selected contract input is missing: ' + name)
         if name == 'support-records' and data is not None:
