@@ -1,0 +1,1260 @@
+{
+  "name": "chat-completions-stream-twin",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-request-id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+    "x-ratelimit-limit": "8",
+    "x-ratelimit-remaining": "4",
+    "x-ratelimit-reset": "0",
+    "content-length": "1790",
+    "date": "Sat, 03 Oct 2026 02:58:32 GMT"
+  },
+  "started": 588603.564136566,
+  "source_log_start": 2152,
+  "disconnected": false,
+  "body": {
+    "object": "chat.completion",
+    "model": "fixture",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "",
+          "reasoning": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Action: Count upward from one (1, 2, 3,",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "text": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Action: Count upward from one (1, 2, 3,"
+            }
+          ]
+        },
+        "finish_reason": "length"
+      },
+      {
+        "index": 1,
+        "message": {
+          "role": "assistant",
+          "content": "",
+          "reasoning": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Action: Count upward from one (1, 2, 3,",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "text": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Action: Count upward from one (1, 2, 3,"
+            }
+          ]
+        },
+        "finish_reason": "length"
+      },
+      {
+        "index": 2,
+        "message": {
+          "role": "assistant",
+          "content": "",
+          "reasoning": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Task: Count upward from one.\n    *   Format: Short item",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "text": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Task: Count upward from one.\n    *   Format: Short item"
+            }
+          ]
+        },
+        "finish_reason": "length"
+      },
+      {
+        "index": 3,
+        "message": {
+          "role": "assistant",
+          "content": "",
+          "reasoning": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Action: Count upward from one.\n    *   Format: Short item",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "text": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Action: Count upward from one.\n    *   Format: Short item"
+            }
+          ]
+        },
+        "finish_reason": "length"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 23,
+      "completion_tokens": 128,
+      "total_tokens": 151,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "elapsed_s": 0.599995132
+    },
+    "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+    "created": 1790996311,
+    "system_fingerprint": "memra-0.138.0-4f633194e043"
+  },
+  "ended": 588604.167453599,
+  "source_log_end": 2296,
+  "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+  "callbacks": [
+    {
+      "tag": "CHOICE_OPEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "model": "fixture",
+        "tenant": "default",
+        "max_tokens": 128,
+        "reserved_ctx": 151,
+        "stream": false
+      },
+      "line": 2153
+    },
+    {
+      "tag": "CHOICE_PROMPT",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "prompt": 23,
+        "cached": 0
+      },
+      "line": 2155
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 1
+      },
+      "line": 2159
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 2
+      },
+      "line": 2160
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 3
+      },
+      "line": 2161
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 4
+      },
+      "line": 2162
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 5
+      },
+      "line": 2163
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 6
+      },
+      "line": 2164
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 7
+      },
+      "line": 2165
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 8
+      },
+      "line": 2166
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 9
+      },
+      "line": 2167
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 10
+      },
+      "line": 2168
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 11
+      },
+      "line": 2169
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 12
+      },
+      "line": 2170
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 13
+      },
+      "line": 2171
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 14
+      },
+      "line": 2172
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 15
+      },
+      "line": 2173
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 16
+      },
+      "line": 2174
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 17
+      },
+      "line": 2175
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 18
+      },
+      "line": 2176
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 19
+      },
+      "line": 2177
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 20
+      },
+      "line": 2178
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 21
+      },
+      "line": 2179
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 22
+      },
+      "line": 2180
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 23
+      },
+      "line": 2181
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 24
+      },
+      "line": 2182
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 25
+      },
+      "line": 2183
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 26
+      },
+      "line": 2184
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 27
+      },
+      "line": 2185
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 28
+      },
+      "line": 2186
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 29
+      },
+      "line": 2187
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 30
+      },
+      "line": 2188
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 31
+      },
+      "line": 2189
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 32
+      },
+      "line": 2190
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 33
+      },
+      "line": 2191
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 34
+      },
+      "line": 2192
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 35
+      },
+      "line": 2193
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 36
+      },
+      "line": 2194
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 37
+      },
+      "line": 2195
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 38
+      },
+      "line": 2196
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 39
+      },
+      "line": 2197
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 40
+      },
+      "line": 2198
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 41
+      },
+      "line": 2199
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 42
+      },
+      "line": 2200
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 43
+      },
+      "line": 2201
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 44
+      },
+      "line": 2202
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 45
+      },
+      "line": 2203
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 46
+      },
+      "line": 2204
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 47
+      },
+      "line": 2205
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 48
+      },
+      "line": 2206
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 49
+      },
+      "line": 2207
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 50
+      },
+      "line": 2208
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 51
+      },
+      "line": 2209
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 52
+      },
+      "line": 2210
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 53
+      },
+      "line": 2211
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 54
+      },
+      "line": 2212
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 55
+      },
+      "line": 2213
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 56
+      },
+      "line": 2214
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 57
+      },
+      "line": 2215
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 58
+      },
+      "line": 2216
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 59
+      },
+      "line": 2217
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 60
+      },
+      "line": 2218
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 61
+      },
+      "line": 2219
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 62
+      },
+      "line": 2220
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 63
+      },
+      "line": 2221
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 64
+      },
+      "line": 2222
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 65
+      },
+      "line": 2223
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 66
+      },
+      "line": 2224
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 67
+      },
+      "line": 2225
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 68
+      },
+      "line": 2226
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 69
+      },
+      "line": 2227
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 70
+      },
+      "line": 2228
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 71
+      },
+      "line": 2229
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 72
+      },
+      "line": 2230
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 73
+      },
+      "line": 2231
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 74
+      },
+      "line": 2232
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 75
+      },
+      "line": 2233
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 76
+      },
+      "line": 2234
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 77
+      },
+      "line": 2235
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 78
+      },
+      "line": 2236
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 79
+      },
+      "line": 2237
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 80
+      },
+      "line": 2238
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 81
+      },
+      "line": 2239
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 82
+      },
+      "line": 2240
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 83
+      },
+      "line": 2241
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 84
+      },
+      "line": 2242
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 85
+      },
+      "line": 2243
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 86
+      },
+      "line": 2244
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 87
+      },
+      "line": 2245
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 88
+      },
+      "line": 2246
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 89
+      },
+      "line": 2247
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 90
+      },
+      "line": 2248
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 91
+      },
+      "line": 2249
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 92
+      },
+      "line": 2250
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 93
+      },
+      "line": 2251
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 94
+      },
+      "line": 2252
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 95
+      },
+      "line": 2253
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 96
+      },
+      "line": 2254
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 97
+      },
+      "line": 2255
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 98
+      },
+      "line": 2256
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 99
+      },
+      "line": 2257
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 100
+      },
+      "line": 2258
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 101
+      },
+      "line": 2259
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 102
+      },
+      "line": 2260
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 103
+      },
+      "line": 2261
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 104
+      },
+      "line": 2262
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 105
+      },
+      "line": 2263
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 106
+      },
+      "line": 2264
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 107
+      },
+      "line": 2265
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 108
+      },
+      "line": 2266
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 109
+      },
+      "line": 2267
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 110
+      },
+      "line": 2268
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 111
+      },
+      "line": 2269
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 112
+      },
+      "line": 2270
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 113
+      },
+      "line": 2271
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 114
+      },
+      "line": 2272
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 115
+      },
+      "line": 2273
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 116
+      },
+      "line": 2274
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 117
+      },
+      "line": 2275
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 118
+      },
+      "line": 2276
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 119
+      },
+      "line": 2277
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 120
+      },
+      "line": 2278
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 121
+      },
+      "line": 2279
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 122
+      },
+      "line": 2280
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 123
+      },
+      "line": 2281
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 124
+      },
+      "line": 2282
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 125
+      },
+      "line": 2283
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 126
+      },
+      "line": 2284
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 127
+      },
+      "line": 2285
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "output": 128
+      },
+      "line": 2286
+    },
+    {
+      "tag": "CHOICE_TERMINAL",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "kind": "complete",
+        "status": 200,
+        "code": "",
+        "prompt": 23,
+        "cached": 0,
+        "output": 128,
+        "observed_prompt": 23,
+        "observed_cached": 0,
+        "observed_output": 128
+      },
+      "line": 2292
+    },
+    {
+      "tag": "CHOICE_DROP",
+      "value": {
+        "id": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+        "terminal": true,
+        "prompt": 23,
+        "cached": 0,
+        "output": 128
+      },
+      "line": 2293
+    }
+  ],
+  "worker_rows": [
+    {
+      "group": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+      "index": 0,
+      "seed": 101,
+      "prompt": 23,
+      "cached": 0,
+      "output": 32,
+      "token_sha256": "608a8f16343572828745389e834362384d53162cb27a56e141ce2d69a2ce3826",
+      "reason": "MaxNew",
+      "sampling": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.0,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0
+      },
+      "think": "Default"
+    },
+    {
+      "group": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+      "index": 1,
+      "seed": 102,
+      "prompt": 23,
+      "cached": 0,
+      "output": 32,
+      "token_sha256": "608a8f16343572828745389e834362384d53162cb27a56e141ce2d69a2ce3826",
+      "reason": "MaxNew",
+      "sampling": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.0,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0
+      },
+      "think": "Default"
+    },
+    {
+      "group": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+      "index": 2,
+      "seed": 103,
+      "prompt": 23,
+      "cached": 0,
+      "output": 32,
+      "token_sha256": "c4abe65045c16a2a1c5ed8a1faae871b6de38166231671a673fb9042bffa4bfa",
+      "reason": "MaxNew",
+      "sampling": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.0,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0
+      },
+      "think": "Default"
+    },
+    {
+      "group": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+      "index": 3,
+      "seed": 104,
+      "prompt": 23,
+      "cached": 0,
+      "output": 32,
+      "token_sha256": "b708c825fbcefeebfb7961d0b86bc1b221c38585e52f927be8c2610b85fda633",
+      "reason": "MaxNew",
+      "sampling": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.0,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0
+      },
+      "think": "Default"
+    }
+  ],
+  "prime_events": [
+    {
+      "group": "chatcmpl-e8a8c9d9d04fed0062779b91d58ce413",
+      "index": 0,
+      "rows": 23
+    }
+  ],
+  "fork_lines": [
+    "[n-choice-prefill] group=chatcmpl-e8a8c9d9d04fed0062779b91d58ce413 choices=4 prompt=23 cached=0 copies=3 bytes=53032448 leader=0"
+  ],
+  "masked_steps": 0
+}

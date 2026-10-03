@@ -1,0 +1,58 @@
+{
+  "changed-context": {
+    "passed": true,
+    "edge": "context_binding"
+  },
+  "missing-choice": {
+    "passed": true,
+    "edge": "indexed_termination"
+  },
+  "duplicate-choice": {
+    "passed": true,
+    "edge": "indexed_termination"
+  },
+  "premature-done": {
+    "passed": true,
+    "edge": "premature_done"
+  },
+  "shared-rng": {
+    "passed": true,
+    "edge": "rng_isolation"
+  },
+  "output-sum": {
+    "passed": true,
+    "edge": "output_sum"
+  },
+  "missing-fork": {
+    "passed": true,
+    "edge": "shared_prefill"
+  },
+  "follower-prime": {
+    "passed": true,
+    "edge": "shared_prefill"
+  },
+  "duplicate-prompt": {
+    "passed": true,
+    "edge": "prompt_once"
+  },
+  "prompt-multiplied": {
+    "passed": true,
+    "edge": "reservation"
+  },
+  "output-unscaled": {
+    "passed": true,
+    "edge": "reservation"
+  },
+  "duplicate-terminal": {
+    "passed": true,
+    "edge": "callback_lifetime"
+  },
+  "wire-content": {
+    "passed": true,
+    "edge": "stream_content_identity"
+  },
+  "token-hash": {
+    "passed": true,
+    "edge": "token_identity"
+  }
+}

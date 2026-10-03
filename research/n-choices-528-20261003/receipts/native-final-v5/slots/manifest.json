@@ -1,0 +1,602 @@
+{
+  "status": "complete",
+  "source": "4ebe099459cfd2c1b05da6bdfb9c077e025abdd9",
+  "binary_sha256": "f2b95b5e50f1eb9ea053a910061333dc5ddb58e1c79ed9955f8fe08713efa746",
+  "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+  "phase": "slots",
+  "server_pid": 4139812,
+  "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.91.07, 24463 MiB",
+  "server_exit": -2,
+  "results": [
+    {
+      "name": "slots-contender",
+      "status": 429,
+      "headers": {
+        "content-type": "application/json",
+        "retry-after": "2",
+        "retry-after-ms": "2000",
+        "x-ratelimit-limit": "4",
+        "x-ratelimit-remaining": "0",
+        "x-ratelimit-reset": "2",
+        "x-request-id": "chatcmpl-39de3ce1cf3973ff4a069eb6a94cd478",
+        "content-length": "293",
+        "date": "Sat, 03 Oct 2026 02:59:14 GMT"
+      },
+      "started": 588646.447620408,
+      "source_log_start": 32,
+      "disconnected": false,
+      "body": {
+        "error": {
+          "message": "estimated queue wait ~2s exceeds this request's remaining timeout_ms deadline (999 ms); this request was not admitted and is not billed; retry after ~2s or raise timeout_ms (a coarse estimate, not a promise)",
+          "type": "rate_limit_error",
+          "param": null,
+          "code": "shed_deadline"
+        }
+      },
+      "ended": 588646.448475779,
+      "source_log_end": 37,
+      "id": "chatcmpl-39de3ce1cf3973ff4a069eb6a94cd478",
+      "callbacks": [
+        {
+          "tag": "CHOICE_OPEN",
+          "value": {
+            "id": "chatcmpl-39de3ce1cf3973ff4a069eb6a94cd478",
+            "model": "fixture",
+            "tenant": "default",
+            "max_tokens": 8,
+            "reserved_ctx": 24,
+            "stream": false
+          },
+          "line": 33
+        },
+        {
+          "tag": "CHOICE_TERMINAL",
+          "value": {
+            "id": "chatcmpl-39de3ce1cf3973ff4a069eb6a94cd478",
+            "kind": "shed_deadline",
+            "status": 429,
+            "code": "shed_deadline",
+            "prompt": 0,
+            "cached": 0,
+            "output": 0,
+            "observed_prompt": 0,
+            "observed_cached": 0,
+            "observed_output": 0
+          },
+          "line": 34
+        },
+        {
+          "tag": "CHOICE_DROP",
+          "value": {
+            "id": "chatcmpl-39de3ce1cf3973ff4a069eb6a94cd478",
+            "terminal": true,
+            "prompt": 0,
+            "cached": 0,
+            "output": 0
+          },
+          "line": 35
+        }
+      ],
+      "worker_rows": [],
+      "prime_events": [],
+      "fork_lines": [],
+      "masked_steps": 0
+    },
+    {
+      "name": "slots-recovery",
+      "status": 200,
+      "headers": {
+        "content-type": "application/json",
+        "x-request-id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+        "x-ratelimit-limit": "4",
+        "x-ratelimit-remaining": "0",
+        "x-ratelimit-reset": "2",
+        "content-length": "1148",
+        "date": "Sat, 03 Oct 2026 02:59:14 GMT"
+      },
+      "started": 588646.449008066,
+      "source_log_start": 38,
+      "disconnected": false,
+      "body": {
+        "object": "chat.completion",
+        "model": "fixture",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "",
+              "reasoning": "Thinking Process:\n\n1.  **",
+              "reasoning_details": [
+                {
+                  "type": "reasoning.text",
+                  "text": "Thinking Process:\n\n1.  **"
+                }
+              ]
+            },
+            "finish_reason": "length"
+          },
+          {
+            "index": 1,
+            "message": {
+              "role": "assistant",
+              "content": "",
+              "reasoning": "Thinking Process:\n\n1.  **",
+              "reasoning_details": [
+                {
+                  "type": "reasoning.text",
+                  "text": "Thinking Process:\n\n1.  **"
+                }
+              ]
+            },
+            "finish_reason": "length"
+          },
+          {
+            "index": 2,
+            "message": {
+              "role": "assistant",
+              "content": "",
+              "reasoning": "Thinking Process:\n\n1.  **",
+              "reasoning_details": [
+                {
+                  "type": "reasoning.text",
+                  "text": "Thinking Process:\n\n1.  **"
+                }
+              ]
+            },
+            "finish_reason": "length"
+          },
+          {
+            "index": 3,
+            "message": {
+              "role": "assistant",
+              "content": "",
+              "reasoning": "Thinking Process:\n\n1.  **",
+              "reasoning_details": [
+                {
+                  "type": "reasoning.text",
+                  "text": "Thinking Process:\n\n1.  **"
+                }
+              ]
+            },
+            "finish_reason": "length"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 16,
+          "completion_tokens": 32,
+          "total_tokens": 48,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "elapsed_s": 0.174358561
+        },
+        "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+        "created": 1790996354,
+        "system_fingerprint": "memra-0.138.0-4f633194e043"
+      },
+      "ended": 588646.648375587,
+      "source_log_end": 96,
+      "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+      "callbacks": [
+        {
+          "tag": "CHOICE_OPEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "model": "fixture",
+            "tenant": "default",
+            "max_tokens": 32,
+            "reserved_ctx": 48,
+            "stream": false
+          },
+          "line": 39
+        },
+        {
+          "tag": "CHOICE_PROMPT",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "prompt": 16,
+            "cached": 0
+          },
+          "line": 51
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 1
+          },
+          "line": 55
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 2
+          },
+          "line": 56
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 3
+          },
+          "line": 57
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 4
+          },
+          "line": 58
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 5
+          },
+          "line": 59
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 6
+          },
+          "line": 60
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 7
+          },
+          "line": 61
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 8
+          },
+          "line": 62
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 9
+          },
+          "line": 63
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 10
+          },
+          "line": 64
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 11
+          },
+          "line": 65
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 12
+          },
+          "line": 66
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 13
+          },
+          "line": 67
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 14
+          },
+          "line": 68
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 15
+          },
+          "line": 69
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 16
+          },
+          "line": 70
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 17
+          },
+          "line": 71
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 18
+          },
+          "line": 72
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 19
+          },
+          "line": 73
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 20
+          },
+          "line": 74
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 21
+          },
+          "line": 75
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 22
+          },
+          "line": 76
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 23
+          },
+          "line": 77
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 24
+          },
+          "line": 78
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 25
+          },
+          "line": 79
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 26
+          },
+          "line": 80
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 27
+          },
+          "line": 81
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 28
+          },
+          "line": 82
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 29
+          },
+          "line": 83
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 30
+          },
+          "line": 84
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 31
+          },
+          "line": 85
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "output": 32
+          },
+          "line": 86
+        },
+        {
+          "tag": "CHOICE_TERMINAL",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "kind": "complete",
+            "status": 200,
+            "code": "",
+            "prompt": 16,
+            "cached": 0,
+            "output": 32,
+            "observed_prompt": 16,
+            "observed_cached": 0,
+            "observed_output": 32
+          },
+          "line": 92
+        },
+        {
+          "tag": "CHOICE_DROP",
+          "value": {
+            "id": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+            "terminal": true,
+            "prompt": 16,
+            "cached": 0,
+            "output": 32
+          },
+          "line": 93
+        }
+      ],
+      "worker_rows": [
+        {
+          "group": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+          "index": 0,
+          "seed": 73,
+          "prompt": 16,
+          "cached": 0,
+          "output": 8,
+          "token_sha256": "42bccd2a025d9aa88008f2f4bc12e34263c4de651d457b5b98c44e3aac4c4a17",
+          "reason": "MaxNew",
+          "sampling": {
+            "temperature": 1.0,
+            "top_p": 0.95,
+            "top_k": 20,
+            "min_p": 0.0,
+            "presence_penalty": 1.5,
+            "repetition_penalty": 1.0
+          },
+          "think": "Default"
+        },
+        {
+          "group": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+          "index": 1,
+          "seed": 74,
+          "prompt": 16,
+          "cached": 0,
+          "output": 8,
+          "token_sha256": "42bccd2a025d9aa88008f2f4bc12e34263c4de651d457b5b98c44e3aac4c4a17",
+          "reason": "MaxNew",
+          "sampling": {
+            "temperature": 1.0,
+            "top_p": 0.95,
+            "top_k": 20,
+            "min_p": 0.0,
+            "presence_penalty": 1.5,
+            "repetition_penalty": 1.0
+          },
+          "think": "Default"
+        },
+        {
+          "group": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+          "index": 2,
+          "seed": 75,
+          "prompt": 16,
+          "cached": 0,
+          "output": 8,
+          "token_sha256": "42bccd2a025d9aa88008f2f4bc12e34263c4de651d457b5b98c44e3aac4c4a17",
+          "reason": "MaxNew",
+          "sampling": {
+            "temperature": 1.0,
+            "top_p": 0.95,
+            "top_k": 20,
+            "min_p": 0.0,
+            "presence_penalty": 1.5,
+            "repetition_penalty": 1.0
+          },
+          "think": "Default"
+        },
+        {
+          "group": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+          "index": 3,
+          "seed": 76,
+          "prompt": 16,
+          "cached": 0,
+          "output": 8,
+          "token_sha256": "42bccd2a025d9aa88008f2f4bc12e34263c4de651d457b5b98c44e3aac4c4a17",
+          "reason": "MaxNew",
+          "sampling": {
+            "temperature": 1.0,
+            "top_p": 0.95,
+            "top_k": 20,
+            "min_p": 0.0,
+            "presence_penalty": 1.5,
+            "repetition_penalty": 1.0
+          },
+          "think": "Default"
+        }
+      ],
+      "prime_events": [
+        {
+          "group": "chatcmpl-efe76a32b78484e92d35ea5828e92d58",
+          "index": 0,
+          "rows": 16
+        }
+      ],
+      "fork_lines": [
+        "[n-choice-prefill] group=chatcmpl-efe76a32b78484e92d35ea5828e92d58 choices=4 prompt=16 cached=0 copies=3 bytes=52928512 leader=0"
+      ],
+      "masked_steps": 0
+    }
+  ],
+  "support_promotion": false,
+  "helper_sha256": {
+    "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+    "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+    "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+  },
+  "files": {
+    "callback-events.json": "0851864979eb0dbcd5f25acadea23def81a93ab8b934710c681884b6f0ef31db",
+    "env.json": "30b71fc5dd81cd4737776e21a2049e9aeef0aa3dcb873dee9d174ab8d0ec30b0",
+    "metadata.toml": "9702a9b331f50a38b798c18531dccfbd22abc277560cf70c322c0b3f091c2380",
+    "server.log": "dbee27f33ea9f31ac3a38fda01b3512216927af548fcdfb4e1ab37c6767ac928",
+    "slots-contender/wire.json": "33958f6b6b4985fcb166051aba778ba9de37e1cb90ab3e8441dfeb6488e1723b",
+    "slots-contender/request.json": "6339a04925d58a5bdf41494f290275cb088eed3368964083ce90f333ac457548",
+    "slots-contender/client.json": "eb52ebb5ad79cae757ccd719db4de8df61427438a99a7ad8ad2347ee3518c72d",
+    "slots-contender/headers.json": "20e0107c292700ec8c54a33f0be3f1d7e2907f8110677d2ca024a2aa680b18e0",
+    "slots-recovery/wire.json": "ba0b7566733f6b569879459816c7f8973f34d233e78d078e0a82d4caff8f38c4",
+    "slots-recovery/request.json": "07d10a5ebac88ae36785c95ad2e2e6b47e3cf61067f988f6f1f4fdf6b989c73f",
+    "slots-recovery/client.json": "a06f5f9c7803083ed2f0336c867bc120eae0550dde8eea8865464ce6ae86216b",
+    "slots-recovery/headers.json": "3a961986d594f4600d9327f3b2215723c89e01cb03c3c198f0604c2115b3fb37",
+    "occupier/wire.sse": "3dc8d5e905dd234c4c0f8f0472c0c9249ed08ce9599d06711e372feb9f5369a7",
+    "occupier/request.json": "13e5cd1102473a39652ed088c8490485d64be8d0c61ca5388816b00c2f5132b1",
+    "occupier/client.json": "d3039b304b8ca3116d1f180d67808a7b9ac2fc1e29e934c6fe899f70922bed1b",
+    "occupier/headers.json": "3e59dd8cf7901379d094b54cf152e6bd7c6728c15734d87c1d34f1323debd70f"
+  }
+}

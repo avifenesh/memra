@@ -1,0 +1,605 @@
+{
+  "decision": "scoped",
+  "selected": [
+    "changed-context",
+    "duplicate-choice",
+    "duplicate-prompt",
+    "duplicate-terminal",
+    "follower-prime",
+    "missing-choice",
+    "missing-fork",
+    "native-composite",
+    "output-sum",
+    "output-unscaled",
+    "premature-done",
+    "prompt-multiplied",
+    "shared-rng",
+    "token-hash",
+    "wire-content"
+  ],
+  "context": {
+    "source": "4ebe099459cfd2c1b05da6bdfb9c077e025abdd9",
+    "binary_sha256": "f2b95b5e50f1eb9ea053a910061333dc5ddb58e1c79ed9955f8fe08713efa746",
+    "stock_sha256": "c1769b8bf49ce3ba3cea9536a13ad8323848bf65667344a1a027aa1672c3ed9a",
+    "baseline_sha256": "57a19f57e99e3a2a13519b61a85b77021d3f9e9b4389c59363b0800477958184",
+    "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+    "helper_sha256": {
+      "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+      "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+      "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+    },
+    "replay_helper_sha256": {
+      "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+      "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+    },
+    "model": "Qwen3.5-9B Q8_0",
+    "artifact": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+    "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.91.07, 24463 MiB",
+    "numeric_program": "existing GGUF forward/sampler and ordinary leader prefix_snapshot/prefix_restore",
+    "binary": "f2b95b5e50f1eb9ea053a910061333dc5ddb58e1c79ed9955f8fe08713efa746",
+    "request_shape": "chat+text n1/2/3/4/8; sampled+greedy+SSE; constrained N2; isolated deadline and capacity boots"
+  },
+  "contract": {
+    "schema": "memra-edge-contract-v1",
+    "required_edges": [
+      "bare_defaults",
+      "cancel_all_and_recover",
+      "constrained_choices",
+      "control.changed-context",
+      "control.duplicate-choice",
+      "control.duplicate-prompt",
+      "control.duplicate-terminal",
+      "control.follower-prime",
+      "control.missing-choice",
+      "control.missing-fork",
+      "control.output-sum",
+      "control.output-unscaled",
+      "control.premature-done",
+      "control.prompt-multiplied",
+      "control.shared-rng",
+      "control.token-hash",
+      "control.wire-content",
+      "deadline_partial",
+      "greedy_row_identity",
+      "indexed_termination",
+      "kv_exhaustion",
+      "n1_identity",
+      "n_slots",
+      "prepaid_exhaustion",
+      "prompt_once_output_sum",
+      "reservation",
+      "seeded_rng_isolation",
+      "shared_prefill",
+      "stream_content_identity"
+    ],
+    "context": {
+      "source": "4ebe099459cfd2c1b05da6bdfb9c077e025abdd9",
+      "binary_sha256": "f2b95b5e50f1eb9ea053a910061333dc5ddb58e1c79ed9955f8fe08713efa746",
+      "stock_sha256": "c1769b8bf49ce3ba3cea9536a13ad8323848bf65667344a1a027aa1672c3ed9a",
+      "baseline_sha256": "57a19f57e99e3a2a13519b61a85b77021d3f9e9b4389c59363b0800477958184",
+      "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "helper_sha256": {
+        "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+        "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "replay_helper_sha256": {
+        "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "model": "Qwen3.5-9B Q8_0",
+      "artifact": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.91.07, 24463 MiB",
+      "numeric_program": "existing GGUF forward/sampler and ordinary leader prefix_snapshot/prefix_restore",
+      "binary": "f2b95b5e50f1eb9ea053a910061333dc5ddb58e1c79ed9955f8fe08713efa746",
+      "request_shape": "chat+text n1/2/3/4/8; sampled+greedy+SSE; constrained N2; isolated deadline and capacity boots"
+    },
+    "tests": {
+      "changed-context": {
+        "id": "changed-context",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.changed-context"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
+          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+        },
+        "mandatory": true
+      },
+      "duplicate-choice": {
+        "id": "duplicate-choice",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.duplicate-choice"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
+          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+        },
+        "mandatory": true
+      },
+      "duplicate-prompt": {
+        "id": "duplicate-prompt",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.duplicate-prompt"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
+          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+        },
+        "mandatory": true
+      },
+      "duplicate-terminal": {
+        "id": "duplicate-terminal",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.duplicate-terminal"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
+          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+        },
+        "mandatory": true
+      },
+      "follower-prime": {
+        "id": "follower-prime",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.follower-prime"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
+          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+        },
+        "mandatory": true
+      },
+      "missing-choice": {
+        "id": "missing-choice",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.missing-choice"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
+          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+        },
+        "mandatory": true
+      },
+      "missing-fork": {
+        "id": "missing-fork",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.missing-fork"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
+          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+        },
+        "mandatory": true
+      },
+      "native-composite": {
+        "id": "native-composite",
+        "kind": "gpu",
+        "cost": 600,
+        "covers": [
+          "n1_identity",
+          "greedy_row_identity",
+          "seeded_rng_isolation",
+          "shared_prefill",
+          "indexed_termination",
+          "stream_content_identity",
+          "prompt_once_output_sum",
+          "reservation",
+          "n_slots",
+          "kv_exhaustion",
+          "prepaid_exhaustion",
+          "cancel_all_and_recover",
+          "bare_defaults",
+          "deadline_partial",
+          "constrained_choices"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
+          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+        },
+        "scope": {
+          "source": "4ebe099459cfd2c1b05da6bdfb9c077e025abdd9",
+          "binary_sha256": "f2b95b5e50f1eb9ea053a910061333dc5ddb58e1c79ed9955f8fe08713efa746",
+          "stock_sha256": "c1769b8bf49ce3ba3cea9536a13ad8323848bf65667344a1a027aa1672c3ed9a",
+          "baseline_sha256": "57a19f57e99e3a2a13519b61a85b77021d3f9e9b4389c59363b0800477958184",
+          "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+          "helper_sha256": {
+            "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+            "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+            "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+          },
+          "replay_helper_sha256": {
+            "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+            "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+          },
+          "model": "Qwen3.5-9B Q8_0",
+          "artifact": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+          "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.91.07, 24463 MiB",
+          "numeric_program": "existing GGUF forward/sampler and ordinary leader prefix_snapshot/prefix_restore",
+          "binary": "f2b95b5e50f1eb9ea053a910061333dc5ddb58e1c79ed9955f8fe08713efa746",
+          "request_shape": "chat+text n1/2/3/4/8; sampled+greedy+SSE; constrained N2; isolated deadline and capacity boots"
+        },
+        "controls": [
+          "changed-context",
+          "missing-choice",
+          "duplicate-choice",
+          "premature-done",
+          "shared-rng",
+          "output-sum",
+          "missing-fork",
+          "follower-prime",
+          "duplicate-prompt",
+          "prompt-multiplied",
+          "output-unscaled",
+          "duplicate-terminal",
+          "wire-content",
+          "token-hash"
+        ],
+        "mandatory": true
+      },
+      "output-sum": {
+        "id": "output-sum",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.output-sum"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
+          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+        },
+        "mandatory": true
+      },
+      "output-unscaled": {
+        "id": "output-unscaled",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.output-unscaled"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
+          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+        },
+        "mandatory": true
+      },
+      "premature-done": {
+        "id": "premature-done",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.premature-done"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
+          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+        },
+        "mandatory": true
+      },
+      "prompt-multiplied": {
+        "id": "prompt-multiplied",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.prompt-multiplied"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
+          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+        },
+        "mandatory": true
+      },
+      "shared-rng": {
+        "id": "shared-rng",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.shared-rng"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
+          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+        },
+        "mandatory": true
+      },
+      "token-hash": {
+        "id": "token-hash",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.token-hash"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
+          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+        },
+        "mandatory": true
+      },
+      "wire-content": {
+        "id": "wire-content",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.wire-content"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
+          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+        },
+        "mandatory": true
+      }
+    }
+  },
+  "contract_id": "9a53a4a012e6fb35dba08ca19af6959f50d925ae0db1282e6b0e02d7d3a6c47b",
+  "uncovered": [],
+  "ineligible": {},
+  "choices": [],
+  "edge_decisions": [
+    {
+      "edge": "bare_defaults",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "cancel_all_and_recover",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "constrained_choices",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "control.changed-context",
+      "covered": true,
+      "tests": [
+        "changed-context"
+      ]
+    },
+    {
+      "edge": "control.duplicate-choice",
+      "covered": true,
+      "tests": [
+        "duplicate-choice"
+      ]
+    },
+    {
+      "edge": "control.duplicate-prompt",
+      "covered": true,
+      "tests": [
+        "duplicate-prompt"
+      ]
+    },
+    {
+      "edge": "control.duplicate-terminal",
+      "covered": true,
+      "tests": [
+        "duplicate-terminal"
+      ]
+    },
+    {
+      "edge": "control.follower-prime",
+      "covered": true,
+      "tests": [
+        "follower-prime"
+      ]
+    },
+    {
+      "edge": "control.missing-choice",
+      "covered": true,
+      "tests": [
+        "missing-choice"
+      ]
+    },
+    {
+      "edge": "control.missing-fork",
+      "covered": true,
+      "tests": [
+        "missing-fork"
+      ]
+    },
+    {
+      "edge": "control.output-sum",
+      "covered": true,
+      "tests": [
+        "output-sum"
+      ]
+    },
+    {
+      "edge": "control.output-unscaled",
+      "covered": true,
+      "tests": [
+        "output-unscaled"
+      ]
+    },
+    {
+      "edge": "control.premature-done",
+      "covered": true,
+      "tests": [
+        "premature-done"
+      ]
+    },
+    {
+      "edge": "control.prompt-multiplied",
+      "covered": true,
+      "tests": [
+        "prompt-multiplied"
+      ]
+    },
+    {
+      "edge": "control.shared-rng",
+      "covered": true,
+      "tests": [
+        "shared-rng"
+      ]
+    },
+    {
+      "edge": "control.token-hash",
+      "covered": true,
+      "tests": [
+        "token-hash"
+      ]
+    },
+    {
+      "edge": "control.wire-content",
+      "covered": true,
+      "tests": [
+        "wire-content"
+      ]
+    },
+    {
+      "edge": "deadline_partial",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "greedy_row_identity",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "indexed_termination",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "kv_exhaustion",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "n1_identity",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "n_slots",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "prepaid_exhaustion",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "prompt_once_output_sum",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "reservation",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "seeded_rng_isolation",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "shared_prefill",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "stream_content_identity",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    }
+  ],
+  "cost": 614,
+  "optimization": "deterministic greedy set cover, not a claimed global optimum",
+  "isolation": "test boot/reset contracts are unchanged; selection never merges process state",
+  "qualification": false
+}

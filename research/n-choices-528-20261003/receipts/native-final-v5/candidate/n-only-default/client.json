@@ -1,0 +1,4232 @@
+{
+  "name": "n-only-default",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-request-id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+    "x-ratelimit-limit": "8",
+    "x-ratelimit-remaining": "6",
+    "x-ratelimit-reset": "0",
+    "content-length": "4562",
+    "date": "Sat, 03 Oct 2026 02:58:47 GMT"
+  },
+  "started": 588615.2050944,
+  "source_log_start": 3264,
+  "disconnected": false,
+  "body": {
+    "object": "chat.completion",
+    "model": "fixture",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "The fixture is ready.",
+          "reasoning": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Task: Reply with one short sentence.\n    *   Content: Confirm that \"this fixture\" is ready.\n    *   Constraint: Short, one sentence, confirmation of readiness.\n\n2.  **Determine the appropriate tone and phrasing:**\n    *   Tone: Professional, clear, concise.\n    *   Phrasing: \"The fixture is ready,\" \"This fixture is confirmed as ready,\" etc.\n\n3.  **Draft options:**\n    *   The fixture is ready.\n    *   This fixture has been prepared and is ready for use.\n    *   Confirmation: This fixture is now ready.\n\n4.  **Select the best option:**\n    *   \"The fixture is ready.\" is direct and meets all constraints.\n\n5.  **Final Polish:** Ensure it's exactly one sentence.\n\n6.  **Final Output:** The fixture is ready.cw\n",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "text": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Task: Reply with one short sentence.\n    *   Content: Confirm that \"this fixture\" is ready.\n    *   Constraint: Short, one sentence, confirmation of readiness.\n\n2.  **Determine the appropriate tone and phrasing:**\n    *   Tone: Professional, clear, concise.\n    *   Phrasing: \"The fixture is ready,\" \"This fixture is confirmed as ready,\" etc.\n\n3.  **Draft options:**\n    *   The fixture is ready.\n    *   This fixture has been prepared and is ready for use.\n    *   Confirmation: This fixture is now ready.\n\n4.  **Select the best option:**\n    *   \"The fixture is ready.\" is direct and meets all constraints.\n\n5.  **Final Polish:** Ensure it's exactly one sentence.\n\n6.  **Final Output:** The fixture is ready.cw\n"
+            }
+          ]
+        },
+        "finish_reason": "stop"
+      },
+      {
+        "index": 1,
+        "message": {
+          "role": "assistant",
+          "content": "The fixture is ready.",
+          "reasoning": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Task: Reply with one short sentence confirming a fixture is ready.\n    *   Constraint: One short sentence.\n    *   Context: Implied context of construction/engineering/project management (confirming readiness).\n\n2.  **Determine the appropriate tone and content:**\n    *   Tone: Professional, concise, affirmative.\n    *   Content: State that the fixture is ready.\n\n3.  **Draft potential sentences:**\n    *   The fixture is ready.\n    *   I confirm the fixture is ready.\n    *   Fixture readiness confirmed.\n    *   Yes, the fixture is ready for use.\n\n4.  **Select the best option based on constraints:**\n    *   \"The fixture is ready.\" (Simple, direct, meets criteria)\n    *   \"Fixture is ready.\" (Slightly more telegraphic)\n\n5.  **Final Selection:** \"The fixture is ready.\" or \"I confirm the fixture is ready.\" Let's go with a clear confirmation.\n\n6.  **Refine for brevity:** \"The fixture is now ready.\"\n\n7.  **Final Check:** One sentence? Yes. Short? Yes. Confirms readiness? Yes.\n\n    *Decision:* \"The fixture is ready.\"\n\n8.  **Output Generation.**\n",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "text": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Task: Reply with one short sentence confirming a fixture is ready.\n    *   Constraint: One short sentence.\n    *   Context: Implied context of construction/engineering/project management (confirming readiness).\n\n2.  **Determine the appropriate tone and content:**\n    *   Tone: Professional, concise, affirmative.\n    *   Content: State that the fixture is ready.\n\n3.  **Draft potential sentences:**\n    *   The fixture is ready.\n    *   I confirm the fixture is ready.\n    *   Fixture readiness confirmed.\n    *   Yes, the fixture is ready for use.\n\n4.  **Select the best option based on constraints:**\n    *   \"The fixture is ready.\" (Simple, direct, meets criteria)\n    *   \"Fixture is ready.\" (Slightly more telegraphic)\n\n5.  **Final Selection:** \"The fixture is ready.\" or \"I confirm the fixture is ready.\" Let's go with a clear confirmation.\n\n6.  **Refine for brevity:** \"The fixture is now ready.\"\n\n7.  **Final Check:** One sentence? Yes. Short? Yes. Confirms readiness? Yes.\n\n    *Decision:* \"The fixture is ready.\"\n\n8.  **Output Generation.**\n"
+            }
+          ]
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 21,
+      "completion_tokens": 508,
+      "total_tokens": 529,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "elapsed_s": 4.330766209
+    },
+    "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+    "created": 1790996323,
+    "system_fingerprint": "memra-0.138.0-4f633194e043"
+  },
+  "ended": 588619.538182006,
+  "source_log_end": 3786,
+  "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+  "callbacks": [
+    {
+      "tag": "CHOICE_OPEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "model": "fixture",
+        "tenant": "default",
+        "max_tokens": null,
+        "reserved_ctx": 8171,
+        "stream": false
+      },
+      "line": 3265
+    },
+    {
+      "tag": "CHOICE_PROMPT",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "prompt": 21,
+        "cached": 0
+      },
+      "line": 3267
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 1
+      },
+      "line": 3271
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 2
+      },
+      "line": 3272
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 3
+      },
+      "line": 3273
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 4
+      },
+      "line": 3274
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 5
+      },
+      "line": 3275
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 6
+      },
+      "line": 3276
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 7
+      },
+      "line": 3277
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 8
+      },
+      "line": 3278
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 9
+      },
+      "line": 3279
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 10
+      },
+      "line": 3280
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 11
+      },
+      "line": 3281
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 12
+      },
+      "line": 3282
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 13
+      },
+      "line": 3283
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 14
+      },
+      "line": 3284
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 15
+      },
+      "line": 3285
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 16
+      },
+      "line": 3286
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 17
+      },
+      "line": 3287
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 18
+      },
+      "line": 3288
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 19
+      },
+      "line": 3289
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 20
+      },
+      "line": 3290
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 21
+      },
+      "line": 3291
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 22
+      },
+      "line": 3292
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 23
+      },
+      "line": 3293
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 24
+      },
+      "line": 3294
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 25
+      },
+      "line": 3295
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 26
+      },
+      "line": 3296
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 27
+      },
+      "line": 3297
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 28
+      },
+      "line": 3298
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 29
+      },
+      "line": 3299
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 30
+      },
+      "line": 3300
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 31
+      },
+      "line": 3301
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 32
+      },
+      "line": 3302
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 33
+      },
+      "line": 3303
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 34
+      },
+      "line": 3304
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 35
+      },
+      "line": 3305
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 36
+      },
+      "line": 3306
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 37
+      },
+      "line": 3307
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 38
+      },
+      "line": 3308
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 39
+      },
+      "line": 3309
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 40
+      },
+      "line": 3310
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 41
+      },
+      "line": 3311
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 42
+      },
+      "line": 3312
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 43
+      },
+      "line": 3313
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 44
+      },
+      "line": 3314
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 45
+      },
+      "line": 3315
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 46
+      },
+      "line": 3316
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 47
+      },
+      "line": 3317
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 48
+      },
+      "line": 3318
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 49
+      },
+      "line": 3319
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 50
+      },
+      "line": 3320
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 51
+      },
+      "line": 3321
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 52
+      },
+      "line": 3322
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 53
+      },
+      "line": 3323
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 54
+      },
+      "line": 3324
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 55
+      },
+      "line": 3325
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 56
+      },
+      "line": 3326
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 57
+      },
+      "line": 3327
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 58
+      },
+      "line": 3328
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 59
+      },
+      "line": 3329
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 60
+      },
+      "line": 3330
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 61
+      },
+      "line": 3331
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 62
+      },
+      "line": 3332
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 63
+      },
+      "line": 3333
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 64
+      },
+      "line": 3334
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 65
+      },
+      "line": 3335
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 66
+      },
+      "line": 3336
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 67
+      },
+      "line": 3337
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 68
+      },
+      "line": 3338
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 69
+      },
+      "line": 3339
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 70
+      },
+      "line": 3340
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 71
+      },
+      "line": 3341
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 72
+      },
+      "line": 3342
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 73
+      },
+      "line": 3343
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 74
+      },
+      "line": 3344
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 75
+      },
+      "line": 3345
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 76
+      },
+      "line": 3346
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 77
+      },
+      "line": 3347
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 78
+      },
+      "line": 3348
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 79
+      },
+      "line": 3349
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 80
+      },
+      "line": 3350
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 81
+      },
+      "line": 3351
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 82
+      },
+      "line": 3352
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 83
+      },
+      "line": 3353
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 84
+      },
+      "line": 3354
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 85
+      },
+      "line": 3355
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 86
+      },
+      "line": 3356
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 87
+      },
+      "line": 3357
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 88
+      },
+      "line": 3358
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 89
+      },
+      "line": 3359
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 90
+      },
+      "line": 3360
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 91
+      },
+      "line": 3361
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 92
+      },
+      "line": 3362
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 93
+      },
+      "line": 3363
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 94
+      },
+      "line": 3364
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 95
+      },
+      "line": 3365
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 96
+      },
+      "line": 3366
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 97
+      },
+      "line": 3367
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 98
+      },
+      "line": 3368
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 99
+      },
+      "line": 3369
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 100
+      },
+      "line": 3370
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 101
+      },
+      "line": 3371
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 102
+      },
+      "line": 3372
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 103
+      },
+      "line": 3373
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 104
+      },
+      "line": 3374
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 105
+      },
+      "line": 3375
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 106
+      },
+      "line": 3376
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 107
+      },
+      "line": 3377
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 108
+      },
+      "line": 3378
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 109
+      },
+      "line": 3379
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 110
+      },
+      "line": 3380
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 111
+      },
+      "line": 3381
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 112
+      },
+      "line": 3382
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 113
+      },
+      "line": 3383
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 114
+      },
+      "line": 3384
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 115
+      },
+      "line": 3385
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 116
+      },
+      "line": 3386
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 117
+      },
+      "line": 3387
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 118
+      },
+      "line": 3388
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 119
+      },
+      "line": 3389
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 120
+      },
+      "line": 3390
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 121
+      },
+      "line": 3391
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 122
+      },
+      "line": 3392
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 123
+      },
+      "line": 3393
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 124
+      },
+      "line": 3394
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 125
+      },
+      "line": 3395
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 126
+      },
+      "line": 3396
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 127
+      },
+      "line": 3397
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 128
+      },
+      "line": 3398
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 129
+      },
+      "line": 3399
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 130
+      },
+      "line": 3400
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 131
+      },
+      "line": 3401
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 132
+      },
+      "line": 3402
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 133
+      },
+      "line": 3403
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 134
+      },
+      "line": 3404
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 135
+      },
+      "line": 3405
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 136
+      },
+      "line": 3406
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 137
+      },
+      "line": 3407
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 138
+      },
+      "line": 3408
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 139
+      },
+      "line": 3409
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 140
+      },
+      "line": 3410
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 141
+      },
+      "line": 3411
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 142
+      },
+      "line": 3412
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 143
+      },
+      "line": 3413
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 144
+      },
+      "line": 3414
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 145
+      },
+      "line": 3415
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 146
+      },
+      "line": 3416
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 147
+      },
+      "line": 3417
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 148
+      },
+      "line": 3418
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 149
+      },
+      "line": 3419
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 150
+      },
+      "line": 3420
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 151
+      },
+      "line": 3421
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 152
+      },
+      "line": 3422
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 153
+      },
+      "line": 3423
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 154
+      },
+      "line": 3424
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 155
+      },
+      "line": 3425
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 156
+      },
+      "line": 3426
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 157
+      },
+      "line": 3427
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 158
+      },
+      "line": 3428
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 159
+      },
+      "line": 3429
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 160
+      },
+      "line": 3430
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 161
+      },
+      "line": 3431
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 162
+      },
+      "line": 3432
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 163
+      },
+      "line": 3433
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 164
+      },
+      "line": 3434
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 165
+      },
+      "line": 3435
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 166
+      },
+      "line": 3436
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 167
+      },
+      "line": 3437
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 168
+      },
+      "line": 3438
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 169
+      },
+      "line": 3439
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 170
+      },
+      "line": 3440
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 171
+      },
+      "line": 3441
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 172
+      },
+      "line": 3442
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 173
+      },
+      "line": 3443
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 174
+      },
+      "line": 3444
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 175
+      },
+      "line": 3445
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 176
+      },
+      "line": 3446
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 177
+      },
+      "line": 3447
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 178
+      },
+      "line": 3448
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 179
+      },
+      "line": 3449
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 180
+      },
+      "line": 3450
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 181
+      },
+      "line": 3451
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 182
+      },
+      "line": 3452
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 183
+      },
+      "line": 3453
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 184
+      },
+      "line": 3454
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 185
+      },
+      "line": 3455
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 186
+      },
+      "line": 3456
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 187
+      },
+      "line": 3457
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 188
+      },
+      "line": 3458
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 189
+      },
+      "line": 3459
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 190
+      },
+      "line": 3460
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 191
+      },
+      "line": 3461
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 192
+      },
+      "line": 3462
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 193
+      },
+      "line": 3463
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 194
+      },
+      "line": 3464
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 195
+      },
+      "line": 3465
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 196
+      },
+      "line": 3466
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 197
+      },
+      "line": 3467
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 198
+      },
+      "line": 3468
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 199
+      },
+      "line": 3469
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 200
+      },
+      "line": 3470
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 201
+      },
+      "line": 3471
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 202
+      },
+      "line": 3472
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 203
+      },
+      "line": 3473
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 204
+      },
+      "line": 3474
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 205
+      },
+      "line": 3475
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 206
+      },
+      "line": 3476
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 207
+      },
+      "line": 3477
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 208
+      },
+      "line": 3478
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 209
+      },
+      "line": 3479
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 210
+      },
+      "line": 3480
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 211
+      },
+      "line": 3481
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 212
+      },
+      "line": 3482
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 213
+      },
+      "line": 3483
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 214
+      },
+      "line": 3484
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 215
+      },
+      "line": 3485
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 216
+      },
+      "line": 3486
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 217
+      },
+      "line": 3487
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 218
+      },
+      "line": 3488
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 219
+      },
+      "line": 3489
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 220
+      },
+      "line": 3490
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 221
+      },
+      "line": 3491
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 222
+      },
+      "line": 3492
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 223
+      },
+      "line": 3493
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 224
+      },
+      "line": 3494
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 225
+      },
+      "line": 3495
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 226
+      },
+      "line": 3496
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 227
+      },
+      "line": 3497
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 228
+      },
+      "line": 3498
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 229
+      },
+      "line": 3499
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 230
+      },
+      "line": 3500
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 231
+      },
+      "line": 3501
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 232
+      },
+      "line": 3502
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 233
+      },
+      "line": 3503
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 234
+      },
+      "line": 3504
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 235
+      },
+      "line": 3505
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 236
+      },
+      "line": 3506
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 237
+      },
+      "line": 3507
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 238
+      },
+      "line": 3508
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 239
+      },
+      "line": 3509
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 240
+      },
+      "line": 3510
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 241
+      },
+      "line": 3511
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 242
+      },
+      "line": 3512
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 243
+      },
+      "line": 3513
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 244
+      },
+      "line": 3514
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 245
+      },
+      "line": 3515
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 246
+      },
+      "line": 3516
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 247
+      },
+      "line": 3517
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 248
+      },
+      "line": 3518
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 249
+      },
+      "line": 3519
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 250
+      },
+      "line": 3520
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 251
+      },
+      "line": 3521
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 252
+      },
+      "line": 3522
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 253
+      },
+      "line": 3523
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 254
+      },
+      "line": 3524
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 255
+      },
+      "line": 3525
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 256
+      },
+      "line": 3526
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 257
+      },
+      "line": 3527
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 258
+      },
+      "line": 3528
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 259
+      },
+      "line": 3529
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 260
+      },
+      "line": 3530
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 261
+      },
+      "line": 3531
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 262
+      },
+      "line": 3532
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 263
+      },
+      "line": 3533
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 264
+      },
+      "line": 3534
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 265
+      },
+      "line": 3535
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 266
+      },
+      "line": 3536
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 267
+      },
+      "line": 3537
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 268
+      },
+      "line": 3538
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 269
+      },
+      "line": 3539
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 270
+      },
+      "line": 3540
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 271
+      },
+      "line": 3541
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 272
+      },
+      "line": 3542
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 273
+      },
+      "line": 3543
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 274
+      },
+      "line": 3544
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 275
+      },
+      "line": 3545
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 276
+      },
+      "line": 3546
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 277
+      },
+      "line": 3547
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 278
+      },
+      "line": 3548
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 279
+      },
+      "line": 3549
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 280
+      },
+      "line": 3550
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 281
+      },
+      "line": 3551
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 282
+      },
+      "line": 3552
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 283
+      },
+      "line": 3553
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 284
+      },
+      "line": 3554
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 285
+      },
+      "line": 3555
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 286
+      },
+      "line": 3556
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 287
+      },
+      "line": 3557
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 288
+      },
+      "line": 3558
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 289
+      },
+      "line": 3559
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 290
+      },
+      "line": 3560
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 291
+      },
+      "line": 3561
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 292
+      },
+      "line": 3562
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 293
+      },
+      "line": 3563
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 294
+      },
+      "line": 3564
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 295
+      },
+      "line": 3565
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 296
+      },
+      "line": 3566
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 297
+      },
+      "line": 3567
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 298
+      },
+      "line": 3568
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 299
+      },
+      "line": 3569
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 300
+      },
+      "line": 3570
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 301
+      },
+      "line": 3571
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 302
+      },
+      "line": 3572
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 303
+      },
+      "line": 3573
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 304
+      },
+      "line": 3574
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 305
+      },
+      "line": 3575
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 306
+      },
+      "line": 3576
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 307
+      },
+      "line": 3577
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 308
+      },
+      "line": 3578
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 309
+      },
+      "line": 3579
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 310
+      },
+      "line": 3580
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 311
+      },
+      "line": 3581
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 312
+      },
+      "line": 3582
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 313
+      },
+      "line": 3583
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 314
+      },
+      "line": 3584
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 315
+      },
+      "line": 3585
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 316
+      },
+      "line": 3586
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 317
+      },
+      "line": 3587
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 318
+      },
+      "line": 3588
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 319
+      },
+      "line": 3589
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 320
+      },
+      "line": 3590
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 321
+      },
+      "line": 3591
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 322
+      },
+      "line": 3592
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 323
+      },
+      "line": 3593
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 324
+      },
+      "line": 3594
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 325
+      },
+      "line": 3595
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 326
+      },
+      "line": 3596
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 327
+      },
+      "line": 3597
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 328
+      },
+      "line": 3598
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 329
+      },
+      "line": 3599
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 330
+      },
+      "line": 3600
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 331
+      },
+      "line": 3601
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 332
+      },
+      "line": 3602
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 333
+      },
+      "line": 3603
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 334
+      },
+      "line": 3604
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 335
+      },
+      "line": 3605
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 336
+      },
+      "line": 3606
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 337
+      },
+      "line": 3607
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 338
+      },
+      "line": 3608
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 339
+      },
+      "line": 3609
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 340
+      },
+      "line": 3610
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 341
+      },
+      "line": 3611
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 342
+      },
+      "line": 3612
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 343
+      },
+      "line": 3613
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 344
+      },
+      "line": 3614
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 345
+      },
+      "line": 3615
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 346
+      },
+      "line": 3616
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 347
+      },
+      "line": 3617
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 348
+      },
+      "line": 3618
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 349
+      },
+      "line": 3619
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 350
+      },
+      "line": 3620
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 351
+      },
+      "line": 3621
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 352
+      },
+      "line": 3622
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 353
+      },
+      "line": 3623
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 354
+      },
+      "line": 3624
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 355
+      },
+      "line": 3625
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 356
+      },
+      "line": 3626
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 357
+      },
+      "line": 3627
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 358
+      },
+      "line": 3628
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 359
+      },
+      "line": 3629
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 360
+      },
+      "line": 3630
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 361
+      },
+      "line": 3631
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 362
+      },
+      "line": 3632
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 363
+      },
+      "line": 3633
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 364
+      },
+      "line": 3634
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 365
+      },
+      "line": 3635
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 366
+      },
+      "line": 3636
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 367
+      },
+      "line": 3637
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 368
+      },
+      "line": 3638
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 369
+      },
+      "line": 3639
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 370
+      },
+      "line": 3640
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 371
+      },
+      "line": 3641
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 372
+      },
+      "line": 3642
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 373
+      },
+      "line": 3643
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 374
+      },
+      "line": 3644
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 375
+      },
+      "line": 3645
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 376
+      },
+      "line": 3646
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 377
+      },
+      "line": 3647
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 378
+      },
+      "line": 3648
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 379
+      },
+      "line": 3649
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 380
+      },
+      "line": 3650
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 381
+      },
+      "line": 3651
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 382
+      },
+      "line": 3652
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 383
+      },
+      "line": 3653
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 384
+      },
+      "line": 3654
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 385
+      },
+      "line": 3655
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 386
+      },
+      "line": 3656
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 387
+      },
+      "line": 3657
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 388
+      },
+      "line": 3658
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 389
+      },
+      "line": 3659
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 390
+      },
+      "line": 3660
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 391
+      },
+      "line": 3661
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 392
+      },
+      "line": 3662
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 393
+      },
+      "line": 3663
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 394
+      },
+      "line": 3664
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 395
+      },
+      "line": 3665
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 396
+      },
+      "line": 3666
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 397
+      },
+      "line": 3667
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 398
+      },
+      "line": 3668
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 399
+      },
+      "line": 3669
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 400
+      },
+      "line": 3670
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 401
+      },
+      "line": 3671
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 402
+      },
+      "line": 3672
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 403
+      },
+      "line": 3673
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 404
+      },
+      "line": 3674
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 405
+      },
+      "line": 3675
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 406
+      },
+      "line": 3676
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 407
+      },
+      "line": 3677
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 408
+      },
+      "line": 3678
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 409
+      },
+      "line": 3679
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 410
+      },
+      "line": 3680
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 411
+      },
+      "line": 3681
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 412
+      },
+      "line": 3682
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 413
+      },
+      "line": 3683
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 414
+      },
+      "line": 3684
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 415
+      },
+      "line": 3685
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 416
+      },
+      "line": 3686
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 417
+      },
+      "line": 3687
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 418
+      },
+      "line": 3688
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 419
+      },
+      "line": 3689
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 420
+      },
+      "line": 3690
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 421
+      },
+      "line": 3691
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 422
+      },
+      "line": 3692
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 423
+      },
+      "line": 3693
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 424
+      },
+      "line": 3694
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 425
+      },
+      "line": 3696
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 426
+      },
+      "line": 3697
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 427
+      },
+      "line": 3699
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 428
+      },
+      "line": 3700
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 429
+      },
+      "line": 3701
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 430
+      },
+      "line": 3702
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 431
+      },
+      "line": 3703
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 432
+      },
+      "line": 3704
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 433
+      },
+      "line": 3705
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 434
+      },
+      "line": 3706
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 435
+      },
+      "line": 3707
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 436
+      },
+      "line": 3708
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 437
+      },
+      "line": 3709
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 438
+      },
+      "line": 3710
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 439
+      },
+      "line": 3711
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 440
+      },
+      "line": 3712
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 441
+      },
+      "line": 3713
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 442
+      },
+      "line": 3714
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 443
+      },
+      "line": 3715
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 444
+      },
+      "line": 3716
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 445
+      },
+      "line": 3717
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 446
+      },
+      "line": 3718
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 447
+      },
+      "line": 3719
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 448
+      },
+      "line": 3720
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 449
+      },
+      "line": 3721
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 450
+      },
+      "line": 3722
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 451
+      },
+      "line": 3723
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 452
+      },
+      "line": 3724
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 453
+      },
+      "line": 3725
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 454
+      },
+      "line": 3726
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 455
+      },
+      "line": 3727
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 456
+      },
+      "line": 3728
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 457
+      },
+      "line": 3729
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 458
+      },
+      "line": 3730
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 459
+      },
+      "line": 3731
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 460
+      },
+      "line": 3732
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 461
+      },
+      "line": 3733
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 462
+      },
+      "line": 3734
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 463
+      },
+      "line": 3735
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 464
+      },
+      "line": 3736
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 465
+      },
+      "line": 3737
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 466
+      },
+      "line": 3738
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 467
+      },
+      "line": 3739
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 468
+      },
+      "line": 3740
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 469
+      },
+      "line": 3741
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 470
+      },
+      "line": 3742
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 471
+      },
+      "line": 3743
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 472
+      },
+      "line": 3744
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 473
+      },
+      "line": 3745
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 474
+      },
+      "line": 3746
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 475
+      },
+      "line": 3747
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 476
+      },
+      "line": 3748
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 477
+      },
+      "line": 3749
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 478
+      },
+      "line": 3750
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 479
+      },
+      "line": 3751
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 480
+      },
+      "line": 3752
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 481
+      },
+      "line": 3753
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 482
+      },
+      "line": 3754
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 483
+      },
+      "line": 3755
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 484
+      },
+      "line": 3756
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 485
+      },
+      "line": 3757
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 486
+      },
+      "line": 3758
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 487
+      },
+      "line": 3759
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 488
+      },
+      "line": 3760
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 489
+      },
+      "line": 3761
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 490
+      },
+      "line": 3762
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 491
+      },
+      "line": 3763
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 492
+      },
+      "line": 3764
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 493
+      },
+      "line": 3765
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 494
+      },
+      "line": 3766
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 495
+      },
+      "line": 3767
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 496
+      },
+      "line": 3768
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 497
+      },
+      "line": 3769
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 498
+      },
+      "line": 3770
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 499
+      },
+      "line": 3771
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 500
+      },
+      "line": 3772
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 501
+      },
+      "line": 3773
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 502
+      },
+      "line": 3774
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 503
+      },
+      "line": 3775
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 504
+      },
+      "line": 3776
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 505
+      },
+      "line": 3777
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 506
+      },
+      "line": 3778
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 507
+      },
+      "line": 3779
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "output": 508
+      },
+      "line": 3782
+    },
+    {
+      "tag": "CHOICE_TERMINAL",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "kind": "complete",
+        "status": 200,
+        "code": "",
+        "prompt": 21,
+        "cached": 0,
+        "output": 508,
+        "observed_prompt": 21,
+        "observed_cached": 0,
+        "observed_output": 508
+      },
+      "line": 3783
+    },
+    {
+      "tag": "CHOICE_DROP",
+      "value": {
+        "id": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+        "terminal": true,
+        "prompt": 21,
+        "cached": 0,
+        "output": 508
+      },
+      "line": 3784
+    }
+  ],
+  "worker_rows": [
+    {
+      "group": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+      "index": 0,
+      "seed": 3436981009485810839,
+      "prompt": 21,
+      "cached": 0,
+      "output": 213,
+      "token_sha256": "29a9e6e9078bfb4eaa9964c2b21f3e31f07a8896bd546b62cb3206615efc62d6",
+      "reason": "Eos",
+      "sampling": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.0,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0
+      },
+      "think": "Default"
+    },
+    {
+      "group": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+      "index": 1,
+      "seed": 3436981009485810840,
+      "prompt": 21,
+      "cached": 0,
+      "output": 295,
+      "token_sha256": "c971e53e21afa43044da1241c2028b65369c506a489227a0381f4a9cb0cf4298",
+      "reason": "Eos",
+      "sampling": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.0,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0
+      },
+      "think": "Default"
+    }
+  ],
+  "prime_events": [
+    {
+      "group": "chatcmpl-05c656dfb3650afcfc9aad2780166287",
+      "index": 0,
+      "rows": 21
+    }
+  ],
+  "fork_lines": [
+    "[n-choice-prefill] group=chatcmpl-05c656dfb3650afcfc9aad2780166287 choices=2 prompt=21 cached=0 copies=1 bytes=53002752 leader=0"
+  ],
+  "masked_steps": 0
+}

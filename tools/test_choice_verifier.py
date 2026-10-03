@@ -3,7 +3,7 @@ import ctypes
 import tempfile
 from pathlib import Path
 from copy import deepcopy
-from choice_verifier import check_completed, check_refusal, check_repeat, check_tools, check_stream_twin, Invalid
+from choice_verifier import check_completed, check_refusal, check_repeat, check_tools, check_stream_twin, check_greedy, Invalid
 from native_choices import Pressure
 
 def fixture():
@@ -47,6 +47,21 @@ class Controls(unittest.TestCase):
         self.assertEqual(e.exception.edge,'refusal')
         check_refusal({'status':400,'body':{'error':{'param':'best_of'}},'worker_rows':[]},'best_of')
     def test_positive(self):self.assertTrue(check_completed(fixture())['pass'])
+    def test_greedy_terminal_reason_cannot_diverge(self):
+        reference={'text':'same','stop_reason':'MaxNew'};group={'choices':[{'index':0,'text':'same','finish_reason':'stop'}]}
+        with self.assertRaises(Invalid) as e:check_greedy(reference,group)
+        self.assertEqual(e.exception.edge,'greedy_identity')
+    def test_committed_complete_native_receipt_and_coherent_controls(self):
+        import json,hashlib
+        from replay_choice_composite import replay
+        root=Path(__file__).resolve().parents[1]/'research/n-choices-528-20261003/receipts/native-final-v5'
+        result=replay(root)
+        self.assertEqual(result['phases'],6)
+        self.assertEqual(result['cached_tokens'],256)
+        self.assertEqual(result['coherent_controls'],14)
+        self.assertFalse(result['qualification'])
+        inventory=json.loads((root/'file-sha256.json').read_text())
+        for name,expected in inventory.items():self.assertEqual(hashlib.sha256((root/name).read_bytes()).hexdigest(),expected,name)
     def test_stream_accumulator_compares_semantics_to_full_envelope(self):
         body=fixture()['body'];full={**deepcopy(body),'object':'chat.completion','model':'fixture','id':'ephemeral','created':1}
         check_stream_twin(body,full)

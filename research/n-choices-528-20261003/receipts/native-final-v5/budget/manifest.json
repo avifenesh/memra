@@ -1,0 +1,762 @@
+{
+  "status": "complete",
+  "source": "4ebe099459cfd2c1b05da6bdfb9c077e025abdd9",
+  "binary_sha256": "f2b95b5e50f1eb9ea053a910061333dc5ddb58e1c79ed9955f8fe08713efa746",
+  "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+  "phase": "budget",
+  "server_pid": 4140489,
+  "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.91.07, 24463 MiB",
+  "server_exit": -2,
+  "results": [
+    {
+      "name": "budget-singleton",
+      "status": 200,
+      "headers": {
+        "content-type": "application/json",
+        "x-request-id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+        "x-ratelimit-limit": "8",
+        "x-ratelimit-remaining": "7",
+        "x-ratelimit-reset": "0",
+        "content-length": "620",
+        "date": "Sat, 03 Oct 2026 02:59:20 GMT"
+      },
+      "started": 588651.811081218,
+      "source_log_start": 21,
+      "disconnected": false,
+      "body": {
+        "model": "fixture",
+        "text": " The items in the list are: 1. \"You should always follow your dreams\", 2. \"Always be kind to others\", 3. \"Don't waste your time on small things\", 4. \"Honesty is the best policy\", 5. \"Work hard, play hard\"\n\n",
+        "tokens": [
+          561,
+          3470,
+          303,
+          279,
+          1103,
+          513,
+          25,
+          220,
+          16,
+          13,
+          328,
+          2523,
+          1220,
+          2590,
+          1732,
+          678,
+          18144,
+          487,
+          220,
+          17,
+          13,
+          328,
+          35865,
+          381,
+          2993,
+          310,
+          3672,
+          487,
+          220,
+          18,
+          13,
+          328,
+          7751,
+          914,
+          11939,
+          678,
+          854,
+          383,
+          2526,
+          2433,
+          487,
+          220,
+          19,
+          13,
+          328,
+          39,
+          33961,
+          88,
+          369,
+          279,
+          1786,
+          4687,
+          487,
+          220,
+          20,
+          13,
+          328,
+          6563,
+          2503,
+          11,
+          1432,
+          2503,
+          1,
+          271
+        ],
+        "stop_reason": "MaxNew",
+        "n_tokens": 64,
+        "prompt_tokens": 6,
+        "cached_tokens": 0,
+        "elapsed_s": 0.947344054
+      },
+      "ended": 588652.761911881,
+      "source_log_end": 103,
+      "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+      "callbacks": [
+        {
+          "tag": "CHOICE_OPEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "model": "fixture",
+            "tenant": "default",
+            "max_tokens": 64,
+            "reserved_ctx": 70,
+            "stream": false
+          },
+          "line": 22
+        },
+        {
+          "tag": "CHOICE_PROMPT",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "prompt": 6,
+            "cached": 0
+          },
+          "line": 27
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 1
+          },
+          "line": 34
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 2
+          },
+          "line": 36
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 3
+          },
+          "line": 37
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 4
+          },
+          "line": 38
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 5
+          },
+          "line": 39
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 6
+          },
+          "line": 40
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 7
+          },
+          "line": 41
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 8
+          },
+          "line": 42
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 9
+          },
+          "line": 43
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 10
+          },
+          "line": 44
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 11
+          },
+          "line": 45
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 12
+          },
+          "line": 46
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 13
+          },
+          "line": 47
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 14
+          },
+          "line": 48
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 15
+          },
+          "line": 49
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 16
+          },
+          "line": 50
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 17
+          },
+          "line": 51
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 18
+          },
+          "line": 52
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 19
+          },
+          "line": 53
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 20
+          },
+          "line": 54
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 21
+          },
+          "line": 55
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 22
+          },
+          "line": 56
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 23
+          },
+          "line": 57
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 24
+          },
+          "line": 58
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 25
+          },
+          "line": 59
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 26
+          },
+          "line": 60
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 27
+          },
+          "line": 61
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 28
+          },
+          "line": 62
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 29
+          },
+          "line": 63
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 30
+          },
+          "line": 64
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 31
+          },
+          "line": 65
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 32
+          },
+          "line": 66
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 33
+          },
+          "line": 67
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 34
+          },
+          "line": 68
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 35
+          },
+          "line": 69
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 36
+          },
+          "line": 70
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 37
+          },
+          "line": 71
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 38
+          },
+          "line": 72
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 39
+          },
+          "line": 73
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 40
+          },
+          "line": 74
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 41
+          },
+          "line": 75
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 42
+          },
+          "line": 76
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 43
+          },
+          "line": 77
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 44
+          },
+          "line": 78
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 45
+          },
+          "line": 79
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 46
+          },
+          "line": 80
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 47
+          },
+          "line": 81
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 48
+          },
+          "line": 82
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 49
+          },
+          "line": 83
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 50
+          },
+          "line": 84
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 51
+          },
+          "line": 85
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 52
+          },
+          "line": 86
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 53
+          },
+          "line": 87
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 54
+          },
+          "line": 88
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 55
+          },
+          "line": 89
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 56
+          },
+          "line": 90
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 57
+          },
+          "line": 91
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 58
+          },
+          "line": 92
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 59
+          },
+          "line": 93
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 60
+          },
+          "line": 94
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 61
+          },
+          "line": 95
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 62
+          },
+          "line": 96
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 63
+          },
+          "line": 97
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "output": 64
+          },
+          "line": 98
+        },
+        {
+          "tag": "CHOICE_TERMINAL",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "kind": "complete",
+            "status": 200,
+            "code": "",
+            "prompt": 6,
+            "cached": 0,
+            "output": 64,
+            "observed_prompt": 6,
+            "observed_cached": 0,
+            "observed_output": 64
+          },
+          "line": 100
+        },
+        {
+          "tag": "CHOICE_DROP",
+          "value": {
+            "id": "cmpl-5b9889547f8f5986eb90e650ec82078b",
+            "terminal": true,
+            "prompt": 6,
+            "cached": 0,
+            "output": 64
+          },
+          "line": 101
+        }
+      ],
+      "worker_rows": [],
+      "prime_events": [],
+      "fork_lines": [],
+      "masked_steps": 0
+    },
+    {
+      "name": "budget",
+      "status": 402,
+      "headers": {
+        "content-type": "application/json",
+        "x-should-retry": "false",
+        "x-request-id": "cmpl-63e9891c83e54e944dbd8e49d5f5f543",
+        "content-length": "152",
+        "date": "Sat, 03 Oct 2026 02:59:20 GMT"
+      },
+      "started": 588652.762222477,
+      "source_log_start": 103,
+      "disconnected": false,
+      "body": {
+        "error": {
+          "message": "tenant prepaid balance is insufficient for this request",
+          "type": "insufficient_balance",
+          "param": null,
+          "code": "insufficient_balance"
+        }
+      },
+      "ended": 588652.76333226,
+      "source_log_end": 108,
+      "id": "cmpl-63e9891c83e54e944dbd8e49d5f5f543",
+      "callbacks": [
+        {
+          "tag": "CHOICE_OPEN",
+          "value": {
+            "id": "cmpl-63e9891c83e54e944dbd8e49d5f5f543",
+            "model": "fixture",
+            "tenant": "default",
+            "max_tokens": 256,
+            "reserved_ctx": null,
+            "stream": false
+          },
+          "line": 104
+        },
+        {
+          "tag": "CHOICE_TERMINAL",
+          "value": {
+            "id": "cmpl-63e9891c83e54e944dbd8e49d5f5f543",
+            "kind": "reject",
+            "status": 402,
+            "code": "insufficient_balance",
+            "prompt": 0,
+            "cached": 0,
+            "output": 0,
+            "observed_prompt": 0,
+            "observed_cached": 0,
+            "observed_output": 0
+          },
+          "line": 105
+        },
+        {
+          "tag": "CHOICE_DROP",
+          "value": {
+            "id": "cmpl-63e9891c83e54e944dbd8e49d5f5f543",
+            "terminal": true,
+            "prompt": 0,
+            "cached": 0,
+            "output": 0
+          },
+          "line": 106
+        }
+      ],
+      "worker_rows": [],
+      "prime_events": [],
+      "fork_lines": [],
+      "masked_steps": 0
+    }
+  ],
+  "support_promotion": false,
+  "helper_sha256": {
+    "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+    "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+    "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+  },
+  "files": {
+    "callback-events.json": "7b2c1257f6aa572340839b98ee464e1b97584bc8cbb7487252dbe5d0a063e138",
+    "env.json": "f076c8b9be6e461cfffa670bbe858d94003bdfd10bfdfa6dcc22ff9031dfa35e",
+    "metadata.toml": "9702a9b331f50a38b798c18531dccfbd22abc277560cf70c322c0b3f091c2380",
+    "server.log": "7f8057ae5bced71e37ffa2663169c7cecfd5890e246aa23bf96ca67eee32de2d",
+    "budget-singleton/wire.json": "e98bdbfc3b3756b8e9f2bfa02d05a5e52fd2a7990875d9983fa0e5ad17db581b",
+    "budget-singleton/request.json": "0f95926546c81acaacc65c47d6f07ade0f612659298754c229da593196bd6a00",
+    "budget-singleton/client.json": "0095bf4f85969687853125e007fa0b04a5872c04f991ff6d4006b19c8f85ab2b",
+    "budget-singleton/headers.json": "50c79cf8d1c2f92e95fee255013d0e0a941c79f774cc3f1cfe900492b4e46abe",
+    "budget/wire.json": "85a338784af6bfd310e6b99f5c10bcab8eebd5250582e6a57fd5fd1c63a1772f",
+    "budget/request.json": "d4dc5c0bd041c0121a0a9c65c07e0c7b78d3ec7e414dfb0543fb902a06a7b25a",
+    "budget/client.json": "8a2a24d394dff2b67f8e84413802eb80dcbc2f35206b3f5eee9d378cbba1d9fa",
+    "budget/headers.json": "f6e5d13a87b5b9dee5db01e1b5f66cedfb204ca5160ffcda2bfbb799beb7dfa0"
+  }
+}

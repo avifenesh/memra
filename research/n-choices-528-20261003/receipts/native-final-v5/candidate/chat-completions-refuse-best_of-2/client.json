@@ -1,0 +1,30 @@
+{
+  "name": "chat-completions-refuse-best_of-2",
+  "status": 400,
+  "headers": {
+    "content-type": "application/json",
+    "x-should-retry": "false",
+    "x-request-id": "chatcmpl-6cce69ea9ddaa269ba20eca45d506091",
+    "content-length": "166",
+    "date": "Sat, 03 Oct 2026 02:58:34 GMT"
+  },
+  "started": 588606.778936228,
+  "source_log_start": 2650,
+  "disconnected": false,
+  "body": {
+    "error": {
+      "message": "best_of is not supported (best_of is not implemented; use n for multiple choices)",
+      "type": "invalid_request_error",
+      "param": "best_of",
+      "code": null
+    }
+  },
+  "ended": 588606.77947919,
+  "source_log_end": 2651,
+  "id": "chatcmpl-6cce69ea9ddaa269ba20eca45d506091",
+  "callbacks": [],
+  "worker_rows": [],
+  "prime_events": [],
+  "fork_lines": [],
+  "masked_steps": 0
+}

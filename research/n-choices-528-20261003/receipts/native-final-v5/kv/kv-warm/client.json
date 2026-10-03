@@ -1,0 +1,156 @@
+{
+  "name": "kv-warm",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-request-id": "cmpl-cdeec4b636375deeb9a021fcf039fb29",
+    "x-ratelimit-limit": "8",
+    "x-ratelimit-remaining": "7",
+    "x-ratelimit-reset": "0",
+    "content-length": "197",
+    "date": "Sat, 03 Oct 2026 02:59:26 GMT"
+  },
+  "started": 588657.819034802,
+  "source_log_start": 21,
+  "disconnected": false,
+  "body": {
+    "model": "fixture",
+    "text": " The items in the list are: ",
+    "tokens": [
+      561,
+      3470,
+      303,
+      279,
+      1103,
+      513,
+      25,
+      220
+    ],
+    "stop_reason": "MaxNew",
+    "n_tokens": 8,
+    "prompt_tokens": 6,
+    "cached_tokens": 0,
+    "elapsed_s": 0.180462601
+  },
+  "ended": 588658.002826998,
+  "source_log_end": 47,
+  "id": "cmpl-cdeec4b636375deeb9a021fcf039fb29",
+  "callbacks": [
+    {
+      "tag": "CHOICE_OPEN",
+      "value": {
+        "id": "cmpl-cdeec4b636375deeb9a021fcf039fb29",
+        "model": "fixture",
+        "tenant": "default",
+        "max_tokens": 8,
+        "reserved_ctx": 14,
+        "stream": false
+      },
+      "line": 22
+    },
+    {
+      "tag": "CHOICE_PROMPT",
+      "value": {
+        "id": "cmpl-cdeec4b636375deeb9a021fcf039fb29",
+        "prompt": 6,
+        "cached": 0
+      },
+      "line": 26
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-cdeec4b636375deeb9a021fcf039fb29",
+        "output": 1
+      },
+      "line": 34
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-cdeec4b636375deeb9a021fcf039fb29",
+        "output": 2
+      },
+      "line": 36
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-cdeec4b636375deeb9a021fcf039fb29",
+        "output": 3
+      },
+      "line": 37
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-cdeec4b636375deeb9a021fcf039fb29",
+        "output": 4
+      },
+      "line": 38
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-cdeec4b636375deeb9a021fcf039fb29",
+        "output": 5
+      },
+      "line": 39
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-cdeec4b636375deeb9a021fcf039fb29",
+        "output": 6
+      },
+      "line": 40
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-cdeec4b636375deeb9a021fcf039fb29",
+        "output": 7
+      },
+      "line": 41
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-cdeec4b636375deeb9a021fcf039fb29",
+        "output": 8
+      },
+      "line": 42
+    },
+    {
+      "tag": "CHOICE_TERMINAL",
+      "value": {
+        "id": "cmpl-cdeec4b636375deeb9a021fcf039fb29",
+        "kind": "complete",
+        "status": 200,
+        "code": "",
+        "prompt": 6,
+        "cached": 0,
+        "output": 8,
+        "observed_prompt": 6,
+        "observed_cached": 0,
+        "observed_output": 8
+      },
+      "line": 44
+    },
+    {
+      "tag": "CHOICE_DROP",
+      "value": {
+        "id": "cmpl-cdeec4b636375deeb9a021fcf039fb29",
+        "terminal": true,
+        "prompt": 6,
+        "cached": 0,
+        "output": 8
+      },
+      "line": 45
+    }
+  ],
+  "worker_rows": [],
+  "prime_events": [],
+  "fork_lines": [],
+  "masked_steps": 0
+}

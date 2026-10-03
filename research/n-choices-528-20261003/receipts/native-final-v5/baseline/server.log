@@ -1,0 +1,44 @@
+[server] build: memra-0.138.0-4f633194e043 (id: source-tree, git: 4ebe099459cf)
+[env-audit] warning: 3 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: MEMRA_CI_LOCK, MEMRA_CI_LOCK_HELD, MEMRA_RIG_LOCK_FD. Left alone: launchers and gate scripts own names outside the engine's families.
+[server] OpenRouter metadata loaded: 1 model(s), sha256 9702a9b331f50a38b798c18531dccfbd22abc277560cf70c322c0b3f091c2380 from /home/avifenesh/.local/state/memra-rig-darklanes-20261002/scratch/C/n-choices-528/native-final-v5/baseline/metadata.toml
+[server] starting; models config = [("fixture", "/data/ai-ml/models/qwen3.5-9b-judge-q8_0.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "fixture" <- /data/ai-ml/models/qwen3.5-9b-judge-q8_0.gguf
+[tensor-contract] bound 427 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "fixture": 32 layers, eos=248046, stop=[248046]
+[worker] fixture: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="fixture" route=hybrid-worker capacity=8 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] fixture: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[admission] "fixture": plain 14848 B/token, spec 14848 B/token; fixed residual learns from effective-free deltas
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[server] worker ready; serving models: ["fixture"]
+[server] listening on http://127.0.0.1:18270
+[meter] admit id=cmpl-2d341592d1bea76c3b504c192ade18a7 tenant=default lane=interactive model="fixture"
+[admission] request cost: model="fixture" ctx=109 path=plain = 14848 B/token x ctx + 5MB prefill-workspace + 0MB fixed = 6MB
+[admission] fixed residual high-water: model="fixture" 103MB (observed 104MB at ctx 53 path=plain)
+[primeseg] TOKENWISE prompt token at fed=0 (bound_rem=None q=13 budget=1024) — W1 two-programs door, NOT the prime path
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+[primeseg] TOKENWISE prompt token at fed=1 (bound_rem=None q=12 budget=1024) — W1 two-programs door, NOT the prime path
+[primeseg] TOKENWISE prompt token at fed=2 (bound_rem=None q=11 budget=1024) — W1 two-programs door, NOT the prime path
+[primeseg] TOKENWISE prompt token at fed=3 (bound_rem=None q=10 budget=1024) — W1 two-programs door, NOT the prime path
+[primeseg] TOKENWISE prompt token at fed=4 (bound_rem=None q=9 budget=1024) — W1 two-programs door, NOT the prime path
+[primeseg] TOKENWISE prompt token at fed=5 (bound_rem=None q=8 budget=1024) — W1 two-programs door, NOT the prime path
+[primeseg] TOKENWISE prompt token at fed=6 (bound_rem=None q=7 budget=1024) — W1 two-programs door, NOT the prime path
+[primeseg] TOKENWISE prompt token at fed=7 (bound_rem=None q=6 budget=1024) — W1 two-programs door, NOT the prime path
+[primeseg] TOKENWISE prompt token at fed=8 (bound_rem=None q=5 budget=1024) — W1 two-programs door, NOT the prime path
+[primeseg] TOKENWISE prompt token at fed=9 (bound_rem=None q=4 budget=1024) — W1 two-programs door, NOT the prime path
+[primeseg] TOKENWISE prompt token at fed=10 (bound_rem=None q=3 budget=1024) — W1 two-programs door, NOT the prime path
+[primeseg] TOKENWISE prompt token at fed=11 (bound_rem=None q=2 budget=1024) — W1 two-programs door, NOT the prime path
+[primeseg] TOKENWISE prompt token at fed=12 (bound_rem=None q=1 budget=1024) — W1 two-programs door, NOT the prime path
+[ttft] id=cmpl-2d341592d1bea76c3b504c192ade18a7 model="fixture" path="/v1/completions" prompt_tokens=13 outcome=ended_without_sse request_parse_ms=1.804 admission_ms=0.929 queue_wait_ms=0.017 tokenize_ms=0.039 prime_wait_ms=1.995 prime_ms=171.511 decode_wait_ms=0.248 sse_handoff_ms=na request_parse_end_ms=1.804 admission_end_ms=2.733 tokenize_start_ms=2.750 tokenize_end_ms=2.789 prime_start_ms=4.784 prime_end_ms=176.295 first_decode_ms=176.543 first_sse_byte_ms=na total_ms=176.543
+[meter] admit id=chatcmpl-d6b58a78e58b33490a26ffd20d3d5b40 tenant=default lane=interactive model="fixture"
+[admission] request cost: model="fixture" ctx=119 path=plain = 14848 B/token x ctx + 8MB prefill-workspace + 103MB fixed = 113MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 23 prompt tokens; model fixture)
+[primeseg] call start=0 take=23 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=23 budget=1024 seed_at=None
+[ttft] id=chatcmpl-d6b58a78e58b33490a26ffd20d3d5b40 model="fixture" path="/v1/chat/completions" prompt_tokens=23 outcome=ended_without_sse request_parse_ms=0.066 admission_ms=0.116 queue_wait_ms=0.018 tokenize_ms=0.071 prime_wait_ms=4.542 prime_ms=201.670 decode_wait_ms=0.236 sse_handoff_ms=na request_parse_end_ms=0.066 admission_end_ms=0.182 tokenize_start_ms=0.200 tokenize_end_ms=0.271 prime_start_ms=4.813 prime_end_ms=206.483 first_decode_ms=206.719 first_sse_byte_ms=na total_ms=206.719

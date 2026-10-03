@@ -1,0 +1,131 @@
+{
+  "name": "cancel",
+  "status": 200,
+  "headers": {
+    "content-type": "text/event-stream",
+    "cache-control": "no-cache",
+    "x-request-id": "chatcmpl-08014468dec57366af433a86f1470e3f",
+    "x-ratelimit-limit": "8",
+    "x-ratelimit-remaining": "4",
+    "x-ratelimit-reset": "0",
+    "transfer-encoding": "chunked",
+    "date": "Sat, 03 Oct 2026 02:58:58 GMT"
+  },
+  "started": 588630.564253034,
+  "source_log_start": 4840,
+  "disconnected": true,
+  "frames": 8,
+  "ended": 588630.639434273,
+  "source_log_end": 4853,
+  "id": "chatcmpl-08014468dec57366af433a86f1470e3f",
+  "callbacks": [
+    {
+      "tag": "CHOICE_OPEN",
+      "value": {
+        "id": "chatcmpl-08014468dec57366af433a86f1470e3f",
+        "model": "fixture",
+        "tenant": "default",
+        "max_tokens": 2048,
+        "reserved_ctx": 2071,
+        "stream": true
+      },
+      "line": 4841
+    },
+    {
+      "tag": "CHOICE_PROMPT",
+      "value": {
+        "id": "chatcmpl-08014468dec57366af433a86f1470e3f",
+        "prompt": 23,
+        "cached": 0
+      },
+      "line": 4844
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-08014468dec57366af433a86f1470e3f",
+        "output": 1
+      },
+      "line": 4848
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-08014468dec57366af433a86f1470e3f",
+        "output": 2
+      },
+      "line": 4850
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-08014468dec57366af433a86f1470e3f",
+        "output": 3
+      },
+      "line": 4851
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-08014468dec57366af433a86f1470e3f",
+        "output": 4
+      },
+      "line": 4852
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-08014468dec57366af433a86f1470e3f",
+        "output": 5
+      },
+      "line": 4853
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-08014468dec57366af433a86f1470e3f",
+        "output": 6
+      },
+      "line": 4854
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-08014468dec57366af433a86f1470e3f",
+        "output": 7
+      },
+      "line": 4855
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-08014468dec57366af433a86f1470e3f",
+        "output": 8
+      },
+      "line": 4856
+    },
+    {
+      "tag": "CHOICE_DROP",
+      "value": {
+        "id": "chatcmpl-08014468dec57366af433a86f1470e3f",
+        "terminal": false,
+        "prompt": 23,
+        "cached": 0,
+        "output": 8
+      },
+      "line": 4857
+    }
+  ],
+  "worker_rows": [],
+  "prime_events": [
+    {
+      "group": "chatcmpl-08014468dec57366af433a86f1470e3f",
+      "index": 0,
+      "rows": 23
+    }
+  ],
+  "fork_lines": [
+    "[n-choice-prefill] group=chatcmpl-08014468dec57366af433a86f1470e3f choices=4 prompt=23 cached=0 copies=3 bytes=53032448 leader=0"
+  ],
+  "masked_steps": 0
+}

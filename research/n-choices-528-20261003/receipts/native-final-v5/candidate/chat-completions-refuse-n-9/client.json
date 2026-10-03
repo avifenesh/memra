@@ -1,0 +1,30 @@
+{
+  "name": "chat-completions-refuse-n-9",
+  "status": 400,
+  "headers": {
+    "content-type": "application/json",
+    "x-should-retry": "false",
+    "x-request-id": "chatcmpl-ce7281b964a7d7323df19c1fde57fa74",
+    "content-length": "116",
+    "date": "Sat, 03 Oct 2026 02:58:34 GMT"
+  },
+  "started": 588606.778163294,
+  "source_log_start": 2649,
+  "disconnected": false,
+  "body": {
+    "error": {
+      "message": "n must be an integer from 1 through 8",
+      "type": "invalid_request_error",
+      "param": "n",
+      "code": null
+    }
+  },
+  "ended": 588606.77856274,
+  "source_log_end": 2650,
+  "id": "chatcmpl-ce7281b964a7d7323df19c1fde57fa74",
+  "callbacks": [],
+  "worker_rows": [],
+  "prime_events": [],
+  "fork_lines": [],
+  "masked_steps": 0
+}

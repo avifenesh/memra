@@ -4,8 +4,8 @@ Planning only. Native values must be observed; this map cannot convert a skipped
 
 | Edge | Raw evidence and actual assertion | Required failing control |
 | --- | --- | --- |
-| n1 compatibility | exact-base and candidate stock HTTP bodies; canonicalization removes only id/created/fingerprint/time fields; native text token IDs and all content/reasoning/finish/usage fields match | semantic byte/count mutation |
-| greedy row identity | every indexed choice matches its n1 greedy control, including terminal reason and producer token hash | changed row text/token hash |
+| n1 compatibility | exact-base and candidate stock HTTP bodies; canonicalization removes only id/created/fingerprint/time fields; all retained content/reasoning/finish/usage fields match | semantic byte/count mutation |
+| greedy row identity | every indexed choice matches its n1 greedy control, including terminal reason; group producer token hashes agree | changed row text/token hash |
 | RNG isolation | actual worker seed witness equals master+i; each sampled row repeats and matches its independent seed+i singleton; every index has independent state | shared seed/RNG witness |
 | shared prefill | CHOICE_PRIME reports leader-only rows; one fork record has N choices and N-1 copies; complete producer rows match the shared prompt boundary | missing fork or follower cold-prime record |
 | indexed termination | raw JSON and SSE cover exactly0..N-1, one finish per index, exactlyone DONE after all finishes | missing/duplicate row or premature DONE |

@@ -1,0 +1,162 @@
+[server] build: memra-0.138.0-4f633194e043 (id: source-tree, git: 4ebe099459cf)
+[env-audit] warning: 3 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: MEMRA_CI_LOCK, MEMRA_CI_LOCK_HELD, MEMRA_RIG_LOCK_FD. Left alone: launchers and gate scripts own names outside the engine's families.
+[server] OpenRouter metadata loaded: 1 model(s), sha256 9702a9b331f50a38b798c18531dccfbd22abc277560cf70c322c0b3f091c2380 from /home/avifenesh/.local/state/memra-rig-darklanes-20261002/scratch/C/n-choices-528/native-final-v5/kv/metadata.toml
+[server] starting; models config = [("fixture", "/data/ai-ml/models/qwen3.5-9b-judge-q8_0.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "fixture" <- /data/ai-ml/models/qwen3.5-9b-judge-q8_0.gguf
+[tensor-contract] bound 427 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "fixture": 32 layers, eos=248046, stop=[248046]
+[worker] fixture: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="fixture" route=hybrid-worker capacity=8 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] fixture: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[admission] "fixture": plain 14848 B/token, spec 14848 B/token; fixed residual learns from effective-free deltas
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[server] worker ready; serving models: ["fixture"]
+[server] listening on http://127.0.0.1:18275
+CHOICE_RESERVE {"tenant":"default","model":"fixture","prompt":6,"output":8,"limit":1000000,"accepted":true}
+CHOICE_OPEN {"id":"cmpl-cdeec4b636375deeb9a021fcf039fb29","model":"fixture","tenant":"default","max_tokens":8,"reserved_ctx":14,"stream":false}
+[meter] admit id=cmpl-cdeec4b636375deeb9a021fcf039fb29 tenant=default lane=interactive model="fixture"
+[admission] request cost: model="fixture" ctx=78 path=plain = 14848 B/token x ctx + 2MB prefill-workspace + 0MB fixed = 3MB
+[admission] fixed residual high-water: model="fixture" 103MB (observed 103MB at ctx 22 path=plain)
+CHOICE_PROMPT {"id":"cmpl-cdeec4b636375deeb9a021fcf039fb29","prompt":6,"cached":0}
+[primeseg] TOKENWISE prompt token at fed=0 (bound_rem=None q=6 budget=1024) — W1 two-programs door, NOT the prime path
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+[primeseg] TOKENWISE prompt token at fed=1 (bound_rem=None q=5 budget=1024) — W1 two-programs door, NOT the prime path
+[primeseg] TOKENWISE prompt token at fed=2 (bound_rem=None q=4 budget=1024) — W1 two-programs door, NOT the prime path
+[primeseg] TOKENWISE prompt token at fed=3 (bound_rem=None q=3 budget=1024) — W1 two-programs door, NOT the prime path
+[primeseg] TOKENWISE prompt token at fed=4 (bound_rem=None q=2 budget=1024) — W1 two-programs door, NOT the prime path
+[primeseg] TOKENWISE prompt token at fed=5 (bound_rem=None q=1 budget=1024) — W1 two-programs door, NOT the prime path
+CHOICE_TOKEN {"id":"cmpl-cdeec4b636375deeb9a021fcf039fb29","output":1}
+[device-penalty] sparse sampled rows=1 unique-counts=7 execution=one-ragged-launch raw-logits=preserved
+CHOICE_TOKEN {"id":"cmpl-cdeec4b636375deeb9a021fcf039fb29","output":2}
+CHOICE_TOKEN {"id":"cmpl-cdeec4b636375deeb9a021fcf039fb29","output":3}
+CHOICE_TOKEN {"id":"cmpl-cdeec4b636375deeb9a021fcf039fb29","output":4}
+CHOICE_TOKEN {"id":"cmpl-cdeec4b636375deeb9a021fcf039fb29","output":5}
+CHOICE_TOKEN {"id":"cmpl-cdeec4b636375deeb9a021fcf039fb29","output":6}
+CHOICE_TOKEN {"id":"cmpl-cdeec4b636375deeb9a021fcf039fb29","output":7}
+CHOICE_TOKEN {"id":"cmpl-cdeec4b636375deeb9a021fcf039fb29","output":8}
+[sampler-order] model=fixture radix=0 comparison=1
+CHOICE_TERMINAL {"id":"cmpl-cdeec4b636375deeb9a021fcf039fb29","kind":"complete","status":200,"code":"","prompt":6,"cached":0,"output":8,"observed_prompt":6,"observed_cached":0,"observed_output":8}
+CHOICE_DROP {"id":"cmpl-cdeec4b636375deeb9a021fcf039fb29","terminal":true,"prompt":6,"cached":0,"output":8}
+[ttft] id=cmpl-cdeec4b636375deeb9a021fcf039fb29 model="fixture" path="/v1/completions" prompt_tokens=6 outcome=ended_without_sse request_parse_ms=0.083 admission_ms=0.845 queue_wait_ms=0.000 tokenize_ms=0.015 prime_wait_ms=0.652 prime_ms=72.847 decode_wait_ms=4.191 sse_handoff_ms=na request_parse_end_ms=0.083 admission_end_ms=0.928 tokenize_start_ms=0.863 tokenize_end_ms=0.878 prime_start_ms=1.530 prime_end_ms=74.377 first_decode_ms=78.568 first_sse_byte_ms=na total_ms=78.568
+CHOICE_RESERVE {"tenant":"default","model":"fixture","prompt":6,"output":24576,"limit":1000000,"accepted":true}
+CHOICE_OPEN {"id":"cmpl-6b526dd97b5c284abf3ba9826dea7073","model":"fixture","tenant":"default","max_tokens":24576,"reserved_ctx":24582,"stream":false}
+[admission] request cost: model="fixture" ctx=3142 path=plain = 14848 B/token x ctx + 2MB prefill-workspace + 103MB fixed = 152MB
+[device-trim] reason=admission-drain {"device":0,"reclaimed_bytes":67108864,"still_owned_bytes":8469418112,"pool_reserved_bytes":8522825728,"pool_cached_bytes":53407616,"driver_free_bytes":1139015680,"synchronization_errors":[]}
+[admit-oom] capacity reject: model="fixture" ctx=3142 does not fit an IDLE box (available 1192MB) — HTTP 400 context_length_exceeded
+[abort] client disconnected while queued (model "fixture"); dropped
+[abort] client disconnected while queued (model "fixture"); dropped
+[abort] client disconnected while queued (model "fixture"); dropped
+[abort] client disconnected while queued (model "fixture"); dropped
+[abort] client disconnected while queued (model "fixture"); dropped
+[abort] client disconnected while queued (model "fixture"); dropped
+[abort] client disconnected while queued (model "fixture"); dropped
+CHOICE_TERMINAL {"id":"cmpl-6b526dd97b5c284abf3ba9826dea7073","kind":"reject","status":400,"code":"context_length_exceeded","prompt":0,"cached":0,"output":0,"observed_prompt":0,"observed_cached":0,"observed_output":0}
+CHOICE_DROP {"id":"cmpl-6b526dd97b5c284abf3ba9826dea7073","terminal":true,"prompt":0,"cached":0,"output":0}
+[ttft] id=cmpl-6b526dd97b5c284abf3ba9826dea7073 model="fixture" path="/v1/completions" prompt_tokens=6 outcome=ended_without_sse request_parse_ms=0.068 admission_ms=na queue_wait_ms=na tokenize_ms=0.013 prime_wait_ms=na prime_ms=na decode_wait_ms=na sse_handoff_ms=na request_parse_end_ms=0.068 admission_end_ms=na tokenize_start_ms=0.134 tokenize_end_ms=0.147 prime_start_ms=na prime_end_ms=na first_decode_ms=na first_sse_byte_ms=na total_ms=0.147
+CHOICE_RESERVE {"tenant":"default","model":"fixture","prompt":6,"output":64,"limit":1000000,"accepted":true}
+CHOICE_OPEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","model":"fixture","tenant":"default","max_tokens":64,"reserved_ctx":70,"stream":false}
+[admission] request cost: model="fixture" ctx=78 path=plain = 14848 B/token x ctx + 2MB prefill-workspace + 103MB fixed = 106MB
+CHOICE_PROMPT {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","prompt":6,"cached":0}
+[primeseg] TOKENWISE prompt token at fed=0 (bound_rem=None q=6 budget=1024) — W1 two-programs door, NOT the prime path
+CHOICE_PRIME {"group":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","index":0,"rows":1}
+[primeseg] TOKENWISE prompt token at fed=1 (bound_rem=None q=5 budget=1024) — W1 two-programs door, NOT the prime path
+CHOICE_PRIME {"group":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","index":0,"rows":1}
+[primeseg] TOKENWISE prompt token at fed=2 (bound_rem=None q=4 budget=1024) — W1 two-programs door, NOT the prime path
+CHOICE_PRIME {"group":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","index":0,"rows":1}
+[primeseg] TOKENWISE prompt token at fed=3 (bound_rem=None q=3 budget=1024) — W1 two-programs door, NOT the prime path
+CHOICE_PRIME {"group":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","index":0,"rows":1}
+[primeseg] TOKENWISE prompt token at fed=4 (bound_rem=None q=2 budget=1024) — W1 two-programs door, NOT the prime path
+CHOICE_PRIME {"group":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","index":0,"rows":1}
+[primeseg] TOKENWISE prompt token at fed=5 (bound_rem=None q=1 budget=1024) — W1 two-programs door, NOT the prime path
+CHOICE_PRIME {"group":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","index":0,"rows":1}
+[n-choice-prefill] group=cmpl-a21ee436fbfe6ff71a8858b7040dd9ce choices=8 prompt=6 cached=0 copies=7 bytes=52780032 leader=0
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":1}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":2}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":3}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":4}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":5}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":6}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":7}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":8}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":9}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":10}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":11}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":12}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":13}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":14}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":15}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":16}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":17}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":18}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":19}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":20}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":21}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":22}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":23}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":24}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":25}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":26}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":27}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":28}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":29}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":30}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":31}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":32}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":33}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":34}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":35}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":36}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":37}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":38}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":39}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":40}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":41}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":42}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":43}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":44}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":45}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":46}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":47}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":48}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":49}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":50}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":51}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":52}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":53}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":54}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":55}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":56}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":57}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":58}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":59}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":60}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":61}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":62}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":63}
+CHOICE_TOKEN {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","output":64}
+CHOICE_WORKER_ROW {"group":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","index":0,"seed":73,"prompt":6,"cached":0,"output":8,"token_sha256":"ab8040c9c2a2062163f0a266ac864e5115c32bc842d44f7aab083d6cefb5c006","reason":"MaxNew","sampling":{"temperature":1.0,"top_p":0.95,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0},"think":"Default"}
+CHOICE_WORKER_ROW {"group":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","index":1,"seed":74,"prompt":6,"cached":0,"output":8,"token_sha256":"aaa3532147ee5a54a4032b4ef7e9a9e315db77272d10e15baa6b38f3f080b5f2","reason":"MaxNew","sampling":{"temperature":1.0,"top_p":0.95,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0},"think":"Default"}
+CHOICE_WORKER_ROW {"group":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","index":2,"seed":75,"prompt":6,"cached":0,"output":8,"token_sha256":"79a7328a16a242629bcddd0fac2ffa1fc0c51d8a6d844fb82b8b5eb156b20168","reason":"MaxNew","sampling":{"temperature":1.0,"top_p":0.95,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0},"think":"Default"}
+CHOICE_WORKER_ROW {"group":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","index":3,"seed":76,"prompt":6,"cached":0,"output":8,"token_sha256":"828f5c2bb3c75ec7a27b78139ba821d9269b923150d21484f565ef7a10005d0e","reason":"MaxNew","sampling":{"temperature":1.0,"top_p":0.95,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0},"think":"Default"}
+CHOICE_WORKER_ROW {"group":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","index":4,"seed":77,"prompt":6,"cached":0,"output":8,"token_sha256":"dc35961c8bf9caa66c7b0628bb9878f990187daaefc576278e2e5c874921793e","reason":"MaxNew","sampling":{"temperature":1.0,"top_p":0.95,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0},"think":"Default"}
+CHOICE_WORKER_ROW {"group":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","index":5,"seed":78,"prompt":6,"cached":0,"output":8,"token_sha256":"561d8835da96c3d3b2af65fb05b9d6795bc161c26ff292c7b02439ef3372f5a3","reason":"MaxNew","sampling":{"temperature":1.0,"top_p":0.95,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0},"think":"Default"}
+CHOICE_WORKER_ROW {"group":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","index":6,"seed":79,"prompt":6,"cached":0,"output":8,"token_sha256":"6a3206239d823c13cbc5c7c65925387d64e7b0d143d722b19f5b7d9c9259f98a","reason":"MaxNew","sampling":{"temperature":1.0,"top_p":0.95,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0},"think":"Default"}
+CHOICE_WORKER_ROW {"group":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","index":7,"seed":80,"prompt":6,"cached":0,"output":8,"token_sha256":"d9d36cad695e2452b368eef9e35cf45c3d836ed340edab8b9d369b96a5c09271","reason":"MaxNew","sampling":{"temperature":1.0,"top_p":0.95,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0},"think":"Default"}
+[sampler-order] model=fixture radix=0 comparison=1
+CHOICE_TERMINAL {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","kind":"complete","status":200,"code":"","prompt":6,"cached":0,"output":64,"observed_prompt":6,"observed_cached":0,"observed_output":64}
+[sampler-order] model=fixture radix=0 comparison=1
+CHOICE_DROP {"id":"cmpl-a21ee436fbfe6ff71a8858b7040dd9ce","terminal":true,"prompt":6,"cached":0,"output":64}
+[sampler-order] model=fixture radix=0 comparison=1
+[sampler-order] model=fixture radix=0 comparison=1
+[sampler-order] model=fixture radix=0 comparison=1
+[sampler-order] model=fixture radix=0 comparison=1
+[sampler-order] model=fixture radix=0 comparison=1
+[sampler-order] model=fixture radix=0 comparison=1
+[ttft] id=cmpl-a21ee436fbfe6ff71a8858b7040dd9ce model="fixture" path="/v1/completions" prompt_tokens=6 outcome=ended_without_sse request_parse_ms=0.046 admission_ms=na queue_wait_ms=na tokenize_ms=0.012 prime_wait_ms=3.329 prime_ms=72.314 decode_wait_ms=10.862 sse_handoff_ms=na request_parse_end_ms=0.046 admission_end_ms=na tokenize_start_ms=0.113 tokenize_end_ms=0.125 prime_start_ms=3.454 prime_end_ms=75.768 first_decode_ms=86.630 first_sse_byte_ms=na total_ms=86.630

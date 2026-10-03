@@ -1,0 +1,30 @@
+{
+  "name": "completions-refuse-best_of-2",
+  "status": 400,
+  "headers": {
+    "content-type": "application/json",
+    "x-should-retry": "false",
+    "x-request-id": "cmpl-cc0ca86ba92b66f1f26cea65b22daace",
+    "content-length": "166",
+    "date": "Sat, 03 Oct 2026 02:58:27 GMT"
+  },
+  "started": 588599.708963057,
+  "source_log_start": 1418,
+  "disconnected": false,
+  "body": {
+    "error": {
+      "message": "best_of is not supported (best_of is not implemented; use n for multiple choices)",
+      "type": "invalid_request_error",
+      "param": "best_of",
+      "code": null
+    }
+  },
+  "ended": 588599.709269554,
+  "source_log_end": 1419,
+  "id": "cmpl-cc0ca86ba92b66f1f26cea65b22daace",
+  "callbacks": [],
+  "worker_rows": [],
+  "prime_events": [],
+  "fork_lines": [],
+  "masked_steps": 0
+}

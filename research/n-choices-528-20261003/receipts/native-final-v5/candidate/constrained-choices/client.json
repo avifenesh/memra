@@ -1,0 +1,451 @@
+{
+  "name": "constrained-choices",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-request-id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+    "x-ratelimit-limit": "8",
+    "x-ratelimit-remaining": "6",
+    "x-ratelimit-reset": "0",
+    "content-length": "749",
+    "date": "Sat, 03 Oct 2026 02:58:58 GMT"
+  },
+  "started": 588629.378711847,
+  "source_log_start": 4739,
+  "disconnected": false,
+  "body": {
+    "object": "chat.completion",
+    "model": "fixture",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "call_b7c962f3111a24a5",
+              "type": "function",
+              "function": {
+                "name": "weather",
+                "arguments": "{\"city\":\"Paris\"}"
+              }
+            }
+          ]
+        },
+        "finish_reason": "tool_calls"
+      },
+      {
+        "index": 1,
+        "message": {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "call_b7c962f3111a24a5",
+              "type": "function",
+              "function": {
+                "name": "weather",
+                "arguments": "{\"city\":\"Paris\"}"
+              }
+            }
+          ]
+        },
+        "finish_reason": "tool_calls"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 274,
+      "completion_tokens": 34,
+      "total_tokens": 308,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "elapsed_s": 0.32237639
+    },
+    "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+    "created": 1790996337,
+    "system_fingerprint": "memra-0.138.0-4f633194e043"
+  },
+  "ended": 588630.291746678,
+  "source_log_end": 4790,
+  "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+  "callbacks": [
+    {
+      "tag": "CHOICE_OPEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "model": "fixture",
+        "tenant": "default",
+        "max_tokens": 256,
+        "reserved_ctx": 530,
+        "stream": false
+      },
+      "line": 4740
+    },
+    {
+      "tag": "CHOICE_PROMPT",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "prompt": 274,
+        "cached": 0
+      },
+      "line": 4743
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 1
+      },
+      "line": 4749
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 2
+      },
+      "line": 4750
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 3
+      },
+      "line": 4751
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 4
+      },
+      "line": 4752
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 5
+      },
+      "line": 4753
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 6
+      },
+      "line": 4754
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 7
+      },
+      "line": 4755
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 8
+      },
+      "line": 4756
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 9
+      },
+      "line": 4757
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 10
+      },
+      "line": 4758
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 11
+      },
+      "line": 4759
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 12
+      },
+      "line": 4760
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 13
+      },
+      "line": 4761
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 14
+      },
+      "line": 4762
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 15
+      },
+      "line": 4763
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 16
+      },
+      "line": 4764
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 17
+      },
+      "line": 4765
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 18
+      },
+      "line": 4766
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 19
+      },
+      "line": 4767
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 20
+      },
+      "line": 4768
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 21
+      },
+      "line": 4769
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 22
+      },
+      "line": 4770
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 23
+      },
+      "line": 4771
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 24
+      },
+      "line": 4772
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 25
+      },
+      "line": 4773
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 26
+      },
+      "line": 4774
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 27
+      },
+      "line": 4775
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 28
+      },
+      "line": 4776
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 29
+      },
+      "line": 4777
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 30
+      },
+      "line": 4778
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 31
+      },
+      "line": 4779
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 32
+      },
+      "line": 4780
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 33
+      },
+      "line": 4782
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "output": 34
+      },
+      "line": 4785
+    },
+    {
+      "tag": "CHOICE_TERMINAL",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "kind": "complete",
+        "status": 200,
+        "code": "",
+        "prompt": 274,
+        "cached": 0,
+        "output": 34,
+        "observed_prompt": 274,
+        "observed_cached": 0,
+        "observed_output": 34
+      },
+      "line": 4787
+    },
+    {
+      "tag": "CHOICE_DROP",
+      "value": {
+        "id": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+        "terminal": true,
+        "prompt": 274,
+        "cached": 0,
+        "output": 34
+      },
+      "line": 4788
+    }
+  ],
+  "worker_rows": [
+    {
+      "group": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+      "index": 0,
+      "seed": 530,
+      "prompt": 274,
+      "cached": 0,
+      "output": 17,
+      "token_sha256": "86eeacb9c0176e0d5c3190e23e3f3a6705f85abf974e92ed48aa21aa30cd7e72",
+      "reason": "Eos",
+      "sampling": {
+        "temperature": 0.0,
+        "top_p": 0.8,
+        "top_k": 20,
+        "min_p": 0.0,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0
+      },
+      "think": "NoThink"
+    },
+    {
+      "group": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+      "index": 1,
+      "seed": 531,
+      "prompt": 274,
+      "cached": 0,
+      "output": 17,
+      "token_sha256": "86eeacb9c0176e0d5c3190e23e3f3a6705f85abf974e92ed48aa21aa30cd7e72",
+      "reason": "Eos",
+      "sampling": {
+        "temperature": 0.0,
+        "top_p": 0.8,
+        "top_k": 20,
+        "min_p": 0.0,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0
+      },
+      "think": "NoThink"
+    }
+  ],
+  "prime_events": [
+    {
+      "group": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+      "index": 0,
+      "rows": 256
+    },
+    {
+      "group": "chatcmpl-d0555ffeb2f05beec4484b0d1607a067",
+      "index": 0,
+      "rows": 18
+    }
+  ],
+  "fork_lines": [
+    "[n-choice-prefill] group=chatcmpl-d0555ffeb2f05beec4484b0d1607a067 choices=2 prompt=274 cached=0 copies=1 bytes=56759296 leader=0"
+  ],
+  "masked_steps": 34
+}
