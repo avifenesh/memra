@@ -59,7 +59,7 @@ def verify(root,baseline=None):
     records={r['name']:r for r in manifest['results']}
     completed=[]
     for name,r in records.items():
-        if r['status']==200 and not r['disconnected']:
+        if r['status']==200 and not r['disconnected'] and name!='deadline-partial':
             c=cell(root,r);check_completed(c);completed.append(c)
         elif '-refuse-' in name:
             require(r['status']==400 and not r.get('worker_rows'),'refusal',name)
@@ -79,6 +79,12 @@ def verify(root,baseline=None):
         dropped=[e['value'] for e in cancel['callbacks'] if e['tag']=='CHOICE_DROP']
         require(not terminal and len(dropped)==1 and dropped[0]['terminal'] is False and 0<dropped[0]['output']<2048,'cancel','one partial handler drop')
         require(records['cancel-recovery']['status']==200,'recovery','ordinary request succeeds after cancellation')
+        partial=records['deadline-partial']
+        require(partial['status']==200 and partial['body'].get('error',{}).get('code')=='deadline_exceeded','deadline_partial','actual native partial deadline required')
+        require(any(c['finish_reason']=='error' for c in partial['body']['choices']),'deadline_partial','unfinished row is explicit')
+        calls=[e['value'] for e in partial['callbacks'] if e['tag']=='CHOICE_TERMINAL']
+        require(len(calls)==1 and calls[0]['kind']=='deadline_partial' and calls[0]['output']==calls[0]['observed_output']==partial['body']['usage']['completion_tokens']>0,'deadline_partial','observed count unchanged by buffer flush')
+        require(records['deadline-recovery']['status']==200,'deadline_partial','all group slots recover')
         bare=json.loads((root/'bare-default'/'request.json').read_text())
         n_only=json.loads((root/'n-only-default'/'request.json').read_text())
         require(set(bare)=={'model','messages'} and set(n_only)=={'model','messages','n'},'bare_defaults','no decoder/mode knobs')

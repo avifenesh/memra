@@ -136,6 +136,8 @@ def main():
             results.append(native.request('n-only-default-fresh','/v1/chat/completions',{**bare,'n':2}))
             results.append(native.request('cancel','/v1/chat/completions',{'model':'fixture','messages':[{'role':'user','content':'List the integers from one upward. Continue until the output limit.'}],'n':4,'stream':True,'max_tokens':512,'seed':103},reset_after=8))
             results.append(native.request('cancel-recovery','/v1/chat/completions',{**bare,'temperature':0,'max_tokens':8,'seed':73}))
+            results.append(native.request('deadline-partial','/v1/chat/completions',{'model':'fixture','messages':[{'role':'user','content':'List integers upward with explanations. Keep going until the output limit.'}],'n':2,'timeout_ms':1000,'seed':73,'stop':['END']}))
+            results.append(native.request('deadline-recovery','/v1/chat/completions',{**bare,'n':2,'max_tokens':8,'seed':73}))
         elif args.phase=='slots':
             payload={'model':'fixture','messages':[{'role':'user','content':'Count upward. Write one integer on each line and keep going until the output limit.'}],'n':4,'stream':True,'max_tokens':512,'seed':103}
             folder=args.out/'occupier';folder.mkdir();save(folder/'request.json',payload)
