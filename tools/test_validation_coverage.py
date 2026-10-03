@@ -172,6 +172,79 @@ class CoverageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'changed source/coverage contract'):
             vc.validate_results(p, {}, self.context, self.root)
 
+    def test_typed_intake_fixture_cannot_be_covered_by_a_boolean_request(self):
+        # These inputs engage different real fixture behavior, despite True == 1.
+        def admit(request):
+            return type(request['n']) is int and 1 <= request['n'] <= 4
+        declared = dict(self.context, request={'n': 1})
+        actual = dict(self.context, request={'n': True})
+        self.assertTrue(admit(declared['request']))
+        self.assertFalse(admit(actual['request']))
+        case = self.case('intake', ['a']); case['scope'] = declared
+        self.assertEqual(vc.select(['a'], [case], actual, self.root)['decision'], 'expand')
+
+    def test_scope_distinguishes_nested_json_numeric_and_boolean_types(self):
+        for declared, actual in ((1, True), (False, 0), (1, 1.0),
+                                 ({'n': 1}, {'n': True}),
+                                 ([1, {'strict': False}], [True, {'strict': 0}])):
+            with self.subTest(declared=declared, actual=actual):
+                case = self.case('typed', ['a']); case['scope'] = {'request': declared}
+                context = dict(self.context, request=actual)
+                self.assertEqual(vc.select(['a'], [case], context, self.root)['decision'], 'expand')
+
+    def test_scope_null_requires_presence_but_matching_null_remains_valid(self):
+        case = self.case('nullable', ['a']); case['scope'] = {'request': None}
+        self.assertEqual(self.plan(['a'], [case])['decision'], 'expand')
+        present = dict(self.context, request=None)
+        self.assertEqual(vc.select(['a'], [case], present, self.root)['decision'], 'scoped')
+
+    def test_changed_execution_and_receipt_contexts_cannot_alias_json_types(self):
+        for declared, actual in (({'n': 1}, {'n': True}),
+                                 ({'flags': [False]}, {'flags': [0]}),
+                                 ({'temperature': 1.0}, {'temperature': 1})):
+            with self.subTest(declared=declared, actual=actual):
+                context = dict(self.context, request=declared)
+                changed = dict(self.context, request=actual)
+                case = self.case('one', ['a']); case['scope'] = context
+                plan = vc.select(['a'], [case], context, self.root)
+                result = {'one': dict(contract_id=plan['contract_id'], status='passed',
+                                      context=changed, executed=1, skipped=0, edges={'a': 'passed'})}
+                with self.assertRaisesRegex(ValueError, 'context changed'):
+                    vc.validate_results(plan, result, changed, self.root)
+                with self.assertRaisesRegex(ValueError, 'mismatched test result'):
+                    vc.validate_results(plan, result, context, self.root)
+
+    def test_unavailable_null_scoped_mandatory_control_cannot_use_broad_cover(self):
+        control = self.case('red', [], mandatory=True)
+        control['scope'] = {'strict': None}
+        plan = self.plan(['a'], [self.case('broad', ['a']), control])
+        self.assertEqual(plan['decision'], 'expand')
+        self.assertIn('mandatory', plan['reason'])
+
+    def test_matching_reordered_json_objects_and_null_results_are_admitted(self):
+        declared = dict(self.context, request={'n': 1, 'values': [None, False, 1.0]})
+        reordered = {'request': {'values': [None, False, 1.0], 'n': 1},
+                     'hardware': 'cpu', 'model': 'fixture'}
+        case = self.case('one', ['a']); case['scope'] = declared
+        plan = vc.select(['a'], [case], reordered, self.root)
+        self.assertEqual(plan['decision'], 'scoped')
+        result = {'one': dict(contract_id=plan['contract_id'], status='passed', context=declared,
+                              executed=1, skipped=0, edges={'a': 'passed'})}
+        self.assertEqual(vc.validate_results(plan, result, declared, self.root)['status'], 'passed')
+
+    def test_native_identity_axes_do_not_hide_a_typed_request_mismatch(self):
+        context = dict(self.context, artifact='fixture-bytes', numeric_program='fixed', request={'n': True})
+        case = self.case('native', ['a'], kind='gpu')
+        case['scope'] = dict(context, request={'n': 1})
+        self.assertEqual(vc.select(['a'], [case], context, self.root)['decision'], 'expand')
+
+    def test_signed_zero_cannot_rebind_a_different_json_contract(self):
+        declared = dict(self.context, temperature=0.0)
+        changed = dict(self.context, temperature=-0.0)
+        self.assertNotEqual(vc.contract_digest(declared), vc.contract_digest(changed))
+        case = self.case('one', ['a']); case['scope'] = declared
+        self.assertEqual(vc.select(['a'], [case], changed, self.root)['decision'], 'expand')
+
 
 if __name__ == '__main__':
     unittest.main()

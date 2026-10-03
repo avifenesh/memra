@@ -698,3 +698,5 @@ image-url-fetch-20261002 | "PASS on the existing Qwen3.8-27B vision path." | ima
 background-chat-text-20261002 | Background Chat/Text retained original native output beyond 90 seconds; current-source cold/cache/cancellation/tenant/usage controls passed on two pinned local Qwen3.5-9B artifacts. Switch and policy values unchanged; no support or release qualification promotion. | background-chat-text-20261002/RESULTS.md
 
 runtime-fixture-traversal-20261003 | Two executed CPU reader controls reproduced omitted fixture consumers; proven traversal now selects the consumer and ambiguous symlink traversal expands validation. | runtime-fixture-traversal-20261003/RESULTS.md
+
+typed-coverage-context-20261003 | Three CLI red controls and one execution-context API red rejected typed or missing coverage contexts after repair; matching typed coverage context remains admitted. | typed-coverage-context-20261003/RESULTS.md

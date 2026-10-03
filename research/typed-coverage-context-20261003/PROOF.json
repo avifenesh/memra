@@ -1,0 +1,220 @@
+{
+  "baseline_commit": "5c8abf9e763c0cc9ec93d324089d3d9aaa80fb5d",
+  "candidate_commit": "65ffcd3eab363833cb2be93961c71b1588c62ef8",
+  "source_sha256": {
+    "baseline/validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7",
+    "candidate/validation_coverage.py": "077495a2ca58d6ad833387ad602180d277d2d368602b6ba134c6a1d9686fe2db",
+    "typed-executable-proof.py": "00fafd8487a9e03335854322253f258159fe119dd4b82706a5e1ad67af3966cf"
+  },
+  "candidate_worktree_dirty": false,
+  "fixture_source": "def intake(request):\n    return 200 if type(request[\"n\"]) is int else 400\n",
+  "expected_input_code": 200,
+  "changed_input_code": 400,
+  "rows": [
+    {
+      "case": "changed-scope",
+      "manifest": {
+        "required_edges": [
+          "typed-intake"
+        ],
+        "context": {
+          "model": "fixture",
+          "hardware": "cpu",
+          "request": {
+            "n": true
+          }
+        },
+        "tests": [
+          {
+            "id": "intake",
+            "covers": [
+              "typed-intake"
+            ],
+            "cost": 1,
+            "inputs": {
+              "harness.py": "27451335f5a30f5b3522c59d048481bebc29bb7e763dc58677dc6f891cff3839"
+            },
+            "scope": {
+              "model": "fixture",
+              "hardware": "cpu",
+              "request": {
+                "n": 1
+              }
+            }
+          }
+        ]
+      },
+      "executions": {
+        "original": {
+          "exit_code": 0,
+          "stdout": "{\n  \"decision\": \"scoped\",\n  \"selected\": [\n    \"intake\"\n  ],\n  \"context\": {\n    \"model\": \"fixture\",\n    \"hardware\": \"cpu\",\n    \"request\": {\n      \"n\": true\n    }\n  },\n  \"contract\": {\n    \"schema\": \"memra-edge-contract-v1\",\n    \"required_edges\": [\n      \"typed-intake\"\n    ],\n    \"context\": {\n      \"model\": \"fixture\",\n      \"hardware\": \"cpu\",\n      \"request\": {\n        \"n\": true\n      }\n    },\n    \"tests\": {\n      \"intake\": {\n        \"id\": \"intake\",\n        \"covers\": [\n          \"typed-intake\"\n        ],\n        \"cost\": 1,\n        \"inputs\": {\n          \"harness.py\": \"27451335f5a30f5b3522c59d048481bebc29bb7e763dc58677dc6f891cff3839\"\n        },\n        \"scope\": {\n          \"model\": \"fixture\",\n          \"hardware\": \"cpu\",\n          \"request\": {\n            \"n\": 1\n          }\n        }\n      }\n    }\n  },\n  \"contract_id\": \"e280a541ac220ac51c614148fca950c7410eb6cfb46ae1fedf0cbcb025053fad\",\n  \"uncovered\": [],\n  \"ineligible\": {},\n  \"choices\": [\n    {\n      \"test\": \"intake\",\n      \"adds\": [\n        \"intake\"\n      ],\n      \"new_edges\": [\n        \"typed-intake\"\n      ],\n      \"cost\": 1\n    }\n  ],\n  \"edge_decisions\": [\n    {\n      \"edge\": \"typed-intake\",\n      \"covered\": true,\n      \"tests\": [\n        \"intake\"\n      ]\n    }\n  ],\n  \"cost\": 1,\n  \"optimization\": \"deterministic greedy set cover, not a claimed global optimum\",\n  \"isolation\": \"test boot/reset contracts are unchanged; selection never merges process state\",\n  \"qualification\": false\n}\n",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_reason": ""
+        },
+        "repaired": {
+          "exit_code": 2,
+          "stdout": "{\n  \"decision\": \"expand\",\n  \"selected\": [],\n  \"context\": {\n    \"model\": \"fixture\",\n    \"hardware\": \"cpu\",\n    \"request\": {\n      \"n\": true\n    }\n  },\n  \"contract\": {\n    \"schema\": \"memra-edge-contract-v1\",\n    \"required_edges\": [\n      \"typed-intake\"\n    ],\n    \"context\": {\n      \"model\": \"fixture\",\n      \"hardware\": \"cpu\",\n      \"request\": {\n        \"n\": true\n      }\n    },\n    \"tests\": {}\n  },\n  \"contract_id\": \"06f0f9032dc3c5d759088ea599235fddfa1f80cb0bd9b613171fda3dd911ff7e\",\n  \"uncovered\": [\n    \"typed-intake\"\n  ],\n  \"ineligible\": {\n    \"intake\": [\n      \"model/hardware/numeric/request scope mismatch\",\n      \"ineligible required test/control: intake\"\n    ]\n  },\n  \"choices\": [],\n  \"edge_decisions\": [\n    {\n      \"edge\": \"typed-intake\",\n      \"covered\": false,\n      \"tests\": []\n    }\n  ],\n  \"cost\": 0,\n  \"optimization\": \"deterministic greedy set cover, not a claimed global optimum\",\n  \"isolation\": \"test boot/reset contracts are unchanged; selection never merges process state\",\n  \"qualification\": false\n}\n",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_reason": ""
+        }
+      }
+    },
+    {
+      "case": "changed-result",
+      "manifest": {
+        "required_edges": [
+          "typed-intake"
+        ],
+        "context": {
+          "model": "fixture",
+          "hardware": "cpu",
+          "request": {
+            "n": 1
+          }
+        },
+        "tests": [
+          {
+            "id": "intake",
+            "covers": [
+              "typed-intake"
+            ],
+            "cost": 1,
+            "inputs": {
+              "harness.py": "27451335f5a30f5b3522c59d048481bebc29bb7e763dc58677dc6f891cff3839"
+            },
+            "scope": {
+              "model": "fixture",
+              "hardware": "cpu",
+              "request": {
+                "n": 1
+              }
+            }
+          }
+        ]
+      },
+      "executions": {
+        "original": {
+          "exit_code": 0,
+          "stdout": "{\n  \"status\": \"passed\",\n  \"edges\": 1,\n  \"contract_id\": \"80b6b62a18258d496aff055780dd0b20bb3b51d230576e5c9522739258b20056\",\n  \"qualification\": false,\n  \"scope\": \"declared behavior assertions only; native receipt admission remains separate\"\n}\n",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_reason": ""
+        },
+        "repaired": {
+          "exit_code": 1,
+          "stdout": "",
+          "stderr_sha256": "2d4cf777ad982387d6da7405a1a632258c028b3d6d70ffc22da8227a3cc4d2e5",
+          "stderr_reason": "ValueError: failed or mismatched test result: intake"
+        }
+      }
+    },
+    {
+      "case": "matching-result",
+      "manifest": {
+        "required_edges": [
+          "typed-intake"
+        ],
+        "context": {
+          "model": "fixture",
+          "hardware": "cpu",
+          "request": {
+            "n": true
+          }
+        },
+        "tests": [
+          {
+            "id": "intake",
+            "covers": [
+              "typed-intake"
+            ],
+            "cost": 1,
+            "inputs": {
+              "harness.py": "27451335f5a30f5b3522c59d048481bebc29bb7e763dc58677dc6f891cff3839"
+            },
+            "scope": {
+              "model": "fixture",
+              "hardware": "cpu",
+              "request": {
+                "n": true
+              }
+            }
+          }
+        ]
+      },
+      "executions": {
+        "original": {
+          "exit_code": 0,
+          "stdout": "{\n  \"status\": \"passed\",\n  \"edges\": 1,\n  \"contract_id\": \"e206df74f86cf7801b20d5168f2613e03fc00bff0834aab7f9e272f7ebe9b309\",\n  \"qualification\": false,\n  \"scope\": \"declared behavior assertions only; native receipt admission remains separate\"\n}\n",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_reason": ""
+        },
+        "repaired": {
+          "exit_code": 0,
+          "stdout": "{\n  \"status\": \"passed\",\n  \"edges\": 1,\n  \"contract_id\": \"e206df74f86cf7801b20d5168f2613e03fc00bff0834aab7f9e272f7ebe9b309\",\n  \"qualification\": false,\n  \"scope\": \"declared behavior assertions only; native receipt admission remains separate\"\n}\n",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_reason": ""
+        }
+      }
+    },
+    {
+      "case": "missing-null-key",
+      "manifest": {
+        "required_edges": [
+          "typed-intake"
+        ],
+        "context": {
+          "model": "fixture",
+          "hardware": "cpu",
+          "request": {
+            "n": 1
+          }
+        },
+        "tests": [
+          {
+            "id": "intake",
+            "covers": [
+              "typed-intake"
+            ],
+            "cost": 1,
+            "inputs": {
+              "harness.py": "27451335f5a30f5b3522c59d048481bebc29bb7e763dc58677dc6f891cff3839"
+            },
+            "scope": {
+              "optional": null
+            }
+          }
+        ]
+      },
+      "executions": {
+        "original": {
+          "exit_code": 0,
+          "stdout": "{\n  \"decision\": \"scoped\",\n  \"selected\": [\n    \"intake\"\n  ],\n  \"context\": {\n    \"model\": \"fixture\",\n    \"hardware\": \"cpu\",\n    \"request\": {\n      \"n\": 1\n    }\n  },\n  \"contract\": {\n    \"schema\": \"memra-edge-contract-v1\",\n    \"required_edges\": [\n      \"typed-intake\"\n    ],\n    \"context\": {\n      \"model\": \"fixture\",\n      \"hardware\": \"cpu\",\n      \"request\": {\n        \"n\": 1\n      }\n    },\n    \"tests\": {\n      \"intake\": {\n        \"id\": \"intake\",\n        \"covers\": [\n          \"typed-intake\"\n        ],\n        \"cost\": 1,\n        \"inputs\": {\n          \"harness.py\": \"27451335f5a30f5b3522c59d048481bebc29bb7e763dc58677dc6f891cff3839\"\n        },\n        \"scope\": {\n          \"optional\": null\n        }\n      }\n    }\n  },\n  \"contract_id\": \"2852e23811bbb0a4fa3b68decaf70ba4cb0c70d42c822a42df6deea8fa948508\",\n  \"uncovered\": [],\n  \"ineligible\": {},\n  \"choices\": [\n    {\n      \"test\": \"intake\",\n      \"adds\": [\n        \"intake\"\n      ],\n      \"new_edges\": [\n        \"typed-intake\"\n      ],\n      \"cost\": 1\n    }\n  ],\n  \"edge_decisions\": [\n    {\n      \"edge\": \"typed-intake\",\n      \"covered\": true,\n      \"tests\": [\n        \"intake\"\n      ]\n    }\n  ],\n  \"cost\": 1,\n  \"optimization\": \"deterministic greedy set cover, not a claimed global optimum\",\n  \"isolation\": \"test boot/reset contracts are unchanged; selection never merges process state\",\n  \"qualification\": false\n}\n",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_reason": ""
+        },
+        "repaired": {
+          "exit_code": 2,
+          "stdout": "{\n  \"decision\": \"expand\",\n  \"selected\": [],\n  \"context\": {\n    \"model\": \"fixture\",\n    \"hardware\": \"cpu\",\n    \"request\": {\n      \"n\": 1\n    }\n  },\n  \"contract\": {\n    \"schema\": \"memra-edge-contract-v1\",\n    \"required_edges\": [\n      \"typed-intake\"\n    ],\n    \"context\": {\n      \"model\": \"fixture\",\n      \"hardware\": \"cpu\",\n      \"request\": {\n        \"n\": 1\n      }\n    },\n    \"tests\": {}\n  },\n  \"contract_id\": \"54e5d0728a1c304b781acba67c5cf9658db172b92eb060da4906b6147f2f0189\",\n  \"uncovered\": [\n    \"typed-intake\"\n  ],\n  \"ineligible\": {\n    \"intake\": [\n      \"model/hardware/numeric/request scope mismatch\",\n      \"ineligible required test/control: intake\"\n    ]\n  },\n  \"choices\": [],\n  \"edge_decisions\": [\n    {\n      \"edge\": \"typed-intake\",\n      \"covered\": false,\n      \"tests\": []\n    }\n  ],\n  \"cost\": 0,\n  \"optimization\": \"deterministic greedy set cover, not a claimed global optimum\",\n  \"isolation\": \"test boot/reset contracts are unchanged; selection never merges process state\",\n  \"qualification\": false\n}\n",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_reason": ""
+        }
+      }
+    }
+  ],
+  "changed_execution_context_api": {
+    "original": {
+      "admitted": true,
+      "verdict": {
+        "status": "passed",
+        "edges": 1,
+        "contract_id": "80b6b62a18258d496aff055780dd0b20bb3b51d230576e5c9522739258b20056",
+        "qualification": false,
+        "scope": "declared behavior assertions only; native receipt admission remains separate"
+      }
+    },
+    "repaired": {
+      "admitted": false,
+      "error": "execution context changed after selection"
+    }
+  },
+  "native_qualification": false
+}
