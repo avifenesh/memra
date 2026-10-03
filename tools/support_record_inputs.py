@@ -13,6 +13,10 @@ READERS = {
 }
 GATES = {'Config', 'TokenizerTemplate', 'TensorCensus', 'TinyParity',
          'CheckpointParity', 'RewriteParity', 'Serve'}
+PACK_ROOT = 'crates/memra-gguf/src/model_packs'
+CLI_SOURCE = 'crates/memra-cli/src/lib.rs'
+ROOT_DOCS = {'README.md', 'STATUS.md', 'AGENTS.md'}
+COPY_ROOTS = (PACK_ROOT, 'docs')
 
 
 class InputContractError(ValueError):
@@ -121,3 +125,40 @@ def resolve(tree):
     if unknown_readers:
         raise UnmodelledReader('unmodelled support data reader: ' + unknown_readers[0])
     return {'required': sorted(required), 'optional': sorted(optional)}
+
+
+def reads_source_doc(name):
+    """Potential content paths of the pinned checker, including new/deleted files."""
+    if name in ROOT_DOCS or name in (CLI_SOURCE, PACK_ROOT + '/mod.rs'):
+        return True
+    if name.startswith(PACK_ROOT + '/') or name.startswith('docs/'):
+        canonical_path(name)
+    if name.startswith(PACK_ROOT + '/'):
+        relative = PurePosixPath(name).relative_to(PACK_ROOT).parts
+        return len(relative) == 2 and relative[-1] == 'mod.rs'
+    return name.startswith('docs/') and name.endswith('.md') and not name.startswith('docs/archive/')
+
+
+def source_docs(tree):
+    """Content inventory plus fixture-copy type safety for the two pinned readers.
+
+    Excluded regular content remains excluded. Copying an ambiguous file type can
+    fail the CPU test even when the checker does not read that file's content.
+    """
+    expected = set(READERS) | {RECORDS}
+    if not (expected & set(tree.paths('tools', 'docs'))):
+        return {'active': False, 'inputs': []}
+    resolve(tree)
+    roots = set(COPY_ROOTS) | ROOT_DOCS | {CLI_SOURCE}
+    ancestors = {str(parent) for name in roots for parent in PurePosixPath(name).parents
+                 if str(parent) != '.'}
+    exact = tree.input_modes(*sorted(roots | ancestors), recursive=False)
+    directories = set(COPY_ROOTS) | ancestors
+    bad = [name for name, mode in exact.items()
+           if (mode != '040000' if name in directories else mode not in ('100644', '100755'))]
+    copied = tree.input_modes(*COPY_ROOTS)
+    bad.extend(name for name, mode in copied.items() if mode not in ('100644', '100755'))
+    if bad:
+        raise InputContractError('ambiguous support fixture copy input type: ' + sorted(set(bad))[0])
+    paths = set(tree.paths(*COPY_ROOTS)) | ROOT_DOCS | {CLI_SOURCE, PACK_ROOT + '/mod.rs'}
+    return {'active': True, 'inputs': sorted(name for name in paths if reads_source_doc(name))}

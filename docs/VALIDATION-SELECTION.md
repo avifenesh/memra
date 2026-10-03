@@ -104,8 +104,15 @@ Unknown-reader execution expands to all available CPU names, including explicit 
 subsets, and runs the actual census without trusting derived required-evidence assumptions.
 Static inputs, metadata syntax, canonical paths and symlink checks remain mandatory. Known
 reader evidence keeps its named missing-file refusal.
-This source-bound data inventory leaves source/docs reader nominations separate and keeps the
-independent always-run support-state checks and all native obligations unchanged.
+The same pinned readers select exact current and potential one-level pack modules, root pack
+lists, CLI source, root README/STATUS/AGENTS and non-archive docs Markdown. Rust package and probe
+handling runs before the content shortcut, retaining every native obligation. Both event trees
+contribute inputs, including creation and deletion. No repository-wide fixture inference.
+The CPU test copies whole docs and model_packs trees, so symlink, gitlink and unsupported type
+ambiguity under those roots or their ancestors expands planning even for excluded content.
+Readable excluded archive/non-mod content does not gain a blanket census requirement. The
+independent always-run support checks and tested execution fallback remain unchanged. Broader
+cited-receipt-parent transport is a separate input-closure question.
 Its CPU shortcut requires every changed input to be a declared CPU contract or plain docs.
 Research/oracle inputs retain fast-gate's native expansion even when they do not rebuild a
 Cargo package; an absent compiler dependency does not prove an absent native probe dependency.
