@@ -1,0 +1,79 @@
+
+### framework.log
+...........................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 171 tests in 18.312s
+
+OK
+unittest-floor: OK: ran 171 tests (floor 171) for tools (test_validation_*.py)
+
+### repaired-12.log
+............
+----------------------------------------------------------------------
+Ran 12 tests in 2.494s
+
+OK
+
+### contract-execution.log
+CPU contract: public-boundary
+............................................................
+----------------------------------------------------------------------
+Ran 60 tests in 0.458s
+
+OK
+public-boundary contract: PASS: executed=60 floor=60 skipped=0 expected_failures=0
+
+### coverage.log
+............
+----------------------------------------------------------------------
+Ran 12 tests in 2.460s
+
+OK
+COVERAGE {'status': 'passed', 'edges': 55, 'contract_id': '41aa73dc065e2ddd4f8c0ea50799c02bcb7552e08ac30578e82229aefd96970a', 'qualification': False, 'scope': 'declared behavior assertions only; native receipt admission remains separate'} RED {'missing-assertion': 'selected test/control lacks an explicit passing assertion: test_unconditional_workflow_security_coverage_and_prepush_unchanged/unconditional-test-command', 'skipped-mandatory': 'empty or skipped test result: test_unconditional_workflow_security_coverage_and_prepush_unchanged', 'missing-result': 'missing or unexpected selected test result'}
+
+### support-census.log
+.....................
+----------------------------------------------------------------------
+Ran 21 tests in 1.961s
+
+OK
+unittest-floor: OK: ran 21 tests (floor 21) for tools (test_check_support_states.py)
+
+### cache.log
+.......................................................
+----------------------------------------------------------------------
+Ran 55 tests in 0.310s
+
+OK
+unittest-floor: OK: ran 55 tests (floor 55) for tools (test_dense_control_cache.py)
+
+### fastgate.log
+.......................................
+----------------------------------------------------------------------
+Ran 39 tests in 3.913s
+
+OK
+unittest-floor: OK: ran 39 tests (floor 39) for tools/fast-gate (test_plan.py)
+
+### registry.log
+Validation registry covers all 14 workspace packages
+
+### actual-ci-shell.log
+ACTUAL CI SHELL tools/check-public-boundary.py code=false/all9jobs=false/contracts=public-boundary
+ACTUAL CI SHELL tools/test_public_boundary.py code=false/all9jobs=false/contracts=public-boundary
+ACTUAL CI SHELL tools/public-boundary-policy.toml code=false/all9jobs=false/contracts=public-boundary
+ACTUAL CI SHELL tools/public-boundary-allowlist.jsonl code=false/all9jobs=false/contracts=public-boundary
+
+### final-mutations.log
+MUTATION missing-input-registration baseline0->assertion failure
+MUTATION include-precedence-bypass baseline0->assertion failure
+MUTATION missing-type-preflight baseline0->assertion failure
+MUTATION ancestor-index-preflight baseline0->assertion failure
+MUTATION lower-test-floor baseline0->assertion failure
+MUTATION allow-test-skips baseline0->assertion failure
+MUTATION allow-expected-failures baseline0->assertion failure
+MUTATION unwire-full-scan baseline0->assertion failure
+MUTATION unwire-allowlist-drift baseline0->assertion failure
+
+### compiled-reader.log
+Actual CPU Rust reader output changed with policy; old include retains Cargo/native server obligations after removal.

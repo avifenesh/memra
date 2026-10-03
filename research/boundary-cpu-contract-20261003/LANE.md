@@ -2,6 +2,35 @@
 
 Boundary-only inputs select their real CPU tests and omit unrelated Cargo jobs while owner/include obligations and unconditional security scans remain intact.
 
+The composed source is `1f3cb5a96402ff1ff7951af2568996a94abaa4b6`, on
+`9efd457949a7580593f133492b5592c79ddfb72a`. `COMPOSED-PROOF.json` binds that
+source, its baseline planner, unchanged support readers and inventories, proof helpers,
+four actual Git event plans, CI shell output, CPU reader and nine mutation controls.
+It retains compact plan witnesses and hashes of the full plans. `composed-cpu.log`
+contains the actual passing CPU outputs. The framework ran 171 tests at floor 171;
+the 12 grouped boundary controls, 60 real boundary tests (zero skips and expected
+failures), 21 support census tests, 55 cache tests, 39 fast-gate tests and 14-package
+registry check passed. All 55 named assertions were admitted; missing assertions,
+missing results and skipped mandatory results refused admission.
+
+The failed `6ea8e59510` composition expected a boundary diagnostic before the support
+reader's valid earlier refusal. The repaired assertion accepts that refusal order;
+the source also removes a duplicate import. Its failed raw receipt remains retained.
+The original `PROOF.json` stays byte-identical and bound to its historical source and
+baseline. Neither record substitutes for current-head CI's full scan and drift check.
+The carrier changes only evidence files. Native math, emitted native programs,
+compiler/build defaults, model artifacts/defaults, tolerances and required native
+gates remain unchanged. There is no native qualification; GPU selection stays shadow-only.
+
+Reproduce the composed CPU framework and strict boundary suite:
+
+```sh
+tools/unittest-floor.sh tools 'test_validation_*.py' 171
+python3 tools/validation_plan.py contracts --selected public-boundary
+```
+
+## Historical source tuple
+
 The baseline planner at8b1a0c75f0 selected all9 Cargo jobs for the checker, tests, policy and allowlist. Four actual Git event snapshots at2202ca9cab and the real `ci-change-class.sh` caller now emit `code=false`, all9 jobs false, empty packages and `contracts=public-boundary`. Cargo workspace and both-tree includes are checked first. A tools-owned crate collision retains lanes and its server consumer; valid offline Cargo metadata verifies both paths. An actual standalone CPU Rust reader changes output when the policy changes, and removing its include still retains the old server/native obligation. This fixture is not a Memra binary or model qualification.
 
 The required contract executes all60 real public-boundary controls with a60-test floor, zero skips and zero expected failures. A planted synthetic policy violation fails the actual checker. Missing inputs, directory/FIFO/symlink types, populated staged or committed submodule ancestors and unknown inputs expand or refuse. Nine coherent source mutations fail assertions rather than tool errors. All12 selection methods pass;55 independently named CPU assertions are admitted. Missing assertions/results and skipped mandatory results refuse admission. The framework ran152 tests at floor152; the unchanged cache55, fastgate39 and registry14 checks passed.
@@ -19,6 +48,6 @@ python3 tools/check-public-boundary.py check
 python3 tools/check-public-boundary.py verify-allowlist
 ```
 
-`PROOF.json` binds source/readers, actual plans, shell output, named assertions, mutation outcomes and the CPU reader. Final integration will compose the support source/docs and execution-type inputs on their merged base, refresh source/baseline binding and run the actual combined test count. This record is CPU tooling evidence. Native math, emitted native programs, compiler/build defaults, model artifacts/defaults, tolerances and required native gates remain unchanged. GPU selection stays shadow-only.
+`PROOF.json` binds the historical source/readers, actual plans, shell output, named assertions, mutation outcomes and CPU reader. The composed integration is recorded above. Both records are CPU tooling evidence. Native math, emitted native programs, compiler/build defaults, model artifacts/defaults, tolerances and required native gates remain unchanged. GPU selection stays shadow-only.
 
 publicity: skipped: maintenance release

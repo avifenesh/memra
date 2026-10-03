@@ -1,0 +1,2153 @@
+{
+  "schema": "boundary-cpu-contract-proof-v1",
+  "tested_source_head": "1f3cb5a96402ff1ff7951af2568996a94abaa4b6",
+  "source_sha256": {
+    "tools/validation_plan.py": "a40c721a3d6b4bbd9ef337147349b171dbd58bdeb583d883871308570d075ca0",
+    "tools/run_public_boundary_contract.py": "4e674d896cc42f042000cc893a0452d443dea88c3720adb1016db499e0bf9832",
+    "tools/test_validation_boundary_contract.py": "9679c6a56ea71e0bb9544f49dc94c9413cc906e4fcee9b04c49826699feae3f1",
+    "tools/test_validation_plan.py": "63b0f918cfec4cda7c16a763bb6567284cae689b576fcc90c7460f44d5f2c119",
+    "tools/support_record_inputs.py": "6e34dfd7747b018feed2395c817835693bfb9720a471ab82ae08a70bf470fa80",
+    "tools/skip-census.py": "d89ce391d748499214df2279a48d719b9e67cad6a2838c77ebcef46640883a7d",
+    "tools/validation_inputs.json": "71e17d5f91f44bae768047ad4c9f2c40486a291e35e123e6a7e54f16fd34d377",
+    "tools/check-public-boundary.py": "33a35dc59df398a0dab24aba2fc8f73c1d29f35c49c688ffab25f108953ce4f1",
+    "tools/test_public_boundary.py": "8c56eb6bff531e71d80983294e2988bb9507173b37994ee138bca6d267004b0f",
+    "tools/public-boundary-policy.toml": "d33b84ffe866b92283080e59403ac72091b08003a40a4c501fcc2304ccb129db",
+    "tools/public-boundary-allowlist.jsonl": "9707a51943a01adc8499067ca66c08254de07ea2ff6d1d5907766ddc53f2b489",
+    ".github/workflows/ci.yml": "0e3ac18e263cf98ce55ae67e3775434efdbf32866f882d9d7a6d068b2b83fca7",
+    ".github/workflows/boundary-refs.yml": "2dfebfaa76e4540598580f733d593a291ed2acba9c73ab04e98ddc023193b3c3",
+    "tools/hooks/pre-push": "7f6a52c5432a09aee2125e5dfe03c927a545f3e9b61b2dfca2f3decac49877db"
+  },
+  "native_qualification": false,
+  "gpu_selection": "shadow-only",
+  "actual_events": {
+    "tools/check-public-boundary.py": {
+      "base": "1f3cb5a96402ff1ff7951af2568996a94abaa4b6",
+      "event_head": "d5a308e7418d90251c9d1adf5eb4523f52af8492",
+      "before": {
+        "schema": "memra-validation-plan-v1",
+        "mode": "full",
+        "reason": "unmodelled input: tools/check-public-boundary.py",
+        "changed": [
+          "tools/check-public-boundary.py"
+        ],
+        "packages": [],
+        "direct_packages": [],
+        "dependency_reasons": {},
+        "jobs": {
+          "build": true,
+          "clippy": true,
+          "server": true,
+          "engine": true,
+          "portable": true,
+          "core": true,
+          "lanes": true,
+          "arch": true,
+          "publish": true
+        },
+        "requires_cuda": true,
+        "native": {
+          "scope": "full",
+          "requirements": [
+            "unmodelled input: tools/check-public-boundary.py"
+          ],
+          "qualification": false
+        },
+        "omitted": {},
+        "base": "1f3cb5a96402ff1ff7951af2568996a94abaa4b6",
+        "head": "d5a308e7418d90251c9d1adf5eb4523f52af8492",
+        "full_plan_sha256": "62bf0fb6813516b408031fb13fca4c63bc5ac2e0c1820b5db17c63dddbc1d942",
+        "cpu_contract_ids": [
+          "n-choice",
+          "q35-cache",
+          "physical-gpu",
+          "support-records",
+          "tool-choice",
+          "cache-meter",
+          "metrics-live",
+          "serving-qualification",
+          "background-chat-text",
+          "sampled-mtp"
+        ]
+      },
+      "after": {
+        "schema": "memra-validation-plan-v1",
+        "mode": "scoped",
+        "reason": "dependency closure plus declared input contracts",
+        "changed": [
+          "tools/check-public-boundary.py"
+        ],
+        "direct_packages": [],
+        "packages": [],
+        "dependency_reasons": {},
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "edge_decisions": [
+          {
+            "from": "changed-inputs",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-reference",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-kv",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-reference",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-runtime",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-sampling",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tier",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-validate",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-gguf",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tier",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-lanes",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-net-guard",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-probe",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-runtime",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-runtime",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-sampling",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-engine",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-lanes",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-net-guard",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-tier",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-tokenizer",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-tokenizer",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-validate",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          }
+        ],
+        "requires_cuda": false,
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        },
+        "omitted": {
+          "build": "No changed package or reverse dependency reaches this execution component",
+          "clippy": "No changed package or reverse dependency reaches this execution component",
+          "server": "No changed package or reverse dependency reaches this execution component",
+          "engine": "No changed package or reverse dependency reaches this execution component",
+          "portable": "No changed package or reverse dependency reaches this execution component",
+          "core": "No changed package or reverse dependency reaches this execution component",
+          "lanes": "No changed package or reverse dependency reaches this execution component",
+          "arch": "No changed package or reverse dependency reaches this execution component",
+          "publish": "No changed package or reverse dependency reaches this execution component"
+        },
+        "base": "1f3cb5a96402ff1ff7951af2568996a94abaa4b6",
+        "head": "d5a308e7418d90251c9d1adf5eb4523f52af8492",
+        "full_plan_sha256": "cb824f1ab5b7233ef6427b45b7f4a0832ee04041297d0f6b2addf2502a115c0f",
+        "cpu_contract_ids": [
+          "public-boundary"
+        ],
+        "selected_cpu_command": [
+          "python3",
+          "tools/run_public_boundary_contract.py"
+        ]
+      }
+    },
+    "tools/test_public_boundary.py": {
+      "base": "1f3cb5a96402ff1ff7951af2568996a94abaa4b6",
+      "event_head": "4aea495d27fc0747b3aaae01eb2904e10713d86d",
+      "before": {
+        "schema": "memra-validation-plan-v1",
+        "mode": "full",
+        "reason": "unmodelled input: tools/test_public_boundary.py",
+        "changed": [
+          "tools/test_public_boundary.py"
+        ],
+        "packages": [],
+        "direct_packages": [],
+        "dependency_reasons": {},
+        "jobs": {
+          "build": true,
+          "clippy": true,
+          "server": true,
+          "engine": true,
+          "portable": true,
+          "core": true,
+          "lanes": true,
+          "arch": true,
+          "publish": true
+        },
+        "requires_cuda": true,
+        "native": {
+          "scope": "full",
+          "requirements": [
+            "unmodelled input: tools/test_public_boundary.py"
+          ],
+          "qualification": false
+        },
+        "omitted": {},
+        "base": "1f3cb5a96402ff1ff7951af2568996a94abaa4b6",
+        "head": "4aea495d27fc0747b3aaae01eb2904e10713d86d",
+        "full_plan_sha256": "69e18558646e452f49b9397be5b7b87885e0dea907cf5b931e992164651a3a4e",
+        "cpu_contract_ids": [
+          "n-choice",
+          "q35-cache",
+          "physical-gpu",
+          "support-records",
+          "tool-choice",
+          "cache-meter",
+          "metrics-live",
+          "serving-qualification",
+          "background-chat-text",
+          "sampled-mtp"
+        ]
+      },
+      "after": {
+        "schema": "memra-validation-plan-v1",
+        "mode": "scoped",
+        "reason": "dependency closure plus declared input contracts",
+        "changed": [
+          "tools/test_public_boundary.py"
+        ],
+        "direct_packages": [],
+        "packages": [],
+        "dependency_reasons": {},
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "edge_decisions": [
+          {
+            "from": "changed-inputs",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-reference",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-kv",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-reference",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-runtime",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-sampling",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tier",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-validate",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-gguf",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tier",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-lanes",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-net-guard",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-probe",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-runtime",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-runtime",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-sampling",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-engine",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-lanes",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-net-guard",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-tier",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-tokenizer",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-tokenizer",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-validate",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          }
+        ],
+        "requires_cuda": false,
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        },
+        "omitted": {
+          "build": "No changed package or reverse dependency reaches this execution component",
+          "clippy": "No changed package or reverse dependency reaches this execution component",
+          "server": "No changed package or reverse dependency reaches this execution component",
+          "engine": "No changed package or reverse dependency reaches this execution component",
+          "portable": "No changed package or reverse dependency reaches this execution component",
+          "core": "No changed package or reverse dependency reaches this execution component",
+          "lanes": "No changed package or reverse dependency reaches this execution component",
+          "arch": "No changed package or reverse dependency reaches this execution component",
+          "publish": "No changed package or reverse dependency reaches this execution component"
+        },
+        "base": "1f3cb5a96402ff1ff7951af2568996a94abaa4b6",
+        "head": "4aea495d27fc0747b3aaae01eb2904e10713d86d",
+        "full_plan_sha256": "9696cbaff17e62d79e0206d07ca961670df8d156b953bfaa055358bef200d667",
+        "cpu_contract_ids": [
+          "public-boundary"
+        ],
+        "selected_cpu_command": [
+          "python3",
+          "tools/run_public_boundary_contract.py"
+        ]
+      }
+    },
+    "tools/public-boundary-policy.toml": {
+      "base": "1f3cb5a96402ff1ff7951af2568996a94abaa4b6",
+      "event_head": "8754f5007b3da458c89108864a0a83b0cf5abff3",
+      "before": {
+        "schema": "memra-validation-plan-v1",
+        "mode": "full",
+        "reason": "unmodelled input: tools/public-boundary-policy.toml",
+        "changed": [
+          "tools/public-boundary-policy.toml"
+        ],
+        "packages": [],
+        "direct_packages": [],
+        "dependency_reasons": {},
+        "jobs": {
+          "build": true,
+          "clippy": true,
+          "server": true,
+          "engine": true,
+          "portable": true,
+          "core": true,
+          "lanes": true,
+          "arch": true,
+          "publish": true
+        },
+        "requires_cuda": true,
+        "native": {
+          "scope": "full",
+          "requirements": [
+            "unmodelled input: tools/public-boundary-policy.toml"
+          ],
+          "qualification": false
+        },
+        "omitted": {},
+        "base": "1f3cb5a96402ff1ff7951af2568996a94abaa4b6",
+        "head": "8754f5007b3da458c89108864a0a83b0cf5abff3",
+        "full_plan_sha256": "78d4df6b1fd81717b3988d32a3a510460c4bc1cfbcf78158e0b4892e4bc843ed",
+        "cpu_contract_ids": [
+          "n-choice",
+          "q35-cache",
+          "physical-gpu",
+          "support-records",
+          "tool-choice",
+          "cache-meter",
+          "metrics-live",
+          "serving-qualification",
+          "background-chat-text",
+          "sampled-mtp"
+        ]
+      },
+      "after": {
+        "schema": "memra-validation-plan-v1",
+        "mode": "scoped",
+        "reason": "dependency closure plus declared input contracts",
+        "changed": [
+          "tools/public-boundary-policy.toml"
+        ],
+        "direct_packages": [],
+        "packages": [],
+        "dependency_reasons": {},
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "edge_decisions": [
+          {
+            "from": "changed-inputs",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-reference",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-kv",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-reference",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-runtime",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-sampling",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tier",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-validate",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-gguf",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tier",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-lanes",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-net-guard",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-probe",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-runtime",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-runtime",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-sampling",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-engine",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-lanes",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-net-guard",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-tier",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-tokenizer",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-tokenizer",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-validate",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          }
+        ],
+        "requires_cuda": false,
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        },
+        "omitted": {
+          "build": "No changed package or reverse dependency reaches this execution component",
+          "clippy": "No changed package or reverse dependency reaches this execution component",
+          "server": "No changed package or reverse dependency reaches this execution component",
+          "engine": "No changed package or reverse dependency reaches this execution component",
+          "portable": "No changed package or reverse dependency reaches this execution component",
+          "core": "No changed package or reverse dependency reaches this execution component",
+          "lanes": "No changed package or reverse dependency reaches this execution component",
+          "arch": "No changed package or reverse dependency reaches this execution component",
+          "publish": "No changed package or reverse dependency reaches this execution component"
+        },
+        "base": "1f3cb5a96402ff1ff7951af2568996a94abaa4b6",
+        "head": "8754f5007b3da458c89108864a0a83b0cf5abff3",
+        "full_plan_sha256": "af48579cac433193f2bd0aed9e63eb2953983202f234b672919dd58fbfea0e8c",
+        "cpu_contract_ids": [
+          "public-boundary"
+        ],
+        "selected_cpu_command": [
+          "python3",
+          "tools/run_public_boundary_contract.py"
+        ]
+      }
+    },
+    "tools/public-boundary-allowlist.jsonl": {
+      "base": "1f3cb5a96402ff1ff7951af2568996a94abaa4b6",
+      "event_head": "d6ac5f17fcbe3a835938a432be9da476a139903c",
+      "before": {
+        "schema": "memra-validation-plan-v1",
+        "mode": "full",
+        "reason": "unmodelled input: tools/public-boundary-allowlist.jsonl",
+        "changed": [
+          "tools/public-boundary-allowlist.jsonl"
+        ],
+        "packages": [],
+        "direct_packages": [],
+        "dependency_reasons": {},
+        "jobs": {
+          "build": true,
+          "clippy": true,
+          "server": true,
+          "engine": true,
+          "portable": true,
+          "core": true,
+          "lanes": true,
+          "arch": true,
+          "publish": true
+        },
+        "requires_cuda": true,
+        "native": {
+          "scope": "full",
+          "requirements": [
+            "unmodelled input: tools/public-boundary-allowlist.jsonl"
+          ],
+          "qualification": false
+        },
+        "omitted": {},
+        "base": "1f3cb5a96402ff1ff7951af2568996a94abaa4b6",
+        "head": "d6ac5f17fcbe3a835938a432be9da476a139903c",
+        "full_plan_sha256": "8cbe54bcee797bddde97eb7c8378101709c41ec4c5e488fd37b0df9b30d6ad77",
+        "cpu_contract_ids": [
+          "n-choice",
+          "q35-cache",
+          "physical-gpu",
+          "support-records",
+          "tool-choice",
+          "cache-meter",
+          "metrics-live",
+          "serving-qualification",
+          "background-chat-text",
+          "sampled-mtp"
+        ]
+      },
+      "after": {
+        "schema": "memra-validation-plan-v1",
+        "mode": "scoped",
+        "reason": "dependency closure plus declared input contracts",
+        "changed": [
+          "tools/public-boundary-allowlist.jsonl"
+        ],
+        "direct_packages": [],
+        "packages": [],
+        "dependency_reasons": {},
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "edge_decisions": [
+          {
+            "from": "changed-inputs",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-reference",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-kv",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-reference",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-runtime",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-sampling",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tier",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-validate",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-gguf",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tier",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-lanes",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-net-guard",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-probe",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-runtime",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-runtime",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-sampling",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-engine",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-lanes",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-net-guard",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-tier",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-tokenizer",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-tokenizer",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-validate",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          }
+        ],
+        "requires_cuda": false,
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        },
+        "omitted": {
+          "build": "No changed package or reverse dependency reaches this execution component",
+          "clippy": "No changed package or reverse dependency reaches this execution component",
+          "server": "No changed package or reverse dependency reaches this execution component",
+          "engine": "No changed package or reverse dependency reaches this execution component",
+          "portable": "No changed package or reverse dependency reaches this execution component",
+          "core": "No changed package or reverse dependency reaches this execution component",
+          "lanes": "No changed package or reverse dependency reaches this execution component",
+          "arch": "No changed package or reverse dependency reaches this execution component",
+          "publish": "No changed package or reverse dependency reaches this execution component"
+        },
+        "base": "1f3cb5a96402ff1ff7951af2568996a94abaa4b6",
+        "head": "d6ac5f17fcbe3a835938a432be9da476a139903c",
+        "full_plan_sha256": "176767f5240402372d59671dc31167489440100445d14f797733b8e6598e0c92",
+        "cpu_contract_ids": [
+          "public-boundary"
+        ],
+        "selected_cpu_command": [
+          "python3",
+          "tools/run_public_boundary_contract.py"
+        ]
+      }
+    }
+  },
+  "actual_ci_shell_fields": {
+    "tools/check-public-boundary.py": {
+      "code": "false",
+      "reason": "dependency closure plus declared input contracts",
+      "build": "false",
+      "clippy": "false",
+      "server": "false",
+      "engine": "false",
+      "portable": "false",
+      "core": "false",
+      "lanes": "false",
+      "arch": "false",
+      "publish": "false",
+      "packages": "",
+      "requires_cuda": "false",
+      "mode": "scoped",
+      "contracts": "public-boundary"
+    },
+    "tools/test_public_boundary.py": {
+      "code": "false",
+      "reason": "dependency closure plus declared input contracts",
+      "build": "false",
+      "clippy": "false",
+      "server": "false",
+      "engine": "false",
+      "portable": "false",
+      "core": "false",
+      "lanes": "false",
+      "arch": "false",
+      "publish": "false",
+      "packages": "",
+      "requires_cuda": "false",
+      "mode": "scoped",
+      "contracts": "public-boundary"
+    },
+    "tools/public-boundary-policy.toml": {
+      "code": "false",
+      "reason": "dependency closure plus declared input contracts",
+      "build": "false",
+      "clippy": "false",
+      "server": "false",
+      "engine": "false",
+      "portable": "false",
+      "core": "false",
+      "lanes": "false",
+      "arch": "false",
+      "publish": "false",
+      "packages": "",
+      "requires_cuda": "false",
+      "mode": "scoped",
+      "contracts": "public-boundary"
+    },
+    "tools/public-boundary-allowlist.jsonl": {
+      "code": "false",
+      "reason": "dependency closure plus declared input contracts",
+      "build": "false",
+      "clippy": "false",
+      "server": "false",
+      "engine": "false",
+      "portable": "false",
+      "core": "false",
+      "lanes": "false",
+      "arch": "false",
+      "publish": "false",
+      "packages": "",
+      "requires_cuda": "false",
+      "mode": "scoped",
+      "contracts": "public-boundary"
+    }
+  },
+  "mutation_controls": {
+    "missing-input-registration": {
+      "baseline_rc": 0,
+      "mutation_rc": 1,
+      "test": "BoundaryContractTests.test_each_real_boundary_input_selects_only_cpu_contract",
+      "source_sha256": "a40c721a3d6b4bbd9ef337147349b171dbd58bdeb583d883871308570d075ca0"
+    },
+    "include-precedence-bypass": {
+      "baseline_rc": 0,
+      "mutation_rc": 1,
+      "test": "BoundaryContractTests.test_actual_committed_changes_and_old_include_keep_all_obligations",
+      "source_sha256": "a40c721a3d6b4bbd9ef337147349b171dbd58bdeb583d883871308570d075ca0"
+    },
+    "missing-type-preflight": {
+      "baseline_rc": 0,
+      "mutation_rc": 1,
+      "test": "BoundaryContractTests.test_symlink_type_expands_both_old_and_new_tree_and_refuses_execution",
+      "source_sha256": "a40c721a3d6b4bbd9ef337147349b171dbd58bdeb583d883871308570d075ca0"
+    },
+    "ancestor-index-preflight": {
+      "baseline_rc": 0,
+      "mutation_rc": 1,
+      "test": "BoundaryContractTests.test_populated_gitlink_ancestor_expands_local_and_git_tree_plans",
+      "source_sha256": "a40c721a3d6b4bbd9ef337147349b171dbd58bdeb583d883871308570d075ca0"
+    },
+    "lower-test-floor": {
+      "baseline_rc": 0,
+      "mutation_rc": 1,
+      "test": "BoundaryRunnerTests.test_complete_suite_passes_and_empty_short_skipped_failed_suites_refuse",
+      "source_sha256": "4e674d896cc42f042000cc893a0452d443dea88c3720adb1016db499e0bf9832"
+    },
+    "allow-test-skips": {
+      "baseline_rc": 0,
+      "mutation_rc": 1,
+      "test": "BoundaryRunnerTests.test_complete_suite_passes_and_empty_short_skipped_failed_suites_refuse",
+      "source_sha256": "4e674d896cc42f042000cc893a0452d443dea88c3720adb1016db499e0bf9832"
+    },
+    "allow-expected-failures": {
+      "baseline_rc": 0,
+      "mutation_rc": 1,
+      "test": "BoundaryRunnerTests.test_complete_suite_passes_and_empty_short_skipped_failed_suites_refuse",
+      "source_sha256": "4e674d896cc42f042000cc893a0452d443dea88c3720adb1016db499e0bf9832"
+    },
+    "unwire-full-scan": {
+      "baseline_rc": 0,
+      "mutation_rc": 1,
+      "test": "BoundaryContractTests.test_unconditional_workflow_security_coverage_and_prepush_unchanged",
+      "source_sha256": "0e3ac18e263cf98ce55ae67e3775434efdbf32866f882d9d7a6d068b2b83fca7"
+    },
+    "unwire-allowlist-drift": {
+      "baseline_rc": 0,
+      "mutation_rc": 1,
+      "test": "BoundaryContractTests.test_unconditional_workflow_security_coverage_and_prepush_unchanged",
+      "source_sha256": "0e3ac18e263cf98ce55ae67e3775434efdbf32866f882d9d7a6d068b2b83fca7"
+    }
+  },
+  "coverage_admission": {
+    "status": "passed",
+    "edges": 55,
+    "contract_id": "41aa73dc065e2ddd4f8c0ea50799c02bcb7552e08ac30578e82229aefd96970a",
+    "qualification": false,
+    "scope": "declared behavior assertions only; native receipt admission remains separate"
+  },
+  "coverage_edges": [
+    {
+      "edge": "actual-cargo-owner-manifest",
+      "covered": true,
+      "tests": [
+        "test_cargo_owner_collision_retains_package_and_contract"
+      ]
+    },
+    {
+      "edge": "actual-cargo-server-dependency",
+      "covered": true,
+      "tests": [
+        "test_cargo_owner_collision_retains_package_and_contract"
+      ]
+    },
+    {
+      "edge": "additive-cpu-contract",
+      "covered": true,
+      "tests": [
+        "test_actual_committed_changes_and_old_include_keep_all_obligations"
+      ]
+    },
+    {
+      "edge": "cargo-lock-expansion",
+      "covered": true,
+      "tests": [
+        "test_unmodelled_tool_reader_and_build_inputs_expand"
+      ]
+    },
+    {
+      "edge": "cargo-owner-before-tool-shortcut",
+      "covered": true,
+      "tests": [
+        "test_cargo_owner_collision_retains_package_and_contract"
+      ]
+    },
+    {
+      "edge": "cargo-toml-expansion",
+      "covered": true,
+      "tests": [
+        "test_unmodelled_tool_reader_and_build_inputs_expand"
+      ]
+    },
+    {
+      "edge": "directory-refusal",
+      "covered": true,
+      "tests": [
+        "test_directory_fifo_and_parent_symlink_refuse_before_contract_start"
+      ]
+    },
+    {
+      "edge": "empty-run-refusal",
+      "covered": true,
+      "tests": [
+        "test_complete_suite_passes_and_empty_short_skipped_failed_suites_refuse"
+      ]
+    },
+    {
+      "edge": "expected-failure-refusal",
+      "covered": true,
+      "tests": [
+        "test_complete_suite_passes_and_empty_short_skipped_failed_suites_refuse"
+      ]
+    },
+    {
+      "edge": "explicit-omission-reasons",
+      "covered": true,
+      "tests": [
+        "test_each_real_boundary_input_selects_only_cpu_contract"
+      ]
+    },
+    {
+      "edge": "failed-run-refusal",
+      "covered": true,
+      "tests": [
+        "test_complete_suite_passes_and_empty_short_skipped_failed_suites_refuse"
+      ]
+    },
+    {
+      "edge": "fifo-refusal",
+      "covered": true,
+      "tests": [
+        "test_directory_fifo_and_parent_symlink_refuse_before_contract_start"
+      ]
+    },
+    {
+      "edge": "full-fallback-boundary",
+      "covered": true,
+      "tests": [
+        "test_required_default_selection_and_genuine_unaffected_none"
+      ]
+    },
+    {
+      "edge": "historical-refs-command",
+      "covered": true,
+      "tests": [
+        "test_unconditional_workflow_security_coverage_and_prepush_unchanged"
+      ]
+    },
+    {
+      "edge": "independent-registry-inventory",
+      "covered": true,
+      "tests": [
+        "test_each_real_boundary_input_selects_only_cpu_contract"
+      ]
+    },
+    {
+      "edge": "missing-allowlist",
+      "covered": true,
+      "tests": [
+        "test_missing_each_input_expands_plan_and_refuses_execution"
+      ]
+    },
+    {
+      "edge": "missing-checker",
+      "covered": true,
+      "tests": [
+        "test_missing_each_input_expands_plan_and_refuses_execution"
+      ]
+    },
+    {
+      "edge": "missing-execution-refusal",
+      "covered": true,
+      "tests": [
+        "test_missing_each_input_expands_plan_and_refuses_execution"
+      ]
+    },
+    {
+      "edge": "missing-policy",
+      "covered": true,
+      "tests": [
+        "test_missing_each_input_expands_plan_and_refuses_execution"
+      ]
+    },
+    {
+      "edge": "missing-runner",
+      "covered": true,
+      "tests": [
+        "test_missing_each_input_expands_plan_and_refuses_execution"
+      ]
+    },
+    {
+      "edge": "missing-tests",
+      "covered": true,
+      "tests": [
+        "test_missing_each_input_expands_plan_and_refuses_execution"
+      ]
+    },
+    {
+      "edge": "new-symlink-expansion",
+      "covered": true,
+      "tests": [
+        "test_symlink_type_expands_both_old_and_new_tree_and_refuses_execution"
+      ]
+    },
+    {
+      "edge": "no-cargo-jobs",
+      "covered": true,
+      "tests": [
+        "test_each_real_boundary_input_selects_only_cpu_contract"
+      ]
+    },
+    {
+      "edge": "no-native-promotion",
+      "covered": true,
+      "tests": [
+        "test_each_real_boundary_input_selects_only_cpu_contract"
+      ]
+    },
+    {
+      "edge": "old-include-consumer-preserved",
+      "covered": true,
+      "tests": [
+        "test_actual_committed_changes_and_old_include_keep_all_obligations"
+      ]
+    },
+    {
+      "edge": "old-symlink-expansion",
+      "covered": true,
+      "tests": [
+        "test_symlink_type_expands_both_old_and_new_tree_and_refuses_execution"
+      ]
+    },
+    {
+      "edge": "owner-and-contract-union",
+      "covered": true,
+      "tests": [
+        "test_cargo_owner_collision_retains_package_and_contract"
+      ]
+    },
+    {
+      "edge": "parent-symlink-refusal",
+      "covered": true,
+      "tests": [
+        "test_directory_fifo_and_parent_symlink_refuse_before_contract_start"
+      ]
+    },
+    {
+      "edge": "populated-git-tree-ancestor-refusal",
+      "covered": true,
+      "tests": [
+        "test_populated_gitlink_ancestor_expands_local_and_git_tree_plans"
+      ]
+    },
+    {
+      "edge": "populated-index-ancestor-refusal",
+      "covered": true,
+      "tests": [
+        "test_populated_gitlink_ancestor_expands_local_and_git_tree_plans"
+      ]
+    },
+    {
+      "edge": "prepush-committed-blobs",
+      "covered": true,
+      "tests": [
+        "test_unconditional_workflow_security_coverage_and_prepush_unchanged"
+      ]
+    },
+    {
+      "edge": "real-declared-command",
+      "covered": true,
+      "tests": [
+        "test_actual_declared_command_executes_real_sixty_controls"
+      ]
+    },
+    {
+      "edge": "real-sixty-tests",
+      "covered": true,
+      "tests": [
+        "test_actual_declared_command_executes_real_sixty_controls"
+      ]
+    },
+    {
+      "edge": "real-zero-skips",
+      "covered": true,
+      "tests": [
+        "test_actual_declared_command_executes_real_sixty_controls"
+      ]
+    },
+    {
+      "edge": "required-default-selection",
+      "covered": true,
+      "tests": [
+        "test_required_default_selection_and_genuine_unaffected_none"
+      ]
+    },
+    {
+      "edge": "reverse-dependency-preserved",
+      "covered": true,
+      "tests": [
+        "test_cargo_owner_collision_retains_package_and_contract"
+      ]
+    },
+    {
+      "edge": "select-allowlist",
+      "covered": true,
+      "tests": [
+        "test_each_real_boundary_input_selects_only_cpu_contract"
+      ]
+    },
+    {
+      "edge": "select-checker",
+      "covered": true,
+      "tests": [
+        "test_each_real_boundary_input_selects_only_cpu_contract"
+      ]
+    },
+    {
+      "edge": "select-policy",
+      "covered": true,
+      "tests": [
+        "test_each_real_boundary_input_selects_only_cpu_contract"
+      ]
+    },
+    {
+      "edge": "select-runner",
+      "covered": true,
+      "tests": [
+        "test_each_real_boundary_input_selects_only_cpu_contract"
+      ]
+    },
+    {
+      "edge": "select-tests",
+      "covered": true,
+      "tests": [
+        "test_each_real_boundary_input_selects_only_cpu_contract"
+      ]
+    },
+    {
+      "edge": "server-cargo-obligation",
+      "covered": true,
+      "tests": [
+        "test_actual_committed_changes_and_old_include_keep_all_obligations"
+      ]
+    },
+    {
+      "edge": "server-native-obligation",
+      "covered": true,
+      "tests": [
+        "test_actual_committed_changes_and_old_include_keep_all_obligations"
+      ]
+    },
+    {
+      "edge": "short-run-refusal",
+      "covered": true,
+      "tests": [
+        "test_complete_suite_passes_and_empty_short_skipped_failed_suites_refuse"
+      ]
+    },
+    {
+      "edge": "skipped-run-refusal",
+      "covered": true,
+      "tests": [
+        "test_complete_suite_passes_and_empty_short_skipped_failed_suites_refuse"
+      ]
+    },
+    {
+      "edge": "strict-runner-positive",
+      "covered": true,
+      "tests": [
+        "test_complete_suite_passes_and_empty_short_skipped_failed_suites_refuse"
+      ]
+    },
+    {
+      "edge": "symlink-execution-refusal",
+      "covered": true,
+      "tests": [
+        "test_symlink_type_expands_both_old_and_new_tree_and_refuses_execution"
+      ]
+    },
+    {
+      "edge": "true-none-preserved",
+      "covered": true,
+      "tests": [
+        "test_required_default_selection_and_genuine_unaffected_none"
+      ]
+    },
+    {
+      "edge": "unconditional-drift-command",
+      "covered": true,
+      "tests": [
+        "test_unconditional_workflow_security_coverage_and_prepush_unchanged"
+      ]
+    },
+    {
+      "edge": "unconditional-fullcheck-command",
+      "covered": true,
+      "tests": [
+        "test_unconditional_workflow_security_coverage_and_prepush_unchanged"
+      ]
+    },
+    {
+      "edge": "unconditional-test-command",
+      "covered": true,
+      "tests": [
+        "test_unconditional_workflow_security_coverage_and_prepush_unchanged"
+      ]
+    },
+    {
+      "edge": "unexpected-success-refusal",
+      "covered": true,
+      "tests": [
+        "test_complete_suite_passes_and_empty_short_skipped_failed_suites_refuse"
+      ]
+    },
+    {
+      "edge": "unknown-include-expansion",
+      "covered": true,
+      "tests": [
+        "test_unmodelled_tool_reader_and_build_inputs_expand"
+      ]
+    },
+    {
+      "edge": "unknown-tool-expansion",
+      "covered": true,
+      "tests": [
+        "test_unmodelled_tool_reader_and_build_inputs_expand"
+      ]
+    },
+    {
+      "edge": "workflow-expansion",
+      "covered": true,
+      "tests": [
+        "test_unmodelled_tool_reader_and_build_inputs_expand"
+      ]
+    }
+  ],
+  "coverage_negative_controls": {
+    "missing-assertion": "selected test/control lacks an explicit passing assertion: test_unconditional_workflow_security_coverage_and_prepush_unchanged/unconditional-test-command",
+    "skipped-mandatory": "empty or skipped test result: test_unconditional_workflow_security_coverage_and_prepush_unchanged",
+    "missing-result": "missing or unexpected selected test result"
+  },
+  "compiled_cpu_reader": {
+    "compiler": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+    "reader_source_sha256": "d350499631d7e45ef7fdee4a2a23ca491bf9e3f3054184814078bb71072e7945",
+    "original_elf_sha256": "dd58221a9e9b167ab67038637e4e7bac1b86ca7d9e4cd97724105feebf273d3b",
+    "changed_elf_sha256": "10b3a5f086c6c5638e4df47bd0539333e1e7e36bfdbd748adc1eb0ebc4f3d930",
+    "original_stdout_sha256": "d33b84ffe866b92283080e59403ac72091b08003a40a4c501fcc2304ccb129db",
+    "changed_stdout_sha256": "3ecc81745be0ef01e010d9f8329f444382e72d24229a467ee07d24ad2e97a634",
+    "changed_stdout_verified_against_actual_policy": true,
+    "old_include_retains_server_after_removal": true,
+    "plan": {
+      "schema": "memra-validation-plan-v1",
+      "mode": "scoped",
+      "reason": "dependency closure plus declared input contracts",
+      "changed": [
+        "crates/memra-server/src/reader.rs",
+        "tools/public-boundary-policy.toml"
+      ],
+      "direct_packages": [
+        "memra-server"
+      ],
+      "packages": [
+        "memra-server"
+      ],
+      "dependency_reasons": {},
+      "jobs": {
+        "build": true,
+        "clippy": true,
+        "server": true,
+        "engine": false,
+        "portable": false,
+        "core": false,
+        "lanes": false,
+        "arch": true,
+        "publish": true
+      },
+      "edge_decisions": [
+        {
+          "from": "changed-inputs",
+          "to": "memra-cli",
+          "affected": false,
+          "reason": "No changed declared input directly belongs to this package"
+        },
+        {
+          "from": "memra-gguf",
+          "to": "memra-cli",
+          "affected": false,
+          "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+        },
+        {
+          "from": "memra-reference",
+          "to": "memra-cli",
+          "affected": false,
+          "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+        },
+        {
+          "from": "memra-tokenizer",
+          "to": "memra-cli",
+          "affected": false,
+          "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+        },
+        {
+          "from": "changed-inputs",
+          "to": "memra-engine",
+          "affected": false,
+          "reason": "No changed declared input directly belongs to this package"
+        },
+        {
+          "from": "memra-gguf",
+          "to": "memra-engine",
+          "affected": false,
+          "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+        },
+        {
+          "from": "memra-kv",
+          "to": "memra-engine",
+          "affected": false,
+          "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+        },
+        {
+          "from": "memra-reference",
+          "to": "memra-engine",
+          "affected": false,
+          "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+        },
+        {
+          "from": "memra-runtime",
+          "to": "memra-engine",
+          "affected": false,
+          "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+        },
+        {
+          "from": "memra-sampling",
+          "to": "memra-engine",
+          "affected": false,
+          "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+        },
+        {
+          "from": "memra-validate",
+          "to": "memra-engine",
+          "affected": false,
+          "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+        },
+        {
+          "from": "changed-inputs",
+          "to": "memra-gguf",
+          "affected": false,
+          "reason": "No changed declared input directly belongs to this package"
+        },
+        {
+          "from": "changed-inputs",
+          "to": "memra-kv",
+          "affected": false,
+          "reason": "No changed declared input directly belongs to this package"
+        },
+        {
+          "from": "memra-gguf",
+          "to": "memra-kv",
+          "affected": false,
+          "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+        },
+        {
+          "from": "memra-tier",
+          "to": "memra-kv",
+          "affected": false,
+          "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+        },
+        {
+          "from": "changed-inputs",
+          "to": "memra-lanes",
+          "affected": false,
+          "reason": "No changed declared input directly belongs to this package"
+        },
+        {
+          "from": "changed-inputs",
+          "to": "memra-probe",
+          "affected": false,
+          "reason": "No changed declared input directly belongs to this package"
+        },
+        {
+          "from": "changed-inputs",
+          "to": "memra-reference",
+          "affected": false,
+          "reason": "No changed declared input directly belongs to this package"
+        },
+        {
+          "from": "memra-gguf",
+          "to": "memra-reference",
+          "affected": false,
+          "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+        },
+        {
+          "from": "memra-tokenizer",
+          "to": "memra-reference",
+          "affected": false,
+          "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+        },
+        {
+          "from": "changed-inputs",
+          "to": "memra-runtime",
+          "affected": false,
+          "reason": "No changed declared input directly belongs to this package"
+        },
+        {
+          "from": "memra-gguf",
+          "to": "memra-runtime",
+          "affected": false,
+          "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+        },
+        {
+          "from": "changed-inputs",
+          "to": "memra-sampling",
+          "affected": false,
+          "reason": "No changed declared input directly belongs to this package"
+        },
+        {
+          "from": "changed-inputs",
+          "to": "memra-server",
+          "affected": true,
+          "reason": "Changed declared input"
+        },
+        {
+          "from": "memra-engine",
+          "to": "memra-server",
+          "affected": false,
+          "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+        },
+        {
+          "from": "memra-lanes",
+          "to": "memra-server",
+          "affected": false,
+          "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+        },
+        {
+          "from": "memra-tokenizer",
+          "to": "memra-server",
+          "affected": false,
+          "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+        },
+        {
+          "from": "changed-inputs",
+          "to": "memra-tier",
+          "affected": false,
+          "reason": "No changed declared input directly belongs to this package"
+        },
+        {
+          "from": "changed-inputs",
+          "to": "memra-tokenizer",
+          "affected": false,
+          "reason": "No changed declared input directly belongs to this package"
+        },
+        {
+          "from": "memra-gguf",
+          "to": "memra-tokenizer",
+          "affected": false,
+          "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+        },
+        {
+          "from": "changed-inputs",
+          "to": "memra-validate",
+          "affected": false,
+          "reason": "No changed declared input directly belongs to this package"
+        }
+      ],
+      "requires_cuda": true,
+      "native": {
+        "scope": "serving",
+        "requirements": [
+          "Affected API/admission/usage/stream/cancel/cache cells on a pinned real model; scheduler or model-route changes include every reachable route"
+        ],
+        "qualification": false
+      },
+      "omitted": {
+        "engine": "No changed package or reverse dependency reaches this execution component",
+        "portable": "No changed package or reverse dependency reaches this execution component",
+        "core": "No changed package or reverse dependency reaches this execution component",
+        "lanes": "No changed package or reverse dependency reaches this execution component"
+      },
+      "base": "eb308fa584615f3cee3c26a28ce18ba740a1fdd5",
+      "head": "dd3da526b6dda5b51e1146f290521872fe1921e0",
+      "full_plan_sha256": "c3c07639b7472aad5b696ee4ea14f4dab12af37794411589aefd789198d1d290",
+      "cpu_contract_ids": [
+        "public-boundary"
+      ],
+      "selected_cpu_command": [
+        "python3",
+        "tools/run_public_boundary_contract.py"
+      ]
+    },
+    "scope": "standalone CPU fixture; no Memra binary/native qualification"
+  },
+  "limits": "CPU selector and standalone CPU fixture evidence only; no Memra binary/model/runtime/serving qualification. CI full repository check and allowlist drift remain unconditional; historical-ref and pre-push behavior is unchanged.",
+  "baseline_source_head": "9efd457949a7580593f133492b5592c79ddfb72a",
+  "baseline_planner_sha256": "f1235637c4e5d2c5dbd2c524534b381008c59e260156c6cfa4fd43c2bb326fb7",
+  "full_proof_sha256": "67bf5aadf58482d71bb5330cb44506a6af38cd191a204a0b1819de241ac9d0e5",
+  "full_plan_hash_encoding": "UTF-8 json.dumps(plan, sort_keys=True), default separators, no terminal newline",
+  "proof_helper_sha256": {
+    "execute-v2.py": "d7160a76934150c19db6634a723b45b2ce9b008cae420a16e858456a596ea7b3",
+    "actual-ci-shell.py": "18261efe7aa63a681e2644aee9c2c657b11aeb5323e682abf5f8fc0a4b6b1ef2",
+    "compiled-reader.py": "212129c6ec591d61089d373ed6aec3478c6a9edcffeed6774da0518e9a88fc98",
+    "mutations.py": "50c05710efecf220b6edc2d5c8482b52510a99d76179d1fb099a347e80a00513",
+    "coverage.py": "7875a077f3eeb5879f1d39ef7d6c839a647cad6d1f121851c6f9153a588b9302",
+    "make_public_proof.py": "f7f361a77964cd928d4dce519ab179a224434c9823e0724f42075f6d2fb52cab",
+    "baseline_validation_plan.py": "f1235637c4e5d2c5dbd2c524534b381008c59e260156c6cfa4fd43c2bb326fb7",
+    "cpu.sh": "1301a26c18795aee9555b3f1bf54e9dfa9ad30f5d83bc503b360be1b60fcea19"
+  },
+  "preserved_composition_inputs": {
+    "tools/support_record_inputs.py": "6e34dfd7747b018feed2395c817835693bfb9720a471ab82ae08a70bf470fa80",
+    "tools/validation_inputs.json": "71e17d5f91f44bae768047ad4c9f2c40486a291e35e123e6a7e54f16fd34d377",
+    "tools/skip-census.py": "d89ce391d748499214df2279a48d719b9e67cad6a2838c77ebcef46640883a7d",
+    "tools/test_validation_plan.py": "63b0f918cfec4cda7c16a763bb6567284cae689b576fcc90c7460f44d5f2c119",
+    "tools/test_validation_support_source_inputs.py": "aa1229d0cbbcf0766916aefd8cdb20ee4a77b917beb14151be14cd468bce539c",
+    "tools/test_validation_support_execution_inputs.py": "74ee3c4abee0f6520b1e883be4ea932e5c03a731915113642933e7479178dcf1"
+  },
+  "actual_checks": {
+    "framework": {
+      "executed": 171,
+      "floor": 171,
+      "passed": true
+    },
+    "boundary_selection_controls": {
+      "executed": 12,
+      "passed": true
+    },
+    "real_boundary_contract": {
+      "executed": 60,
+      "floor": 60,
+      "skipped": 0,
+      "expected_failures": 0,
+      "passed": true
+    },
+    "support_census": {
+      "executed": 21,
+      "floor": 21,
+      "passed": true
+    },
+    "dense_cache": {
+      "executed": 55,
+      "floor": 55,
+      "passed": true
+    },
+    "fastgate": {
+      "executed": 39,
+      "floor": 39,
+      "passed": true
+    },
+    "workspace_registry": {
+      "packages": 14,
+      "passed": true
+    }
+  },
+  "raw_logs_sha256": {
+    "framework.log": "9abc7bd73c6ea9c0e5eb2bfeaf5f9c6a508d914013522114f5011c6d5ab485e0",
+    "repaired-12.log": "4ce4b159ff7679481a0468f481ab9e558b9a46d43b31b03c542ec76edc04e964",
+    "contract-execution.log": "05aa002943ee7bf703e7c7205f382d9cf71532f38c6d1cece97ab0252a737586",
+    "coverage.log": "40bc39b95977f2664cfae4a688149afd0b5ed7a54941afccd3446fbd2851c7cf",
+    "support-census.log": "352a478c9aa1a8e420a2c2c7660482dd7bc5d6f904433a173c5778a9857b5a0c",
+    "cache.log": "59656e89a0d0d488203ac83567460e27e2a169fd88d75a108bfc9102f625386e",
+    "fastgate.log": "0fbf87c165b8ef1e7f39c11b08efd383461b429419f9574a7d0d81b82dc04797",
+    "registry.log": "d29a3eff345fae568378f53692307e0fd02164daa67b71f750c40508a5b3ad65",
+    "actual-ci-shell.log": "227a6e9c633cce30e2d8002c119d10c6f91b64ff0648acd44ffb7522b520e12b",
+    "final-mutations.log": "64e29db3004348c0dce74514cefb81def13c84fe69f2cf9c2a6454fe418f38bd",
+    "compiled-reader.log": "12aff74c3cd241ad7a16ee251b0821e8c71adbb2c12c4accc43c589abbea981d"
+  },
+  "public_raw_log_sha256": "a4a8522eb7c15b5adc6eab3659770e4a94ae5e0fa513cd83b4369fca148290cf",
+  "historical_proof": {
+    "path": "PROOF.json",
+    "sha256": "11cbcf9a4c390b7e165bf0dae7bed8ca52bef8194f02e13bd564e64f2879c24e",
+    "tested_source_head": "2202ca9cabac5ce6e7a52696ff514e2d431f54ed",
+    "baseline_source_head": "8b1a0c75f09ad7c63010227be2a369a490e7dd85",
+    "relation": "Historical tuple retained unchanged. It does not establish the composed source result."
+  },
+  "failed_composition": {
+    "source_head": "6ea8e59510b159a925d54f6fa19f6d8a74615f2a",
+    "admitted": false,
+    "reason": "Boundary directory refusal assertion expected its own diagnostic before the composed support-reader admission. Repaired assertion accepts the valid earlier refusal; source also removes a duplicate stat import. Failed raw result retained."
+  }
+}
