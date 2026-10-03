@@ -1,0 +1,30 @@
+Running as unit: memra-rig-job-8676ff19e42d.service; invocation ID: 546f4b9e8f614d4da9831c46e2670a73
+{"test_methods": 15, "admitted_edges": 44, "verdict": {"status": "passed", "edges": 44, "contract_id": "c114917c64926c1298d32fc5bd8844006414f01a473f67013a639fc2f30125fe", "qualification": false, "scope": "declared behavior assertions only; native receipt admission remains separate"}, "admission_negatives": 2, "native_qualification": false}
+..................................................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 194 tests in 24.626s
+
+OK
+unittest-floor: OK: ran 194 tests (floor 194) for tools (test_validation_*.py)
+.....................
+----------------------------------------------------------------------
+Ran 21 tests in 2.278s
+
+OK
+unittest-floor: OK: ran 21 tests (floor 21) for tools (test_check_support_states.py)
+Validation registry covers all 14 workspace packages
+check-workflow-keys: .github/workflows/boundary-refs.yml: jobs refs
+check-workflow-keys: .github/workflows/ci.yml: jobs changes, gates, boundary, build, clippy, server-tests, portable-suites, engine-tests, arch-coverage, publish-dryrun
+check-workflow-keys: .github/workflows/gpu-ci.yml: jobs build, build-feedback-measurement, gpu, qualification-result
+check-workflow-keys: .github/workflows/mtp-context-receipts.yml: jobs reproduce
+check-workflow-keys: .github/workflows/mtp-depth-receipts.yml: jobs reproduce
+check-workflow-keys: .github/workflows/prompt-depth-router.yml: jobs classifier, native-build, native-receipts, upcoming-format, prefix-study
+check-workflow-keys: .github/workflows/prompt-prefix-depth.yml: jobs prefix-policy, native-build, prefix-v2-replay, confidence-replay, confidence-v3-cpu, confidence-v3-replay, joint-v4-history-pilot, joint-v4-native-cpu, joint-v4-native-release, joint-v5-native, joint-v6-draft-only-native, joint-v8-prime-probability-native, joint-v8-sealed-replay
+check-workflow-keys: .github/workflows/publish.yml: jobs publish
+check-workflow-keys: .github/workflows/release.yml: jobs guard, build, release
+check-workflow-keys: OK: 9 workflow files, no duplicate mapping keys (stdlib walker)
+          Finished with result: success
+Main processes terminated with: code=exited, status=0/SUCCESS
+               Service runtime: 33.199s
+             CPU time consumed: 35.313s
+                   Memory peak: 247.4M (swap: 0B)

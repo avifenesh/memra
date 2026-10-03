@@ -1,0 +1,158 @@
+{
+  "cases": [
+    {
+      "baseline_identical": true,
+      "case": "regular-dry-build",
+      "flags": [],
+      "exit": 0,
+      "command": [
+        "cargo",
+        "build",
+        "--release",
+        "--workspace",
+        "--bins"
+      ],
+      "native_executed": false
+    },
+    {
+      "baseline_identical": true,
+      "case": "regular-dry-clippy",
+      "flags": [],
+      "exit": 0,
+      "command": [
+        "cargo",
+        "clippy",
+        "--release",
+        "--all-targets",
+        "--workspace",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "native_executed": false
+    },
+    {
+      "baseline_identical": true,
+      "case": "regular-dry-publish",
+      "flags": [],
+      "exit": 0,
+      "command": [
+        "cargo",
+        "publish",
+        "--workspace",
+        "--exclude",
+        "memra-probe",
+        "--locked",
+        "--dry-run"
+      ],
+      "native_executed": false
+    },
+    {
+      "case": "unknown-reader-full",
+      "flags": [],
+      "exit": 0,
+      "all_jobs": true,
+      "baseline_obligations_identical": true,
+      "native_executed": false
+    },
+    {
+      "case": "cargo-root-fifo",
+      "flags": [],
+      "exit": 0,
+      "mode": "full",
+      "all_jobs": true,
+      "native_qualification": false
+    },
+    {
+      "case": "unrelated-manifest-fifo",
+      "flags": [],
+      "exit": 1,
+      "no_command_emitted": true,
+      "native_executed": false
+    },
+    {
+      "baseline_identical": true,
+      "case": "regular-dry-build",
+      "flags": [
+        "-O"
+      ],
+      "exit": 0,
+      "command": [
+        "cargo",
+        "build",
+        "--release",
+        "--workspace",
+        "--bins"
+      ],
+      "native_executed": false
+    },
+    {
+      "baseline_identical": true,
+      "case": "regular-dry-clippy",
+      "flags": [
+        "-O"
+      ],
+      "exit": 0,
+      "command": [
+        "cargo",
+        "clippy",
+        "--release",
+        "--all-targets",
+        "--workspace",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "native_executed": false
+    },
+    {
+      "baseline_identical": true,
+      "case": "regular-dry-publish",
+      "flags": [
+        "-O"
+      ],
+      "exit": 0,
+      "command": [
+        "cargo",
+        "publish",
+        "--workspace",
+        "--exclude",
+        "memra-probe",
+        "--locked",
+        "--dry-run"
+      ],
+      "native_executed": false
+    },
+    {
+      "case": "unknown-reader-full",
+      "flags": [
+        "-O"
+      ],
+      "exit": 0,
+      "all_jobs": true,
+      "baseline_obligations_identical": true,
+      "native_executed": false
+    },
+    {
+      "case": "cargo-root-fifo",
+      "flags": [
+        "-O"
+      ],
+      "exit": 0,
+      "mode": "full",
+      "all_jobs": true,
+      "native_qualification": false
+    },
+    {
+      "case": "unrelated-manifest-fifo",
+      "flags": [
+        "-O"
+      ],
+      "exit": 1,
+      "no_command_emitted": true,
+      "native_executed": false
+    }
+  ],
+  "owned_root_removed": true,
+  "native_qualification": false
+}

@@ -1,0 +1,36 @@
+{
+  "old_source_sha256": "f1235637c4e5d2c5dbd2c524534b381008c59e260156c6cfa4fd43c2bb326fb7",
+  "new_source_sha256": "39c4c37ab21b774729f7b55f5e64516132d394b51570d295126805f0ec687f56",
+  "controls": [
+    {
+      "case": "cargo-root",
+      "old_observed_read": "text",
+      "actual_fifo": true,
+      "no_fifo_io": true,
+      "current_outcome": "full planning expansion"
+    },
+    {
+      "case": "unrelated-cargo",
+      "old_observed_read": "text",
+      "actual_fifo": true,
+      "no_fifo_io": true,
+      "current_outcome": "refused before content"
+    },
+    {
+      "case": "tracked-reader",
+      "old_observed_read": "bytes",
+      "actual_fifo": true,
+      "no_fifo_io": true,
+      "current_outcome": "refused before content"
+    },
+    {
+      "case": "own-registry",
+      "old_observed_read": "text",
+      "actual_fifo": true,
+      "no_fifo_io": true,
+      "current_outcome": "refused before content"
+    }
+  ],
+  "owned_roots_removed": true,
+  "native_qualification": false
+}

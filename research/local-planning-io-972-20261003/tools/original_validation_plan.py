@@ -17,8 +17,8 @@ import os
 from pathlib import Path, PurePosixPath
 import posixpath
 import re
-import stat
 import subprocess
+import stat
 import sys
 import tempfile
 import tomllib
@@ -31,14 +31,6 @@ JOBS = ('build', 'clippy', 'server', 'engine', 'portable', 'core', 'lanes', 'arc
 # These are executable CPU/harness contracts, not a blanket tools/** exemption.
 # Their tests remain in the always-run gates job. Native reruns are named separately.
 TOOL_CONTRACTS = {
-    'public-boundary': {
-        'required': True,
-        'inputs': ['tools/check-public-boundary.py', 'tools/test_public_boundary.py',
-                   'tools/public-boundary-policy.toml', 'tools/public-boundary-allowlist.jsonl',
-                   'tools/run_public_boundary_contract.py'],
-        'cpu': ['python3', 'tools/run_public_boundary_contract.py'],
-        'native': [],
-    },
     'n-choice': {
         'required': True,
         'inputs': ['tools/native_choices.py', 'tools/choice_verifier.py',
@@ -414,8 +406,7 @@ TOOL_CONTRACTS = {
         'inputs': ['tools/check-support-states.py', 'tools/test_check_support_states.py',
                    'docs/support-records.toml', 'tools/support_record_inputs.py',
                    'tools/test_validation_support_record_inputs.py',
-                   'tools/test_validation_support_source_inputs.py',
-                   'tools/test_validation_support_receipt_copies.py'],
+                   'tools/test_validation_support_source_inputs.py'],
         'cpu': ['tools/unittest-floor.sh', 'tools', 'test_check_support_states.py', '21'],
         'native': [],
     },
@@ -486,15 +477,6 @@ def support_record_source_inputs(tree):
         raise Refused(str(error)) from error
 
 
-def support_record_receipt_copy_inputs(tree):
-    # The preceding source-doc preflight loads the pinned helper and protects
-    # metadata content reads. Transport adds no blanket content requirement.
-    try:
-        return _SUPPORT_DATA.receipt_copies(tree)
-    except _SUPPORT_DATA.InputContractError as error:
-        raise Refused(str(error)) from error
-
-
 def rust_code_view(text, string_spans=None):
     global _RUST_SCANNER
     if _RUST_SCANNER is None:
@@ -505,39 +487,6 @@ def rust_code_view(text, string_spans=None):
         return _RUST_SCANNER.rust_code_view(text, string_spans)
     except _RUST_SCANNER.CensusError as error:
         raise Refused(str(error)) from error
-
-
-def read_local_input(root, name, *, binary=False):
-    """Read a regular file anchored below the trusted root, without following links."""
-    root = Path(root).resolve()
-    if not isinstance(name, str) or not name or any(c in name for c in '\n\r\t\0\\'):
-        raise Refused('noncanonical local input path')
-    path = PurePosixPath(name)
-    if path.is_absolute() or '..' in path.parts or path.as_posix() != name or name == '.':
-        raise Refused('noncanonical local input path: ' + name)
-    parent = leaf = None
-    try:
-        parent = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        for part in path.parts[:-1]:
-            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
-            os.close(parent)
-            parent = child
-        info = os.stat(path.name, dir_fd=parent, follow_symlinks=False)
-        if not stat.S_ISREG(info.st_mode):
-            raise Refused('local input contains a symlink or is not a regular file: ' + name)
-        leaf = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
-        if not stat.S_ISREG(os.fstat(leaf).st_mode):
-            raise Refused('local input is not a regular file: ' + name)
-        with os.fdopen(leaf, 'rb' if binary else 'r') as source:
-            leaf = None
-            return source.read()
-    except OSError as error:
-        raise Refused('local input is missing, nonregular or contains a symlink: ' + name) from error
-    finally:
-        if leaf is not None:
-            os.close(leaf)
-        if parent is not None:
-            os.close(parent)
 
 
 def git(repo, *args):
@@ -602,10 +551,16 @@ class LocalTree(Tree):
         super().__init__(repo, 'WORKTREE')
 
     def read(self, path):
-        return read_local_input(self.repo, path)
+        target = (self.repo / path).resolve()
+        if not target.is_relative_to(self.repo.resolve()):
+            raise Refused('source symlink escapes checkout')
+        return target.read_text()
 
     def read_bytes(self, path):
-        return read_local_input(self.repo, path, binary=True)
+        target = (self.repo / path).resolve()
+        if not target.is_relative_to(self.repo.resolve()):
+            raise Refused('source symlink escapes checkout')
+        return target.read_bytes()
 
     def input_modes(self, *prefixes, recursive=True):
         paths = set(prefixes)
@@ -792,7 +747,7 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
         # Source module resolution through symlinks depends on both lexical and
         # physical locations. Until that transitive graph is modelled, expand.
         raise Refused('crate symlink needs a transitive input contract: ' + path)
-    contracts = json.loads(read_local_input(Path(__file__).parent, 'validation_inputs.json'))
+    contracts = json.loads(Path(__file__).with_name('validation_inputs.json').read_text())
     if contracts.get('schema') != 'memra-validation-build-inputs-v1':
         raise Refused('unrecognized build input contracts')
     generated = defaultdict(set)
@@ -1042,58 +997,6 @@ def native_probe_inputs(tree):
     return inputs
 
 
-def boundary_contract_inputs(tree, *, missing_ok=False, index_metadata=True):
-    """Admit exact regular inputs without following a symlink or opening a FIFO."""
-    inputs = TOOL_CONTRACTS['public-boundary']['inputs']
-    checked = set(inputs)
-    for name in inputs:
-        checked.update(str(p) for p in PurePosixPath(name).parents if str(p) != '.')
-    if isinstance(tree, LocalTree):
-        for name in inputs:
-            current = tree.repo
-            for part in PurePosixPath(name).parts:
-                current = current / part
-                try:
-                    mode = current.lstat().st_mode
-                except FileNotFoundError:
-                    if missing_ok:
-                        break
-                    raise Refused('public-boundary input is missing: ' + name)
-                expected = stat.S_ISREG if current == tree.repo / name else stat.S_ISDIR
-                if not expected(mode):
-                    raise Refused('public-boundary input has unsafe type: ' + name)
-        if index_metadata:
-            rows = git(tree.repo, '--literal-pathspecs', 'ls-files', '--stage', '-z',
-                       '--', *sorted(checked))
-            for row in rows.split(b'\0'):
-                if not row:
-                    continue
-                metadata, path = row.split(b'\t', 1)
-                name = path.decode()
-                if name in checked and (name not in inputs or
-                        metadata.split()[0] not in (b'100644', b'100755') or
-                        metadata.split()[2] != b'0'):
-                    raise Refused('public-boundary input has unsafe index metadata: ' + name)
-        return
-    if tree.symlinks_exact(checked):
-        raise Refused('public-boundary input contains a symlink')
-    rows = git(tree.repo, '--literal-pathspecs', 'ls-tree', '-z', tree.ref, '--', *sorted(checked))
-    regular = set()
-    for row in rows.split(b'\0'):
-        if row:
-            metadata, path = row.split(b'\t', 1)
-            name = path.decode()
-            mode = metadata.split()[0]
-            if name in inputs:
-                if mode not in (b'100644', b'100755'):
-                    raise Refused('public-boundary input has unsafe type: ' + name)
-                regular.add(name)
-            elif name in checked and mode != b'040000':
-                raise Refused('public-boundary ancestor has unsafe type: ' + name)
-    if not missing_ok and set(inputs) - regular:
-        raise Refused('public-boundary input is missing: ' + sorted(set(inputs) - regular)[0])
-
-
 def make_plan(paths, base_tree, head_tree):
     paths = sorted(set(paths))
     if not paths:
@@ -1107,7 +1010,6 @@ def make_plan(paths, base_tree, head_tree):
             sources = support_record_source_inputs(tree)
             support_sources.update(sources['inputs'])
             source_reader_active = source_reader_active or sources['active']
-            support_record_receipt_copy_inputs(tree)
             resolved = support_record_data_inputs(tree)
             support_data.update(resolved['required'])
             support_data.update(resolved['optional'])
@@ -1136,19 +1038,16 @@ def make_plan(paths, base_tree, head_tree):
                 if matches_input(path, pattern):
                     native_requirements.add('Changed native probe input ' + path + ': rerun pinned assertions for ' + ', '.join(sorted(probes)))
             package = owner(path, owners)
-            consumers = input_consumers(path, includes)
             if package:
                 direct.add(package)
-            direct.update(consumers)
+                direct.update(input_consumers(path, includes))
+                continue
+            consumers = input_consumers(path, includes)
+            if consumers:
+                direct.update(consumers)
+                continue
             matches = [name for name, c in TOOL_CONTRACTS.items() if path in c['inputs']
                        and ('presence' not in c or any(p in contract_paths for p in c['presence']))]
-            # Resolve ownership first. Only this boundary contract is additive
-            # to a package/include collision; other tool contracts retain their policy.
-            if (package or consumers) and 'public-boundary' not in matches:
-                continue
-            if 'public-boundary' in matches:
-                boundary_contract_inputs(base_tree, missing_ok=True)
-                boundary_contract_inputs(head_tree)
             if matches:
                 contracts.update(matches)
                 for name in matches:
@@ -1261,8 +1160,7 @@ def cargo_packages(value, root):
     if not value:
         return ['--workspace']
     names = value.split(',')
-    known = {tomllib.loads(read_local_input(root, p.relative_to(root).as_posix()))['package']['name']
-             for p in (root / 'crates').glob('*/Cargo.toml')}
+    known = {tomllib.loads(p.read_text())['package']['name'] for p in (root / 'crates').glob('*/Cargo.toml')}
     if len(names) != len(set(names)) or any(not re.fullmatch(r'memra-[a-z0-9-]+', n) or n not in known for n in names):
         return ['--workspace']
     return [arg for n in sorted(names) for arg in ('-p', n)]
@@ -1305,8 +1203,6 @@ def cpu_contract_names(root, selected):
     else:
         names = names or available
     for name in names:
-        if name == 'public-boundary':
-            boundary_contract_inputs(LocalTree(root), index_metadata=False)
         if not all((root / p).is_file() for p in TOOL_CONTRACTS[name]['inputs']):
             raise Refused('selected contract input is missing: ' + name)
         if name == 'support-records' and data is not None:

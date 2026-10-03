@@ -1,0 +1,30 @@
+test_stat_to_fifo_replacement_is_nonblocking_and_refused (test_validation_local_input_io.LocalInputIO.test_stat_to_fifo_replacement_is_nonblocking_and_refused) ... FAIL
+
+======================================================================
+FAIL: test_stat_to_fifo_replacement_is_nonblocking_and_refused (test_validation_local_input_io.LocalInputIO.test_stat_to_fifo_replacement_is_nonblocking_and_refused)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-local-planning-io-972/tools/test_validation_local_input_io.py", line 77, in test_stat_to_fifo_replacement_is_nonblocking_and_refused
+    self.tree.read_bytes('race.txt')
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "/tmp/memra-local-io-controls-do55a902/remove-nonblock.py", line 608, in read_bytes
+    return read_local_input(self.repo, path, binary=True)
+  File "/tmp/memra-local-io-controls-do55a902/remove-nonblock.py", line 528, in read_local_input
+    leaf = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent)
+  File "/usr/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1247, in _execute_mock_call
+    result = effect(*args, **kwargs)
+  File "/home/avifenesh/projects/wt-memra-local-planning-io-972/tools/test_validation_local_input_io.py", line 72, in replace
+    self.assertTrue(flags & os.O_NONBLOCK)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 is not true
+
+----------------------------------------------------------------------
+Ran 1 test in 0.017s
+
+FAILED (failures=1)

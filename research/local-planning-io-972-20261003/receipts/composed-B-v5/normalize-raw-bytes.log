@@ -1,0 +1,15 @@
+test_regular_text_and_raw_bytes_preserve_original_semantics (test_validation_local_input_io.LocalInputIO.test_regular_text_and_raw_bytes_preserve_original_semantics) ... FAIL
+
+======================================================================
+FAIL: test_regular_text_and_raw_bytes_preserve_original_semantics (test_validation_local_input_io.LocalInputIO.test_regular_text_and_raw_bytes_preserve_original_semantics)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-local-planning-io-972/tools/test_validation_local_input_io.py", line 26, in test_regular_text_and_raw_bytes_preserve_original_semantics
+    self.assertEqual(self.tree.read_bytes('data.txt'), raw)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: b'\xd7\xa2\xd7\x91\xd7\xa8\xd7\x99\xd7\xaa\nnext\n' != b'\xd7\xa2\xd7\x91\xd7\xa8\xd7\x99\xd7\xaa\r\nnext\n'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.017s
+
+FAILED (failures=1)

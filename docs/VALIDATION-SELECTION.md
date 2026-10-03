@@ -219,3 +219,5 @@ test counts and expected failing assertions. CI and local-ci run the same entry 
 These replace the jittered full-batch-rate unit verdict, whose requested 1.5 ms sleep did not
 bound actual scheduling delay. They do not establish a batching performance guarantee under
 arbitrary host load. The observed failed batch widths remain in the research receipt.
+
+Local CPU planning reads require regular files below the trusted root. LocalTree text/raw-byte reads, Cargo manifest command planning and the planner-owned include registry use anchored nofollow components with nonblocking leaf open and fstat. Unsafe types raise into the existing full-planning or CLI refusal boundary. Snapshot Git readers, raw bytes/text normalization, default Cargo arrays and all required CPU/native obligations remain.
