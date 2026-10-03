@@ -9,7 +9,7 @@ threads 2. No CUDA context, model, rental or serving work.
 
 Actual cold build and warm restore passed all 18 controls each. All six restored
 whole-file hashes match the cold payloads. The executed helper and wrapper hashes
-remain unchanged. The original shell baseline also passed all 18. The 52 CPU
+remain unchanged. The original shell baseline also passed all 18. The 55 CPU
 regressions cover dependency mutations, complete phase permutations, strict JSON
 types, damaged payloads/manifests, symlink targets, ambient override presence and
 uncached compiler failure/unsupported-executable behavior.
@@ -73,3 +73,19 @@ Compiler diagnostic phases are version-sensitive. NVIDIA CUDA 13.1 documents
 unstable. They are used only for this defensive input census; original compilation
 still calls nvcc with its unchanged recipe. Unknown output rebuilds.
 Source: https://docs.nvidia.com/cuda/archive/13.1.0/cuda-compiler-driver-nvcc/index.html
+
+## Bounded retention and semantic transport
+
+The current entry survives and older entries are removed only when their exact
+SHA key and schema-verified producer context prove this helper owns them. Foreign
+siblings and symlink siblings are preserved. CI restores by prefix, then saves
+only by the validated helper semantic input key. A matching unchanged restore
+creates no new upload. The previous run-specific archive keys are not reused.
+
+This retention/transport change leaves compiler, source, phase and program inputs
+unchanged. Its actual native reader proof compares the full current census with
+the sealed producer expectation and permits only controller size/hash metadata
+differences. It restores the six original native bytes with that original producer
+expectation, verifies owned deletion and foreign preservation, executes all 18
+controls and verifies the six whole hashes. It never relabels the prior native
+build as a new producer. The repeated post-rebase restore also passed all 18.

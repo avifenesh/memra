@@ -345,6 +345,29 @@ def restore(entry, expected, out):
         raise Miss("restored payload differs")
 
 
+
+def prune_cache(cache, current_key):
+    """Retain one owned entry; never delete foreign siblings or follow links."""
+    removed = 0
+    for entry in Path(cache).iterdir():
+        if (entry.name == current_key or not re.fullmatch(r"[0-9a-f]{64}", entry.name)
+                or entry.is_symlink() or not entry.is_dir()):
+            continue
+        manifest = entry / "manifest.json"
+        if manifest.is_symlink() or not manifest.is_file() or manifest.stat().st_size > 64 * 1024 * 1024:
+            continue
+        try:
+            record = json.loads(manifest.read_text())
+            context_record = record.get("context") if isinstance(record, dict) else None
+            if (not isinstance(context_record, dict) or context_record.get("schema") != SCHEMA
+                    or digest(canonical(context_record)) != entry.name):
+                continue
+        except (OSError, ValueError):
+            continue
+        shutil.rmtree(entry)
+        removed += 1
+    return removed
+
 def build(repo, nvcc, out, argv0=None):
     for name in NAMES:
         command = recipe(nvcc, name, out)
@@ -401,6 +424,7 @@ def run(repo, nvcc, out, cache):
             if canonical(after) != canonical(expected):
                 print("dense-control changed inputs:", differences(expected, after)[:20], flush=True)
                 raise Miss("compiler inputs changed during restore")
+            prune_cache(cache, key)
             print(json.dumps({"status": "restored", "key": key, "payloads": payloads(out)}), flush=True)
             return
         except (Miss, OSError, ValueError) as error:
@@ -432,6 +456,7 @@ def run(repo, nvcc, out, cache):
                 if entry.exists() or entry.is_symlink():
                     shutil.rmtree(entry) if entry.is_dir() and not entry.is_symlink() else entry.unlink()
                 stage.rename(entry)
+            prune_cache(cache, key)
             status = "built"
         except (Miss, OSError, ValueError, subprocess.CalledProcessError) as error:
             print("dense-control cache not stored:", reason(error), flush=True)

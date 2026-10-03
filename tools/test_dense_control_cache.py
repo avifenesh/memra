@@ -276,4 +276,30 @@ class DenseCacheTests(unittest.TestCase):
         self.assertEqual(before,after)
         self.assertTrue(all(len(record['phases'])==3 for record in before.values()))
 
+    def owned_entry(self,storage,generation):
+        record=copy.deepcopy(self.record);record['context']['generation']=generation
+        key=cache.digest(cache.canonical(record['context']));entry=storage/key;entry.mkdir()
+        (entry/'manifest.json').write_bytes(cache.canonical(record))
+        return entry
+    def test_retention_keeps_current_and_deletes_only_owned_entries(self):
+        storage=self.root/'cache';storage.mkdir()
+        current=self.owned_entry(storage,0);old=[self.owned_entry(storage,i) for i in (1,2)]
+        foreign=storage/'foreign';foreign.mkdir();(foreign/'data').write_text('keep')
+        self.assertEqual(cache.prune_cache(storage,current.name),2)
+        self.assertTrue(current.is_dir());self.assertEqual((foreign/'data').read_text(),'keep')
+        self.assertTrue(all(not entry.exists() for entry in old))
+    def test_retention_preserves_foreign_schema_and_symlink_siblings(self):
+        storage=self.root/'cache';storage.mkdir();current=self.owned_entry(storage,0)
+        foreign=storage/('a'*64);foreign.mkdir();(foreign/'manifest.json').write_text('{"context":{"schema":"foreign"}}')
+        alias=storage/('b'*64);alias.symlink_to(self.entry,target_is_directory=True)
+        self.assertEqual(cache.prune_cache(storage,current.name),0)
+        self.assertTrue(foreign.is_dir());self.assertTrue(alias.is_symlink());self.assertTrue(self.entry.is_dir())
+    def test_transport_upload_uses_semantic_key_and_skips_unchanged_restore(self):
+        workflow=Path(cache.__file__).parents[1]/'.github/workflows/ci.yml'
+        text=workflow.read_text();save=text.split('- uses: actions/cache/save@',1)[1].split('  # ── clippy:',1)[0]
+        self.assertIn('steps.dense_controls.outputs.cache-key',save)
+        self.assertIn('steps.dense_cache.outputs.cache-matched-key !=',save)
+        self.assertNotIn('github.run_id',save)
+        self.assertIn("records = [json.loads(line)",text)
+
 if __name__ == '__main__': unittest.main(verbosity=2)
