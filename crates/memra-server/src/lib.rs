@@ -25726,7 +25726,7 @@ temperature = 0.6
             None,
             Json(
                 serde_json::from_value(json!({"model":"m","prompt":"fixture","n":2,
-                "stop":"END","timeout_ms":100,"seed":500}))
+                "stop":"END","timeout_ms":1000,"seed":500}))
                 .unwrap(),
             ),
         )

@@ -155,7 +155,7 @@ def main():
                     if part and part!=b'[DONE]':
                         event=json.loads(part)
                         nonempty=any(c.get('delta',{}).get('content') or c.get('delta',{}).get('reasoning') for c in event.get('choices',[]))
-            results.append(native.request('slots-contender','/v1/chat/completions',{'model':'fixture','messages':[{'role':'user','content':'Reply with one short sentence.'}],'max_tokens':8,'timeout_ms':100,'seed':73}))
+            results.append(native.request('slots-contender','/v1/chat/completions',{'model':'fixture','messages':[{'role':'user','content':'Reply with one short sentence.'}],'max_tokens':8,'timeout_ms':1000,'seed':73}))
             assert conn.sock is not None
             conn.sock.setsockopt(socket.SOL_SOCKET,socket.SO_LINGER,struct.pack('ii',1,0));conn.close()
             (folder/'wire.sse').write_bytes(b''.join(raw))
