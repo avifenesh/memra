@@ -18,6 +18,7 @@ from pathlib import Path, PurePosixPath
 import posixpath
 import re
 import subprocess
+import stat
 import sys
 import tempfile
 import tomllib
@@ -404,7 +405,8 @@ TOOL_CONTRACTS = {
         'required': True,
         'inputs': ['tools/check-support-states.py', 'tools/test_check_support_states.py',
                    'docs/support-records.toml', 'tools/support_record_inputs.py',
-                   'tools/test_validation_support_record_inputs.py'],
+                   'tools/test_validation_support_record_inputs.py',
+                   'tools/test_validation_support_source_inputs.py'],
         'cpu': ['tools/unittest-floor.sh', 'tools', 'test_check_support_states.py', '21'],
         'native': [],
     },
@@ -462,6 +464,19 @@ def support_record_data_inputs(tree, *, directory=False, allow_unknown_reader=Fa
         raise Refused(str(error)) from error
 
 
+def support_record_source_inputs(tree):
+    global _SUPPORT_DATA
+    if _SUPPORT_DATA is None:
+        spec = importlib.util.spec_from_file_location(
+            'support_record_data_inputs', Path(__file__).with_name('support_record_inputs.py'))
+        _SUPPORT_DATA = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_SUPPORT_DATA)
+    try:
+        return _SUPPORT_DATA.source_docs(tree)
+    except _SUPPORT_DATA.InputContractError as error:
+        raise Refused(str(error)) from error
+
+
 def rust_code_view(text, string_spans=None):
     global _RUST_SCANNER
     if _RUST_SCANNER is None:
@@ -490,6 +505,22 @@ class Tree:
 
     def read_bytes(self, path):
         return git(self.repo, 'show', f'{self.ref}:{path}')
+
+    def input_modes(self, *prefixes, recursive=True):
+        args = ['--literal-pathspecs', 'ls-tree']
+        if recursive:
+            args.append('-r')
+        result = {}
+        for row in git(self.repo, *args, '-z', self.ref, '--', *prefixes).split(b'\0'):
+            if row:
+                metadata, path = row.split(b'\t', 1)
+                name = path.decode()
+                if recursive or name in prefixes:
+                    result[name] = metadata.split()[0].decode()
+        return result
+
+    def ignored_paths(self, *prefixes):
+        return []
 
     def paths(self, *prefixes):
         return [x.decode() for x in git(self.repo, 'ls-tree', '-r', '--name-only', '-z',
@@ -530,6 +561,46 @@ class LocalTree(Tree):
         if not target.is_relative_to(self.repo.resolve()):
             raise Refused('source symlink escapes checkout')
         return target.read_bytes()
+
+    def input_modes(self, *prefixes, recursive=True):
+        paths = set(prefixes)
+        if recursive:
+            def enumeration_error(error):
+                raise error
+
+            paths = set()
+            for prefix in prefixes:
+                root = self.repo / prefix
+                if root.is_symlink() or not root.is_dir():
+                    paths.add(prefix)
+                    continue
+                for directory, dirs, files in os.walk(root, followlinks=False, onerror=enumeration_error):
+                    for name in dirs + files:
+                        path = Path(directory) / name
+                        if path.is_symlink() or not path.is_dir():
+                            paths.add(str(path.relative_to(self.repo)))
+        result = {}
+        for name in paths:
+            try:
+                mode = (self.repo / name).lstat().st_mode
+            except FileNotFoundError:
+                continue
+            if stat.S_ISREG(mode) and not os.access(self.repo / name, os.R_OK):
+                result[name] = 'unreadable'
+                continue
+            result[name] = ('120000' if stat.S_ISLNK(mode) else '040000' if stat.S_ISDIR(mode)
+                            else '100755' if stat.S_ISREG(mode) and mode & 0o111
+                            else '100644' if stat.S_ISREG(mode) else 'unsupported')
+        for row in git(self.repo, 'ls-files', '--stage', '-z', '--', *prefixes).split(b'\0'):
+            if row:
+                metadata, name = row.split(b'\t', 1)
+                if metadata.startswith(b'160000 ') and (recursive or name.decode() in prefixes):
+                    result[name.decode()] = '160000'
+        return result
+
+    def ignored_paths(self, *prefixes):
+        return [p.decode() for p in git(self.repo, 'ls-files', '--others', '--ignored',
+                                       '--exclude-standard', '-z', '--', *prefixes).split(b'\0') if p]
 
     def paths(self, *prefixes):
         return [x.decode() for x in git(self.repo, 'ls-files', '--cached', '--others',
@@ -934,6 +1005,14 @@ def make_plan(paths, base_tree, head_tree):
         if PurePosixPath(path).is_absolute() or '..' in PurePosixPath(path).parts or any(c in path for c in '\n\r\t\0'):
             return full('noncanonical changed path')
     try:
+        support_data, support_sources, source_reader_active = set(), set(), False
+        for tree in (base_tree, head_tree):
+            sources = support_record_source_inputs(tree)
+            support_sources.update(sources['inputs'])
+            source_reader_active = source_reader_active or sources['active']
+            resolved = support_record_data_inputs(tree)
+            support_data.update(resolved['required'])
+            support_data.update(resolved['optional'])
         base_graph, base_owners = workspace(base_tree)
         graph, owners = workspace(head_tree)
         if graph != base_graph or owners != base_owners:
@@ -946,17 +1025,13 @@ def make_plan(paths, base_tree, head_tree):
         for path, packages in included_inputs(base_tree, base_owners).items():
             includes[path].update(packages)
         direct, contracts, native_requirements = set(), set(), set()
-        support_data = set()
-        for tree in (base_tree, head_tree):
-            resolved = support_record_data_inputs(tree)
-            support_data.update(resolved['required'])
-            support_data.update(resolved['optional'])
         contract_paths = set(base_tree.paths('tools')) | set(head_tree.paths('tools'))
         probe_inputs = native_probe_inputs(head_tree)
         for pattern, probes in native_probe_inputs(base_tree).items():
             probe_inputs[pattern].update(probes)
         for path in paths:
-            if path in support_data:
+            source_input = path in support_sources or (source_reader_active and _SUPPORT_DATA.reads_source_doc(path))
+            if path in support_data or source_input:
                 contracts.add('support-records')
                 native_requirements.update(TOOL_CONTRACTS['support-records']['native'])
             for pattern, probes in probe_inputs.items():
@@ -978,7 +1053,7 @@ def make_plan(paths, base_tree, head_tree):
                 for name in matches:
                     native_requirements.update(TOOL_CONTRACTS[name]['native'])
                 continue
-            if path in support_data:
+            if path in support_data or source_input:
                 continue
             # Receipt data is not a compiler input unless a declared include, generated
             # input, or runtime fixture reader reaches it. Standalone research programs
