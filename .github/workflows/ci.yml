@@ -149,6 +149,7 @@ jobs:
       - name: Local development selection and immutable reuse controls (CPU-only)
         run: |
           tools/unittest-floor.sh tools test_local_build_cache.py 48
+          tools/unittest-floor.sh tools test_dense_control_cache.py 52
           tools/unittest-floor.sh tools test_build_measurement.py 2
           tools/unittest-floor.sh tools/fast-gate test_plan.py 39
           tools/unittest-floor.sh tools/fast-gate test_component.py 4
@@ -391,6 +392,14 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           key: ci-build-120a
+
+      # Transport only. The helper recomputes the complete current compiler input
+      # identity and checks all six payloads; an action restore is never a gate pass.
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: target/dsv4-control-cache
+          key: dense-control-v1-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: dense-control-v1-${{ runner.os }}-
 
       # MEMRA_CUDA_ARCH is EXPLICIT on purpose. It used to be unset, which meant
       # build.rs::detect_arch() decided, and detect_arch probes nvidia-smi, falling back to

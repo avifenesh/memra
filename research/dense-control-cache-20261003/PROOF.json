@@ -1,0 +1,48 @@
+{
+  "schema": "memra-dense-control-cache-proof-v1",
+  "source_base": "75bac45b8acc0cb96190689a2e11a882310ebdbd",
+  "cache_key": "bc881a2e5a34ad9afedb888588d966be2b839281f8419eca166b8ec339946077",
+  "native_job": "12e8835b0e24",
+  "cpu_tests": 52,
+  "actual_controls": {
+    "baseline": 18,
+    "cold": 18,
+    "restored": 18
+  },
+  "wall_seconds_single_run": {
+    "baseline": 298.48,
+    "cold": 271.39,
+    "restored": 33.3
+  },
+  "fresh_elf_difference": "one STB_LOCAL STT_FILE tmpxft filename in .strtab only; every other section payload and attributes identical",
+  "whole_file_restore": "all six byte identities identical",
+  "compiler_defaults_changed": false,
+  "gpu_context_or_model_qualification": false,
+  "known_warning_owner": "Memra #944, A after #942",
+  "receipt_sha256": {
+    "accepted-cold.log": "2301e7d60cdad3e64dc3b9a2fdb65b96b869064ab6bcef99bfa441fef2479cf4",
+    "accepted-cold.sha256": "972b379c91aa74eb8cdda7ae516332774c3bad06c49e7197fc5af9d2e7419fb3",
+    "accepted-restore-identity.log": "79a954bd32da7a14e669587e3e2cbf24d7b667996db0597057142f8bfb2de456",
+    "accepted-source-unchanged.log": "ad74ba6af65f566d6d0ed36907763b62be50abe3831b7d2d66d7b773fe196060",
+    "accepted-source.sha256": "70903d766c295de4d2732ae0c1d302ff25e34cb80c1c7e1a7235c615a87ad282",
+    "accepted-warm.log": "97ab5beff4d00ad5945082ede987b1219ab1f708318628f599596d61ba7e90e0",
+    "ambient-fallback-interrupted.log": "49f31af715f34d1575472a76aa15b579fd61b2e4ddfe6d4519939a14257945a0",
+    "baseline-cold-final-identity.log": "f24a6f707a58f70b7711a926bf3c07277ebef442735b1ad378d7ebc09193e416",
+    "baseline.log": "797885406ee15b8443c60a395f7a3ab974fc415a3264682366e3910c5f29f0d5",
+    "broad-census-fallback-interrupted.log": "ced274a8e155fadd2998f28cff88cad497a0190f99d82174c2acc8ffe736b91f",
+    "cold-final.log": "c5e5c208b3b698307ef5c3f47a73c8186640fcd6e46529bd4fae5aa30438418d",
+    "cpu52.log": "c6536ddf183fb33de562105b42372f4cc86d5a6fd1c6e580d846a2c3774099da",
+    "dsv4-dense-exact-tail-gate-host-sections.json": "5f1052131b43abecce46f9406874ceb0801a10b44b01522bd11aae4d80c2dc4a",
+    "dsv4-dense-tc-gate-host-sections.json": "4686418881cce905a8833cc0a29ed3506ee99a3d0051be7f18e106329ff083ba",
+    "dsv4-dense-tc-gate-r4-host-sections.json": "eecac151b9812522826272f8e9414d6c929b1d00a900207ad29132ffecb21e6b",
+    "dsv4-dense-tc-gate-r7-driver-host-sections.json": "623a1fd828f816ce029fed4df0340e865a60d5982cbee9d9c656e6f8995f3b93",
+    "dsv4-dense-tc-gate-r8-driver-host-sections.json": "f393f42e761659442fafbfa85513f0efcaad9b7d4ba7fade485fab13fddd5205",
+    "dsv4-dense-tc-gate-r9-driver-host-sections.json": "5e26964c3b3a74e03ba616276332998acb8b969b6a872c781b4da945dba20633",
+    "native-build-manifest.json": "fa982892531f5ee9392d02bdaa7f133e9bdd80afb862aafc1eb4e43fe724e1f9",
+    "native-symbol-metadata-proof.json": "b8908d0618ac66868ab1f6c16e2baa9ca5767151a73ad0d904cf5b16502521d7",
+    "nvcc-random-symbol-help.txt": "91b2662eb4561de448269588fe8265fd87b506862c61c2965e53b50a07bbfc0a",
+    "phase-permutation-diagnosis.json": "22e72b9b8859643ad5d9b0976e969c091dd71d4630cda75b818bce55ca02809c",
+    "type-manifest-red.json": "14ca6bbc324f228e5e7a7a17acada281c3279250f76bb4dbbe81287f62dec978",
+    "boundary-verification.json": "64e86ce6165819598286c0a6c1937eb44f20a5d46c1dda3cc3ac41b023409c07"
+  }
+}
