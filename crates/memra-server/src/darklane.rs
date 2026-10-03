@@ -304,6 +304,34 @@ fn kill_group(pgid: u32, sig: i32) {
     let _ = signal_group(pgid, sig);
 }
 
+/// A reaped leader does not imply that its owned process group is empty. Keep the
+/// group's identity until remaining members have exited or received SIGKILL.
+fn terminate_owned_group(c: &mut std::process::Child) {
+    let pgid = c.id();
+    kill_group(pgid, libc::SIGCONT);
+    kill_group(pgid, libc::SIGTERM);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        let child_alive = matches!(c.try_wait(), Ok(None));
+        let group_gone = matches!(
+            signal_group(pgid, 0),
+            Err(err) if err.raw_os_error() == Some(libc::ESRCH)
+        );
+        if group_gone && !child_alive {
+            return;
+        }
+        if std::time::Instant::now() >= deadline {
+            kill_group(pgid, libc::SIGKILL);
+            if child_alive {
+                let _ = c.kill();
+            }
+            let _ = c.wait();
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
 /// Observe a stop without reaping an exit that Child::try_wait must classify.
 /// Sending SIGSTOP successfully does not prove the child remains alive or stopped.
 fn child_stop_acknowledged(pid: u32) -> std::io::Result<bool> {
@@ -442,6 +470,7 @@ fn runner_loop(
                 // exit first: a finished job must not be signaled.
                 match c.try_wait() {
                     Ok(Some(status)) => {
+                        terminate_owned_group(c);
                         handle_exit(status, &st, /*preempting=*/ false);
                         st.job_pid.store(0, Ordering::Release);
                         child = None;
@@ -478,6 +507,7 @@ fn runner_loop(
                                             // An exit racing the signal retains its real status.
                                             match c.try_wait() {
                                                 Ok(Some(status)) => {
+                                                    terminate_owned_group(c);
                                                     handle_exit(status, &st, false);
                                                     st.job_pid.store(0, Ordering::Release);
                                                     child = None;
@@ -506,6 +536,7 @@ fn runner_loop(
                     }
                     Err(err) => {
                         eprintln!("[darklane] try_wait failed: {err}; treating job as failed");
+                        terminate_owned_group(c);
                         st.state.store(BG_FAILED, Ordering::Release);
                         st.job_pid.store(0, Ordering::Release);
                         child = None;
@@ -517,6 +548,7 @@ fn runner_loop(
                 let c = child.as_mut().expect("yielded state implies child");
                 match c.try_wait() {
                     Ok(Some(status)) => {
+                        terminate_owned_group(c);
                         handle_exit(status, &st, false);
                         st.job_pid.store(0, Ordering::Release);
                         child = None;
@@ -547,27 +579,8 @@ fn runner_loop(
     // cannot act on TERM), then TERM (checkpoint-class jobs get their handler), brief
     // grace, then KILL the group.
     if let Some(mut c) = child.take() {
-        let pgid = c.id();
-        kill_group(pgid, libc::SIGCONT);
-        kill_group(pgid, libc::SIGTERM);
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-        loop {
-            match c.try_wait() {
-                Ok(Some(status)) => {
-                    eprintln!("[darklane] job terminated at shutdown ({status})");
-                    break;
-                }
-                Ok(None) if std::time::Instant::now() < deadline => {
-                    std::thread::sleep(std::time::Duration::from_millis(10));
-                }
-                _ => {
-                    kill_group(pgid, libc::SIGKILL);
-                    let _ = c.wait();
-                    eprintln!("[darklane] job SIGKILLed at shutdown (grace expired)");
-                    break;
-                }
-            }
-        }
+        terminate_owned_group(&mut c);
+        eprintln!("[darklane] owned process group terminated at shutdown");
         st.job_pid.store(0, Ordering::Release);
     }
 }
@@ -629,6 +642,7 @@ fn preempt_wait(c: &mut std::process::Child, st: &BgJobState, grace_ms: u64) {
     loop {
         match c.try_wait() {
             Ok(Some(status)) => {
+                terminate_owned_group(c);
                 handle_exit(status, st, /*preempting=*/ true);
                 return;
             }
@@ -806,6 +820,99 @@ mod tests {
         }
     }
 
+    fn descendant_cleanup_case(action: &str) {
+        let path = std::env::temp_dir().join(format!(
+            "darklane-descendant-{}-{action}",
+            std::process::id()
+        ));
+        std::fs::create_dir(&path).unwrap();
+        let dir = TestDir(path);
+        let ready = dir.0.join("descendant");
+        let release = dir.0.join("release");
+        let tail = match action {
+            "normal" => format!(
+                "while test ! -f '{}'; do sleep 0.005; done; exit 0",
+                release.display()
+            ),
+            "checkpoint" => "trap 'exit 75' USR1; wait".into(),
+            "shutdown" => "wait".into(),
+            _ => panic!("unknown owned-group test action"),
+        };
+        // The descendant inherits ignored HUP/TERM/USR1. The leader restores TERM,
+        // so shutdown must not mistake its prompt exit for an empty group.
+        let cmd = format!(
+            "trap '' HUP TERM USR1; sleep 600 & echo $! > '{}'; trap - TERM; {tail}",
+            ready.display()
+        );
+        let mode = if action == "checkpoint" {
+            YieldMode::Checkpoint
+        } else {
+            YieldMode::Stop
+        };
+        let (sig, v, b) = sigs();
+        let h = spawn_runner(cfg(&cmd, mode), v, b, Arc::new(|| None));
+        let st = h.state.clone();
+        let guard = RunnerGuard(Some(h));
+        sig.valley.store(true, Ordering::Release);
+        wait_acknowledged("owned descendant ready", || {
+            st.state.load(Ordering::Acquire) == BG_RUNNING
+                && std::fs::read_to_string(&ready).is_ok_and(|s| s.trim().parse::<u32>().is_ok())
+        });
+        let pid = st.job_pid.load(Ordering::Acquire);
+        let descendant: u32 = std::fs::read_to_string(&ready)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        let owned = OwnedDescendant::open(descendant);
+        assert!(owned.alive());
+        assert_eq!(unsafe { libc::getpgid(descendant as i32) }, pid as i32);
+        sig.valley.store(false, Ordering::Release);
+        match action {
+            "normal" => {
+                std::fs::write(release, []).unwrap();
+                wait_acknowledged("normal group completion", || {
+                    st.state.load(Ordering::Acquire) == BG_DONE
+                        && st.job_pid.load(Ordering::Acquire) == 0
+                });
+                guard.shutdown();
+            }
+            "checkpoint" => {
+                sig.busy.store(true, Ordering::Release);
+                wait_acknowledged("checkpoint group completion", || {
+                    st.state.load(Ordering::Acquire) == BG_PREEMPTED
+                        && st.job_pid.load(Ordering::Acquire) == 0
+                });
+                assert_eq!(st.preempts.load(Ordering::Relaxed), 1);
+                assert_eq!(st.ckpt_kills.load(Ordering::Relaxed), 0);
+                guard.shutdown();
+            }
+            "shutdown" => guard.shutdown(),
+            _ => unreachable!(),
+        }
+        wait_acknowledged("TERM-ignoring owned descendant terminated", || {
+            !owned.alive()
+        });
+        assert_eq!(st.job_pid.load(Ordering::Acquire), 0);
+        assert_eq!(st.yields.load(Ordering::Relaxed), 0);
+        assert_eq!(st.resumes.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn normal_leader_exit_terminates_term_ignoring_descendant() {
+        descendant_cleanup_case("normal");
+    }
+
+    #[test]
+    fn checkpoint_leader_exit_terminates_term_ignoring_descendant() {
+        descendant_cleanup_case("checkpoint");
+    }
+
+    #[test]
+    fn shutdown_terminates_descendant_after_leader_exits() {
+        descendant_cleanup_case("shutdown");
+    }
+
     #[test]
     fn killing_only_yielded_leader_terminates_remaining_owned_group() {
         let path =
@@ -823,7 +930,8 @@ mod tests {
         let guard = RunnerGuard(Some(h));
         sig.valley.store(true, Ordering::Release);
         wait_acknowledged("owned descendant ready", || {
-            std::fs::read_to_string(&ready).is_ok_and(|s| s.trim().parse::<u32>().is_ok())
+            st.state.load(Ordering::Acquire) == BG_RUNNING
+                && std::fs::read_to_string(&ready).is_ok_and(|s| s.trim().parse::<u32>().is_ok())
         });
         let pid = st.job_pid.load(Ordering::Acquire);
         let descendant: u32 = std::fs::read_to_string(&ready)
