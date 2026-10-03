@@ -1,40 +1,41 @@
 {
-  "base": "18ca040cc3bbdd07813dec75682f83c6fba1de17",
-  "source": "ab2e165225e28df52ab895b21233c2cb7df97354",
+  "base": "567bad56ab8dc1333d1d4e15ceb36e500fdc05d5",
+  "source": "c0653fe21acec2ac16848b32f20b37f96cb8b631",
   "source_sha256": {
-    "docs/VALIDATION-SELECTION.md": "f7b6d6374c502b5a56e7f4ac5aa64d18420c9664a19fac597e8f2f1ac2bfa108",
-    "research/unittest-admission-20261003/LANE.md": "8735e89222bf3fbb5aa22bd90575d2b950598c25fa8121209fc58af6ba9297df",
-    "research/unittest-admission-20261003/actual_controls.py": "7b2d579753f5cb1d1d333f45607ef36884d4027fd60e489789924bc36554b45c",
+    "docs/VALIDATION-SELECTION.md": "84d25fb1585861ce69a7daebc49c5bbdbfc492ec5cee879b9fb4389e5593c88c",
+    "research/unittest-admission-20261003/LANE.md": "549b1794c29cd4bab2994e2117afd9ba04b81a69f346a2083a713803e560ba64",
+    "research/unittest-admission-20261003/actual_controls.py": "75aecbec95fc222b72ce8241be55e0242d6aee8d231dff8209d4ea02125c251f",
     "tools/fast-gate/test_plan.py": "ac961010ecdd2dad2c3f0784fd2882a8d22d181bddd4d1bb61b2aaacdf6427db",
-    "tools/test_unittest_floor.py": "821b0c349967f30263bf5559d22fc18a582e0d97d25fe7fd034ff8d7565a52fb",
-    "tools/test_unittest_floor.sh": "9a043d027330f8440bccae7c75ea42fa8261010f0eef3f997bf44db9bb1160a7",
+    "tools/test_unittest_floor.py": "8ff4ec56d5f34bd71748afa10942882338d193bfdfbc852f57fa583e482815ae",
+    "tools/test_unittest_floor.sh": "cdc67ad83ad2d20a751a7ae0231fe78100c94abc723eec65d47e9c9124e8b585",
     "tools/unittest-floor.sh": "19b9d1ee25d8bc31de732a0284ac30be161cda7119fe15acfac1863eafff605d",
-    "tools/unittest_floor.py": "c1b32e6068aa7bf7b076b09f8175050adaa8c31d75d4500acd415febf2608d87"
+    "tools/unittest_floor.py": "6890d148c55415eaa0bb1fd8076b2dfebf6b59cdbf6018cfd65a0e67ee7b6f06"
   },
   "artifact_sha256": {
-    "actual-controls.json": "8c5c11281393aa9a254dd8abe804ca1a596ce5f17d74697af84571b976f3dc61",
-    "teeth.log": "e5bee740a7e97e239bcd9b16c03810a9b97e570a6e21e1b8e4f9da657c02df2e",
-    "framework.log": "a9aa1b8a501bdfd4a3ae5c6c331803942a0b43c731f66f43be7c085c6dd936b6",
-    "fastgate.log": "5346fb2cd10c780d36346dc209b03280e4b64fc424bfa29e8cd01816f9815892",
-    "component.log": "50c37679e876af3acab145c985c684317d7d4c1d4e195de5584a5dfc4224fc97",
-    "cache.log": "720c3ea5e83051d98f0a524ddfd48ae1d4088b021bcdd66eb1d456d2695d6c29",
-    "contracts.log": "fbc33e6ca6cbc7053ec90c2583fb2e994fd223df04b906e4633e6d24e1989d6d",
-    "controls.log": "81e4d063542ca62d4fac597d59ddd40e47280d3c840e3e99f35ec96067b5c745"
+    "actual-controls.json": "a07bd96388b2944d722a2124505f5fa36c33244815ce2a0fe0b094aa6af22221",
+    "teeth.log": "cf2fe0c79e72b57677badddd8bdfa55db00e068d8b46a1d0ff04c6f375e7b872",
+    "framework.log": "696e92205e81322bea6e7f28b15e28b84390627fc0c85c48d3685e575b49b528",
+    "fastgate.log": "4ef41ced791583d72e1d026c63c5d1089ccbae914711e23cc4d019a7d513b684",
+    "component.log": "2f28f7ff81dc61e4b4f1fdd6e4d6264a7e34650f8d9fb186bed213c9c8ad8d81",
+    "cache.log": "76e257313fdce279d7da602bcf0bd4c35af2517e268a31d9a39e2eee60e7452d",
+    "contracts.log": "22e7459bb19551e5dd9266b247332713d2b42edb3402e697c9037e7833a1dedd",
+    "controls.log": "6da14bccf53ebb31cb9c68e3969ad5a446ec9fadca3ac76c4024c2a8ea088635"
   },
   "actual": {
     "original_controls": 5,
-    "new_tests": 14,
-    "framework": 179,
+    "new_tests": 15,
+    "framework": 194,
     "fastgate": 39,
     "component": 4,
     "dense_cache": 55,
     "dynamic_floor_contracts": 10,
-    "before_after_cases": 9,
-    "coherent_guard_mutations": 3
+    "before_after_cases": 10,
+    "coherent_guard_mutations": 4
   },
   "preserved": [
     "caller selection",
     "CLI selectors and floors",
+    "C194 workflow and typed readers",
     "A expert-tier runner and workflow steps",
     "native/model/default/qualification requirements"
   ],
