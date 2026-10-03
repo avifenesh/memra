@@ -565,13 +565,16 @@ class LocalTree(Tree):
     def input_modes(self, *prefixes, recursive=True):
         paths = set(prefixes)
         if recursive:
+            def enumeration_error(error):
+                raise error
+
             paths = set()
             for prefix in prefixes:
                 root = self.repo / prefix
                 if root.is_symlink() or not root.is_dir():
                     paths.add(prefix)
                     continue
-                for directory, dirs, files in os.walk(root, followlinks=False):
+                for directory, dirs, files in os.walk(root, followlinks=False, onerror=enumeration_error):
                     for name in dirs + files:
                         path = Path(directory) / name
                         if path.is_symlink() or not path.is_dir():

@@ -129,6 +129,12 @@ class SupportSourceInputs(unittest.TestCase):
             data.source_docs(tree)
         (self.repo / 'docs/ignored.md').unlink()
         ignored.unlink()
+        with mock.patch.object(vp.os, 'scandir', side_effect=PermissionError('owned copy enumeration observer')):
+            with self.assertRaisesRegex(PermissionError, 'owned copy enumeration observer'):
+                data.source_docs(tree)
+            plan = vp.make_plan(['README.md'], vp.Tree(self.repo, 'HEAD'), tree)
+            self.assertEqual(plan['mode'], 'full')
+            self.assertIn('owned copy enumeration observer', plan['reason'])
         shutil.rmtree(self.repo / 'docs')
         (self.repo / 'docs').symlink_to('absent-owned-docs', target_is_directory=True)
         self.fixture.fixture.commit()
