@@ -96,7 +96,8 @@ TOOL_CONTRACTS = {
     'support-records': {
         'required': True,
         'inputs': ['tools/check-support-states.py', 'tools/test_check_support_states.py',
-                   'docs/support-records.toml'],
+                   'docs/support-records.toml', 'tools/support_record_inputs.py',
+                   'tools/test_validation_support_record_inputs.py'],
         'cpu': ['tools/unittest-floor.sh', 'tools', 'test_check_support_states.py', '21'],
         'native': [],
     },
@@ -132,6 +133,20 @@ class Refused(ValueError):
 
 
 _RUST_SCANNER = None
+_SUPPORT_DATA = None
+
+
+def support_record_data_inputs(tree):
+    global _SUPPORT_DATA
+    if _SUPPORT_DATA is None:
+        spec = importlib.util.spec_from_file_location(
+            'support_record_data_inputs', Path(__file__).with_name('support_record_inputs.py'))
+        _SUPPORT_DATA = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_SUPPORT_DATA)
+    try:
+        return _SUPPORT_DATA.resolve(tree)
+    except _SUPPORT_DATA.InputContractError as error:
+        raise Refused(str(error)) from error
 
 
 def rust_code_view(text, string_spans=None):
@@ -596,11 +611,19 @@ def make_plan(paths, base_tree, head_tree):
         for path, packages in included_inputs(base_tree, base_owners).items():
             includes[path].update(packages)
         direct, contracts, native_requirements = set(), set(), set()
+        support_data = set()
+        for tree in (base_tree, head_tree):
+            resolved = support_record_data_inputs(tree)
+            support_data.update(resolved['required'])
+            support_data.update(resolved['optional'])
         contract_paths = set(base_tree.paths('tools')) | set(head_tree.paths('tools'))
         probe_inputs = native_probe_inputs(head_tree)
         for pattern, probes in native_probe_inputs(base_tree).items():
             probe_inputs[pattern].update(probes)
         for path in paths:
+            if path in support_data:
+                contracts.add('support-records')
+                native_requirements.update(TOOL_CONTRACTS['support-records']['native'])
             for pattern, probes in probe_inputs.items():
                 if matches_input(path, pattern):
                     native_requirements.add('Changed native probe input ' + path + ': rerun pinned assertions for ' + ', '.join(sorted(probes)))
@@ -619,6 +642,8 @@ def make_plan(paths, base_tree, head_tree):
                 contracts.update(matches)
                 for name in matches:
                     native_requirements.update(TOOL_CONTRACTS[name]['native'])
+                continue
+            if path in support_data:
                 continue
             # Receipt data is not a compiler input unless a declared include, generated
             # input, or runtime fixture reader reaches it. Standalone research programs
@@ -760,6 +785,11 @@ def cpu_contract_names(root, selected):
     for name in names:
         if not all((root / p).is_file() for p in TOOL_CONTRACTS[name]['inputs']):
             raise Refused('selected contract input is missing: ' + name)
+        if name == 'support-records':
+            data = support_record_data_inputs(LocalTree(root))
+            for path in data['required']:
+                if not (root / path).is_file():
+                    raise Refused('selected contract input is missing: support-records: ' + path)
     return names
 
 

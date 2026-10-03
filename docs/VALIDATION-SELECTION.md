@@ -93,6 +93,15 @@ and the two banked logs under `research/spill-lead-20260919/integration-day12/in
 workload fields; replay goldens come from seed rows in those logs. This exact input inventory
 does not infer all repository fixture dependencies. The historical inputs and Q35 native
 obligation remain unchanged. Its always-run CI replay is retained independently of selection.
+The support-records contract derives persisted gate evidence from the before and after
+`docs/support-records.toml` trees. Each referenced evidence path is required for execution;
+both exact sibling `artifact.lock` and `tiny-gate.tsv` paths affect selection even when absent.
+The census chooses `artifact.lock` first and otherwise reads `tiny-gate.tsv`, so optional-file
+creation and deletion must retain the consumer. Neither alternative is made unconditionally
+required. Missing required evidence retains a named refusal. Changed census/test reader bytes,
+unknown record shapes or CI tokens, noncanonical paths and symlink ambiguity expand validation.
+This source-bound data inventory leaves source/docs reader nominations separate and keeps the
+independent always-run support-state checks and all native obligations unchanged.
 Its CPU shortcut requires every changed input to be a declared CPU contract or plain docs.
 Research/oracle inputs retain fast-gate's native expansion even when they do not rebuild a
 Cargo package; an absent compiler dependency does not prove an absent native probe dependency.
