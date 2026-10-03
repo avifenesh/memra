@@ -1,0 +1,93 @@
+test_known_fifo_directory_socket_refuse_before_special_open (test_validation_coverage_input_io.CoverageInputIO.test_known_fifo_directory_socket_refuse_before_special_open) ... 
+  test_known_fifo_directory_socket_refuse_before_special_open (test_validation_coverage_input_io.CoverageInputIO.test_known_fifo_directory_socket_refuse_before_special_open) (kind='fifo') ... FAIL
+  test_known_fifo_directory_socket_refuse_before_special_open (test_validation_coverage_input_io.CoverageInputIO.test_known_fifo_directory_socket_refuse_before_special_open) (kind='directory') ... FAIL
+  test_known_fifo_directory_socket_refuse_before_special_open (test_validation_coverage_input_io.CoverageInputIO.test_known_fifo_directory_socket_refuse_before_special_open) (kind='socket') ... FAIL
+
+======================================================================
+FAIL: test_known_fifo_directory_socket_refuse_before_special_open (test_validation_coverage_input_io.CoverageInputIO.test_known_fifo_directory_socket_refuse_before_special_open) (kind='fifo')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-coverage-input-io-984/tools/test_validation_coverage_input_io.py", line 81, in test_known_fifo_directory_socket_refuse_before_special_open
+    self.assertEqual(self.select()['decision'], 'expand')
+                     ~~~~~~~~~~~^^
+  File "/home/avifenesh/projects/wt-memra-coverage-input-io-984/tools/test_validation_coverage_input_io.py", line 39, in select
+    def select(self): return vc.select(['io'], [self.case], self.context, self.root)
+                             ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/memra-coverage-mutations-7d9tkmv0/remove-prestat.py", line 115, in select
+    actual = hashlib.sha256(read_input(root / path, root=root)).hexdigest()
+                            ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/memra-coverage-mutations-7d9tkmv0/remove-prestat.py", line 37, in read_input
+    leaf = os.open(relative.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+  File "/usr/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1247, in _execute_mock_call
+    result = effect(*args, **kwargs)
+  File "/home/avifenesh/projects/wt-memra-coverage-input-io-984/tools/test_validation_coverage_input_io.py", line 77, in observe
+    if name == 'harness.py': raise AssertionError('known unsafe leaf opened')
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: known unsafe leaf opened
+
+======================================================================
+FAIL: test_known_fifo_directory_socket_refuse_before_special_open (test_validation_coverage_input_io.CoverageInputIO.test_known_fifo_directory_socket_refuse_before_special_open) (kind='directory')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-coverage-input-io-984/tools/test_validation_coverage_input_io.py", line 81, in test_known_fifo_directory_socket_refuse_before_special_open
+    self.assertEqual(self.select()['decision'], 'expand')
+                     ~~~~~~~~~~~^^
+  File "/home/avifenesh/projects/wt-memra-coverage-input-io-984/tools/test_validation_coverage_input_io.py", line 39, in select
+    def select(self): return vc.select(['io'], [self.case], self.context, self.root)
+                             ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/memra-coverage-mutations-7d9tkmv0/remove-prestat.py", line 115, in select
+    actual = hashlib.sha256(read_input(root / path, root=root)).hexdigest()
+                            ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/memra-coverage-mutations-7d9tkmv0/remove-prestat.py", line 37, in read_input
+    leaf = os.open(relative.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+  File "/usr/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1247, in _execute_mock_call
+    result = effect(*args, **kwargs)
+  File "/home/avifenesh/projects/wt-memra-coverage-input-io-984/tools/test_validation_coverage_input_io.py", line 77, in observe
+    if name == 'harness.py': raise AssertionError('known unsafe leaf opened')
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: known unsafe leaf opened
+
+======================================================================
+FAIL: test_known_fifo_directory_socket_refuse_before_special_open (test_validation_coverage_input_io.CoverageInputIO.test_known_fifo_directory_socket_refuse_before_special_open) (kind='socket')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-coverage-input-io-984/tools/test_validation_coverage_input_io.py", line 81, in test_known_fifo_directory_socket_refuse_before_special_open
+    self.assertEqual(self.select()['decision'], 'expand')
+                     ~~~~~~~~~~~^^
+  File "/home/avifenesh/projects/wt-memra-coverage-input-io-984/tools/test_validation_coverage_input_io.py", line 39, in select
+    def select(self): return vc.select(['io'], [self.case], self.context, self.root)
+                             ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/memra-coverage-mutations-7d9tkmv0/remove-prestat.py", line 115, in select
+    actual = hashlib.sha256(read_input(root / path, root=root)).hexdigest()
+                            ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/memra-coverage-mutations-7d9tkmv0/remove-prestat.py", line 37, in read_input
+    leaf = os.open(relative.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+  File "/usr/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1247, in _execute_mock_call
+    result = effect(*args, **kwargs)
+  File "/home/avifenesh/projects/wt-memra-coverage-input-io-984/tools/test_validation_coverage_input_io.py", line 77, in observe
+    if name == 'harness.py': raise AssertionError('known unsafe leaf opened')
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: known unsafe leaf opened
+
+----------------------------------------------------------------------
+Ran 1 test in 0.010s
+
+FAILED (failures=3)

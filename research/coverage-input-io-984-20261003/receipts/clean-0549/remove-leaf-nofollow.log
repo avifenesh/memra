@@ -1,0 +1,29 @@
+test_leaf_replacement_alias_refuses_both_real_consumers (test_validation_coverage_input_io.CoverageInputIO.test_leaf_replacement_alias_refuses_both_real_consumers) ... 
+  test_leaf_replacement_alias_refuses_both_real_consumers (test_validation_coverage_input_io.CoverageInputIO.test_leaf_replacement_alias_refuses_both_real_consumers) (consumer='select') ... FAIL
+  test_leaf_replacement_alias_refuses_both_real_consumers (test_validation_coverage_input_io.CoverageInputIO.test_leaf_replacement_alias_refuses_both_real_consumers) (consumer='admit') ... FAIL
+
+======================================================================
+FAIL: test_leaf_replacement_alias_refuses_both_real_consumers (test_validation_coverage_input_io.CoverageInputIO.test_leaf_replacement_alias_refuses_both_real_consumers) (consumer='select')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-coverage-input-io-984/tools/test_validation_coverage_input_io.py", line 96, in test_leaf_replacement_alias_refuses_both_real_consumers
+    if execute.__name__ == 'select': self.assertEqual(execute()['decision'], 'expand')
+                                     ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'scoped' != 'expand'
+- scoped
++ expand
+
+
+======================================================================
+FAIL: test_leaf_replacement_alias_refuses_both_real_consumers (test_validation_coverage_input_io.CoverageInputIO.test_leaf_replacement_alias_refuses_both_real_consumers) (consumer='admit')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-coverage-input-io-984/tools/test_validation_coverage_input_io.py", line 98, in test_leaf_replacement_alias_refuses_both_real_consumers
+    with self.assertRaises(ValueError): execute()
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=2)

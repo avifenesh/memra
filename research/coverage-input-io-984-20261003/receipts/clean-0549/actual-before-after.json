@@ -1,0 +1,109 @@
+[
+  {
+    "consumer": "select",
+    "original_actual_swap": true,
+    "original_outcome": {
+      "decision": "scoped",
+      "selected": [
+        "owned"
+      ],
+      "context": {
+        "hardware": "cpu",
+        "case": "owned IO, synthetic result metadata"
+      },
+      "contract": {
+        "schema": "memra-edge-contract-v1",
+        "required_edges": [
+          "io"
+        ],
+        "context": {
+          "hardware": "cpu",
+          "case": "owned IO, synthetic result metadata"
+        },
+        "tests": {
+          "owned": {
+            "id": "owned",
+            "cost": 1,
+            "covers": [
+              "io"
+            ],
+            "mandatory": true,
+            "scope": {
+              "hardware": "cpu",
+              "case": "owned IO, synthetic result metadata"
+            },
+            "inputs": {
+              "harness.py": "057c119fd9e1bfc5e143c58a0dbe7896f743539484eb9bfd3531c75d58de86ae"
+            }
+          }
+        }
+      },
+      "contract_id": "54343cd917b4935a2525a3bdeaaf16b2872da0a5f06b31234971a7f7464e647f",
+      "uncovered": [],
+      "ineligible": {},
+      "choices": [],
+      "edge_decisions": [
+        {
+          "edge": "io",
+          "covered": true,
+          "tests": [
+            "owned"
+          ]
+        }
+      ],
+      "cost": 1,
+      "optimization": "deterministic greedy set cover, not a claimed global optimum",
+      "isolation": "test boot/reset contracts are unchanged; selection never merges process state",
+      "qualification": false
+    },
+    "current_actual_swap": true,
+    "current_outcome": {
+      "decision": "expand",
+      "selected": [],
+      "uncovered": [
+        "io"
+      ],
+      "ineligible": {
+        "owned": [
+          "missing or escaping coverage input: harness.py",
+          "ineligible required test/control: owned"
+        ]
+      },
+      "reason": "mandatory regression/control is unavailable",
+      "qualification": false
+    },
+    "synthetic_result_metadata_only": true,
+    "actual_test_execution": false
+  },
+  {
+    "consumer": "validate_results",
+    "original_actual_swap": true,
+    "original_outcome": {
+      "status": "passed",
+      "edges": 1,
+      "contract_id": "54343cd917b4935a2525a3bdeaaf16b2872da0a5f06b31234971a7f7464e647f",
+      "qualification": false,
+      "scope": "declared behavior assertions only; native receipt admission remains separate"
+    },
+    "current_actual_swap": true,
+    "current_outcome": {
+      "status": "refused"
+    },
+    "synthetic_result_metadata_only": true,
+    "actual_test_execution": false
+  },
+  {
+    "consumer": "manifest",
+    "original_owned_fifo_read_observed": true,
+    "fifo_content_io_prevented_by_observer": true,
+    "current_outcome": "refused",
+    "actual_test_execution": false
+  },
+  {
+    "consumer": "results",
+    "original_owned_fifo_read_observed": true,
+    "fifo_content_io_prevented_by_observer": true,
+    "current_outcome": "refused",
+    "actual_test_execution": false
+  }
+]

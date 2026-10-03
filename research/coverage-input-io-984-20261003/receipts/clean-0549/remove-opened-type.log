@@ -1,0 +1,64 @@
+test_leaf_replacement_fifo_is_nonblocking_and_refused (test_validation_coverage_input_io.CoverageInputIO.test_leaf_replacement_fifo_is_nonblocking_and_refused) ... 
+  test_leaf_replacement_fifo_is_nonblocking_and_refused (test_validation_coverage_input_io.CoverageInputIO.test_leaf_replacement_fifo_is_nonblocking_and_refused) (consumer='select') ... FAIL
+  test_leaf_replacement_fifo_is_nonblocking_and_refused (test_validation_coverage_input_io.CoverageInputIO.test_leaf_replacement_fifo_is_nonblocking_and_refused) (consumer='admit') ... FAIL
+
+======================================================================
+FAIL: test_leaf_replacement_fifo_is_nonblocking_and_refused (test_validation_coverage_input_io.CoverageInputIO.test_leaf_replacement_fifo_is_nonblocking_and_refused) (consumer='select')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-coverage-input-io-984/tools/test_validation_coverage_input_io.py", line 117, in test_leaf_replacement_fifo_is_nonblocking_and_refused
+    if execute.__name__ == 'select': self.assertEqual(execute()['decision'], 'expand')
+                                                      ~~~~~~~^^
+  File "/home/avifenesh/projects/wt-memra-coverage-input-io-984/tools/test_validation_coverage_input_io.py", line 39, in select
+    def select(self): return vc.select(['io'], [self.case], self.context, self.root)
+                             ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/memra-coverage-mutations-7d9tkmv0/remove-opened-type.py", line 115, in select
+    actual = hashlib.sha256(read_input(root / path, root=root)).hexdigest()
+                            ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/memra-coverage-mutations-7d9tkmv0/remove-opened-type.py", line 40, in read_input
+    with os.fdopen(leaf, 'rb' if binary else 'r') as source:
+         ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1247, in _execute_mock_call
+    result = effect(*args, **kwargs)
+  File "/home/avifenesh/projects/wt-memra-coverage-input-io-984/tools/test_validation_coverage_input_io.py", line 113, in content
+    raise AssertionError('nonregular opened object reached content')
+AssertionError: nonregular opened object reached content
+
+======================================================================
+FAIL: test_leaf_replacement_fifo_is_nonblocking_and_refused (test_validation_coverage_input_io.CoverageInputIO.test_leaf_replacement_fifo_is_nonblocking_and_refused) (consumer='admit')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-coverage-input-io-984/tools/test_validation_coverage_input_io.py", line 119, in test_leaf_replacement_fifo_is_nonblocking_and_refused
+    with self.assertRaises(ValueError): execute()
+                                        ~~~~~~~^^
+  File "/home/avifenesh/projects/wt-memra-coverage-input-io-984/tools/test_validation_coverage_input_io.py", line 40, in admit
+    def admit(self): return vc.validate_results(self.plan, self.results, self.context, self.root)
+                            ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/memra-coverage-mutations-7d9tkmv0/remove-opened-type.py", line 207, in validate_results
+    actual = hashlib.sha256(read_input(root / path, root=root)).hexdigest()
+                            ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/memra-coverage-mutations-7d9tkmv0/remove-opened-type.py", line 40, in read_input
+    with os.fdopen(leaf, 'rb' if binary else 'r') as source:
+         ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1247, in _execute_mock_call
+    result = effect(*args, **kwargs)
+  File "/home/avifenesh/projects/wt-memra-coverage-input-io-984/tools/test_validation_coverage_input_io.py", line 113, in content
+    raise AssertionError('nonregular opened object reached content')
+AssertionError: nonregular opened object reached content
+
+----------------------------------------------------------------------
+Ran 1 test in 0.002s
+
+FAILED (failures=2)

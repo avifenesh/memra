@@ -49,3 +49,9 @@ No native math/program, model artifact/default, compiler/build default, toleranc
 required native gate or GPU shadow policy changed. No native qualification.
 
 Publicity: skipped: maintenance release.
+
+The clean source at `0549d98a53` replays 12 IO methods, four before/after
+consumers and eight coherent negatives with zero fixture errors, plus 40 coverage
+and 16 live caller tests. Workflow and registry checks pass. `CLEAN-COMMIT.json`
+retains this distinct tuple. The 206-framework result remains the actual earlier
+working-tree run; its source/test bytes match this commit and it is not relabelled.

@@ -1,0 +1,18 @@
+test_descriptors_close_on_success_type_and_open_failure (test_validation_coverage_input_io.CoverageInputIO.test_descriptors_close_on_success_type_and_open_failure) ... FAIL
+
+======================================================================
+FAIL: test_descriptors_close_on_success_type_and_open_failure (test_validation_coverage_input_io.CoverageInputIO.test_descriptors_close_on_success_type_and_open_failure)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-coverage-input-io-984/tools/test_validation_coverage_input_io.py", line 151, in test_descriptors_close_on_success_type_and_open_failure
+    self.assertEqual(set(os.listdir('/proc/self/fd')), before)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Items in the first set but not the second:
+'4'
+'6'
+'5'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)

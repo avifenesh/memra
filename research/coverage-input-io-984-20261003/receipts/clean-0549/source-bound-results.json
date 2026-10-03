@@ -1,0 +1,114 @@
+{
+  "inputs": {
+    "tools/validation_coverage.py": "a51dff0d449c03683dd34dc643e542854108f6639fdca19cd36997375f03880b",
+    "tools/test_validation_coverage_input_io.py": "89d9792db8916e200a3c1e42844dd2828666f9a732cb5d0b17a4a7c39ac83aba",
+    "tools/test_validation_coverage.py": "a2576d2dfbebe84eeaa73fad03e81991883c114a5db1f1937777d4b8135fa601",
+    "research/coverage-input-io-984-20261003/tools/controls.py": "9c87fc5b5a79ec0b7978da26c54132e8270c6108fca9ce65df554cebb38f2b0e",
+    "research/coverage-input-io-984-20261003/tools/original_validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
+  },
+  "results": [
+    {
+      "method": "test_cli_fifo_documents_refuse_without_blocking_normal_and_optimized",
+      "executed": 1,
+      "skipped": 0,
+      "expected_failures": 0,
+      "unexpected_successes": 0,
+      "raw_sha256": "b851d94ea449bf54919afb3f9be83f23a47fc7fdc50740b15154aa5af30ae0d4"
+    },
+    {
+      "method": "test_cli_open_replacement_fifo_refuses_both_document_readers",
+      "executed": 1,
+      "skipped": 0,
+      "expected_failures": 0,
+      "unexpected_successes": 0,
+      "raw_sha256": "f81173240d01171910b285f04e5d0f8238210797053371993a1b57603aefe4be"
+    },
+    {
+      "method": "test_contained_leaf_parent_and_absolute_source_aliases_remain_valid",
+      "executed": 1,
+      "skipped": 0,
+      "expected_failures": 0,
+      "unexpected_successes": 0,
+      "raw_sha256": "cab100895c43d437ae49876da04a65c4a12c36a3a44b77ef7571a60b4805e158"
+    },
+    {
+      "method": "test_descriptors_close_on_success_type_and_open_failure",
+      "executed": 1,
+      "skipped": 0,
+      "expected_failures": 0,
+      "unexpected_successes": 0,
+      "raw_sha256": "2ddc5fdb747b4859c3193f1eb4453aa9e1fa666fec45385f97a91794f69ec145"
+    },
+    {
+      "method": "test_external_cli_documents_and_aliases_work_normal_and_optimized",
+      "executed": 1,
+      "skipped": 0,
+      "expected_failures": 0,
+      "unexpected_successes": 0,
+      "raw_sha256": "1b218b36c429cb3d3864b2b2baa359ee74acd2f8ce17cdfe7e9546dedaf87692"
+    },
+    {
+      "method": "test_known_fifo_directory_socket_refuse_before_special_open",
+      "executed": 1,
+      "skipped": 0,
+      "expected_failures": 0,
+      "unexpected_successes": 0,
+      "raw_sha256": "105d3b740d96bbebefe44a80f4f5f69afc3f08bf1ff84cfbb139896d32b5fba7"
+    },
+    {
+      "method": "test_leaf_replacement_alias_refuses_both_real_consumers",
+      "executed": 1,
+      "skipped": 0,
+      "expected_failures": 0,
+      "unexpected_successes": 0,
+      "raw_sha256": "679398775158ef30c56bc1275f662f760919dd9b85930ba673c5e86c8b02b3a7"
+    },
+    {
+      "method": "test_leaf_replacement_fifo_is_nonblocking_and_refused",
+      "executed": 1,
+      "skipped": 0,
+      "expected_failures": 0,
+      "unexpected_successes": 0,
+      "raw_sha256": "84472fc6a5c54441c84a088e24d53ec0ca709f4d07966ae1f5eb87a825ad3c85"
+    },
+    {
+      "method": "test_missing_escaping_and_broken_sources_expand_or_refuse",
+      "executed": 1,
+      "skipped": 0,
+      "expected_failures": 0,
+      "unexpected_successes": 0,
+      "raw_sha256": "7e935a02f92393a9be417a7cfbe4c218780affaa55bbbe2e0790ca8c76962805"
+    },
+    {
+      "method": "test_opened_parent_keeps_original_bytes_after_path_replacement",
+      "executed": 1,
+      "skipped": 0,
+      "expected_failures": 0,
+      "unexpected_successes": 0,
+      "raw_sha256": "9b5c9ed3c8803b04bd3831c13709f1e0b15c4e3b45fbbd0972cf1d3451ad8bf4"
+    },
+    {
+      "method": "test_regular_bytes_text_and_context_preserve_semantics",
+      "executed": 1,
+      "skipped": 0,
+      "expected_failures": 0,
+      "unexpected_successes": 0,
+      "raw_sha256": "c548011e5e4305c55f60aace661758bcba9154274a1959621975c4d5b4389de1"
+    },
+    {
+      "method": "test_resolved_ancestor_replacement_refuses_opened_escape",
+      "executed": 1,
+      "skipped": 0,
+      "expected_failures": 0,
+      "unexpected_successes": 0,
+      "raw_sha256": "dcf4ce91a2cd86b90c4783dc0c643dfeac919094fd243212f343d36ad302eef6"
+    }
+  ],
+  "original_source_sha256": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+  "before_after_consumers": 4,
+  "coherent_red_groups": 8,
+  "red_fixture_errors": 0,
+  "owned_roots_removed": true,
+  "qualification": false,
+  "scope": "CPU input reader behavior; synthetic row metadata is not test/native execution"
+}
