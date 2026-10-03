@@ -121,7 +121,7 @@ pub(crate) const BACKGROUND_RESPONSES_ENV: &str = "MEMRA_BACKGROUND_RESPONSES";
 
 /// Whether the `background: true` door is armed. Read once per call; cheap, and the flag is
 /// not on a hot path (it gates one field on one translation call per request).
-fn background_door_open() -> bool {
+pub(crate) fn background_door_open() -> bool {
     match std::env::var(BACKGROUND_RESPONSES_ENV) {
         Ok(v) => {
             let v = v.trim();
@@ -901,7 +901,7 @@ fn build_output_array(
     output
 }
 
-fn job_status_str(s: crate::metering::JobStatus) -> &'static str {
+pub(crate) fn job_status_str(s: crate::metering::JobStatus) -> &'static str {
     use crate::metering::JobStatus as S;
     match s {
         S::Queued => "queued",
@@ -947,8 +947,7 @@ fn job_record_response(id: &str, record: crate::metering::JobRecord) -> Response
 }
 
 /// Admit-then-answer-immediately half of a background submission: puts the job's `Queued`
-/// placeholder into the store (the write that mints the id there, and the only point a
-/// `CapacityExceeded` byte-cap refusal can land, before any worker time is spent), arms the
+/// placeholder into the store (the write that mints the id there), arms the
 /// cancel signal, answers the caller, then spawns [`run_background_job`] to drive the rest.
 #[allow(clippy::too_many_arguments)]
 async fn handle_background_submit(
@@ -985,7 +984,7 @@ async fn handle_background_submit(
         return rl.attach(crate::ledger_rejected(receipt, resp, code, &env.id));
     }
 
-    let notify = std::sync::Arc::new(tokio::sync::Notify::new());
+    let (notify, terminal) = crate::background_jobs::Control::new();
     st.background_cancel
         .lock()
         .unwrap()
@@ -1013,9 +1012,10 @@ async fn handle_background_submit(
             guard,
             parser,
             stop_strings,
-            notify,
+            notify.cancel,
         )
         .await;
+        let _ = terminal.send(true);
         // The task's own terminal write already landed; nothing left to signal.
         cleanup_state
             .background_cancel
@@ -1046,22 +1046,23 @@ async fn handle_background_submit(
 /// sweep never evicts it because `finished_at` is stamped only by a successful terminal
 /// write. The fallback record is small enough to always fit, so it keeps the "exactly one
 /// terminal `JobStore` row" guarantee even when the real output could not be buffered.
-fn finalize_terminal_job(
+pub(crate) fn finalize_terminal_job(
     store: &dyn crate::metering::JobStore,
     id: &str,
     record: crate::metering::JobRecord,
 ) {
-    if store.put(id, record).is_err() {
+    if let Err(error) = store.put(id, record) {
+        let message = if error == crate::metering::JobStoreError::SettlementFailed {
+            "request_ledger_unavailable"
+        } else {
+            "background job output could not be buffered; result is unavailable and completion is not billed"
+        };
         let _ = store.put(
             id,
             crate::metering::JobRecord {
                 status: crate::metering::JobStatus::Failed,
                 output: None,
-                error: Some(
-                    "background job output could not be buffered (store capacity); the \
-                     result may already be billed but is not retrievable"
-                        .to_string(),
-                ),
+                error: Some(message.to_string()),
             },
         );
     }
@@ -1071,7 +1072,7 @@ fn finalize_terminal_job(
 /// `put`, so a refused write (revuto's finding on the first version of this lane:
 /// `InMemoryJobStore::put` re-checks the byte cap on every update, so a large completed or
 /// cancelled body can be refused even though the `Queued` placeholder fit) cannot leave the
-/// job stuck `InProgress` forever: already billed, `GET` answering `in_progress` forever,
+/// job stuck `InProgress` forever: `GET` answering `in_progress` forever,
 /// never TTL-evicted because `finished_at` is only stamped on a SUCCESSFUL terminal put.
 #[allow(clippy::too_many_arguments)]
 async fn run_background_job(
@@ -1088,6 +1089,26 @@ async fn run_background_job(
 ) {
     use crate::metering::{JobRecord, JobStatus, UsageCounts};
 
+    let (publication, deferred) =
+        crate::job_publication::Publication::new(st.job_store.clone(), id.clone(), receipt);
+    receipt = deferred;
+    let guarded_store = crate::job_publication::PublishingStore(publication.clone());
+    if let Err(error) = publication.initial_reservation() {
+        publication.fail_storage(error);
+        finalize_terminal_job(
+            &guarded_store,
+            &id,
+            JobRecord {
+                status: JobStatus::Failed,
+                output: None,
+                error: Some(
+                    "background output could not be buffered by the configured store".into(),
+                ),
+            },
+        );
+        drop(guard);
+        return;
+    }
     let mut text = String::new();
     let mut reasoning = String::new();
     let mut calls: Vec<crate::toolcall::ParsedToolCall> = Vec::new();
@@ -1135,7 +1156,7 @@ async fn run_background_job(
                 };
                 if !ledger_ok {
                     finalize_terminal_job(
-                        &*st.job_store,
+                        &guarded_store,
                         &id,
                         JobRecord {
                             status: JobStatus::Failed,
@@ -1161,7 +1182,7 @@ async fn run_background_job(
                     Value::Null,
                 );
                 finalize_terminal_job(
-                    &*st.job_store,
+                    &guarded_store,
                     &id,
                     JobRecord { status: JobStatus::Cancelled, output: Some(body), error: None },
                 );
@@ -1174,7 +1195,7 @@ async fn run_background_job(
                         let _ = r.reject(500, "worker_channel_closed");
                     }
                     finalize_terminal_job(
-                        &*st.job_store,
+                        &guarded_store,
                         &id,
                         JobRecord {
                             status: JobStatus::Failed,
@@ -1198,7 +1219,7 @@ async fn run_background_job(
                             );
                             let _ = r.reject(500, "request_ledger_unavailable");
                             finalize_terminal_job(
-                                &*st.job_store,
+                                &guarded_store,
                                 &id,
                                 JobRecord {
                                     status: JobStatus::Failed,
@@ -1211,6 +1232,12 @@ async fn run_background_job(
                         }
                     }
                     Event::Token { text: delta, .. } => {
+                        if let Err(error) = publication.reserve_delta(&delta, 1) {
+                            publication.fail_storage(error);
+                            finalize_terminal_job(&guarded_store, &id, JobRecord { status: JobStatus::Failed, output: None, error: Some("background output could not be buffered by the configured store".into()) });
+                            drop(guard);
+                            return;
+                        }
                         n_completion_tokens += 1;
                         usage.completion_tokens = n_completion_tokens;
                         if let Some(r) = receipt.as_mut() {
@@ -1221,7 +1248,7 @@ async fn run_background_job(
                                 );
                                 let _ = r.reject(500, "request_ledger_unavailable");
                                 finalize_terminal_job(
-                                    &*st.job_store,
+                                    &guarded_store,
                                     &id,
                                     JobRecord {
                                         status: JobStatus::Failed,
@@ -1255,14 +1282,17 @@ async fn run_background_job(
                                 crate::engine_error_code(err.class),
                             );
                         }
+                        let message = match publication.reserve_delta(&err.message, 0) {
+                            Ok(()) => err.message.clone(),
+                            Err(error) => {
+                                publication.fail_storage(error);
+                                "background error could not be buffered by the configured store".into()
+                            }
+                        };
                         finalize_terminal_job(
-                            &*st.job_store,
+                            &guarded_store,
                             &id,
-                            JobRecord {
-                                status: JobStatus::Failed,
-                                output: None,
-                                error: Some(err.message.clone()),
-                            },
+                            JobRecord { status: JobStatus::Failed, output: None, error: Some(message) },
                         );
                         drop(guard);
                         return;
@@ -1276,7 +1306,7 @@ async fn run_background_job(
                             );
                         }
                         finalize_terminal_job(
-                            &*st.job_store,
+                            &guarded_store,
                             &id,
                             JobRecord {
                                 status: JobStatus::Failed,
@@ -1331,7 +1361,7 @@ async fn run_background_job(
                             // actually billed.
                             let _ = r.reject(500, "request_ledger_unavailable");
                             finalize_terminal_job(
-                                &*st.job_store,
+                                &guarded_store,
                                 &id,
                                 JobRecord {
                                     status: JobStatus::Failed,
@@ -1362,7 +1392,7 @@ async fn run_background_job(
                             incomplete,
                         );
                         finalize_terminal_job(
-                            &*st.job_store,
+                            &guarded_store,
                             &id,
                             JobRecord { status: job_status, output: Some(body), error: None },
                         );
@@ -1389,6 +1419,15 @@ pub(crate) async fn poll_admitted(
     headers: axum::http::HeaderMap,
     axum::extract::Path(id): axum::extract::Path<String>,
 ) -> Response {
+    poll_record(st, headers, id, job_record_response).await
+}
+
+pub(crate) async fn poll_record(
+    st: AppState,
+    headers: axum::http::HeaderMap,
+    id: String,
+    render: fn(&str, crate::metering::JobRecord) -> Response,
+) -> Response {
     let tenant =
         match surfaces::authenticate_candidates(&st.api_auth, &[crate::bearer_token(&headers)]) {
             Ok(tenant) => tenant,
@@ -1402,7 +1441,7 @@ pub(crate) async fn poll_admitted(
             "invalid_request_error",
             None,
         ),
-        Some(record) => job_record_response(&id, record),
+        Some(record) => render(&id, record),
     }
 }
 
@@ -1416,6 +1455,15 @@ pub(crate) async fn cancel_admitted(
     State(st): State<AppState>,
     headers: axum::http::HeaderMap,
     axum::extract::Path(id): axum::extract::Path<String>,
+) -> Response {
+    cancel_record(st, headers, id, job_record_response).await
+}
+
+pub(crate) async fn cancel_record(
+    st: AppState,
+    headers: axum::http::HeaderMap,
+    id: String,
+    render: fn(&str, crate::metering::JobRecord) -> Response,
 ) -> Response {
     let tenant =
         match surfaces::authenticate_candidates(&st.api_auth, &[crate::bearer_token(&headers)]) {
@@ -1446,21 +1494,12 @@ pub(crate) async fn cancel_admitted(
     let notify = st.background_cancel.lock().unwrap().get(&key).cloned();
     if let Some(n) = notify {
         n.notify_one();
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(1), n.wait_terminal()).await;
     }
-    // Poll briefly for the background task's own terminal write (it is the only writer of a
-    // terminal state; see `run_background_job`). Bounded so a task that is slow to notice the
-    // signal cannot hold this handler open indefinitely; a real GPU worker's next tick is the
-    // same order of magnitude the existing deadline-miss cancel path already assumes.
-    for _ in 0..200 {
-        if let Some(r) = st.job_store.get(&key)
-            && r.status.is_terminal()
-        {
-            return job_record_response(&id, r);
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-    }
+    // The task publishes its terminal row before signaling. A remote store still
+    // requires deployment routing to the process that owns live cancellation.
     match st.job_store.get(&key) {
-        Some(r) => job_record_response(&id, r),
+        Some(r) => render(&id, r),
         None => crate::error_response(
             axum::http::StatusCode::NOT_FOUND,
             "no background job with this id",

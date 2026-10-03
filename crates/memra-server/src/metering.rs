@@ -253,7 +253,7 @@ impl JobRecord {
 }
 
 /// Why a `JobStore` call could not do what was asked.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JobStoreError {
     /// No record exists for this id (never existed, or already evicted by TTL).
     NotFound,
@@ -262,6 +262,10 @@ pub enum JobStoreError {
     AlreadyTerminal,
     /// Admitting this record would push the store's resident bytes past its configured cap.
     CapacityExceeded,
+    /// The backend cannot reserve output or guarantee guarded terminal publication.
+    PublicationUnsupported,
+    /// The terminal settlement callback failed; the result was not exposed.
+    SettlementFailed,
 }
 
 /// The seam a background job's buffered output is held behind, mirroring `Metering`: the
@@ -276,6 +280,28 @@ pub enum JobStoreError {
 /// must preserve the complete key. A shared store does not transfer a live generation or
 /// cancellation handle to another process; deployments must route cancellation to its owner.
 pub trait JobStore: Send + Sync {
+    /// Reserve this job's total working-output byte budget before retaining more
+    /// output. The existing backend cap governs the reservation; it is not a new
+    /// server policy limit. Reservations remain charged until terminal publication.
+    /// A backend lacking this guarantee refuses buffered delivery explicitly.
+    fn reserve_output(&self, _id: &str, _bytes: usize) -> Result<(), JobStoreError> {
+        Err(JobStoreError::PublicationUnsupported)
+    }
+
+    /// Check and retain the complete terminal output before invoking settlement,
+    /// then expose the record only after settlement succeeds. Failure before the
+    /// callback must not invoke it. A successful callback must have a guaranteed
+    /// publication commit; reads cannot see the result while it is settling.
+    /// Backends implement this with their transaction/reservation mechanism.
+    fn publish_terminal(
+        &self,
+        _id: &str,
+        _record: JobRecord,
+        _settle: &mut dyn FnMut() -> Result<(), String>,
+    ) -> Result<(), JobStoreError> {
+        Err(JobStoreError::PublicationUnsupported)
+    }
+
     /// Insert or update a job's record. A brand-new id may only be admitted as `Queued`
     /// (`Err(NotFound)` for any other status on an id the store does not already hold): a
     /// job's own id is minted once, by the `Queued` `put` that creates it, so any later write

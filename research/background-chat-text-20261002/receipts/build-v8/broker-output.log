@@ -1,0 +1,22 @@
+Running as unit: memra-rig-job-d9e57373fee6.service; invocation ID: c1d1620c0e7f4632be1b5e430ac70f1a
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-memra-background-chat-text-20261002/crates/memra-server)
+error[E0599]: no method named `put` found for struct `std::sync::Arc<job_store::InMemoryJobStore>` in the current scope
+     --> crates/memra-server/src/lib.rs:25233:15
+      |
+25233 |         store.put("job", metering::JobRecord::queued()).unwrap();
+      |               ^^^ method not found in `std::sync::Arc<job_store::InMemoryJobStore>`
+      |
+      = help: items from traits can only be used if the trait is in scope
+help: trait `JobStore` which provides `put` is implemented but not in scope; perhaps you want to import it
+      |
+12386 +     use crate::metering::JobStore;
+      |
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `memra-server` (lib test) due to 1 previous error
+          Finished with result: exit-code
+Main processes terminated with: code=exited, status=101/n/a
+               Service runtime: 29.302s
+             CPU time consumed: 18.712s
+                   Memory peak: 1.4G (swap: 0B)

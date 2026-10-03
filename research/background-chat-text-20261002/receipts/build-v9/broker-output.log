@@ -1,0 +1,28 @@
+Running as unit: memra-rig-job-81d46139feef.service; invocation ID: 7fc448a0d3e34366a6b9eca7f8344036
+CPU contract: background-chat-text
+.........
+----------------------------------------------------------------------
+Ran 9 tests in 0.002s
+
+OK
+unittest-floor: OK: ran 9 tests (floor 9) for tools (test_background_chat_text_gate.py)
+........................F.....................................................................
+======================================================================
+FAIL: test_binary_filter_keeps_feature_union_without_building_other_binary (test_validation_plan.FeatureProgramTests.test_binary_filter_keeps_feature_union_without_building_other_binary)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-background-chat-text-20261002/tools/test_validation_plan.py", line 596, in test_binary_filter_keeps_feature_union_without_building_other_binary
+    self.assertTrue((self.root / 'target/debug/memra-a').exists())
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: False is not true
+
+----------------------------------------------------------------------
+Ran 94 tests in 8.270s
+
+FAILED (failures=1)
+unittest-floor: FAIL: unittest exited 1 for tools (test_validation_*.py); ran 94
+          Finished with result: exit-code
+Main processes terminated with: code=exited, status=1/FAILURE
+               Service runtime: 15.268s
+             CPU time consumed: 15.169s
+                   Memory peak: 1G (swap: 0B)

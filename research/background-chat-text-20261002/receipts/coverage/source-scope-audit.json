@@ -1,0 +1,27 @@
+{
+  "source": "39b3962f4bca577a45d32911f90bc73576a68486",
+  "changed_tracked_paths": [
+    "crates/memra-server/examples/background_accounting_gate.rs",
+    "crates/memra-server/src/background_jobs.rs",
+    "crates/memra-server/src/job_publication.rs",
+    "crates/memra-server/src/job_store.rs",
+    "crates/memra-server/src/lib.rs",
+    "crates/memra-server/src/metering.rs",
+    "crates/memra-server/src/responses_api.rs",
+    "crates/memra-server/src/worker.rs",
+    "docs/API-SURFACES.md",
+    "docs/FLAGS.md",
+    "docs/SERVING.md",
+    "research/background-chat-text-20261002/PREREGISTRATION.md",
+    "research/background-chat-text-20261002/tools/vendor-profile.toml",
+    "tools/background-chat-text-gate.py",
+    "tools/test_background_chat_text_gate.py",
+    "tools/test_validation_plan.py",
+    "tools/validation_plan.py"
+  ],
+  "unchanged_native_math_build_model_defaults_support_inputs": true,
+  "worker_diff": "source-wiring unit assertion only",
+  "full_cpu_plan": "conservative full CI retained for unmodelled selector-test input",
+  "native_scope": "shared API result collectors and JobStore; two pinned Qwen3.5-9B artifacts with separate cold/cache/long cells",
+  "qualification": false
+}

@@ -1,0 +1,141 @@
+{
+  "required_edges": [
+    "door-off-type-stream-refusal",
+    "deadline-exemption-and-sync-partial-regression",
+    "tenant-key-rotation-forged-key-isolation",
+    "queued-native-dialect-original-output",
+    "zero-and-partial-cancel",
+    "worker-error-eof-unbilled",
+    "storage-capacity-failure-unbilled-once",
+    "publication-hidden-reentrant-read-and-protection",
+    "settlement-error-panic-fallback",
+    "incremental-and-escaped-encoding-bound",
+    "tool-call-budget-cut-is-incomplete",
+    "cache-restore-spec-missing-and-wrong-grid-red",
+    "phase-context-binding-red",
+    "missing-and-double-terminal-red",
+    "usage-token-envelope-corruption-red",
+    "premature-native-deadline-red",
+    "cancel-without-native-progress-red",
+    "vendor-witness-startup-and-wrong-profile-red",
+    "native-off-on-fresh-boots",
+    "native-chat-text-openai-sync-background-identity",
+    "native-token-id-identity",
+    "native-no-decoder-fields-primary-profile",
+    "native-loaded-both-arm-metadata-hash",
+    "native-tenant-terminal-404-and-rotation",
+    "native-repeat-poll-terminal-conflict",
+    "native-exactly-one-final-callback-including-shutdown",
+    "native-warm-prefix-cache-grid-and-spec-engagement",
+    "native-cached-cancel-and-sync-continuation"
+  ],
+  "tests": [
+    {
+      "id": "background-and-stock-publication-cpu-contracts",
+      "cost": 25,
+      "kind": "cpu",
+      "mandatory": true,
+      "covers": [
+        "door-off-type-stream-refusal",
+        "deadline-exemption-and-sync-partial-regression",
+        "tenant-key-rotation-forged-key-isolation",
+        "queued-native-dialect-original-output",
+        "zero-and-partial-cancel",
+        "worker-error-eof-unbilled",
+        "storage-capacity-failure-unbilled-once",
+        "publication-hidden-reentrant-read-and-protection",
+        "settlement-error-panic-fallback",
+        "incremental-and-escaped-encoding-bound",
+        "tool-call-budget-cut-is-incomplete"
+      ],
+      "inputs": {
+        "crates/memra-server/src/lib.rs": "71805436cef8954858e8f2ef4261807901d8c8a214be2aa1ac7ee217dfb3b54e",
+        "crates/memra-server/src/background_jobs.rs": "dd583894c397decc3f09913ae515a7fd92bbe063c6cbcf647176e13ab2f615c2",
+        "crates/memra-server/src/job_publication.rs": "9d02e55407ac2a3cfd88af1870704b20a76148cdbc3afd93d6e08bffbe04891f",
+        "crates/memra-server/src/job_store.rs": "0959d39889631ef4beb28e9e1604f1444336f4ce73aba919dffcfdf4aa8d9003",
+        "crates/memra-server/src/metering.rs": "f4968c848bbd6247fee0c8a4b5f05943281c728d01eb7ee90ab1bc62f809cd51",
+        "crates/memra-server/src/responses_api.rs": "df5dc4f7de5e752cbd643680f3f9451c96d367666307a883b50986f1044a7a01",
+        "crates/memra-server/src/worker.rs": "59113a3d85a2b4eedb7500c8ffb244fa0672cc1644a0a886e6316beea0dd2ddd"
+      },
+      "execution": "17 focused background tests plus individually passed stock/publication tests in the full release server suite; no ignored test is treated as executed"
+    },
+    {
+      "id": "native-collector-negative-controls",
+      "cost": 0.01,
+      "kind": "cpu",
+      "mandatory": true,
+      "covers": [
+        "cache-restore-spec-missing-and-wrong-grid-red",
+        "phase-context-binding-red",
+        "missing-and-double-terminal-red",
+        "usage-token-envelope-corruption-red",
+        "premature-native-deadline-red",
+        "cancel-without-native-progress-red",
+        "vendor-witness-startup-and-wrong-profile-red"
+      ],
+      "inputs": {
+        "tools/background-chat-text-gate.py": "8d128c89774d2e48aac356a6cd311a7a8c8402c38c9afd7be363280b5a784b08",
+        "tools/test_background_chat_text_gate.py": "bcfed7d2129a13c71013090706cfee2c1c8d647d3487f1879948181fb6f338df",
+        "tools/cache_qualification.py": "48bd67dda86e39ff4836c8eee619b45ae9f94b4922a37e9ea48be39a9b489b15",
+        "research/background-chat-text-20261002/tools/vendor-profile.toml": "a02a22ff5d95c0dedcd18305c9903a7173260a60d28d6a3b67ffc9e57a7911e3",
+        "tools/validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+      }
+    },
+    {
+      "id": "native-short-v2 + native-cached-v1",
+      "cost": 30,
+      "kind": "gpu",
+      "mandatory": true,
+      "covers": [
+        "native-off-on-fresh-boots",
+        "native-chat-text-openai-sync-background-identity",
+        "native-token-id-identity",
+        "native-no-decoder-fields-primary-profile",
+        "native-loaded-both-arm-metadata-hash",
+        "native-tenant-terminal-404-and-rotation",
+        "native-repeat-poll-terminal-conflict",
+        "native-exactly-one-final-callback-including-shutdown",
+        "native-warm-prefix-cache-grid-and-spec-engagement",
+        "native-cached-cancel-and-sync-continuation"
+      ],
+      "controls": [
+        "native-collector-negative-controls"
+      ],
+      "inputs": {
+        "crates/memra-server/src/lib.rs": "71805436cef8954858e8f2ef4261807901d8c8a214be2aa1ac7ee217dfb3b54e",
+        "crates/memra-server/src/background_jobs.rs": "dd583894c397decc3f09913ae515a7fd92bbe063c6cbcf647176e13ab2f615c2",
+        "crates/memra-server/src/job_publication.rs": "9d02e55407ac2a3cfd88af1870704b20a76148cdbc3afd93d6e08bffbe04891f",
+        "crates/memra-server/src/job_store.rs": "0959d39889631ef4beb28e9e1604f1444336f4ce73aba919dffcfdf4aa8d9003",
+        "crates/memra-server/src/metering.rs": "f4968c848bbd6247fee0c8a4b5f05943281c728d01eb7ee90ab1bc62f809cd51",
+        "crates/memra-server/src/responses_api.rs": "df5dc4f7de5e752cbd643680f3f9451c96d367666307a883b50986f1044a7a01",
+        "crates/memra-server/src/worker.rs": "59113a3d85a2b4eedb7500c8ffb244fa0672cc1644a0a886e6316beea0dd2ddd",
+        "tools/background-chat-text-gate.py": "8d128c89774d2e48aac356a6cd311a7a8c8402c38c9afd7be363280b5a784b08",
+        "tools/test_background_chat_text_gate.py": "bcfed7d2129a13c71013090706cfee2c1c8d647d3487f1879948181fb6f338df",
+        "tools/cache_qualification.py": "48bd67dda86e39ff4836c8eee619b45ae9f94b4922a37e9ea48be39a9b489b15",
+        "research/background-chat-text-20261002/tools/vendor-profile.toml": "a02a22ff5d95c0dedcd18305c9903a7173260a60d28d6a3b67ffc9e57a7911e3",
+        "tools/validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+      },
+      "scope": {
+        "model": "Qwen3.5-9B",
+        "artifact": "52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de",
+        "hardware": "GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d",
+        "numeric_program": "Memra native engine tree 2618cb81aadf10183131fea9805234d9c9bacb08; checkpoint bytes 52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de"
+      }
+    }
+  ],
+  "context": {
+    "model": "Qwen3.5-9B",
+    "artifact": "52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de",
+    "hardware": "GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d",
+    "numeric_program": "Memra native engine tree 2618cb81aadf10183131fea9805234d9c9bacb08; checkpoint bytes 52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de"
+  },
+  "mandatory_regressions_outside_reduction": [
+    "complete memra-server release library suite, strict release all-target Clippy, server+observer build, fmt/diff/flags census"
+  ],
+  "omissions": {
+    "other-native-model-families": "Transport and result storage changed; native math/model/default/support sources did not. Native evidence is scoped to the declared artifacts and is not transferred to another family.",
+    "full-kernel-multi-card-battery": "No kernel, FFI, numerical execution, compiler default, topology or qualification tolerance changed. worker.rs diff changes only a source-wiring unit assertion.",
+    "paid-compute-or-production": "Outside owner scope and cash ceiling is zero."
+  },
+  "qualification": false
+}

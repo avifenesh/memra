@@ -1105,8 +1105,9 @@ billed. Everything that is OUR fault bills zero (the census below).
 ### Background delivery for long non-streaming requests (`background: true`)
 
 `MEMRA_BACKGROUND_RESPONSES` (default OFF) enables background delivery on
-`POST /v1/responses`. Set `background: true` and omit `stream` or set it to false.
-The response returns a `queued` envelope with an id. Poll `GET /v1/responses/{id}`
+`POST /v1/responses`, `POST /v1/chat/completions` and `POST /v1/completions`.
+Set `background: true` and omit `stream` or set it to false. The response returns
+`status: "queued"` with the original request id. Poll `GET /v1/responses/{id}`
 for the original output. Terminal states are `completed`, `incomplete`, `cancelled`
 and `failed`; an output-token or context limit remains an explicit incomplete result.
 
@@ -1122,7 +1123,13 @@ Keys for the same tenant share access. The open-server and single-key modes reta
 their existing `default` tenant. Storage keys are opaque, length-prefixed tenant/id
 pairs; clients continue to use the public response id.
 
-`POST /v1/responses/{id}/cancel` signals the owning task, which closes its worker
+Chat/text jobs use `GET /v1/jobs/{id}` and `POST /v1/jobs/{id}/cancel`.
+Pending job bodies carry identity and status; terminal bodies retain the submitting
+API's chat, OpenAI-text or native-text result fields and add `id`/`status`.
+Native text keeps its token ids, token counts, stop reason and elapsed time. Polling
+returns the stored original body, including partial cancellation errors.
+
+The cancel route signals the owning task, which closes its worker
 channel and preserves the produced partial output. A terminal job returns 409.
 The task settles one receipt: `complete` for a normal finish,
 `complete_deadline_partial` for cancellation after tokens, or the named unbilled
@@ -1132,9 +1139,14 @@ worker errors remain failures rather than successful empty responses.
 The stock result store is in-memory and process-local. Terminal results expire after
 `MEMRA_BACKGROUND_JOB_TTL_SECS` (default 900 seconds). The approximate resident cap
 is `MEMRA_BACKGROUND_JOB_MAX_BYTES` (default 64 MiB). Each admitted record reserves
-at least 256 bytes, enough for the fixed terminal storage-failure record. If a final
-output exceeds the available cap, polling reports failure; accounting may already
-have settled, so this is not a promise of a refund. The TTL starts at terminal state,
+at least 256 bytes, enough for the fixed terminal storage-failure record.
+Working output reserves a conservative proportional budget before buffering, and
+encoding uses a counted, capped writer. If output cannot fit, polling reports failure
+and the receipt settles `background_storage_failed` unbilled. Completed and partial
+usage settles only after the configured store reserves terminal publication. Custom
+stores must implement output reservation and guarded publication; otherwise background
+delivery fails visibly before billing. This is approximate accounting, not an exact
+process RSS limit. The TTL starts at terminal state,
 not submission. Polls do not consume results.
 
 Deployment binaries can pass their own `Arc<dyn JobStore>` through
@@ -1144,10 +1156,11 @@ terminal-write and capacity semantics. Shared durable results do not transfer a
 live worker or its cancellation signal. Route in-flight cancellation to the process
 that owns generation; restart recovery is deployment-owned.
 
-The initial implementation covers the Responses dialect only. The design's
-`/v1/jobs/{id}` routes and background delivery for `/v1/chat/completions` and
-`/v1/completions` remain a separate follow-up #914. Clients needing this mode
-must use `/v1/responses`. No model support state or serving default changes here.
+Chat/text delivery (#914) uses the existing non-stream collector and receipt
+callbacks. Cancellation waits on terminal publication for at most one second.
+A separate store still requires routing cancellation to the process owning the
+live task. The switch, retention and capacity remain the existing values; #550
+remains open for the owner's policy decision.
 
 ### Fault attribution: which outcomes may bill
 

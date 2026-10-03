@@ -1,0 +1,49 @@
+[server] build: memra-0.138.0-76fbd5649d68 (id: source-tree, git: 39b3962f4bca)
+[env-audit] warning: 3 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: MEMRA_CI_LOCK, MEMRA_CI_LOCK_HELD, MEMRA_RIG_LOCK_FD. Left alone: launchers and gate scripts own names outside the engine's families.
+[auth] keyring loaded: 3 inline key(s)
+[server] OpenRouter metadata loaded: 1 model(s), sha256 a02a22ff5d95c0dedcd18305c9903a7173260a60d28d6a3b67ffc9e57a7911e3 from /home/avifenesh/.local/state/memra-rig-darklanes-20261002/scratch/B/vendor-profile.toml
+[server] starting; models config = [("q9", "/data/ai-ml/models/qwen3.5-9b-judge-q8_0.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "q9" <- /data/ai-ml/models/qwen3.5-9b-judge-q8_0.gguf
+[tensor-contract] bound 427 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "q9": 32 layers, eos=248046, stop=[248046]
+[worker] q9: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="q9" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] q9: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[admission] "q9": plain 14848 B/token, spec 14848 B/token; fixed residual learns from effective-free deltas
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[server] worker ready; serving models: ["q9"]
+[server] listening on http://127.0.0.1:18124
+[meter] admit id=chatcmpl-96ae41990de102a25c2a24517ca2c617 tenant=acme lane=interactive model="q9"
+[admission] request cost: model="q9" ctx=24086 path=plain = 14848 B/token x ctx + 8MB prefill-workspace + 0MB fixed = 366MB
+[admission] fixed residual high-water: model="q9" 103MB (observed 460MB at ctx 24030 path=plain)
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+GATE_PROGRESS {"id":"chatcmpl-96ae41990de102a25c2a24517ca2c617","completion_tokens":32}
+[fa-pool] grow #1 dev=0 o_len 4096 -> 49152 ml_len 16 -> 192 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 49152 -> 98304 ml_len 192 -> 384 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 98304 -> 196608 ml_len 384 -> 768 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 196608 -> 393216 ml_len 768 -> 1536 (retired kept, zero=false)
+[fa-pool] grow #5 dev=0 o_len 393216 -> 786432 ml_len 1536 -> 3072 (retired kept, zero=false)
+[fa-pool] grow #6 dev=0 o_len 786432 -> 1572864 ml_len 3072 -> 6144 (retired kept, zero=false)
+[constrained] q9: 18001 masked steps, mask total 161.69 ms (0.009 ms/step)
+GATE_RECEIPT {"id":"chatcmpl-96ae41990de102a25c2a24517ca2c617","tenant":"acme","outcome":"complete","status":200,"code":"","prompt_tokens":22,"cached_tokens":0,"completion_tokens":18001}
+[meter] admit id=chatcmpl-a3f243354c5343afa3a26b5eeba81329 tenant=acme lane=interactive model="q9"
+[admission] request cost: model="q9" ctx=24086 path=plain = 14848 B/token x ctx + 8MB prefill-workspace + 103MB fixed = 469MB
+GATE_PROGRESS {"id":"chatcmpl-a3f243354c5343afa3a26b5eeba81329","completion_tokens":32}
+[constrained] q9: 18001 masked steps, mask total 152.03 ms (0.008 ms/step)
+GATE_RECEIPT {"id":"chatcmpl-a3f243354c5343afa3a26b5eeba81329","tenant":"acme","outcome":"complete","status":200,"code":"","prompt_tokens":22,"cached_tokens":0,"completion_tokens":18001}
+GATE_STORED {"id":"chatcmpl-a3f243354c5343afa3a26b5eeba81329","status":"Completed"}
+[meter] admit id=chatcmpl-de501fc6657f365fca6c7d542e3d81fc tenant=acme lane=interactive model="q9"
+GATE_PROGRESS {"id":"chatcmpl-de501fc6657f365fca6c7d542e3d81fc","completion_tokens":32}
+GATE_RECEIPT {"id":"chatcmpl-de501fc6657f365fca6c7d542e3d81fc","tenant":"acme","outcome":"cancel_partial","status":200,"code":"cancelled","prompt_tokens":22,"cached_tokens":0,"completion_tokens":32}
+GATE_STORED {"id":"chatcmpl-de501fc6657f365fca6c7d542e3d81fc","status":"Cancelled"}
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[abort] client disconnected: model "q9", prompt 22 (0 cached, 54 fed), 32 generated — billed to abort point, 0.57s
+[server] GPU worker shutdown complete

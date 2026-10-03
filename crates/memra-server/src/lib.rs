@@ -95,6 +95,7 @@ mod anthropic;
 /// `/v1/audio/*`: the streaming-transcription surface — session lifecycle, typed admission
 /// shedding, and the declared ASR decode on the wire (lane/audio-endpoint-g8).
 mod audio_api;
+mod background_jobs;
 /// The `system_fingerprint` identity, shared with `build.rs` (which `include!`s this same
 /// file to bake the value). Compiled into the crate so the fingerprint tests can re-derive
 /// the id from the working tree instead of pinning a second copy of the algorithm.
@@ -109,6 +110,7 @@ mod histogram;
 mod http_metrics;
 mod hybrid_telemetry;
 mod image_fetch;
+mod job_publication;
 /// In-memory reference implementation of `metering::JobStore` (memra#550,
 /// `docs/decisions/COMPLETE-RESULT-PATH-V1.md`): the bounded, TTL'd buffer a background
 /// (`background: true`) job's output would live in between the worker finishing and the
@@ -2106,7 +2108,7 @@ struct AppState {
     /// means either no background job with that id exists, or its task already finished; the
     /// `JobStore`'s own terminal-status check is what actually answers 404 / already-terminal,
     /// this map is only the stop signal.
-    background_cancel: Arc<Mutex<HashMap<String, Arc<tokio::sync::Notify>>>>,
+    background_cancel: Arc<Mutex<HashMap<String, background_jobs::Control>>>,
 }
 
 impl AppState {
@@ -3314,6 +3316,9 @@ struct StreamOptions {
 #[derive(Deserialize)]
 struct CompletionReq {
     model: String,
+    /// Buffered complete-result delivery. Uses the default-OFF background door.
+    #[serde(default = "background_jobs::default_background")]
+    background: serde_json::Value,
     #[serde(default)]
     prompt: String,
     /// raw token-id prompt (the exact-token validation-gate path; bypasses the tokenizer).
@@ -3521,6 +3526,9 @@ impl StopSequences {
 #[derive(Deserialize)]
 struct ChatCompletionReq {
     model: String,
+    /// Buffered complete-result delivery. Incompatible with streaming.
+    #[serde(default = "background_jobs::default_background")]
+    background: serde_json::Value,
     messages: Vec<ChatMessage>,
     /// Omitted (gap-scan F2) => context-bounded (session ctx - prompt, model-capped), never a
     /// silent 128-token truncation. Under `MEMRA_ADMIT_BY_MEMORY=1` the bound is the charged open
@@ -6301,6 +6309,11 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
         .route(
             "/v1/responses/:id/cancel",
             post(responses_api::cancel_admitted),
+        )
+        .route("/v1/jobs/:id", get(background_jobs::poll_admitted))
+        .route(
+            "/v1/jobs/:id/cancel",
+            post(background_jobs::cancel_admitted),
         )
         // Audio (lane/audio-endpoint-g8). `transcriptions` is the OpenAI-named batch surface
         // and the target of G7's live half; the `sessions` trio is the streaming lane
@@ -10249,6 +10262,10 @@ async fn completions_with_admission(
 ) -> Response {
     http_metrics::bind_model(canonical_model_id(&st.models, &req.model));
     let env = Envelope::new(false);
+    if let Err(message) = background_jobs::validate(&req.background, req.stream) {
+        return with_request_id(&env.id, bad_request(message, Some("background")));
+    }
+    let background = req.background == serde_json::Value::Bool(true);
     if let Err(msg) = req.stop.validate() {
         return with_request_id(&env.id, bad_request(&msg, Some("stop")));
     }
@@ -10307,7 +10324,7 @@ async fn completions_with_admission(
     }
     // Request deadline (lane/deadline-billing): validated with the other request params
     // (a named 400 costs no slot and opens no receipt), armed from this point on.
-    let deadline = match parse_timeout_ms(req.timeout_ms.as_ref(), req.stream) {
+    let deadline = match parse_timeout_ms(req.timeout_ms.as_ref(), req.stream || background) {
         Ok(ms) => RequestDeadline::starting_now(ms),
         Err(msg) => return with_request_id(&env.id, bad_request(&msg, Some("timeout_ms"))),
     };
@@ -10345,7 +10362,11 @@ async fn completions_with_admission(
     request.request_id = env.id.clone();
     // The wire deadline rides to the worker beside the receipt identity, so the
     // first-token deadline gate judges the REMAINING deadline at its own tick.
-    request.wire_deadline = Some(deadline.at.into_std());
+    request.wire_deadline = if background {
+        None
+    } else {
+        Some(deadline.at.into_std())
+    };
     if let Err((message, param)) =
         apply_model_request_limits(&mut request, md.models.get(&model), st.caps.get(&model))
     {
@@ -10357,7 +10378,7 @@ async fn completions_with_admission(
     // threw away every token it had generated.
     if let Err(msg) = nonstream_deadline_gate(
         &request,
-        req.stream,
+        req.stream || background,
         deadline,
         req.max_tokens.is_some(),
         st.budget_tokenizers
@@ -10486,6 +10507,22 @@ async fn completions_with_admission(
         }
     };
 
+    if background {
+        return background_jobs::submit(
+            st.clone(),
+            tenant.tenant,
+            env,
+            model,
+            false,
+            rx,
+            receipt,
+            guard,
+            rl,
+            None,
+            stop_strings,
+        )
+        .await;
+    }
     let resp = if stream {
         // Streaming: timeout_ms bounds TIME-TO-FIRST-TOKEN only. Once the first token has
         // streamed the parameter is spent — a client that walks away mid-stream is the
@@ -10837,6 +10874,10 @@ async fn chat_completions_with_admission(
 ) -> Response {
     http_metrics::bind_model(canonical_model_id(&st.models, &req.model));
     let env = Envelope::new(true);
+    if let Err(message) = background_jobs::validate(&req.background, req.stream) {
+        return with_request_id(&env.id, bad_request(message, Some("background")));
+    }
+    let background = req.background == serde_json::Value::Bool(true);
     // Canonicalize before ANY downstream use: metadata limits, caps, cache namespace, ledger
     // pricing and the worker's roster all key off this id and must agree on one spelling.
     // An id that resolves to nothing refuses HERE — before budget admission (see
@@ -10894,7 +10935,7 @@ async fn chat_completions_with_admission(
     }
     // Request deadline (lane/deadline-billing): validated with the other request params
     // (a named 400 costs no slot and opens no receipt), armed from this point on.
-    let deadline = match parse_timeout_ms(req.timeout_ms.as_ref(), req.stream) {
+    let deadline = match parse_timeout_ms(req.timeout_ms.as_ref(), req.stream || background) {
         Ok(ms) => RequestDeadline::starting_now(ms),
         Err(msg) => return with_request_id(&env.id, bad_request(&msg, Some("timeout_ms"))),
     };
@@ -10966,7 +11007,11 @@ async fn chat_completions_with_admission(
     };
     plan.request.cache_ns = cache_ns;
     plan.request.request_id = env.id.clone();
-    plan.request.wire_deadline = Some(deadline.at.into_std());
+    plan.request.wire_deadline = if background {
+        None
+    } else {
+        Some(deadline.at.into_std())
+    };
     if let Err((message, param)) = apply_model_request_limits(
         &mut plan.request,
         md.models.get(&model),
@@ -10978,7 +11023,7 @@ async fn chat_completions_with_admission(
     // one implementation, every entry path). See nonstream_deadline_gate.
     if let Err(msg) = nonstream_deadline_gate(
         &plan.request,
-        stream,
+        stream || background,
         deadline,
         declared_max_tokens,
         st.budget_tokenizers
@@ -11182,6 +11227,22 @@ async fn chat_completions_with_admission(
             );
         }
     };
+    if background {
+        return background_jobs::submit(
+            st.clone(),
+            tenant.tenant,
+            env,
+            model,
+            true,
+            rx,
+            receipt,
+            guard,
+            rl,
+            plan.parser,
+            stop_strings,
+        )
+        .await;
+    }
     let resp = if stream {
         // Streaming: timeout_ms bounds TIME-TO-FIRST-TOKEN only — see `completions`.
         let mut receipt = receipt;
@@ -11791,7 +11852,10 @@ struct BlockingPayload<'a> {
     deadline_error: Option<serde_json::Value>,
 }
 
-fn blocking_payload(p: BlockingPayload<'_>) -> Response {
+fn blocking_payload(
+    p: BlockingPayload<'_>,
+    output: Option<&job_publication::Publication>,
+) -> Response {
     if p.deadline_error.is_some()
         && let Some(observation) = http_metrics::current()
     {
@@ -11840,11 +11904,21 @@ fn blocking_payload(p: BlockingPayload<'_>) -> Response {
                           "finish_reason": finish }],
             "usage": usage_json(n_prompt, n_tokens, n_cached, elapsed_s, spec)
         });
+        if output.is_some() {
+            body["status"] = json!(if stop_reason_to_finish(&stop_reason) == "length" {
+                "incomplete"
+            } else {
+                "completed"
+            });
+        }
         if let Some(err) = deadline_error {
-            body["choices"][0]["native_finish_reason"] = json!("deadline_exceeded");
+            body["choices"][0]["native_finish_reason"] = err
+                .get("code")
+                .cloned()
+                .unwrap_or_else(|| json!("deadline_exceeded"));
             body["error"] = err;
         }
-        return Json(env.stamp(body)).into_response();
+        return buffered_json(&env.stamp(body), output);
     }
     if openai_compat() {
         let mut body = json!({
@@ -11854,23 +11928,64 @@ fn blocking_payload(p: BlockingPayload<'_>) -> Response {
             "usage": usage_json(n_prompt, n_tokens, n_cached, elapsed_s, spec)
         });
         if let Some(err) = deadline_error {
-            body["choices"][0]["native_finish_reason"] = json!("deadline_exceeded");
+            body["choices"][0]["native_finish_reason"] = err
+                .get("code")
+                .cloned()
+                .unwrap_or_else(|| json!("deadline_exceeded"));
             body["error"] = err;
         }
-        return Json(env.stamp(body)).into_response();
+        return buffered_json(&env.stamp(body), output);
     }
-    Json(CompletionResp {
-        model,
-        text,
-        tokens,
-        stop_reason,
-        error: deadline_error,
-        n_tokens,
-        prompt_tokens: n_prompt,
-        cached_tokens: n_cached,
-        elapsed_s,
-    })
-    .into_response()
+    buffered_json(
+        &CompletionResp {
+            model,
+            text,
+            tokens,
+            stop_reason,
+            error: deadline_error,
+            n_tokens,
+            prompt_tokens: n_prompt,
+            cached_tokens: n_cached,
+            elapsed_s,
+        },
+        output,
+    )
+}
+
+fn buffered_json<T: serde::Serialize>(
+    value: &T,
+    output: Option<&job_publication::Publication>,
+) -> Response {
+    match output {
+        Some(output) => match output.encode(value) {
+            Ok(bytes) => (
+                [(axum::http::header::CONTENT_TYPE, "application/json")],
+                bytes,
+            )
+                .into_response(),
+            Err(error) => output.storage_response(error),
+        },
+        None => Json(value).into_response(),
+    }
+}
+
+fn buffered_engine_error(
+    e: &worker::EngineError,
+    output: Option<&job_publication::Publication>,
+) -> Response {
+    if let Some(output) = output
+        && let Err(error) = output.reserve_delta(&e.message, 0)
+    {
+        return output.storage_response(error);
+    }
+    let mut response = buffered_json(&engine_error_body(e), output);
+    if response.status().is_success() {
+        *response.status_mut() = class_http(e.class).0;
+    }
+    retry_contract_response(
+        response,
+        e.retry_after_s.or_else(|| class_retry_after_s(e.class)),
+    )
 }
 
 /// Collect a complete non-streaming response.
@@ -11899,6 +12014,34 @@ fn blocking_payload(p: BlockingPayload<'_>) -> Response {
 /// answers 408 unbilled — there is nothing to deliver.
 #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
 async fn blocking_response_with_receipt(
+    rx: worker::EventReceiver,
+    model: String,
+    chat: bool,
+    stop_strings: Vec<String>,
+    parser: Option<ToolStreamParser>,
+    env: Envelope,
+    receipt: &mut Option<Box<dyn metering::Receipt>>,
+    deadline: Option<RequestDeadline>,
+) -> Response {
+    collect_blocking_response(
+        rx,
+        model,
+        chat,
+        stop_strings,
+        parser,
+        env,
+        receipt,
+        deadline,
+        None,
+        None,
+    )
+    .await
+}
+
+/// The same collector for synchronous and buffered delivery. Background jobs add
+/// a cancellation signal while retaining the dialect renderer and receipt rules.
+#[allow(clippy::too_many_arguments)] // the same request resources, plus cancellation
+pub(crate) async fn collect_blocking_response(
     mut rx: worker::EventReceiver,
     model: String,
     chat: bool,
@@ -11907,6 +12050,8 @@ async fn blocking_response_with_receipt(
     env: Envelope,
     receipt: &mut Option<Box<dyn metering::Receipt>>,
     deadline: Option<RequestDeadline>,
+    cancel: Option<Arc<tokio::sync::Notify>>,
+    output: Option<&job_publication::Publication>,
 ) -> Response {
     let mut text = String::new();
     let mut reasoning = String::new();
@@ -12013,10 +12158,61 @@ async fn blocking_response_with_receipt(
                         elapsed_s,
                         spec: None,
                         deadline_error: Some(err_obj),
-                    });
+                    }, output);
                 }
             },
-            None => rx.recv().await,
+            None => match cancel.as_ref() {
+                None => rx.recv().await,
+                Some(cancel) => tokio::select! {
+                    biased;
+                    () = cancel.notified() => {
+                        drop(rx);
+                        if seen_tokens == 0 {
+                            if let Some(receipt) = receipt.as_mut()
+                                && let Err(err) = receipt.settle_unbilled("cancelled", 409, "cancelled")
+                            {
+                                eprintln!("[ledger] ERROR: request {} cancellation receipt failed: {err}", env.id);
+                                let _ = receipt.reject(500, "request_ledger_unavailable");
+                                return request_ledger_error_response();
+                            }
+                            return error_response_coded(
+                                StatusCode::CONFLICT, "background generation cancelled before output",
+                                "invalid_request_error", None, Some("cancelled"),
+                            );
+                        }
+                        if let Some(p) = parser.as_mut() {
+                            consume(p.finish(), &mut text, &mut reasoning, &mut calls);
+                        }
+                        truncate_at_stop(&mut text, &stop_strings);
+                        let elapsed_s = started.elapsed().as_secs_f64();
+                        if let Some(receipt) = receipt.as_mut()
+                            && let Err(err) = receipt.complete_deadline_partial(
+                                metering::UsageCounts {
+                                    prompt_tokens: seen_prompt as u64,
+                                    cached_prompt_tokens: seen_cached as u64,
+                                    completion_tokens: seen_tokens as u64,
+                                }, elapsed_s,
+                            )
+                        {
+                            eprintln!("[ledger] ERROR: request {} partial-cancel receipt failed: {err}", env.id);
+                            let _ = receipt.reject(500, "request_ledger_unavailable");
+                            return request_ledger_error_response();
+                        }
+                        return blocking_payload(BlockingPayload {
+                            env: &env, model, chat, finish: "error", text, reasoning, calls, tokens,
+                            stop_reason: "Cancelled".to_string(),
+                            n_prompt: seen_prompt, n_tokens: seen_tokens, n_cached: seen_cached,
+                            elapsed_s, spec: None,
+                            deadline_error: Some(json!({
+                                "message": "background generation cancelled; the produced partial is retained",
+                                "code": "cancelled",
+                                "metadata": {"error_type": "cancelled", "provider_name": "memra"},
+                            })),
+                        }, output);
+                    }
+                    ev = rx.recv() => ev,
+                },
+            },
         };
         let Some(ev) = ev else { break };
         match ev {
@@ -12038,6 +12234,11 @@ async fn blocking_response_with_receipt(
                 seen_cached = n_cached;
             }
             Event::Token { id, text: delta } => {
+                if let Some(output) = output.as_ref()
+                    && let Err(error) = output.reserve_delta(&delta, 1)
+                {
+                    return output.storage_response(error);
+                }
                 if let Some(receipt) = receipt.as_mut()
                     && let Err(err) = receipt.record_completion_token()
                 {
@@ -12059,7 +12260,14 @@ async fn blocking_response_with_receipt(
                     None => text.push_str(&delta),
                 }
             }
-            Event::TokenSnapshot(ids) => tokens = ids,
+            Event::TokenSnapshot(ids) => {
+                if let Some(output) = output
+                    && let Err(error) = output.reserve_snapshot(ids.len())
+                {
+                    return output.storage_response(error);
+                }
+                tokens = ids;
+            }
             Event::DeadlineExceeded { ms } => {
                 if let Some(receipt) = receipt.as_mut()
                     && let Err(ledger_err) = receipt.settle_unbilled(
@@ -12112,23 +12320,26 @@ async fn blocking_response_with_receipt(
                     let _ = receipt.reject(500, "request_ledger_unavailable");
                     return request_ledger_error_response();
                 }
-                return blocking_payload(BlockingPayload {
-                    env: &env,
-                    model,
-                    chat,
-                    finish,
-                    text,
-                    reasoning,
-                    calls,
-                    tokens,
-                    stop_reason,
-                    n_prompt,
-                    n_tokens,
-                    n_cached,
-                    elapsed_s,
-                    spec,
-                    deadline_error: None,
-                });
+                return blocking_payload(
+                    BlockingPayload {
+                        env: &env,
+                        model,
+                        chat,
+                        finish,
+                        text,
+                        reasoning,
+                        calls,
+                        tokens,
+                        stop_reason,
+                        n_prompt,
+                        n_tokens,
+                        n_cached,
+                        elapsed_s,
+                        spec,
+                        deadline_error: None,
+                    },
+                    output,
+                );
             }
             Event::Error(err) => {
                 // G6: the class decides the status. This single line used to be
@@ -12146,7 +12357,7 @@ async fn blocking_response_with_receipt(
                     );
                     return request_ledger_error_response();
                 }
-                return engine_error_response(&err);
+                return buffered_engine_error(&err, output);
             }
         }
     }
@@ -12167,7 +12378,7 @@ async fn blocking_response_with_receipt(
         );
         return request_ledger_error_response();
     }
-    engine_error_response(&e)
+    buffered_engine_error(&e, output)
 }
 
 #[cfg(test)]
@@ -12279,6 +12490,7 @@ mod tests {
         limited: bool,
         reserve_script: std::sync::Mutex<std::collections::VecDeque<ReserveScript>>,
         captures: bool,
+        token_observed: Option<Arc<tokio::sync::Notify>>,
     }
 
     impl MockMetering {
@@ -12289,6 +12501,7 @@ mod tests {
                 limited: true,
                 reserve_script: std::sync::Mutex::new(std::collections::VecDeque::new()),
                 captures: false,
+                token_observed: None,
             })
         }
 
@@ -12299,6 +12512,7 @@ mod tests {
                 limited: true,
                 reserve_script: std::sync::Mutex::new(script.into()),
                 captures: false,
+                token_observed: None,
             })
         }
 
@@ -12309,6 +12523,7 @@ mod tests {
                 limited: true,
                 reserve_script: std::sync::Mutex::new(std::collections::VecDeque::new()),
                 captures: true,
+                token_observed: None,
             })
         }
 
@@ -12370,6 +12585,7 @@ mod tests {
                 cached: 0,
                 completion: 0,
                 finalized: false,
+                token_observed: self.token_observed.clone(),
             })
         }
 
@@ -12393,6 +12609,7 @@ mod tests {
         cached: u64,
         completion: u64,
         finalized: bool,
+        token_observed: Option<Arc<tokio::sync::Notify>>,
     }
 
     impl metering::Receipt for MockReceipt {
@@ -12429,6 +12646,9 @@ mod tests {
         fn record_completion_token(&mut self) -> Result<(), String> {
             self.completion += 1;
             self.events.lock().unwrap().push(MeterEvent::Token);
+            if let Some(token) = &self.token_observed {
+                token.notify_one();
+            }
             Ok(())
         }
 
@@ -17246,6 +17466,8 @@ default_reasoning_effort = "always"
                         cached: 0,
                         completion: 0,
                         finalized: false,
+
+                        token_observed: None,
                     };
                     let env = Envelope::new(chat);
                     let lines = sse_data_lines(
@@ -18843,6 +19065,8 @@ default_reasoning_effort = "always"
             cached: 0,
             completion: 0,
             finalized: false,
+
+            token_observed: None,
         });
         let (tx, rx) = worker::event_channel();
         tx.send(Event::PromptUsage {
@@ -18892,6 +19116,8 @@ default_reasoning_effort = "always"
             cached: 0,
             completion: 0,
             finalized: false,
+
+            token_observed: None,
         }));
         let shared = prefill_receipt::SharedReceipt::wrap(&mut receipt);
         let (tx, rx) = worker::event_channel();
@@ -18957,6 +19183,8 @@ default_reasoning_effort = "always"
             cached: 0,
             completion: 0,
             finalized: false,
+
+            token_observed: None,
         }));
         let shared = prefill_receipt::SharedReceipt::wrap(&mut receipt);
         let (tx, rx) = worker::event_channel();
@@ -23317,6 +23545,23 @@ temperature = 0.6
             terminal: Arc<tokio::sync::Notify>,
         }
         impl JobStore for Store {
+            fn reserve_output(&self, id: &str, bytes: usize) -> Result<(), JobStoreError> {
+                self.inner.reserve_output(id, bytes)
+            }
+            fn publish_terminal(
+                &self,
+                id: &str,
+                record: JobRecord,
+                settle: &mut dyn FnMut() -> Result<(), String>,
+            ) -> Result<(), JobStoreError> {
+                let terminal = record.status.is_terminal();
+                self.inner.publish_terminal(id, record, settle)?;
+                if terminal {
+                    self.terminal.notify_one();
+                }
+                Ok(())
+            }
+
             fn put(&self, key: &str, record: JobRecord) -> Result<(), JobStoreError> {
                 let terminal = record.status.is_terminal();
                 self.inner.put(key, record)?;
@@ -23952,6 +24197,8 @@ temperature = 0.6
         let h = health.clone();
         let worker_saw_cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let worker_saw_cancel2 = worker_saw_cancel.clone();
+        let cancelled = Arc::new(tokio::sync::Notify::new());
+        let cancelled2 = cancelled.clone();
         std::thread::spawn(move || {
             h.mark_ready();
             while let Ok(Cmd::Generate(req)) = cmd_rx.recv() {
@@ -23968,13 +24215,12 @@ temperature = 0.6
                 // Never sends Done: this job is cancelled before the worker would finish.
                 // The cancel signal is `rx` being dropped on the consumer side; this loop
                 // proves it happened by watching the sender's own channel close.
-                for _ in 0..5_000 {
-                    if req.tx.is_closed() {
-                        worker_saw_cancel2.store(true, std::sync::atomic::Ordering::SeqCst);
-                        break;
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(1));
-                }
+                tokio::runtime::Builder::new_current_thread()
+                    .build()
+                    .unwrap()
+                    .block_on(req.tx.closed());
+                worker_saw_cancel2.store(true, std::sync::atomic::Ordering::SeqCst);
+                cancelled2.notify_one();
             }
         });
         for _ in 0..2_000 {
@@ -24020,6 +24266,9 @@ temperature = 0.6
             "the partial output actually produced must be preserved, never dropped: {cb}"
         );
 
+        tokio::time::timeout(std::time::Duration::from_secs(1), cancelled.notified())
+            .await
+            .unwrap();
         assert!(
             worker_saw_cancel.load(std::sync::atomic::Ordering::SeqCst),
             "the worker must observe its event channel close: cancel did not stop generation"
@@ -24292,6 +24541,8 @@ temperature = 0.6
         unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
 
         let mut st = fake_worker_state_with_steps(50, std::time::Duration::from_millis(1));
+        let mock = MockMetering::admit_all();
+        st.metering = Some(mock.clone());
         // Exactly fills the placeholder reservation, but cannot hold a completed
         // envelope. The fallback must still fit with no spare capacity.
         st.job_store = Arc::new(job_store::InMemoryJobStore::new(
@@ -24336,6 +24587,14 @@ temperature = 0.6
                 .unwrap()
                 .contains("could not be buffered"),
             "the fallback record must say why the real output is missing: {b}"
+        );
+        assert_eq!(
+            bg914_terminal_events(&mock),
+            vec![MeterEvent::Unbilled {
+                outcome: "background_storage_failed",
+                status: 503,
+                code: "background_job_store_capacity_exceeded".into(),
+            }]
         );
     }
 
@@ -24431,6 +24690,730 @@ temperature = 0.6
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
         let body = body_value(resp).await;
         assert_eq!(body["error"]["code"], "nonstream_deadline_infeasible");
+    }
+
+    fn bg914_fixture(
+        cap: Option<usize>,
+    ) -> (
+        AppState,
+        Arc<MockMetering>,
+        Arc<tokio::sync::Notify>,
+        std::sync::mpsc::Receiver<Cmd>,
+    ) {
+        let (cmd_tx, cmd_rx) = std::sync::mpsc::channel();
+        let health = health::WorkerHealth::new();
+        health.mark_ready();
+        let progress = Arc::new(tokio::sync::Notify::new());
+        let mut mock = MockMetering::admit_all();
+        Arc::get_mut(&mut mock).unwrap().token_observed = Some(progress.clone());
+        let spec = format!(
+            "acme:{},acme:{},blue:{}",
+            auth::sha256_hex("owner-key"),
+            auth::sha256_hex("rotated-key"),
+            auth::sha256_hex("foreign-key")
+        );
+        let api_auth = ApiAuth {
+            keyring: Some(Box::leak(Box::new(
+                auth::KeyStore::from_spec(&spec).unwrap(),
+            ))),
+            ..ApiAuth::default()
+        };
+        let st = AppState {
+            cmd_tx,
+            models: Arc::new(vec!["bg914".into()]),
+            caps: Arc::new(HashMap::new()),
+            openrouter_metadata: Arc::new(RwLock::new(Arc::new(ModelMetadataSet::default()))),
+            metering: Some(mock.clone()),
+            budget_tokenizers: None,
+            api_auth,
+            metrics_auth: MetricsAuth::default(),
+            metrics: SharedMetrics::default(),
+            inflight: Arc::new(Default::default()),
+            tenant_inflight: Arc::new(Default::default()),
+            health,
+            bg: None,
+            audio: audio_api::shared_audio(false),
+            job_store: Arc::new(job_store::InMemoryJobStore::new(
+                std::time::Duration::from_secs(60),
+                cap.unwrap_or(64 * 1024 * 1024),
+            )),
+            background_cancel: Arc::new(Mutex::new(HashMap::new())),
+        };
+        (st, mock, progress, cmd_rx)
+    }
+
+    fn bg914_router(st: AppState) -> Router {
+        Router::new()
+            .route("/v1/completions", post(completions_admitted))
+            .route("/v1/chat/completions", post(chat_completions_admitted))
+            .route("/v1/jobs/:id", get(background_jobs::poll_admitted))
+            .route(
+                "/v1/jobs/:id/cancel",
+                post(background_jobs::cancel_admitted),
+            )
+            .with_state(st)
+    }
+
+    fn bg914_body(chat: bool) -> serde_json::Value {
+        if chat {
+            json!({"model":"bg914","messages":[{"role":"user","content":"hi"}],"background":true})
+        } else {
+            json!({"model":"bg914","prompt":"hi","background":true})
+        }
+    }
+
+    async fn bg914_http(
+        app: Router,
+        method: &str,
+        path: &str,
+        key: Option<&str>,
+        body: serde_json::Value,
+    ) -> Response {
+        use tower::ServiceExt;
+        let mut req = axum::http::Request::builder()
+            .method(method)
+            .uri(path)
+            .header("content-type", "application/json");
+        if let Some(key) = key {
+            req = req.header("authorization", format!("Bearer {key}"));
+        }
+        app.oneshot(req.body(Body::from(body.to_string())).unwrap())
+            .await
+            .unwrap()
+    }
+
+    async fn bg914_submit(
+        app: Router,
+        chat: bool,
+        body: serde_json::Value,
+        rx: std::sync::mpsc::Receiver<Cmd>,
+    ) -> (Response, Box<worker::Request>) {
+        let path = if chat {
+            "/v1/chat/completions"
+        } else {
+            "/v1/completions"
+        };
+        let call = tokio::spawn(bg914_http(app, "POST", path, Some("owner-key"), body));
+        let Cmd::Generate(mut request) = tokio::task::spawn_blocking(move || {
+            rx.recv_timeout(std::time::Duration::from_secs(3)).unwrap()
+        })
+        .await
+        .unwrap() else {
+            panic!("missing generation request")
+        };
+        worker::release_pending_admit();
+        worker::release_request_reservation(&mut request);
+        assert!(
+            request.wire_deadline.is_none(),
+            "background must not inherit the synchronous worker deadline"
+        );
+        request
+            .tx
+            .send(Event::PromptUsage {
+                n_prompt: 3,
+                n_cached: 1,
+            })
+            .unwrap();
+        (call.await.unwrap(), request)
+    }
+
+    fn bg914_terminal_events(mock: &MockMetering) -> Vec<MeterEvent> {
+        mock.events()
+            .into_iter()
+            .filter(|event| {
+                matches!(
+                    event,
+                    MeterEvent::Complete { .. }
+                        | MeterEvent::DeadlinePartial { .. }
+                        | MeterEvent::Reject { .. }
+                        | MeterEvent::Unbilled { .. }
+                        | MeterEvent::Dropped { .. }
+                )
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // shared drain/env guards serialize real handlers
+    async fn background_chat_text_explicit_refusals_precede_generation() {
+        let _drain = drain_lock();
+        let _env = background_env_lock();
+        for chat in [false, true] {
+            let (st, mock, _, rx) = bg914_fixture(None);
+            let app = bg914_router(st.clone());
+            let path = if chat {
+                "/v1/chat/completions"
+            } else {
+                "/v1/completions"
+            };
+            let response = bg914_http(
+                app.clone(),
+                "POST",
+                path,
+                Some("owner-key"),
+                bg914_body(chat),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            assert_eq!(body_value(response).await["error"]["param"], "background");
+            unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
+            let mut body = bg914_body(chat);
+            body["stream"] = json!(true);
+            assert_eq!(
+                bg914_http(app.clone(), "POST", path, Some("owner-key"), body)
+                    .await
+                    .status(),
+                StatusCode::BAD_REQUEST
+            );
+            for invalid in [json!("true"), json!(1), serde_json::Value::Null] {
+                let mut body = bg914_body(chat);
+                body["background"] = invalid;
+                let response = bg914_http(app.clone(), "POST", path, Some("owner-key"), body).await;
+                assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+                assert!(
+                    body_value(response).await["error"]["message"]
+                        .as_str()
+                        .unwrap()
+                        .contains("background")
+                );
+            }
+            assert!(rx.try_recv().is_err());
+            assert!(mock.events().is_empty());
+            unsafe { std::env::remove_var(responses_api::BACKGROUND_RESPONSES_ENV) };
+        }
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // shared drain/env guards serialize real handlers
+    async fn background_chat_text_complete_after_deadline_preserves_native_data_and_defaults() {
+        let _drain = drain_lock();
+        let _env = background_env_lock();
+        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
+        for chat in [false, true] {
+            let (st, mock, _, rx) = bg914_fixture(None);
+            let app = bg914_router(st.clone());
+            let mut body = bg914_body(chat);
+            body["timeout_ms"] = json!(1000);
+            let (response, request) = bg914_submit(app.clone(), chat, body, rx).await;
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(request.sampler_cfg.temperature, 1.0);
+            assert_eq!(request.sampler_cfg.top_k, 0);
+            assert_eq!(request.sampler_cfg.top_p, 1.0);
+            assert_eq!(request.sampler_cfg.min_p, 0.0);
+            let ack = body_value(response).await;
+            assert_eq!(ack["status"], "queued");
+            let id = ack["id"].as_str().unwrap();
+            let key = responses_api::background_store_key("acme", id);
+            let control = st.background_cancel.lock().unwrap()[&key].clone();
+            tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+            request
+                .tx
+                .send(Event::Token {
+                    id: 7,
+                    text: "hello ".into(),
+                })
+                .unwrap();
+            request
+                .tx
+                .send(Event::Token {
+                    id: 8,
+                    text: "world".into(),
+                })
+                .unwrap();
+            request.tx.send(Event::TokenSnapshot(vec![7, 8])).unwrap();
+            request
+                .tx
+                .send(Event::Done {
+                    stop_reason: "Eos".into(),
+                    n_tokens: 2,
+                    n_prompt: 3,
+                    n_cached: 1,
+                    elapsed_s: 1.1,
+                    spec: None,
+                })
+                .unwrap();
+            control.wait_terminal().await;
+            let first = body_value(
+                bg914_http(
+                    app.clone(),
+                    "GET",
+                    &format!("/v1/jobs/{id}"),
+                    Some("rotated-key"),
+                    serde_json::Value::Null,
+                )
+                .await,
+            )
+            .await;
+            assert_eq!(first["status"], "completed");
+            if chat {
+                assert_eq!(first["object"], "chat.completion");
+                assert_eq!(first["choices"][0]["message"]["content"], "hello world");
+                assert_eq!(first["usage"]["completion_tokens"], 2);
+            } else if openai_compat() {
+                assert_eq!(first["object"], "text_completion");
+                assert_eq!(first["choices"][0]["text"], "hello world");
+                assert_eq!(first["usage"]["completion_tokens"], 2);
+            } else {
+                assert_eq!(first["text"], "hello world");
+                assert_eq!(first["tokens"], json!([7, 8]));
+                assert_eq!(first["n_tokens"], 2);
+                assert_eq!(first["prompt_tokens"], 3);
+                assert_eq!(first["cached_tokens"], 1);
+            }
+            assert_eq!(
+                first,
+                body_value(
+                    bg914_http(
+                        app.clone(),
+                        "GET",
+                        &format!("/v1/jobs/{id}"),
+                        Some("owner-key"),
+                        serde_json::Value::Null
+                    )
+                    .await
+                )
+                .await
+            );
+            assert_eq!(
+                bg914_http(
+                    app,
+                    "POST",
+                    &format!("/v1/jobs/{id}/cancel"),
+                    Some("owner-key"),
+                    serde_json::Value::Null
+                )
+                .await
+                .status(),
+                StatusCode::CONFLICT
+            );
+            assert_eq!(
+                bg914_terminal_events(&mock),
+                vec![MeterEvent::Complete {
+                    prompt: 3,
+                    cached: 1,
+                    completion: 2
+                }]
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // shared drain/env guards serialize real handlers
+    async fn background_chat_text_cancel_is_tenant_bound_and_retains_partial() {
+        let _drain = drain_lock();
+        let _env = background_env_lock();
+        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
+        for chat in [false, true] {
+            for partial in [false, true] {
+                let (st, mock, progress, rx) = bg914_fixture(None);
+                let app = bg914_router(st.clone());
+                let (response, request) =
+                    bg914_submit(app.clone(), chat, bg914_body(chat), rx).await;
+                let ack = body_value(response).await;
+                let id = ack["id"].as_str().unwrap();
+                let key = responses_api::background_store_key("acme", id);
+                for candidate in [id, &key] {
+                    assert_eq!(
+                        bg914_http(
+                            app.clone(),
+                            "GET",
+                            &format!("/v1/jobs/{candidate}"),
+                            Some("foreign-key"),
+                            serde_json::Value::Null
+                        )
+                        .await
+                        .status(),
+                        StatusCode::NOT_FOUND
+                    );
+                    assert_eq!(
+                        bg914_http(
+                            app.clone(),
+                            "POST",
+                            &format!("/v1/jobs/{candidate}/cancel"),
+                            Some("foreign-key"),
+                            serde_json::Value::Null
+                        )
+                        .await
+                        .status(),
+                        StatusCode::NOT_FOUND
+                    );
+                }
+                assert_eq!(
+                    bg914_http(
+                        app.clone(),
+                        "GET",
+                        &format!("/v1/jobs/{id}"),
+                        None,
+                        serde_json::Value::Null
+                    )
+                    .await
+                    .status(),
+                    StatusCode::UNAUTHORIZED
+                );
+                if partial {
+                    request
+                        .tx
+                        .send(Event::Token {
+                            id: 7,
+                            text: "partial".into(),
+                        })
+                        .unwrap();
+                    tokio::time::timeout(std::time::Duration::from_secs(1), progress.notified())
+                        .await
+                        .unwrap();
+                }
+                let response = bg914_http(
+                    app.clone(),
+                    "POST",
+                    &format!("/v1/jobs/{id}/cancel"),
+                    Some("rotated-key"),
+                    serde_json::Value::Null,
+                )
+                .await;
+                assert_eq!(response.status(), StatusCode::OK);
+                let result = body_value(response).await;
+                assert_eq!(result["status"], "cancelled");
+                assert_eq!(result["error"]["code"], "cancelled");
+                if partial {
+                    if chat {
+                        assert_eq!(result["choices"][0]["message"]["content"], "partial");
+                        assert_eq!(result["choices"][0]["native_finish_reason"], "cancelled");
+                    } else if openai_compat() {
+                        assert_eq!(result["choices"][0]["text"], "partial");
+                    } else {
+                        assert_eq!(result["text"], "partial");
+                        assert_eq!(result["tokens"], json!([7]));
+                        assert_eq!(result["n_tokens"], 1);
+                    }
+                    assert_eq!(
+                        bg914_terminal_events(&mock),
+                        vec![MeterEvent::DeadlinePartial {
+                            prompt: 3,
+                            cached: 1,
+                            completion: 1
+                        }]
+                    );
+                } else {
+                    assert_eq!(
+                        bg914_terminal_events(&mock),
+                        vec![MeterEvent::Unbilled {
+                            outcome: "cancelled",
+                            status: 409,
+                            code: "cancelled".into()
+                        }]
+                    );
+                }
+                tokio::time::timeout(std::time::Duration::from_secs(1), request.tx.closed())
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    result,
+                    body_value(
+                        bg914_http(
+                            app,
+                            "GET",
+                            &format!("/v1/jobs/{id}"),
+                            Some("owner-key"),
+                            serde_json::Value::Null
+                        )
+                        .await
+                    )
+                    .await
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // shared drain/env guards serialize real handlers
+    async fn background_chat_text_worker_failures_remain_explicit_and_settle_once() {
+        let _drain = drain_lock();
+        let _env = background_env_lock();
+        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
+        for chat in [false, true] {
+            for close in [false, true] {
+                let (st, mock, _, rx) = bg914_fixture(None);
+                let app = bg914_router(st.clone());
+                let (response, request) =
+                    bg914_submit(app.clone(), chat, bg914_body(chat), rx).await;
+                let ack = body_value(response).await;
+                let id = ack["id"].as_str().unwrap();
+                let control = st.background_cancel.lock().unwrap()
+                    [&responses_api::background_store_key("acme", id)]
+                    .clone();
+                if !close {
+                    request
+                        .tx
+                        .send(Event::Error(worker::EngineError::engine(
+                            "bg914 controlled worker fault",
+                        )))
+                        .unwrap();
+                }
+                drop(request);
+                control.wait_terminal().await;
+                let result = body_value(
+                    bg914_http(
+                        app,
+                        "GET",
+                        &format!("/v1/jobs/{id}"),
+                        Some("owner-key"),
+                        serde_json::Value::Null,
+                    )
+                    .await,
+                )
+                .await;
+                assert_eq!(result["status"], "failed");
+                assert!(result["error"].is_object());
+                let terminal = bg914_terminal_events(&mock);
+                assert_eq!(terminal.len(), 1);
+                assert!(matches!(
+                    terminal[0],
+                    MeterEvent::Reject {
+                        status: 500 | 503,
+                        ..
+                    }
+                ));
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // shared drain/env guards serialize real handlers
+    async fn background_chat_text_oversized_worker_errors_are_bounded_and_unbilled() {
+        let _drain = drain_lock();
+        let _env = background_env_lock();
+        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
+        for chat in [false, true] {
+            let (st, mock, _, rx) = bg914_fixture(Some(1024));
+            let app = bg914_router(st.clone());
+            let (response, request) = bg914_submit(app.clone(), chat, bg914_body(chat), rx).await;
+            let ack = body_value(response).await;
+            let id = ack["id"].as_str().unwrap();
+            let control = st.background_cancel.lock().unwrap()
+                [&responses_api::background_store_key("acme", id)]
+                .clone();
+            request
+                .tx
+                .send(Event::Error(worker::EngineError::engine("x".repeat(16384))))
+                .unwrap();
+            control.wait_terminal().await;
+            let result = body_value(
+                bg914_http(
+                    app,
+                    "GET",
+                    &format!("/v1/jobs/{id}"),
+                    Some("owner-key"),
+                    serde_json::Value::Null,
+                )
+                .await,
+            )
+            .await;
+            assert_eq!(result["status"], "failed");
+            assert!(
+                result.to_string().len() < 1024,
+                "an oversized engine diagnostic must not be retained or encoded"
+            );
+            assert_eq!(
+                bg914_terminal_events(&mock),
+                vec![MeterEvent::Reject {
+                    status: 500,
+                    code: "engine_error".into()
+                }]
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn background_chat_text_tool_call_budget_cut_keeps_incomplete_status() {
+        use metering::JobStore;
+        let env = Envelope::new(true);
+        let store = Arc::new(job_store::InMemoryJobStore::new(
+            std::time::Duration::from_secs(60),
+            65536,
+        ));
+        store.put("job", metering::JobRecord::queued()).unwrap();
+        let (publication, _) = job_publication::Publication::new(store, "job".into(), None);
+        for background in [false, true] {
+            let body = body_value(blocking_payload(
+                BlockingPayload {
+                    env: &env,
+                    model: "bg914".into(),
+                    chat: true,
+                    finish: "tool_calls",
+                    text: String::new(),
+                    reasoning: String::new(),
+                    calls: vec![ParsedToolCall {
+                        id: "call-1".into(),
+                        name: "weather".into(),
+                        arguments: "{}".into(),
+                    }],
+                    tokens: vec![7, 8],
+                    stop_reason: "MaxNew".into(),
+                    n_prompt: 3,
+                    n_tokens: 2,
+                    n_cached: 1,
+                    elapsed_s: 1.0,
+                    spec: None,
+                    deadline_error: None,
+                },
+                background.then_some(&publication),
+            ))
+            .await;
+            assert_eq!(body["choices"][0]["finish_reason"], "tool_calls");
+            assert_eq!(
+                body["choices"][0]["message"]["tool_calls"][0]["function"]["name"],
+                "weather"
+            );
+            if background {
+                assert_eq!(body["status"], "incomplete");
+            } else {
+                assert!(
+                    body.get("status").is_none(),
+                    "synchronous native envelope stays unchanged"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // shared drain/env guards serialize real handlers
+    async fn background_chat_text_storage_refusal_and_terminal_fallback_are_settled() {
+        let _drain = drain_lock();
+        let _env = background_env_lock();
+        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
+        for chat in [false, true] {
+            for cap in [8, 256] {
+                let (st, mock, _, rx) = bg914_fixture(Some(cap));
+                let app = bg914_router(st.clone());
+                let (response, request) =
+                    bg914_submit(app.clone(), chat, bg914_body(chat), rx).await;
+                if cap == 8 {
+                    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+                    assert_eq!(
+                        body_value(response).await["error"]["code"],
+                        "background_job_store_capacity_exceeded"
+                    );
+                    assert_eq!(
+                        bg914_terminal_events(&mock),
+                        vec![MeterEvent::Reject {
+                            status: 503,
+                            code: "background_job_store_capacity_exceeded".into()
+                        }]
+                    );
+                } else {
+                    let ack = body_value(response).await;
+                    let id = ack["id"].as_str().unwrap();
+                    let control = st.background_cancel.lock().unwrap()
+                        [&responses_api::background_store_key("acme", id)]
+                        .clone();
+                    request
+                        .tx
+                        .send(Event::Token {
+                            id: 7,
+                            text: "x".repeat(4096),
+                        })
+                        .unwrap();
+                    request
+                        .tx
+                        .send(Event::Done {
+                            stop_reason: "Eos".into(),
+                            n_tokens: 1,
+                            n_prompt: 3,
+                            n_cached: 1,
+                            elapsed_s: 0.1,
+                            spec: None,
+                        })
+                        .unwrap();
+                    control.wait_terminal().await;
+                    let result = body_value(
+                        bg914_http(
+                            app,
+                            "GET",
+                            &format!("/v1/jobs/{id}"),
+                            Some("owner-key"),
+                            serde_json::Value::Null,
+                        )
+                        .await,
+                    )
+                    .await;
+                    assert_eq!(result["status"], "failed");
+                    assert!(
+                        result["error"]["message"]
+                            .as_str()
+                            .unwrap()
+                            .contains("could not be buffered")
+                    );
+                    assert_eq!(
+                        bg914_terminal_events(&mock),
+                        vec![MeterEvent::Unbilled {
+                            outcome: "background_storage_failed",
+                            status: 503,
+                            code: "background_job_store_capacity_exceeded".into()
+                        }]
+                    );
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // shared drain/env guards serialize real handlers
+    async fn background_chat_text_synchronous_deadline_control_still_delivers_explicit_partial() {
+        let _drain = drain_lock();
+        let _env = background_env_lock();
+        for chat in [false, true] {
+            let (st, mock, progress, rx) = bg914_fixture(None);
+            let app = bg914_router(st);
+            let mut body = bg914_body(chat);
+            body["background"] = json!(false);
+            body["timeout_ms"] = json!(1000);
+            let path = if chat {
+                "/v1/chat/completions"
+            } else {
+                "/v1/completions"
+            };
+            let call = tokio::spawn(bg914_http(app, "POST", path, Some("owner-key"), body));
+            let Cmd::Generate(mut request) = tokio::task::spawn_blocking(move || {
+                rx.recv_timeout(std::time::Duration::from_secs(3)).unwrap()
+            })
+            .await
+            .unwrap() else {
+                panic!("missing request")
+            };
+            worker::release_pending_admit();
+            worker::release_request_reservation(&mut request);
+            assert!(request.wire_deadline.is_some());
+            request
+                .tx
+                .send(Event::PromptUsage {
+                    n_prompt: 3,
+                    n_cached: 1,
+                })
+                .unwrap();
+            request
+                .tx
+                .send(Event::Token {
+                    id: 7,
+                    text: "partial".into(),
+                })
+                .unwrap();
+            tokio::time::timeout(std::time::Duration::from_secs(1), progress.notified())
+                .await
+                .unwrap();
+            let result = body_value(call.await.unwrap()).await;
+            assert_eq!(result["error"]["code"], "deadline_exceeded");
+            assert_eq!(
+                bg914_terminal_events(&mock),
+                vec![MeterEvent::DeadlinePartial {
+                    prompt: 3,
+                    cached: 1,
+                    completion: 1
+                }]
+            );
+            tokio::time::timeout(std::time::Duration::from_secs(1), request.tx.closed())
+                .await
+                .unwrap();
+        }
     }
 
     fn fake_worker_state() -> AppState {

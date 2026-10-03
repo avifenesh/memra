@@ -1,0 +1,120 @@
+Running as unit: memra-rig-job-93559ae2786f.service; invocation ID: 8eed6c9abdd74ca4b6f94ce8fe015c65
+WAITING canonical GPU lock /tmp/memra-5090.lock
+ACQUIRED canonical GPU lock on inherited FD9
+uuid, name, memory.total [MiB], memory.free [MiB], driver_version
+GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, NVIDIA GeForce RTX 5090 Laptop GPU, 24463 MiB, 23899 MiB, 595.91.07
+
+[
+  {
+    "cell": "short-identity",
+    "chat": false,
+    "compat": "native",
+    "usage": {
+      "prompt_tokens": 11,
+      "cached_tokens": 0,
+      "completion_tokens": 18
+    }
+  },
+  {
+    "cell": "bare-default",
+    "chat": false,
+    "request": {
+      "model": "q9",
+      "background": true,
+      "prompt": "What is two plus two? Answer briefly."
+    },
+    "usage": {
+      "prompt_tokens": 9,
+      "cached_tokens": 0,
+      "completion_tokens": 33
+    },
+    "mode": "artifact/template default",
+    "parameter_proof": {
+      "resolved_arm": "primary_thinking",
+      "observed": {
+        "temp": 1.0,
+        "top_k": 20,
+        "top_p": 0.95,
+        "min_p": 0.0,
+        "pen_on": 1
+      },
+      "matching_bursts": 1,
+      "first_http_burst": "[skey] burst sampled=1 pure_temp=0 capturable=0 temp=1 top_k=20 top_p=0.95 min_p=0 pen_on=1 k=3 graph_draft=1 graph_s_parked=0 chain_s_parked=0 s_key_parked=None"
+    },
+    "trace_start_line": 154
+  },
+  {
+    "cell": "short-identity",
+    "chat": true,
+    "compat": "native",
+    "usage": {
+      "prompt_tokens": 23,
+      "cached_tokens": 0,
+      "completion_tokens": 2
+    }
+  },
+  {
+    "cell": "bare-default",
+    "chat": true,
+    "request": {
+      "model": "q9",
+      "background": true,
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is two plus two? Answer briefly."
+        }
+      ]
+    },
+    "usage": {
+      "prompt_tokens": 19,
+      "cached_tokens": 0,
+      "completion_tokens": 200
+    },
+    "mode": "artifact/template default",
+    "parameter_proof": {
+      "resolved_arm": "primary_thinking",
+      "observed": {
+        "temp": 1.0,
+        "top_k": 20,
+        "top_p": 0.95,
+        "min_p": 0.0,
+        "pen_on": 1
+      },
+      "matching_bursts": 6,
+      "first_http_burst": "[skey] burst sampled=1 pure_temp=0 capturable=0 temp=1 top_k=20 top_p=0.95 min_p=0 pen_on=1 k=3 graph_draft=1 graph_s_parked=0 chain_s_parked=0 s_key_parked=None"
+    },
+    "trace_start_line": 268
+  },
+  {
+    "cell": "default-parameters",
+    "proof": {
+      "resolved_arm": "primary_thinking",
+      "observed": {
+        "temp": 1.0,
+        "top_k": 20,
+        "top_p": 0.95,
+        "min_p": 0.0,
+        "pen_on": 1
+      },
+      "matching_bursts": 7,
+      "first_http_burst": "[skey] burst sampled=1 pure_temp=0 capturable=0 temp=1 top_k=20 top_p=0.95 min_p=0 pen_on=1 k=3 graph_draft=1 graph_s_parked=0 chain_s_parked=0 s_key_parked=None"
+    },
+    "metadata_sha256": "a02a22ff5d95c0dedcd18305c9903a7173260a60d28d6a3b67ffc9e57a7911e3"
+  },
+  {
+    "cell": "short-identity",
+    "chat": false,
+    "compat": "openai",
+    "usage": {
+      "prompt_tokens": 11,
+      "cached_tokens": 0,
+      "completion_tokens": 18
+    }
+  }
+]
+          Finished with result: success
+Main processes terminated with: code=exited, status=0/SUCCESS
+               Service runtime: 22.451s
+             CPU time consumed: 19.641s
+                   Memory peak: 6.3G (swap: 0B)

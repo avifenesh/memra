@@ -1,0 +1,1289 @@
+diff --git a/crates/memra-server/examples/background_accounting_gate.rs b/crates/memra-server/examples/background_accounting_gate.rs
+index 9e520cc999..37b9217368 100644
+--- a/crates/memra-server/examples/background_accounting_gate.rs
++++ b/crates/memra-server/examples/background_accounting_gate.rs
+@@ -10,6 +10,30 @@ struct Counts;
+ /// can wait on an event instead of polling a background job for completion.
+ struct ObservedStore(memra_server::job_store::InMemoryJobStore);
+ impl JobStore for ObservedStore {
++    fn reserve_output(&self, id: &str, bytes: usize) -> Result<(), JobStoreError> {
++        self.0.reserve_output(id, bytes)
++    }
++    fn publish_terminal(
++        &self,
++        id: &str,
++        record: JobRecord,
++        settle: &mut dyn FnMut() -> Result<(), String>,
++    ) -> Result<(), JobStoreError> {
++        let terminal = record.status.is_terminal();
++        let status = format!("{:?}", record.status);
++        let public_id = record
++            .output
++            .as_ref()
++            .and_then(|v| v.get("id"))
++            .and_then(|v| v.as_str())
++            .map(str::to_owned);
++        self.0.publish_terminal(id, record, settle)?;
++        if terminal {
++            println!("GATE_STORED {}", json!({"id":public_id,"status":status}));
++        }
++        Ok(())
++    }
++
+     fn put(&self, key: &str, record: JobRecord) -> Result<(), JobStoreError> {
+         let terminal = record.status.is_terminal();
+         let status = format!("{:?}", record.status);
+diff --git a/crates/memra-server/src/background_jobs.rs b/crates/memra-server/src/background_jobs.rs
+index 975f6ab4e7..8cd1c23569 100644
+--- a/crates/memra-server/src/background_jobs.rs
++++ b/crates/memra-server/src/background_jobs.rs
+@@ -45,7 +45,17 @@ impl Control {
+     }
+ }
+ 
+-pub(crate) fn validate(background: bool, stream: bool) -> Result<(), &'static str> {
++pub(crate) fn default_background() -> Value {
++    Value::Bool(false)
++}
++
++pub(crate) fn validate(value: &Value, stream: bool) -> Result<(), &'static str> {
++    let background = match value {
++        Value::Bool(value) => *value,
++        // Serde's default for an omitted Value is null. Use a dedicated false
++        // default so an explicit null is distinguishable and refused.
++        _ => return Err("background must be a boolean"),
++    };
+     if background && !crate::responses_api::background_door_open() {
+         return Err("background delivery is disabled; MEMRA_BACKGROUND_RESPONSES is off");
+     }
+@@ -143,7 +153,26 @@ pub(crate) async fn submit(
+                 error: None,
+             },
+         );
+-        let mut receipt = receipt;
++        let (publication, mut receipt) =
++            crate::job_publication::Publication::new(st.job_store.clone(), key.clone(), receipt);
++        if let Err(error) = publication.initial_reservation() {
++            publication.fail_storage(error);
++            crate::responses_api::finalize_terminal_job(
++                &crate::job_publication::PublishingStore(publication),
++                &key,
++                JobRecord {
++                    status: JobStatus::Failed,
++                    output: None,
++                    error: Some(
++                        "background output could not be buffered by the configured store".into(),
++                    ),
++                },
++            );
++            let _ = terminal.send(true);
++            st.background_cancel.lock().unwrap().remove(&key);
++            drop(guard);
++            return;
++        }
+         let response = crate::collect_blocking_response(
+             rx,
+             model,
+@@ -154,13 +183,15 @@ pub(crate) async fn submit(
+             &mut receipt,
+             None,
+             Some(control.cancel),
++            Some(&publication),
+         )
+         .await;
+         let http_status = response.status();
+-        let parsed = match axum::body::to_bytes(response.into_body(), usize::MAX).await {
+-            Ok(bytes) => serde_json::from_slice::<Value>(&bytes).ok(),
+-            Err(_) => None,
+-        };
++        let parsed =
++            match axum::body::to_bytes(response.into_body(), publication.body_limit()).await {
++                Ok(bytes) => serde_json::from_slice::<Value>(&bytes).ok(),
++                Err(_) => None,
++            };
+         let record = match parsed {
+             Some(mut body) if body.is_object() => {
+                 let code = body
+@@ -202,7 +233,8 @@ pub(crate) async fn submit(
+                 error: Some("background completion could not be encoded".into()),
+             },
+         };
+-        crate::responses_api::finalize_terminal_job(&*st.job_store, &key, record);
++        let guarded = crate::job_publication::PublishingStore(publication);
++        crate::responses_api::finalize_terminal_job(&guarded, &key, record);
+         let _ = terminal.send(true);
+         st.background_cancel.lock().unwrap().remove(&key);
+         drop(guard);
+diff --git a/crates/memra-server/src/job_publication.rs b/crates/memra-server/src/job_publication.rs
+new file mode 100644
+index 0000000000..2ff79c1a4d
+--- /dev/null
++++ b/crates/memra-server/src/job_publication.rs
+@@ -0,0 +1,335 @@
++//! Output reservations and settlement guarded by the configured JobStore.
++use crate::metering::{JobRecord, JobStore, JobStoreError, Receipt, UsageCounts};
++use std::sync::{Arc, Mutex};
++
++enum Pending {
++    Complete(UsageCounts, f64),
++    Partial(UsageCounts, f64),
++}
++
++struct Settlement {
++    receipt: Option<Box<dyn Receipt>>,
++    pending: Option<Pending>,
++    settled: bool,
++}
++
++#[derive(Clone)]
++pub(crate) struct Publication {
++    pub(crate) store: Arc<dyn JobStore>,
++    pub(crate) key: String,
++    settlement: Arc<Mutex<Settlement>>,
++    buffered: Arc<Mutex<usize>>,
++}
++
++impl Publication {
++    pub(crate) fn new(
++        store: Arc<dyn JobStore>,
++        key: String,
++        receipt: Option<Box<dyn Receipt>>,
++    ) -> (Self, Option<Box<dyn Receipt>>) {
++        let settlement = Arc::new(Mutex::new(Settlement {
++            receipt,
++            pending: None,
++            settled: false,
++        }));
++        let publication = Self {
++            store,
++            key,
++            settlement,
++            buffered: Arc::new(Mutex::new(0)),
++        };
++        let proxy: Box<dyn Receipt> = Box::new(DeferredReceipt(publication.clone()));
++        (publication, Some(proxy))
++    }
++
++    /// Charge a conservative working budget before retaining a delta. The factor
++    /// covers parser strings/calls, duplicated reasoning fields, escaped JSON,
++    /// and simultaneous encoded/decoded envelopes. This is proportional accounting,
++    /// not an exact RSS claim. The configured aggregate store cap remains the limit.
++    pub(crate) fn reserve_delta(&self, text: &str, tokens: usize) -> Result<(), JobStoreError> {
++        let mut bytes = self.buffered.lock().unwrap();
++        let next = bytes
++            .checked_add(
++                text.len()
++                    .checked_mul(64)
++                    .ok_or(JobStoreError::CapacityExceeded)?,
++            )
++            .and_then(|v| v.checked_add(tokens.checked_mul(128)?))
++            .ok_or(JobStoreError::CapacityExceeded)?;
++        self.store.reserve_output(
++            &self.key,
++            next.checked_add(256)
++                .ok_or(JobStoreError::CapacityExceeded)?,
++        )?;
++        *bytes = next;
++        Ok(())
++    }
++
++    pub(crate) fn reserve_snapshot(&self, tokens: usize) -> Result<(), JobStoreError> {
++        self.reserve_delta("", tokens)
++    }
++
++    pub(crate) fn initial_reservation(&self) -> Result<(), JobStoreError> {
++        self.store.reserve_output(&self.key, 256)
++    }
++
++    pub(crate) fn body_limit(&self) -> usize {
++        self.buffered.lock().unwrap().saturating_add(256)
++    }
++
++    /// Count without allocating, reserve before encoding, then use a capped writer.
++    /// A body can never allocate past the accepted encoding reservation.
++    pub(crate) fn encode<T: serde::Serialize>(&self, value: &T) -> Result<Vec<u8>, JobStoreError> {
++        struct Counter(usize);
++        impl std::io::Write for Counter {
++            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
++                self.0 = self
++                    .0
++                    .checked_add(bytes.len())
++                    .ok_or_else(|| std::io::Error::other("size overflow"))?;
++                Ok(bytes.len())
++            }
++            fn flush(&mut self) -> std::io::Result<()> {
++                Ok(())
++            }
++        }
++        let mut count = Counter(0);
++        serde_json::to_writer(&mut count, value).map_err(|_| JobStoreError::CapacityExceeded)?;
++        let working = count
++            .0
++            .checked_mul(3)
++            .and_then(|v| v.checked_add(256))
++            .ok_or(JobStoreError::CapacityExceeded)?;
++        self.store
++            .reserve_output(&self.key, self.body_limit().max(working))?;
++        struct Capped {
++            bytes: Vec<u8>,
++            limit: usize,
++        }
++        impl std::io::Write for Capped {
++            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
++                if bytes.len() > self.limit.saturating_sub(self.bytes.len()) {
++                    return Err(std::io::Error::other("encoding overflow"));
++                }
++                self.bytes.extend_from_slice(bytes);
++                Ok(bytes.len())
++            }
++            fn flush(&mut self) -> std::io::Result<()> {
++                Ok(())
++            }
++        }
++        let mut writer = Capped {
++            bytes: Vec::with_capacity(count.0),
++            limit: count.0,
++        };
++        serde_json::to_writer(&mut writer, value).map_err(|_| JobStoreError::CapacityExceeded)?;
++        let mut buffered = self.buffered.lock().unwrap();
++        *buffered = (*buffered).max(count.0);
++        Ok(writer.bytes)
++    }
++
++    pub(crate) fn fail_storage(&self, error: JobStoreError) {
++        let code = if error == JobStoreError::CapacityExceeded {
++            "background_job_store_capacity_exceeded"
++        } else {
++            "background_job_store_unavailable"
++        };
++        let mut state = self.settlement.lock().unwrap();
++        state.pending = None;
++        if !state.settled {
++            if let Some(receipt) = state.receipt.as_mut() {
++                if receipt
++                    .settle_unbilled("background_storage_failed", 503, code)
++                    .is_err()
++                {
++                    let _ = receipt.reject(500, "request_ledger_unavailable");
++                }
++            }
++            state.settled = true;
++        }
++    }
++
++    pub(crate) fn publish(&self, record: JobRecord) -> Result<(), JobStoreError> {
++        if record.output.is_none() {
++            self.fail_storage(JobStoreError::CapacityExceeded);
++            return self.store.put(&self.key, record);
++        }
++        if let Some(output) = &record.output {
++            if let Err(error) = self.encode(output) {
++                self.fail_storage(error);
++                return Err(error);
++            }
++        }
++        let result = self.store.publish_terminal(&self.key, record, &mut || {
++            let mut state = self.settlement.lock().unwrap();
++            if state.settled {
++                return Ok(());
++            }
++            let pending = state.pending.take();
++            if let Some(receipt) = state.receipt.as_mut() {
++                match pending {
++                    Some(Pending::Complete(usage, elapsed)) => receipt.complete(usage, elapsed)?,
++                    Some(Pending::Partial(usage, elapsed)) => {
++                        receipt.complete_deadline_partial(usage, elapsed)?
++                    }
++                    None => {}
++                }
++            }
++            state.settled = true;
++            Ok(())
++        });
++        if let Err(error) = &result {
++            if *error == JobStoreError::SettlementFailed {
++                let mut state = self.settlement.lock().unwrap();
++                if let Some(receipt) = state.receipt.as_mut() {
++                    let _ = receipt.reject(500, "request_ledger_unavailable");
++                }
++                state.settled = true;
++            } else {
++                self.fail_storage(match error {
++                    JobStoreError::CapacityExceeded => JobStoreError::CapacityExceeded,
++                    _ => JobStoreError::PublicationUnsupported,
++                });
++            }
++        }
++        result
++    }
++}
++
++/// Used by the existing Responses finalizer, so both dialect implementations
++/// reserve and publish through the same configured backend and receipt state.
++pub(crate) struct PublishingStore(pub(crate) Publication);
++impl JobStore for PublishingStore {
++    fn reserve_output(&self, id: &str, bytes: usize) -> Result<(), JobStoreError> {
++        self.0.store.reserve_output(id, bytes)
++    }
++    fn publish_terminal(
++        &self,
++        id: &str,
++        record: JobRecord,
++        settle: &mut dyn FnMut() -> Result<(), String>,
++    ) -> Result<(), JobStoreError> {
++        self.0.store.publish_terminal(id, record, settle)
++    }
++    fn put(&self, id: &str, record: JobRecord) -> Result<(), JobStoreError> {
++        if record.status.is_terminal() {
++            self.0.publish(record)
++        } else {
++            self.0.store.put(id, record)
++        }
++    }
++    fn get(&self, id: &str) -> Option<JobRecord> {
++        self.0.store.get(id)
++    }
++    fn take(&self, id: &str) -> Option<JobRecord> {
++        self.0.store.take(id)
++    }
++    fn cancel(&self, id: &str) -> Result<(), JobStoreError> {
++        self.0.store.cancel(id)
++    }
++    fn sweep(&self) -> usize {
++        self.0.store.sweep()
++    }
++}
++
++impl Publication {
++    /// The configured backend, including wrappers, remains the authority for
++    /// both reservation and publication. This check is performed before buffering.
++    pub(crate) fn storage_response(&self, error: JobStoreError) -> axum::response::Response {
++        let code = if error == JobStoreError::CapacityExceeded {
++            "background_job_store_capacity_exceeded"
++        } else {
++            "background_job_store_unavailable"
++        };
++        self.fail_storage(error);
++        crate::error_response_coded(
++            axum::http::StatusCode::SERVICE_UNAVAILABLE,
++            "background output could not be buffered by the configured store",
++            "server_error",
++            None,
++            Some(code),
++        )
++    }
++}
++
++struct DeferredReceipt(Publication);
++impl Receipt for DeferredReceipt {
++    fn wants_capture(&self) -> bool {
++        self.0
++            .settlement
++            .lock()
++            .unwrap()
++            .receipt
++            .as_ref()
++            .is_some_and(|r| r.wants_capture())
++    }
++    fn arm_capture(&mut self, prompt: serde_json::Value) {
++        if let Some(r) = self.0.settlement.lock().unwrap().receipt.as_mut() {
++            r.arm_capture(prompt);
++        }
++    }
++    fn capture_completion_delta(&mut self, text: &str) {
++        if let Some(r) = self.0.settlement.lock().unwrap().receipt.as_mut() {
++            r.capture_completion_delta(text);
++        }
++    }
++    fn record_prompt_usage(&mut self, prompt: u64, cached: u64) -> Result<(), String> {
++        match self.0.settlement.lock().unwrap().receipt.as_mut() {
++            Some(r) => r.record_prompt_usage(prompt, cached),
++            None => Ok(()),
++        }
++    }
++    fn record_completion_token(&mut self) -> Result<(), String> {
++        match self.0.settlement.lock().unwrap().receipt.as_mut() {
++            Some(r) => r.record_completion_token(),
++            None => Ok(()),
++        }
++    }
++    fn complete(&mut self, usage: UsageCounts, elapsed: f64) -> Result<(), String> {
++        self.0.settlement.lock().unwrap().pending = Some(Pending::Complete(usage, elapsed));
++        Ok(())
++    }
++    fn complete_deadline_partial(
++        &mut self,
++        usage: UsageCounts,
++        elapsed: f64,
++    ) -> Result<(), String> {
++        self.0.settlement.lock().unwrap().pending = Some(Pending::Partial(usage, elapsed));
++        Ok(())
++    }
++    fn reject(&mut self, status: u16, code: &str) -> Result<(), String> {
++        let mut state = self.0.settlement.lock().unwrap();
++        if state.settled {
++            return Ok(());
++        }
++        state.pending = None;
++        let result = match state.receipt.as_mut() {
++            Some(r) => r.reject(status, code),
++            None => Ok(()),
++        };
++        if result.is_ok() {
++            state.settled = true;
++        }
++        result
++    }
++    fn settle_unbilled(
++        &mut self,
++        outcome: &'static str,
++        status: u16,
++        code: &str,
++    ) -> Result<(), String> {
++        let mut state = self.0.settlement.lock().unwrap();
++        if state.settled {
++            return Ok(());
++        }
++        state.pending = None;
++        let result = match state.receipt.as_mut() {
++            Some(r) => r.settle_unbilled(outcome, status, code),
++            None => Ok(()),
++        };
++        if result.is_ok() {
++            state.settled = true;
++        }
++        result
++    }
++}
+diff --git a/crates/memra-server/src/job_store.rs b/crates/memra-server/src/job_store.rs
+index 84de584d76..6773885f83 100644
+--- a/crates/memra-server/src/job_store.rs
++++ b/crates/memra-server/src/job_store.rs
+@@ -58,15 +58,32 @@ pub fn max_bytes_from_env() -> usize {
+ /// store's aggregate bounded, not to bill anyone.
+ fn record_size_bytes(record: &JobRecord) -> usize {
+     const BOOKKEEPING_OVERHEAD: usize = 96;
+-    let output_len = record
+-        .output
+-        .as_ref()
+-        .and_then(|v| serde_json::to_vec(v).ok())
+-        .map(|b| b.len())
+-        .unwrap_or(0);
++    struct Count(usize);
++    impl std::io::Write for Count {
++        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
++            self.0 = self
++                .0
++                .checked_add(bytes.len())
++                .ok_or_else(|| std::io::Error::other("job size overflow"))?;
++            Ok(bytes.len())
++        }
++        fn flush(&mut self) -> std::io::Result<()> {
++            Ok(())
++        }
++    }
++    let mut count = Count(0);
++    if let Some(output) = &record.output {
++        if serde_json::to_writer(&mut count, output).is_err() {
++            return usize::MAX;
++        }
++    }
++    let output_len = count.0;
+     let error_len = record.error.as_ref().map(|e| e.len()).unwrap_or(0);
+     // Reserve enough space at admission for the fixed terminal storage-failure record.
+-    (output_len + error_len + BOOKKEEPING_OVERHEAD).max(256)
++    output_len
++        .saturating_add(error_len)
++        .saturating_add(BOOKKEEPING_OVERHEAD)
++        .max(256)
+ }
+ 
+ struct Entry {
+@@ -76,6 +93,9 @@ struct Entry {
+     /// the record's creation time, so a long-running in-progress job is never evicted for
+     /// simply taking a while.
+     finished_at: Option<Instant>,
++    /// Complete output held during settlement, invisible to readers. Mutation,
++    /// cancellation and collection refuse while publication owns this reservation.
++    pending: Option<JobRecord>,
+ }
+ 
+ struct Inner {
+@@ -128,12 +148,85 @@ impl InMemoryJobStore {
+ }
+ 
+ impl JobStore for InMemoryJobStore {
++    fn reserve_output(&self, id: &str, bytes: usize) -> Result<(), JobStoreError> {
++        let mut inner = self.inner.lock().unwrap();
++        let entry = inner.map.get(id).ok_or(JobStoreError::NotFound)?;
++        if entry.record.status.is_terminal() || entry.pending.is_some() {
++            return Err(JobStoreError::AlreadyTerminal);
++        }
++        let old = entry.size_bytes;
++        let size = old.max(bytes);
++        let projected = inner
++            .total_bytes
++            .saturating_sub(old)
++            .checked_add(size)
++            .ok_or(JobStoreError::CapacityExceeded)?;
++        if projected > self.max_bytes {
++            return Err(JobStoreError::CapacityExceeded);
++        }
++        inner.total_bytes = projected;
++        inner.map.get_mut(id).unwrap().size_bytes = size;
++        Ok(())
++    }
++
++    fn publish_terminal(
++        &self,
++        id: &str,
++        record: JobRecord,
++        settle: &mut dyn FnMut() -> Result<(), String>,
++    ) -> Result<(), JobStoreError> {
++        if !record.status.is_terminal() {
++            return Err(JobStoreError::PublicationUnsupported);
++        }
++        let size = record_size_bytes(&record);
++        {
++            let mut inner = self.inner.lock().unwrap();
++            let entry = inner.map.get(id).ok_or(JobStoreError::NotFound)?;
++            if entry.record.status.is_terminal() || entry.pending.is_some() {
++                return Err(JobStoreError::AlreadyTerminal);
++            }
++            let held = entry.size_bytes.max(size);
++            let projected = inner
++                .total_bytes
++                .saturating_sub(entry.size_bytes)
++                .checked_add(held)
++                .ok_or(JobStoreError::CapacityExceeded)?;
++            if projected > self.max_bytes {
++                return Err(JobStoreError::CapacityExceeded);
++            }
++            inner.total_bytes = projected;
++            let entry = inner.map.get_mut(id).unwrap();
++            entry.size_bytes = held;
++            entry.pending = Some(record);
++        }
++        // The callback may read the store. No store lock is held, and the pending
++        // reservation prevents mutation/take/cancel from invalidating the commit.
++        let settled = std::panic::catch_unwind(std::panic::AssertUnwindSafe(settle));
++        let mut inner = self.inner.lock().unwrap();
++        let entry = inner
++            .map
++            .get_mut(id)
++            .expect("pending publication owns its entry");
++        let pending = entry.pending.take().expect("pending record is retained");
++        if !matches!(settled, Ok(Ok(()))) {
++            return Err(JobStoreError::SettlementFailed);
++        }
++        let old = entry.size_bytes;
++        entry.record = pending;
++        entry.finished_at = Some(Instant::now());
++        entry.size_bytes = size;
++        inner.total_bytes = inner.total_bytes.saturating_sub(old) + size;
++        Ok(())
++    }
++
+     fn put(&self, id: &str, record: JobRecord) -> Result<(), JobStoreError> {
+         let mut inner = self.inner.lock().unwrap();
+         self.sweep_locked(&mut inner);
+ 
+         match inner.map.get(id) {
+-            Some(existing) if existing.record.status.is_terminal() => {
++            Some(existing)
++                if existing.record.status.is_terminal() || existing.pending.is_some() =>
++            {
+                 return Err(JobStoreError::AlreadyTerminal);
+             }
+             None if record.status != JobStatus::Queued => {
+@@ -149,10 +242,18 @@ impl JobStore for InMemoryJobStore {
+             _ => {}
+         }
+ 
+-        let size = record_size_bytes(&record);
++        let size = record_size_bytes(&record).max(if record.status.is_terminal() {
++            0
++        } else {
++            inner.map.get(id).map(|e| e.size_bytes).unwrap_or(0)
++        });
+         let finished_at = record.status.is_terminal().then(Instant::now);
+         let existing_size = inner.map.get(id).map(|e| e.size_bytes).unwrap_or(0);
+-        let projected = inner.total_bytes.saturating_sub(existing_size) + size;
++        let projected = inner
++            .total_bytes
++            .saturating_sub(existing_size)
++            .checked_add(size)
++            .ok_or(JobStoreError::CapacityExceeded)?;
+         if projected > self.max_bytes {
+             return Err(JobStoreError::CapacityExceeded);
+         }
+@@ -164,6 +265,7 @@ impl JobStore for InMemoryJobStore {
+                 record,
+                 size_bytes: size,
+                 finished_at,
++                pending: None,
+             },
+         );
+         Ok(())
+@@ -178,6 +280,13 @@ impl JobStore for InMemoryJobStore {
+     fn take(&self, id: &str) -> Option<JobRecord> {
+         let mut inner = self.inner.lock().unwrap();
+         self.sweep_locked(&mut inner);
++        if inner
++            .map
++            .get(id)
++            .is_some_and(|entry| entry.pending.is_some())
++        {
++            return None;
++        }
+         inner.map.remove(id).map(|e| {
+             inner.total_bytes = inner.total_bytes.saturating_sub(e.size_bytes);
+             e.record
+@@ -189,7 +298,9 @@ impl JobStore for InMemoryJobStore {
+         self.sweep_locked(&mut inner);
+         match inner.map.get_mut(id) {
+             None => Err(JobStoreError::NotFound),
+-            Some(e) if e.record.status.is_terminal() => Err(JobStoreError::AlreadyTerminal),
++            Some(e) if e.record.status.is_terminal() || e.pending.is_some() => {
++                Err(JobStoreError::AlreadyTerminal)
++            }
+             Some(e) => {
+                 e.record.status = JobStatus::Cancelled;
+                 e.finished_at = Some(Instant::now());
+@@ -486,6 +597,105 @@ mod tests {
+         assert_eq!(rec.status, JobStatus::InProgress);
+     }
+ 
++    #[test]
++    fn publication_capacity_failure_never_calls_settlement() {
++        let s = store(Duration::from_secs(60), 256);
++        s.put("job", JobRecord::queued()).unwrap();
++        let mut calls = 0;
++        let result = s.publish_terminal(
++            "job",
++            JobRecord {
++                status: JobStatus::Completed,
++                output: Some(json!({"text": "x".repeat(4096)})),
++                error: None,
++            },
++            &mut || {
++                calls += 1;
++                Ok(())
++            },
++        );
++        assert_eq!(result, Err(JobStoreError::CapacityExceeded));
++        assert_eq!(calls, 0);
++        assert_eq!(s.get("job").unwrap().status, JobStatus::Queued);
++    }
++
++    #[test]
++    fn publication_is_hidden_and_protected_until_settlement_commits() {
++        let s = store(Duration::from_secs(60), 1024);
++        s.put("job", JobRecord::queued()).unwrap();
++        s.reserve_output("job", 800).unwrap();
++        // Non-terminal updates cannot release the working reservation.
++        s.put(
++            "job",
++            JobRecord {
++                status: JobStatus::InProgress,
++                output: None,
++                error: None,
++            },
++        )
++        .unwrap();
++        assert_eq!(
++            s.put("peer", JobRecord::queued()),
++            Err(JobStoreError::CapacityExceeded)
++        );
++        let record = JobRecord {
++            status: JobStatus::Completed,
++            output: Some(json!({"text":"done"})),
++            error: None,
++        };
++        let mut calls = 0;
++        s.publish_terminal("job", record.clone(), &mut || {
++            calls += 1;
++            assert_eq!(s.get("job").unwrap().status, JobStatus::InProgress);
++            assert!(s.take("job").is_none());
++            assert_eq!(s.cancel("job"), Err(JobStoreError::AlreadyTerminal));
++            assert_eq!(
++                s.put("job", JobRecord::queued()),
++                Err(JobStoreError::AlreadyTerminal)
++            );
++            assert_eq!(s.sweep(), 0);
++            Ok(())
++        })
++        .unwrap();
++        assert_eq!(calls, 1);
++        assert_eq!(s.get("job"), Some(record));
++        s.put("peer", JobRecord::queued()).unwrap();
++    }
++
++    #[test]
++    fn failed_or_panicked_settlement_does_not_expose_output() {
++        for panic in [false, true] {
++            let s = store(Duration::from_secs(60), 1024);
++            s.put("job", JobRecord::queued()).unwrap();
++            let result = s.publish_terminal(
++                "job",
++                JobRecord {
++                    status: JobStatus::Completed,
++                    output: Some(json!({"text":"hidden"})),
++                    error: None,
++                },
++                &mut || {
++                    if panic {
++                        panic!("injected settlement panic");
++                    }
++                    Err("injected settlement failure".into())
++                },
++            );
++            assert_eq!(result, Err(JobStoreError::SettlementFailed));
++            assert!(s.get("job").unwrap().output.is_none());
++            s.put(
++                "job",
++                JobRecord {
++                    status: JobStatus::Failed,
++                    output: None,
++                    error: Some("ledger failure".into()),
++                },
++            )
++            .unwrap();
++            assert_eq!(s.get("job").unwrap().status, JobStatus::Failed);
++        }
++    }
++
+     #[test]
+     fn env_defaults_are_used_when_unset() {
+         // Best-effort: only asserts the fallback path when the vars are genuinely absent.
+diff --git a/crates/memra-server/src/lib.rs b/crates/memra-server/src/lib.rs
+index f005a7b4df..1a0bc09378 100644
+--- a/crates/memra-server/src/lib.rs
++++ b/crates/memra-server/src/lib.rs
+@@ -110,6 +110,7 @@ mod histogram;
+ mod http_metrics;
+ mod hybrid_telemetry;
+ mod image_fetch;
++mod job_publication;
+ /// In-memory reference implementation of `metering::JobStore` (memra#550,
+ /// `docs/decisions/COMPLETE-RESULT-PATH-V1.md`): the bounded, TTL'd buffer a background
+ /// (`background: true`) job's output would live in between the worker finishing and the
+@@ -3316,8 +3317,8 @@ struct StreamOptions {
+ struct CompletionReq {
+     model: String,
+     /// Buffered complete-result delivery. Uses the default-OFF background door.
+-    #[serde(default)]
+-    background: bool,
++    #[serde(default = "background_jobs::default_background")]
++    background: serde_json::Value,
+     #[serde(default)]
+     prompt: String,
+     /// raw token-id prompt (the exact-token validation-gate path; bypasses the tokenizer).
+@@ -3526,8 +3527,8 @@ impl StopSequences {
+ struct ChatCompletionReq {
+     model: String,
+     /// Buffered complete-result delivery. Incompatible with streaming.
+-    #[serde(default)]
+-    background: bool,
++    #[serde(default = "background_jobs::default_background")]
++    background: serde_json::Value,
+     messages: Vec<ChatMessage>,
+     /// Omitted (gap-scan F2) => context-bounded (session ctx - prompt, model-capped), never a
+     /// silent 128-token truncation. Under `MEMRA_ADMIT_BY_MEMORY=1` the bound is the charged open
+@@ -10261,10 +10262,10 @@ async fn completions_with_admission(
+ ) -> Response {
+     http_metrics::bind_model(canonical_model_id(&st.models, &req.model));
+     let env = Envelope::new(false);
+-    if let Err(message) = background_jobs::validate(req.background, req.stream) {
++    if let Err(message) = background_jobs::validate(&req.background, req.stream) {
+         return with_request_id(&env.id, bad_request(message, Some("background")));
+     }
+-    let background = req.background;
++    let background = req.background == serde_json::Value::Bool(true);
+     if let Err(msg) = req.stop.validate() {
+         return with_request_id(&env.id, bad_request(&msg, Some("stop")));
+     }
+@@ -10873,10 +10874,10 @@ async fn chat_completions_with_admission(
+ ) -> Response {
+     http_metrics::bind_model(canonical_model_id(&st.models, &req.model));
+     let env = Envelope::new(true);
+-    if let Err(message) = background_jobs::validate(req.background, req.stream) {
++    if let Err(message) = background_jobs::validate(&req.background, req.stream) {
+         return with_request_id(&env.id, bad_request(message, Some("background")));
+     }
+-    let background = req.background;
++    let background = req.background == serde_json::Value::Bool(true);
+     // Canonicalize before ANY downstream use: metadata limits, caps, cache namespace, ledger
+     // pricing and the worker's roster all key off this id and must agree on one spelling.
+     // An id that resolves to nothing refuses HERE — before budget admission (see
+@@ -11851,7 +11852,10 @@ struct BlockingPayload<'a> {
+     deadline_error: Option<serde_json::Value>,
+ }
+ 
+-fn blocking_payload(p: BlockingPayload<'_>) -> Response {
++fn blocking_payload(
++    p: BlockingPayload<'_>,
++    output: Option<&job_publication::Publication>,
++) -> Response {
+     if p.deadline_error.is_some()
+         && let Some(observation) = http_metrics::current()
+     {
+@@ -11907,7 +11911,7 @@ fn blocking_payload(p: BlockingPayload<'_>) -> Response {
+                 .unwrap_or_else(|| json!("deadline_exceeded"));
+             body["error"] = err;
+         }
+-        return Json(env.stamp(body)).into_response();
++        return buffered_json(&env.stamp(body), output);
+     }
+     if openai_compat() {
+         let mut body = json!({
+@@ -11923,20 +11927,39 @@ fn blocking_payload(p: BlockingPayload<'_>) -> Response {
+                 .unwrap_or_else(|| json!("deadline_exceeded"));
+             body["error"] = err;
+         }
+-        return Json(env.stamp(body)).into_response();
++        return buffered_json(&env.stamp(body), output);
++    }
++    buffered_json(
++        &CompletionResp {
++            model,
++            text,
++            tokens,
++            stop_reason,
++            error: deadline_error,
++            n_tokens,
++            prompt_tokens: n_prompt,
++            cached_tokens: n_cached,
++            elapsed_s,
++        },
++        output,
++    )
++}
++
++fn buffered_json<T: serde::Serialize>(
++    value: &T,
++    output: Option<&job_publication::Publication>,
++) -> Response {
++    match output {
++        Some(output) => match output.encode(value) {
++            Ok(bytes) => (
++                [(axum::http::header::CONTENT_TYPE, "application/json")],
++                bytes,
++            )
++                .into_response(),
++            Err(error) => output.storage_response(error),
++        },
++        None => Json(value).into_response(),
+     }
+-    Json(CompletionResp {
+-        model,
+-        text,
+-        tokens,
+-        stop_reason,
+-        error: deadline_error,
+-        n_tokens,
+-        prompt_tokens: n_prompt,
+-        cached_tokens: n_cached,
+-        elapsed_s,
+-    })
+-    .into_response()
+ }
+ 
+ /// Collect a complete non-streaming response.
+@@ -11984,6 +12007,7 @@ async fn blocking_response_with_receipt(
+         receipt,
+         deadline,
+         None,
++        None,
+     )
+     .await
+ }
+@@ -12001,6 +12025,7 @@ pub(crate) async fn collect_blocking_response(
+     receipt: &mut Option<Box<dyn metering::Receipt>>,
+     deadline: Option<RequestDeadline>,
+     cancel: Option<Arc<tokio::sync::Notify>>,
++    output: Option<&job_publication::Publication>,
+ ) -> Response {
+     let mut text = String::new();
+     let mut reasoning = String::new();
+@@ -12107,7 +12132,7 @@ pub(crate) async fn collect_blocking_response(
+                         elapsed_s,
+                         spec: None,
+                         deadline_error: Some(err_obj),
+-                    });
++                    }, output);
+                 }
+             },
+             None => match cancel.as_ref() {
+@@ -12157,7 +12182,7 @@ pub(crate) async fn collect_blocking_response(
+                                 "code": "cancelled",
+                                 "metadata": {"error_type": "cancelled", "provider_name": "memra"},
+                             })),
+-                        });
++                        }, output);
+                     }
+                     ev = rx.recv() => ev,
+                 },
+@@ -12183,6 +12208,11 @@ pub(crate) async fn collect_blocking_response(
+                 seen_cached = n_cached;
+             }
+             Event::Token { id, text: delta } => {
++                if let Some(output) = output.as_ref()
++                    && let Err(error) = output.reserve_delta(&delta, 1)
++                {
++                    return output.storage_response(error);
++                }
+                 if let Some(receipt) = receipt.as_mut()
+                     && let Err(err) = receipt.record_completion_token()
+                 {
+@@ -12204,7 +12234,14 @@ pub(crate) async fn collect_blocking_response(
+                     None => text.push_str(&delta),
+                 }
+             }
+-            Event::TokenSnapshot(ids) => tokens = ids,
++            Event::TokenSnapshot(ids) => {
++                if let Some(output) = output
++                    && let Err(error) = output.reserve_snapshot(ids.len())
++                {
++                    return output.storage_response(error);
++                }
++                tokens = ids;
++            }
+             Event::DeadlineExceeded { ms } => {
+                 if let Some(receipt) = receipt.as_mut()
+                     && let Err(ledger_err) = receipt.settle_unbilled(
+@@ -12257,23 +12294,26 @@ pub(crate) async fn collect_blocking_response(
+                     let _ = receipt.reject(500, "request_ledger_unavailable");
+                     return request_ledger_error_response();
+                 }
+-                return blocking_payload(BlockingPayload {
+-                    env: &env,
+-                    model,
+-                    chat,
+-                    finish,
+-                    text,
+-                    reasoning,
+-                    calls,
+-                    tokens,
+-                    stop_reason,
+-                    n_prompt,
+-                    n_tokens,
+-                    n_cached,
+-                    elapsed_s,
+-                    spec,
+-                    deadline_error: None,
+-                });
++                return blocking_payload(
++                    BlockingPayload {
++                        env: &env,
++                        model,
++                        chat,
++                        finish,
++                        text,
++                        reasoning,
++                        calls,
++                        tokens,
++                        stop_reason,
++                        n_prompt,
++                        n_tokens,
++                        n_cached,
++                        elapsed_s,
++                        spec,
++                        deadline_error: None,
++                    },
++                    output,
++                );
+             }
+             Event::Error(err) => {
+                 // G6: the class decides the status. This single line used to be
+@@ -23479,6 +23519,23 @@ temperature = 0.6
+             terminal: Arc<tokio::sync::Notify>,
+         }
+         impl JobStore for Store {
++            fn reserve_output(&self, id: &str, bytes: usize) -> Result<(), JobStoreError> {
++                self.inner.reserve_output(id, bytes)
++            }
++            fn publish_terminal(
++                &self,
++                id: &str,
++                record: JobRecord,
++                settle: &mut dyn FnMut() -> Result<(), String>,
++            ) -> Result<(), JobStoreError> {
++                let terminal = record.status.is_terminal();
++                self.inner.publish_terminal(id, record, settle)?;
++                if terminal {
++                    self.terminal.notify_one();
++                }
++                Ok(())
++            }
++
+             fn put(&self, key: &str, record: JobRecord) -> Result<(), JobStoreError> {
+                 let terminal = record.status.is_terminal();
+                 self.inner.put(key, record)?;
+@@ -24454,6 +24511,8 @@ temperature = 0.6
+         unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
+ 
+         let mut st = fake_worker_state_with_steps(50, std::time::Duration::from_millis(1));
++        let mock = MockMetering::admit_all();
++        st.metering = Some(mock.clone());
+         // Exactly fills the placeholder reservation, but cannot hold a completed
+         // envelope. The fallback must still fit with no spare capacity.
+         st.job_store = Arc::new(job_store::InMemoryJobStore::new(
+@@ -24499,6 +24558,14 @@ temperature = 0.6
+                 .contains("could not be buffered"),
+             "the fallback record must say why the real output is missing: {b}"
+         );
++        assert_eq!(
++            bg914_terminal_events(&mock),
++            vec![MeterEvent::Unbilled {
++                outcome: "background_storage_failed",
++                status: 503,
++                code: "background_job_store_capacity_exceeded".into(),
++            }]
++        );
+     }
+ 
+     /// A job past its TTL is evicted lazily on the next store touch; polling it afterward is
+@@ -24772,8 +24839,7 @@ temperature = 0.6
+                 let mut body = bg914_body(chat);
+                 body["background"] = invalid;
+                 let response = bg914_http(app.clone(), "POST", path, Some("owner-key"), body).await;
+-                // Preserve AdmittedJson's existing typed-body refusal contract.
+-                assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
++                assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+                 assert!(
+                     body_value(response).await["error"]["message"]
+                         .as_str()
+diff --git a/crates/memra-server/src/metering.rs b/crates/memra-server/src/metering.rs
+index 33b21224ce..3f737c5e28 100644
+--- a/crates/memra-server/src/metering.rs
++++ b/crates/memra-server/src/metering.rs
+@@ -253,7 +253,7 @@ impl JobRecord {
+ }
+ 
+ /// Why a `JobStore` call could not do what was asked.
+-#[derive(Debug, PartialEq, Eq)]
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+ pub enum JobStoreError {
+     /// No record exists for this id (never existed, or already evicted by TTL).
+     NotFound,
+@@ -262,6 +262,10 @@ pub enum JobStoreError {
+     AlreadyTerminal,
+     /// Admitting this record would push the store's resident bytes past its configured cap.
+     CapacityExceeded,
++    /// The backend cannot reserve output or guarantee guarded terminal publication.
++    PublicationUnsupported,
++    /// The terminal settlement callback failed; the result was not exposed.
++    SettlementFailed,
+ }
+ 
+ /// The seam a background job's buffered output is held behind, mirroring `Metering`: the
+@@ -276,6 +280,28 @@ pub enum JobStoreError {
+ /// must preserve the complete key. A shared store does not transfer a live generation or
+ /// cancellation handle to another process; deployments must route cancellation to its owner.
+ pub trait JobStore: Send + Sync {
++    /// Reserve this job's total working-output byte budget before retaining more
++    /// output. The existing backend cap governs the reservation; it is not a new
++    /// server policy limit. Reservations remain charged until terminal publication.
++    /// A backend lacking this guarantee refuses buffered delivery explicitly.
++    fn reserve_output(&self, _id: &str, _bytes: usize) -> Result<(), JobStoreError> {
++        Err(JobStoreError::PublicationUnsupported)
++    }
++
++    /// Check and retain the complete terminal output before invoking settlement,
++    /// then expose the record only after settlement succeeds. Failure before the
++    /// callback must not invoke it. A successful callback must have a guaranteed
++    /// publication commit; reads cannot see the result while it is settling.
++    /// Backends implement this with their transaction/reservation mechanism.
++    fn publish_terminal(
++        &self,
++        _id: &str,
++        _record: JobRecord,
++        _settle: &mut dyn FnMut() -> Result<(), String>,
++    ) -> Result<(), JobStoreError> {
++        Err(JobStoreError::PublicationUnsupported)
++    }
++
+     /// Insert or update a job's record. A brand-new id may only be admitted as `Queued`
+     /// (`Err(NotFound)` for any other status on an id the store does not already hold): a
+     /// job's own id is minted once, by the `Queued` `put` that creates it, so any later write
+diff --git a/crates/memra-server/src/responses_api.rs b/crates/memra-server/src/responses_api.rs
+index 0e4e47e6dc..4a9ca60d93 100644
+--- a/crates/memra-server/src/responses_api.rs
++++ b/crates/memra-server/src/responses_api.rs
+@@ -1052,17 +1052,18 @@ pub(crate) fn finalize_terminal_job(
+     id: &str,
+     record: crate::metering::JobRecord,
+ ) {
+-    if store.put(id, record).is_err() {
++    if let Err(error) = store.put(id, record) {
++        let message = if error == crate::metering::JobStoreError::SettlementFailed {
++            "request_ledger_unavailable"
++        } else {
++            "background job output could not be buffered; result is unavailable and completion is not billed"
++        };
+         let _ = store.put(
+             id,
+             crate::metering::JobRecord {
+                 status: crate::metering::JobStatus::Failed,
+                 output: None,
+-                error: Some(
+-                    "background job output could not be buffered (store capacity); the \
+-                     result may already be billed but is not retrievable"
+-                        .to_string(),
+-                ),
++                error: Some(message.to_string()),
+             },
+         );
+     }
+@@ -1072,7 +1073,7 @@ pub(crate) fn finalize_terminal_job(
+ /// `put`, so a refused write (revuto's finding on the first version of this lane:
+ /// `InMemoryJobStore::put` re-checks the byte cap on every update, so a large completed or
+ /// cancelled body can be refused even though the `Queued` placeholder fit) cannot leave the
+-/// job stuck `InProgress` forever: already billed, `GET` answering `in_progress` forever,
++/// job stuck `InProgress` forever: `GET` answering `in_progress` forever,
+ /// never TTL-evicted because `finished_at` is only stamped on a SUCCESSFUL terminal put.
+ #[allow(clippy::too_many_arguments)]
+ async fn run_background_job(
+@@ -1089,6 +1090,26 @@ async fn run_background_job(
+ ) {
+     use crate::metering::{JobRecord, JobStatus, UsageCounts};
+ 
++    let (publication, deferred) =
++        crate::job_publication::Publication::new(st.job_store.clone(), id.clone(), receipt);
++    receipt = deferred;
++    let guarded_store = crate::job_publication::PublishingStore(publication.clone());
++    if let Err(error) = publication.initial_reservation() {
++        publication.fail_storage(error);
++        finalize_terminal_job(
++            &guarded_store,
++            &id,
++            JobRecord {
++                status: JobStatus::Failed,
++                output: None,
++                error: Some(
++                    "background output could not be buffered by the configured store".into(),
++                ),
++            },
++        );
++        drop(guard);
++        return;
++    }
+     let mut text = String::new();
+     let mut reasoning = String::new();
+     let mut calls: Vec<crate::toolcall::ParsedToolCall> = Vec::new();
+@@ -1136,7 +1157,7 @@ async fn run_background_job(
+                 };
+                 if !ledger_ok {
+                     finalize_terminal_job(
+-                        &*st.job_store,
++                        &guarded_store,
+                         &id,
+                         JobRecord {
+                             status: JobStatus::Failed,
+@@ -1162,7 +1183,7 @@ async fn run_background_job(
+                     Value::Null,
+                 );
+                 finalize_terminal_job(
+-                    &*st.job_store,
++                    &guarded_store,
+                     &id,
+                     JobRecord { status: JobStatus::Cancelled, output: Some(body), error: None },
+                 );
+@@ -1175,7 +1196,7 @@ async fn run_background_job(
+                         let _ = r.reject(500, "worker_channel_closed");
+                     }
+                     finalize_terminal_job(
+-                        &*st.job_store,
++                        &guarded_store,
+                         &id,
+                         JobRecord {
+                             status: JobStatus::Failed,
+@@ -1199,7 +1220,7 @@ async fn run_background_job(
+                             );
+                             let _ = r.reject(500, "request_ledger_unavailable");
+                             finalize_terminal_job(
+-                                &*st.job_store,
++                                &guarded_store,
+                                 &id,
+                                 JobRecord {
+                                     status: JobStatus::Failed,
+@@ -1212,6 +1233,12 @@ async fn run_background_job(
+                         }
+                     }
+                     Event::Token { text: delta, .. } => {
++                        if let Err(error) = publication.reserve_delta(&delta, 1) {
++                            publication.fail_storage(error);
++                            finalize_terminal_job(&guarded_store, &id, JobRecord { status: JobStatus::Failed, output: None, error: Some("background output could not be buffered by the configured store".into()) });
++                            drop(guard);
++                            return;
++                        }
+                         n_completion_tokens += 1;
+                         usage.completion_tokens = n_completion_tokens;
+                         if let Some(r) = receipt.as_mut() {
+@@ -1222,7 +1249,7 @@ async fn run_background_job(
+                                 );
+                                 let _ = r.reject(500, "request_ledger_unavailable");
+                                 finalize_terminal_job(
+-                                    &*st.job_store,
++                                    &guarded_store,
+                                     &id,
+                                     JobRecord {
+                                         status: JobStatus::Failed,
+@@ -1257,7 +1284,7 @@ async fn run_background_job(
+                             );
+                         }
+                         finalize_terminal_job(
+-                            &*st.job_store,
++                            &guarded_store,
+                             &id,
+                             JobRecord {
+                                 status: JobStatus::Failed,
+@@ -1277,7 +1304,7 @@ async fn run_background_job(
+                             );
+                         }
+                         finalize_terminal_job(
+-                            &*st.job_store,
++                            &guarded_store,
+                             &id,
+                             JobRecord {
+                                 status: JobStatus::Failed,
+@@ -1332,7 +1359,7 @@ async fn run_background_job(
+                             // actually billed.
+                             let _ = r.reject(500, "request_ledger_unavailable");
+                             finalize_terminal_job(
+-                                &*st.job_store,
++                                &guarded_store,
+                                 &id,
+                                 JobRecord {
+                                     status: JobStatus::Failed,
+@@ -1363,7 +1390,7 @@ async fn run_background_job(
+                             incomplete,
+                         );
+                         finalize_terminal_job(
+-                            &*st.job_store,
++                            &guarded_store,
+                             &id,
+                             JobRecord { status: job_status, output: Some(body), error: None },
+                         );
+diff --git a/docs/SERVING.md b/docs/SERVING.md
+index 36dae6d4e4..435743b446 100644
+--- a/docs/SERVING.md
++++ b/docs/SERVING.md
+@@ -1139,9 +1139,13 @@ worker errors remain failures rather than successful empty responses.
+ The stock result store is in-memory and process-local. Terminal results expire after
+ `MEMRA_BACKGROUND_JOB_TTL_SECS` (default 900 seconds). The approximate resident cap
+ is `MEMRA_BACKGROUND_JOB_MAX_BYTES` (default 64 MiB). Each admitted record reserves
+-at least 256 bytes, enough for the fixed terminal storage-failure record. If a final
+-output exceeds the available cap, polling reports failure; accounting may already
+-have settled, so this is not a promise of a refund. The TTL starts at terminal state,
++at least 256 bytes, enough for the fixed terminal storage-failure record. Working output reserves a conservative proportional budget before buffering, and
++encoding uses a counted, capped writer. If output cannot fit, polling reports failure
++and the receipt settles `background_storage_failed` unbilled. Completed and partial
++usage settles only after the configured store reserves terminal publication. Custom
++stores must implement output reservation and guarded publication; otherwise background
++delivery fails visibly before billing. This is approximate accounting, not an exact
++process RSS limit. The TTL starts at terminal state,
+ not submission. Polls do not consume results.
+ 
+ Deployment binaries can pass their own `Arc<dyn JobStore>` through

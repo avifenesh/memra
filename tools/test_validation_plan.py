@@ -121,6 +121,30 @@ class ValidationPlanTests(unittest.TestCase):
                 self.assertTrue(plan['native']['requirements'])
                 self.assertFalse(plan['native']['qualification'])
 
+    def test_background_collector_selects_its_cpu_floor_and_native_obligations(self):
+        contract = vp.TOOL_CONTRACTS['background-chat-text']
+        for path in contract['inputs']:
+            self.put(path, '# fixture\n')
+        self.commit()
+        for path in contract['inputs']:
+            with self.subTest(path=path):
+                plan = self.plan([path])
+                self.assertEqual([c['id'] for c in plan['cpu_contracts']], ['background-chat-text'])
+                self.assertEqual(plan['cpu_contracts'][0]['cpu'][-1], '9')
+                self.assertTrue(plan['native']['requirements'])
+                self.assertFalse(plan['native']['qualification'])
+
+    def test_background_contract_refuses_partial_or_deleted_inputs(self):
+        contract = vp.TOOL_CONTRACTS['background-chat-text']
+        for path in contract['inputs']:
+            self.put(path, '# fixture\n')
+        for path in contract['inputs']:
+            with self.subTest(missing=path):
+                (self.repo / path).unlink()
+                with self.assertRaisesRegex(vp.Refused, 'background-chat-text'):
+                    vp.cpu_contract_names(self.repo, 'background-chat-text')
+                self.put(path, '# fixture\n')
+
     def test_shared_metrics_parser_selects_both_collectors(self):
         for name in ('cache-meter', 'metrics-live'):
             for path in vp.TOOL_CONTRACTS[name]['inputs']:
