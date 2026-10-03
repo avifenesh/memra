@@ -1193,6 +1193,8 @@ Paris\n</parameter>\n<parameter=days>\n3\n</parameter>\n<parameter=metric>\ntrue
             ToolStreamParser::dsv4(true),
             ToolStreamParser::hy3(HashMap::new(), true),
             ToolStreamParser::glm5(true, HashMap::new()),
+            ToolStreamParser::new(HashMap::new(), false).with_json_arguments(),
+            ToolStreamParser::gemma_tools().with_json_arguments(),
         ];
         for mut original in configs {
             let initial = std::mem::discriminant(&original.state);
@@ -1213,6 +1215,7 @@ Paris\n</parameter>\n<parameter=days>\n3\n</parameter>\n<parameter=metric>\ntrue
             assert_eq!(fresh.dsv4, original.dsv4);
             assert_eq!(fresh.glm5, original.glm5);
             assert_eq!(fresh.hy3, original.hy3);
+            assert_eq!(fresh.json_arguments, original.json_arguments);
         }
     }
 

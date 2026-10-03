@@ -1021,6 +1021,18 @@ mod tests {
             None,
             ToolDialect::Qwen
         ));
+        assert!(accepts(
+            "1 < 2 and <ordinary> text",
+            false,
+            None,
+            ToolDialect::Qwen
+        ));
+        assert!(accepts(
+            &format!("<prefix {gemma}"),
+            false,
+            None,
+            ToolDialect::Gemma
+        ));
         for bad in [
             qwen.replace("Paris", "Berlin"),
             qwen.replace("weather", "clock"),

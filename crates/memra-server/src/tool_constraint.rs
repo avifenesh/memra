@@ -90,8 +90,12 @@ impl ToolLanguage {
                     "tool_choice function {name:?} parameters must be a schema object"
                 ));
             }
-            constrained::validate_json_schema(&schema)
-                .map_err(|e| format!("tool_choice function {name:?} parameters: {e}"))?;
+            constrained::validate_json_schema(&schema).map_err(|e| {
+                format!(
+                    "tool_choice function {name:?} parameters: {}",
+                    e.replace("response_format.json_schema.schema", "schema")
+                )
+            })?;
             // Arguments must be an object. Keep the original document root so local
             // $ref/$defs pointers do not move under a synthetic allOf wrapper.
             let allows_object = match schema.get("type") {
@@ -108,6 +112,12 @@ impl ToolLanguage {
                 ));
             }
             schema["type"] = json!("object");
+            constrained::validate_json_schema(&schema).map_err(|e| {
+                format!(
+                    "tool_choice function {name:?} parameters: {}",
+                    e.replace("response_format.json_schema.schema", "schema")
+                )
+            })?;
             if named.is_none_or(|selected| selected == name) {
                 functions.push((name.to_owned(), schema));
             }
@@ -135,12 +145,22 @@ impl ToolLanguage {
             let repeat = if self.parallel { "+" } else { "" };
             format!("start: call{repeat}\ncall: {choices}\n")
         } else {
-            // One lexeme for all ordinary prefix bytes. Splitting it into repeatable
-            // lexemes would let an opener straddle two unconstrained prefix chunks.
-            let escaped = open.replace('|', "\\|");
-            format!(
-                "start: PREFIX? call?\nPREFIX: /(?s:.+?)/ & ~/(?s:.*){escaped}(?s:.*)/\ncall: {choices}\n"
-            )
+            // A whole-prefix lexeme greedily consumes partial openers before the
+            // parser can hand off to a call. These DFA states recognize arbitrary
+            // ordinary bytes while reserving only the complete call opener.
+            let mut prefix = String::from("prefix: p0\np0: | /[^<]+/ p0 | \"<\" p1\n");
+            for (i, ch) in open.chars().enumerate().skip(1) {
+                prefix.push_str(&format!("p{i}: | \"<\" p1 | /[^<{ch}]/ p0"));
+                if i + 1 < open.len() {
+                    prefix.push_str(&format!(
+                        " | {} p{}",
+                        serde_json::to_string(&ch.to_string()).expect("character"),
+                        i + 1
+                    ));
+                }
+                prefix.push('\n');
+            }
+            format!("start: prefix call?\n{prefix}call: {choices}\n")
         };
         for (i, (name, schema)) in self.functions.iter().enumerate() {
             let (head, tail) = match self.dialect {
@@ -184,7 +204,7 @@ mod tests {
         assert_eq!(required.functions.len(), 2);
         assert!(required.lark(literal).contains("call0 | call1"));
         let optional = ToolLanguage::new(&tools(), None, false, ToolDialect::Qwen).unwrap();
-        assert!(optional.lark(literal).contains("start: PREFIX? call?"));
+        assert!(optional.lark(literal).contains("start: prefix call?"));
     }
 
     #[test]
