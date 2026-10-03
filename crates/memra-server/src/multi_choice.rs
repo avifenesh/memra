@@ -608,6 +608,10 @@ pub(crate) async fn respond(
     for (request, reservation) in requests.iter_mut().zip(&mut pending) {
         reservation.bind(request);
     }
+    crate::meter_admit(&env, tenant, &model, lane);
+    if let Some(trace) = requests.first().and_then(|request| request.ttft.as_ref()) {
+        trace.mark_submitted();
+    }
     if st
         .cmd_tx
         .send(crate::worker::Cmd::GenerateChoices(requests))

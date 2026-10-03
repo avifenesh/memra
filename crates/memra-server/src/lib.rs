@@ -2886,8 +2886,15 @@ fn reserve_pending_choices(
                 "shed_queue",
             ));
         };
-        let running = st.inflight[lane.idx()]
-            .load(std::sync::atomic::Ordering::SeqCst)
+        // Match the shared-pool ownership used by acquire_request_slot. Headers are
+        // saturated and tenant-narrowed, so they cannot reconstruct raw occupancy.
+        let all = st.inflight[lane.idx()].load(std::sync::atomic::Ordering::SeqCst);
+        let routed: usize = served_routes(st)
+            .iter()
+            .map(|route| route.inflight(lane.idx()))
+            .sum();
+        let running = all
+            .saturating_sub(routed)
             .saturating_sub(choices)
             .saturating_sub(queued);
         let waits = queued > 0 || running.saturating_add(choices) > cap;

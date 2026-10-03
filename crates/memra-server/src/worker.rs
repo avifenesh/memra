@@ -29760,7 +29760,7 @@ pub fn run(
                             && !is_multi_device_deployment(&loaded)
                             && !memra_engine::pp::pp_host_bounce_active();
                         if !supported {
-                            choice.group.fail();
+                            reject_choice_route(choice, &mut px, &mut s.prefix_pin);
                             s.errored = true;
                             let _ = s.tx.send(Event::Error(EngineError::invalid_param(
                                 "n-choice shared prefill is unsupported for this selected native route", "n")));
@@ -38069,6 +38069,17 @@ fn prefix_fanout_eligible(s: &Session, eager_only: &std::collections::HashSet<St
         && s.cache.as_ref().is_some_and(|c| c.pos == 0 && !c.has_swa_ring())
         && !eager_only.contains(&s.model)
         && s.prefill_queue.len() >= PREFIX_CACHE_MIN_TOKENS
+}
+
+/// A freshly admitted but unsupported choice has not entered the retire sweep.
+/// Release its source lease here before the Session drops.
+fn reject_choice_route(
+    choice: &crate::multi_choice::Choice,
+    px: &mut PrefixCache,
+    pin: &mut Option<PrefixPin>,
+) {
+    choice.group.fail();
+    retire_prefix_pin(px, pin);
 }
 
 fn choice_waiting(s: &Session) -> bool {
@@ -62062,6 +62073,30 @@ mod tests {
             "an evicted lease id must not release another entry"
         );
         assert_prefix_cache_accounting(&px);
+    }
+
+    #[test]
+    fn refused_choice_leader_releases_its_live_source_lease_before_drop() {
+        let k = key("");
+        let mut px = PrefixCache::default();
+        px.insert_with_budget(&k, entry_b(&k, 0, 4), "test", 8);
+        let mut pin = Some(px.pin(&k, 0).unwrap());
+        let group = crate::multi_choice::Group::new("refused-leader".into(), 2);
+        let choice = crate::multi_choice::Choice {
+            group: group.clone(),
+            index: 0,
+            restored: false,
+        };
+        assert_eq!(px.entries[&k][0].pins, 1);
+        super::reject_choice_route(&choice, &mut px, &mut pin);
+        super::reject_choice_route(&choice, &mut px, &mut pin);
+        assert!(group.failed());
+        assert!(pin.is_none());
+        assert_eq!(px.entries[&k][0].pins, 0);
+        assert!(
+            px.prepare_snapshot(&k, 8, 8, None),
+            "refused leader cannot keep an entry unevictable"
+        );
     }
 
     #[test]
