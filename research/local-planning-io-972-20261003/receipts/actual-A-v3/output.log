@@ -1,0 +1,20 @@
+Running as unit: memra-rig-job-de362c91e38d.service; invocation ID: 103bc2af29a24781abacdb5d9d9436e3
+{"test_methods": 14, "admitted_edges": 37, "verdict": {"status": "passed", "edges": 37, "contract_id": "a0dcc489f1a2ad5f05fda88e825f7eab5c7e18a995ad67c028b306117ae1be00", "qualification": false, "scope": "declared behavior assertions only; native receipt admission remains separate"}, "admission_negatives": 2, "native_qualification": false}
+.........................................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 185 tests in 20.210s
+
+OK
+unittest-floor: OK: ran 185 tests (floor 185) for tools (test_validation_*.py)
+.....................
+----------------------------------------------------------------------
+Ran 21 tests in 2.036s
+
+OK
+unittest-floor: OK: ran 21 tests (floor 21) for tools (test_check_support_states.py)
+Validation registry covers all 14 workspace packages
+          Finished with result: success
+Main processes terminated with: code=exited, status=0/SUCCESS
+               Service runtime: 27.867s
+             CPU time consumed: 30.493s
+                   Memory peak: 218.6M (swap: 0B)

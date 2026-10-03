@@ -8,7 +8,8 @@ opening, uses nofollow and nonblocking flags, and checks the opened file with fs
 Four actual original-consumer FIFO observations prevent content I/O. Four current
 consumers exercise leaf aliases and FIFO/symlink stat-to-open replacements. The two
 descendant readers also exercise ancestor aliases and replacement before directory
-open. The root and the registry's module directory are trusted bases, not descendant
+open. A replacement after directory open retains the original file bytes through
+the descriptor. The root and the registry's module directory are trusted bases, not descendant
 components. Root manifest failure retains full planning expansion. Direct unsafe
 reads retain refusal. Git snapshots, CRLF raw bytes, text newline normalization,
 default Cargo command arrays and unknown-reader full fallback have controls.

@@ -1,0 +1,150 @@
+test_fifo_and_directory_readers_refuse_before_content (test_validation_local_input_io.LocalInputIO.test_fifo_and_directory_readers_refuse_before_content) ... 
+  test_fifo_and_directory_readers_refuse_before_content (test_validation_local_input_io.LocalInputIO.test_fifo_and_directory_readers_refuse_before_content) (kind='fifo', reader='read') ... FAIL
+  test_fifo_and_directory_readers_refuse_before_content (test_validation_local_input_io.LocalInputIO.test_fifo_and_directory_readers_refuse_before_content) (kind='fifo', reader='read_bytes') ... FAIL
+  test_fifo_and_directory_readers_refuse_before_content (test_validation_local_input_io.LocalInputIO.test_fifo_and_directory_readers_refuse_before_content) (kind='directory', reader='read') ... FAIL
+  test_fifo_and_directory_readers_refuse_before_content (test_validation_local_input_io.LocalInputIO.test_fifo_and_directory_readers_refuse_before_content) (kind='directory', reader='read_bytes') ... FAIL
+  test_fifo_and_directory_readers_refuse_before_content (test_validation_local_input_io.LocalInputIO.test_fifo_and_directory_readers_refuse_before_content) (kind='socket', reader='read') ... FAIL
+  test_fifo_and_directory_readers_refuse_before_content (test_validation_local_input_io.LocalInputIO.test_fifo_and_directory_readers_refuse_before_content) (kind='socket', reader='read_bytes') ... FAIL
+
+======================================================================
+FAIL: test_fifo_and_directory_readers_refuse_before_content (test_validation_local_input_io.LocalInputIO.test_fifo_and_directory_readers_refuse_before_content) (kind='fifo', reader='read')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-local-planning-io-972/tools/test_validation_local_input_io.py", line 52, in test_fifo_and_directory_readers_refuse_before_content
+    reader(kind)
+    ~~~~~~^^^^^^
+  File "/tmp/memra-local-io-controls-l1cax30w/remove-prestat-type.py", line 595, in read
+    return read_local_input(self.repo, path)
+  File "/tmp/memra-local-io-controls-l1cax30w/remove-prestat-type.py", line 518, in read_local_input
+    leaf = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+  File "/usr/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1247, in _execute_mock_call
+    result = effect(*args, **kwargs)
+  File "/home/avifenesh/projects/wt-memra-local-planning-io-972/tools/test_validation_local_input_io.py", line 45, in refuse_special_open
+    raise AssertionError('known special input opened')
+AssertionError: known special input opened
+
+======================================================================
+FAIL: test_fifo_and_directory_readers_refuse_before_content (test_validation_local_input_io.LocalInputIO.test_fifo_and_directory_readers_refuse_before_content) (kind='fifo', reader='read_bytes')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-local-planning-io-972/tools/test_validation_local_input_io.py", line 52, in test_fifo_and_directory_readers_refuse_before_content
+    reader(kind)
+    ~~~~~~^^^^^^
+  File "/tmp/memra-local-io-controls-l1cax30w/remove-prestat-type.py", line 598, in read_bytes
+    return read_local_input(self.repo, path, binary=True)
+  File "/tmp/memra-local-io-controls-l1cax30w/remove-prestat-type.py", line 518, in read_local_input
+    leaf = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+  File "/usr/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1247, in _execute_mock_call
+    result = effect(*args, **kwargs)
+  File "/home/avifenesh/projects/wt-memra-local-planning-io-972/tools/test_validation_local_input_io.py", line 45, in refuse_special_open
+    raise AssertionError('known special input opened')
+AssertionError: known special input opened
+
+======================================================================
+FAIL: test_fifo_and_directory_readers_refuse_before_content (test_validation_local_input_io.LocalInputIO.test_fifo_and_directory_readers_refuse_before_content) (kind='directory', reader='read')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-local-planning-io-972/tools/test_validation_local_input_io.py", line 52, in test_fifo_and_directory_readers_refuse_before_content
+    reader(kind)
+    ~~~~~~^^^^^^
+  File "/tmp/memra-local-io-controls-l1cax30w/remove-prestat-type.py", line 595, in read
+    return read_local_input(self.repo, path)
+  File "/tmp/memra-local-io-controls-l1cax30w/remove-prestat-type.py", line 518, in read_local_input
+    leaf = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+  File "/usr/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1247, in _execute_mock_call
+    result = effect(*args, **kwargs)
+  File "/home/avifenesh/projects/wt-memra-local-planning-io-972/tools/test_validation_local_input_io.py", line 45, in refuse_special_open
+    raise AssertionError('known special input opened')
+AssertionError: known special input opened
+
+======================================================================
+FAIL: test_fifo_and_directory_readers_refuse_before_content (test_validation_local_input_io.LocalInputIO.test_fifo_and_directory_readers_refuse_before_content) (kind='directory', reader='read_bytes')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-local-planning-io-972/tools/test_validation_local_input_io.py", line 52, in test_fifo_and_directory_readers_refuse_before_content
+    reader(kind)
+    ~~~~~~^^^^^^
+  File "/tmp/memra-local-io-controls-l1cax30w/remove-prestat-type.py", line 598, in read_bytes
+    return read_local_input(self.repo, path, binary=True)
+  File "/tmp/memra-local-io-controls-l1cax30w/remove-prestat-type.py", line 518, in read_local_input
+    leaf = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+  File "/usr/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1247, in _execute_mock_call
+    result = effect(*args, **kwargs)
+  File "/home/avifenesh/projects/wt-memra-local-planning-io-972/tools/test_validation_local_input_io.py", line 45, in refuse_special_open
+    raise AssertionError('known special input opened')
+AssertionError: known special input opened
+
+======================================================================
+FAIL: test_fifo_and_directory_readers_refuse_before_content (test_validation_local_input_io.LocalInputIO.test_fifo_and_directory_readers_refuse_before_content) (kind='socket', reader='read')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-local-planning-io-972/tools/test_validation_local_input_io.py", line 52, in test_fifo_and_directory_readers_refuse_before_content
+    reader(kind)
+    ~~~~~~^^^^^^
+  File "/tmp/memra-local-io-controls-l1cax30w/remove-prestat-type.py", line 595, in read
+    return read_local_input(self.repo, path)
+  File "/tmp/memra-local-io-controls-l1cax30w/remove-prestat-type.py", line 518, in read_local_input
+    leaf = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+  File "/usr/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1247, in _execute_mock_call
+    result = effect(*args, **kwargs)
+  File "/home/avifenesh/projects/wt-memra-local-planning-io-972/tools/test_validation_local_input_io.py", line 45, in refuse_special_open
+    raise AssertionError('known special input opened')
+AssertionError: known special input opened
+
+======================================================================
+FAIL: test_fifo_and_directory_readers_refuse_before_content (test_validation_local_input_io.LocalInputIO.test_fifo_and_directory_readers_refuse_before_content) (kind='socket', reader='read_bytes')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-local-planning-io-972/tools/test_validation_local_input_io.py", line 52, in test_fifo_and_directory_readers_refuse_before_content
+    reader(kind)
+    ~~~~~~^^^^^^
+  File "/tmp/memra-local-io-controls-l1cax30w/remove-prestat-type.py", line 598, in read_bytes
+    return read_local_input(self.repo, path, binary=True)
+  File "/tmp/memra-local-io-controls-l1cax30w/remove-prestat-type.py", line 518, in read_local_input
+    leaf = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+  File "/usr/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1247, in _execute_mock_call
+    result = effect(*args, **kwargs)
+  File "/home/avifenesh/projects/wt-memra-local-planning-io-972/tools/test_validation_local_input_io.py", line 45, in refuse_special_open
+    raise AssertionError('known special input opened')
+AssertionError: known special input opened
+
+----------------------------------------------------------------------
+Ran 1 test in 0.019s
+
+FAILED (failures=6)

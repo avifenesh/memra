@@ -214,6 +214,24 @@ class LocalInputIO(unittest.TestCase):
                     finally:
                         target.unlink(); saved.rename(target)
 
+    def test_opened_parent_stays_anchored_when_its_path_is_replaced(self):
+        self.fixture.put('parent/input.txt', 'original\r\n')
+        self.fixture.put('replacement/input.txt', 'different\n')
+        parent = self.root / 'parent'; saved = self.root / 'saved-parent'
+        real_open = os.open; swapped = []
+        def replace(part, flags, *args, **kwargs):
+            descriptor = real_open(part, flags, *args, **kwargs)
+            if part == 'parent' and not swapped:
+                parent.rename(saved)
+                parent.symlink_to(self.root / 'replacement', target_is_directory=True)
+                swapped.append(True)
+            return descriptor
+        before = set(os.listdir('/proc/self/fd'))
+        with mock.patch.object(vp.os, 'open', side_effect=replace):
+            self.assertEqual(self.tree.read_bytes('parent/input.txt'), b'original\r\n')
+        self.assertEqual(swapped, [True])
+        self.assertEqual(before, set(os.listdir('/proc/self/fd')))
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -23,6 +23,7 @@ names = [
     'test_fifo_and_directory_readers_refuse_before_content',
     'test_leaf_and_parent_links_are_refused_before_reading_target',
     'test_missing_and_noncanonical_paths_remain_refusals',
+    'test_opened_parent_stays_anchored_when_its_path_is_replaced',
     'test_own_registry_fifo_refuses_real_include_reader',
     'test_real_consumers_refuse_leaf_aliases_and_replacement_races',
     'test_real_descendant_consumers_refuse_ancestor_aliases_and_anchor_races',
