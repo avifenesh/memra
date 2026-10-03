@@ -326,6 +326,8 @@ def build_plan(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def self_test() -> None:
+    if not __debug__:
+        raise RuntimeError("expert tier plan self-test requires enabled assertions")
     with tempfile.TemporaryDirectory(prefix="memra-tier-plan-") as tmp:
         root = Path(tmp)
         trace = root / "usage.trace"

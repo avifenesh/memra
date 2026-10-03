@@ -50,6 +50,26 @@ immutable build-only or GPU capsules. Reuse can avoid repeating a completed buil
 at the same exact candidate. It does not replace a changed candidate's build,
 model gates or the required native/publication battery.
 
+## Expert-tier planner self-test admission
+
+The unconditional CI gates job runs the actual expert-tier self-test and its CPU
+admission controls:
+
+```sh
+python3 tools/build_expert_tier_plan.py --self-test
+tools/unittest-floor.sh tools test_expert_tier_plan_contract.py 12
+```
+
+The self-test refuses `-O`, `-OO` and `PYTHONOPTIMIZE=1/2` before creating a fixture.
+Imported self-test calls retain that refusal. Controls observe all nine recipe
+cases and at least 26 assertion sites, reject an incorrect result and empty or
+shortened observation, and reject removal or masking of the CI caller. Ordinary
+plan generation remains available with optimized Python.
+
+This is CPU self-test admission. It grants no model, runtime, serving or emitted
+native-plan qualification. Builder changes still select the conservative full
+validation plan; native obligations and required gate coverage remain unchanged.
+
 ## DSV4 norm-fusion gates, REMOVED 2026-09-11
 
 The two sections that stood here documented `dsv4_compose_densefast_normfuse_gate`
