@@ -38,4 +38,4 @@ Decision: stop after these acceptance edges pass and reviewed PR/CI/merge/cleanu
 Diagnose concrete failures before any repeated cell. Preserve failed raw records.
 A local fixture result does not establish model-family qualification.
 
-Status: source preparation. CPU and native execution have not passed yet.
+Status: bounded native acceptance passed. See RESULTS.md and the hash-bound native-v3 receipt. Review, full selected CI and manager merge remain.

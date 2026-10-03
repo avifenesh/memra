@@ -33,8 +33,13 @@ TOOL_CONTRACTS = {
     'tool-choice': {
         'presence': ['tools/tool-choice-gate.py', 'tools/test_tool_choice_gate.py'],
         'inputs': ['tools/tool-choice-gate.py', 'tools/test_tool_choice_gate.py',
-                   'tools/validation_coverage.py'],
-        'cpu': ['tools/unittest-floor.sh', 'tools', 'test_tool_choice_gate.py', '15'],
+                   'tools/validation_coverage.py',
+                   'research/tool-choice-20261003/receipts/native-v3/report.json',
+                   'research/tool-choice-20261003/receipts/native-v3/expected-context.json',
+                   'research/tool-choice-20261003/receipts/native-v3/coverage-plan.json',
+                   'research/tool-choice-20261003/receipts/native-v3/coverage-results.json',
+                   'research/tool-choice-20261003/receipts/native-v3/file-sha256.json'],
+        'cpu': ['tools/unittest-floor.sh', 'tools', 'test_tool_choice_gate.py', '16'],
         'native': ['Pinned Qwen/Gemma tool-choice streams: required/named schema and grammar engagement, single-call policy, explicit refusals, and unchanged-auto/tool-none identity with coherent receipt red controls'],
     },
     'q35-cache': {

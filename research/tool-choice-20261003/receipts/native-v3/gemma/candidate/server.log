@@ -1,0 +1,46 @@
+[server] build: memra-0.138.0-ab2eb6fcc2c7 (id: source-tree, git: 3c530d494428)
+[env-audit] warning: 3 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: MEMRA_CI_LOCK, MEMRA_CI_LOCK_HELD, MEMRA_RIG_LOCK_FD. Left alone: launchers and gate scripts own names outside the engine's families.
+[auth] keyring loaded: 1 inline key(s)
+[server] starting; models config = [("tool-fixture", "/data/ai-ml/models/gemma4-12b-it-qat-29d0977/gemma-4-12b-it-qat-q4_0.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "tool-fixture" <- /data/ai-ml/models/gemma4-12b-it-qat-29d0977/gemma-4-12b-it-qat-q4_0.gguf
+[tensor-contract] bound 667 semantic tensors (pack gemma4_dense, Gguf, output head TiedToEmbedding); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[gemma4] suppress_tokens: 2 ids masked at sampling
+[q8rp] split-plane decode mirrors built: 1 tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: capacity-keyed auto REFUSED (UNPINNED)); free 16147 MiB, mirror mass 20820 MiB, capacity threshold 29012 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[q4rp] split-plane IN-PLACE swap: 336 dense trunk tensors
+[worker]   loaded "tool-fixture": 48 layers, eos=1, stop=[1, 106]
+[worker] tool-fixture: template caps tools=true think=false think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=true dsv4=false glm5=false ctx=262144 tok="gemma4" instruct=None chat_defaults=None/None
+[route-contract] model="tool-fixture" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] tool-fixture: decode wave cap 8; scheduler tick cap 8
+[worker] tool-fixture: BATCHED DECODE (gemma4 dense arm, default-on; MEMRA_GEMMA4_BATCH=0 = eager kill switch): batched decode chunks; monolithic prefill, no graph promotion, no prime batching (eager-only for every non-decode entry point)
+[admission] "tool-fixture": plain 172032 B/token, spec 172032 B/token; fixed residual learns from effective-free deltas
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[server] worker ready; serving models: ["tool-fixture"]
+[server] listening on http://127.0.0.1:18253
+[meter] admit id=chatcmpl-d754643e19287af98a136e45a2003d3d tenant=fixture lane=interactive model="tool-fixture"
+[admission] request cost: model="tool-fixture" ctx=707 path=plain = 172032 B/token x ctx + 51MB prefill-workspace + 0MB fixed = 173MB
+[admission] fixed residual high-water: model="tool-fixture" 0MB (observed 112MB at ctx 651 path=plain)
+[fa-pool] grow #0 dev=0 o_len 0 -> 20480 ml_len 0 -> 80 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 20480 -> 139264 ml_len 80 -> 272 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 139264 -> 278528 ml_len 272 -> 544 (retired kept, zero=false)
+[meter] admit id=chatcmpl-f896e193023c10cada4120c4601fbfad tenant=fixture lane=interactive model="tool-fixture"
+[admission] request cost: model="tool-fixture" ctx=605 path=plain = 172032 B/token x ctx + 11MB prefill-workspace + 0MB fixed = 115MB
+[meter] admit id=chatcmpl-3dd91f9ab4080c0731fa909e68529337 tenant=fixture lane=interactive model="tool-fixture"
+[admission] request cost: model="tool-fixture" ctx=730 path=plain = 172032 B/token x ctx + 60MB prefill-workspace + 0MB fixed = 186MB
+[constrained] tool-fixture: 38 masked steps, mask total 0.54 ms (0.014 ms/step)
+[meter] admit id=chatcmpl-2ba59c1a0cc9f2743692db4eda7b1361 tenant=fixture lane=interactive model="tool-fixture"
+[constrained] tool-fixture: 38 masked steps, mask total 0.59 ms (0.016 ms/step)
+[meter] admit id=chatcmpl-a8c03afd38858a1a6f8aaa4479205775 tenant=fixture lane=interactive model="tool-fixture"
+[admission] request cost: model="tool-fixture" ctx=736 path=plain = 172032 B/token x ctx + 63MB prefill-workspace + 0MB fixed = 189MB
+[constrained] tool-fixture: 38 masked steps, mask total 2.68 ms (0.070 ms/step)
+[meter] admit id=chatcmpl-5c7bc6287fd3f9b15a9a5accc04558e7 tenant=fixture lane=interactive model="tool-fixture"
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete
