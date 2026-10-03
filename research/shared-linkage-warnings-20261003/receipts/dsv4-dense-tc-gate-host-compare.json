@@ -1,0 +1,426 @@
+{
+  "left_sha256": "fc8884fa18961d7b5f266a42a6af19c9ec640e58cff2c559215bd34ad107e74a",
+  "right_sha256": "3de93b654edc1523277bb545b84c42515dcc1d5bbfc60832cd034522b83fe727",
+  "fatbin_size_delta": 456,
+  "bounded_payload_changes": [
+    ".note.gnu.build-id",
+    ".nv_fatbin",
+    ".eh_frame_hdr",
+    ".eh_frame",
+    ".symtab",
+    ".strtab"
+  ],
+  "program_header_changes": [
+    {
+      "index": 4,
+      "before": [
+        1,
+        4,
+        1077248,
+        1077248,
+        1077248,
+        6587376,
+        6587376,
+        4096
+      ],
+      "after": [
+        1,
+        4,
+        1077248,
+        1077248,
+        1077248,
+        6587832,
+        6587832,
+        4096
+      ]
+    },
+    {
+      "index": 8,
+      "before": [
+        4,
+        4,
+        7664560,
+        7664560,
+        7664560,
+        32,
+        32,
+        8
+      ],
+      "after": [
+        4,
+        4,
+        7665016,
+        7665016,
+        7665016,
+        32,
+        32,
+        8
+      ]
+    },
+    {
+      "index": 9,
+      "before": [
+        4,
+        4,
+        7664592,
+        7664592,
+        7664592,
+        32,
+        32,
+        4
+      ],
+      "after": [
+        4,
+        4,
+        7665048,
+        7665048,
+        7665048,
+        32,
+        32,
+        4
+      ]
+    },
+    {
+      "index": 11,
+      "before": [
+        1685382483,
+        4,
+        7664560,
+        7664560,
+        7664560,
+        32,
+        32,
+        8
+      ],
+      "after": [
+        1685382483,
+        4,
+        7665016,
+        7665016,
+        7665016,
+        32,
+        32,
+        8
+      ]
+    },
+    {
+      "index": 12,
+      "before": [
+        1685382480,
+        4,
+        7492384,
+        7492384,
+        7492384,
+        24772,
+        24772,
+        4
+      ],
+      "after": [
+        1685382480,
+        4,
+        7492840,
+        7492840,
+        7492840,
+        24772,
+        24772,
+        4
+      ]
+    }
+  ],
+  "entrypoint_identical": true,
+  "host_code_data_exports_relocations_exact": true,
+  "symbol_indices_preserved": true,
+  "decoded_unwind_exception_abi_equal": true,
+  "complete_section_census_sha256": "88a60e2b69dcc6b614660c2b04d7bcb36edba73ba1bedbf45a8a2c786920b5a6",
+  "complete_section_census_records": 35,
+  "changed_section_records": [
+    {
+      "index": 1,
+      "name": ".note.gnu.build-id",
+      "before": {
+        "index": 1,
+        "name": ".note.gnu.build-id",
+        "type": 7,
+        "flags": 2,
+        "address": 904,
+        "offset": 904,
+        "size": 36,
+        "link": 0,
+        "info": 0,
+        "alignment": 4,
+        "entry_size": 0
+      },
+      "after": {
+        "index": 1,
+        "name": ".note.gnu.build-id",
+        "type": 7,
+        "flags": 2,
+        "address": 904,
+        "offset": 904,
+        "size": 36,
+        "link": 0,
+        "info": 0,
+        "alignment": 4,
+        "entry_size": 0
+      },
+      "left_payload_sha256": "ffe4f27d32f82511206005cd0e2674e23afc0f35566f37b36e60b0e8a315767d",
+      "right_payload_sha256": "d05ec336146a444b9a6cf3683132fa2dfb9c19a4344080af002cdf7eb2192a91"
+    },
+    {
+      "index": 16,
+      "name": ".nv_fatbin",
+      "before": {
+        "index": 16,
+        "name": ".nv_fatbin",
+        "type": 1,
+        "flags": 2,
+        "address": 1159792,
+        "offset": 1159792,
+        "size": 6332592,
+        "link": 0,
+        "info": 0,
+        "alignment": 8,
+        "entry_size": 0
+      },
+      "after": {
+        "index": 16,
+        "name": ".nv_fatbin",
+        "type": 1,
+        "flags": 2,
+        "address": 1159792,
+        "offset": 1159792,
+        "size": 6333048,
+        "link": 0,
+        "info": 0,
+        "alignment": 8,
+        "entry_size": 0
+      },
+      "left_payload_sha256": "ac21d05502efba192af0816941bd8de50e4486824048786d048f20491eb94b44",
+      "right_payload_sha256": "919143eb08cdfbe5db4edf1937c25b6eb60dfe490858b6a09a3234ba694bb3c4"
+    },
+    {
+      "index": 17,
+      "name": ".eh_frame_hdr",
+      "before": {
+        "index": 17,
+        "name": ".eh_frame_hdr",
+        "type": 1,
+        "flags": 2,
+        "address": 7492384,
+        "offset": 7492384,
+        "size": 24772,
+        "link": 0,
+        "info": 0,
+        "alignment": 4,
+        "entry_size": 0
+      },
+      "after": {
+        "index": 17,
+        "name": ".eh_frame_hdr",
+        "type": 1,
+        "flags": 2,
+        "address": 7492840,
+        "offset": 7492840,
+        "size": 24772,
+        "link": 0,
+        "info": 0,
+        "alignment": 4,
+        "entry_size": 0
+      },
+      "left_payload_sha256": "932aa182c7e8a59f2944cbc752884630792d4b551b7512716fccd8dd26fa6ca1",
+      "right_payload_sha256": "103e2413b1a437e3cd603eb15b6dd33481a50b5b004ef6d42bdcfd813d36fc3b"
+    },
+    {
+      "index": 18,
+      "name": ".eh_frame",
+      "before": {
+        "index": 18,
+        "name": ".eh_frame",
+        "type": 1,
+        "flags": 2,
+        "address": 7517160,
+        "offset": 7517160,
+        "size": 135032,
+        "link": 0,
+        "info": 0,
+        "alignment": 8,
+        "entry_size": 0
+      },
+      "after": {
+        "index": 18,
+        "name": ".eh_frame",
+        "type": 1,
+        "flags": 2,
+        "address": 7517616,
+        "offset": 7517616,
+        "size": 135032,
+        "link": 0,
+        "info": 0,
+        "alignment": 8,
+        "entry_size": 0
+      },
+      "left_payload_sha256": "a23d3e4f5b0e65d8a46ab9227915711925453caf5e19ea85f8dcea31289278f7",
+      "right_payload_sha256": "e2c3cab9cafd1fe7b4504a731f761e36ba74d5875e4e9898b1b4066492b7ba54"
+    },
+    {
+      "index": 19,
+      "name": ".gcc_except_table",
+      "before": {
+        "index": 19,
+        "name": ".gcc_except_table",
+        "type": 1,
+        "flags": 2,
+        "address": 7652192,
+        "offset": 7652192,
+        "size": 12367,
+        "link": 0,
+        "info": 0,
+        "alignment": 1,
+        "entry_size": 0
+      },
+      "after": {
+        "index": 19,
+        "name": ".gcc_except_table",
+        "type": 1,
+        "flags": 2,
+        "address": 7652648,
+        "offset": 7652648,
+        "size": 12367,
+        "link": 0,
+        "info": 0,
+        "alignment": 1,
+        "entry_size": 0
+      },
+      "left_payload_sha256": "0114977a9f54ba01e48e74d557ef9f1116df0e94e58927bd1430b4df9f2b4b86",
+      "right_payload_sha256": "0114977a9f54ba01e48e74d557ef9f1116df0e94e58927bd1430b4df9f2b4b86"
+    },
+    {
+      "index": 20,
+      "name": ".note.gnu.property",
+      "before": {
+        "index": 20,
+        "name": ".note.gnu.property",
+        "type": 7,
+        "flags": 2,
+        "address": 7664560,
+        "offset": 7664560,
+        "size": 32,
+        "link": 0,
+        "info": 0,
+        "alignment": 8,
+        "entry_size": 0
+      },
+      "after": {
+        "index": 20,
+        "name": ".note.gnu.property",
+        "type": 7,
+        "flags": 2,
+        "address": 7665016,
+        "offset": 7665016,
+        "size": 32,
+        "link": 0,
+        "info": 0,
+        "alignment": 8,
+        "entry_size": 0
+      },
+      "left_payload_sha256": "5978480398fc48bfa6c56246117c5bc1a40145463a2faca541e5e91d5067ff79",
+      "right_payload_sha256": "5978480398fc48bfa6c56246117c5bc1a40145463a2faca541e5e91d5067ff79"
+    },
+    {
+      "index": 21,
+      "name": ".note.ABI-tag",
+      "before": {
+        "index": 21,
+        "name": ".note.ABI-tag",
+        "type": 7,
+        "flags": 2,
+        "address": 7664592,
+        "offset": 7664592,
+        "size": 32,
+        "link": 0,
+        "info": 0,
+        "alignment": 4,
+        "entry_size": 0
+      },
+      "after": {
+        "index": 21,
+        "name": ".note.ABI-tag",
+        "type": 7,
+        "flags": 2,
+        "address": 7665048,
+        "offset": 7665048,
+        "size": 32,
+        "link": 0,
+        "info": 0,
+        "alignment": 4,
+        "entry_size": 0
+      },
+      "left_payload_sha256": "6e48317ad93a8ac2dc04321465ede06d1274543fc8ab172e68171a9d684bb313",
+      "right_payload_sha256": "6e48317ad93a8ac2dc04321465ede06d1274543fc8ab172e68171a9d684bb313"
+    },
+    {
+      "index": 32,
+      "name": ".symtab",
+      "before": {
+        "index": 32,
+        "name": ".symtab",
+        "type": 2,
+        "flags": 0,
+        "address": 0,
+        "offset": 7689576,
+        "size": 160632,
+        "link": 33,
+        "info": 4871,
+        "alignment": 8,
+        "entry_size": 24
+      },
+      "after": {
+        "index": 32,
+        "name": ".symtab",
+        "type": 2,
+        "flags": 0,
+        "address": 0,
+        "offset": 7689576,
+        "size": 160632,
+        "link": 33,
+        "info": 4871,
+        "alignment": 8,
+        "entry_size": 24
+      },
+      "left_payload_sha256": "17357adb90e97b629bd992b2c10d859e9c6d47208aa18dcbfddacfcf6041996c",
+      "right_payload_sha256": "794bc4e48c7a09f414b38626b0b75b8c534616202f683f3f751c55aa31fadbe0"
+    },
+    {
+      "index": 33,
+      "name": ".strtab",
+      "before": {
+        "index": 33,
+        "name": ".strtab",
+        "type": 3,
+        "flags": 0,
+        "address": 0,
+        "offset": 7850208,
+        "size": 404063,
+        "link": 0,
+        "info": 0,
+        "alignment": 1,
+        "entry_size": 0
+      },
+      "after": {
+        "index": 33,
+        "name": ".strtab",
+        "type": 3,
+        "flags": 0,
+        "address": 0,
+        "offset": 7850208,
+        "size": 404063,
+        "link": 0,
+        "info": 0,
+        "alignment": 1,
+        "entry_size": 0
+      },
+      "left_payload_sha256": "9e969b68d45f637dd1b3faeb2b8169e1329d4d34f9ab3e422e828dd8beb0a663",
+      "right_payload_sha256": "9966c916420cc6487cc7e525580efd900b16034551f7b3642907a153f22b318f"
+    }
+  ]
+}

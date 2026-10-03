@@ -1,0 +1,126 @@
+{
+  "reproduction": [
+    {
+      "id": "8e32433eb1c5",
+      "state": "success",
+      "source_sha": "62a9da5dc0b1407fdce483174b8c56f197b9b987",
+      "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "script_sha256": "b8f8458658ec7c09fbb31f6a11292eebc43ceefed8ea408a242f6f4b19bfa6e3",
+      "result": {
+        "exit_code": 0,
+        "error": null,
+        "started": 1791011192.002878,
+        "finished": 1791011194.0717843,
+        "canonical_lock": null
+      }
+    }
+  ],
+  "production_original": [
+    {
+      "id": "ddc28740a646",
+      "state": "success",
+      "source_sha": "62a9da5dc0b1407fdce483174b8c56f197b9b987",
+      "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "script_sha256": "2e31149b450acd56f2a70ba8878cc43d4388da9ab78014ea07bef2b6fc65e881",
+      "result": {
+        "exit_code": 0,
+        "error": null,
+        "started": 1791011257.289929,
+        "finished": 1791011415.3340504,
+        "canonical_lock": null
+      }
+    }
+  ],
+  "production_repaired": [
+    {
+      "id": "4e866c9095df",
+      "state": "failed",
+      "source_sha": "62a9da5dc0b1407fdce483174b8c56f197b9b987",
+      "diff_sha256": "385934af7cd119515b85b30ecdb193304cb7fccfda0b53d7d0202f1ac00469d3",
+      "script_sha256": "d2aa1406ec73245c8e6b62e89e91061895da364574d7dee357ba3736969bdbf6",
+      "result": {
+        "exit_code": 1,
+        "error": null,
+        "started": 1791011448.7740762,
+        "finished": 1791011482.9720614,
+        "canonical_lock": null
+      }
+    },
+    {
+      "id": "813bc69a6f42",
+      "state": "failed",
+      "source_sha": "62a9da5dc0b1407fdce483174b8c56f197b9b987",
+      "diff_sha256": "385934af7cd119515b85b30ecdb193304cb7fccfda0b53d7d0202f1ac00469d3",
+      "script_sha256": "13a3ca36e4c84d0bd90529c7483094f054012a007b0dcc1b5d6ace006cfd1c9f",
+      "result": {
+        "exit_code": 1,
+        "error": null,
+        "started": 1791011635.712731,
+        "finished": 1791011766.5701847,
+        "canonical_lock": null
+      }
+    }
+  ],
+  "harness_repaired": [
+    {
+      "id": "7d6ea873be96",
+      "state": "failed",
+      "source_sha": "62a9da5dc0b1407fdce483174b8c56f197b9b987",
+      "diff_sha256": "385934af7cd119515b85b30ecdb193304cb7fccfda0b53d7d0202f1ac00469d3",
+      "script_sha256": "5992598523510e28825446f21bbce1d842f1b880255e3cccd037dcad367f88fb",
+      "result": {
+        "exit_code": 126,
+        "error": null,
+        "started": 1791011972.4909706,
+        "finished": 1791011972.4944718,
+        "canonical_lock": null
+      }
+    },
+    {
+      "id": "161edf2180b1",
+      "state": "success",
+      "source_sha": "62a9da5dc0b1407fdce483174b8c56f197b9b987",
+      "diff_sha256": "385934af7cd119515b85b30ecdb193304cb7fccfda0b53d7d0202f1ac00469d3",
+      "script_sha256": "7e41baa3362d38a635fce8d3a26def04cc45ee7ad8553295a9021846c104dd4d",
+      "result": {
+        "exit_code": 0,
+        "error": null,
+        "started": 1791012145.3867624,
+        "finished": 1791012381.2548501,
+        "canonical_lock": null
+      }
+    }
+  ],
+  "ptx_fallback": [
+    {
+      "id": "263eaa4848ca",
+      "state": "success",
+      "source_sha": "62a9da5dc0b1407fdce483174b8c56f197b9b987",
+      "diff_sha256": "385934af7cd119515b85b30ecdb193304cb7fccfda0b53d7d0202f1ac00469d3",
+      "script_sha256": "5e7f4740fcd9a5e396f49b3e9b497ae6b24f0f73485bd4a1dfbb83d96311aaba",
+      "result": {
+        "exit_code": 0,
+        "error": null,
+        "started": 1791012551.2676387,
+        "finished": 1791012700.5822058,
+        "canonical_lock": null
+      }
+    }
+  ],
+  "harness_original_same_path": [
+    {
+      "id": "73f80980d00d",
+      "state": "success",
+      "source_sha": "62a9da5dc0b1407fdce483174b8c56f197b9b987",
+      "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "script_sha256": "e68427eb0e01e675bfd3d16c67623b40a407ff847dcff8404ac46bfce66b995c",
+      "result": {
+        "exit_code": 0,
+        "error": null,
+        "started": 1791013379.187775,
+        "finished": 1791013631.885411,
+        "canonical_lock": null
+      }
+    }
+  ]
+}
