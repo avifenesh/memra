@@ -66,7 +66,10 @@ TOOL_CONTRACTS = {
     'q35-cache': {
         'required': True,
         'inputs': ['tools/q35-cold-mixed-gate.py', 'tools/test_q35_cold_mixed_gate.py',
-                   'research/sellgate-20260812/sellgate_replay.py', 'tools/cache_qualification.py'],
+                   'research/sellgate-20260812/sellgate_replay.py', 'tools/cache_qualification.py',
+                   'research/sellgate-20260812/workload.lock.json',
+                   'research/spill-lead-20260919/integration-day12/integ68-q35ab/main-q35-cold-mixed.log',
+                   'research/spill-lead-20260919/integration-day12/integ68-q35ab/integ68-q35-cold-mixed.log'],
         'cpu': ['tools/unittest-floor.sh', 'tools', 'test_q35_cold_mixed_gate.py', '13'],
         'native': ['Qwen3.6 MoE mixed c=4 cache/usage/golden gate on the pinned artifact'],
     },
