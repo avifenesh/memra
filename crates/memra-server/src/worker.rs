@@ -18629,7 +18629,8 @@ fn host_promote_park_probe(
     };
     let vision_req = request_has_images(req);
     let capture_req = req.capture.is_some();
-    let reuse_on = request_reuse_on(vision_req, capture_req);
+    let reuse_on = request_reuse_on(vision_req, capture_req)
+        && crate::multi_choice::reuse_eligible(req.choice.as_ref());
     if !request_prefix_on(reuse_on, plan) {
         return false;
     }
@@ -21042,7 +21043,8 @@ fn host_restore_park_probe(
     };
     let vision_req = request_has_images(req);
     let capture_req = req.capture.is_some();
-    let reuse_on = request_reuse_on(vision_req, capture_req);
+    let reuse_on = request_reuse_on(vision_req, capture_req)
+        && crate::multi_choice::reuse_eligible(req.choice.as_ref());
     if !request_prefix_on(reuse_on, &lm.model.plan) {
         return false;
     }
@@ -34591,7 +34593,8 @@ fn admit(
     // exactly what it validates. MEMRA_KV_REUSE=0 disables.
     // Vision requests bypass every token-keyed reuse tier: pad runs are byte-identical
     // across DIFFERENT images, so a token match is not a state match (lane/vision).
-    let reuse_on = request_reuse_on(vision_req, capture_req);
+    let reuse_on = request_reuse_on(vision_req, capture_req)
+        && crate::multi_choice::reuse_eligible(req.choice.as_ref());
     if let (true, Some(pool)) = (
         reuse_on && admission_restore.is_none(),
         reuse.get_mut(&pool_key),

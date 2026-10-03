@@ -85,6 +85,13 @@ impl Choice {
     }
 }
 
+/// The leader retains ordinary reuse. Followers receive only its final prompt image,
+/// so an independent device/host prefix or parked-session restore would violate the
+/// existing prefix_restore fresh-destination contract.
+pub(crate) fn reuse_eligible(choice: Option<&Choice>) -> bool {
+    choice.is_none_or(|choice| choice.index == 0)
+}
+
 use crate::metering::{Receipt, UsageCounts};
 use crate::toolcall::{ParsedToolCall, Piece, ToolStreamParser};
 use crate::worker::{EngineError, Event, EventReceiver};
@@ -1181,6 +1188,26 @@ mod tests {
         assert_eq!(choice_seed(73, 0), 73);
         assert_eq!(choice_seed(73, 3), 76);
         assert_eq!(choice_seed(u64::MAX, 1), 0);
+    }
+
+    #[test]
+    fn only_the_group_leader_may_restore_independent_cached_state() {
+        let group = Group::new("cached-parent".into(), 4);
+        let leader = Choice {
+            group: group.clone(),
+            index: 0,
+            restored: false,
+        };
+        let mut follower = Choice {
+            group,
+            index: 1,
+            restored: false,
+        };
+        assert!(reuse_eligible(None));
+        assert!(reuse_eligible(Some(&leader)));
+        assert!(!reuse_eligible(Some(&follower)));
+        follower.restored = true;
+        assert!(!reuse_eligible(Some(&follower)));
     }
 
     #[test]
