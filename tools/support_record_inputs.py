@@ -38,10 +38,11 @@ class DirectoryTree:
         found = []
         for name in (*READERS, RECORDS):
             path = self.root / name
-            # A broken parent link still constitutes an unsafe input, even if
+            # A broken link or non-directory parent remains an unsafe input, even if
             # exists() would hide all of its children.
             if (path.exists() or path.is_symlink() or
-                    any(parent.is_symlink() for parent in path.parents
+                    any(parent.is_symlink() or (parent.exists() and not parent.is_dir())
+                        for parent in path.parents
                         if parent.is_relative_to(self.root))):
                 found.append(name)
         return found

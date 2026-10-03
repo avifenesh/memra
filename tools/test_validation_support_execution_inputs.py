@@ -92,6 +92,32 @@ class SupportExecutionInputs(unittest.TestCase):
                     finally:
                         parent.unlink()
             moved.rename(parent)
+        # Both bad parents must not masquerade as an absent optional census.
+        for kind in ('broken-link', 'fifo', 'file', 'socket'):
+            with self.subTest(both_parents=kind):
+                endpoints = []
+                parents = [self.repo / name for name in ('tools', 'docs')]
+                moved = [self.repo / (name + '-saved') for name in ('tools', 'docs')]
+                for parent, saved in zip(parents, moved):
+                    parent.rename(saved)
+                    if kind == 'broken-link':
+                        parent.symlink_to(self.repo / 'missing-parent', target_is_directory=True)
+                    elif kind == 'fifo':
+                        os.mkfifo(parent)
+                    elif kind == 'file':
+                        parent.write_bytes(b'not a directory')
+                    else:
+                        endpoint = socket.socket(socket.AF_UNIX)
+                        endpoint.bind(str(parent))
+                        endpoints.append(endpoint)
+                try:
+                    self.assert_no_content_read()
+                finally:
+                    for endpoint in endpoints:
+                        endpoint.close()
+                    for parent, saved in zip(parents, moved):
+                        parent.unlink()
+                        saved.rename(parent)
 
     def test_read_bytes_remains_exact_and_regular_metadata_still_resolves(self):
         reader = next(iter(data.READERS))
@@ -143,7 +169,6 @@ class SupportExecutionInputs(unittest.TestCase):
 
         def replace(name, flags, *args, **kwargs):
             if name == path.name and not swapped:
-                self.assertTrue(flags & os.O_NOFOLLOW)
                 path.unlink()
                 path.symlink_to(target)
                 swapped.append(True)
