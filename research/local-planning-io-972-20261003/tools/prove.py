@@ -64,6 +64,10 @@ for helper, receipt, expected in (
     data = json.loads((out / receipt).read_text())
     rows = data if isinstance(data, list) else data.get('controls', data.get('cases'))
     assert len(rows) == expected, helper
+    if helper == 'consumer_controls.py':
+        aliases = json.loads((out / 'executed-alias-consumers.json').read_text())
+        assert aliases['owned_roots_removed'] and len(aliases['controls']) == 6
+        rows += aliases['controls']; expected += 6
     group_edges = []
     for index, row in enumerate(rows):
         if helper == 'coherent_controls.py':
@@ -71,7 +75,11 @@ for helper, receipt, expected in (
             assert row['exit'] == 1 and hashlib.sha256(raw).hexdigest() == row['log_sha256']
             assert b'FAIL:' in raw and b'ERROR:' not in raw
         elif helper == 'consumer_controls.py':
-            assert row['actual_fifo'] and row['no_fifo_io'] and row['old_observed_read'] in ('text', 'bytes')
+            if 'alias' in row:
+                assert row['original_observed_read'] in ('text', 'bytes')
+                assert row['current_outcome'] in ('full planning expansion', 'refused before content')
+            else:
+                assert row['actual_fifo'] and row['no_fifo_io'] and row['old_observed_read'] in ('text', 'bytes')
         else:
             if row['case'].startswith('regular-dry-'): assert row['baseline_identical']
             if row['case'] == 'unknown-reader-full': assert row['baseline_obligations_identical']
