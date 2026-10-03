@@ -1,0 +1,527 @@
+{
+  "sources": {
+    "source": "7c67d11e0e5fa31fcd9d78b5755035aadb5fc4d4",
+    "baseline": "462ae029f4efe9e7296d7dbad4e3afc4af026b0e",
+    "baseline_registry_sha256": "0f49399ac119d2ddb51d323129833decb0e634d1fc85bdb7c36102e7027d058a",
+    "generator_fn_sha256": "5aca9c7def4af21303cc70801a8e59bbeef62cda20a3030fefb798af49ed3d73",
+    "source_sha256": {
+      "crates/memra-engine/src/env_audit.rs": "9b8b52dcfa621275c240fa53caf9167bbd8a5fb6a870925f072411ba65f0a040",
+      "crates/memra-engine/build.rs": "180121b171874735788cf45eddedd2ab82f284990db2d8f0774a640369fb5836",
+      "crates/memra-server/src/lib.rs": "8aacedab273bebd1c614920933c6014641064acda92e05fd0bef7a79c6ad428a",
+      "crates/memra-server/src/worker.rs": "4b5ef3a04c0f4d0040fa0e630774e836e3d0aeeb49bba9ca12f4e20170b7df0c",
+      "docs/FLAGS.md": "f284f2f606aae548b0357942f7798bf7775213f35d248b2ea2acfce7e955469d"
+    }
+  },
+  "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)\nbinary: rustc\ncommit-hash: 8bab26f4f68e0e26f0bb7960be334d5b520ea452\ncommit-date: 2026-07-14\nhost: x86_64-unknown-linux-gnu\nrelease: 1.97.1\nLLVM version: 22.1.6\n",
+  "generated_registry_sha256_unchanged": "0f49399ac119d2ddb51d323129833decb0e634d1fc85bdb7c36102e7027d058a",
+  "programs": {
+    "baseline": {
+      "binary_sha256": "18dcd6a1ea39c8667b4b414b5ece1ab1902f6b480da2ddc96aa9b99d9d1412b2",
+      "cases": {
+        "default/owned-utf8": {
+          "exit": 2,
+          "stdout": "",
+          "stderr": "[env-audit] REFUSED: the environment names doors this build does not have:\n  MEMRA_ADMIT_DEFINITELY_NOT_A_DOOR_ZZ: unknown MEMRA_ADMIT_* name (16 documented names in that family, none is this one). Neither a documented name nor a retired one in docs/FLAGS.md: a typo or a name from another tree. It would be read by nothing.\n  Unset them (or MEMRA_ENV_AUDIT=warn for one boot while the launcher is fixed). Registry: docs/FLAGS.md, generated into this binary at build time.\n"
+        },
+        "default/owned-raw": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": ""
+        },
+        "default/unowned-utf8": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] warning: 1 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: MEMRA_ZZ_ORPHAN_X. Left alone: launchers and gate scripts own names outside the engine's families.\n"
+        },
+        "default/unowned-raw": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": ""
+        },
+        "default/unrelated": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": ""
+        },
+        "default/retired": {
+          "exit": 2,
+          "stdout": "",
+          "stderr": "[env-audit] REFUSED: the environment names doors this build does not have:\n  MEMRA_DSV4_MOE_PROGRAM: retired. See docs/FLAGS.md 'Removed doors, 2026-09-11 (the matrix expert program is the default; split-K goes with the flip)'. The value parses into nothing now; unset it, and if the arm it selected is the one you need, the ledger names what replaced it.\n  Unset them (or MEMRA_ENV_AUDIT=warn for one boot while the launcher is fixed). Registry: docs/FLAGS.md, generated into this binary at build time.\n"
+        },
+        "default/known-invalid-value": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": ""
+        },
+        "default/all-legal-invalid-values": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": ""
+        },
+        "warn/owned-utf8": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] warning (MEMRA_ENV_AUDIT=warn downgraded a refusal): MEMRA_ADMIT_DEFINITELY_NOT_A_DOOR_ZZ: unknown MEMRA_ADMIT_* name (16 documented names in that family, none is this one). Neither a documented name nor a retired one in docs/FLAGS.md: a typo or a name from another tree. It would be read by nothing.\n"
+        },
+        "warn/owned-raw": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": ""
+        },
+        "warn/unowned-utf8": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] warning: 1 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: MEMRA_ZZ_ORPHAN_X. Left alone: launchers and gate scripts own names outside the engine's families.\n"
+        },
+        "warn/unowned-raw": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": ""
+        },
+        "warn/unrelated": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": ""
+        },
+        "warn/retired": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] warning (MEMRA_ENV_AUDIT=warn downgraded a refusal): MEMRA_DSV4_MOE_PROGRAM: retired. See docs/FLAGS.md 'Removed doors, 2026-09-11 (the matrix expert program is the default; split-K goes with the flip)'. The value parses into nothing now; unset it, and if the arm it selected is the one you need, the ledger names what replaced it.\n"
+        },
+        "warn/known-invalid-value": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": ""
+        },
+        "warn/all-legal-invalid-values": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": ""
+        },
+        "off/owned-utf8": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] MEMRA_ENV_AUDIT=0: the MEMRA_* environment audit is OFF for this boot\n"
+        },
+        "off/owned-raw": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] MEMRA_ENV_AUDIT=0: the MEMRA_* environment audit is OFF for this boot\n"
+        },
+        "off/unowned-utf8": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] MEMRA_ENV_AUDIT=0: the MEMRA_* environment audit is OFF for this boot\n"
+        },
+        "off/unowned-raw": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] MEMRA_ENV_AUDIT=0: the MEMRA_* environment audit is OFF for this boot\n"
+        },
+        "off/unrelated": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] MEMRA_ENV_AUDIT=0: the MEMRA_* environment audit is OFF for this boot\n"
+        },
+        "off/retired": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] MEMRA_ENV_AUDIT=0: the MEMRA_* environment audit is OFF for this boot\n"
+        },
+        "off/known-invalid-value": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] MEMRA_ENV_AUDIT=0: the MEMRA_* environment audit is OFF for this boot\n"
+        },
+        "off/all-legal-invalid-values": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] MEMRA_ENV_AUDIT=0: the MEMRA_* environment audit is OFF for this boot\n"
+        },
+        "prefix/replacement-owned": {
+          "exit": 2,
+          "stdout": "",
+          "stderr": "[env-audit] REFUSED: the environment names doors this build does not have:\n  MEMRA_ADMIT_\ufffd: unknown MEMRA_ADMIT_* name (16 documented names in that family, none is this one). Neither a documented name nor a retired one in docs/FLAGS.md: a typo or a name from another tree. It would be read by nothing.\n  Unset them (or MEMRA_ENV_AUDIT=warn for one boot while the launcher is fixed). Registry: docs/FLAGS.md, generated into this binary at build time.\n"
+        },
+        "prefix/namespace-only": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": ""
+        },
+        "prefix/lookalike-owned": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": ""
+        },
+        "prefix/corrupted-family": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": ""
+        },
+        "prefix/leading-invalid-unrelated": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": ""
+        },
+        "prefix/lowercase-unrelated": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": ""
+        }
+      }
+    },
+    "candidate": {
+      "binary_sha256": "3409e5397e72bd04932042f866e67e9f84be061ac8bc686054dca348df7afe8c",
+      "cases": {
+        "default/owned-utf8": {
+          "exit": 2,
+          "stdout": "",
+          "stderr": "[env-audit] REFUSED: the environment names doors this build does not have:\n  MEMRA_ADMIT_DEFINITELY_NOT_A_DOOR_ZZ: unknown MEMRA_ADMIT_* name (16 documented names in that family, none is this one). Neither a documented name nor a retired one in docs/FLAGS.md: a typo or a name from another tree. It would be read by nothing.\n  Unset them (or MEMRA_ENV_AUDIT=warn for one boot while the launcher is fixed). Registry: docs/FLAGS.md, generated into this binary at build time.\n"
+        },
+        "default/owned-raw": {
+          "exit": 2,
+          "stdout": "",
+          "stderr": "[env-audit] REFUSED: the environment names doors this build does not have:\n  \"MEMRA_ADMIT_\\xFF\": non-UTF-8 unknown MEMRA_ADMIT_* name. This owned family requires a documented UTF-8 name; the key would be read by nothing.\n  Unset them (or MEMRA_ENV_AUDIT=warn for one boot while the launcher is fixed). Registry: docs/FLAGS.md, generated into this binary at build time.\n"
+        },
+        "default/unowned-utf8": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] warning: 1 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: MEMRA_ZZ_ORPHAN_X. Left alone: launchers and gate scripts own names outside the engine's families.\n"
+        },
+        "default/unowned-raw": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] warning: 1 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: \"MEMRA_ZZ_ORPHAN_\\xFF\". Left alone: launchers and gate scripts own names outside the engine's families.\n"
+        },
+        "default/unrelated": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": ""
+        },
+        "default/retired": {
+          "exit": 2,
+          "stdout": "",
+          "stderr": "[env-audit] REFUSED: the environment names doors this build does not have:\n  MEMRA_DSV4_MOE_PROGRAM: retired. See docs/FLAGS.md 'Removed doors, 2026-09-11 (the matrix expert program is the default; split-K goes with the flip)'. The value parses into nothing now; unset it, and if the arm it selected is the one you need, the ledger names what replaced it.\n  Unset them (or MEMRA_ENV_AUDIT=warn for one boot while the launcher is fixed). Registry: docs/FLAGS.md, generated into this binary at build time.\n"
+        },
+        "default/known-invalid-value": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": ""
+        },
+        "default/all-legal-invalid-values": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": ""
+        },
+        "warn/owned-utf8": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] warning (MEMRA_ENV_AUDIT=warn downgraded a refusal): MEMRA_ADMIT_DEFINITELY_NOT_A_DOOR_ZZ: unknown MEMRA_ADMIT_* name (16 documented names in that family, none is this one). Neither a documented name nor a retired one in docs/FLAGS.md: a typo or a name from another tree. It would be read by nothing.\n"
+        },
+        "warn/owned-raw": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] warning (MEMRA_ENV_AUDIT=warn downgraded a refusal): \"MEMRA_ADMIT_\\xFF\": non-UTF-8 unknown MEMRA_ADMIT_* name. This owned family requires a documented UTF-8 name; the key would be read by nothing.\n"
+        },
+        "warn/unowned-utf8": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] warning: 1 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: MEMRA_ZZ_ORPHAN_X. Left alone: launchers and gate scripts own names outside the engine's families.\n"
+        },
+        "warn/unowned-raw": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] warning: 1 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: \"MEMRA_ZZ_ORPHAN_\\xFF\". Left alone: launchers and gate scripts own names outside the engine's families.\n"
+        },
+        "warn/unrelated": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": ""
+        },
+        "warn/retired": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] warning (MEMRA_ENV_AUDIT=warn downgraded a refusal): MEMRA_DSV4_MOE_PROGRAM: retired. See docs/FLAGS.md 'Removed doors, 2026-09-11 (the matrix expert program is the default; split-K goes with the flip)'. The value parses into nothing now; unset it, and if the arm it selected is the one you need, the ledger names what replaced it.\n"
+        },
+        "warn/known-invalid-value": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": ""
+        },
+        "warn/all-legal-invalid-values": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": ""
+        },
+        "off/owned-utf8": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] MEMRA_ENV_AUDIT=0: the MEMRA_* environment audit is OFF for this boot\n"
+        },
+        "off/owned-raw": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] MEMRA_ENV_AUDIT=0: the MEMRA_* environment audit is OFF for this boot\n"
+        },
+        "off/unowned-utf8": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] MEMRA_ENV_AUDIT=0: the MEMRA_* environment audit is OFF for this boot\n"
+        },
+        "off/unowned-raw": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] MEMRA_ENV_AUDIT=0: the MEMRA_* environment audit is OFF for this boot\n"
+        },
+        "off/unrelated": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] MEMRA_ENV_AUDIT=0: the MEMRA_* environment audit is OFF for this boot\n"
+        },
+        "off/retired": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] MEMRA_ENV_AUDIT=0: the MEMRA_* environment audit is OFF for this boot\n"
+        },
+        "off/known-invalid-value": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] MEMRA_ENV_AUDIT=0: the MEMRA_* environment audit is OFF for this boot\n"
+        },
+        "off/all-legal-invalid-values": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] MEMRA_ENV_AUDIT=0: the MEMRA_* environment audit is OFF for this boot\n"
+        },
+        "prefix/replacement-owned": {
+          "exit": 2,
+          "stdout": "",
+          "stderr": "[env-audit] REFUSED: the environment names doors this build does not have:\n  MEMRA_ADMIT_\ufffd: unknown MEMRA_ADMIT_* name (16 documented names in that family, none is this one). Neither a documented name nor a retired one in docs/FLAGS.md: a typo or a name from another tree. It would be read by nothing.\n  Unset them (or MEMRA_ENV_AUDIT=warn for one boot while the launcher is fixed). Registry: docs/FLAGS.md, generated into this binary at build time.\n"
+        },
+        "prefix/namespace-only": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] warning: 1 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: \"MEMRA_\\xFF\". Left alone: launchers and gate scripts own names outside the engine's families.\n"
+        },
+        "prefix/lookalike-owned": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] warning: 1 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: \"MEMRA_ADMITHOST_\\xFF\". Left alone: launchers and gate scripts own names outside the engine's families.\n"
+        },
+        "prefix/corrupted-family": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] warning: 1 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: \"MEMRA_ADMIT\\xFF_X\". Left alone: launchers and gate scripts own names outside the engine's families.\n"
+        },
+        "prefix/leading-invalid-unrelated": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": ""
+        },
+        "prefix/lowercase-unrelated": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": ""
+        }
+      }
+    }
+  },
+  "unit_tests": {
+    "passed": 9,
+    "failed": 0,
+    "ignored": 0,
+    "binary_sha256": "a705cbb9ed4ad5357ee5f5e4ba66d583c1b2093efb3ac84cdc737d01624d4ea9"
+  },
+  "absent_registry": {
+    "sha256": "d63e967119c02f864f66fe9c19debae509802bc365b631b10bf5c669c79ecf03",
+    "cases": {
+      "baseline": {
+        "default": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] registry absent in this build (no docs/FLAGS.md at build time); the MEMRA_* audit is inert\n"
+        },
+        "warn": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] registry absent in this build (no docs/FLAGS.md at build time); the MEMRA_* audit is inert\n"
+        },
+        "off": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] registry absent in this build (no docs/FLAGS.md at build time); the MEMRA_* audit is inert\n"
+        }
+      },
+      "candidate": {
+        "default": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] registry absent in this build (no docs/FLAGS.md at build time); the MEMRA_* audit is inert\n"
+        },
+        "warn": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] registry absent in this build (no docs/FLAGS.md at build time); the MEMRA_* audit is inert\n"
+        },
+        "off": {
+          "exit": 0,
+          "stdout": "OK\n",
+          "stderr": "[env-audit] registry absent in this build (no docs/FLAGS.md at build time); the MEMRA_* audit is inert\n"
+        }
+      }
+    }
+  },
+  "schema": "cpu-raw-os-name-audit-proof-v1",
+  "scope": "CPU boot environment name admission; raw key bytes classified before escaped diagnostics; values unexamined",
+  "qualification": false,
+  "native_exclusions": {
+    "math": "Only environment-key intake changes; no math call or generated native program changes",
+    "cuda": "No CUDA source, FFI, dispatch, compiler setting or gate coverage change",
+    "models": "No checkpoint, tensor, tokenizer, template, decode, model artifact or default changes",
+    "hardware": "No model, server or GPU execution in this lane"
+  },
+  "review_assertions": [
+    "audit_vars retains exact UTF8 path and retired precedence over legal wildcards",
+    "audit_mode and registry-absent paths remain unchanged",
+    "exact ASCII namespace and owned-family prefix classification precede diagnostic rendering",
+    "malformed unowned names enter a deduplicated single warning summary",
+    "OS values never converted or printed",
+    "server calls audit_process_env before API-key and worker setup"
+  ],
+  "verification_helpers_sha256": {
+    "execute.py": "ec7b198c124913fe8674629eabd32c227bb4f6eab99d81d227d3ef2a91fb2498",
+    "admit_coverage.py": "0ff0348ac53c94428a80285c885f3b2558c7d11d3f40f1db94ec545362c97770",
+    "generate_registry.rs": "5b795b3a9766ef4e9c5369e37beb287b65f593032d6c219bb1bec4450cf1e23a",
+    "build.sh": "f6b4183fbb302994095f97c66fb75d1a2b1c8ae39afb87128a33cb7430b3a225"
+  },
+  "source_bound_coverage": {
+    "admission": {
+      "status": "passed",
+      "edges": 38,
+      "contract_id": "00a41a97f34af7cd282a377ead08da915e964829861b6590fba7b0a7f9eedae9",
+      "qualification": false,
+      "scope": "declared behavior assertions only; native receipt admission remains separate"
+    },
+    "mandatory_controls": {
+      "missing-owned-refusal": "selected test/control lacks an explicit passing assertion: actual-name-admission/default/owned-raw",
+      "skipped-warning-red": "empty or skipped test result: original-omissions"
+    },
+    "required_edges": [
+      "absent-registry-inert",
+      "deduplicated-single-warning",
+      "default/all-legal-invalid-values",
+      "default/known-invalid-value",
+      "default/owned-raw",
+      "default/owned-utf8",
+      "default/retired",
+      "default/unowned-raw",
+      "default/unowned-utf8",
+      "default/unrelated",
+      "engine-cpu",
+      "off/all-legal-invalid-values",
+      "off/known-invalid-value",
+      "off/owned-raw",
+      "off/owned-utf8",
+      "off/retired",
+      "off/unowned-raw",
+      "off/unowned-utf8",
+      "off/unrelated",
+      "original-owned-refusal-red",
+      "original-unowned-warning-red",
+      "prefix/corrupted-family",
+      "prefix/leading-invalid-unrelated",
+      "prefix/lookalike-owned",
+      "prefix/lowercase-unrelated",
+      "prefix/namespace-only",
+      "prefix/replacement-owned",
+      "registry-identity-unchanged",
+      "server-cpu",
+      "strict-clippy",
+      "warn/all-legal-invalid-values",
+      "warn/known-invalid-value",
+      "warn/owned-raw",
+      "warn/owned-utf8",
+      "warn/retired",
+      "warn/unowned-raw",
+      "warn/unowned-utf8",
+      "warn/unrelated"
+    ]
+  },
+  "checks": {
+    "exact_unit_tests": {
+      "passed": 9,
+      "failed": 0,
+      "ignored": 0,
+      "binary_sha256": "a705cbb9ed4ad5357ee5f5e4ba66d583c1b2093efb3ac84cdc737d01624d4ea9"
+    },
+    "package_suites": {
+      "engine": {
+        "passed": 669,
+        "failed": 0,
+        "ignored": 80
+      },
+      "server": {
+        "passed": 1093,
+        "failed": 0,
+        "ignored": 28
+      }
+    },
+    "clippy": "release all-targets engine/server, -D warnings, passed",
+    "framework": {
+      "passed": 124,
+      "floor": 124
+    },
+    "package_registry": 14,
+    "format": "passed",
+    "flags": "passed",
+    "diff": "passed"
+  },
+  "frozen_inputs_sha256": {
+    "build.sh": "f6b4183fbb302994095f97c66fb75d1a2b1c8ae39afb87128a33cb7430b3a225",
+    "execute.py": "ec7b198c124913fe8674629eabd32c227bb4f6eab99d81d227d3ef2a91fb2498",
+    "source-pins.json": "d83a76b23047275626de68163aa1c393ae0002dda2a298d3e49e5fd93b7577a3",
+    "generate_registry.rs": "5b795b3a9766ef4e9c5369e37beb287b65f593032d6c219bb1bec4450cf1e23a",
+    "registry/memra_env_registry.rs": "0f49399ac119d2ddb51d323129833decb0e634d1fc85bdb7c36102e7027d058a",
+    "baseline/env_audit.rs": "11fb4f6330a206480d1a543ec5ef5aa2eadaedf216adde550376457f5992b7ac",
+    "baseline/main.rs": "4263df91a218f3d25de480c45f1e39d2708a46494f10448166c9364573c1ba8a",
+    "candidate/env_audit.rs": "9b8b52dcfa621275c240fa53caf9167bbd8a5fb6a870925f072411ba65f0a040",
+    "candidate/main.rs": "4263df91a218f3d25de480c45f1e39d2708a46494f10448166c9364573c1ba8a"
+  },
+  "raw_log_sha256": {
+    "env-unit.log": "79fc3a46eb8cb15606e4ca75dda9d1485c352f15ec9e00fa869e76aad5b3db25",
+    "engine-suite.log": "915fa73cfa88757fd8099bfdb4de2fe0d75dcf9bf41e145d1aecaed27baa9bfc",
+    "server-suite.log": "3cbb52a1ef3a39550f22969349f2e3b40ce43bcb9c226106b33175ac2ca1d4d2",
+    "clippy.log": "c97668f837b8b0e1f60e8ea778fdb77a66ab0dd59129b04f8010df9985ae2cc7",
+    "flags.log": "8ec2bddfc51456888099cc4b5ddb692f6685938cd7c25646f8237cd35a3ac016",
+    "framework.log": "2d42a8319367ae39bfdc95c161dcc6fa1fa9786cf04ff1e9168804dc15d43ae9",
+    "package-registry.log": "d29a3eff345fae568378f53692307e0fd02164daa67b71f750c40508a5b3ad65",
+    "coverage-admission.json": "969ac8eedfffb4194981214137c3631b8f5a4dffb07f7b5a7e43a91c0a05b008"
+  },
+  "raw_assertion_output": {
+    "env-unit.log": "\nrunning 9 tests\ntest tests::a_retired_door_refuses_with_its_ledger ... ok\ntest tests::every_legal_name_passes ... ok\ntest tests::os_audit_classifies_raw_prefixes_before_rendering_and_keeps_utf8_distinct ... ok\ntest tests::os_audit_all_legal_names_accept_uninterpretable_values ... ok\ntest tests::os_audit_preserves_utf8_retired_wildcard_and_value_ignorance ... ok\ntest tests::os_audit_refuses_owned_bytes_and_summarizes_deduplicated_unowned_names ... ok\ntest tests::registry_is_populated_sorted_and_disjoint ... ok\ntest tests::unknown_names_refuse_inside_owned_families_and_warn_outside ... ok\ntest tests::retired_names_are_not_read_at_runtime ... ok\n\ntest result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s\n\n",
+    "flags.log": "check-flags: runtime literal reads=887\ncheck-flags: no uncovered runtime names\ncheck-flags: every runtime MEMRA_* name resolves against 'docs/FLAGS.md' (no grandfather list)\nflags-row-shape: 1082 rows within 4000 chars, default cells within 300, one decide-by each, 47 history sections all linked\n",
+    "framework.log": "............................................................................................................................\n----------------------------------------------------------------------\nRan 124 tests in 10.191s\n\nOK\nunittest-floor: OK: ran 124 tests (floor 124) for tools (test_validation_*.py)\n",
+    "package-registry.log": "Validation registry covers all 14 workspace packages\n"
+  },
+  "repository_lock_sha256": "7c954049dbf754d628d93dc5a88f3287b44baad44279f7d17e9a8cc6de871b28",
+  "broker": {
+    "job": "586e20ff77a9",
+    "source": "7c67d11e0e5fa31fcd9d78b5755035aadb5fc4d4",
+    "script_sha256": "f6b4183fbb302994095f97c66fb75d1a2b1c8ae39afb87128a33cb7430b3a225",
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "kind": "build",
+    "state": "success",
+    "exit_code": 0,
+    "cpu_quota_percent": 400,
+    "memory_max_gib": 32,
+    "swap_max": 0,
+    "compiler_jobs": 2
+  },
+  "review_scope": {
+    "changed": [
+      "crates/memra-engine/src/env_audit.rs"
+    ],
+    "native_selector_advisory_only": true,
+    "notes": "The conservative package planner expands source-derived registry consumers. OS assertions and complete engine/server CPU suites cover this change. Native binaries compile, but no model, server or GPU gate executes."
+  }
+}

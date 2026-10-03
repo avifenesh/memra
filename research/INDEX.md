@@ -704,3 +704,5 @@ mandatory-empty-coverage-20261003 | Explicit mandatory guards retain selection a
 
 shared-cache-contract-20261003 | The repaired registry selects all four affected contracts and preserves their CPU commands and native obligations. | shared-cache-contract-20261003/RESULTS.md
 non-utf8-drafter-environment-20261003 | "Unrelated non-UTF8 exports no longer panic drafter collection; relevant bytes refuse without changing valid identity strings." | [RESULTS.md](non-utf8-drafter-environment-20261003/RESULTS.md)
+
+raw-os-environment-name-audit-20261003 | "Owned malformed OS names refuse; unowned names warn; UTF8 and value-ignorance controls preserve baseline bytes." | raw-os-environment-name-audit-20261003/RESULTS.md
