@@ -226,12 +226,14 @@ class SupportExecutionInputs(unittest.TestCase):
             run.assert_not_called()
         for name in ('validation_plan.py', 'support_record_inputs.py'):
             shutil.copyfile(ROOT / 'tools' / name, self.repo / 'tools' / name)
-        result = subprocess.run(
-            [sys.executable, str(self.repo / 'tools/validation_plan.py'),
-             'contracts', '--selected', 'none'], capture_output=True, timeout=5)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn(b'not a regular file', result.stderr)
-        self.assertNotIn(b'CPU contract:', result.stdout)
+        for flags in ([], ['-O']):
+            with self.subTest(python_flags=flags):
+                result = subprocess.run(
+                    [sys.executable, *flags, str(self.repo / 'tools/validation_plan.py'),
+                     'contracts', '--selected', 'none'], capture_output=True, timeout=5)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(b'not a regular file', result.stderr)
+                self.assertNotIn(b'CPU contract:', result.stdout)
 
     def test_absent_fixture_and_partial_fixture_keep_original_contract(self):
         shutil.rmtree(self.repo / 'tools')
