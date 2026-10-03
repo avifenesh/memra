@@ -89,17 +89,24 @@ class ExpertTierContractTests(unittest.TestCase):
 
     def test_real_selftest_executes_nine_cases_and_26_assertions(self):
         namespace = runpy.run_path(str(BUILDER))
-        count, cases = observe(namespace['self_test'].__globals__, BUILDER.read_text())
+        try:
+            count, cases = observe(namespace['self_test'].__globals__, BUILDER.read_text())
+        except ValueError as error:
+            self.fail(str(error))
         self.assertGreaterEqual(count, 26)
         self.assertEqual(cases, CASES)
 
     def test_cli_optimization_refuses(self):
         for flag in ('-O', '-OO'):
-            with self.subTest(flag=flag):
-                result = self.command([flag, str(BUILDER), '--self-test'])
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn(REFUSAL, result.stderr)
-                self.assertNotIn('PASS', result.stdout)
+            for script, args, refusal in (
+                    (BUILDER, ['--self-test'], REFUSAL),
+                    (ROOT / 'tools/run_expert_tier_contract.py', [],
+                     'expert-tier admission controls require enabled assertions')):
+                with self.subTest(flag=flag, script=script.name):
+                    result = self.command([flag, str(script), *args])
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(refusal, result.stderr)
+                    self.assertNotIn('PASS', result.stdout)
 
     def test_environment_optimization_refuses(self):
         for value in ('1', '2'):
@@ -147,7 +154,10 @@ class ExpertTierContractTests(unittest.TestCase):
             observe(namespace, source)
 
     def test_ci_wiring(self):
-        check_wiring((ROOT / '.github/workflows/ci.yml').read_text())
+        try:
+            check_wiring((ROOT / '.github/workflows/ci.yml').read_text())
+        except ValueError as error:
+            self.fail(str(error))
 
     def test_removed_or_masked_ci_caller_refuses(self):
         text = (ROOT / '.github/workflows/ci.yml').read_text()
