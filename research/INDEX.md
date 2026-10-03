@@ -7,6 +7,8 @@ Check here BEFORE re-running an experiment; add your lane's row at close. Full r
 live in each dir (jsonl/logs are out of default rg via the repo .ignore — `rg -u` to
 include). `rg '<topic>' research/INDEX.md` = the fast path to any lane's verdict.
 
+sft-cpu-caller-20261003 | CI executes all nine original generator CPU methods with independent identity, success-outcome and caller admission; generator bytes and native obligations remain unchanged. | sft-cpu-caller-20261003/LANE.md
+
 expert-tier-selftest-ci-20261003 | Expert-tier self-tests refuse optimized Python and CI executes real assertion and recipe controls; ordinary plan generation and native obligations remain unchanged. | expert-tier-selftest-ci-20261003/LANE.md
 
 boundary-cpu-contract-20261003 | Boundary-only inputs select their real CPU tests and omit unrelated Cargo jobs while owner/include obligations and unconditional security scans remain intact. | boundary-cpu-contract-20261003/LANE.md

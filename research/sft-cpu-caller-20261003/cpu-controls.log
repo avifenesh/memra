@@ -1,0 +1,570 @@
+
+### contract-current.log
+..................
+----------------------------------------------------------------------
+Ran 18 tests in 12.008s
+
+OK
+SFT CPU contract: PASS: original=9 executed=18 discovered=18 unique=18 skipped=0 expected_failures=0
+SFT CPU contract identities: {"discovered": ["test_sft_gen.SftGeneratorTests.test_all_fixture_sources_compile_and_scan_clean", "test_sft_gen.SftGeneratorTests.test_battery_has_six_shapes_and_four_task_kinds", "test_sft_gen.SftGeneratorTests.test_content_hash_ignores_ids_times_and_usage", "test_sft_gen.SftGeneratorTests.test_event_parser_requires_json_objects_and_one_session", "test_sft_gen.SftGeneratorTests.test_file_stdout_capture_preserves_large_single_write", "test_sft_gen.SftGeneratorTests.test_opencode_config_requires_exact_provider_pin", "test_sft_gen.SftGeneratorTests.test_prepare_workspace_accepts_precreated_empty_directory", "test_sft_gen.SftGeneratorTests.test_secret_scanner_detects_assigned_and_prefixed_keys", "test_sft_gen.SftGeneratorTests.test_tool_audit_rejects_rust_and_accelerator_commands", "test_sft_gen_contract.SftGenContractTests.test_empty_missing_replaced_unrelated_duplicate_discovery", "test_sft_gen_contract.SftGenContractTests.test_generator_selection_remains_full", "test_sft_gen_contract.SftGenContractTests.test_mandatory_caller_and_masking_refusals", "test_sft_gen_contract.SftGenContractTests.test_missing_and_equal_count_duplicate_execution", "test_sft_gen_contract.SftGenContractTests.test_non_successful_results_refuse", "test_sft_gen_contract.SftGenContractTests.test_optimization_refuses_before_fixture_and_import", "test_sft_gen_contract.SftGenContractTests.test_original_control_call_scope_and_generation_guard", "test_sft_gen_contract.SftGenContractTests.test_original_control_inventory", "test_sft_gen_contract.SftGenContractTests.test_private_fixture_boundary_and_cleanup"], "executed": ["test_sft_gen.SftGeneratorTests.test_all_fixture_sources_compile_and_scan_clean", "test_sft_gen.SftGeneratorTests.test_battery_has_six_shapes_and_four_task_kinds", "test_sft_gen.SftGeneratorTests.test_content_hash_ignores_ids_times_and_usage", "test_sft_gen.SftGeneratorTests.test_event_parser_requires_json_objects_and_one_session", "test_sft_gen.SftGeneratorTests.test_file_stdout_capture_preserves_large_single_write", "test_sft_gen.SftGeneratorTests.test_opencode_config_requires_exact_provider_pin", "test_sft_gen.SftGeneratorTests.test_prepare_workspace_accepts_precreated_empty_directory", "test_sft_gen.SftGeneratorTests.test_secret_scanner_detects_assigned_and_prefixed_keys", "test_sft_gen.SftGeneratorTests.test_tool_audit_rejects_rust_and_accelerator_commands", "test_sft_gen_contract.SftGenContractTests.test_empty_missing_replaced_unrelated_duplicate_discovery", "test_sft_gen_contract.SftGenContractTests.test_generator_selection_remains_full", "test_sft_gen_contract.SftGenContractTests.test_mandatory_caller_and_masking_refusals", "test_sft_gen_contract.SftGenContractTests.test_missing_and_equal_count_duplicate_execution", "test_sft_gen_contract.SftGenContractTests.test_non_successful_results_refuse", "test_sft_gen_contract.SftGenContractTests.test_optimization_refuses_before_fixture_and_import", "test_sft_gen_contract.SftGenContractTests.test_original_control_call_scope_and_generation_guard", "test_sft_gen_contract.SftGenContractTests.test_original_control_inventory", "test_sft_gen_contract.SftGenContractTests.test_private_fixture_boundary_and_cleanup"], "original": ["test_sft_gen.SftGeneratorTests.test_all_fixture_sources_compile_and_scan_clean", "test_sft_gen.SftGeneratorTests.test_battery_has_six_shapes_and_four_task_kinds", "test_sft_gen.SftGeneratorTests.test_content_hash_ignores_ids_times_and_usage", "test_sft_gen.SftGeneratorTests.test_event_parser_requires_json_objects_and_one_session", "test_sft_gen.SftGeneratorTests.test_file_stdout_capture_preserves_large_single_write", "test_sft_gen.SftGeneratorTests.test_opencode_config_requires_exact_provider_pin", "test_sft_gen.SftGeneratorTests.test_prepare_workspace_accepts_precreated_empty_directory", "test_sft_gen.SftGeneratorTests.test_secret_scanner_detects_assigned_and_prefixed_keys", "test_sft_gen.SftGeneratorTests.test_tool_audit_rejects_rust_and_accelerator_commands"], "succeeded": ["test_sft_gen.SftGeneratorTests.test_all_fixture_sources_compile_and_scan_clean", "test_sft_gen.SftGeneratorTests.test_battery_has_six_shapes_and_four_task_kinds", "test_sft_gen.SftGeneratorTests.test_content_hash_ignores_ids_times_and_usage", "test_sft_gen.SftGeneratorTests.test_event_parser_requires_json_objects_and_one_session", "test_sft_gen.SftGeneratorTests.test_file_stdout_capture_preserves_large_single_write", "test_sft_gen.SftGeneratorTests.test_opencode_config_requires_exact_provider_pin", "test_sft_gen.SftGeneratorTests.test_prepare_workspace_accepts_precreated_empty_directory", "test_sft_gen.SftGeneratorTests.test_secret_scanner_detects_assigned_and_prefixed_keys", "test_sft_gen.SftGeneratorTests.test_tool_audit_rejects_rust_and_accelerator_commands", "test_sft_gen_contract.SftGenContractTests.test_empty_missing_replaced_unrelated_duplicate_discovery", "test_sft_gen_contract.SftGenContractTests.test_generator_selection_remains_full", "test_sft_gen_contract.SftGenContractTests.test_mandatory_caller_and_masking_refusals", "test_sft_gen_contract.SftGenContractTests.test_missing_and_equal_count_duplicate_execution", "test_sft_gen_contract.SftGenContractTests.test_non_successful_results_refuse", "test_sft_gen_contract.SftGenContractTests.test_optimization_refuses_before_fixture_and_import", "test_sft_gen_contract.SftGenContractTests.test_original_control_call_scope_and_generation_guard", "test_sft_gen_contract.SftGenContractTests.test_original_control_inventory", "test_sft_gen_contract.SftGenContractTests.test_private_fixture_boundary_and_cleanup"]}
+
+### proof-current.log
+MUTATION erase-discovery-obligation baseline0 -> assertion failure
+MUTATION erase-discovery-uniqueness baseline0 -> assertion failure
+MUTATION erase-execution-obligation baseline0 -> assertion failure
+MUTATION erase-success-outcomes baseline0 -> assertion failure
+MUTATION accept-floating-count baseline0 -> assertion failure
+MUTATION accept-skipped-results baseline0 -> assertion failure
+MUTATION accept-expected-failure baseline0 -> assertion failure
+MUTATION erase-optimization-guard baseline0 -> assertion failure
+MUTATION unwire-caller baseline0 -> assertion failure
+MUTATION swallow-caller-failure baseline0 -> assertion failure
+ACTUAL all9producer before0/red1/restored0;18identity/success controls;10coherent refusal mutations;fixture retired
+
+### workflow-current.log
+check-workflow-keys: .github/workflows/boundary-refs.yml: jobs refs
+check-workflow-keys: .github/workflows/ci.yml: jobs changes, gates, boundary, build, clippy, server-tests, portable-suites, engine-tests, arch-coverage, publish-dryrun
+check-workflow-keys: .github/workflows/gpu-ci.yml: jobs build, build-feedback-measurement, gpu, qualification-result
+check-workflow-keys: .github/workflows/mtp-context-receipts.yml: jobs reproduce
+check-workflow-keys: .github/workflows/mtp-depth-receipts.yml: jobs reproduce
+check-workflow-keys: .github/workflows/prompt-depth-router.yml: jobs classifier, native-build, native-receipts, upcoming-format, prefix-study
+check-workflow-keys: .github/workflows/prompt-prefix-depth.yml: jobs prefix-policy, native-build, prefix-v2-replay, confidence-replay, confidence-v3-cpu, confidence-v3-replay, joint-v4-history-pilot, joint-v4-native-cpu, joint-v4-native-release, joint-v5-native, joint-v6-draft-only-native, joint-v8-prime-probability-native, joint-v8-sealed-replay
+check-workflow-keys: .github/workflows/publish.yml: jobs publish
+check-workflow-keys: .github/workflows/release.yml: jobs guard, build, release
+check-workflow-keys: OK: 9 workflow files, no duplicate mapping keys (stdlib walker)
+
+### producer-before.log
+test_all_fixture_sources_compile_and_scan_clean (test_sft_gen.SftGeneratorTests.test_all_fixture_sources_compile_and_scan_clean) ... ok
+test_battery_has_six_shapes_and_four_task_kinds (test_sft_gen.SftGeneratorTests.test_battery_has_six_shapes_and_four_task_kinds) ... ok
+test_content_hash_ignores_ids_times_and_usage (test_sft_gen.SftGeneratorTests.test_content_hash_ignores_ids_times_and_usage) ... ok
+test_event_parser_requires_json_objects_and_one_session (test_sft_gen.SftGeneratorTests.test_event_parser_requires_json_objects_and_one_session) ... ok
+test_file_stdout_capture_preserves_large_single_write (test_sft_gen.SftGeneratorTests.test_file_stdout_capture_preserves_large_single_write) ... ok
+test_opencode_config_requires_exact_provider_pin (test_sft_gen.SftGeneratorTests.test_opencode_config_requires_exact_provider_pin) ... ok
+test_prepare_workspace_accepts_precreated_empty_directory (test_sft_gen.SftGeneratorTests.test_prepare_workspace_accepts_precreated_empty_directory) ... ok
+test_secret_scanner_detects_assigned_and_prefixed_keys (test_sft_gen.SftGeneratorTests.test_secret_scanner_detects_assigned_and_prefixed_keys) ... ok
+test_tool_audit_rejects_rust_and_accelerator_commands (test_sft_gen.SftGeneratorTests.test_tool_audit_rejects_rust_and_accelerator_commands) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.037s
+
+OK
+
+### producer-red.log
+test_all_fixture_sources_compile_and_scan_clean (test_sft_gen.SftGeneratorTests.test_all_fixture_sources_compile_and_scan_clean) ... ok
+test_battery_has_six_shapes_and_four_task_kinds (test_sft_gen.SftGeneratorTests.test_battery_has_six_shapes_and_four_task_kinds) ... ok
+test_content_hash_ignores_ids_times_and_usage (test_sft_gen.SftGeneratorTests.test_content_hash_ignores_ids_times_and_usage) ... ok
+test_event_parser_requires_json_objects_and_one_session (test_sft_gen.SftGeneratorTests.test_event_parser_requires_json_objects_and_one_session) ... ok
+test_file_stdout_capture_preserves_large_single_write (test_sft_gen.SftGeneratorTests.test_file_stdout_capture_preserves_large_single_write) ... ok
+test_opencode_config_requires_exact_provider_pin (test_sft_gen.SftGeneratorTests.test_opencode_config_requires_exact_provider_pin) ... ok
+test_prepare_workspace_accepts_precreated_empty_directory (test_sft_gen.SftGeneratorTests.test_prepare_workspace_accepts_precreated_empty_directory) ... ok
+test_secret_scanner_detects_assigned_and_prefixed_keys (test_sft_gen.SftGeneratorTests.test_secret_scanner_detects_assigned_and_prefixed_keys) ... ok
+test_tool_audit_rejects_rust_and_accelerator_commands (test_sft_gen.SftGeneratorTests.test_tool_audit_rejects_rust_and_accelerator_commands) ... FAIL
+
+======================================================================
+FAIL: test_tool_audit_rejects_rust_and_accelerator_commands (test_sft_gen.SftGeneratorTests.test_tool_audit_rejects_rust_and_accelerator_commands)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen.py", line 188, in test_tool_audit_rejects_rust_and_accelerator_commands
+    self.assertEqual(
+    ~~~~~~~~~~~~~~~~^
+        self.tool.audit_tool_commands(session),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        ["bash: forbidden CPU/GPU command requested"],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+AssertionError: Lists differ: [] != ['bash: forbidden CPU/GPU command requested']
+
+Second list contains 1 additional elements.
+First extra element 0:
+'bash: forbidden CPU/GPU command requested'
+
+- []
++ ['bash: forbidden CPU/GPU command requested']
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.034s
+
+FAILED (failures=1)
+
+### producer-restored.log
+test_all_fixture_sources_compile_and_scan_clean (test_sft_gen.SftGeneratorTests.test_all_fixture_sources_compile_and_scan_clean) ... ok
+test_battery_has_six_shapes_and_four_task_kinds (test_sft_gen.SftGeneratorTests.test_battery_has_six_shapes_and_four_task_kinds) ... ok
+test_content_hash_ignores_ids_times_and_usage (test_sft_gen.SftGeneratorTests.test_content_hash_ignores_ids_times_and_usage) ... ok
+test_event_parser_requires_json_objects_and_one_session (test_sft_gen.SftGeneratorTests.test_event_parser_requires_json_objects_and_one_session) ... ok
+test_file_stdout_capture_preserves_large_single_write (test_sft_gen.SftGeneratorTests.test_file_stdout_capture_preserves_large_single_write) ... ok
+test_opencode_config_requires_exact_provider_pin (test_sft_gen.SftGeneratorTests.test_opencode_config_requires_exact_provider_pin) ... ok
+test_prepare_workspace_accepts_precreated_empty_directory (test_sft_gen.SftGeneratorTests.test_prepare_workspace_accepts_precreated_empty_directory) ... ok
+test_secret_scanner_detects_assigned_and_prefixed_keys (test_sft_gen.SftGeneratorTests.test_secret_scanner_detects_assigned_and_prefixed_keys) ... ok
+test_tool_audit_rejects_rust_and_accelerator_commands (test_sft_gen.SftGeneratorTests.test_tool_audit_rejects_rust_and_accelerator_commands) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.036s
+
+OK
+
+### erase-discovery-obligation-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+OK
+
+### erase-discovery-obligation-red.log
+FFFFFFFFFFFFFFFFFFF
+======================================================================
+FAIL: test_empty_missing_replaced_unrelated_duplicate_discovery (test_sft_gen_contract.SftGenContractTests.test_empty_missing_replaced_unrelated_duplicate_discovery) (label='empty')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 89, in test_empty_missing_replaced_unrelated_duplicate_discovery
+    self.assertEqual(runner.run(suite, stream=output), 1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_empty_missing_replaced_unrelated_duplicate_discovery (test_sft_gen_contract.SftGenContractTests.test_empty_missing_replaced_unrelated_duplicate_discovery) (label='missing-test_sft_gen.SftGeneratorTests.test_battery_has_six_shapes_and_four_task_kinds')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 89, in test_empty_missing_replaced_unrelated_duplicate_discovery
+    self.assertEqual(runner.run(suite, stream=output), 1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_empty_missing_replaced_unrelated_duplicate_discovery (test_sft_gen_contract.SftGenContractTests.test_empty_missing_replaced_unrelated_duplicate_discovery) (label='missing-test_sft_gen.SftGeneratorTests.test_all_fixture_sources_compile_and_scan_clean')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 89, in test_empty_missing_replaced_unrelated_duplicate_discovery
+    self.assertEqual(runner.run(suite, stream=output), 1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_empty_missing_replaced_unrelated_duplicate_discovery (test_sft_gen_contract.SftGenContractTests.test_empty_missing_replaced_unrelated_duplicate_discovery) (label='missing-test_sft_gen.SftGeneratorTests.test_secret_scanner_detects_assigned_and_prefixed_keys')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 89, in test_empty_missing_replaced_unrelated_duplicate_discovery
+    self.assertEqual(runner.run(suite, stream=output), 1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_empty_missing_replaced_unrelated_duplicate_discovery (test_sft_gen_contract.SftGenContractTests.test_empty_missing_replaced_unrelated_duplicate_discovery) (label='missing-test_sft_gen.SftGeneratorTests.test_content_hash_ignores_ids_times_and_usage')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 89, in test_empty_missing_replaced_unrelated_duplicate_discovery
+    self.assertEqual(runner.run(suite, stream=output), 1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_empty_missing_replaced_unrelated_duplicate_discovery (test_sft_gen_contract.SftGenContractTests.test_empty_missing_replaced_unrelated_duplicate_discovery) (label='missing-test_sft_gen.SftGeneratorTests.test_event_parser_requires_json_objects_and_one_session')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 89, in test_empty_missing_replaced_unrelated_duplicate_discovery
+    self.assertEqual(runner.run(suite, stream=output), 1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_empty_missing_replaced_unrelated_duplicate_discovery (test_sft_gen_contract.SftGenContractTests.test_empty_missing_replaced_unrelated_duplicate_discovery) (label='missing-test_sft_gen.SftGeneratorTests.test_prepare_workspace_accepts_precreated_empty_directory')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 89, in test_empty_missing_replaced_unrelated_duplicate_discovery
+    self.assertEqual(runner.run(suite, stream=output), 1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_empty_missing_replaced_unrelated_duplicate_discovery (test_sft_gen_contract.SftGenContractTests.test_empty_missing_replaced_unrelated_duplicate_discovery) (label='missing-test_sft_gen.SftGeneratorTests.test_file_stdout_capture_preserves_large_single_write')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 89, in test_empty_missing_replaced_unrelated_duplicate_discovery
+    self.assertEqual(runner.run(suite, stream=output), 1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_empty_missing_replaced_unrelated_duplicate_discovery (test_sft_gen_contract.SftGenContractTests.test_empty_missing_replaced_unrelated_duplicate_discovery) (label='missing-test_sft_gen.SftGeneratorTests.test_opencode_config_requires_exact_provider_pin')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 89, in test_empty_missing_replaced_unrelated_duplicate_discovery
+    self.assertEqual(runner.run(suite, stream=output), 1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_empty_missing_replaced_unrelated_duplicate_discovery (test_sft_gen_contract.SftGenContractTests.test_empty_missing_replaced_unrelated_duplicate_discovery) (label='missing-test_sft_gen.SftGeneratorTests.test_tool_audit_rejects_rust_and_accelerator_commands')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 89, in test_empty_missing_replaced_unrelated_duplicate_discovery
+    self.assertEqual(runner.run(suite, stream=output), 1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_empty_missing_replaced_unrelated_duplicate_discovery (test_sft_gen_contract.SftGenContractTests.test_empty_missing_replaced_unrelated_duplicate_discovery) (label='missing-test_sft_gen_contract.SftGenContractTests.test_original_control_inventory')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 89, in test_empty_missing_replaced_unrelated_duplicate_discovery
+    self.assertEqual(runner.run(suite, stream=output), 1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_empty_missing_replaced_unrelated_duplicate_discovery (test_sft_gen_contract.SftGenContractTests.test_empty_missing_replaced_unrelated_duplicate_discovery) (label='missing-test_sft_gen_contract.SftGenContractTests.test_empty_missing_replaced_unrelated_duplicate_discovery')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 89, in test_empty_missing_replaced_unrelated_duplicate_discovery
+    self.assertEqual(runner.run(suite, stream=output), 1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_empty_missing_replaced_unrelated_duplicate_discovery (test_sft_gen_contract.SftGenContractTests.test_empty_missing_replaced_unrelated_duplicate_discovery) (label='missing-test_sft_gen_contract.SftGenContractTests.test_missing_and_equal_count_duplicate_execution')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 89, in test_empty_missing_replaced_unrelated_duplicate_discovery
+    self.assertEqual(runner.run(suite, stream=output), 1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_empty_missing_replaced_unrelated_duplicate_discovery (test_sft_gen_contract.SftGenContractTests.test_empty_missing_replaced_unrelated_duplicate_discovery) (label='missing-test_sft_gen_contract.SftGenContractTests.test_non_successful_results_refuse')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 89, in test_empty_missing_replaced_unrelated_duplicate_discovery
+    self.assertEqual(runner.run(suite, stream=output), 1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_empty_missing_replaced_unrelated_duplicate_discovery (test_sft_gen_contract.SftGenContractTests.test_empty_missing_replaced_unrelated_duplicate_discovery) (label='missing-test_sft_gen_contract.SftGenContractTests.test_optimization_refuses_before_fixture_and_import')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 89, in test_empty_missing_replaced_unrelated_duplicate_discovery
+    self.assertEqual(runner.run(suite, stream=output), 1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_empty_missing_replaced_unrelated_duplicate_discovery (test_sft_gen_contract.SftGenContractTests.test_empty_missing_replaced_unrelated_duplicate_discovery) (label='missing-test_sft_gen_contract.SftGenContractTests.test_mandatory_caller_and_masking_refusals')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 89, in test_empty_missing_replaced_unrelated_duplicate_discovery
+    self.assertEqual(runner.run(suite, stream=output), 1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_empty_missing_replaced_unrelated_duplicate_discovery (test_sft_gen_contract.SftGenContractTests.test_empty_missing_replaced_unrelated_duplicate_discovery) (label='missing-test_sft_gen_contract.SftGenContractTests.test_original_control_call_scope_and_generation_guard')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 89, in test_empty_missing_replaced_unrelated_duplicate_discovery
+    self.assertEqual(runner.run(suite, stream=output), 1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_empty_missing_replaced_unrelated_duplicate_discovery (test_sft_gen_contract.SftGenContractTests.test_empty_missing_replaced_unrelated_duplicate_discovery) (label='missing-test_sft_gen_contract.SftGenContractTests.test_private_fixture_boundary_and_cleanup')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 89, in test_empty_missing_replaced_unrelated_duplicate_discovery
+    self.assertEqual(runner.run(suite, stream=output), 1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_empty_missing_replaced_unrelated_duplicate_discovery (test_sft_gen_contract.SftGenContractTests.test_empty_missing_replaced_unrelated_duplicate_discovery) (label='missing-test_sft_gen_contract.SftGenContractTests.test_generator_selection_remains_full')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 89, in test_empty_missing_replaced_unrelated_duplicate_discovery
+    self.assertEqual(runner.run(suite, stream=output), 1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+----------------------------------------------------------------------
+Ran 1 test in 0.007s
+
+FAILED (failures=19)
+
+### erase-discovery-uniqueness-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+OK
+
+### erase-discovery-uniqueness-red.log
+F
+======================================================================
+FAIL: test_empty_missing_replaced_unrelated_duplicate_discovery (test_sft_gen_contract.SftGenContractTests.test_empty_missing_replaced_unrelated_duplicate_discovery) (label='extra-duplicate')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 90, in test_empty_missing_replaced_unrelated_duplicate_discovery
+    self.assertIn('FAIL: discovery:', output.getvalue())
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'FAIL: discovery:' not found in '...................\n----------------------------------------------------------------------\nRan 19 tests in 0.000s\n\nOK\nSFT CPU contract: FAIL: executed identities do not match discovery\n'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.002s
+
+FAILED (failures=1)
+
+### erase-execution-obligation-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+OK
+
+### erase-execution-obligation-red.log
+FFFF
+======================================================================
+FAIL: test_missing_and_equal_count_duplicate_execution (test_sft_gen_contract.SftGenContractTests.test_missing_and_equal_count_duplicate_execution) (kind='Empty')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 123, in test_missing_and_equal_count_duplicate_execution
+    self.assertEqual(runner.run(cls(cases()), stream=output), 1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_missing_and_equal_count_duplicate_execution (test_sft_gen_contract.SftGenContractTests.test_missing_and_equal_count_duplicate_execution) (kind='Duplicate')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 123, in test_missing_and_equal_count_duplicate_execution
+    self.assertEqual(runner.run(cls(cases()), stream=output), 1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_missing_and_equal_count_duplicate_execution (test_sft_gen_contract.SftGenContractTests.test_missing_and_equal_count_duplicate_execution) (kind='NoOutcome')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 123, in test_missing_and_equal_count_duplicate_execution
+    self.assertEqual(runner.run(cls(cases()), stream=output), 1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_missing_and_equal_count_duplicate_execution (test_sft_gen_contract.SftGenContractTests.test_missing_and_equal_count_duplicate_execution) (kind='FloatCount')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 123, in test_missing_and_equal_count_duplicate_execution
+    self.assertEqual(runner.run(cls(cases()), stream=output), 1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+----------------------------------------------------------------------
+Ran 1 test in 0.002s
+
+FAILED (failures=4)
+
+### erase-success-outcomes-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+OK
+
+### erase-success-outcomes-red.log
+F
+======================================================================
+FAIL: test_missing_and_equal_count_duplicate_execution (test_sft_gen_contract.SftGenContractTests.test_missing_and_equal_count_duplicate_execution) (kind='NoOutcome')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 123, in test_missing_and_equal_count_duplicate_execution
+    self.assertEqual(runner.run(cls(cases()), stream=output), 1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)
+
+### accept-floating-count-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+OK
+
+### accept-floating-count-red.log
+F
+======================================================================
+FAIL: test_missing_and_equal_count_duplicate_execution (test_sft_gen_contract.SftGenContractTests.test_missing_and_equal_count_duplicate_execution) (kind='FloatCount')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 123, in test_missing_and_equal_count_duplicate_execution
+    self.assertEqual(runner.run(cls(cases()), stream=output), 1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)
+
+### accept-skipped-results-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.002s
+
+OK
+
+### accept-skipped-results-red.log
+F
+======================================================================
+FAIL: test_non_successful_results_refuse (test_sft_gen_contract.SftGenContractTests.test_non_successful_results_refuse) (mode='skip')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 140, in test_non_successful_results_refuse
+    self.assertEqual(runner.run(unittest.TestSuite(cases()), stream=io.StringIO()), expected)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+----------------------------------------------------------------------
+Ran 1 test in 0.002s
+
+FAILED (failures=1)
+
+### accept-expected-failure-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.002s
+
+OK
+
+### accept-expected-failure-red.log
+F
+======================================================================
+FAIL: test_non_successful_results_refuse (test_sft_gen_contract.SftGenContractTests.test_non_successful_results_refuse) (mode='expected-failure')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 140, in test_non_successful_results_refuse
+    self.assertEqual(runner.run(unittest.TestSuite(cases()), stream=io.StringIO()), expected)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+----------------------------------------------------------------------
+Ran 1 test in 0.002s
+
+FAILED (failures=1)
+
+### erase-optimization-guard-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 1.201s
+
+OK
+
+### erase-optimization-guard-red.log
+FFFF
+======================================================================
+FAIL: test_optimization_refuses_before_fixture_and_import (test_sft_gen_contract.SftGenContractTests.test_optimization_refuses_before_fixture_and_import) (flag='-O', optimize=None)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 157, in test_optimization_refuses_before_fixture_and_import
+    self.assertIn('SFT generator admission requires enabled assertions', result.stderr)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'SFT generator admission requires enabled assertions' not found in 'Traceback (most recent call last):\n  File "<string>", line 1, in <module>\n    import sys;sys.path.insert(0,\'<fixture>/tools\');import run_sft_gen_contract as r;r.owned_fixture=lambda: (_ for _ in ()).throw(AssertionError("fixture touched"));r.discover=lambda: (_ for _ in ()).throw(AssertionError("controls imported"));r.main()\n                                                                                                                                                                                                                                                                                                                                                                     ~~~~~~^^\n  File "<fixture>/tools/run_sft_gen_contract.py", line 163, in main\n    with owned_fixture():\n         ~~~~~~~~~~~~~^^\n  File "<string>", line 1, in <lambda>\n    import sys;sys.path.insert(0,\'<fixture>/tools\');import run_sft_gen_contract as r;r.owned_fixture=lambda: (_ for _ in ()).throw(AssertionError("fixture touched"));r.discover=lambda: (_ for _ in ()).throw(AssertionError("controls imported"));r.main()\n                                                                                                                                                                                                                              ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File "<string>", line 1, in <genexpr>\n    import sys;sys.path.insert(0,\'<fixture>/tools\');import run_sft_gen_contract as r;r.owned_fixture=lambda: (_ for _ in ()).throw(AssertionError("fixture touched"));r.discover=lambda: (_ for _ in ()).throw(AssertionError("controls imported"));r.main()\nAssertionError: fixture touched\n'
+
+======================================================================
+FAIL: test_optimization_refuses_before_fixture_and_import (test_sft_gen_contract.SftGenContractTests.test_optimization_refuses_before_fixture_and_import) (flag='-OO', optimize=None)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 157, in test_optimization_refuses_before_fixture_and_import
+    self.assertIn('SFT generator admission requires enabled assertions', result.stderr)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'SFT generator admission requires enabled assertions' not found in 'Traceback (most recent call last):\n  File "<string>", line 1, in <module>\n    import sys;sys.path.insert(0,\'<fixture>/tools\');import run_sft_gen_contract as r;r.owned_fixture=lambda: (_ for _ in ()).throw(AssertionError("fixture touched"));r.discover=lambda: (_ for _ in ()).throw(AssertionError("controls imported"));r.main()\n                                                                                                                                                                                                                                                                                                                                                                     ~~~~~~^^\n  File "<fixture>/tools/run_sft_gen_contract.py", line 163, in main\n    with owned_fixture():\n         ~~~~~~~~~~~~~^^\n  File "<string>", line 1, in <lambda>\n    import sys;sys.path.insert(0,\'<fixture>/tools\');import run_sft_gen_contract as r;r.owned_fixture=lambda: (_ for _ in ()).throw(AssertionError("fixture touched"));r.discover=lambda: (_ for _ in ()).throw(AssertionError("controls imported"));r.main()\n                                                                                                                                                                                                                              ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File "<string>", line 1, in <genexpr>\n    import sys;sys.path.insert(0,\'<fixture>/tools\');import run_sft_gen_contract as r;r.owned_fixture=lambda: (_ for _ in ()).throw(AssertionError("fixture touched"));r.discover=lambda: (_ for _ in ()).throw(AssertionError("controls imported"));r.main()\nAssertionError: fixture touched\n'
+
+======================================================================
+FAIL: test_optimization_refuses_before_fixture_and_import (test_sft_gen_contract.SftGenContractTests.test_optimization_refuses_before_fixture_and_import) (flag=None, optimize='1')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 157, in test_optimization_refuses_before_fixture_and_import
+    self.assertIn('SFT generator admission requires enabled assertions', result.stderr)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'SFT generator admission requires enabled assertions' not found in 'Traceback (most recent call last):\n  File "<string>", line 1, in <module>\n    import sys;sys.path.insert(0,\'<fixture>/tools\');import run_sft_gen_contract as r;r.owned_fixture=lambda: (_ for _ in ()).throw(AssertionError("fixture touched"));r.discover=lambda: (_ for _ in ()).throw(AssertionError("controls imported"));r.main()\n                                                                                                                                                                                                                                                                                                                                                                     ~~~~~~^^\n  File "<fixture>/tools/run_sft_gen_contract.py", line 163, in main\n    with owned_fixture():\n         ~~~~~~~~~~~~~^^\n  File "<string>", line 1, in <lambda>\n    import sys;sys.path.insert(0,\'<fixture>/tools\');import run_sft_gen_contract as r;r.owned_fixture=lambda: (_ for _ in ()).throw(AssertionError("fixture touched"));r.discover=lambda: (_ for _ in ()).throw(AssertionError("controls imported"));r.main()\n                                                                                                                                                                                                                              ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File "<string>", line 1, in <genexpr>\n    import sys;sys.path.insert(0,\'<fixture>/tools\');import run_sft_gen_contract as r;r.owned_fixture=lambda: (_ for _ in ()).throw(AssertionError("fixture touched"));r.discover=lambda: (_ for _ in ()).throw(AssertionError("controls imported"));r.main()\nAssertionError: fixture touched\n'
+
+======================================================================
+FAIL: test_optimization_refuses_before_fixture_and_import (test_sft_gen_contract.SftGenContractTests.test_optimization_refuses_before_fixture_and_import) (flag=None, optimize='2')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 157, in test_optimization_refuses_before_fixture_and_import
+    self.assertIn('SFT generator admission requires enabled assertions', result.stderr)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'SFT generator admission requires enabled assertions' not found in 'Traceback (most recent call last):\n  File "<string>", line 1, in <module>\n    import sys;sys.path.insert(0,\'<fixture>/tools\');import run_sft_gen_contract as r;r.owned_fixture=lambda: (_ for _ in ()).throw(AssertionError("fixture touched"));r.discover=lambda: (_ for _ in ()).throw(AssertionError("controls imported"));r.main()\n                                                                                                                                                                                                                                                                                                                                                                     ~~~~~~^^\n  File "<fixture>/tools/run_sft_gen_contract.py", line 163, in main\n    with owned_fixture():\n         ~~~~~~~~~~~~~^^\n  File "<string>", line 1, in <lambda>\n    import sys;sys.path.insert(0,\'<fixture>/tools\');import run_sft_gen_contract as r;r.owned_fixture=lambda: (_ for _ in ()).throw(AssertionError("fixture touched"));r.discover=lambda: (_ for _ in ()).throw(AssertionError("controls imported"));r.main()\n                                                                                                                                                                                                                              ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File "<string>", line 1, in <genexpr>\n    import sys;sys.path.insert(0,\'<fixture>/tools\');import run_sft_gen_contract as r;r.owned_fixture=lambda: (_ for _ in ()).throw(AssertionError("fixture touched"));r.discover=lambda: (_ for _ in ()).throw(AssertionError("controls imported"));r.main()\nAssertionError: fixture touched\n'
+
+----------------------------------------------------------------------
+Ran 1 test in 1.181s
+
+FAILED (failures=4)
+
+### unwire-caller-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+OK
+
+### unwire-caller-red.log
+F
+======================================================================
+FAIL: test_mandatory_caller_and_masking_refusals (test_sft_gen_contract.SftGenContractTests.test_mandatory_caller_and_masking_refusals)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 163, in test_mandatory_caller_and_masking_refusals
+    check_caller(text)
+    ~~~~~~~~~~~~^^^^^^
+  File "<fixture>/tools/test_sft_gen_contract.py", line 63, in check_caller
+    raise ValueError('SFT caller command changed or failure swallowed')
+ValueError: SFT caller command changed or failure swallowed
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 165, in test_mandatory_caller_and_masking_refusals
+    self.fail(str(error))
+    ~~~~~~~~~^^^^^^^^^^^^
+AssertionError: SFT caller command changed or failure swallowed
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)
+
+### swallow-caller-failure-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+OK
+
+### swallow-caller-failure-red.log
+F
+======================================================================
+FAIL: test_mandatory_caller_and_masking_refusals (test_sft_gen_contract.SftGenContractTests.test_mandatory_caller_and_masking_refusals)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 163, in test_mandatory_caller_and_masking_refusals
+    check_caller(text)
+    ~~~~~~~~~~~~^^^^^^
+  File "<fixture>/tools/test_sft_gen_contract.py", line 63, in check_caller
+    raise ValueError('SFT caller command changed or failure swallowed')
+ValueError: SFT caller command changed or failure swallowed
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<fixture>/tools/test_sft_gen_contract.py", line 165, in test_mandatory_caller_and_masking_refusals
+    self.fail(str(error))
+    ~~~~~~~~~^^^^^^^^^^^^
+AssertionError: SFT caller command changed or failure swallowed
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)
