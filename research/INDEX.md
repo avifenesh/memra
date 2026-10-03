@@ -698,3 +698,5 @@ background-chat-text-20261002 | Background Chat/Text retained original native ou
 runtime-fixture-traversal-20261003 | Two executed CPU reader controls reproduced omitted fixture consumers; proven traversal now selects the consumer and ambiguous symlink traversal expands validation. | runtime-fixture-traversal-20261003/RESULTS.md
 
 typed-coverage-context-20261003 | Three CLI red controls and one execution-context API red rejected typed or missing coverage contexts after repair; matching typed coverage context remains admitted. | typed-coverage-context-20261003/RESULTS.md
+
+compiled-input-graph-20261003 | "Three actual CPU compiler omissions are repaired; both independent positive controls remain selected." | compiled-input-graph-20261003/RESULTS.md

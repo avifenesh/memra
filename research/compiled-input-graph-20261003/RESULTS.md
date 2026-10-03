@@ -1,0 +1,23 @@
+# Compiled-input reach, 2026-10-03
+
+Three actual CPU compiler omissions are repaired. Conditional and raw-identifier module roots, and split
+concat includes through symlink parents changed the independently compiled programs
+from BEFORE to AFTER. The baseline planner omitted server checks; the candidate selects
+full CPU checks. Direct module attributes and unsplit includes remain selected.
+
+PROOF.json records the five two-commit programs, ten real compiler/execution outputs,
+changed input paths, source/binary/helper/bundle/compiler hashes and both plans. The five
+fixture Git bundles retain their input states. replay.py recreates the builds without
+model weights or a GPU. B's complete runtime_target helper is preserved byte-for-byte,
+and now checks the complete compiled include before parent cancellation. Conditional
+paths expand without guessing cfg truth. Lexical example/comment controls stay scoped.
+
+All113 composed CPU planner/coverage controls passed after integrating #933. The workspace registry accounts for14
+packages; both immutable tool-choice receipts replayed with16 controls. The four new
+grouped planner tests cover conditional/nested/unknown/inactive
+paths, non-reader examples, unterminated attributes and complete split include aliases.
+The final CI floor is113, preserving both groups. CI and review still gate merge.
+
+This is CPU dependency/validation tooling. Native selectors remain in shadow. No native
+math, emitted runtime program, compiler/build defaults, artifacts/defaults, tolerance,
+required native gates or support states change. Native qualification=false; GPU work0.

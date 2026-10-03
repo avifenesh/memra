@@ -41,6 +41,14 @@ Runtime fixture paths under `research` and `docs` retain their canonical targets
 `.` and proven `..` traversal. Removing a parent component requires a known directory in
 the inspected tree and no symlink along the traversed spelling. Symlinks, missing
 directories, escaping traversal and pattern-dependent parents expand validation.
+Compiled include literals use the same physical traversal check after their complete
+`concat!` or registered environment expression is resolved. A symlink cannot disappear
+through `..` cancellation, even when its path is split across string fragments.
+Conditional `cfg_attr` module path attributes expand validation until their transitive
+module graph has a contract; the selector does not evaluate cfg truth. Raw identifiers
+for path and cfg_attr retain the same input reach as their ordinary spellings. Comments and
+quoted example code cannot create those attribute readers.
+
 Format and glob suffixes keep their conservative reach. Traversal to the repository root
 covers the whole subtree, and the census inspects both sides of deletions and renames.
 
