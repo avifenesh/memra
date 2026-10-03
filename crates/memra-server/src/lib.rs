@@ -9172,7 +9172,7 @@ fn build_chat_request_with_trace(
 
     let parser = parser.map(|p| {
         if tool_language.is_some() {
-            p.with_json_arguments()
+            p.with_json_arguments().fresh()
         } else {
             p
         }
