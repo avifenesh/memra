@@ -29759,6 +29759,7 @@ pub fn run(
                             && !memra_engine::pp::pp_host_bounce_active();
                         if !supported {
                             choice.group.fail();
+                            s.errored = true;
                             let _ = s.tx.send(Event::Error(EngineError::invalid_param(
                                 "n-choice shared prefill is unsupported for this selected native route", "n")));
                             continue;
@@ -49586,9 +49587,12 @@ mod tests {
         let qw_at = prod
             .find("crate::hybrid_telemetry::record_queue_wait(")
             .unwrap();
-        let qw_before = &prod[qw_at.saturating_sub(400)..qw_at];
+        let success = prod[..qw_at]
+            .rfind("Ok(mut s) => {")
+            .expect("queue-wait remains in the successful admission arm");
+        let qw_before = &prod[success..qw_at];
         assert!(
-            qw_before.contains("Ok(mut s) => {"),
+            !qw_before.contains("Err((tx, msg)) =>"),
             "queue-wait records only on a successful admission"
         );
         assert!(
@@ -59950,7 +59954,7 @@ mod tests {
         let worker = squash(include_str!("worker.rs"));
         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
         let sweep = live
-            .find("if s.tx.is_closed() { abort_log(s); finished.push(i); } }")
+            .find("if s.tx.is_closed() || s.choice.as_ref().is_some_and(|c| c.group.failed()) { abort_log(s); finished.push(i); } }")
             .expect("the disconnect sweep");
         let ensure = live
             .find("if crate::kv_vmm::armed() { let (reaped, pending) = vmm_reap_tick(&mut active, &mut reuse, &mut spec_reuse);")
