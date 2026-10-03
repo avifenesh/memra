@@ -26,8 +26,9 @@
 //! conversation is not a valley).
 //!
 //! YIELD MECHANISM v1 — simplest honest first: the job is a CHILD PROCESS in its own
-//! process group; yield is SIGSTOP to the group, resume is SIGCONT. Bounded by the poll
-//! interval (`MEMRA_BG_POLL_MS`, default 25 ms) + signal delivery — measured receipts in
+//! process group. The runner submits SIGSTOP/SIGCONT on poll ticks (`MEMRA_BG_POLL_MS`,
+//! default 25 ms) and publishes yielded after observing a stop on a later tick. OS
+//! scheduling and signal delivery control latency. Historical timing receipts live in
 //! `research/darktrain-20260807/`. Two consequences the operator must know:
 //!   * a SIGSTOPPED process KEEPS its memory — VRAM included. The VRAM budget below is
 //!     therefore carved out for the LIFE of the job, not per-valley.

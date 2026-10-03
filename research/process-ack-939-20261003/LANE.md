@@ -1,0 +1,19 @@
+# Owned background-process stop acknowledgements
+
+Verdict: CPU owned-process yield state now requires an observed stop; the original intermittent failure remains unproven.
+
+The runner must publish `yielded` only after observing the owned child stop. A successful `kill(-pgid, SIGSTOP)` alone is insufficient: it can return success after the child has exited and remains a zombie.
+
+The executed red capsule copied the production runner, launch, exit classification, cleanup and checkpoint functions from source `e8ef5e47ae4f38c420f602abd38aadd4fd59f181`. Its busy callback released only its own shell after `Child::try_wait` returned `None`, then observed the exit with `waitid(WEXITED | WNOWAIT)`. The syscall trace recorded the child exiting with status 0 and `kill(SIGSTOP)` returning 0. The runner published state 2 with one yield and a zombie. The expected state 4 assertion failed. Production source was unchanged for this diagnostic.
+
+The repair checks signal results and keeps stop submission pending until a nonblocking child-status query reports `CLD_STOPPED`. Exit status remains owned by `Child::try_wait`. A child killed while yielded is reaped before resume. Yields count observed child stops. Resumes count successful `SIGCONT` submissions; the lifecycle tests separately observe the child running again. No new flag or configuration default is added.
+
+The tests use their own process groups and CPU commands. They force status 0 and status 7 exits in the actual wait-to-signal window, exercise a killed stopped child and an invalid signal on the owned live group, retain the original real stop/resume/shutdown test and its 30-second guard, and test two separate stop acknowledgements with shutdown during the second stop. Directory cleanup guards exist only after exclusive acquisition succeeds. Test-local runner guards print the owned child state and counters before shutting down on assertion failure.
+
+At source `fa3dfe73bb13b2dcdf1b9392eb10fd4915d0a0eb`, all 10 lifecycle tests passed and the complete server suite passed 1,097 tests with zero failures, 28 declared ignores and zero filtered tests. Strict all-target release Clippy, formatting, diff checks, the 14-package validation registry and all 124 validation contract tests passed. The same current fixture failed as expected against the byte-identical old runner: before cleanup, its assertion guard captured `yielded`, child state `Z`, yields 1 and resumes 0; shutdown reaped exit status 0 and removed the owned directory. The standalone old-runner capsule then compiled with warnings denied and reproduced the expected red result; its owned directory was removed. One earlier wrapper attempt refused two ambiguous libc artifacts before executing any lifecycle tests. The corrected wrapper pins the artifact matching the executed release test binary dependency fingerprint and its SHA-256. No model or GPU is used. Numeric programs, native math, compiler defaults, model artifacts, decode defaults, qualification tolerances and native gate coverage are unchanged. This CPU lifecycle repair grants no runtime, model or serving qualification.
+
+The original intermittent full-suite stop-cycle failure has no established cause. The deterministic exit-window counterexample is a distinct proved defect. Its proof does not establish why that earlier shell failed to reach `T`.
+
+Publicity: skipped: maintenance release.
+
+The local complete checks bind source `fa3dfe73bb13b2dcdf1b9392eb10fd4915d0a0eb`. The publication branch subsequently integrates main `1371a81787` and updates only the yield-timing module comment and lane receipts in this change. Current-head CI verifies the composed branch. [CPU proof](cpu-proof.json) and [old-runner red binding](red-proof.json) retain compiler, library, function and log hashes. The namespace custody also retains original full logs and failed attempts.

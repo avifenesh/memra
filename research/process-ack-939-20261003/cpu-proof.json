@@ -1,0 +1,57 @@
+{
+  "source": "fa3dfe73bb13b2dcdf1b9392eb10fd4915d0a0eb",
+  "source_darklane_sha256": "bc93b48bdbf8b81ee19edf9fc92ab8856adbcd9b315711e750e31d8aeec26715",
+  "cpu_tests": {
+    "passed": 1097,
+    "failed": 0,
+    "ignored": 28,
+    "filtered": 0
+  },
+  "lifecycle_tests": {
+    "passed": 10,
+    "failed": 0
+  },
+  "registry_packages": 14,
+  "validation_floor_tests": 124,
+  "strict_release_all_target_clippy": "passed",
+  "format": "passed",
+  "diff_check": "passed",
+  "raw_log_sha256": "659528183dcb28f2b285b8c7e50db152ede8ee21bc71e1df43b81a42390a00df",
+  "scope": "owned CPU POSIX lifecycle; no GPU/model/runtime or release qualification",
+  "original_intermittent_cause": "unproven",
+  "expected_old_runner_red": "passed expected101 with observed zombie and falseyield; guard reapedchild and removedowned directory",
+  "warning_denied_old_runner_capsule": "passed; expected red101; owned directory removed",
+  "capsule_log_sha256": "951b9afd775fc9f0dbac0e0c8d06ded784fd9570dfe8a5a9cfae4731bc9fb38c",
+  "clean_capsule_binding": {
+    "fixture_source": "fa3dfe73bb13b2dcdf1b9392eb10fd4915d0a0eb",
+    "fixture_source_sha256": "bc93b48bdbf8b81ee19edf9fc92ab8856adbcd9b315711e750e31d8aeec26715",
+    "runner_source": "e8ef5e47ae4f38c420f602abd38aadd4fd59f181",
+    "capsule_sha256": "bedc609e35765b1b70f5a91137e392f6e9e2f4106f81164065dbfd9a92960a7d",
+    "runner_functions": {
+      "fn runner_loop(": "4144951218e52883f3867fc1136a971c81e419687868294650b6dcf325250835",
+      "fn launch(": "da119ccb54f08122bf5a0de4b17ad163b03a0eb87b5f849dbc7a8377f169de6b",
+      "fn kill_group(": "2edc31a8f20845eda4467aab2ce21fcd44fe2166e42a5b5f50a288a90de42b8c",
+      "fn handle_exit(": "16d9af1d391ffcf2b79a3938084d7a57692ab8baa98a80f2702c3bf590a62467",
+      "fn preempt_wait(": "1eb6e05cea5d5dca99a11e1fad46ec6a313bab59771ec7409bff92502ac7be05"
+    },
+    "executed_test": "normal_exit_between_wait_and_stop_is_done_without_yield",
+    "expected_exit": 101,
+    "purpose": "same real owned-child regression is red with exact old runner; exercise panic snapshot and owned shutdown/dir cleanup; unchanged 30-second guard",
+    "only_change": "remove unused copied wait_for helper; no executed fixture/production function changes",
+    "removed_unused_helper_sha256": "5307e80269f8ccda690ebaf2cabf890f6c447772fead350f4b0fd71ade2a7828"
+  },
+  "libc_binding": {
+    "rlib": "liblibc-436a9c23a73f2f62.rlib",
+    "sha256": "799587d0ed0076f16be25c5ba198c49a66db5f425be2e8850feedec5a2db51bb",
+    "fingerprint_decimal": 8533174067110887054,
+    "memra_server_test_fingerprint": "18a72fda78e92499",
+    "reason": "matches the libc dependency fingerprint of the executed release test binary; alternate rlib has different profile and fingerprint"
+  },
+  "failed_attempts": [
+    {
+      "stage": "capsule dependency selection",
+      "exit_code": 1,
+      "reason": "two libc profile artifacts; refused ambiguous selection; fixed by exact release dependency fingerprint and rlib hash"
+    }
+  ]
+}

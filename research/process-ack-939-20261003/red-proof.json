@@ -1,0 +1,42 @@
+{
+  "source": "e8ef5e47ae4f38c420f602abd38aadd4fd59f181",
+  "source_sha256": "3b9f096bcd460dfbfd8c44c68693fb0f5fc58d3f97a8bd3e4cf523a2cb3de203",
+  "capsule_sha256": "fec0b28b0ce591363ee01a63794b3f82eafc3a5d8c1b963a01a077da89011b8b",
+  "functions": {
+    "fn runner_loop": {
+      "exact": true,
+      "sha256": "4144951218e52883f3867fc1136a971c81e419687868294650b6dcf325250835"
+    },
+    "fn launch": {
+      "exact": true,
+      "sha256": "da119ccb54f08122bf5a0de4b17ad163b03a0eb87b5f849dbc7a8377f169de6b"
+    },
+    "fn kill_group": {
+      "exact": true,
+      "sha256": "2edc31a8f20845eda4467aab2ce21fcd44fe2166e42a5b5f50a288a90de42b8c"
+    },
+    "fn handle_exit": {
+      "exact": true,
+      "sha256": "16d9af1d391ffcf2b79a3938084d7a57692ab8baa98a80f2702c3bf590a62467"
+    },
+    "fn preempt_wait": {
+      "exact": true,
+      "sha256": "1eb6e05cea5d5dca99a11e1fad46ec6a313bab59771ec7409bff92502ac7be05"
+    }
+  },
+  "red": {
+    "exit_code": 101,
+    "child_exit_status": 0,
+    "sigstop_return": 0,
+    "published_state": 2,
+    "published_yields": 1,
+    "child_state": "Z",
+    "expected_state": 4
+  },
+  "original_intermittent_cause": "unproven",
+  "strace_sha256": "c250c2be4aeb0761681e37b0b1ddfdaf66b00ca90ba2686b4312cd1c736a18b1",
+  "capsule_exit_status": 101,
+  "pr_base": "462ae029f4",
+  "pr_base_darklane_sha256": "3b9f096bcd460dfbfd8c44c68693fb0f5fc58d3f97a8bd3e4cf523a2cb3de203",
+  "all_five_red_functions_equal_pr_base": true
+}

@@ -706,3 +706,5 @@ shared-cache-contract-20261003 | The repaired registry selects all four affected
 non-utf8-drafter-environment-20261003 | "Unrelated non-UTF8 exports no longer panic drafter collection; relevant bytes refuse without changing valid identity strings." | [RESULTS.md](non-utf8-drafter-environment-20261003/RESULTS.md)
 
 raw-os-environment-name-audit-20261003 | "Owned malformed OS names refuse; unowned names warn; UTF8 and value-ignorance controls preserve baseline bytes." | raw-os-environment-name-audit-20261003/RESULTS.md
+
+process-ack-939-20261003 | Verdict: CPU owned-process yield state now requires an observed stop; the original intermittent failure remains unproven. | process-ack-939-20261003/LANE.md
