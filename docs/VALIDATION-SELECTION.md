@@ -37,6 +37,13 @@ A producer edit invalidates its declaration until the changed dependency is revi
 Unreferenced research receipts do not rebuild the engine. A standalone research probe retains
 its own experiment requirement; it does not imply that every engine program changed.
 
+Runtime fixture paths under `research` and `docs` retain their canonical targets across
+`.` and proven `..` traversal. Removing a parent component requires a known directory in
+the inspected tree and no symlink along the traversed spelling. Symlinks, missing
+directories, escaping traversal and pattern-dependent parents expand validation.
+Format and glob suffixes keep their conservative reach. Traversal to the repository root
+covers the whole subtree, and the census inspects both sides of deletions and renames.
+
 The graph is an explicit dependency contract, not whole-program static analysis. New input
 mechanisms must be declared or remain expanded. File names alone do not prove native
 independence. Execution traces help find missing edges but do not by themselves prove an
