@@ -87,8 +87,10 @@ class SupportExecutionInputs(unittest.TestCase):
             for target in (moved, self.repo / 'missing-parent'):
                 with self.subTest(name=name, target=target.name):
                     parent.symlink_to(target, target_is_directory=True)
-                    self.assert_no_content_read()
-                    parent.unlink()
+                    try:
+                        self.assert_no_content_read()
+                    finally:
+                        parent.unlink()
             moved.rename(parent)
 
     def test_read_bytes_remains_exact_and_regular_metadata_still_resolves(self):
