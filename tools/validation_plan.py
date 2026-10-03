@@ -244,6 +244,7 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
     inputs = defaultdict(set)
     source_consumers = defaultdict(set)
     links = tree.symlinks()
+    runtime_paths = None
     def linked_input(path):
         fixed_prefix = re.split(r'[\[{}*?]', path, maxsplit=1)[0].rstrip('/')
         return any(path == alias or path.startswith(alias + '/')
@@ -252,6 +253,32 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
                        (alias.startswith(fixed_prefix) or fixed_prefix.startswith(alias + '/')))
                    or fnmatch.fnmatchcase(alias, path)
                    or fnmatch.fnmatchcase(alias, path.rstrip('/') + '/**') for alias in links)
+
+    def runtime_target(path):
+        nonlocal runtime_paths
+        parts = []
+        for part in path.split('/'):
+            if part in ('', '.'):
+                continue
+            if part == '..':
+                if not parts:
+                    raise Refused('runtime fixture path escapes repository: ' + path)
+                parent = '/'.join(parts)
+                if any(re.search(r'[{}*?\[]', component) for component in parts):
+                    raise Refused('runtime fixture parent traversal depends on a pattern: ' + path)
+                # The filesystem follows symlinks before applying '..'. Check the
+                # traversed spelling, including prefixes normalized so far, before
+                # removing anything. Lexical cancellation alone is not proof.
+                if linked_input(parent):
+                    raise Refused('runtime fixture parent traversal contains a symlink: ' + path)
+                if runtime_paths is None:
+                    runtime_paths = tree.paths()
+                if not any(candidate.startswith(parent + '/') for candidate in runtime_paths):
+                    raise Refused('runtime fixture parent directory is unresolved: ' + parent)
+                parts.pop()
+            else:
+                parts.append(part)
+        return '/'.join(parts)
 
     for path in links:
         package = owner(path, owners)
@@ -377,6 +404,12 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
                 rooted = value[match.start():]
                 if linked_input(rooted):
                     raise Refused('runtime fixture symlink needs an input contract: ' + rooted)
+                rooted = runtime_target(rooted)
+                if linked_input(rooted):
+                    raise Refused('normalized runtime fixture symlink needs an input contract: ' + rooted)
+                if not rooted:
+                    inputs['**'].add(package)
+                    continue
                 # A string can be a literal path or a pattern consumed by a reader.
                 # Retain both interpretations; escaping must never drop glob reach.
                 for input_pattern in {re.sub(r'\{[^}]*\}', '*', rooted),
