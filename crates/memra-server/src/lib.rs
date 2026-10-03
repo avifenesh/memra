@@ -3588,6 +3588,9 @@ struct ChatCompletionReq {
     top_logprobs: Option<usize>,
     #[serde(default)]
     n: Option<usize>,
+    /// Captured to refuse candidate-ranking semantics rather than silently ignoring them.
+    #[serde(default)]
+    best_of: Option<usize>,
     /// OpenAI tool schemas: `[{"type":"function","function":{name,description?,parameters?}}]`.
     #[serde(default)]
     tools: Vec<serde_json::Value>,
@@ -10974,6 +10977,11 @@ async fn chat_completions_with_admission(
             "",
         ),
         ("top_logprobs", req.top_logprobs.is_some(), ""),
+        (
+            "best_of",
+            req.best_of.is_some_and(|n| n != 1),
+            " (best_of is not implemented; use n for multiple choices)",
+        ),
     ]) {
         return with_request_id(&env.id, bad_request(&msg, Some(&param)));
     }
@@ -25633,6 +25641,110 @@ temperature = 0.6
                 0
             );
         }
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // the refusal must not reserve any worker/tenant state
+    async fn choice_http_both_endpoints_refuse_best_of_instead_of_ignoring_it() {
+        let _lock = drain_lock();
+        for chat in [false, true] {
+            let state = choice_http_state();
+            let body = if chat {
+                json!({"model":"m","messages":[{"role":"user","content":"fixture"}],"best_of":2,"seed":500})
+            } else {
+                json!({"model":"m","prompt":"fixture","best_of":2,"seed":500})
+            };
+            let response = if chat {
+                chat_completions(
+                    State(state.clone()),
+                    HeaderMap::new(),
+                    None,
+                    Json(serde_json::from_value(body).unwrap()),
+                )
+                .await
+            } else {
+                completions(
+                    State(state.clone()),
+                    HeaderMap::new(),
+                    None,
+                    Json(serde_json::from_value(body).unwrap()),
+                )
+                .await
+            };
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let body = body_value(response).await;
+            assert_eq!(body["error"]["param"], "best_of");
+            assert!(body["error"]["message"].as_str().unwrap().contains("use n"));
+            assert_eq!(
+                state.inflight[lanes::Lane::Interactive.idx()]
+                    .load(std::sync::atomic::Ordering::SeqCst),
+                0
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // real group deadline handler owns the same shared admission state
+    async fn choice_http_deadline_flushes_prefix_and_returns_one_flat_error() {
+        let _lock = drain_lock();
+        let mut state = choice_http_state();
+        let (tx, rx) = std::sync::mpsc::channel::<Cmd>();
+        state.cmd_tx = tx;
+        let (release, hold) = std::sync::mpsc::channel::<()>();
+        let worker = std::thread::spawn(move || {
+            let Cmd::GenerateChoices(mut requests) = rx.recv().unwrap() else {
+                panic!("choice group expected")
+            };
+            for request in &mut requests {
+                worker::release_pending_admit();
+                worker::release_request_reservation(request);
+                request
+                    .tx
+                    .send(Event::PromptUsage {
+                        n_prompt: 5,
+                        n_cached: 0,
+                    })
+                    .unwrap();
+            }
+            for (id, ch) in "abcE".chars().enumerate() {
+                requests[0]
+                    .tx
+                    .send(Event::Token {
+                        id: id as u32,
+                        text: ch.to_string(),
+                    })
+                    .unwrap();
+            }
+            // Event handshake keeps both channels open through the actual HTTP deadline.
+            hold.recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap();
+            assert!(requests.iter().all(|r| r.tx.is_closed()));
+        });
+        let response = completions(
+            State(state.clone()),
+            HeaderMap::new(),
+            None,
+            Json(
+                serde_json::from_value(json!({"model":"m","prompt":"fixture","n":2,
+                "stop":"END","timeout_ms":100,"seed":500}))
+                .unwrap(),
+            ),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_value(response).await;
+        assert_eq!(body["choices"][0]["text"], "abcE");
+        assert_eq!(body["choices"][0]["finish_reason"], "error");
+        assert_eq!(body["usage"]["completion_tokens"], 4);
+        assert_eq!(body["error"]["code"], "deadline_exceeded");
+        assert!(body["error"].get("error").is_none());
+        release.send(()).unwrap();
+        worker.join().unwrap();
+        assert_eq!(
+            state.inflight[lanes::Lane::Interactive.idx()]
+                .load(std::sync::atomic::Ordering::SeqCst),
+            0
+        );
     }
 
     #[tokio::test]

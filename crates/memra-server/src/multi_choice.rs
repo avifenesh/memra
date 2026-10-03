@@ -714,7 +714,7 @@ pub(crate) async fn respond(
                     );
                 }
                 let mut body = rows.body(&env, &model, true);
-                body["error"] = crate::deadline_exceeded_error(deadline.ms, false);
+                body["error"] = crate::deadline_exceeded_error(deadline.ms, false)["error"].clone();
                 drop(input);
                 drop(guard);
                 return reading.attach(crate::with_request_id(

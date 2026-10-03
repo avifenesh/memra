@@ -1,6 +1,6 @@
 import unittest
 from copy import deepcopy
-from choice_verifier import check_completed, Invalid
+from choice_verifier import check_completed, check_refusal, Invalid
 
 def fixture():
     identity='fixture'; output=3
@@ -12,6 +12,10 @@ class Controls(unittest.TestCase):
     def reject(self,cell,edge):
         with self.assertRaises(Invalid) as e:check_completed(cell)
         self.assertEqual(e.exception.edge,edge)
+    def test_success_cannot_satisfy_an_intended_refusal(self):
+        with self.assertRaises(Invalid) as e:check_refusal({'status':200,'body':{'choices':[]},'worker_rows':[]},'best_of')
+        self.assertEqual(e.exception.edge,'refusal')
+        check_refusal({'status':400,'body':{'error':{'param':'best_of'}},'worker_rows':[]},'best_of')
     def test_positive(self):self.assertTrue(check_completed(fixture())['pass'])
     def test_missing_choice(self):
         x=fixture();x['body']['choices'].pop();self.reject(x,'indexed_termination')

@@ -21,6 +21,10 @@ def normalized(body):
 def text(choice):
     return choice.get('text') if 'text' in choice else choice['message']
 
+def check_refusal(record, name):
+    require(record['status']==400 and not record.get('worker_rows'), 'refusal', name)
+    require(record.get('body',{}).get('error',{}).get('param') in ('n','best_of'), 'refusal', name)
+
 def check_completed(cell):
     n = cell['n']; body = cell['body']; identity = cell['id']
     choices = body['choices']

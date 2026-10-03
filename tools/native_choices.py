@@ -111,7 +111,7 @@ def main():
     for name in ['binary-sha','model-sha','source']:p.add_argument('--'+name,required=True)
     p.add_argument('--port',type=int,default=18230);p.add_argument('--context',type=int,default=4096);p.add_argument('--sessions',type=int,default=8)
     p.add_argument('--output-budget',type=int,default=1000000);p.add_argument('--reserve-mb',type=int)
-    p.add_argument('--phase',choices=['baseline','candidate','budget','kv','slots'],required=True)
+    p.add_argument('--phase',choices=['baseline','candidate','budget','kv','slots','deadline'],required=True)
     args=p.parse_args();assert not args.out.exists(),'new receipt directory required; never overwrite evidence';native=Native(args);results=[];status='failed'
     try:
         native.start()
@@ -136,8 +136,10 @@ def main():
             results.append(native.request('n-only-default-fresh','/v1/chat/completions',{**bare,'n':2}))
             results.append(native.request('cancel','/v1/chat/completions',{'model':'fixture','messages':[{'role':'user','content':'List the integers from one upward. Continue until the output limit.'}],'n':4,'stream':True,'max_tokens':512,'seed':103},reset_after=8))
             results.append(native.request('cancel-recovery','/v1/chat/completions',{**bare,'temperature':0,'max_tokens':8,'seed':73}))
-            results.append(native.request('deadline-partial','/v1/chat/completions',{'model':'fixture','messages':[{'role':'user','content':'List integers upward with explanations. Keep going until the output limit.'}],'n':2,'timeout_ms':1000,'seed':73,'stop':['END']}))
-            results.append(native.request('deadline-recovery','/v1/chat/completions',{**bare,'n':2,'max_tokens':8,'seed':73}))
+        elif args.phase=='deadline':
+            payload={'model':'fixture','messages':[{'role':'user','content':'List integers upward with explanations. Keep going until the output limit.'}],'n':2,'timeout_ms':2000,'seed':73,'stop':['END']}
+            results.append(native.request('deadline-partial','/v1/chat/completions',payload))
+            results.append(native.request('deadline-recovery','/v1/chat/completions',{'model':'fixture','messages':[{'role':'user','content':'Reply with one short sentence.'}],'n':2,'max_tokens':8,'seed':73}))
         elif args.phase=='slots':
             payload={'model':'fixture','messages':[{'role':'user','content':'Count upward. Write one integer on each line and keep going until the output limit.'}],'n':4,'stream':True,'max_tokens':512,'seed':103}
             folder=args.out/'occupier';folder.mkdir();save(folder/'request.json',payload)
