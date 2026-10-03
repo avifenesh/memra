@@ -177,12 +177,59 @@ class ValidationPlanTests(unittest.TestCase):
 
     def test_shared_collector_selects_sampled_tests_only_when_present(self):
         paths = ['tools/collect-serving-qualification.py']
+        self.put(paths[0], '# actual serving collector\n')
+        self.commit()
         self.assertEqual([c['id'] for c in self.plan(paths)['cpu_contracts']], ['serving-qualification'])
         self.put('tools/collect-sampled-mtp.py', '# imports serving collector\n')
         self.commit()
         p = self.plan(paths)
         self.assertEqual({c['id'] for c in p['cpu_contracts']}, {'serving-qualification', 'sampled-mtp'})
         self.assertFalse(any(p['jobs'].values()))
+
+    def test_shared_cache_helper_selects_present_consumers_and_keeps_native_obligations(self):
+        names = ('background-chat-text', 'serving-qualification', 'sampled-mtp')
+        present = set()
+        for name in names:
+            for path in vp.TOOL_CONTRACTS[name]['inputs']:
+                self.put(path, '# fixture\n')
+            self.commit()
+            present.add(name)
+            with self.subTest(present=sorted(present)):
+                plan = self.plan(['tools/cache_qualification.py'])
+                self.assertEqual({c['id'] for c in plan['cpu_contracts']}, present)
+                self.assertEqual({tuple(c['cpu']) for c in plan['cpu_contracts']},
+                                 {tuple(vp.TOOL_CONTRACTS[n]['cpu']) for n in present})
+                self.assertEqual(set(plan['native']['requirements']),
+                                 set().union(*(vp.TOOL_CONTRACTS[n]['native'] for n in present)))
+                self.assertFalse(any(plan['jobs'].values()))
+                self.assertFalse(plan['native']['qualification'])
+
+    def test_shared_cache_helper_does_not_invent_absent_contracts_in_fallback(self):
+        for name in ('q35-cache', 'physical-gpu', 'support-records', 'background-chat-text'):
+            for path in vp.TOOL_CONTRACTS[name]['inputs']:
+                self.put(path, '# fixture\n')
+        expected = {'q35-cache', 'physical-gpu', 'support-records', 'background-chat-text'}
+        self.assertEqual(set(vp.cpu_contract_names(self.repo, '')), expected)
+        for name in ('serving-qualification', 'sampled-mtp'):
+            for path in vp.TOOL_CONTRACTS[name]['inputs']:
+                self.put(path, '# fixture\n')
+            expected.add(name)
+            self.assertEqual(set(vp.cpu_contract_names(self.repo, '')), expected)
+
+    def test_shared_cache_helper_deletion_keeps_obligations_and_refuses_execution(self):
+        names = ('background-chat-text', 'serving-qualification', 'sampled-mtp')
+        for name in names:
+            for path in vp.TOOL_CONTRACTS[name]['inputs']:
+                self.put(path, '# fixture\n')
+        before = self.commit()
+        (self.repo / 'tools/cache_qualification.py').unlink()
+        after = self.commit()
+        plan = vp.event_plan(self.repo, 'push', '', before, after)
+        self.assertEqual({c['id'] for c in plan['cpu_contracts']}, set(names))
+        self.assertFalse(any(plan['jobs'].values()))
+        for name in names:
+            with self.subTest(contract=name), self.assertRaisesRegex(vp.Refused, name):
+                vp.cpu_contract_names(self.repo, name)
 
     def test_sampled_dependency_pin_selects_its_contract(self):
         self.put('tools/sampled-mtp-requirements.txt', 'numpy==2.3.5\n')
