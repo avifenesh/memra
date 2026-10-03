@@ -1286,7 +1286,8 @@ def preserve_contract_obligations(plan, before, after):
     existing = {c['id'] for c in plan['cpu_contracts']}
     paths = set(before.paths('tools', 'research', 'docs')) | set(after.paths('tools', 'research', 'docs'))
     for name, contract in TOOL_CONTRACTS.items():
-        if name not in existing and any(p in paths for p in contract.get('presence', contract['inputs'])):
+        if (not contract.get('workflow_only') and name not in existing
+                and any(p in paths for p in contract.get('presence', contract['inputs']))):
             plan['cpu_contracts'].append({'id': name, **contract})
 
 
@@ -1335,8 +1336,9 @@ def cpu_contract_names(root, selected):
     names = selected.split(',') if selected and selected != 'none' else []
     if names and (len(set(names)) != len(names) or any(n not in TOOL_CONTRACTS for n in names)):
         raise Refused('unknown or duplicated CPU contract')
-    available = [n for n, c in TOOL_CONTRACTS.items()
-                 if c.get('required') or any((root / p).exists() for p in c.get('presence', c['inputs']))]
+    available = [n for n, c in TOOL_CONTRACTS.items() if not c.get('workflow_only')
+                 and (c.get('required') or any((root / p).exists()
+                      for p in c.get('presence', c['inputs'])))]
     for name in names or (available if selected != 'none' else []):
         if not all((root / p).is_file() for p in TOOL_CONTRACTS[name]['inputs']):
             raise Refused('selected contract input is missing: ' + name)
@@ -1358,7 +1360,9 @@ def cpu_contract_names(root, selected):
             for path in data['required']:
                 if not (root / path).is_file():
                     raise Refused('selected contract input is missing: support-records: ' + path)
-    return names
+    # These plan labels are executed by their existing mandatory gates steps.
+    # Keep their selected-input preflight, without invoking the suite twice.
+    return [name for name in names if not TOOL_CONTRACTS[name].get('workflow_only')]
 
 
 def run_cpu_contract(contract, root):

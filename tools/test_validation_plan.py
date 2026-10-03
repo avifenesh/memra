@@ -927,6 +927,40 @@ class ValidationPlanTests(unittest.TestCase):
         self.assertIn('refused policy', plan['reason'])
         self.assertFalse(plan['native']['qualification'])
 
+    def test_real_repo_full_plan_does_not_duplicate_dedicated_workflow_suites(self):
+        tree = vp.Tree(Path(__file__).parent.parent, 'HEAD')
+        plan = vp.full('explicit full selection')
+        vp.preserve_contract_obligations(plan, tree, tree)
+        labels = {name for name, contract in vp.TOOL_CONTRACTS.items()
+                  if contract.get('workflow_only')}
+        self.assertTrue(labels)
+        self.assertFalse(labels & {c['id'] for c in plan['cpu_contracts']})
+        self.assertTrue(all(plan['jobs'].values()))
+
+    def test_missing_selection_keeps_normal_contracts_without_workflow_duplicates(self):
+        labels = {name for name, contract in vp.TOOL_CONTRACTS.items()
+                  if contract.get('workflow_only')}
+        required = {name for name, contract in vp.TOOL_CONTRACTS.items()
+                    if contract.get('required')}
+        for name in labels | required:
+            for path in vp.TOOL_CONTRACTS[name]['inputs']:
+                self.put(path, '# present input\n')
+        self.put_support_data_reader_fixture()
+        actual = set(vp.cpu_contract_names(self.repo, ''))
+        self.assertFalse(actual & labels)
+        self.assertTrue(required <= actual)
+        self.assertTrue(any(vp.TOOL_CONTRACTS[name]['native'] for name in actual))
+
+    def test_explicit_workflow_label_preflights_without_second_execution(self):
+        name = 'sft-generator-caller'
+        for path in vp.TOOL_CONTRACTS[name]['inputs']:
+            self.put(path, '# present input\n')
+        self.put_support_data_reader_fixture()
+        self.assertEqual(vp.cpu_contract_names(self.repo, name), [])
+        (self.repo / vp.TOOL_CONTRACTS[name]['inputs'][0]).unlink()
+        with self.assertRaisesRegex(vp.Refused, 'selected contract input is missing'):
+            vp.cpu_contract_names(self.repo, name)
+
 
 class FeatureProgramTests(unittest.TestCase):
     def setUp(self):
