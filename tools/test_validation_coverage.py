@@ -2,6 +2,8 @@
 import hashlib
 from pathlib import Path
 import tempfile
+import subprocess
+import sys
 import unittest
 
 import validation_coverage as vc
@@ -244,6 +246,85 @@ class CoverageTests(unittest.TestCase):
         self.assertNotEqual(vc.contract_digest(declared), vc.contract_digest(changed))
         case = self.case('one', ['a']); case['scope'] = declared
         self.assertEqual(vc.select(['a'], [case], changed, self.root)['decision'], 'expand')
+
+    def test_empty_edges_keep_the_explicit_mandatory_control_bundle(self):
+        plan = self.plan([], [self.case('guard', ['guard'], mandatory=True, controls=['red']),
+                              self.case('red', ['control-red'])])
+        self.assertEqual(plan['decision'], 'scoped')
+        self.assertEqual(plan['selected'], ['guard', 'red'])
+        self.assertEqual(plan['contract']['required_edges'], [])
+        self.assertFalse(plan['qualification'])
+
+    def test_empty_edges_without_mandatory_requests_remain_nonpassing_no_change(self):
+        for cases in ([], [self.case('optional', ['guard'])]):
+            with self.subTest(cases=cases):
+                plan = self.plan([], cases)
+                self.assertEqual(plan['decision'], 'no-change')
+                self.assertEqual(plan['selected'], [])
+                with self.assertRaises(ValueError):
+                    vc.validate_results(plan, {}, self.context, self.root)
+
+    def test_empty_edges_still_expand_unavailable_mandatory_sources_and_scope(self):
+        for cause in ('missing', 'stale', 'scope'):
+            with self.subTest(cause=cause):
+                case = self.case('guard', ['guard'], mandatory=True)
+                if cause == 'missing': case['inputs'] = {'missing.py': self.digest}
+                if cause == 'stale': case['inputs'] = {'harness.py': '0' * 64}
+                if cause == 'scope': case['scope'] = {'hardware': 'other'}
+                plan = self.plan([], [case])
+                self.assertEqual(plan['decision'], 'expand')
+                self.assertIn('mandatory', plan['reason'])
+
+    def test_empty_edges_validate_required_control_existence_and_source(self):
+        guard = self.case('guard', ['guard'], mandatory=True, controls=['red'])
+        with self.assertRaisesRegex(ValueError, 'unknown control'):
+            self.plan([], [guard])
+        red = self.case('red', ['control-red']); red['inputs'] = {'missing.py': self.digest}
+        self.assertEqual(self.plan([], [guard, red])['decision'], 'expand')
+
+    def test_zero_requested_edges_admit_a_genuine_mandatory_execution_receipt(self):
+        source = self.root / 'guard.py'
+        source.write_text('assert 2 + 2 == 4\nprint("guard assertion passed")\n')
+        guard = self.case('guard', ['guard'], mandatory=True)
+        guard['inputs'] = {'guard.py': hashlib.sha256(source.read_bytes()).hexdigest()}
+        plan = self.plan([], [guard])
+        run = subprocess.run([sys.executable, str(source)], capture_output=True, text=True, timeout=10)
+        self.assertEqual(run.returncode, 0)
+        self.assertEqual(run.stdout, 'guard assertion passed\n')
+        results = {'guard': dict(contract_id=plan['contract_id'], status='passed', context=self.context,
+                                 executed=1, skipped=0, edges={'guard': 'passed'})}
+        admitted = vc.validate_results(plan, results, self.context, self.root)
+        self.assertEqual(admitted['status'], 'passed')
+        self.assertEqual(admitted['edges'], 0)  # Requested edges only; the guard assertion was checked.
+        self.assertFalse(admitted['qualification'])
+
+    def test_empty_edges_reject_failed_skipped_missing_or_unasserted_guard_results(self):
+        plan = self.plan([], [self.case('guard', ['guard'], mandatory=True)])
+        good = dict(contract_id=plan['contract_id'], status='passed', context=self.context,
+                    executed=1, skipped=0, edges={'guard': 'passed'})
+        with self.assertRaisesRegex(ValueError, 'missing'):
+            vc.validate_results(plan, {}, self.context, self.root)
+        for field, value in (('status', 'failed'), ('skipped', 1), ('edges', {})):
+            with self.subTest(field=field):
+                result = {**good, field: value}
+                with self.assertRaises(ValueError):
+                    vc.validate_results(plan, {'guard': result}, self.context, self.root)
+
+    def test_empty_edges_preserve_generator_catalogs_and_recursive_controls(self):
+        cases = [self.case('optional', []),
+                 self.case('guard', ['guard'], mandatory=True, controls=['red']),
+                 self.case('red', ['control-red'], controls=['nested']),
+                 self.case('nested', ['nested-control'])]
+        plan = self.plan([], iter(cases))
+        self.assertEqual(plan['selected'], ['guard', 'nested', 'red'])
+        self.assertEqual(plan['decision'], 'scoped')
+
+    def test_mandatory_guard_with_no_named_edges_still_needs_execution(self):
+        plan = self.plan([], [self.case('guard', [], mandatory=True)])
+        self.assertEqual(plan['selected'], ['guard'])
+        self.assertEqual(plan['decision'], 'scoped')
+        with self.assertRaisesRegex(ValueError, 'missing'):
+            vc.validate_results(plan, {}, self.context, self.root)
 
 
 if __name__ == '__main__':
