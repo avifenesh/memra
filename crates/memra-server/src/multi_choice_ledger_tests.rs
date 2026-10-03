@@ -134,7 +134,13 @@ async fn choice_http_ledger_callback_failures_are_named_and_release_owned_capaci
             state.metering = Some(Arc::new(ChoiceFailMeter {
                 trace: trace.clone(),
                 prompt,
-                fail_token: if after_header { 2 } else { 1 },
+                fail_token: if prompt {
+                    usize::MAX
+                } else if after_header {
+                    2
+                } else {
+                    1
+                },
             }));
             let (cmd_tx, cmd_rx) = std::sync::mpsc::channel();
             state.cmd_tx = cmd_tx;
@@ -169,20 +175,26 @@ async fn choice_http_ledger_callback_failures_are_named_and_release_owned_capaci
                         .recv_timeout(std::time::Duration::from_secs(5))
                         .unwrap();
                 }
-                for (index, request) in requests.iter().enumerate() {
-                    if index != first {
-                        let _ = request.tx.send(usage());
+                if prompt {
+                    if first != 0 {
+                        let _ = requests[0].tx.send(usage());
                     }
-                    let _ = request.tx.send(token(2));
-                    let _ = request.tx.send(Event::TokenSnapshot(vec![2]));
-                    let _ = request.tx.send(Event::Done {
-                        stop_reason: "MaxNew".into(),
-                        n_tokens: 1,
-                        n_prompt: 5,
-                        n_cached: 0,
-                        elapsed_s: 0.01,
-                        spec: None,
-                    });
+                } else {
+                    for (index, request) in requests.iter().enumerate() {
+                        if index != first {
+                            let _ = request.tx.send(usage());
+                        }
+                        let _ = request.tx.send(token(2));
+                        let _ = request.tx.send(Event::TokenSnapshot(vec![2]));
+                        let _ = request.tx.send(Event::Done {
+                            stop_reason: "MaxNew".into(),
+                            n_tokens: 1,
+                            n_prompt: 5,
+                            n_cached: 0,
+                            elapsed_s: 0.01,
+                            spec: None,
+                        });
+                    }
                 }
                 // Hold every producer open so EOF cannot mask the callback failure.
                 let _ = closed_tx.send(requests);
@@ -257,8 +269,10 @@ async fn choice_http_ledger_callback_failures_are_named_and_release_owned_capaci
                 && seen.token_calls
                     == if prompt {
                         usize::from(after_header)
+                    } else if after_header {
+                        2
                     } else {
-                        if after_header { 2 } else { 1 }
+                        1
                     }
                 && closed
                 && counts_zero;
