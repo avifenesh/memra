@@ -31447,6 +31447,8 @@ pub fn run(
                         finished.push(i);
                     }
                     Err(err) => {
+                        // Terminal prefill OOM also releases device state behind a fence.
+                        s.oom_teardown |= is_cuda_oom(&err.to_string());
                         quarantine_request_fault(s, err.as_ref());
                         s.errored = true;
                         let _ = s.tx.send(Event::Error(EngineError::engine(format!(
@@ -32006,6 +32008,8 @@ pub fn run(
                             &mut n_step_oom_parks,
                         );
                     } else {
+                        // Terminal prefill OOM also releases device state behind a fence.
+                        s.oom_teardown |= is_cuda_oom(&err.to_string());
                         quarantine_request_fault(s, err.as_ref());
                         s.errored = true;
                         let _ = s.tx.send(Event::Error(EngineError::engine(format!(
@@ -49445,6 +49449,8 @@ mod tests {
             retire.find("oom_teardown_fence(&engine,&loaded);").unwrap()
                 < retire.find("continue;").unwrap()
         );
+        assert_eq!(flat.matches("s.oom_teardown|=is_cuda_oom(&err.to_string());quarantine_request_fault(s,err.as_ref());s.errored=true;").count(), 2,
+            "both terminal prefill arms mark only OOM for fenced retirement");
         let block = flat.find("ifoom_teardowns>0{").expect("teardown block");
         let end = flat[block..]
             .find("}else{oom_evict_streak=0;}")
@@ -61252,13 +61258,23 @@ mod tests {
             "both prefill arms must feed the prefill-OOM predicate the session's own markers"
         );
         let guard = format!(
-            "{pred} active[i].generated.len(), active[i].tokens_emitted, \
-            active[i].oom_retries, step_oom_retries(), ) =>"
+            "if is_cuda_oom(&err.to_string()) && {pred} active[i].generated.len(), \
+             active[i].tokens_emitted, active[i].oom_retries, step_oom_retries(), ) =>"
         );
         assert_eq!(
             live_sq.matches(guard.as_str()).count(),
-            2,
-            "both scheduler park arms must gate on the predicate fed BOTH markers"
+            1,
+            "the speculative step park must gate on OOM and BOTH markers"
+        );
+        let serial_guard = format!(
+            "if is_cuda_oom(&err.to_string()) && (active[i].prefill_done || admit_memory_cfg.armed) \
+             && {pred} active[i].generated.len(), active[i].tokens_emitted, \
+             active[i].oom_retries, step_oom_retries(), ) =>"
+        );
+        assert_eq!(
+            live_sq.matches(serial_guard.as_str()).count(),
+            1,
+            "the serial park must gate on OOM, phase policy and BOTH markers"
         );
         // 2. The glm5 round-cadence hook advances the marker at the send, before the burst.
         let glm5 = live
