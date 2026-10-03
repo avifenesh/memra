@@ -55,3 +55,9 @@ consumers and eight coherent negatives with zero fixture errors, plus 40 coverag
 and 16 live caller tests. Workflow and registry checks pass. `CLEAN-COMMIT.json`
 retains this distinct tuple. The 206-framework result remains the actual earlier
 working-tree run; its source/test bytes match this commit and it is not relabelled.
+
+Actual A983 composition at `a90dd0e509` on merged `ac7b686f87` passes
+12 IO methods, 40 coverage tests, 16 live caller controls, A14 and SFT18 required
+identities, registry14 and workflow9. All five C byte pins are unchanged. Both A
+steps remain in CI alongside floor206. `COMPOSED.json` binds this new scoped run;
+206 and the original guard-removal proof are retained on their actual tuples.
