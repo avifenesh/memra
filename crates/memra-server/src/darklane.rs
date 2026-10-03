@@ -765,6 +765,93 @@ mod tests {
         }
     }
 
+    // Keep cleanup bound to the exact owned descendant even after it is orphaned.
+    struct OwnedDescendant(std::os::fd::OwnedFd);
+
+    impl OwnedDescendant {
+        fn open(pid: u32) -> Self {
+            use std::os::fd::FromRawFd;
+            let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) };
+            assert!(fd >= 0, "pidfd_open: {}", std::io::Error::last_os_error());
+            Self(unsafe { std::os::fd::OwnedFd::from_raw_fd(fd as i32) })
+        }
+
+        fn alive(&self) -> bool {
+            use std::os::fd::AsRawFd;
+            let mut poll = libc::pollfd {
+                fd: self.0.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            let rc = unsafe { libc::poll(&mut poll, 1, 0) };
+            assert!(rc >= 0, "pidfd poll: {}", std::io::Error::last_os_error());
+            rc == 0
+        }
+    }
+
+    impl Drop for OwnedDescendant {
+        fn drop(&mut self) {
+            use std::os::fd::AsRawFd;
+            for signal in [libc::SIGCONT, libc::SIGKILL] {
+                unsafe {
+                    libc::syscall(
+                        libc::SYS_pidfd_send_signal,
+                        self.0.as_raw_fd(),
+                        signal,
+                        std::ptr::null::<libc::siginfo_t>(),
+                        0,
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn killing_only_yielded_leader_terminates_remaining_owned_group() {
+        let path =
+            std::env::temp_dir().join(format!("darklane-leader-only-{}", std::process::id()));
+        std::fs::create_dir(&path).unwrap();
+        let dir = TestDir(path);
+        let ready = dir.0.join("descendant");
+        let cmd = format!(
+            "trap '' HUP; sleep 600 & echo $! > '{}'; wait",
+            ready.display()
+        );
+        let (sig, v, b) = sigs();
+        let h = spawn_runner(cfg(&cmd, YieldMode::Stop), v, b, Arc::new(|| None));
+        let st = h.state.clone();
+        let guard = RunnerGuard(Some(h));
+        sig.valley.store(true, Ordering::Release);
+        wait_acknowledged("owned descendant ready", || {
+            std::fs::read_to_string(&ready).is_ok_and(|s| s.trim().parse::<u32>().is_ok())
+        });
+        let pid = st.job_pid.load(Ordering::Acquire);
+        let descendant: u32 = std::fs::read_to_string(&ready)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        let owned = OwnedDescendant::open(descendant);
+        assert!(owned.alive());
+        assert_eq!(unsafe { libc::getpgid(descendant as i32) }, pid as i32);
+        sig.valley.store(false, Ordering::Release);
+        sig.busy.store(true, Ordering::Release);
+        wait_acknowledged("owned group stopped", || {
+            st.state.load(Ordering::Acquire) == BG_YIELDED
+                && proc_state(pid) == Some('T')
+                && proc_state(descendant) == Some('T')
+        });
+        // Deliberately kill only the leader, preserving the review's HUP-ignoring child.
+        assert_eq!(unsafe { libc::kill(pid as i32, libc::SIGKILL) }, 0);
+        wait_acknowledged("killed leader classified", || {
+            st.state.load(Ordering::Acquire) == BG_FAILED && st.job_pid.load(Ordering::Acquire) == 0
+        });
+        wait_acknowledged("remaining owned descendant terminated", || !owned.alive());
+        assert_eq!(st.yields.load(Ordering::Relaxed), 1);
+        assert_eq!(st.resumes.load(Ordering::Relaxed), 0);
+        guard.shutdown();
+    }
+
     fn exit_between_wait_and_stop(code: i32, expected: u8) {
         let path = std::env::temp_dir().join(format!(
             "darklane-exit-window-{}-{code}",
