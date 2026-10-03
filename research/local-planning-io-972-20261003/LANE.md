@@ -44,3 +44,11 @@ tests and all 14 registered packages. The 15 methods and original consumer/CLI/r
 groups admit 44 edges. Two admission mutations and four optimized-producer startups
 are refused. `PROOF.json` binds that actual source and base. B970 composition remains
 separate; the A-only receipt is not final-base evidence.
+
+Actual B970 composition at `4fbf0d4505` on merged `996a64af78` passes 194
+framework tests, 21 census tests and all 14 registry packages. Its independently
+bound 44-edge proof and all refusal controls pass. `COMPOSED.json` and
+`receipts/composed-B-v5/` retain that new tuple. B970 helper/registry/transport-test
+bytes and every other A/B planner function match the merged base. The original
+A-only receipts remain unchanged. The first nonred prestat attempt is retained
+under `receipts/non-admitted/`.

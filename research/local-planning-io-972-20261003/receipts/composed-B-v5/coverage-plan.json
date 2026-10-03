@@ -1,0 +1,932 @@
+{
+  "decision": "scoped",
+  "selected": [
+    "cli_controls.py",
+    "coherent_controls.py",
+    "consumer_controls.py",
+    "test_descriptor_cleanup_on_success_and_failure",
+    "test_fifo_and_directory_readers_refuse_before_content",
+    "test_leaf_and_parent_links_are_refused_before_reading_target",
+    "test_missing_and_noncanonical_paths_remain_refusals",
+    "test_opened_parent_stays_anchored_when_its_path_is_replaced",
+    "test_own_registry_fifo_refuses_real_include_reader",
+    "test_real_consumers_refuse_leaf_aliases_and_replacement_races",
+    "test_real_descendant_consumers_refuse_ancestor_aliases_and_anchor_races",
+    "test_regular_text_and_raw_bytes_preserve_original_semantics",
+    "test_root_cargo_fifo_expands_actual_planning_before_read",
+    "test_snapshot_reads_remain_git_bytes_not_local_filesystem",
+    "test_stat_to_fifo_replacement_is_nonblocking_and_refused",
+    "test_stat_to_symlink_replacement_refuses_actual_target_content",
+    "test_tracked_census_reader_fifo_refuses_raw_byte_adapter",
+    "test_unrelated_cargo_manifest_fifo_refuses_command_planning"
+  ],
+  "context": {
+    "lane": "local-planning-io-972",
+    "program": "CPU planning input reads",
+    "source": "4fbf0d450583ac8881438a2f078559484de56d53"
+  },
+  "contract": {
+    "schema": "memra-edge-contract-v1",
+    "required_edges": [
+      "cli_controls.py/0",
+      "cli_controls.py/1",
+      "cli_controls.py/10",
+      "cli_controls.py/11",
+      "cli_controls.py/2",
+      "cli_controls.py/3",
+      "cli_controls.py/4",
+      "cli_controls.py/5",
+      "cli_controls.py/6",
+      "cli_controls.py/7",
+      "cli_controls.py/8",
+      "cli_controls.py/9",
+      "coherent_controls.py/0",
+      "coherent_controls.py/1",
+      "coherent_controls.py/2",
+      "coherent_controls.py/3",
+      "coherent_controls.py/4",
+      "coherent_controls.py/5",
+      "coherent_controls.py/6",
+      "consumer_controls.py/0",
+      "consumer_controls.py/1",
+      "consumer_controls.py/2",
+      "consumer_controls.py/3",
+      "consumer_controls.py/4",
+      "consumer_controls.py/5",
+      "consumer_controls.py/6",
+      "consumer_controls.py/7",
+      "consumer_controls.py/8",
+      "consumer_controls.py/9",
+      "input/test_descriptor_cleanup_on_success_and_failure",
+      "input/test_fifo_and_directory_readers_refuse_before_content",
+      "input/test_leaf_and_parent_links_are_refused_before_reading_target",
+      "input/test_missing_and_noncanonical_paths_remain_refusals",
+      "input/test_opened_parent_stays_anchored_when_its_path_is_replaced",
+      "input/test_own_registry_fifo_refuses_real_include_reader",
+      "input/test_real_consumers_refuse_leaf_aliases_and_replacement_races",
+      "input/test_real_descendant_consumers_refuse_ancestor_aliases_and_anchor_races",
+      "input/test_regular_text_and_raw_bytes_preserve_original_semantics",
+      "input/test_root_cargo_fifo_expands_actual_planning_before_read",
+      "input/test_snapshot_reads_remain_git_bytes_not_local_filesystem",
+      "input/test_stat_to_fifo_replacement_is_nonblocking_and_refused",
+      "input/test_stat_to_symlink_replacement_refuses_actual_target_content",
+      "input/test_tracked_census_reader_fifo_refuses_raw_byte_adapter",
+      "input/test_unrelated_cargo_manifest_fifo_refuses_command_planning"
+    ],
+    "context": {
+      "lane": "local-planning-io-972",
+      "program": "CPU planning input reads",
+      "source": "4fbf0d450583ac8881438a2f078559484de56d53"
+    },
+    "tests": {
+      "cli_controls.py": {
+        "id": "cli_controls.py",
+        "cost": 1,
+        "covers": [
+          "cli_controls.py/0",
+          "cli_controls.py/1",
+          "cli_controls.py/2",
+          "cli_controls.py/3",
+          "cli_controls.py/4",
+          "cli_controls.py/5",
+          "cli_controls.py/6",
+          "cli_controls.py/7",
+          "cli_controls.py/8",
+          "cli_controls.py/9",
+          "cli_controls.py/10",
+          "cli_controls.py/11"
+        ],
+        "inputs": {
+          "tools/validation_plan.py": "cf0966c7a293333317bfe976dd7362c9305266b01797ad9595a0f1d75da739b2",
+          "tools/support_record_inputs.py": "d3548a8fa3f765046e1864efd78c028d596151971a45908dad38230f021276d5",
+          "tools/validation_inputs.json": "71e17d5f91f44bae768047ad4c9f2c40486a291e35e123e6a7e54f16fd34d377",
+          "tools/test_validation_local_input_io.py": "273d310c981d3586324f9656a8687f8facc49f00ff1e9880c08a5cbc68876987",
+          "tools/test_validation_plan.py": "ecb1db5e2963657d97b06359530311f2fc9b9ce1a6def0dafeb6250440b3ca2f",
+          "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+          "tools/skip-census.py": "d89ce391d748499214df2279a48d719b9e67cad6a2838c77ebcef46640883a7d",
+          "research/local-planning-io-972-20261003/tools/cli_controls.py": "bb3e98f3d0099437e6762ca06161909c50f3a307cd068952fb705c3f88ec47c0",
+          "research/local-planning-io-972-20261003/tools/prove.py": "a5792f866f00018740cab371e2621d7ebb965a3086d7286f60af20d1025d9d19",
+          "research/local-planning-io-972-20261003/tools/coherent_controls.py": "774feabf663b09a7b3e2447f245e943c40718496a8bbcacb2c7c6bc4db2ad8bf",
+          "research/local-planning-io-972-20261003/tools/consumer_controls.py": "8795b7d59dbf0bfcedecc307e91259a4624326c5590fbcec16a8edf3aab15b11",
+          "research/local-planning-io-972-20261003/tools/original_support_record_inputs.py": "6e34dfd7747b018feed2395c817835693bfb9720a471ab82ae08a70bf470fa80",
+          "research/local-planning-io-972-20261003/tools/original_validation_plan.py": "f1235637c4e5d2c5dbd2c524534b381008c59e260156c6cfa4fd43c2bb326fb7"
+        },
+        "scope": {
+          "lane": "local-planning-io-972",
+          "program": "CPU planning input reads",
+          "source": "4fbf0d450583ac8881438a2f078559484de56d53"
+        },
+        "mandatory": true
+      },
+      "coherent_controls.py": {
+        "id": "coherent_controls.py",
+        "cost": 1,
+        "covers": [
+          "coherent_controls.py/0",
+          "coherent_controls.py/1",
+          "coherent_controls.py/2",
+          "coherent_controls.py/3",
+          "coherent_controls.py/4",
+          "coherent_controls.py/5",
+          "coherent_controls.py/6"
+        ],
+        "inputs": {
+          "tools/validation_plan.py": "cf0966c7a293333317bfe976dd7362c9305266b01797ad9595a0f1d75da739b2",
+          "tools/support_record_inputs.py": "d3548a8fa3f765046e1864efd78c028d596151971a45908dad38230f021276d5",
+          "tools/validation_inputs.json": "71e17d5f91f44bae768047ad4c9f2c40486a291e35e123e6a7e54f16fd34d377",
+          "tools/test_validation_local_input_io.py": "273d310c981d3586324f9656a8687f8facc49f00ff1e9880c08a5cbc68876987",
+          "tools/test_validation_plan.py": "ecb1db5e2963657d97b06359530311f2fc9b9ce1a6def0dafeb6250440b3ca2f",
+          "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+          "tools/skip-census.py": "d89ce391d748499214df2279a48d719b9e67cad6a2838c77ebcef46640883a7d",
+          "research/local-planning-io-972-20261003/tools/cli_controls.py": "bb3e98f3d0099437e6762ca06161909c50f3a307cd068952fb705c3f88ec47c0",
+          "research/local-planning-io-972-20261003/tools/prove.py": "a5792f866f00018740cab371e2621d7ebb965a3086d7286f60af20d1025d9d19",
+          "research/local-planning-io-972-20261003/tools/coherent_controls.py": "774feabf663b09a7b3e2447f245e943c40718496a8bbcacb2c7c6bc4db2ad8bf",
+          "research/local-planning-io-972-20261003/tools/consumer_controls.py": "8795b7d59dbf0bfcedecc307e91259a4624326c5590fbcec16a8edf3aab15b11",
+          "research/local-planning-io-972-20261003/tools/original_support_record_inputs.py": "6e34dfd7747b018feed2395c817835693bfb9720a471ab82ae08a70bf470fa80",
+          "research/local-planning-io-972-20261003/tools/original_validation_plan.py": "f1235637c4e5d2c5dbd2c524534b381008c59e260156c6cfa4fd43c2bb326fb7"
+        },
+        "scope": {
+          "lane": "local-planning-io-972",
+          "program": "CPU planning input reads",
+          "source": "4fbf0d450583ac8881438a2f078559484de56d53"
+        },
+        "mandatory": true
+      },
+      "consumer_controls.py": {
+        "id": "consumer_controls.py",
+        "cost": 1,
+        "covers": [
+          "consumer_controls.py/0",
+          "consumer_controls.py/1",
+          "consumer_controls.py/2",
+          "consumer_controls.py/3",
+          "consumer_controls.py/4",
+          "consumer_controls.py/5",
+          "consumer_controls.py/6",
+          "consumer_controls.py/7",
+          "consumer_controls.py/8",
+          "consumer_controls.py/9"
+        ],
+        "inputs": {
+          "tools/validation_plan.py": "cf0966c7a293333317bfe976dd7362c9305266b01797ad9595a0f1d75da739b2",
+          "tools/support_record_inputs.py": "d3548a8fa3f765046e1864efd78c028d596151971a45908dad38230f021276d5",
+          "tools/validation_inputs.json": "71e17d5f91f44bae768047ad4c9f2c40486a291e35e123e6a7e54f16fd34d377",
+          "tools/test_validation_local_input_io.py": "273d310c981d3586324f9656a8687f8facc49f00ff1e9880c08a5cbc68876987",
+          "tools/test_validation_plan.py": "ecb1db5e2963657d97b06359530311f2fc9b9ce1a6def0dafeb6250440b3ca2f",
+          "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+          "tools/skip-census.py": "d89ce391d748499214df2279a48d719b9e67cad6a2838c77ebcef46640883a7d",
+          "research/local-planning-io-972-20261003/tools/cli_controls.py": "bb3e98f3d0099437e6762ca06161909c50f3a307cd068952fb705c3f88ec47c0",
+          "research/local-planning-io-972-20261003/tools/prove.py": "a5792f866f00018740cab371e2621d7ebb965a3086d7286f60af20d1025d9d19",
+          "research/local-planning-io-972-20261003/tools/coherent_controls.py": "774feabf663b09a7b3e2447f245e943c40718496a8bbcacb2c7c6bc4db2ad8bf",
+          "research/local-planning-io-972-20261003/tools/consumer_controls.py": "8795b7d59dbf0bfcedecc307e91259a4624326c5590fbcec16a8edf3aab15b11",
+          "research/local-planning-io-972-20261003/tools/original_support_record_inputs.py": "6e34dfd7747b018feed2395c817835693bfb9720a471ab82ae08a70bf470fa80",
+          "research/local-planning-io-972-20261003/tools/original_validation_plan.py": "f1235637c4e5d2c5dbd2c524534b381008c59e260156c6cfa4fd43c2bb326fb7"
+        },
+        "scope": {
+          "lane": "local-planning-io-972",
+          "program": "CPU planning input reads",
+          "source": "4fbf0d450583ac8881438a2f078559484de56d53"
+        },
+        "mandatory": true
+      },
+      "test_descriptor_cleanup_on_success_and_failure": {
+        "id": "test_descriptor_cleanup_on_success_and_failure",
+        "cost": 1,
+        "covers": [
+          "input/test_descriptor_cleanup_on_success_and_failure"
+        ],
+        "inputs": {
+          "tools/validation_plan.py": "cf0966c7a293333317bfe976dd7362c9305266b01797ad9595a0f1d75da739b2",
+          "tools/support_record_inputs.py": "d3548a8fa3f765046e1864efd78c028d596151971a45908dad38230f021276d5",
+          "tools/validation_inputs.json": "71e17d5f91f44bae768047ad4c9f2c40486a291e35e123e6a7e54f16fd34d377",
+          "tools/test_validation_local_input_io.py": "273d310c981d3586324f9656a8687f8facc49f00ff1e9880c08a5cbc68876987",
+          "tools/test_validation_plan.py": "ecb1db5e2963657d97b06359530311f2fc9b9ce1a6def0dafeb6250440b3ca2f",
+          "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+          "tools/skip-census.py": "d89ce391d748499214df2279a48d719b9e67cad6a2838c77ebcef46640883a7d",
+          "research/local-planning-io-972-20261003/tools/cli_controls.py": "bb3e98f3d0099437e6762ca06161909c50f3a307cd068952fb705c3f88ec47c0",
+          "research/local-planning-io-972-20261003/tools/prove.py": "a5792f866f00018740cab371e2621d7ebb965a3086d7286f60af20d1025d9d19",
+          "research/local-planning-io-972-20261003/tools/coherent_controls.py": "774feabf663b09a7b3e2447f245e943c40718496a8bbcacb2c7c6bc4db2ad8bf",
+          "research/local-planning-io-972-20261003/tools/consumer_controls.py": "8795b7d59dbf0bfcedecc307e91259a4624326c5590fbcec16a8edf3aab15b11",
+          "research/local-planning-io-972-20261003/tools/original_support_record_inputs.py": "6e34dfd7747b018feed2395c817835693bfb9720a471ab82ae08a70bf470fa80",
+          "research/local-planning-io-972-20261003/tools/original_validation_plan.py": "f1235637c4e5d2c5dbd2c524534b381008c59e260156c6cfa4fd43c2bb326fb7"
+        },
+        "scope": {
+          "lane": "local-planning-io-972",
+          "program": "CPU planning input reads",
+          "source": "4fbf0d450583ac8881438a2f078559484de56d53"
+        },
+        "mandatory": true
+      },
+      "test_fifo_and_directory_readers_refuse_before_content": {
+        "id": "test_fifo_and_directory_readers_refuse_before_content",
+        "cost": 1,
+        "covers": [
+          "input/test_fifo_and_directory_readers_refuse_before_content"
+        ],
+        "inputs": {
+          "tools/validation_plan.py": "cf0966c7a293333317bfe976dd7362c9305266b01797ad9595a0f1d75da739b2",
+          "tools/support_record_inputs.py": "d3548a8fa3f765046e1864efd78c028d596151971a45908dad38230f021276d5",
+          "tools/validation_inputs.json": "71e17d5f91f44bae768047ad4c9f2c40486a291e35e123e6a7e54f16fd34d377",
+          "tools/test_validation_local_input_io.py": "273d310c981d3586324f9656a8687f8facc49f00ff1e9880c08a5cbc68876987",
+          "tools/test_validation_plan.py": "ecb1db5e2963657d97b06359530311f2fc9b9ce1a6def0dafeb6250440b3ca2f",
+          "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+          "tools/skip-census.py": "d89ce391d748499214df2279a48d719b9e67cad6a2838c77ebcef46640883a7d",
+          "research/local-planning-io-972-20261003/tools/cli_controls.py": "bb3e98f3d0099437e6762ca06161909c50f3a307cd068952fb705c3f88ec47c0",
+          "research/local-planning-io-972-20261003/tools/prove.py": "a5792f866f00018740cab371e2621d7ebb965a3086d7286f60af20d1025d9d19",
+          "research/local-planning-io-972-20261003/tools/coherent_controls.py": "774feabf663b09a7b3e2447f245e943c40718496a8bbcacb2c7c6bc4db2ad8bf",
+          "research/local-planning-io-972-20261003/tools/consumer_controls.py": "8795b7d59dbf0bfcedecc307e91259a4624326c5590fbcec16a8edf3aab15b11",
+          "research/local-planning-io-972-20261003/tools/original_support_record_inputs.py": "6e34dfd7747b018feed2395c817835693bfb9720a471ab82ae08a70bf470fa80",
+          "research/local-planning-io-972-20261003/tools/original_validation_plan.py": "f1235637c4e5d2c5dbd2c524534b381008c59e260156c6cfa4fd43c2bb326fb7"
+        },
+        "scope": {
+          "lane": "local-planning-io-972",
+          "program": "CPU planning input reads",
+          "source": "4fbf0d450583ac8881438a2f078559484de56d53"
+        },
+        "mandatory": true
+      },
+      "test_leaf_and_parent_links_are_refused_before_reading_target": {
+        "id": "test_leaf_and_parent_links_are_refused_before_reading_target",
+        "cost": 1,
+        "covers": [
+          "input/test_leaf_and_parent_links_are_refused_before_reading_target"
+        ],
+        "inputs": {
+          "tools/validation_plan.py": "cf0966c7a293333317bfe976dd7362c9305266b01797ad9595a0f1d75da739b2",
+          "tools/support_record_inputs.py": "d3548a8fa3f765046e1864efd78c028d596151971a45908dad38230f021276d5",
+          "tools/validation_inputs.json": "71e17d5f91f44bae768047ad4c9f2c40486a291e35e123e6a7e54f16fd34d377",
+          "tools/test_validation_local_input_io.py": "273d310c981d3586324f9656a8687f8facc49f00ff1e9880c08a5cbc68876987",
+          "tools/test_validation_plan.py": "ecb1db5e2963657d97b06359530311f2fc9b9ce1a6def0dafeb6250440b3ca2f",
+          "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+          "tools/skip-census.py": "d89ce391d748499214df2279a48d719b9e67cad6a2838c77ebcef46640883a7d",
+          "research/local-planning-io-972-20261003/tools/cli_controls.py": "bb3e98f3d0099437e6762ca06161909c50f3a307cd068952fb705c3f88ec47c0",
+          "research/local-planning-io-972-20261003/tools/prove.py": "a5792f866f00018740cab371e2621d7ebb965a3086d7286f60af20d1025d9d19",
+          "research/local-planning-io-972-20261003/tools/coherent_controls.py": "774feabf663b09a7b3e2447f245e943c40718496a8bbcacb2c7c6bc4db2ad8bf",
+          "research/local-planning-io-972-20261003/tools/consumer_controls.py": "8795b7d59dbf0bfcedecc307e91259a4624326c5590fbcec16a8edf3aab15b11",
+          "research/local-planning-io-972-20261003/tools/original_support_record_inputs.py": "6e34dfd7747b018feed2395c817835693bfb9720a471ab82ae08a70bf470fa80",
+          "research/local-planning-io-972-20261003/tools/original_validation_plan.py": "f1235637c4e5d2c5dbd2c524534b381008c59e260156c6cfa4fd43c2bb326fb7"
+        },
+        "scope": {
+          "lane": "local-planning-io-972",
+          "program": "CPU planning input reads",
+          "source": "4fbf0d450583ac8881438a2f078559484de56d53"
+        },
+        "mandatory": true
+      },
+      "test_missing_and_noncanonical_paths_remain_refusals": {
+        "id": "test_missing_and_noncanonical_paths_remain_refusals",
+        "cost": 1,
+        "covers": [
+          "input/test_missing_and_noncanonical_paths_remain_refusals"
+        ],
+        "inputs": {
+          "tools/validation_plan.py": "cf0966c7a293333317bfe976dd7362c9305266b01797ad9595a0f1d75da739b2",
+          "tools/support_record_inputs.py": "d3548a8fa3f765046e1864efd78c028d596151971a45908dad38230f021276d5",
+          "tools/validation_inputs.json": "71e17d5f91f44bae768047ad4c9f2c40486a291e35e123e6a7e54f16fd34d377",
+          "tools/test_validation_local_input_io.py": "273d310c981d3586324f9656a8687f8facc49f00ff1e9880c08a5cbc68876987",
+          "tools/test_validation_plan.py": "ecb1db5e2963657d97b06359530311f2fc9b9ce1a6def0dafeb6250440b3ca2f",
+          "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+          "tools/skip-census.py": "d89ce391d748499214df2279a48d719b9e67cad6a2838c77ebcef46640883a7d",
+          "research/local-planning-io-972-20261003/tools/cli_controls.py": "bb3e98f3d0099437e6762ca06161909c50f3a307cd068952fb705c3f88ec47c0",
+          "research/local-planning-io-972-20261003/tools/prove.py": "a5792f866f00018740cab371e2621d7ebb965a3086d7286f60af20d1025d9d19",
+          "research/local-planning-io-972-20261003/tools/coherent_controls.py": "774feabf663b09a7b3e2447f245e943c40718496a8bbcacb2c7c6bc4db2ad8bf",
+          "research/local-planning-io-972-20261003/tools/consumer_controls.py": "8795b7d59dbf0bfcedecc307e91259a4624326c5590fbcec16a8edf3aab15b11",
+          "research/local-planning-io-972-20261003/tools/original_support_record_inputs.py": "6e34dfd7747b018feed2395c817835693bfb9720a471ab82ae08a70bf470fa80",
+          "research/local-planning-io-972-20261003/tools/original_validation_plan.py": "f1235637c4e5d2c5dbd2c524534b381008c59e260156c6cfa4fd43c2bb326fb7"
+        },
+        "scope": {
+          "lane": "local-planning-io-972",
+          "program": "CPU planning input reads",
+          "source": "4fbf0d450583ac8881438a2f078559484de56d53"
+        },
+        "mandatory": true
+      },
+      "test_opened_parent_stays_anchored_when_its_path_is_replaced": {
+        "id": "test_opened_parent_stays_anchored_when_its_path_is_replaced",
+        "cost": 1,
+        "covers": [
+          "input/test_opened_parent_stays_anchored_when_its_path_is_replaced"
+        ],
+        "inputs": {
+          "tools/validation_plan.py": "cf0966c7a293333317bfe976dd7362c9305266b01797ad9595a0f1d75da739b2",
+          "tools/support_record_inputs.py": "d3548a8fa3f765046e1864efd78c028d596151971a45908dad38230f021276d5",
+          "tools/validation_inputs.json": "71e17d5f91f44bae768047ad4c9f2c40486a291e35e123e6a7e54f16fd34d377",
+          "tools/test_validation_local_input_io.py": "273d310c981d3586324f9656a8687f8facc49f00ff1e9880c08a5cbc68876987",
+          "tools/test_validation_plan.py": "ecb1db5e2963657d97b06359530311f2fc9b9ce1a6def0dafeb6250440b3ca2f",
+          "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+          "tools/skip-census.py": "d89ce391d748499214df2279a48d719b9e67cad6a2838c77ebcef46640883a7d",
+          "research/local-planning-io-972-20261003/tools/cli_controls.py": "bb3e98f3d0099437e6762ca06161909c50f3a307cd068952fb705c3f88ec47c0",
+          "research/local-planning-io-972-20261003/tools/prove.py": "a5792f866f00018740cab371e2621d7ebb965a3086d7286f60af20d1025d9d19",
+          "research/local-planning-io-972-20261003/tools/coherent_controls.py": "774feabf663b09a7b3e2447f245e943c40718496a8bbcacb2c7c6bc4db2ad8bf",
+          "research/local-planning-io-972-20261003/tools/consumer_controls.py": "8795b7d59dbf0bfcedecc307e91259a4624326c5590fbcec16a8edf3aab15b11",
+          "research/local-planning-io-972-20261003/tools/original_support_record_inputs.py": "6e34dfd7747b018feed2395c817835693bfb9720a471ab82ae08a70bf470fa80",
+          "research/local-planning-io-972-20261003/tools/original_validation_plan.py": "f1235637c4e5d2c5dbd2c524534b381008c59e260156c6cfa4fd43c2bb326fb7"
+        },
+        "scope": {
+          "lane": "local-planning-io-972",
+          "program": "CPU planning input reads",
+          "source": "4fbf0d450583ac8881438a2f078559484de56d53"
+        },
+        "mandatory": true
+      },
+      "test_own_registry_fifo_refuses_real_include_reader": {
+        "id": "test_own_registry_fifo_refuses_real_include_reader",
+        "cost": 1,
+        "covers": [
+          "input/test_own_registry_fifo_refuses_real_include_reader"
+        ],
+        "inputs": {
+          "tools/validation_plan.py": "cf0966c7a293333317bfe976dd7362c9305266b01797ad9595a0f1d75da739b2",
+          "tools/support_record_inputs.py": "d3548a8fa3f765046e1864efd78c028d596151971a45908dad38230f021276d5",
+          "tools/validation_inputs.json": "71e17d5f91f44bae768047ad4c9f2c40486a291e35e123e6a7e54f16fd34d377",
+          "tools/test_validation_local_input_io.py": "273d310c981d3586324f9656a8687f8facc49f00ff1e9880c08a5cbc68876987",
+          "tools/test_validation_plan.py": "ecb1db5e2963657d97b06359530311f2fc9b9ce1a6def0dafeb6250440b3ca2f",
+          "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+          "tools/skip-census.py": "d89ce391d748499214df2279a48d719b9e67cad6a2838c77ebcef46640883a7d",
+          "research/local-planning-io-972-20261003/tools/cli_controls.py": "bb3e98f3d0099437e6762ca06161909c50f3a307cd068952fb705c3f88ec47c0",
+          "research/local-planning-io-972-20261003/tools/prove.py": "a5792f866f00018740cab371e2621d7ebb965a3086d7286f60af20d1025d9d19",
+          "research/local-planning-io-972-20261003/tools/coherent_controls.py": "774feabf663b09a7b3e2447f245e943c40718496a8bbcacb2c7c6bc4db2ad8bf",
+          "research/local-planning-io-972-20261003/tools/consumer_controls.py": "8795b7d59dbf0bfcedecc307e91259a4624326c5590fbcec16a8edf3aab15b11",
+          "research/local-planning-io-972-20261003/tools/original_support_record_inputs.py": "6e34dfd7747b018feed2395c817835693bfb9720a471ab82ae08a70bf470fa80",
+          "research/local-planning-io-972-20261003/tools/original_validation_plan.py": "f1235637c4e5d2c5dbd2c524534b381008c59e260156c6cfa4fd43c2bb326fb7"
+        },
+        "scope": {
+          "lane": "local-planning-io-972",
+          "program": "CPU planning input reads",
+          "source": "4fbf0d450583ac8881438a2f078559484de56d53"
+        },
+        "mandatory": true
+      },
+      "test_real_consumers_refuse_leaf_aliases_and_replacement_races": {
+        "id": "test_real_consumers_refuse_leaf_aliases_and_replacement_races",
+        "cost": 1,
+        "covers": [
+          "input/test_real_consumers_refuse_leaf_aliases_and_replacement_races"
+        ],
+        "inputs": {
+          "tools/validation_plan.py": "cf0966c7a293333317bfe976dd7362c9305266b01797ad9595a0f1d75da739b2",
+          "tools/support_record_inputs.py": "d3548a8fa3f765046e1864efd78c028d596151971a45908dad38230f021276d5",
+          "tools/validation_inputs.json": "71e17d5f91f44bae768047ad4c9f2c40486a291e35e123e6a7e54f16fd34d377",
+          "tools/test_validation_local_input_io.py": "273d310c981d3586324f9656a8687f8facc49f00ff1e9880c08a5cbc68876987",
+          "tools/test_validation_plan.py": "ecb1db5e2963657d97b06359530311f2fc9b9ce1a6def0dafeb6250440b3ca2f",
+          "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+          "tools/skip-census.py": "d89ce391d748499214df2279a48d719b9e67cad6a2838c77ebcef46640883a7d",
+          "research/local-planning-io-972-20261003/tools/cli_controls.py": "bb3e98f3d0099437e6762ca06161909c50f3a307cd068952fb705c3f88ec47c0",
+          "research/local-planning-io-972-20261003/tools/prove.py": "a5792f866f00018740cab371e2621d7ebb965a3086d7286f60af20d1025d9d19",
+          "research/local-planning-io-972-20261003/tools/coherent_controls.py": "774feabf663b09a7b3e2447f245e943c40718496a8bbcacb2c7c6bc4db2ad8bf",
+          "research/local-planning-io-972-20261003/tools/consumer_controls.py": "8795b7d59dbf0bfcedecc307e91259a4624326c5590fbcec16a8edf3aab15b11",
+          "research/local-planning-io-972-20261003/tools/original_support_record_inputs.py": "6e34dfd7747b018feed2395c817835693bfb9720a471ab82ae08a70bf470fa80",
+          "research/local-planning-io-972-20261003/tools/original_validation_plan.py": "f1235637c4e5d2c5dbd2c524534b381008c59e260156c6cfa4fd43c2bb326fb7"
+        },
+        "scope": {
+          "lane": "local-planning-io-972",
+          "program": "CPU planning input reads",
+          "source": "4fbf0d450583ac8881438a2f078559484de56d53"
+        },
+        "mandatory": true
+      },
+      "test_real_descendant_consumers_refuse_ancestor_aliases_and_anchor_races": {
+        "id": "test_real_descendant_consumers_refuse_ancestor_aliases_and_anchor_races",
+        "cost": 1,
+        "covers": [
+          "input/test_real_descendant_consumers_refuse_ancestor_aliases_and_anchor_races"
+        ],
+        "inputs": {
+          "tools/validation_plan.py": "cf0966c7a293333317bfe976dd7362c9305266b01797ad9595a0f1d75da739b2",
+          "tools/support_record_inputs.py": "d3548a8fa3f765046e1864efd78c028d596151971a45908dad38230f021276d5",
+          "tools/validation_inputs.json": "71e17d5f91f44bae768047ad4c9f2c40486a291e35e123e6a7e54f16fd34d377",
+          "tools/test_validation_local_input_io.py": "273d310c981d3586324f9656a8687f8facc49f00ff1e9880c08a5cbc68876987",
+          "tools/test_validation_plan.py": "ecb1db5e2963657d97b06359530311f2fc9b9ce1a6def0dafeb6250440b3ca2f",
+          "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+          "tools/skip-census.py": "d89ce391d748499214df2279a48d719b9e67cad6a2838c77ebcef46640883a7d",
+          "research/local-planning-io-972-20261003/tools/cli_controls.py": "bb3e98f3d0099437e6762ca06161909c50f3a307cd068952fb705c3f88ec47c0",
+          "research/local-planning-io-972-20261003/tools/prove.py": "a5792f866f00018740cab371e2621d7ebb965a3086d7286f60af20d1025d9d19",
+          "research/local-planning-io-972-20261003/tools/coherent_controls.py": "774feabf663b09a7b3e2447f245e943c40718496a8bbcacb2c7c6bc4db2ad8bf",
+          "research/local-planning-io-972-20261003/tools/consumer_controls.py": "8795b7d59dbf0bfcedecc307e91259a4624326c5590fbcec16a8edf3aab15b11",
+          "research/local-planning-io-972-20261003/tools/original_support_record_inputs.py": "6e34dfd7747b018feed2395c817835693bfb9720a471ab82ae08a70bf470fa80",
+          "research/local-planning-io-972-20261003/tools/original_validation_plan.py": "f1235637c4e5d2c5dbd2c524534b381008c59e260156c6cfa4fd43c2bb326fb7"
+        },
+        "scope": {
+          "lane": "local-planning-io-972",
+          "program": "CPU planning input reads",
+          "source": "4fbf0d450583ac8881438a2f078559484de56d53"
+        },
+        "mandatory": true
+      },
+      "test_regular_text_and_raw_bytes_preserve_original_semantics": {
+        "id": "test_regular_text_and_raw_bytes_preserve_original_semantics",
+        "cost": 1,
+        "covers": [
+          "input/test_regular_text_and_raw_bytes_preserve_original_semantics"
+        ],
+        "inputs": {
+          "tools/validation_plan.py": "cf0966c7a293333317bfe976dd7362c9305266b01797ad9595a0f1d75da739b2",
+          "tools/support_record_inputs.py": "d3548a8fa3f765046e1864efd78c028d596151971a45908dad38230f021276d5",
+          "tools/validation_inputs.json": "71e17d5f91f44bae768047ad4c9f2c40486a291e35e123e6a7e54f16fd34d377",
+          "tools/test_validation_local_input_io.py": "273d310c981d3586324f9656a8687f8facc49f00ff1e9880c08a5cbc68876987",
+          "tools/test_validation_plan.py": "ecb1db5e2963657d97b06359530311f2fc9b9ce1a6def0dafeb6250440b3ca2f",
+          "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+          "tools/skip-census.py": "d89ce391d748499214df2279a48d719b9e67cad6a2838c77ebcef46640883a7d",
+          "research/local-planning-io-972-20261003/tools/cli_controls.py": "bb3e98f3d0099437e6762ca06161909c50f3a307cd068952fb705c3f88ec47c0",
+          "research/local-planning-io-972-20261003/tools/prove.py": "a5792f866f00018740cab371e2621d7ebb965a3086d7286f60af20d1025d9d19",
+          "research/local-planning-io-972-20261003/tools/coherent_controls.py": "774feabf663b09a7b3e2447f245e943c40718496a8bbcacb2c7c6bc4db2ad8bf",
+          "research/local-planning-io-972-20261003/tools/consumer_controls.py": "8795b7d59dbf0bfcedecc307e91259a4624326c5590fbcec16a8edf3aab15b11",
+          "research/local-planning-io-972-20261003/tools/original_support_record_inputs.py": "6e34dfd7747b018feed2395c817835693bfb9720a471ab82ae08a70bf470fa80",
+          "research/local-planning-io-972-20261003/tools/original_validation_plan.py": "f1235637c4e5d2c5dbd2c524534b381008c59e260156c6cfa4fd43c2bb326fb7"
+        },
+        "scope": {
+          "lane": "local-planning-io-972",
+          "program": "CPU planning input reads",
+          "source": "4fbf0d450583ac8881438a2f078559484de56d53"
+        },
+        "mandatory": true
+      },
+      "test_root_cargo_fifo_expands_actual_planning_before_read": {
+        "id": "test_root_cargo_fifo_expands_actual_planning_before_read",
+        "cost": 1,
+        "covers": [
+          "input/test_root_cargo_fifo_expands_actual_planning_before_read"
+        ],
+        "inputs": {
+          "tools/validation_plan.py": "cf0966c7a293333317bfe976dd7362c9305266b01797ad9595a0f1d75da739b2",
+          "tools/support_record_inputs.py": "d3548a8fa3f765046e1864efd78c028d596151971a45908dad38230f021276d5",
+          "tools/validation_inputs.json": "71e17d5f91f44bae768047ad4c9f2c40486a291e35e123e6a7e54f16fd34d377",
+          "tools/test_validation_local_input_io.py": "273d310c981d3586324f9656a8687f8facc49f00ff1e9880c08a5cbc68876987",
+          "tools/test_validation_plan.py": "ecb1db5e2963657d97b06359530311f2fc9b9ce1a6def0dafeb6250440b3ca2f",
+          "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+          "tools/skip-census.py": "d89ce391d748499214df2279a48d719b9e67cad6a2838c77ebcef46640883a7d",
+          "research/local-planning-io-972-20261003/tools/cli_controls.py": "bb3e98f3d0099437e6762ca06161909c50f3a307cd068952fb705c3f88ec47c0",
+          "research/local-planning-io-972-20261003/tools/prove.py": "a5792f866f00018740cab371e2621d7ebb965a3086d7286f60af20d1025d9d19",
+          "research/local-planning-io-972-20261003/tools/coherent_controls.py": "774feabf663b09a7b3e2447f245e943c40718496a8bbcacb2c7c6bc4db2ad8bf",
+          "research/local-planning-io-972-20261003/tools/consumer_controls.py": "8795b7d59dbf0bfcedecc307e91259a4624326c5590fbcec16a8edf3aab15b11",
+          "research/local-planning-io-972-20261003/tools/original_support_record_inputs.py": "6e34dfd7747b018feed2395c817835693bfb9720a471ab82ae08a70bf470fa80",
+          "research/local-planning-io-972-20261003/tools/original_validation_plan.py": "f1235637c4e5d2c5dbd2c524534b381008c59e260156c6cfa4fd43c2bb326fb7"
+        },
+        "scope": {
+          "lane": "local-planning-io-972",
+          "program": "CPU planning input reads",
+          "source": "4fbf0d450583ac8881438a2f078559484de56d53"
+        },
+        "mandatory": true
+      },
+      "test_snapshot_reads_remain_git_bytes_not_local_filesystem": {
+        "id": "test_snapshot_reads_remain_git_bytes_not_local_filesystem",
+        "cost": 1,
+        "covers": [
+          "input/test_snapshot_reads_remain_git_bytes_not_local_filesystem"
+        ],
+        "inputs": {
+          "tools/validation_plan.py": "cf0966c7a293333317bfe976dd7362c9305266b01797ad9595a0f1d75da739b2",
+          "tools/support_record_inputs.py": "d3548a8fa3f765046e1864efd78c028d596151971a45908dad38230f021276d5",
+          "tools/validation_inputs.json": "71e17d5f91f44bae768047ad4c9f2c40486a291e35e123e6a7e54f16fd34d377",
+          "tools/test_validation_local_input_io.py": "273d310c981d3586324f9656a8687f8facc49f00ff1e9880c08a5cbc68876987",
+          "tools/test_validation_plan.py": "ecb1db5e2963657d97b06359530311f2fc9b9ce1a6def0dafeb6250440b3ca2f",
+          "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+          "tools/skip-census.py": "d89ce391d748499214df2279a48d719b9e67cad6a2838c77ebcef46640883a7d",
+          "research/local-planning-io-972-20261003/tools/cli_controls.py": "bb3e98f3d0099437e6762ca06161909c50f3a307cd068952fb705c3f88ec47c0",
+          "research/local-planning-io-972-20261003/tools/prove.py": "a5792f866f00018740cab371e2621d7ebb965a3086d7286f60af20d1025d9d19",
+          "research/local-planning-io-972-20261003/tools/coherent_controls.py": "774feabf663b09a7b3e2447f245e943c40718496a8bbcacb2c7c6bc4db2ad8bf",
+          "research/local-planning-io-972-20261003/tools/consumer_controls.py": "8795b7d59dbf0bfcedecc307e91259a4624326c5590fbcec16a8edf3aab15b11",
+          "research/local-planning-io-972-20261003/tools/original_support_record_inputs.py": "6e34dfd7747b018feed2395c817835693bfb9720a471ab82ae08a70bf470fa80",
+          "research/local-planning-io-972-20261003/tools/original_validation_plan.py": "f1235637c4e5d2c5dbd2c524534b381008c59e260156c6cfa4fd43c2bb326fb7"
+        },
+        "scope": {
+          "lane": "local-planning-io-972",
+          "program": "CPU planning input reads",
+          "source": "4fbf0d450583ac8881438a2f078559484de56d53"
+        },
+        "mandatory": true
+      },
+      "test_stat_to_fifo_replacement_is_nonblocking_and_refused": {
+        "id": "test_stat_to_fifo_replacement_is_nonblocking_and_refused",
+        "cost": 1,
+        "covers": [
+          "input/test_stat_to_fifo_replacement_is_nonblocking_and_refused"
+        ],
+        "inputs": {
+          "tools/validation_plan.py": "cf0966c7a293333317bfe976dd7362c9305266b01797ad9595a0f1d75da739b2",
+          "tools/support_record_inputs.py": "d3548a8fa3f765046e1864efd78c028d596151971a45908dad38230f021276d5",
+          "tools/validation_inputs.json": "71e17d5f91f44bae768047ad4c9f2c40486a291e35e123e6a7e54f16fd34d377",
+          "tools/test_validation_local_input_io.py": "273d310c981d3586324f9656a8687f8facc49f00ff1e9880c08a5cbc68876987",
+          "tools/test_validation_plan.py": "ecb1db5e2963657d97b06359530311f2fc9b9ce1a6def0dafeb6250440b3ca2f",
+          "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+          "tools/skip-census.py": "d89ce391d748499214df2279a48d719b9e67cad6a2838c77ebcef46640883a7d",
+          "research/local-planning-io-972-20261003/tools/cli_controls.py": "bb3e98f3d0099437e6762ca06161909c50f3a307cd068952fb705c3f88ec47c0",
+          "research/local-planning-io-972-20261003/tools/prove.py": "a5792f866f00018740cab371e2621d7ebb965a3086d7286f60af20d1025d9d19",
+          "research/local-planning-io-972-20261003/tools/coherent_controls.py": "774feabf663b09a7b3e2447f245e943c40718496a8bbcacb2c7c6bc4db2ad8bf",
+          "research/local-planning-io-972-20261003/tools/consumer_controls.py": "8795b7d59dbf0bfcedecc307e91259a4624326c5590fbcec16a8edf3aab15b11",
+          "research/local-planning-io-972-20261003/tools/original_support_record_inputs.py": "6e34dfd7747b018feed2395c817835693bfb9720a471ab82ae08a70bf470fa80",
+          "research/local-planning-io-972-20261003/tools/original_validation_plan.py": "f1235637c4e5d2c5dbd2c524534b381008c59e260156c6cfa4fd43c2bb326fb7"
+        },
+        "scope": {
+          "lane": "local-planning-io-972",
+          "program": "CPU planning input reads",
+          "source": "4fbf0d450583ac8881438a2f078559484de56d53"
+        },
+        "mandatory": true
+      },
+      "test_stat_to_symlink_replacement_refuses_actual_target_content": {
+        "id": "test_stat_to_symlink_replacement_refuses_actual_target_content",
+        "cost": 1,
+        "covers": [
+          "input/test_stat_to_symlink_replacement_refuses_actual_target_content"
+        ],
+        "inputs": {
+          "tools/validation_plan.py": "cf0966c7a293333317bfe976dd7362c9305266b01797ad9595a0f1d75da739b2",
+          "tools/support_record_inputs.py": "d3548a8fa3f765046e1864efd78c028d596151971a45908dad38230f021276d5",
+          "tools/validation_inputs.json": "71e17d5f91f44bae768047ad4c9f2c40486a291e35e123e6a7e54f16fd34d377",
+          "tools/test_validation_local_input_io.py": "273d310c981d3586324f9656a8687f8facc49f00ff1e9880c08a5cbc68876987",
+          "tools/test_validation_plan.py": "ecb1db5e2963657d97b06359530311f2fc9b9ce1a6def0dafeb6250440b3ca2f",
+          "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+          "tools/skip-census.py": "d89ce391d748499214df2279a48d719b9e67cad6a2838c77ebcef46640883a7d",
+          "research/local-planning-io-972-20261003/tools/cli_controls.py": "bb3e98f3d0099437e6762ca06161909c50f3a307cd068952fb705c3f88ec47c0",
+          "research/local-planning-io-972-20261003/tools/prove.py": "a5792f866f00018740cab371e2621d7ebb965a3086d7286f60af20d1025d9d19",
+          "research/local-planning-io-972-20261003/tools/coherent_controls.py": "774feabf663b09a7b3e2447f245e943c40718496a8bbcacb2c7c6bc4db2ad8bf",
+          "research/local-planning-io-972-20261003/tools/consumer_controls.py": "8795b7d59dbf0bfcedecc307e91259a4624326c5590fbcec16a8edf3aab15b11",
+          "research/local-planning-io-972-20261003/tools/original_support_record_inputs.py": "6e34dfd7747b018feed2395c817835693bfb9720a471ab82ae08a70bf470fa80",
+          "research/local-planning-io-972-20261003/tools/original_validation_plan.py": "f1235637c4e5d2c5dbd2c524534b381008c59e260156c6cfa4fd43c2bb326fb7"
+        },
+        "scope": {
+          "lane": "local-planning-io-972",
+          "program": "CPU planning input reads",
+          "source": "4fbf0d450583ac8881438a2f078559484de56d53"
+        },
+        "mandatory": true
+      },
+      "test_tracked_census_reader_fifo_refuses_raw_byte_adapter": {
+        "id": "test_tracked_census_reader_fifo_refuses_raw_byte_adapter",
+        "cost": 1,
+        "covers": [
+          "input/test_tracked_census_reader_fifo_refuses_raw_byte_adapter"
+        ],
+        "inputs": {
+          "tools/validation_plan.py": "cf0966c7a293333317bfe976dd7362c9305266b01797ad9595a0f1d75da739b2",
+          "tools/support_record_inputs.py": "d3548a8fa3f765046e1864efd78c028d596151971a45908dad38230f021276d5",
+          "tools/validation_inputs.json": "71e17d5f91f44bae768047ad4c9f2c40486a291e35e123e6a7e54f16fd34d377",
+          "tools/test_validation_local_input_io.py": "273d310c981d3586324f9656a8687f8facc49f00ff1e9880c08a5cbc68876987",
+          "tools/test_validation_plan.py": "ecb1db5e2963657d97b06359530311f2fc9b9ce1a6def0dafeb6250440b3ca2f",
+          "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+          "tools/skip-census.py": "d89ce391d748499214df2279a48d719b9e67cad6a2838c77ebcef46640883a7d",
+          "research/local-planning-io-972-20261003/tools/cli_controls.py": "bb3e98f3d0099437e6762ca06161909c50f3a307cd068952fb705c3f88ec47c0",
+          "research/local-planning-io-972-20261003/tools/prove.py": "a5792f866f00018740cab371e2621d7ebb965a3086d7286f60af20d1025d9d19",
+          "research/local-planning-io-972-20261003/tools/coherent_controls.py": "774feabf663b09a7b3e2447f245e943c40718496a8bbcacb2c7c6bc4db2ad8bf",
+          "research/local-planning-io-972-20261003/tools/consumer_controls.py": "8795b7d59dbf0bfcedecc307e91259a4624326c5590fbcec16a8edf3aab15b11",
+          "research/local-planning-io-972-20261003/tools/original_support_record_inputs.py": "6e34dfd7747b018feed2395c817835693bfb9720a471ab82ae08a70bf470fa80",
+          "research/local-planning-io-972-20261003/tools/original_validation_plan.py": "f1235637c4e5d2c5dbd2c524534b381008c59e260156c6cfa4fd43c2bb326fb7"
+        },
+        "scope": {
+          "lane": "local-planning-io-972",
+          "program": "CPU planning input reads",
+          "source": "4fbf0d450583ac8881438a2f078559484de56d53"
+        },
+        "mandatory": true
+      },
+      "test_unrelated_cargo_manifest_fifo_refuses_command_planning": {
+        "id": "test_unrelated_cargo_manifest_fifo_refuses_command_planning",
+        "cost": 1,
+        "covers": [
+          "input/test_unrelated_cargo_manifest_fifo_refuses_command_planning"
+        ],
+        "inputs": {
+          "tools/validation_plan.py": "cf0966c7a293333317bfe976dd7362c9305266b01797ad9595a0f1d75da739b2",
+          "tools/support_record_inputs.py": "d3548a8fa3f765046e1864efd78c028d596151971a45908dad38230f021276d5",
+          "tools/validation_inputs.json": "71e17d5f91f44bae768047ad4c9f2c40486a291e35e123e6a7e54f16fd34d377",
+          "tools/test_validation_local_input_io.py": "273d310c981d3586324f9656a8687f8facc49f00ff1e9880c08a5cbc68876987",
+          "tools/test_validation_plan.py": "ecb1db5e2963657d97b06359530311f2fc9b9ce1a6def0dafeb6250440b3ca2f",
+          "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+          "tools/skip-census.py": "d89ce391d748499214df2279a48d719b9e67cad6a2838c77ebcef46640883a7d",
+          "research/local-planning-io-972-20261003/tools/cli_controls.py": "bb3e98f3d0099437e6762ca06161909c50f3a307cd068952fb705c3f88ec47c0",
+          "research/local-planning-io-972-20261003/tools/prove.py": "a5792f866f00018740cab371e2621d7ebb965a3086d7286f60af20d1025d9d19",
+          "research/local-planning-io-972-20261003/tools/coherent_controls.py": "774feabf663b09a7b3e2447f245e943c40718496a8bbcacb2c7c6bc4db2ad8bf",
+          "research/local-planning-io-972-20261003/tools/consumer_controls.py": "8795b7d59dbf0bfcedecc307e91259a4624326c5590fbcec16a8edf3aab15b11",
+          "research/local-planning-io-972-20261003/tools/original_support_record_inputs.py": "6e34dfd7747b018feed2395c817835693bfb9720a471ab82ae08a70bf470fa80",
+          "research/local-planning-io-972-20261003/tools/original_validation_plan.py": "f1235637c4e5d2c5dbd2c524534b381008c59e260156c6cfa4fd43c2bb326fb7"
+        },
+        "scope": {
+          "lane": "local-planning-io-972",
+          "program": "CPU planning input reads",
+          "source": "4fbf0d450583ac8881438a2f078559484de56d53"
+        },
+        "mandatory": true
+      }
+    }
+  },
+  "contract_id": "c114917c64926c1298d32fc5bd8844006414f01a473f67013a639fc2f30125fe",
+  "uncovered": [],
+  "ineligible": {},
+  "choices": [],
+  "edge_decisions": [
+    {
+      "edge": "cli_controls.py/0",
+      "covered": true,
+      "tests": [
+        "cli_controls.py"
+      ]
+    },
+    {
+      "edge": "cli_controls.py/1",
+      "covered": true,
+      "tests": [
+        "cli_controls.py"
+      ]
+    },
+    {
+      "edge": "cli_controls.py/10",
+      "covered": true,
+      "tests": [
+        "cli_controls.py"
+      ]
+    },
+    {
+      "edge": "cli_controls.py/11",
+      "covered": true,
+      "tests": [
+        "cli_controls.py"
+      ]
+    },
+    {
+      "edge": "cli_controls.py/2",
+      "covered": true,
+      "tests": [
+        "cli_controls.py"
+      ]
+    },
+    {
+      "edge": "cli_controls.py/3",
+      "covered": true,
+      "tests": [
+        "cli_controls.py"
+      ]
+    },
+    {
+      "edge": "cli_controls.py/4",
+      "covered": true,
+      "tests": [
+        "cli_controls.py"
+      ]
+    },
+    {
+      "edge": "cli_controls.py/5",
+      "covered": true,
+      "tests": [
+        "cli_controls.py"
+      ]
+    },
+    {
+      "edge": "cli_controls.py/6",
+      "covered": true,
+      "tests": [
+        "cli_controls.py"
+      ]
+    },
+    {
+      "edge": "cli_controls.py/7",
+      "covered": true,
+      "tests": [
+        "cli_controls.py"
+      ]
+    },
+    {
+      "edge": "cli_controls.py/8",
+      "covered": true,
+      "tests": [
+        "cli_controls.py"
+      ]
+    },
+    {
+      "edge": "cli_controls.py/9",
+      "covered": true,
+      "tests": [
+        "cli_controls.py"
+      ]
+    },
+    {
+      "edge": "coherent_controls.py/0",
+      "covered": true,
+      "tests": [
+        "coherent_controls.py"
+      ]
+    },
+    {
+      "edge": "coherent_controls.py/1",
+      "covered": true,
+      "tests": [
+        "coherent_controls.py"
+      ]
+    },
+    {
+      "edge": "coherent_controls.py/2",
+      "covered": true,
+      "tests": [
+        "coherent_controls.py"
+      ]
+    },
+    {
+      "edge": "coherent_controls.py/3",
+      "covered": true,
+      "tests": [
+        "coherent_controls.py"
+      ]
+    },
+    {
+      "edge": "coherent_controls.py/4",
+      "covered": true,
+      "tests": [
+        "coherent_controls.py"
+      ]
+    },
+    {
+      "edge": "coherent_controls.py/5",
+      "covered": true,
+      "tests": [
+        "coherent_controls.py"
+      ]
+    },
+    {
+      "edge": "coherent_controls.py/6",
+      "covered": true,
+      "tests": [
+        "coherent_controls.py"
+      ]
+    },
+    {
+      "edge": "consumer_controls.py/0",
+      "covered": true,
+      "tests": [
+        "consumer_controls.py"
+      ]
+    },
+    {
+      "edge": "consumer_controls.py/1",
+      "covered": true,
+      "tests": [
+        "consumer_controls.py"
+      ]
+    },
+    {
+      "edge": "consumer_controls.py/2",
+      "covered": true,
+      "tests": [
+        "consumer_controls.py"
+      ]
+    },
+    {
+      "edge": "consumer_controls.py/3",
+      "covered": true,
+      "tests": [
+        "consumer_controls.py"
+      ]
+    },
+    {
+      "edge": "consumer_controls.py/4",
+      "covered": true,
+      "tests": [
+        "consumer_controls.py"
+      ]
+    },
+    {
+      "edge": "consumer_controls.py/5",
+      "covered": true,
+      "tests": [
+        "consumer_controls.py"
+      ]
+    },
+    {
+      "edge": "consumer_controls.py/6",
+      "covered": true,
+      "tests": [
+        "consumer_controls.py"
+      ]
+    },
+    {
+      "edge": "consumer_controls.py/7",
+      "covered": true,
+      "tests": [
+        "consumer_controls.py"
+      ]
+    },
+    {
+      "edge": "consumer_controls.py/8",
+      "covered": true,
+      "tests": [
+        "consumer_controls.py"
+      ]
+    },
+    {
+      "edge": "consumer_controls.py/9",
+      "covered": true,
+      "tests": [
+        "consumer_controls.py"
+      ]
+    },
+    {
+      "edge": "input/test_descriptor_cleanup_on_success_and_failure",
+      "covered": true,
+      "tests": [
+        "test_descriptor_cleanup_on_success_and_failure"
+      ]
+    },
+    {
+      "edge": "input/test_fifo_and_directory_readers_refuse_before_content",
+      "covered": true,
+      "tests": [
+        "test_fifo_and_directory_readers_refuse_before_content"
+      ]
+    },
+    {
+      "edge": "input/test_leaf_and_parent_links_are_refused_before_reading_target",
+      "covered": true,
+      "tests": [
+        "test_leaf_and_parent_links_are_refused_before_reading_target"
+      ]
+    },
+    {
+      "edge": "input/test_missing_and_noncanonical_paths_remain_refusals",
+      "covered": true,
+      "tests": [
+        "test_missing_and_noncanonical_paths_remain_refusals"
+      ]
+    },
+    {
+      "edge": "input/test_opened_parent_stays_anchored_when_its_path_is_replaced",
+      "covered": true,
+      "tests": [
+        "test_opened_parent_stays_anchored_when_its_path_is_replaced"
+      ]
+    },
+    {
+      "edge": "input/test_own_registry_fifo_refuses_real_include_reader",
+      "covered": true,
+      "tests": [
+        "test_own_registry_fifo_refuses_real_include_reader"
+      ]
+    },
+    {
+      "edge": "input/test_real_consumers_refuse_leaf_aliases_and_replacement_races",
+      "covered": true,
+      "tests": [
+        "test_real_consumers_refuse_leaf_aliases_and_replacement_races"
+      ]
+    },
+    {
+      "edge": "input/test_real_descendant_consumers_refuse_ancestor_aliases_and_anchor_races",
+      "covered": true,
+      "tests": [
+        "test_real_descendant_consumers_refuse_ancestor_aliases_and_anchor_races"
+      ]
+    },
+    {
+      "edge": "input/test_regular_text_and_raw_bytes_preserve_original_semantics",
+      "covered": true,
+      "tests": [
+        "test_regular_text_and_raw_bytes_preserve_original_semantics"
+      ]
+    },
+    {
+      "edge": "input/test_root_cargo_fifo_expands_actual_planning_before_read",
+      "covered": true,
+      "tests": [
+        "test_root_cargo_fifo_expands_actual_planning_before_read"
+      ]
+    },
+    {
+      "edge": "input/test_snapshot_reads_remain_git_bytes_not_local_filesystem",
+      "covered": true,
+      "tests": [
+        "test_snapshot_reads_remain_git_bytes_not_local_filesystem"
+      ]
+    },
+    {
+      "edge": "input/test_stat_to_fifo_replacement_is_nonblocking_and_refused",
+      "covered": true,
+      "tests": [
+        "test_stat_to_fifo_replacement_is_nonblocking_and_refused"
+      ]
+    },
+    {
+      "edge": "input/test_stat_to_symlink_replacement_refuses_actual_target_content",
+      "covered": true,
+      "tests": [
+        "test_stat_to_symlink_replacement_refuses_actual_target_content"
+      ]
+    },
+    {
+      "edge": "input/test_tracked_census_reader_fifo_refuses_raw_byte_adapter",
+      "covered": true,
+      "tests": [
+        "test_tracked_census_reader_fifo_refuses_raw_byte_adapter"
+      ]
+    },
+    {
+      "edge": "input/test_unrelated_cargo_manifest_fifo_refuses_command_planning",
+      "covered": true,
+      "tests": [
+        "test_unrelated_cargo_manifest_fifo_refuses_command_planning"
+      ]
+    }
+  ],
+  "cost": 18,
+  "optimization": "deterministic greedy set cover, not a claimed global optimum",
+  "isolation": "test boot/reset contracts are unchanged; selection never merges process state",
+  "qualification": false
+}
