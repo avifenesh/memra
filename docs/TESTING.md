@@ -116,6 +116,31 @@ CPU caller admission. Ordinary merge functions, schema, metadata, row ordering
 and hashes are unchanged. Merger edits retain full native-plan selection; this
 caller grants no model, runtime or emitted native-plan qualification.
 
+## Agreement-summary self-test admission
+
+The unconditional CI gates job runs the original summary self-test and the
+identified CPU caller:
+
+```sh
+python3 tools/summarize_hy3_plan_agreement.py --self-test
+python3 tools/run_agreement_summary_contract.py
+```
+
+All eight original predicates remain. The observer requires ten predicate-entry
+opcode executions, with the traffic-mass loop visiting a, b and c exactly once.
+Real summary, three-plan expansion and CSV calls must execute. Sixteen canonical
+control identities must be discovered, executed and successful without skips or
+expected failures. Missing or duplicate iterations, no-op/deleted predicates,
+incorrect outputs, masked callers and incomplete execution refuse admission.
+Optimized calls refuse before fixtures; ordinary reports remain available under
+optimized Python. Tracing state is restored.
+
+[Source-bound evidence](../research/agreement-summary-989-20261004/README.md)
+uses owned synthetic JSON/CSV only. Summary/traffic math, thresholds, formats,
+private-only selection logic and input hashes are unchanged. Full native
+classification and required gates remain; this CPU caller grants no native,
+model or runtime qualification.
+
 ## DSV4 norm-fusion gates, REMOVED 2026-09-11
 
 The two sections that stood here documented `dsv4_compose_densefast_normfuse_gate`
