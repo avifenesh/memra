@@ -1,10 +1,10 @@
 {
   "base": "62a9da5dc0b1407fdce483174b8c56f197b9b987",
-  "source": "390ca1db839dfcda371ef4ffad5f307c4a3cff35",
+  "source": "ca3ae79b78a3de9ede52da3ceebc81c78bb58c28",
   "source_sha256": {
-    "tools/validation_plan.py": "de869e9d07d975882f8bade37f1839748ce16cf3ebe491cb7c5b7b31b3fb569e",
-    "tools/support_record_inputs.py": "951497cad481c51798b73f0aae90617b1d01c8e9e1ac40e2f4e9e00b1ff40e48",
-    "tools/test_validation_support_record_inputs.py": "86464291877c647f1a9b24df631150db3d5a03c869a85cff2f8606309bab654b",
+    "tools/validation_plan.py": "095f696be7502d51ad68d6d69bff0208012d79c5ef4d5f83e3173f54222c0853",
+    "tools/support_record_inputs.py": "bb1cb80f4e52ea75104bfb9bd70f6047a8de31d77a060ade656362aa0806f473",
+    "tools/test_validation_support_record_inputs.py": "c486f0ce8d38cffbf055b8067f8e7a66065796adbc3475b2c7e7b907cd2a1d12",
     "tools/test_validation_plan.py": "5531e129c698fba4f38be567634a99ca9fc73492fe692fbf2b2d7de625a76a9d",
     "tools/check-support-states.py": "27b4a68fb545cfd434caab8764f42becd021a52d7d6a36fb9fba466d396cf8ec",
     "tools/test_check_support_states.py": "366556ebf11d27173032f1fe9cd71ef59d18b3c1f2314f920f214a63e5482050",
@@ -54,10 +54,10 @@
   "all_existing_cpu_native_commands_preserved": true,
   "qualification": false,
   "scope": "support-record data closure only; source/docs reader nominations separate",
-  "helper_sha256": "18c76ea5bbc59000ddbce72d12c99325067cc925d3c9dc497585c00e28900306",
+  "helper_sha256": "d64f1878b1f86b90af1fc9db0db77a2da0b26ef9c712ef234a79308691d79c32",
   "composition": {
-    "tested_source": "390ca1db839dfcda371ef4ffad5f307c4a3cff35",
-    "composed_source": "390ca1db839dfcda371ef4ffad5f307c4a3cff35",
+    "tested_source": "ca3ae79b78a3de9ede52da3ceebc81c78bb58c28",
+    "composed_source": "ca3ae79b78a3de9ede52da3ceebc81c78bb58c28",
     "base": "251c534ea5e7fb07c709ce65d894053e92a27044",
     "tested_files_equal": {
       "tools/validation_plan.py": true,
@@ -1359,30 +1359,30 @@
       "stdout": "",
       "stderr": ".\n----------------------------------------------------------------------\nRan 1 test in 0.085s\n\nOK\n"
     },
-    "crlf-reader-cli": {
+    "crlf-scoped-data-proof": {
       "exit": 1,
-      "stdout": "",
-      "stderr": "Traceback (most recent call last):\n  File \"COPIED_ROOT/B955-data-rj9o_r5j/tools/validation_plan.py\", line 149, in support_record_data_inputs\n    return _SUPPORT_DATA.resolve(tree)\n           ~~~~~~~~~~~~~~~~~~~~~^^^^^^\n  File \"COPIED_ROOT/B955-data-rj9o_r5j/tools/support_record_inputs.py\", line 73, in resolve\n    raise InputContractError('unmodelled support data reader: ' + name)\nsupport_record_data_inputs.InputContractError: unmodelled support data reader: tools/check-support-states.py\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B955-data-rj9o_r5j/tools/validation_plan.py\", line 964, in <module>\n    raise SystemExit(main())\n                     ~~~~^^\n  File \"COPIED_ROOT/B955-data-rj9o_r5j/tools/validation_plan.py\", line 918, in main\n    names = cpu_contract_names(ROOT, args.selected)\n  File \"COPIED_ROOT/B955-data-rj9o_r5j/tools/validation_plan.py\", line 813, in cpu_contract_names\n    data = support_record_data_inputs(root, directory=True)\n  File \"COPIED_ROOT/B955-data-rj9o_r5j/tools/validation_plan.py\", line 151, in support_record_data_inputs\n    raise Refused(str(error)) from error\nRefused: unmodelled support data reader: tools/check-support-states.py\n"
+      "api": "support_record_data_inputs",
+      "error": "unmodelled support data reader: tools/check-support-states.py"
     },
     "canonical-reader-cli": {
       "exit": 0,
-      "stdout": "CPU contract: support-records\n.....................\n----------------------------------------------------------------------\nRan 21 tests in 1.936s\n\nOK\nunittest-floor: OK: ran 21 tests (floor 21) for tools (test_check_support_states.py)\n",
+      "stdout": "CPU contract: support-records\n.....................\n----------------------------------------------------------------------\nRan 21 tests in 1.940s\n\nOK\nunittest-floor: OK: ran 21 tests (floor 21) for tools (test_check_support_states.py)\n",
       "stderr": ""
     },
     "created-shadowing-artifact-lock": {
       "exit": 1,
       "stdout": "",
-      "stderr": "F\n======================================================================\nFAIL: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B955-data-rj9o_r5j/tools/test_check_support_states.py\", line 65, in test_clean_copy_passes\n    self.assertEqual(result.returncode, 0, result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : check-support-states: docs/support-records.toml: record hy3-bf16-reference: TinyParity evidence research/modelplan-onboarding-hy3-20260830/tiny/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'hy3'\ncheck-support-states: FAIL (1 violations)\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.089s\n\nFAILED (failures=1)\n"
+      "stderr": "F\n======================================================================\nFAIL: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B955-data-_bczvm15/tools/test_check_support_states.py\", line 65, in test_clean_copy_passes\n    self.assertEqual(result.returncode, 0, result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : check-support-states: docs/support-records.toml: record hy3-bf16-reference: TinyParity evidence research/modelplan-onboarding-hy3-20260830/tiny/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'hy3'\ncheck-support-states: FAIL (1 violations)\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.087s\n\nFAILED (failures=1)\n"
     },
     "deleted-selected/research/modelplan-onboarding-20260822/qwen3/artifact.lock": {
       "exit": 1,
       "stdout": "",
-      "stderr": "F\n======================================================================\nFAIL: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B955-data-rj9o_r5j/tools/test_check_support_states.py\", line 65, in test_clean_copy_passes\n    self.assertEqual(result.returncode, 0, result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : check-support-states: docs/support-records.toml: record qwen3-tiny-random: Config evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: TokenizerTemplate evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: TensorCensus evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: TinyParity evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: CheckpointParity evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: Serve evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: FAIL (6 violations)\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.086s\n\nFAILED (failures=1)\n"
+      "stderr": "F\n======================================================================\nFAIL: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B955-data-_bczvm15/tools/test_check_support_states.py\", line 65, in test_clean_copy_passes\n    self.assertEqual(result.returncode, 0, result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : check-support-states: docs/support-records.toml: record qwen3-tiny-random: Config evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: TokenizerTemplate evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: TensorCensus evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: TinyParity evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: CheckpointParity evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: Serve evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: FAIL (6 violations)\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.086s\n\nFAILED (failures=1)\n"
     },
     "deleted-selected/research/modelplan-onboarding-hy3-20260830/tiny/tiny-gate.tsv": {
       "exit": 1,
       "stdout": "",
-      "stderr": "F\n======================================================================\nFAIL: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B955-data-rj9o_r5j/tools/test_check_support_states.py\", line 65, in test_clean_copy_passes\n    self.assertEqual(result.returncode, 0, result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : check-support-states: docs/support-records.toml: record hy3-bf16-reference: TinyParity evidence research/modelplan-onboarding-hy3-20260830/tiny/gates.txt is for family None, not 'hy3'\ncheck-support-states: FAIL (1 violations)\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.088s\n\nFAILED (failures=1)\n"
+      "stderr": "F\n======================================================================\nFAIL: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B955-data-_bczvm15/tools/test_check_support_states.py\", line 65, in test_clean_copy_passes\n    self.assertEqual(result.returncode, 0, result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : check-support-states: docs/support-records.toml: record hy3-bf16-reference: TinyParity evidence research/modelplan-onboarding-hy3-20260830/tiny/gates.txt is for family None, not 'hy3'\ncheck-support-states: FAIL (1 violations)\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.100s\n\nFAILED (failures=1)\n"
     }
   },
   "reused_unchanged_actual_mutations": {
@@ -1485,16 +1485,16 @@
     "description": "14 copied-data corruption results reused after exact original reader/data source equality; current clean and optional presence/deletion cases rerun"
   },
   "checks": {
-    "framework-final.log": "............................................................................................................................................\n----------------------------------------------------------------------\nRan 140 tests in 16.323s\n\nOK\nunittest-floor: OK: ran 140 tests (floor 140) for tools (test_validation_*.py)\n",
-    "cache-final.log": ".......................................................\n----------------------------------------------------------------------\nRan 55 tests in 0.348s\n\nOK\nunittest-floor: OK: ran 55 tests (floor 55) for tools (test_dense_control_cache.py)\n",
+    "framework-final.log": "............................................................................................................................................\n----------------------------------------------------------------------\nRan 140 tests in 16.105s\n\nOK\nunittest-floor: OK: ran 140 tests (floor 140) for tools (test_validation_*.py)\n",
+    "cache-final.log": ".......................................................\n----------------------------------------------------------------------\nRan 55 tests in 0.327s\n\nOK\nunittest-floor: OK: ran 55 tests (floor 55) for tools (test_dense_control_cache.py)\n",
     "registry-final.log": "Validation registry covers all 14 workspace packages\n",
-    "support-final.log": ".....................\n----------------------------------------------------------------------\nRan 21 tests in 2.074s\n\nOK\nunittest-floor: OK: ran 21 tests (floor 21) for tools (test_check_support_states.py)\n"
+    "support-final.log": ".....................\n----------------------------------------------------------------------\nRan 21 tests in 2.012s\n\nOK\nunittest-floor: OK: ran 21 tests (floor 21) for tools (test_check_support_states.py)\n"
   },
   "coverage": {
     "admission": {
       "status": "passed",
-      "edges": 78,
-      "contract_id": "3edd34cf6f790b4022d24887e410683a910575983d88c09ebd172aef0ee95f2e",
+      "edges": 100,
+      "contract_id": "37bdf3e6408e3f126290278da7cc8624312576d6f813b641622e880084079591",
       "qualification": false,
       "scope": "declared behavior assertions only; native receipt admission remains separate"
     },
@@ -1503,10 +1503,12 @@
       "skipped-mandatory-regressions": "empty or skipped test result: regressions"
     },
     "helper_sha256": {
-      "execute.py": "18c76ea5bbc59000ddbce72d12c99325067cc925d3c9dc497585c00e28900306",
-      "admit_coverage.py": "fc1255c8e695f0a1178ea7d80c27c93adecf1db16dca8c524d6b748afa9427d0",
-      "executed-proof.json": "d7720d7294fc878d06451977ac46c75ef324395c9ffa57bf13c5da264bc8701a",
-      "composed-source-bridge.json": "c423e64e21934be991734372960726b6ea8a3c6d0885ab7d7f5db77f159f1e86"
+      "execute.py": "d64f1878b1f86b90af1fc9db0db77a2da0b26ef9c712ef234a79308691d79c32",
+      "admit_coverage.py": "24f61d120a453f49e5675d2e7a03f04dd6c805ae96cfd59422e3df89a81cf933",
+      "executed-proof.json": "472cccbd3af7584d46b95343637ad7fa51e0c5407483109b7d2690c36212db05",
+      "composed-source-bridge.json": "3a949f6d57bbc18a401ffc05366f0a87153803e654239689cee87125a5256e22",
+      "review-fixes/execute.py": "17bd636ce596fde834ae7b8a3bbbfc68ea12bf846c615a252b80c8598f085a56",
+      "review-fixes/executed-proof.json": "d311d990aa09ce2b4cd6604a817f900f768e6e40739b94bef9eb25cf629d69c5"
     }
   },
   "reader_byte_identity_red_control": {
@@ -1517,5 +1519,788 @@
     "unknown_changed_reader_was_accepted": true,
     "required": 7,
     "scope": "copied bytes only; no original modifications"
+  },
+  "review_fixes": {
+    "base": "db71ce7588da8336d03b5b5c8b68bc9e1b2aa488",
+    "source": "ca3ae79b78a3de9ede52da3ceebc81c78bb58c28",
+    "source_sha256": {
+      "tools/validation_plan.py": "095f696be7502d51ad68d6d69bff0208012d79c5ef4d5f83e3173f54222c0853",
+      "tools/support_record_inputs.py": "bb1cb80f4e52ea75104bfb9bd70f6047a8de31d77a060ade656362aa0806f473",
+      "tools/test_validation_support_record_inputs.py": "c486f0ce8d38cffbf055b8067f8e7a66065796adbc3475b2c7e7b907cd2a1d12",
+      "tools/test_validation_plan.py": "5531e129c698fba4f38be567634a99ca9fc73492fe692fbf2b2d7de625a76a9d",
+      "tools/check-support-states.py": "27b4a68fb545cfd434caab8764f42becd021a52d7d6a36fb9fba466d396cf8ec",
+      "tools/test_check_support_states.py": "366556ebf11d27173032f1fe9cd71ef59d18b3c1f2314f920f214a63e5482050",
+      "docs/support-records.toml": "18d75c943748b89a8bd9d9bc07054b19dafb37080c211e3d15ee18640ad13e19"
+    },
+    "reader_regressions": {
+      "tools/check-support-states.py": {
+        "old_full_execution_refusal": "unmodelled support data reader: tools/check-support-states.py",
+        "current_full_plan": {
+          "schema": "memra-validation-plan-v1",
+          "mode": "full",
+          "reason": "dependency/input analysis unavailable: unmodelled support data reader: tools/check-support-states.py",
+          "changed": [
+            "README.md",
+            "tools/check-support-states.py"
+          ],
+          "packages": [],
+          "direct_packages": [],
+          "dependency_reasons": {},
+          "jobs": {
+            "build": true,
+            "clippy": true,
+            "server": true,
+            "engine": true,
+            "portable": true,
+            "core": true,
+            "lanes": true,
+            "arch": true,
+            "publish": true
+          },
+          "requires_cuda": true,
+          "cpu_contracts": [
+            {
+              "id": "q35-cache",
+              "required": true,
+              "inputs": [
+                "tools/q35-cold-mixed-gate.py",
+                "tools/test_q35_cold_mixed_gate.py",
+                "research/sellgate-20260812/sellgate_replay.py",
+                "tools/cache_qualification.py",
+                "research/sellgate-20260812/workload.lock.json",
+                "research/spill-lead-20260919/integration-day12/integ68-q35ab/main-q35-cold-mixed.log",
+                "research/spill-lead-20260919/integration-day12/integ68-q35ab/integ68-q35-cold-mixed.log"
+              ],
+              "cpu": [
+                "tools/unittest-floor.sh",
+                "tools",
+                "test_q35_cold_mixed_gate.py",
+                "13"
+              ],
+              "native": [
+                "Qwen3.6 MoE mixed c=4 cache/usage/golden gate on the pinned artifact"
+              ]
+            },
+            {
+              "id": "physical-gpu",
+              "required": true,
+              "inputs": [
+                "tools/resolve-physical-gpu.py",
+                "tools/test_resolve_physical_gpu.py"
+              ],
+              "cpu": [
+                "tools/unittest-floor.sh",
+                "tools",
+                "test_resolve_physical_gpu.py",
+                "21"
+              ],
+              "native": [
+                "Selected physical GPU refusal/ready test when resolver behavior changes"
+              ]
+            },
+            {
+              "id": "support-records",
+              "required": true,
+              "inputs": [
+                "tools/check-support-states.py",
+                "tools/test_check_support_states.py",
+                "docs/support-records.toml",
+                "tools/support_record_inputs.py",
+                "tools/test_validation_support_record_inputs.py"
+              ],
+              "cpu": [
+                "tools/unittest-floor.sh",
+                "tools",
+                "test_check_support_states.py",
+                "21"
+              ],
+              "native": []
+            },
+            {
+              "id": "tool-choice",
+              "presence": [
+                "tools/tool-choice-gate.py",
+                "tools/test_tool_choice_gate.py"
+              ],
+              "inputs": [
+                "tools/tool-choice-gate.py",
+                "tools/test_tool_choice_gate.py",
+                "tools/validation_coverage.py",
+                "research/tool-choice-20261003/receipts/native-v3/candidate.sha256",
+                "research/tool-choice-20261003/receipts/native-v3/coverage-plan.json",
+                "research/tool-choice-20261003/receipts/native-v3/coverage-results.json",
+                "research/tool-choice-20261003/receipts/native-v3/expected-context.json",
+                "research/tool-choice-20261003/receipts/native-v3/file-sha256.json",
+                "research/tool-choice-20261003/receipts/native-v3/frozen-inputs.sha256",
+                "research/tool-choice-20261003/receipts/native-v3/gemma/baseline/environment.json",
+                "research/tool-choice-20261003/receipts/native-v3/gemma/baseline/server.log",
+                "research/tool-choice-20261003/receipts/native-v3/gemma/candidate/environment.json",
+                "research/tool-choice-20261003/receipts/native-v3/gemma/candidate/server.log",
+                "research/tool-choice-20261003/receipts/native-v3/gpu-250ms.csv",
+                "research/tool-choice-20261003/receipts/native-v3/gpu-after.txt",
+                "research/tool-choice-20261003/receipts/native-v3/gpu-before.txt",
+                "research/tool-choice-20261003/receipts/native-v3/input-snapshot/test_tool_choice_gate.py",
+                "research/tool-choice-20261003/receipts/native-v3/input-snapshot/tool-choice-gate.py",
+                "research/tool-choice-20261003/receipts/native-v3/input-snapshot/validation_coverage.py",
+                "research/tool-choice-20261003/receipts/native-v3/qwen/baseline/environment.json",
+                "research/tool-choice-20261003/receipts/native-v3/qwen/baseline/server.log",
+                "research/tool-choice-20261003/receipts/native-v3/qwen/candidate/environment.json",
+                "research/tool-choice-20261003/receipts/native-v3/qwen/candidate/server.log",
+                "research/tool-choice-20261003/receipts/native-v3/report.json",
+                "research/tool-choice-20261003/receipts/native-v4/candidate.sha256",
+                "research/tool-choice-20261003/receipts/native-v4/coverage-plan.json",
+                "research/tool-choice-20261003/receipts/native-v4/coverage-results.json",
+                "research/tool-choice-20261003/receipts/native-v4/expected-context.json",
+                "research/tool-choice-20261003/receipts/native-v4/file-sha256.json",
+                "research/tool-choice-20261003/receipts/native-v4/frozen-inputs.sha256",
+                "research/tool-choice-20261003/receipts/native-v4/gemma/baseline/environment.json",
+                "research/tool-choice-20261003/receipts/native-v4/gemma/baseline/server.log",
+                "research/tool-choice-20261003/receipts/native-v4/gemma/candidate/environment.json",
+                "research/tool-choice-20261003/receipts/native-v4/gemma/candidate/server.log",
+                "research/tool-choice-20261003/receipts/native-v4/gpu-250ms.csv",
+                "research/tool-choice-20261003/receipts/native-v4/gpu-after.txt",
+                "research/tool-choice-20261003/receipts/native-v4/gpu-before.txt",
+                "research/tool-choice-20261003/receipts/native-v4/input-snapshot/test_tool_choice_gate.py",
+                "research/tool-choice-20261003/receipts/native-v4/input-snapshot/tool-choice-gate.py",
+                "research/tool-choice-20261003/receipts/native-v4/input-snapshot/validation_coverage.py",
+                "research/tool-choice-20261003/receipts/native-v4/qwen/baseline/environment.json",
+                "research/tool-choice-20261003/receipts/native-v4/qwen/baseline/server.log",
+                "research/tool-choice-20261003/receipts/native-v4/qwen/candidate/environment.json",
+                "research/tool-choice-20261003/receipts/native-v4/qwen/candidate/server.log",
+                "research/tool-choice-20261003/receipts/native-v4/report.json",
+                "research/tool-choice-20261003/receipts/native-v4/source-binding.json"
+              ],
+              "cpu": [
+                "tools/unittest-floor.sh",
+                "tools",
+                "test_tool_choice_gate.py",
+                "16"
+              ],
+              "native": [
+                "Pinned Qwen/Gemma tool-choice streams: required/named schema and grammar engagement, single-call policy, explicit refusals, and unchanged-auto/tool-none identity with coherent receipt red controls"
+              ]
+            },
+            {
+              "id": "cache-meter",
+              "presence": [
+                "tools/cache-meter-gate.py",
+                "tools/test_cache_meter_gate.py"
+              ],
+              "inputs": [
+                "tools/cache-meter-gate.py",
+                "tools/prometheus_metrics.py",
+                "tools/test_cache_meter_gate.py"
+              ],
+              "cpu": [
+                "tools/unittest-floor.sh",
+                "tools",
+                "test_cache_meter_gate.py",
+                "3"
+              ],
+              "native": [
+                "Pinned local model cache-meter closed form, native/OpenAI format parity, authenticated Prometheus and exact usage/token distributions"
+              ]
+            },
+            {
+              "id": "metrics-live",
+              "presence": [
+                "tools/metrics-live-gate.py",
+                "tools/test_prometheus_metrics.py"
+              ],
+              "inputs": [
+                "tools/metrics-live-gate.py",
+                "tools/prometheus_metrics.py",
+                "tools/test_prometheus_metrics.py"
+              ],
+              "cpu": [
+                "tools/unittest-floor.sh",
+                "tools",
+                "test_prometheus_metrics.py",
+                "7"
+              ],
+              "native": [
+                "Pinned local plain/MTP lifecycle, real queue/cancellation, live capacity and owned-worker-fault assertions; CPU parser success does not qualify serving"
+              ]
+            },
+            {
+              "id": "serving-qualification",
+              "presence": [
+                "tools/collect-serving-qualification.py",
+                "tools/test_collect_serving_qualification.py"
+              ],
+              "inputs": [
+                "tools/collect-serving-qualification.py",
+                "tools/test_collect_serving_qualification.py",
+                "tools/cache_qualification.py"
+              ],
+              "cpu": [
+                "tools/unittest-floor.sh",
+                "tools",
+                "test_collect_serving_qualification.py",
+                "8"
+              ],
+              "native": [
+                "Source-bound composite streaming/cache/offered-concurrency/cancellation/context collector, with the separate cache-disabled red boot"
+              ]
+            },
+            {
+              "id": "background-chat-text",
+              "presence": [
+                "tools/background-chat-text-gate.py",
+                "tools/test_background_chat_text_gate.py"
+              ],
+              "inputs": [
+                "tools/background-chat-text-gate.py",
+                "tools/test_background_chat_text_gate.py",
+                "tools/cache_qualification.py",
+                "research/background-chat-text-20261002/tools/vendor-profile.toml"
+              ],
+              "cpu": [
+                "tools/unittest-floor.sh",
+                "tools",
+                "test_background_chat_text_gate.py",
+                "9"
+              ],
+              "native": [
+                "Pinned-artifact fresh OFF/ON identity and bare-default probes; paired real chat/text delivery beyond 90 seconds, tenant isolation, native-progress cancellation and exactly-one final callback"
+              ]
+            },
+            {
+              "id": "sampled-mtp",
+              "presence": [
+                "tools/collect-sampled-mtp.py",
+                "tools/test_collect_sampled_mtp.py",
+                "tools/sampled-mtp-requirements.txt"
+              ],
+              "inputs": [
+                "tools/collect-sampled-mtp.py",
+                "tools/test_collect_sampled_mtp.py",
+                "tools/sampled-mtp-requirements.txt",
+                "tools/collect-serving-qualification.py",
+                "tools/cache_qualification.py"
+              ],
+              "cpu": [
+                "tools/unittest-floor.sh",
+                "tools",
+                "test_collect_sampled_mtp.py",
+                "7"
+              ],
+              "python_requirements": "tools/sampled-mtp-requirements.txt",
+              "native": [
+                "Pinned positive-PMIN eager/graph/residual/bonus/zero-draft probes, distribution controls and vendor-default serving checks"
+              ]
+            }
+          ],
+          "native": {
+            "scope": "full",
+            "requirements": [
+              "dependency/input analysis unavailable: unmodelled support data reader: tools/check-support-states.py"
+            ],
+            "qualification": false
+          },
+          "omitted": {},
+          "base": "aeefda85a862951f15deb698d12e773a296b3feb",
+          "head": "WORKTREE",
+          "qualification": false
+        },
+        "expanded_selections": {
+          "": [
+            "tool-choice",
+            "q35-cache",
+            "cache-meter",
+            "metrics-live",
+            "physical-gpu",
+            "support-records",
+            "serving-qualification",
+            "background-chat-text",
+            "sampled-mtp"
+          ],
+          "tool-choice,q35-cache,cache-meter,metrics-live,physical-gpu,support-records,serving-qualification,background-chat-text,sampled-mtp": [
+            "tool-choice",
+            "q35-cache",
+            "cache-meter",
+            "metrics-live",
+            "physical-gpu",
+            "support-records",
+            "serving-qualification",
+            "background-chat-text",
+            "sampled-mtp"
+          ],
+          "support-records": [
+            "tool-choice",
+            "q35-cache",
+            "cache-meter",
+            "metrics-live",
+            "physical-gpu",
+            "support-records",
+            "serving-qualification",
+            "background-chat-text",
+            "sampled-mtp"
+          ],
+          "none": [
+            "tool-choice",
+            "q35-cache",
+            "cache-meter",
+            "metrics-live",
+            "physical-gpu",
+            "support-records",
+            "serving-qualification",
+            "background-chat-text",
+            "sampled-mtp"
+          ],
+          "q35-cache": [
+            "tool-choice",
+            "q35-cache",
+            "cache-meter",
+            "metrics-live",
+            "physical-gpu",
+            "support-records",
+            "serving-qualification",
+            "background-chat-text",
+            "sampled-mtp"
+          ]
+        },
+        "actual_census": {
+          "exit": 0,
+          "stdout": ".....................\n----------------------------------------------------------------------\nRan 21 tests in 1.938s\n\nOK\nunittest-floor: OK: ran 21 tests (floor 21) for tools (test_check_support_states.py)\n",
+          "stderr": ""
+        }
+      },
+      "tools/test_check_support_states.py": {
+        "old_full_execution_refusal": "unmodelled support data reader: tools/test_check_support_states.py",
+        "current_full_plan": {
+          "schema": "memra-validation-plan-v1",
+          "mode": "full",
+          "reason": "dependency/input analysis unavailable: unmodelled support data reader: tools/test_check_support_states.py",
+          "changed": [
+            "README.md",
+            "tools/test_check_support_states.py"
+          ],
+          "packages": [],
+          "direct_packages": [],
+          "dependency_reasons": {},
+          "jobs": {
+            "build": true,
+            "clippy": true,
+            "server": true,
+            "engine": true,
+            "portable": true,
+            "core": true,
+            "lanes": true,
+            "arch": true,
+            "publish": true
+          },
+          "requires_cuda": true,
+          "cpu_contracts": [
+            {
+              "id": "q35-cache",
+              "required": true,
+              "inputs": [
+                "tools/q35-cold-mixed-gate.py",
+                "tools/test_q35_cold_mixed_gate.py",
+                "research/sellgate-20260812/sellgate_replay.py",
+                "tools/cache_qualification.py",
+                "research/sellgate-20260812/workload.lock.json",
+                "research/spill-lead-20260919/integration-day12/integ68-q35ab/main-q35-cold-mixed.log",
+                "research/spill-lead-20260919/integration-day12/integ68-q35ab/integ68-q35-cold-mixed.log"
+              ],
+              "cpu": [
+                "tools/unittest-floor.sh",
+                "tools",
+                "test_q35_cold_mixed_gate.py",
+                "13"
+              ],
+              "native": [
+                "Qwen3.6 MoE mixed c=4 cache/usage/golden gate on the pinned artifact"
+              ]
+            },
+            {
+              "id": "physical-gpu",
+              "required": true,
+              "inputs": [
+                "tools/resolve-physical-gpu.py",
+                "tools/test_resolve_physical_gpu.py"
+              ],
+              "cpu": [
+                "tools/unittest-floor.sh",
+                "tools",
+                "test_resolve_physical_gpu.py",
+                "21"
+              ],
+              "native": [
+                "Selected physical GPU refusal/ready test when resolver behavior changes"
+              ]
+            },
+            {
+              "id": "support-records",
+              "required": true,
+              "inputs": [
+                "tools/check-support-states.py",
+                "tools/test_check_support_states.py",
+                "docs/support-records.toml",
+                "tools/support_record_inputs.py",
+                "tools/test_validation_support_record_inputs.py"
+              ],
+              "cpu": [
+                "tools/unittest-floor.sh",
+                "tools",
+                "test_check_support_states.py",
+                "21"
+              ],
+              "native": []
+            },
+            {
+              "id": "tool-choice",
+              "presence": [
+                "tools/tool-choice-gate.py",
+                "tools/test_tool_choice_gate.py"
+              ],
+              "inputs": [
+                "tools/tool-choice-gate.py",
+                "tools/test_tool_choice_gate.py",
+                "tools/validation_coverage.py",
+                "research/tool-choice-20261003/receipts/native-v3/candidate.sha256",
+                "research/tool-choice-20261003/receipts/native-v3/coverage-plan.json",
+                "research/tool-choice-20261003/receipts/native-v3/coverage-results.json",
+                "research/tool-choice-20261003/receipts/native-v3/expected-context.json",
+                "research/tool-choice-20261003/receipts/native-v3/file-sha256.json",
+                "research/tool-choice-20261003/receipts/native-v3/frozen-inputs.sha256",
+                "research/tool-choice-20261003/receipts/native-v3/gemma/baseline/environment.json",
+                "research/tool-choice-20261003/receipts/native-v3/gemma/baseline/server.log",
+                "research/tool-choice-20261003/receipts/native-v3/gemma/candidate/environment.json",
+                "research/tool-choice-20261003/receipts/native-v3/gemma/candidate/server.log",
+                "research/tool-choice-20261003/receipts/native-v3/gpu-250ms.csv",
+                "research/tool-choice-20261003/receipts/native-v3/gpu-after.txt",
+                "research/tool-choice-20261003/receipts/native-v3/gpu-before.txt",
+                "research/tool-choice-20261003/receipts/native-v3/input-snapshot/test_tool_choice_gate.py",
+                "research/tool-choice-20261003/receipts/native-v3/input-snapshot/tool-choice-gate.py",
+                "research/tool-choice-20261003/receipts/native-v3/input-snapshot/validation_coverage.py",
+                "research/tool-choice-20261003/receipts/native-v3/qwen/baseline/environment.json",
+                "research/tool-choice-20261003/receipts/native-v3/qwen/baseline/server.log",
+                "research/tool-choice-20261003/receipts/native-v3/qwen/candidate/environment.json",
+                "research/tool-choice-20261003/receipts/native-v3/qwen/candidate/server.log",
+                "research/tool-choice-20261003/receipts/native-v3/report.json",
+                "research/tool-choice-20261003/receipts/native-v4/candidate.sha256",
+                "research/tool-choice-20261003/receipts/native-v4/coverage-plan.json",
+                "research/tool-choice-20261003/receipts/native-v4/coverage-results.json",
+                "research/tool-choice-20261003/receipts/native-v4/expected-context.json",
+                "research/tool-choice-20261003/receipts/native-v4/file-sha256.json",
+                "research/tool-choice-20261003/receipts/native-v4/frozen-inputs.sha256",
+                "research/tool-choice-20261003/receipts/native-v4/gemma/baseline/environment.json",
+                "research/tool-choice-20261003/receipts/native-v4/gemma/baseline/server.log",
+                "research/tool-choice-20261003/receipts/native-v4/gemma/candidate/environment.json",
+                "research/tool-choice-20261003/receipts/native-v4/gemma/candidate/server.log",
+                "research/tool-choice-20261003/receipts/native-v4/gpu-250ms.csv",
+                "research/tool-choice-20261003/receipts/native-v4/gpu-after.txt",
+                "research/tool-choice-20261003/receipts/native-v4/gpu-before.txt",
+                "research/tool-choice-20261003/receipts/native-v4/input-snapshot/test_tool_choice_gate.py",
+                "research/tool-choice-20261003/receipts/native-v4/input-snapshot/tool-choice-gate.py",
+                "research/tool-choice-20261003/receipts/native-v4/input-snapshot/validation_coverage.py",
+                "research/tool-choice-20261003/receipts/native-v4/qwen/baseline/environment.json",
+                "research/tool-choice-20261003/receipts/native-v4/qwen/baseline/server.log",
+                "research/tool-choice-20261003/receipts/native-v4/qwen/candidate/environment.json",
+                "research/tool-choice-20261003/receipts/native-v4/qwen/candidate/server.log",
+                "research/tool-choice-20261003/receipts/native-v4/report.json",
+                "research/tool-choice-20261003/receipts/native-v4/source-binding.json"
+              ],
+              "cpu": [
+                "tools/unittest-floor.sh",
+                "tools",
+                "test_tool_choice_gate.py",
+                "16"
+              ],
+              "native": [
+                "Pinned Qwen/Gemma tool-choice streams: required/named schema and grammar engagement, single-call policy, explicit refusals, and unchanged-auto/tool-none identity with coherent receipt red controls"
+              ]
+            },
+            {
+              "id": "cache-meter",
+              "presence": [
+                "tools/cache-meter-gate.py",
+                "tools/test_cache_meter_gate.py"
+              ],
+              "inputs": [
+                "tools/cache-meter-gate.py",
+                "tools/prometheus_metrics.py",
+                "tools/test_cache_meter_gate.py"
+              ],
+              "cpu": [
+                "tools/unittest-floor.sh",
+                "tools",
+                "test_cache_meter_gate.py",
+                "3"
+              ],
+              "native": [
+                "Pinned local model cache-meter closed form, native/OpenAI format parity, authenticated Prometheus and exact usage/token distributions"
+              ]
+            },
+            {
+              "id": "metrics-live",
+              "presence": [
+                "tools/metrics-live-gate.py",
+                "tools/test_prometheus_metrics.py"
+              ],
+              "inputs": [
+                "tools/metrics-live-gate.py",
+                "tools/prometheus_metrics.py",
+                "tools/test_prometheus_metrics.py"
+              ],
+              "cpu": [
+                "tools/unittest-floor.sh",
+                "tools",
+                "test_prometheus_metrics.py",
+                "7"
+              ],
+              "native": [
+                "Pinned local plain/MTP lifecycle, real queue/cancellation, live capacity and owned-worker-fault assertions; CPU parser success does not qualify serving"
+              ]
+            },
+            {
+              "id": "serving-qualification",
+              "presence": [
+                "tools/collect-serving-qualification.py",
+                "tools/test_collect_serving_qualification.py"
+              ],
+              "inputs": [
+                "tools/collect-serving-qualification.py",
+                "tools/test_collect_serving_qualification.py",
+                "tools/cache_qualification.py"
+              ],
+              "cpu": [
+                "tools/unittest-floor.sh",
+                "tools",
+                "test_collect_serving_qualification.py",
+                "8"
+              ],
+              "native": [
+                "Source-bound composite streaming/cache/offered-concurrency/cancellation/context collector, with the separate cache-disabled red boot"
+              ]
+            },
+            {
+              "id": "background-chat-text",
+              "presence": [
+                "tools/background-chat-text-gate.py",
+                "tools/test_background_chat_text_gate.py"
+              ],
+              "inputs": [
+                "tools/background-chat-text-gate.py",
+                "tools/test_background_chat_text_gate.py",
+                "tools/cache_qualification.py",
+                "research/background-chat-text-20261002/tools/vendor-profile.toml"
+              ],
+              "cpu": [
+                "tools/unittest-floor.sh",
+                "tools",
+                "test_background_chat_text_gate.py",
+                "9"
+              ],
+              "native": [
+                "Pinned-artifact fresh OFF/ON identity and bare-default probes; paired real chat/text delivery beyond 90 seconds, tenant isolation, native-progress cancellation and exactly-one final callback"
+              ]
+            },
+            {
+              "id": "sampled-mtp",
+              "presence": [
+                "tools/collect-sampled-mtp.py",
+                "tools/test_collect_sampled_mtp.py",
+                "tools/sampled-mtp-requirements.txt"
+              ],
+              "inputs": [
+                "tools/collect-sampled-mtp.py",
+                "tools/test_collect_sampled_mtp.py",
+                "tools/sampled-mtp-requirements.txt",
+                "tools/collect-serving-qualification.py",
+                "tools/cache_qualification.py"
+              ],
+              "cpu": [
+                "tools/unittest-floor.sh",
+                "tools",
+                "test_collect_sampled_mtp.py",
+                "7"
+              ],
+              "python_requirements": "tools/sampled-mtp-requirements.txt",
+              "native": [
+                "Pinned positive-PMIN eager/graph/residual/bonus/zero-draft probes, distribution controls and vendor-default serving checks"
+              ]
+            }
+          ],
+          "native": {
+            "scope": "full",
+            "requirements": [
+              "dependency/input analysis unavailable: unmodelled support data reader: tools/test_check_support_states.py"
+            ],
+            "qualification": false
+          },
+          "omitted": {},
+          "base": "aeefda85a862951f15deb698d12e773a296b3feb",
+          "head": "WORKTREE",
+          "qualification": false
+        },
+        "expanded_selections": {
+          "": [
+            "tool-choice",
+            "q35-cache",
+            "cache-meter",
+            "metrics-live",
+            "physical-gpu",
+            "support-records",
+            "serving-qualification",
+            "background-chat-text",
+            "sampled-mtp"
+          ],
+          "tool-choice,q35-cache,cache-meter,metrics-live,physical-gpu,support-records,serving-qualification,background-chat-text,sampled-mtp": [
+            "tool-choice",
+            "q35-cache",
+            "cache-meter",
+            "metrics-live",
+            "physical-gpu",
+            "support-records",
+            "serving-qualification",
+            "background-chat-text",
+            "sampled-mtp"
+          ],
+          "support-records": [
+            "tool-choice",
+            "q35-cache",
+            "cache-meter",
+            "metrics-live",
+            "physical-gpu",
+            "support-records",
+            "serving-qualification",
+            "background-chat-text",
+            "sampled-mtp"
+          ],
+          "none": [
+            "tool-choice",
+            "q35-cache",
+            "cache-meter",
+            "metrics-live",
+            "physical-gpu",
+            "support-records",
+            "serving-qualification",
+            "background-chat-text",
+            "sampled-mtp"
+          ],
+          "q35-cache": [
+            "tool-choice",
+            "q35-cache",
+            "cache-meter",
+            "metrics-live",
+            "physical-gpu",
+            "support-records",
+            "serving-qualification",
+            "background-chat-text",
+            "sampled-mtp"
+          ]
+        },
+        "actual_census": {
+          "exit": 0,
+          "stdout": ".....................\n----------------------------------------------------------------------\nRan 21 tests in 2.018s\n\nOK\nunittest-floor: OK: ran 21 tests (floor 21) for tools (test_check_support_states.py)\n",
+          "stderr": ""
+        }
+      }
+    },
+    "crlf_scoped_refusal": "unmodelled support data reader: tools/check-support-states.py",
+    "crlf_actual_census": {
+      "exit": 0,
+      "stdout": ".....................\n----------------------------------------------------------------------\nRan 21 tests in 1.958s\n\nOK\nunittest-floor: OK: ran 21 tests (floor 21) for tools (test_check_support_states.py)\n",
+      "stderr": ""
+    },
+    "canonical_selected_names": [
+      "support-records"
+    ],
+    "known_reader_missing_required_refusal": "selected contract input is missing: support-records: research/modelplan-onboarding-20260822/qwen3/gates.txt",
+    "valid_new_record": {
+      "derived_required": [
+        "research/cpu-support-record-extension/gates.txt",
+        "research/glm53-flash-bringup-20260827/inspect-receipts/gates.txt",
+        "research/modelplan-onboarding-20260822/qwen3/gates.txt",
+        "research/modelplan-onboarding-20260822/qwen35/gates.txt",
+        "research/modelplan-onboarding-hy3-20260830/bf16-inspect/gates.txt",
+        "research/modelplan-onboarding-hy3-20260830/fp8-inspect/gates.txt",
+        "research/modelplan-onboarding-hy3-20260830/tiny/gates.txt",
+        "research/spill-c-20260919/pro-single-day11/inspect/gates.txt"
+      ],
+      "derived_optional": [
+        "research/cpu-support-record-extension/artifact.lock",
+        "research/cpu-support-record-extension/tiny-gate.tsv",
+        "research/glm53-flash-bringup-20260827/inspect-receipts/artifact.lock",
+        "research/glm53-flash-bringup-20260827/inspect-receipts/tiny-gate.tsv",
+        "research/modelplan-onboarding-20260822/qwen3/artifact.lock",
+        "research/modelplan-onboarding-20260822/qwen3/tiny-gate.tsv",
+        "research/modelplan-onboarding-20260822/qwen35/artifact.lock",
+        "research/modelplan-onboarding-20260822/qwen35/tiny-gate.tsv",
+        "research/modelplan-onboarding-hy3-20260830/bf16-inspect/artifact.lock",
+        "research/modelplan-onboarding-hy3-20260830/bf16-inspect/tiny-gate.tsv",
+        "research/modelplan-onboarding-hy3-20260830/fp8-inspect/artifact.lock",
+        "research/modelplan-onboarding-hy3-20260830/fp8-inspect/tiny-gate.tsv",
+        "research/modelplan-onboarding-hy3-20260830/tiny/artifact.lock",
+        "research/modelplan-onboarding-hy3-20260830/tiny/tiny-gate.tsv",
+        "research/spill-c-20260919/pro-single-day11/inspect/artifact.lock",
+        "research/spill-c-20260919/pro-single-day11/inspect/tiny-gate.tsv"
+      ],
+      "actual_consumer": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ".\n----------------------------------------------------------------------\nRan 1 test in 0.086s\n\nOK\n"
+      },
+      "old_live_count_red": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "F\n======================================================================\nFAIL: test_current_record_data_has_seven_required_and_fourteen_potential_paths (test_fixed_count_before.SupportRecordDataInputs.test_current_record_data_has_seven_required_and_fourteen_potential_paths)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/test_fixed_count_before.py\", line 42, in test_current_record_data_has_seven_required_and_fourteen_potential_paths\n    self.assertEqual(len(resolved['required']), 7)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 8 != 7\n\n----------------------------------------------------------------------\nRan 1 test in 0.042s\n\nFAILED (failures=1)\n"
+      },
+      "new_structural_oracle_positive": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ".\n----------------------------------------------------------------------\nRan 1 test in 0.038s\n\nOK\n"
+      }
+    },
+    "all_cpu_names": [
+      "tool-choice",
+      "q35-cache",
+      "cache-meter",
+      "metrics-live",
+      "physical-gpu",
+      "support-records",
+      "serving-qualification",
+      "background-chat-text",
+      "sampled-mtp"
+    ],
+    "unknown_reader_safety_refusals": {
+      "malformed-metadata": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "Traceback (most recent call last):\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/support_record_inputs.py\", line 78, in resolve\n    metadata = tomllib.loads(tree.read(RECORDS))\n  File \"/usr/lib/python3.14/tomllib/_parser.py\", line 174, in loads\n    pos = key_value_rule(src, pos, out, header, parse_float)\n  File \"/usr/lib/python3.14/tomllib/_parser.py\", line 403, in key_value_rule\n    pos, key, value = parse_key_value_pair(src, pos, parse_float)\n                      ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.14/tomllib/_parser.py\", line 443, in parse_key_value_pair\n    raise TOMLDecodeError(\"Expected '=' after a key in a key/value pair\", src, pos)\ntomllib.TOMLDecodeError: Expected '=' after a key in a key/value pair (at line 1, column 5)\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/validation_plan.py\", line 149, in support_record_data_inputs\n    return _SUPPORT_DATA.resolve(tree)\n           ~~~~~~~~~~~~~~~~~~~~~^^^^^^\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/support_record_inputs.py\", line 80, in resolve\n    raise InputContractError('unmodelled support record metadata') from error\nsupport_record_data_inputs.InputContractError: unmodelled support record metadata\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/validation_plan.py\", line 977, in <module>\n    raise SystemExit(main())\n                     ~~~~^^\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/validation_plan.py\", line 931, in main\n    names = cpu_contract_names(ROOT, args.selected)\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/validation_plan.py\", line 814, in cpu_contract_names\n    data = support_record_data_inputs(root, directory=True, allow_unknown_reader=True)\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/validation_plan.py\", line 155, in support_record_data_inputs\n    raise Refused(str(error)) from error\nRefused: unmodelled support record metadata\n"
+      },
+      "escaping-evidence": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "Traceback (most recent call last):\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/validation_plan.py\", line 149, in support_record_data_inputs\n    return _SUPPORT_DATA.resolve(tree)\n           ~~~~~~~~~~~~~~~~~~~~~^^^^^^\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/support_record_inputs.py\", line 110, in resolve\n    name = canonical_path(source)\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/support_record_inputs.py\", line 58, in canonical_path\n    raise InputContractError('noncanonical support evidence path: ' + value)\nsupport_record_data_inputs.InputContractError: noncanonical support evidence path: ../outside-root-canary.txt\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/validation_plan.py\", line 977, in <module>\n    raise SystemExit(main())\n                     ~~~~^^\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/validation_plan.py\", line 931, in main\n    names = cpu_contract_names(ROOT, args.selected)\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/validation_plan.py\", line 814, in cpu_contract_names\n    data = support_record_data_inputs(root, directory=True, allow_unknown_reader=True)\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/validation_plan.py\", line 155, in support_record_data_inputs\n    raise Refused(str(error)) from error\nRefused: noncanonical support evidence path: ../outside-root-canary.txt\n"
+      },
+      "required-symlink": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "Traceback (most recent call last):\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/validation_plan.py\", line 149, in support_record_data_inputs\n    return _SUPPORT_DATA.resolve(tree)\n           ~~~~~~~~~~~~~~~~~~~~~^^^^^^\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/support_record_inputs.py\", line 120, in resolve\n    raise InputContractError('support data reader path contains a symlink: ' + sorted(links)[0])\nsupport_record_data_inputs.InputContractError: support data reader path contains a symlink: research/modelplan-onboarding-20260822/qwen3/gates.txt\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/validation_plan.py\", line 977, in <module>\n    raise SystemExit(main())\n                     ~~~~^^\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/validation_plan.py\", line 931, in main\n    names = cpu_contract_names(ROOT, args.selected)\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/validation_plan.py\", line 814, in cpu_contract_names\n    data = support_record_data_inputs(root, directory=True, allow_unknown_reader=True)\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/validation_plan.py\", line 155, in support_record_data_inputs\n    raise Refused(str(error)) from error\nRefused: support data reader path contains a symlink: research/modelplan-onboarding-20260822/qwen3/gates.txt\n"
+      },
+      "optional-symlink": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "Traceback (most recent call last):\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/validation_plan.py\", line 149, in support_record_data_inputs\n    return _SUPPORT_DATA.resolve(tree)\n           ~~~~~~~~~~~~~~~~~~~~~^^^^^^\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/support_record_inputs.py\", line 120, in resolve\n    raise InputContractError('support data reader path contains a symlink: ' + sorted(links)[0])\nsupport_record_data_inputs.InputContractError: support data reader path contains a symlink: research/modelplan-onboarding-20260822/qwen3/artifact.lock\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/validation_plan.py\", line 977, in <module>\n    raise SystemExit(main())\n                     ~~~~^^\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/validation_plan.py\", line 931, in main\n    names = cpu_contract_names(ROOT, args.selected)\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/validation_plan.py\", line 814, in cpu_contract_names\n    data = support_record_data_inputs(root, directory=True, allow_unknown_reader=True)\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/validation_plan.py\", line 155, in support_record_data_inputs\n    raise Refused(str(error)) from error\nRefused: support data reader path contains a symlink: research/modelplan-onboarding-20260822/qwen3/artifact.lock\n"
+      },
+      "missing-required-static": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "Traceback (most recent call last):\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/validation_plan.py\", line 977, in <module>\n    raise SystemExit(main())\n                     ~~~~^^\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/validation_plan.py\", line 931, in main\n    names = cpu_contract_names(ROOT, args.selected)\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/validation_plan.py\", line 825, in cpu_contract_names\n    raise Refused('selected contract input is missing: ' + name)\nRefused: selected contract input is missing: physical-gpu\n"
+      },
+      "reader-root-escape": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "Traceback (most recent call last):\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/validation_plan.py\", line 149, in support_record_data_inputs\n    return _SUPPORT_DATA.resolve(tree)\n           ~~~~~~~~~~~~~~~~~~~~~^^^^^^\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/support_record_inputs.py\", line 76, in resolve\n    if hashlib.sha256(tree.read_bytes(name)).hexdigest() != digest]\n                      ~~~~~~~~~~~~~~~^^^^^^\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/support_record_inputs.py\", line 45, in read_bytes\n    raise InputContractError('support data reader path escapes root: ' + name)\nsupport_record_data_inputs.InputContractError: support data reader path escapes root: tools/check-support-states.py\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/validation_plan.py\", line 977, in <module>\n    raise SystemExit(main())\n                     ~~~~^^\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/validation_plan.py\", line 931, in main\n    names = cpu_contract_names(ROOT, args.selected)\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/validation_plan.py\", line 814, in cpu_contract_names\n    data = support_record_data_inputs(root, directory=True, allow_unknown_reader=True)\n  File \"COPIED_ROOT/B955-review-2qm5039q/tools/validation_plan.py\", line 155, in support_record_data_inputs\n    raise Refused(str(error)) from error\nRefused: support data reader path escapes root: tools/check-support-states.py\n"
+      }
+    },
+    "actual_execution_scope": "census21 for changed checker/test/CRLF; all-CPU selection metadata is not full CPU execution",
+    "qualification": false,
+    "helper_sha256": "17bd636ce596fde834ae7b8a3bbbfc68ea12bf846c615a252b80c8598f085a56",
+    "historical_originals_unchanged": true
   }
 }

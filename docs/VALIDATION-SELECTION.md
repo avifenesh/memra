@@ -99,7 +99,11 @@ both exact sibling `artifact.lock` and `tiny-gate.tsv` paths affect selection ev
 The census chooses `artifact.lock` first and otherwise reads `tiny-gate.tsv`, so optional-file
 creation and deletion must retain the consumer. Neither alternative is made unconditionally
 required. Missing required evidence retains a named refusal. Changed census/test reader bytes,
-unknown record shapes or CI tokens, noncanonical paths and symlink ambiguity expand validation.
+unknown record shapes or CI tokens, noncanonical paths and symlink ambiguity expand planning.
+Unknown-reader execution expands to all available CPU names, including explicit none and stale
+subsets, and runs the actual census without trusting derived required-evidence assumptions.
+Static inputs, metadata syntax, canonical paths and symlink checks remain mandatory. Known
+reader evidence keeps its named missing-file refusal.
 This source-bound data inventory leaves source/docs reader nominations separate and keeps the
 independent always-run support-state checks and all native obligations unchanged.
 Its CPU shortcut requires every changed input to be a declared CPU contract or plain docs.
