@@ -38,7 +38,7 @@ class Admission(unittest.TestCase):
 
     def test_boolean_negative_string_and_missing_counts(self):
         for name in floor.FIELDS:
-            for value in (True, -1, '2', None):
+            for value in (True, False, -1, '2', None):
                 self.assertFalse(floor.admit(self.evidence(**{name: value}), 1))
             data = self.evidence()
             del data[name]

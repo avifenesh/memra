@@ -37,7 +37,7 @@ with tempfile.TemporaryDirectory(prefix='unittest-proof-',dir=OUT) as directory:
  'disabled_assertion_guard':current['tools/unittest_floor.py'].decode().replace('if not __debug__ or sys.flags.optimize:','if False:'),
  'admit_skipped_outcome':current['tools/unittest_floor.py'].decode().replace("and evidence['discovered'] == evidence['run'] == evidence['passed']","and evidence['discovered'] == evidence['run']").replace("FIELDS - {'discovered', 'run', 'passed'}","FIELDS - {'discovered', 'run', 'passed', 'skipped'}"),
  'disabled_identity_guard':current['tools/unittest_floor.py'].decode().replace('if not same_cases(program.result.selected_ids, program.result.executed_ids,','if False and not same_cases(program.result.selected_ids, program.result.executed_ids,'),
- 'admit_malformed_evidence':current['tools/unittest_floor.py'].decode().replace("if any(type(value) is not int or value < 0 for value in evidence.values()):","if False:")}
+ 'admit_boolean_evidence':current['tools/unittest_floor.py'].decode().replace("type(value) is not int", "type(value) not in (int, bool)")}
  mutated={}
  for label,text in mutations.items():
   (tools/'unittest_floor.py').write_text(text)
