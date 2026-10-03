@@ -1,0 +1,55 @@
+{
+  "name": "v1-chat-completions-n1",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-request-id": "chatcmpl-abce625cf7b7a89b2c692a1693730b74",
+    "x-ratelimit-limit": "8",
+    "x-ratelimit-remaining": "7",
+    "x-ratelimit-reset": "0",
+    "content-length": "700",
+    "date": "Sat, 03 Oct 2026 01:08:35 GMT"
+  },
+  "started": 582006.602725142,
+  "source_log_start": 39,
+  "disconnected": false,
+  "body": {
+    "object": "chat.completion",
+    "model": "fixture",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "",
+          "reasoning": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Task: Count upward from one.\n    *   Format: Short item",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "text": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Task: Count upward from one.\n    *   Format: Short item"
+            }
+          ]
+        },
+        "finish_reason": "length"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 23,
+      "completion_tokens": 32,
+      "total_tokens": 55,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "elapsed_s": 0.628241529
+    },
+    "id": "chatcmpl-abce625cf7b7a89b2c692a1693730b74",
+    "created": 1790989714,
+    "system_fingerprint": "memra-0.138.0-fb485dfcbb76"
+  },
+  "ended": 582007.233587498,
+  "source_log_end": 44,
+  "id": "chatcmpl-abce625cf7b7a89b2c692a1693730b74",
+  "worker_rows": [],
+  "prime_events": [],
+  "fork_lines": []
+}

@@ -1,0 +1,154 @@
+{
+  "status": "complete",
+  "source": "c6db12b96bced55fa1d7b6e0b308f23f5699f1b7",
+  "binary_sha256": "fead9d5d6acff8cb4b116b4aaaceaffe43f0ab040c4e04bf35d76cb1ea606965",
+  "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+  "phase": "baseline",
+  "server_pid": 2533325,
+  "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.91.07, 24463 MiB",
+  "server_exit": -2,
+  "results": [
+    {
+      "name": "v1-completions-n1",
+      "status": 200,
+      "headers": {
+        "content-type": "application/json",
+        "x-request-id": "cmpl-ac7cd3c61b49f68f00f1ce4de35c506d",
+        "x-ratelimit-limit": "8",
+        "x-ratelimit-remaining": "7",
+        "x-ratelimit-reset": "0",
+        "content-length": "338",
+        "date": "Sat, 03 Oct 2026 09:38:29 GMT"
+      },
+      "started": 612601.312681599,
+      "source_log_start": 21,
+      "disconnected": false,
+      "body": {
+        "model": "fixture",
+        "text": "\n\n1. One\n2. Two\n3. Three\n4. Four\n5. Five\n6. Six\n7. Seven\n8. Eight",
+        "tokens": [
+          271,
+          16,
+          13,
+          3648,
+          198,
+          17,
+          13,
+          8771,
+          198,
+          18,
+          13,
+          14095,
+          198,
+          19,
+          13,
+          12937,
+          198,
+          20,
+          13,
+          20285,
+          198,
+          21,
+          13,
+          18117,
+          198,
+          22,
+          13,
+          28970,
+          198,
+          23,
+          13,
+          34656
+        ],
+        "stop_reason": "MaxNew",
+        "n_tokens": 32,
+        "prompt_tokens": 13,
+        "cached_tokens": 0,
+        "elapsed_s": 0.577572168
+      },
+      "ended": 612601.894945079,
+      "source_log_end": 39,
+      "id": "cmpl-ac7cd3c61b49f68f00f1ce4de35c506d",
+      "worker_rows": [],
+      "prime_events": [],
+      "fork_lines": [],
+      "masked_steps": 0
+    },
+    {
+      "name": "v1-chat-completions-n1",
+      "status": 200,
+      "headers": {
+        "content-type": "application/json",
+        "x-request-id": "chatcmpl-cb174dff5d0a9b1924c33ba5dc8b5217",
+        "x-ratelimit-limit": "8",
+        "x-ratelimit-remaining": "7",
+        "x-ratelimit-reset": "0",
+        "content-length": "700",
+        "date": "Sat, 03 Oct 2026 09:38:30 GMT"
+      },
+      "started": 612601.895201097,
+      "source_log_start": 39,
+      "disconnected": false,
+      "body": {
+        "object": "chat.completion",
+        "model": "fixture",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "",
+              "reasoning": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Task: Count upward from one.\n    *   Format: Short item",
+              "reasoning_details": [
+                {
+                  "type": "reasoning.text",
+                  "text": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Task: Count upward from one.\n    *   Format: Short item"
+                }
+              ]
+            },
+            "finish_reason": "length"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 23,
+          "completion_tokens": 32,
+          "total_tokens": 55,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "elapsed_s": 0.598761339
+        },
+        "id": "chatcmpl-cb174dff5d0a9b1924c33ba5dc8b5217",
+        "created": 1791020309,
+        "system_fingerprint": "memra-0.138.0-2a6bfaefd933"
+      },
+      "ended": 612602.495325661,
+      "source_log_end": 44,
+      "id": "chatcmpl-cb174dff5d0a9b1924c33ba5dc8b5217",
+      "worker_rows": [],
+      "prime_events": [],
+      "fork_lines": [],
+      "masked_steps": 0
+    }
+  ],
+  "support_promotion": false,
+  "helper_sha256": {
+    "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+    "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+    "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+  },
+  "files": {
+    "callback-events.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+    "env.json": "1f4ef09091d7b2b97a373b426c87ecdde8b0dca186db274c2ce49b87e408e022",
+    "metadata.toml": "9702a9b331f50a38b798c18531dccfbd22abc277560cf70c322c0b3f091c2380",
+    "server.log": "136d7282ea74f6a4dd3c35a526a8a1541fcfb0acbc2ad99f938f6b0b5d8036ae",
+    "v1-chat-completions-n1/wire.json": "b6b2f94fce801ff7591fd568146e00fc84d64a03809c8b65c6e8d58a50db3c2f",
+    "v1-chat-completions-n1/request.json": "4fbfed9331efd7b42020dedc91bc7edd6da5d027aabfa84509f42c617eaaa882",
+    "v1-chat-completions-n1/client.json": "20076e6dcf2d541402735ceb76e2a0e7f2811eb82d4dbc946dae85095440a42c",
+    "v1-chat-completions-n1/headers.json": "6fe0c3248539486cb41e74550f2ef7610fb173710ba624f8d0d5b5e67b1a0c31",
+    "v1-completions-n1/wire.json": "cffa7e4102ecc078609a704e481eba1dcf4da56b5872a2734655b9a487c4ea7b",
+    "v1-completions-n1/request.json": "ad0a57c8ed0fc85321f713244086f6e6913d5d251411f574dd8da11f48a74e85",
+    "v1-completions-n1/client.json": "eb45050ab2c6a54e881bbb4aecb7139ad316ef28cd1fd3b5fe00db98abf524a7",
+    "v1-completions-n1/headers.json": "b982cb20087160d34be7b3176e0efde5a3d3fc311e0af6de66814823c26b6584"
+  }
+}

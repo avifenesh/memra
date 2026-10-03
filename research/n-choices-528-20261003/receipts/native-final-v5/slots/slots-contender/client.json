@@ -1,0 +1,74 @@
+{
+  "name": "slots-contender",
+  "status": 429,
+  "headers": {
+    "content-type": "application/json",
+    "retry-after": "2",
+    "retry-after-ms": "2000",
+    "x-ratelimit-limit": "4",
+    "x-ratelimit-remaining": "0",
+    "x-ratelimit-reset": "2",
+    "x-request-id": "chatcmpl-baeb809a3b995fa5ec1d541167f921ec",
+    "content-length": "293",
+    "date": "Sat, 03 Oct 2026 09:39:30 GMT"
+  },
+  "started": 612662.549168564,
+  "source_log_start": 33,
+  "disconnected": false,
+  "body": {
+    "error": {
+      "message": "estimated queue wait ~2s exceeds this request's remaining timeout_ms deadline (999 ms); this request was not admitted and is not billed; retry after ~2s or raise timeout_ms (a coarse estimate, not a promise)",
+      "type": "rate_limit_error",
+      "param": null,
+      "code": "shed_deadline"
+    }
+  },
+  "ended": 612662.55029268,
+  "source_log_end": 38,
+  "id": "chatcmpl-baeb809a3b995fa5ec1d541167f921ec",
+  "callbacks": [
+    {
+      "tag": "CHOICE_OPEN",
+      "value": {
+        "id": "chatcmpl-baeb809a3b995fa5ec1d541167f921ec",
+        "model": "fixture",
+        "tenant": "default",
+        "max_tokens": 8,
+        "reserved_ctx": 24,
+        "stream": false
+      },
+      "line": 34
+    },
+    {
+      "tag": "CHOICE_TERMINAL",
+      "value": {
+        "id": "chatcmpl-baeb809a3b995fa5ec1d541167f921ec",
+        "kind": "shed_deadline",
+        "status": 429,
+        "code": "shed_deadline",
+        "prompt": 0,
+        "cached": 0,
+        "output": 0,
+        "observed_prompt": 0,
+        "observed_cached": 0,
+        "observed_output": 0
+      },
+      "line": 35
+    },
+    {
+      "tag": "CHOICE_DROP",
+      "value": {
+        "id": "chatcmpl-baeb809a3b995fa5ec1d541167f921ec",
+        "terminal": true,
+        "prompt": 0,
+        "cached": 0,
+        "output": 0
+      },
+      "line": 36
+    }
+  ],
+  "worker_rows": [],
+  "prime_events": [],
+  "fork_lines": [],
+  "masked_steps": 0
+}

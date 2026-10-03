@@ -1,0 +1,829 @@
+{
+  "name": "kv-recovery",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-request-id": "cmpl-d87560807a8c180171d07526e8485aa3",
+    "x-ratelimit-limit": "8",
+    "x-ratelimit-remaining": "0",
+    "x-ratelimit-reset": "1",
+    "content-length": "909",
+    "date": "Sat, 03 Oct 2026 09:39:42 GMT"
+  },
+  "started": 612673.883623996,
+  "source_log_start": 63,
+  "disconnected": false,
+  "body": {
+    "object": "text_completion",
+    "model": "fixture",
+    "choices": [
+      {
+        "index": 0,
+        "text": " The items in the list are: ",
+        "finish_reason": "length"
+      },
+      {
+        "index": 1,
+        "text": "\n1) 20+ of",
+        "finish_reason": "length"
+      },
+      {
+        "index": 2,
+        "text": "\n1. I need to be able",
+        "finish_reason": "length"
+      },
+      {
+        "index": 3,
+        "text": " It contains all the things I need to",
+        "finish_reason": "length"
+      },
+      {
+        "index": 4,
+        "text": " The first 50 items should be",
+        "finish_reason": "length"
+      },
+      {
+        "index": 5,
+        "text": " Each item in the list is exactly ",
+        "finish_reason": "length"
+      },
+      {
+        "index": 6,
+        "text": " For each item, provide its number (",
+        "finish_reason": "length"
+      },
+      {
+        "index": 7,
+        "text": " Write at least 10 items in",
+        "finish_reason": "length"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 6,
+      "completion_tokens": 64,
+      "total_tokens": 70,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "elapsed_s": 0.2623728
+    },
+    "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+    "created": 1791020381,
+    "system_fingerprint": "memra-0.138.0-2a6bfaefd933"
+  },
+  "ended": 612674.149696387,
+  "source_log_end": 158,
+  "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+  "callbacks": [
+    {
+      "tag": "CHOICE_OPEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "model": "fixture",
+        "tenant": "default",
+        "max_tokens": 64,
+        "reserved_ctx": 70,
+        "stream": false
+      },
+      "line": 64
+    },
+    {
+      "tag": "CHOICE_PROMPT",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "prompt": 6,
+        "cached": 0
+      },
+      "line": 67
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 1
+      },
+      "line": 81
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 2
+      },
+      "line": 82
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 3
+      },
+      "line": 83
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 4
+      },
+      "line": 84
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 5
+      },
+      "line": 85
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 6
+      },
+      "line": 86
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 7
+      },
+      "line": 87
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 8
+      },
+      "line": 88
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 9
+      },
+      "line": 89
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 10
+      },
+      "line": 90
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 11
+      },
+      "line": 91
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 12
+      },
+      "line": 92
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 13
+      },
+      "line": 93
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 14
+      },
+      "line": 94
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 15
+      },
+      "line": 95
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 16
+      },
+      "line": 96
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 17
+      },
+      "line": 97
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 18
+      },
+      "line": 98
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 19
+      },
+      "line": 99
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 20
+      },
+      "line": 100
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 21
+      },
+      "line": 101
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 22
+      },
+      "line": 102
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 23
+      },
+      "line": 103
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 24
+      },
+      "line": 104
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 25
+      },
+      "line": 105
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 26
+      },
+      "line": 106
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 27
+      },
+      "line": 107
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 28
+      },
+      "line": 108
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 29
+      },
+      "line": 109
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 30
+      },
+      "line": 110
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 31
+      },
+      "line": 111
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 32
+      },
+      "line": 112
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 33
+      },
+      "line": 113
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 34
+      },
+      "line": 114
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 35
+      },
+      "line": 115
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 36
+      },
+      "line": 116
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 37
+      },
+      "line": 117
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 38
+      },
+      "line": 118
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 39
+      },
+      "line": 119
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 40
+      },
+      "line": 120
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 41
+      },
+      "line": 121
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 42
+      },
+      "line": 122
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 43
+      },
+      "line": 123
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 44
+      },
+      "line": 124
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 45
+      },
+      "line": 125
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 46
+      },
+      "line": 126
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 47
+      },
+      "line": 127
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 48
+      },
+      "line": 128
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 49
+      },
+      "line": 129
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 50
+      },
+      "line": 130
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 51
+      },
+      "line": 131
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 52
+      },
+      "line": 132
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 53
+      },
+      "line": 133
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 54
+      },
+      "line": 134
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 55
+      },
+      "line": 135
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 56
+      },
+      "line": 136
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 57
+      },
+      "line": 137
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 58
+      },
+      "line": 138
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 59
+      },
+      "line": 139
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 60
+      },
+      "line": 140
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 61
+      },
+      "line": 141
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 62
+      },
+      "line": 142
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 63
+      },
+      "line": 143
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "output": 64
+      },
+      "line": 144
+    },
+    {
+      "tag": "CHOICE_TERMINAL",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "kind": "complete",
+        "status": 200,
+        "code": "",
+        "prompt": 6,
+        "cached": 0,
+        "output": 64,
+        "observed_prompt": 6,
+        "observed_cached": 0,
+        "observed_output": 64
+      },
+      "line": 154
+    },
+    {
+      "tag": "CHOICE_DROP",
+      "value": {
+        "id": "cmpl-d87560807a8c180171d07526e8485aa3",
+        "terminal": true,
+        "prompt": 6,
+        "cached": 0,
+        "output": 64
+      },
+      "line": 156
+    }
+  ],
+  "worker_rows": [
+    {
+      "group": "cmpl-d87560807a8c180171d07526e8485aa3",
+      "index": 0,
+      "seed": 73,
+      "prompt": 6,
+      "cached": 0,
+      "output": 8,
+      "token_sha256": "ab8040c9c2a2062163f0a266ac864e5115c32bc842d44f7aab083d6cefb5c006",
+      "reason": "MaxNew",
+      "sampling": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.0,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0
+      },
+      "think": "Default"
+    },
+    {
+      "group": "cmpl-d87560807a8c180171d07526e8485aa3",
+      "index": 1,
+      "seed": 74,
+      "prompt": 6,
+      "cached": 0,
+      "output": 8,
+      "token_sha256": "aaa3532147ee5a54a4032b4ef7e9a9e315db77272d10e15baa6b38f3f080b5f2",
+      "reason": "MaxNew",
+      "sampling": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.0,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0
+      },
+      "think": "Default"
+    },
+    {
+      "group": "cmpl-d87560807a8c180171d07526e8485aa3",
+      "index": 2,
+      "seed": 75,
+      "prompt": 6,
+      "cached": 0,
+      "output": 8,
+      "token_sha256": "79a7328a16a242629bcddd0fac2ffa1fc0c51d8a6d844fb82b8b5eb156b20168",
+      "reason": "MaxNew",
+      "sampling": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.0,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0
+      },
+      "think": "Default"
+    },
+    {
+      "group": "cmpl-d87560807a8c180171d07526e8485aa3",
+      "index": 3,
+      "seed": 76,
+      "prompt": 6,
+      "cached": 0,
+      "output": 8,
+      "token_sha256": "828f5c2bb3c75ec7a27b78139ba821d9269b923150d21484f565ef7a10005d0e",
+      "reason": "MaxNew",
+      "sampling": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.0,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0
+      },
+      "think": "Default"
+    },
+    {
+      "group": "cmpl-d87560807a8c180171d07526e8485aa3",
+      "index": 4,
+      "seed": 77,
+      "prompt": 6,
+      "cached": 0,
+      "output": 8,
+      "token_sha256": "dc35961c8bf9caa66c7b0628bb9878f990187daaefc576278e2e5c874921793e",
+      "reason": "MaxNew",
+      "sampling": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.0,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0
+      },
+      "think": "Default"
+    },
+    {
+      "group": "cmpl-d87560807a8c180171d07526e8485aa3",
+      "index": 5,
+      "seed": 78,
+      "prompt": 6,
+      "cached": 0,
+      "output": 8,
+      "token_sha256": "561d8835da96c3d3b2af65fb05b9d6795bc161c26ff292c7b02439ef3372f5a3",
+      "reason": "MaxNew",
+      "sampling": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.0,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0
+      },
+      "think": "Default"
+    },
+    {
+      "group": "cmpl-d87560807a8c180171d07526e8485aa3",
+      "index": 6,
+      "seed": 79,
+      "prompt": 6,
+      "cached": 0,
+      "output": 8,
+      "token_sha256": "6a3206239d823c13cbc5c7c65925387d64e7b0d143d722b19f5b7d9c9259f98a",
+      "reason": "MaxNew",
+      "sampling": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.0,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0
+      },
+      "think": "Default"
+    },
+    {
+      "group": "cmpl-d87560807a8c180171d07526e8485aa3",
+      "index": 7,
+      "seed": 80,
+      "prompt": 6,
+      "cached": 0,
+      "output": 8,
+      "token_sha256": "d9d36cad695e2452b368eef9e35cf45c3d836ed340edab8b9d369b96a5c09271",
+      "reason": "MaxNew",
+      "sampling": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.0,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0
+      },
+      "think": "Default"
+    }
+  ],
+  "prime_events": [
+    {
+      "group": "cmpl-d87560807a8c180171d07526e8485aa3",
+      "index": 0,
+      "rows": 1
+    },
+    {
+      "group": "cmpl-d87560807a8c180171d07526e8485aa3",
+      "index": 0,
+      "rows": 1
+    },
+    {
+      "group": "cmpl-d87560807a8c180171d07526e8485aa3",
+      "index": 0,
+      "rows": 1
+    },
+    {
+      "group": "cmpl-d87560807a8c180171d07526e8485aa3",
+      "index": 0,
+      "rows": 1
+    },
+    {
+      "group": "cmpl-d87560807a8c180171d07526e8485aa3",
+      "index": 0,
+      "rows": 1
+    },
+    {
+      "group": "cmpl-d87560807a8c180171d07526e8485aa3",
+      "index": 0,
+      "rows": 1
+    }
+  ],
+  "fork_lines": [
+    "[n-choice-prefill] group=cmpl-d87560807a8c180171d07526e8485aa3 choices=8 prompt=6 cached=0 copies=7 bytes=52780032 leader=0"
+  ],
+  "masked_steps": 0
+}

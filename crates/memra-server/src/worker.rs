@@ -1715,6 +1715,8 @@ pub struct Request {
     /// for THIS admission attempt", never a cross-retry cumulative wait: the same choice
     /// `route_telemetry::RouteTicket` makes for the dedicated-route queue-wait histogram.
     pub(crate) queued_at: Instant,
+    /// Request-scoped fanout; None retains the ordinary single-choice program.
+    pub(crate) choice: Option<crate::multi_choice::Choice>,
     /// The waiting slot a dedicated route's admission took for this request (memra#501). A
     /// route-bound request holds this INSTEAD of a lane `ADMISSION_RESERVATIONS` slot; the route
     /// drops it at dequeue, and a request dropped anywhere earlier (a failed send, a dead
@@ -1722,6 +1724,99 @@ pub struct Request {
     pub(crate) route_ticket: Option<crate::route_telemetry::RouteTicket>,
     /// per-request stream back to the handler. tokio mpsc so the async side can await it.
     pub tx: EventSender,
+}
+
+/// Fork only request metadata here. The CUDA worker creates and copies the native states.
+pub(crate) fn choice_requests(
+    mut leader: Request,
+    first_rx: EventReceiver,
+    count: usize,
+) -> Result<(Vec<Request>, Vec<EventReceiver>), EngineError> {
+    if !(2..=crate::multi_choice::MAX_CHOICES).contains(&count) {
+        return Err(EngineError::invalid_param(
+            "n must be an integer from 2 through 8 for a choice group",
+            "n",
+        ));
+    }
+    if leader.route_ticket.is_some()
+        || leader.vision_memory.is_some()
+        || leader.capture.is_some()
+        || !leader.images.is_empty()
+        || !leader.gemma_images.is_empty()
+        || !leader.glm5_images.is_empty()
+        || !leader.step_images.is_empty()
+        || leader.prepared_constraint.is_some()
+        || leader.reclaim_offtick.is_some()
+        || leader.choice.is_some()
+    {
+        return Err(EngineError::invalid_param(
+            "n-choice generation requires a fresh text request on a shared-prefill route",
+            "n",
+        ));
+    }
+    let group = crate::multi_choice::Group::new(leader.request_id.clone(), count);
+    let mut requests = Vec::with_capacity(count);
+    let mut receivers = Vec::with_capacity(count);
+    receivers.push(first_rx);
+    for index in 1..count {
+        let (tx, rx) = event_channel();
+        let mut sampler_cfg = leader.sampler_cfg.clone();
+        sampler_cfg.seed = crate::multi_choice::choice_seed(sampler_cfg.seed, index);
+        requests.push(Request {
+            model: leader.model.clone(),
+            prompt_ids: leader.prompt_ids.clone(),
+            prompt_text: leader.prompt_text.clone(),
+            chat: leader.chat,
+            chat_turns: leader.chat_turns.clone(),
+            tools_json: leader.tools_json.clone(),
+            tools_struct: leader.tools_struct.clone(),
+            think: leader.think,
+            reasoning_effort: leader.reasoning_effort.clone(),
+            params: leader.params.clone(),
+            sampler_cfg,
+            stop_strings: leader.stop_strings.clone(),
+            stop_token_ids: leader.stop_token_ids.clone(),
+            trace_id: None,
+            request_id: format!("{}:choice:{index}", leader.request_id),
+            admit_predict_logged: false,
+            memory_defer_since: None,
+            reclaim_offtick: None,
+            max_prompt_tokens: leader.max_prompt_tokens,
+            cache_ns: leader.cache_ns.clone(),
+            affinity: leader.affinity.clone(),
+            lane: leader.lane,
+            oom_retries: 0,
+            spec_k_replay: leader.spec_k_replay,
+            grammar: leader.grammar.clone(),
+            prepared_constraint: None,
+            constraint_ready: None,
+            prepared_prompt: leader.prepared_prompt.clone(),
+            ttft: None,
+            images: Vec::new(),
+            gemma_images: Vec::new(),
+            glm5_images: Vec::new(),
+            step_images: Vec::new(),
+            capture: None,
+            vision_memory: None,
+            wire_deadline: leader.wire_deadline,
+            queued_at: leader.queued_at,
+            choice: Some(crate::multi_choice::Choice {
+                group: group.clone(),
+                index,
+                restored: false,
+            }),
+            route_ticket: None,
+            tx,
+        });
+        receivers.push(rx);
+    }
+    leader.choice = Some(crate::multi_choice::Choice {
+        group,
+        index: 0,
+        restored: false,
+    });
+    requests.insert(0, leader);
+    Ok((requests, receivers))
 }
 
 /// What a capture request wants read off the final prompt position (lane/embed-serve).
@@ -1793,6 +1888,9 @@ pub fn prompt_source_limit_error(req: &Request) -> Option<String> {
 /// HTTP layer never invents values (unknown = 0/""/None -> honest nulls in the route).
 #[derive(Debug, Clone, Default)]
 pub struct ModelCaps {
+    /// Logical API eligibility, distinct from model qualification/support state.
+    /// One means the selected model/boot requires the ordinary single-choice route.
+    pub max_choices: usize,
     /// template carries a supported `<tools>` branch (qwen/step/HY3 or gemma/dsv4 dialect).
     pub tools_branch: bool,
     /// Tencent HY3 suffixed-special-token dialect (native reasoning + tool calls).
@@ -1876,6 +1974,8 @@ pub struct ModelCaps {
 /// served from the cached model-name list captured at spawn (no need to round-trip the worker).
 pub enum Cmd {
     Generate(Box<Request>),
+    /// One atomic intake window. Every row retains an independent bounded event queue.
+    GenerateChoices(Vec<Request>),
     /// Drop every EVICTABLE cross-request pool — KV reuse, spec/dspark resume, the
     /// prefix cache — and report the entry counts freed (deploy-headroom lane,
     /// 2026-08-27). In-flight sessions are untouched; the pools rebuild from traffic.
@@ -18546,7 +18646,8 @@ fn host_promote_park_probe(
     };
     let vision_req = request_has_images(req);
     let capture_req = req.capture.is_some();
-    let reuse_on = request_reuse_on(vision_req, capture_req);
+    let reuse_on = request_reuse_on(vision_req, capture_req)
+        && crate::multi_choice::reuse_eligible(req.choice.as_ref());
     if !request_prefix_on(reuse_on, plan) {
         return false;
     }
@@ -20959,7 +21060,8 @@ fn host_restore_park_probe(
     };
     let vision_req = request_has_images(req);
     let capture_req = req.capture.is_some();
-    let reuse_on = request_reuse_on(vision_req, capture_req);
+    let reuse_on = request_reuse_on(vision_req, capture_req)
+        && crate::multi_choice::reuse_eligible(req.choice.as_ref());
     if !request_prefix_on(reuse_on, &lm.model.plan) {
         return false;
     }
@@ -25334,6 +25436,7 @@ struct Session {
     /// hybrid-lane queue-wait histogram from `t0 - queued_at` without re-reading a
     /// consumed `Request`.
     queued_at: Instant,
+    choice: Option<crate::multi_choice::Choice>,
     /// memra#522 revuto finding: whether this request was a capture (embeddings/rerank,
     /// `max_new: 0`, prefill-only). `s.capture` itself is `take()`n during prefill, so this
     /// is stamped once at admission (before the take can happen) and never changes; both
@@ -26330,6 +26433,25 @@ pub fn run(
         .map(|(n, lm)| {
             let t = lm.tok.chat_template();
             let caps = ModelCaps {
+                max_choices: if serve_batching()
+                    && !is_multi_device_deployment(&loaded)
+                    && lm.model.hyper.is_none()
+                    && lm.model.plan.speech.is_none()
+                    && !lm.model.plan.layers.is_empty()
+                    && (!serve_spec_enabled() || !mtp_spec_capable(lm))
+                    && std::env::var_os("MEMRA_DSPARK_DRAFT").is_none()
+                    && lm.model.plan.layers.iter().all(|layer| {
+                        matches!(
+                            &layer.attention,
+                            memra_gguf::model_plan::AttentionPlan::Full(_)
+                                | memra_gguf::model_plan::AttentionPlan::GatedDeltaNet(_)
+                        )
+                    }) {
+                    crate::multi_choice::MAX_CHOICES
+                        .min(crate::route_contract::hybrid_interactive_cap())
+                } else {
+                    1
+                },
                 // qwen/step/HY3 `<tools>` OR the gemma4 tooluse dialect (`<|turn>` +
                 // `<|tool>`). Shared law with the renderer dispatch.
                 tools_branch: t.is_some_and(memra_tokenizer::chat::template_has_tools_branch),
@@ -27901,7 +28023,7 @@ pub fn run(
             // DISCONNECT ABORT (gap-scan F8): a queued request whose client already hung
             // up (receiver dropped) never reaches the GPU — dropped here, logged for the
             // metering record (0 generated; prompt never primed).
-            if req.tx.is_closed() {
+            if req.tx.is_closed() || req.choice.as_ref().is_some_and(|c| c.group.failed()) {
                 eprintln!(
                     "[abort] client disconnected while queued (model {:?}); dropped",
                     req.model
@@ -28032,7 +28154,38 @@ pub fn run(
                     })
                 );
             }
-            if lane_count >= cap {
+            let needed_slots = req.choice.as_ref().map_or(1, |c| c.group.remaining());
+            if req.choice.is_some() && needed_slots > cap {
+                fail_request(
+                    req,
+                    EngineError::invalid_param("n exceeds this route's decode-slot capacity", "n"),
+                );
+                continue;
+            }
+            let mut reserved_groups = std::collections::HashSet::new();
+            let mut unavailable_slots = lane_count;
+            for session in active.iter().filter(|s| s.lane == lane) {
+                if let Some(c) = &session.choice {
+                    let same_group = req
+                        .choice
+                        .as_ref()
+                        .is_some_and(|own| Arc::ptr_eq(&own.group, &c.group));
+                    if !same_group
+                        && !c.group.failed()
+                        && reserved_groups.insert(Arc::as_ptr(&c.group))
+                    {
+                        unavailable_slots = unavailable_slots.saturating_add(c.group.remaining());
+                    }
+                }
+            }
+            let capacity_full = if req.choice.is_none() && reserved_groups.is_empty() {
+                lane_count >= cap
+            } else {
+                unavailable_slots
+                    .checked_add(needed_slots)
+                    .is_none_or(|needed| needed > cap)
+            };
+            if capacity_full {
                 if lane == crate::lanes::Lane::Interactive {
                     n_session_defers += 1;
                     requeue.push_back(req); // waits (FIFO), never shed
@@ -28554,15 +28707,25 @@ pub fn run(
                 } else {
                     None
                 };
-                let mut required = admission_required(cost, reserve);
+                let choice_state_count = req
+                    .choice
+                    .as_ref()
+                    .map_or(1, |c| c.group.remaining().saturating_add(1));
+                // N remaining private states plus one transient full-prompt snapshot. Keep
+                // each admitted row's book at its own cost; this is the whole-group fit gate.
+                let mut required =
+                    admission_required(cost.saturating_mul(choice_state_count), reserve);
                 // EAGER-ARM twin (lane/step37-vram-admission-20260830): the draft-state
                 // charge models a session that CAPTURES its draft graphs. When headroom
                 // cannot hold that arm, the pre-capture reserve gate will refuse the
                 // captures at this same headroom, so the honest charge for the work that
                 // will actually run is the EAGER one. Consulted only after the captured
                 // arm defers, and only while the gate that enforces it is armed.
-                let mut required_eager =
-                    admission_required(cost.saturating_sub(draft_state_bytes), reserve);
+                let mut required_eager = admission_required(
+                    cost.saturating_sub(draft_state_bytes)
+                        .saturating_mul(choice_state_count),
+                    reserve,
+                );
                 let device_requirements = if pp_plan.is_some()
                     || !request_state.is_empty()
                     || !pending_state.is_empty()
@@ -28894,7 +29057,8 @@ pub fn run(
                         // donor and parked session it needs. Only a concrete retained
                         // single-device restore can now replace the cold workspace charge.
                         // Context KV, source residency, draft state and reserve stay paid.
-                        let can_plan = device_requirements.is_none()
+                        let can_plan = req.choice.is_none()
+                            && device_requirements.is_none()
                             && !is_multi_device_deployment(&loaded)
                             && !confidence_trace_enabled()
                             && serve_batching()
@@ -29600,6 +29764,27 @@ pub fn run(
                     // `active`; its queue reservation must no longer count against waiting
                     // capacity. The HTTP in-flight gauge continues to cover the live stream.
                     release_admission_reservation(lane);
+                    if let Some(choice) = &s.choice {
+                        let supported = s.spec.is_none()
+                            && s.gspec_k == 0
+                            && !s.dspark_on
+                            && !s.glm5_on
+                            && s.vision.is_none()
+                            && s.capture.is_none()
+                            && s.cache.as_ref().is_some_and(|c| {
+                                !c.has_swa_ring() && c.latent.iter().all(Option::is_none)
+                            })
+                            && !is_multi_device_deployment(&loaded)
+                            && !memra_engine::pp::pp_host_bounce_active();
+                        if !supported {
+                            reject_choice_route(choice, &mut px, &mut s.prefix_pin);
+                            s.errored = true;
+                            let _ = s.tx.send(Event::Error(EngineError::invalid_param(
+                                "n-choice shared prefill is unsupported for this selected native route", "n")));
+                            continue;
+                        }
+                        choice.group.admit();
+                    }
                     // memra#522: the hybrid-lane queue-wait histogram, recorded exactly once
                     // per admitted request (route_telemetry::RouteTicket's own contract for
                     // the dedicated-route twin of this metric). Capture (embeddings/rerank)
@@ -29848,7 +30033,7 @@ pub fn run(
         // the metering record (bill-to-abort-point: prompt/cached/generated so far).
         // Abort retirement must NOT park generated KV: the client did not commit that branch.
         for (i, s) in active.iter_mut().enumerate() {
-            if s.tx.is_closed() {
+            if s.tx.is_closed() || s.choice.as_ref().is_some_and(|c| c.group.failed()) {
                 abort_log(s);
                 finished.push(i);
             }
@@ -30850,6 +31035,9 @@ pub fn run(
                             continue;
                         }
                         let s = &active[i];
+                        if s.choice.is_some() {
+                            continue;
+                        }
                         let ql = s.prefill_queue.len();
                         let Some(take) = interactive_prime_batch_take(ql, budgets[0], pb_maxt)
                         else {
@@ -31038,7 +31226,7 @@ pub fn run(
                 && active
                     .iter()
                     .enumerate()
-                    .filter(|(i, _)| !finished.contains(i))
+                    .filter(|(i, s)| !finished.contains(i) && !choice_waiting(s))
                     .count()
                     == 1;
             #[allow(clippy::needless_range_loop)]
@@ -31130,6 +31318,16 @@ pub fn run(
                     )
                 }) {
                     Ok(consumed) => {
+                        if consumed > 0
+                            && let Some(choice) = &s.choice
+                            && std::env::var("MEMRA_TTFT_TRACE").as_deref() == Ok("1")
+                        {
+                            eprintln!(
+                                "CHOICE_PRIME {}",
+                                serde_json::json!({"group":choice.group.id,
+                                "index":choice.index,"rows":consumed})
+                            );
+                        }
                         if consumed > 0 {
                             prefill_single_calls += 1;
                             prefill_single_tokens += consumed;
@@ -31165,6 +31363,7 @@ pub fn run(
                     }
                 }
             }
+            copy_choice_prefixes(&engine, &loaded, &mut px, &mut active, &mut finished);
             let prefill_ms = t_prefill
                 .map(|started| started.elapsed().as_secs_f32() * 1000.0)
                 .unwrap_or(0.0);
@@ -31800,6 +31999,11 @@ pub fn run(
         }
         for &i in finished.iter().rev() {
             let mut s = active.remove(i);
+            if (s.errored || s.aborted || s.oom_teardown)
+                && let Some(choice) = &s.choice
+            {
+                choice.group.fail();
+            }
             // One retirement receipt, never per-token logging or a sampler policy switch.
             if !s.oom_teardown {
                 let (radix, comparison) = s.sampler.nucleus_sort_counts();
@@ -32783,6 +32987,9 @@ pub fn run(
 }
 
 fn fail_request(mut req: Box<Request>, error: EngineError) {
+    if let Some(choice) = &req.choice {
+        choice.group.fail();
+    }
     release_request_reservation(&mut req);
     if let Some(ready) = req.constraint_ready.take() {
         let _ = ready.send(Err(error));
@@ -32802,6 +33009,21 @@ fn handle_cmd(
     purges: &mut Vec<(String, tokio::sync::oneshot::Sender<HostPurgeReport>)>,
     handoffs: &mut PendingHandoffs,
 ) {
+    if let Cmd::GenerateChoices(requests) = cmd {
+        for request in requests {
+            handle_cmd(
+                Cmd::Generate(Box::new(request)),
+                loaded,
+                dsv4_routes,
+                order,
+                queue,
+                trims,
+                purges,
+                handoffs,
+            );
+        }
+        return;
+    }
     match cmd {
         // The pools live in run()'s scheduler scope — park the reply channel; run()
         // performs the trim at the tick top where they are in scope.
@@ -32826,6 +33048,7 @@ fn handle_cmd(
             handoffs.import_starts.push(tx);
             return;
         }
+        Cmd::GenerateChoices(_) => unreachable!("handled above"),
         Cmd::Generate(_) => {}
     }
     // Pending-admit gauge (admission yield): the request is now in the worker's hands
@@ -32836,7 +33059,8 @@ fn handle_cmd(
     // touched either gauge.
     release_pending_admit();
     match cmd {
-        Cmd::TrimPools(_)
+        Cmd::GenerateChoices(_)
+        | Cmd::TrimPools(_)
         | Cmd::PurgeTenantHost { .. }
         | Cmd::ExportHostHandoff { .. }
         | Cmd::ImportHostHandoff { .. } => unreachable!("handled above"),
@@ -32844,6 +33068,20 @@ fn handle_cmd(
             // dsv4 route: hand the request to the model's dedicated serving thread —
             // its channel is the FIFO admission queue (bs=1 engine; queueing is the
             // honest concurrency behavior and the c-cells measure it as such).
+            if req.choice.is_some()
+                && (!serve_batching()
+                    || is_multi_device_deployment(loaded)
+                    || dsv4_routes.contains_key(&req.model))
+            {
+                fail_request(
+                    req,
+                    EngineError::invalid_param(
+                        "n-choice generation requires the shared-prefill hybrid route with batching enabled",
+                        "n",
+                    ),
+                );
+                return;
+            }
             if let Some(dtx) = dsv4_routes.get(&req.model) {
                 if let Err(back) = dtx.send(req) {
                     fail_request(
@@ -34047,7 +34285,7 @@ fn park_requeue(loaded: &HashMap<String, LoadedModel>, s: &Session) -> Option<Bo
     // Vision sessions cannot replay: ReplayPlan does not carry the preprocessed images
     // (hundreds of MB host-side) — report the OOM honestly instead of re-admitting a
     // request that would fail pad-run validation.
-    if s.vision.is_some() {
+    if s.vision.is_some() || s.choice.is_some() {
         return None;
     }
     debug_assert!(
@@ -34088,6 +34326,7 @@ fn park_requeue(loaded: &HashMap<String, LoadedModel>, s: &Session) -> Option<Bo
         // histogram's purpose: it measures the wait for THIS admission, not a cross-retry
         // cumulative wait (see `Request::queued_at`'s doc comment).
         queued_at: Instant::now(),
+        choice: s.choice.clone(),
         route_ticket: None,
         spec_k_replay: Some(s.spec_k),
         prepared_prompt: None,
@@ -34371,7 +34610,8 @@ fn admit(
     // exactly what it validates. MEMRA_KV_REUSE=0 disables.
     // Vision requests bypass every token-keyed reuse tier: pad runs are byte-identical
     // across DIFFERENT images, so a token match is not a state match (lane/vision).
-    let reuse_on = request_reuse_on(vision_req, capture_req);
+    let reuse_on = request_reuse_on(vision_req, capture_req)
+        && crate::multi_choice::reuse_eligible(req.choice.as_ref());
     if let (true, Some(pool)) = (
         reuse_on && admission_restore.is_none(),
         reuse.get_mut(&pool_key),
@@ -37446,6 +37686,7 @@ fn admit(
         ttft: req.ttft,
         t0: Instant::now(),
         queued_at: req.queued_at,
+        choice: req.choice.clone(),
         is_capture,
     };
     if memra_engine::glm5_tp_sampler::requested() {
@@ -37825,7 +38066,8 @@ fn record_output_tokens(
 /// into every sibling. Returns sessions whose prefill budget was consumed by this stage so
 /// the ordinary single-prime loop does not give them a second chunk in the same tick.
 fn prefix_fanout_eligible(s: &Session, eager_only: &std::collections::HashSet<String>) -> bool {
-    !memra_engine::pp::pp_host_bounce_active()
+    s.choice.is_none()
+        && !memra_engine::pp::pp_host_bounce_active()
         && s.vision.is_none()
         && s.capture.is_none()
         && s.spec.is_none()
@@ -37844,6 +38086,128 @@ fn prefix_fanout_eligible(s: &Session, eager_only: &std::collections::HashSet<St
         && s.cache.as_ref().is_some_and(|c| c.pos == 0 && !c.has_swa_ring())
         && !eager_only.contains(&s.model)
         && s.prefill_queue.len() >= PREFIX_CACHE_MIN_TOKENS
+}
+
+/// A freshly admitted but unsupported choice has not entered the retire sweep.
+/// Release its source lease here before the Session drops.
+fn reject_choice_route(
+    choice: &crate::multi_choice::Choice,
+    px: &mut PrefixCache,
+    pin: &mut Option<PrefixPin>,
+) {
+    choice.group.fail();
+    retire_prefix_pin(px, pin);
+}
+
+fn choice_waiting(s: &Session) -> bool {
+    s.choice
+        .as_ref()
+        .is_some_and(crate::multi_choice::Choice::waiting)
+}
+
+/// The leader keeps its existing prefill program. This stage only copies its completed
+/// prompt state using the already qualified prefix snapshot/restore implementation.
+fn copy_choice_prefixes(
+    engine: &Engine,
+    loaded: &HashMap<String, LoadedModel>,
+    px: &mut PrefixCache,
+    active: &mut [Session],
+    finished: &mut Vec<usize>,
+) {
+    for leader in 0..active.len() {
+        let Some(choice) = active[leader].choice.as_ref() else {
+            continue;
+        };
+        if choice.index != 0
+            || choice.restored
+            || choice.group.remaining() != 0
+            || finished.contains(&leader)
+            || !active[leader].prefill_done
+        {
+            continue;
+        }
+        let group = choice.group.clone();
+        let members: Vec<usize> = active
+            .iter()
+            .enumerate()
+            .filter_map(|(i, s)| {
+                s.choice
+                    .as_ref()
+                    .filter(|c| Arc::ptr_eq(&c.group, &group))
+                    .map(|_| i)
+            })
+            .collect();
+        if group.failed()
+            || members.len() != group.count
+            || members.iter().any(|i| finished.contains(i))
+        {
+            group.fail();
+            continue;
+        }
+        let key = active[leader].pool_key();
+        let model = &loaded[&active[leader].model].model;
+        let fed = active[leader].fed.clone();
+        let cached = active[leader].n_cached;
+        let snapshot = prefix_snapshot(
+            engine,
+            active[leader].cache.as_ref().unwrap(),
+            &key,
+            &fed,
+            &active[leader].last_logits,
+            Some(model),
+        );
+        let copied = snapshot.and_then(|entry| {
+            let restores = (|| -> Result<(), Box<dyn std::error::Error>> {
+            for &i in &members {
+                if i == leader { continue; }
+                let s = &mut active[i];
+                prefix_restore(engine, s.cache.as_mut().unwrap(), &entry, &key, Some(model))?;
+                retire_prefix_pin(px, &mut s.prefix_pin);
+                s.last_logits = entry.last_logits.clone();
+                s.device_next = None;
+                s.fed = fed.clone();
+                s.prefill_queue.clear();
+                s.prefill_done = true;
+                s.n_cached = cached;
+                let _ = s.tx.send(Event::PromptUsage { n_prompt: s.n_prompt, n_cached: cached });
+                s.sampler = Sampler::new(s.replay.sampler_cfg.clone());
+                for &token in &fed { s.sampler.accept(token); }
+                s.snapshot_at = None;
+                s.ckpt_at = None;
+                s.ckpt_snap = None;
+                s.exact_at = None;
+                s.prefix_miss_lcp = None;
+                s.seed_prefix = false;
+                s.seed_at = None;
+            }
+            Ok(())
+            })();
+            // Fence even a failed restore: earlier copies still own this scoped source.
+            let fenced = model.prefix_restore_fence(engine);
+            restores?;
+            fenced?;
+            eprintln!("[n-choice-prefill] group={} choices={} prompt={} cached={} copies={} bytes={} leader=0",
+                group.id, group.count, fed.len(), cached, members.len()-1, entry.bytes);
+            Ok(())
+        });
+        match copied {
+            Ok(()) => {
+                for i in members {
+                    active[i].choice.as_mut().unwrap().restored = true;
+                }
+            }
+            Err(error) => {
+                group.fail();
+                for i in members {
+                    active[i].errored = true;
+                    let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
+                        "n-choice prefix copy failed: {error}"
+                    ))));
+                    finished.push(i);
+                }
+            }
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -38112,6 +38476,9 @@ fn prefill_tick(
     step_tower: Option<&StepTowerPlacement>,
     overlay_publish: memra_engine::vision::OverlayPublish,
 ) -> Result<usize, Box<dyn std::error::Error>> {
+    if choice_waiting(s) {
+        return Ok(0);
+    }
     if let Some(trace) = s.ttft.as_ref() {
         trace.mark_prime_start();
     }
@@ -38594,6 +38961,9 @@ fn advance_sample_emit(
     loaded: &HashMap<String, LoadedModel>,
     s: &mut Session,
 ) -> (bool, Option<u32>) {
+    if choice_waiting(s) {
+        return (true, None);
+    }
     let lm = &loaded[&s.model];
     if s.generated.len() >= s.budget {
         finish(s, StopReason::MaxNew);
@@ -39178,6 +39548,9 @@ fn step_session_async_chain(
     loaded: &HashMap<String, LoadedModel>,
     s: &mut Session,
 ) -> Result<Option<bool>, Box<dyn std::error::Error>> {
+    if choice_waiting(s) {
+        return Ok(Some(true));
+    }
     let configured = serve_async_chain_k();
     if configured < 2
         || !s.prefill_done
@@ -39296,6 +39669,9 @@ fn step_session(
     s: &mut Session,
     spec_metrics: &mut SpecMetricState,
 ) -> Result<bool, Box<dyn std::error::Error>> {
+    if choice_waiting(s) {
+        return Ok(true);
+    }
     // A dspark session owns its cache; s.cache is None. Stepping one here decodes from an
     // EMPTY context — coherent garbage, no crash, the silent-quality-loss class. That
     // happened when the dispatch flag disagreed with the installed session (the restored-
@@ -41555,6 +41931,27 @@ fn finish(s: &Session, reason: StopReason) {
             );
         }
     }
+    if let Some(choice) = &s.choice
+        && std::env::var("MEMRA_TTFT_TRACE").as_deref() == Ok("1")
+    {
+        let mut digest = Sha256::new();
+        for token in &s.generated {
+            digest.update(token.to_le_bytes());
+        }
+        eprintln!(
+            "CHOICE_WORKER_ROW {}",
+            serde_json::json!({
+                "group":choice.group.id, "index":choice.index, "seed":s.sampler.seed(),
+                "prompt":s.n_prompt, "cached":s.n_cached, "output":s.generated.len(),
+                "token_sha256":format!("{:x}",digest.finalize()), "reason":format!("{reason:?}"),
+                "sampling": {"temperature":s.replay.sampler_cfg.temperature,
+                    "top_p":s.replay.sampler_cfg.top_p,"top_k":s.replay.sampler_cfg.top_k,
+                    "min_p":s.replay.sampler_cfg.min_p,"presence_penalty":s.replay.sampler_cfg.penalty_present,
+                    "repetition_penalty":s.replay.sampler_cfg.penalty_repeat},
+                "think":format!("{:?}",s.replay.think)
+            })
+        );
+    }
     let reason = format!("{reason:?}");
     // Per-request spec acceptance summary (lane/accept-telemetry): only when this request
     // actually ran spec rounds — plain sessions carry None and the usage block is unchanged.
@@ -42122,6 +42519,49 @@ mod tests {
         assert!(async_chain_devsample(None).is_none());
     }
 
+    #[test]
+    fn n_choice_request_forks_copy_inputs_and_isolate_sampler_seeds() {
+        let mut request = bare_request();
+        let (tx, rx) = event_channel();
+        request.tx = tx;
+        request.request_id = "parent".into();
+        request.sampler_cfg.seed = u64::MAX;
+        request.prompt_ids = vec![3, 5, 7];
+        let (rows, receivers) = super::choice_requests(request, rx, 3).unwrap();
+        assert_eq!(receivers.len(), 3);
+        assert_eq!(
+            rows.iter().map(|r| r.sampler_cfg.seed).collect::<Vec<_>>(),
+            vec![u64::MAX, 0, 1]
+        );
+        assert!(rows.iter().all(|r| r.prompt_ids == vec![3, 5, 7]));
+        for (index, row) in rows.iter().enumerate() {
+            let choice = row.choice.as_ref().unwrap();
+            assert_eq!(choice.index, index);
+            assert_eq!(choice.group.count, 3);
+            assert!(std::sync::Arc::ptr_eq(
+                &choice.group,
+                &rows[0].choice.as_ref().unwrap().group
+            ));
+            assert!(!choice.restored);
+            assert!(row.prepared_constraint.is_none());
+        }
+        drop(receivers);
+        assert!(rows.iter().all(|r| r.tx.is_closed()));
+    }
+
+    #[test]
+    fn n_choice_forks_refuse_invalid_counts_and_non_text_state_before_intake() {
+        let (tx, rx) = event_channel();
+        let mut request = bare_request();
+        request.tx = tx;
+        assert!(super::choice_requests(request, rx, 9).is_err());
+        let (tx, rx) = event_channel();
+        let mut request = bare_request();
+        request.tx = tx;
+        request.capture = Some(super::CaptureSpec::default());
+        assert!(super::choice_requests(request, rx, 2).is_err());
+    }
+
     fn bare_request() -> Request {
         let (tx, _rx) = event_channel();
         Request {
@@ -42162,6 +42602,7 @@ mod tests {
             vision_memory: None,
             wire_deadline: None,
             queued_at: std::time::Instant::now(),
+            choice: None,
             route_ticket: None,
             tx,
         }
@@ -42616,6 +43057,7 @@ mod tests {
             vision_memory: None,
             wire_deadline: None,
             queued_at: std::time::Instant::now(),
+            choice: None,
             route_ticket: None,
             ttft: None,
             tx: bad_tx,
@@ -49187,9 +49629,12 @@ mod tests {
         let qw_at = prod
             .find("crate::hybrid_telemetry::record_queue_wait(")
             .unwrap();
-        let qw_before = &prod[qw_at.saturating_sub(400)..qw_at];
+        let success = prod[..qw_at]
+            .rfind("Ok(mut s) => {")
+            .expect("queue-wait remains in the successful admission arm");
+        let qw_before = &prod[success..qw_at];
         assert!(
-            qw_before.contains("Ok(mut s) => {"),
+            !qw_before.contains("Err((tx, msg)) =>"),
             "queue-wait records only on a successful admission"
         );
         assert!(
@@ -59673,7 +60118,7 @@ mod tests {
         let worker = squash(include_str!("worker.rs"));
         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
         let sweep = live
-            .find("if s.tx.is_closed() { abort_log(s); finished.push(i); } }")
+            .find("if s.tx.is_closed() || s.choice.as_ref().is_some_and(|c| c.group.failed()) { abort_log(s); finished.push(i); } }")
             .expect("the disconnect sweep");
         let ensure = live
             .find("if crate::kv_vmm::armed() { let (reaped, pending) = vmm_reap_tick(&mut active, &mut reuse, &mut spec_reuse);")
@@ -60868,6 +61313,7 @@ mod tests {
             vision_memory: None,
             wire_deadline: None,
             queued_at: std::time::Instant::now(),
+            choice: None,
             route_ticket: None,
             ttft: None,
             tx,
@@ -61766,6 +62212,30 @@ mod tests {
             "an evicted lease id must not release another entry"
         );
         assert_prefix_cache_accounting(&px);
+    }
+
+    #[test]
+    fn refused_choice_leader_releases_its_live_source_lease_before_drop() {
+        let k = key("");
+        let mut px = PrefixCache::default();
+        px.insert_with_budget(&k, entry_b(&k, 0, 4), "test", 8);
+        let mut pin = Some(px.pin(&k, 0).unwrap());
+        let group = crate::multi_choice::Group::new("refused-leader".into(), 2);
+        let choice = crate::multi_choice::Choice {
+            group: group.clone(),
+            index: 0,
+            restored: false,
+        };
+        assert_eq!(px.entries[&k][0].pins, 1);
+        super::reject_choice_route(&choice, &mut px, &mut pin);
+        super::reject_choice_route(&choice, &mut px, &mut pin);
+        assert!(group.failed());
+        assert!(pin.is_none());
+        assert_eq!(px.entries[&k][0].pins, 0);
+        assert!(
+            px.prepare_snapshot(&k, 8, 8, None),
+            "refused leader cannot keep an entry unevictable"
+        );
     }
 
     #[test]

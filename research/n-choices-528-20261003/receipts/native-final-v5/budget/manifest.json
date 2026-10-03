@@ -1,0 +1,762 @@
+{
+  "status": "complete",
+  "source": "c6db12b96bced55fa1d7b6e0b308f23f5699f1b7",
+  "binary_sha256": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+  "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+  "phase": "budget",
+  "server_pid": 2548432,
+  "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.91.07, 24463 MiB",
+  "server_exit": -2,
+  "results": [
+    {
+      "name": "budget-singleton",
+      "status": 200,
+      "headers": {
+        "content-type": "application/json",
+        "x-request-id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+        "x-ratelimit-limit": "8",
+        "x-ratelimit-remaining": "7",
+        "x-ratelimit-reset": "0",
+        "content-length": "620",
+        "date": "Sat, 03 Oct 2026 09:39:36 GMT"
+      },
+      "started": 612667.635626885,
+      "source_log_start": 21,
+      "disconnected": false,
+      "body": {
+        "model": "fixture",
+        "text": " The items in the list are: 1. \"You should always follow your dreams\", 2. \"Always be kind to others\", 3. \"Don't waste your time on small things\", 4. \"Honesty is the best policy\", 5. \"Work hard, play hard\"\n\n",
+        "tokens": [
+          561,
+          3470,
+          303,
+          279,
+          1103,
+          513,
+          25,
+          220,
+          16,
+          13,
+          328,
+          2523,
+          1220,
+          2590,
+          1732,
+          678,
+          18144,
+          487,
+          220,
+          17,
+          13,
+          328,
+          35865,
+          381,
+          2993,
+          310,
+          3672,
+          487,
+          220,
+          18,
+          13,
+          328,
+          7751,
+          914,
+          11939,
+          678,
+          854,
+          383,
+          2526,
+          2433,
+          487,
+          220,
+          19,
+          13,
+          328,
+          39,
+          33961,
+          88,
+          369,
+          279,
+          1786,
+          4687,
+          487,
+          220,
+          20,
+          13,
+          328,
+          6563,
+          2503,
+          11,
+          1432,
+          2503,
+          1,
+          271
+        ],
+        "stop_reason": "MaxNew",
+        "n_tokens": 64,
+        "prompt_tokens": 6,
+        "cached_tokens": 0,
+        "elapsed_s": 0.941869312
+      },
+      "ended": 612668.580864257,
+      "source_log_end": 99,
+      "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+      "callbacks": [
+        {
+          "tag": "CHOICE_OPEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "model": "fixture",
+            "tenant": "default",
+            "max_tokens": 64,
+            "reserved_ctx": 70,
+            "stream": false
+          },
+          "line": 22
+        },
+        {
+          "tag": "CHOICE_PROMPT",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "prompt": 6,
+            "cached": 0
+          },
+          "line": 26
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 1
+          },
+          "line": 34
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 2
+          },
+          "line": 36
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 3
+          },
+          "line": 37
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 4
+          },
+          "line": 38
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 5
+          },
+          "line": 39
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 6
+          },
+          "line": 40
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 7
+          },
+          "line": 41
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 8
+          },
+          "line": 42
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 9
+          },
+          "line": 43
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 10
+          },
+          "line": 44
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 11
+          },
+          "line": 45
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 12
+          },
+          "line": 46
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 13
+          },
+          "line": 47
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 14
+          },
+          "line": 48
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 15
+          },
+          "line": 49
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 16
+          },
+          "line": 50
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 17
+          },
+          "line": 51
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 18
+          },
+          "line": 52
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 19
+          },
+          "line": 53
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 20
+          },
+          "line": 54
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 21
+          },
+          "line": 55
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 22
+          },
+          "line": 56
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 23
+          },
+          "line": 57
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 24
+          },
+          "line": 58
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 25
+          },
+          "line": 59
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 26
+          },
+          "line": 60
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 27
+          },
+          "line": 61
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 28
+          },
+          "line": 62
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 29
+          },
+          "line": 63
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 30
+          },
+          "line": 64
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 31
+          },
+          "line": 65
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 32
+          },
+          "line": 66
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 33
+          },
+          "line": 67
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 34
+          },
+          "line": 68
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 35
+          },
+          "line": 69
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 36
+          },
+          "line": 70
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 37
+          },
+          "line": 71
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 38
+          },
+          "line": 72
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 39
+          },
+          "line": 73
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 40
+          },
+          "line": 74
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 41
+          },
+          "line": 75
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 42
+          },
+          "line": 76
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 43
+          },
+          "line": 77
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 44
+          },
+          "line": 78
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 45
+          },
+          "line": 79
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 46
+          },
+          "line": 80
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 47
+          },
+          "line": 81
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 48
+          },
+          "line": 82
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 49
+          },
+          "line": 83
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 50
+          },
+          "line": 84
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 51
+          },
+          "line": 85
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 52
+          },
+          "line": 86
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 53
+          },
+          "line": 87
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 54
+          },
+          "line": 88
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 55
+          },
+          "line": 89
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 56
+          },
+          "line": 90
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 57
+          },
+          "line": 91
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 58
+          },
+          "line": 92
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 59
+          },
+          "line": 93
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 60
+          },
+          "line": 94
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 61
+          },
+          "line": 95
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 62
+          },
+          "line": 96
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 63
+          },
+          "line": 97
+        },
+        {
+          "tag": "CHOICE_TOKEN",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "output": 64
+          },
+          "line": 98
+        },
+        {
+          "tag": "CHOICE_TERMINAL",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "kind": "complete",
+            "status": 200,
+            "code": "",
+            "prompt": 6,
+            "cached": 0,
+            "output": 64,
+            "observed_prompt": 6,
+            "observed_cached": 0,
+            "observed_output": 64
+          },
+          "line": 100
+        },
+        {
+          "tag": "CHOICE_DROP",
+          "value": {
+            "id": "cmpl-9567033691d80255b9a0b2d981c023a4",
+            "terminal": true,
+            "prompt": 6,
+            "cached": 0,
+            "output": 64
+          },
+          "line": 101
+        }
+      ],
+      "worker_rows": [],
+      "prime_events": [],
+      "fork_lines": [],
+      "masked_steps": 0
+    },
+    {
+      "name": "budget",
+      "status": 402,
+      "headers": {
+        "content-type": "application/json",
+        "x-should-retry": "false",
+        "x-request-id": "cmpl-e4461684afaffc5f94621beca259687c",
+        "content-length": "152",
+        "date": "Sat, 03 Oct 2026 09:39:36 GMT"
+      },
+      "started": 612668.581887227,
+      "source_log_start": 103,
+      "disconnected": false,
+      "body": {
+        "error": {
+          "message": "tenant prepaid balance is insufficient for this request",
+          "type": "insufficient_balance",
+          "param": null,
+          "code": "insufficient_balance"
+        }
+      },
+      "ended": 612668.582746807,
+      "source_log_end": 108,
+      "id": "cmpl-e4461684afaffc5f94621beca259687c",
+      "callbacks": [
+        {
+          "tag": "CHOICE_OPEN",
+          "value": {
+            "id": "cmpl-e4461684afaffc5f94621beca259687c",
+            "model": "fixture",
+            "tenant": "default",
+            "max_tokens": 256,
+            "reserved_ctx": null,
+            "stream": false
+          },
+          "line": 104
+        },
+        {
+          "tag": "CHOICE_TERMINAL",
+          "value": {
+            "id": "cmpl-e4461684afaffc5f94621beca259687c",
+            "kind": "reject",
+            "status": 402,
+            "code": "insufficient_balance",
+            "prompt": 0,
+            "cached": 0,
+            "output": 0,
+            "observed_prompt": 0,
+            "observed_cached": 0,
+            "observed_output": 0
+          },
+          "line": 105
+        },
+        {
+          "tag": "CHOICE_DROP",
+          "value": {
+            "id": "cmpl-e4461684afaffc5f94621beca259687c",
+            "terminal": true,
+            "prompt": 0,
+            "cached": 0,
+            "output": 0
+          },
+          "line": 106
+        }
+      ],
+      "worker_rows": [],
+      "prime_events": [],
+      "fork_lines": [],
+      "masked_steps": 0
+    }
+  ],
+  "support_promotion": false,
+  "helper_sha256": {
+    "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+    "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+    "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+  },
+  "files": {
+    "callback-events.json": "c26a32dcec96ffd27d4b6ab8fe45970ab7a0e08a48ae2d208c550d7b19115cd6",
+    "env.json": "a531f7128319f8d0e5402b786064306e21c66452962316956747b90aefaaef81",
+    "metadata.toml": "9702a9b331f50a38b798c18531dccfbd22abc277560cf70c322c0b3f091c2380",
+    "server.log": "aeafe564a46248eb3d57e3aacc9252c8952d003b6790de498e6cfdd33134633a",
+    "budget-singleton/wire.json": "e72dbf36cc037c2ce9b329f1684fcb40c55c63057aa485176c9c60e3dc95975b",
+    "budget-singleton/request.json": "0f95926546c81acaacc65c47d6f07ade0f612659298754c229da593196bd6a00",
+    "budget-singleton/client.json": "bcd6a65006ae07cd53d533427b2055b40dc061183f4f6489cb35aa6e4d573076",
+    "budget-singleton/headers.json": "799f023424f2afc717ffbadfa27675bd2e78f388a7c173a6b99b6cfa0a9c27c5",
+    "budget/wire.json": "85a338784af6bfd310e6b99f5c10bcab8eebd5250582e6a57fd5fd1c63a1772f",
+    "budget/request.json": "d4dc5c0bd041c0121a0a9c65c07e0c7b78d3ec7e414dfb0543fb902a06a7b25a",
+    "budget/client.json": "91354e7ab979545b884dc086087bcb49b51ee5841d1063afe8c49fa6fca31304",
+    "budget/headers.json": "eb7b8d6358545e8f98a8f986a764520a5927f72bd6a61f6fceaf064b26882889"
+  }
+}

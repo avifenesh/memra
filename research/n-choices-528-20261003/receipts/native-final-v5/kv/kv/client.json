@@ -1,0 +1,73 @@
+{
+  "name": "kv",
+  "status": 400,
+  "headers": {
+    "content-type": "application/json",
+    "x-should-retry": "false",
+    "x-ratelimit-limit": "8",
+    "x-ratelimit-remaining": "0",
+    "x-ratelimit-reset": "1",
+    "x-request-id": "cmpl-b2c60d983553550e38f67458c37f992e",
+    "content-length": "264",
+    "date": "Sat, 03 Oct 2026 09:39:41 GMT"
+  },
+  "started": 612673.773705243,
+  "source_log_start": 47,
+  "disconnected": false,
+  "body": {
+    "error": {
+      "message": "request context 3142 does not fit this model's available KV capacity on an idle server. Retrying will not help: send a shorter prompt or a smaller max_tokens",
+      "type": "invalid_request_error",
+      "param": "messages",
+      "code": "context_length_exceeded"
+    }
+  },
+  "ended": 612673.77537949,
+  "source_log_end": 60,
+  "id": "cmpl-b2c60d983553550e38f67458c37f992e",
+  "callbacks": [
+    {
+      "tag": "CHOICE_OPEN",
+      "value": {
+        "id": "cmpl-b2c60d983553550e38f67458c37f992e",
+        "model": "fixture",
+        "tenant": "default",
+        "max_tokens": 24576,
+        "reserved_ctx": 24582,
+        "stream": false
+      },
+      "line": 48
+    },
+    {
+      "tag": "CHOICE_TERMINAL",
+      "value": {
+        "id": "cmpl-b2c60d983553550e38f67458c37f992e",
+        "kind": "reject",
+        "status": 400,
+        "code": "context_length_exceeded",
+        "prompt": 0,
+        "cached": 0,
+        "output": 0,
+        "observed_prompt": 0,
+        "observed_cached": 0,
+        "observed_output": 0
+      },
+      "line": 60
+    },
+    {
+      "tag": "CHOICE_DROP",
+      "value": {
+        "id": "cmpl-b2c60d983553550e38f67458c37f992e",
+        "terminal": true,
+        "prompt": 0,
+        "cached": 0,
+        "output": 0
+      },
+      "line": 61
+    }
+  ],
+  "worker_rows": [],
+  "prime_events": [],
+  "fork_lines": [],
+  "masked_steps": 0
+}

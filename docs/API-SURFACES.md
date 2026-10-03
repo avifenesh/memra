@@ -231,3 +231,21 @@ surface's: prompt usage recorded at admission, one completion record per token, 
 complete/reject synced before the response finishes. Per-tenant capture (when armed)
 stores the **translated** internal messages array, the exact prompt the template
 rendered, with the same consent/trial posture as chat completions.
+
+## Bounded choices on chat and text completions
+
+`n` defaults to 1. Both endpoints accept bounded multi-choice generation on an eligible shared-prefill route. The global bound is 8; a deployment's decode-slot cap can be smaller. `/v1/models` reports `capabilities.max_choices` for each loaded model/boot. That is API eligibility, not a model support or numerical qualification state.
+
+One leader follows the ordinary prefill path. Its completed prompt KV and recurrent state are copied into independent choice rows. Each row owns its sampler/history, cache, parser and termination state. With a supplied seed, row i uses `(seed + i) mod 2^64`; without a supplied seed, one fresh master seed is drawn for the group. No row borrows another row's mutable parser or RNG.
+
+`max_tokens` bounds each choice. The parent request's completion reservation covers `n * resolved_output_bound`, while prompt input is reserved and counted once. `usage.completion_tokens` sums observed outputs across all choices; prompt and cached-prompt counts describe the leader's one prompt. Internal receipt metadata expresses the aggregate output bound. One HTTP request uses one tenant-request quota entry and n worker/route decode slots. Each private state and the transient prompt snapshot must fit admission before generation.
+
+Responses carry one indexed `choices` entry per row. Streaming may interleave indices; each row has one finish reason and `[DONE]` follows all terminal rows and successful parent accounting. With `stream_options.include_usage=true`, choice chunks carry null usage and one final empty-choice chunk carries the sum. Otherwise the final choices-bearing finish chunk carries aggregate usage. Dropping the group stream closes every child receiver; a worker failure cannot become a successful partial choice list.
+
+Prompt or completion receipt callback failures return `request_ledger_unavailable` and reject the parent ledger row. Before SSE headers, the response is HTTP 500. After headers, the stream emits the same error body and closes without successful usage or `[DONE]`. All choice receivers and request/decode-slot reservations are released.
+
+The implemented route is text-only and single-device, with completed-prefix-copy-compatible full-attention or GDN state. Selected speculative, parallel, sliding-window, latent and unsupported states refuse explicitly. A caller is never moved silently to a different numerical program to honor n. `best_of > 1` remains a named refusal and directs callers to n; its legacy value1 no-op remains compatible. `background:true` with n>1 is refused by name before worker or receipt intake; n=1 retains background delivery.
+
+Capture, when enabled by the deployment, retains one prompt with n and indexed JSON-line raw completion deltas. Consent/redaction and finalization remain owned by the existing metering implementation. No production billing backend, model support state, compiler/numerical default or release gate is changed by this API capability.
+
+Exact qualification evidence and its fixture limits belong in `research/n-choices-528-20261003/`. A code declaration or CPU result alone is not native model qualification.

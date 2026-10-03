@@ -20,3 +20,6 @@ research/image-url-fetch-20261002/raw/qwen-combined/on/transport-unit.log -text 
 # Preserve unified-diff context whitespace in immutable B914 source receipts.
 research/background-chat-text-20261002/receipts/**/source.diff -whitespace
 research/background-chat-text-20261002/receipts/**/broker-source.diff -whitespace
+
+# SSE events end with a blank line. Preserve hash-pinned native wire receipts.
+research/n-choices-528-20261003/receipts/**/wire.sse -text whitespace=-blank-at-eof

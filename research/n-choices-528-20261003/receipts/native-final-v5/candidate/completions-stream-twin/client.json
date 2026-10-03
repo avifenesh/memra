@@ -1,0 +1,1280 @@
+{
+  "name": "completions-stream-twin",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-request-id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+    "x-ratelimit-limit": "8",
+    "x-ratelimit-remaining": "4",
+    "x-ratelimit-reset": "0",
+    "content-length": "836",
+    "date": "Sat, 03 Oct 2026 09:38:44 GMT"
+  },
+  "started": 612615.999795406,
+  "source_log_start": 816,
+  "disconnected": false,
+  "body": {
+    "object": "text_completion",
+    "model": "fixture",
+    "choices": [
+      {
+        "index": 0,
+        "text": "\n\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n1",
+        "finish_reason": "length"
+      },
+      {
+        "index": 1,
+        "text": " The goal is to reach 20 in the shortest possible time by guessing which items fit and which do not fit.\nThe game offers five sets: A",
+        "finish_reason": "length"
+      },
+      {
+        "index": 2,
+        "text": " The lines are numbered 1 through 9, and items on the same line share similar features or categories.\n\n1. (4) : (5)",
+        "finish_reason": "length"
+      },
+      {
+        "index": 3,
+        "text": "\n\n2, 4, 6, 8, 10, 12, 14, 16, 18,",
+        "finish_reason": "length"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 13,
+      "completion_tokens": 128,
+      "total_tokens": 141,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "elapsed_s": 0.711066117
+    },
+    "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+    "created": 1791020324,
+    "system_fingerprint": "memra-0.138.0-2a6bfaefd933"
+  },
+  "ended": 612616.712087485,
+  "source_log_end": 976,
+  "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+  "callbacks": [
+    {
+      "tag": "CHOICE_OPEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "model": "fixture",
+        "tenant": "default",
+        "max_tokens": 128,
+        "reserved_ctx": 141,
+        "stream": false
+      },
+      "line": 817
+    },
+    {
+      "tag": "CHOICE_PROMPT",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "prompt": 13,
+        "cached": 0
+      },
+      "line": 820
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 1
+      },
+      "line": 848
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 2
+      },
+      "line": 849
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 3
+      },
+      "line": 850
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 4
+      },
+      "line": 851
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 5
+      },
+      "line": 852
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 6
+      },
+      "line": 853
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 7
+      },
+      "line": 854
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 8
+      },
+      "line": 855
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 9
+      },
+      "line": 856
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 10
+      },
+      "line": 857
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 11
+      },
+      "line": 858
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 12
+      },
+      "line": 859
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 13
+      },
+      "line": 860
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 14
+      },
+      "line": 861
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 15
+      },
+      "line": 862
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 16
+      },
+      "line": 863
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 17
+      },
+      "line": 864
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 18
+      },
+      "line": 865
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 19
+      },
+      "line": 866
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 20
+      },
+      "line": 867
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 21
+      },
+      "line": 868
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 22
+      },
+      "line": 869
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 23
+      },
+      "line": 870
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 24
+      },
+      "line": 871
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 25
+      },
+      "line": 872
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 26
+      },
+      "line": 873
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 27
+      },
+      "line": 874
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 28
+      },
+      "line": 875
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 29
+      },
+      "line": 876
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 30
+      },
+      "line": 877
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 31
+      },
+      "line": 878
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 32
+      },
+      "line": 879
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 33
+      },
+      "line": 880
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 34
+      },
+      "line": 881
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 35
+      },
+      "line": 882
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 36
+      },
+      "line": 883
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 37
+      },
+      "line": 884
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 38
+      },
+      "line": 885
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 39
+      },
+      "line": 886
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 40
+      },
+      "line": 887
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 41
+      },
+      "line": 888
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 42
+      },
+      "line": 889
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 43
+      },
+      "line": 890
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 44
+      },
+      "line": 891
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 45
+      },
+      "line": 892
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 46
+      },
+      "line": 893
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 47
+      },
+      "line": 894
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 48
+      },
+      "line": 895
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 49
+      },
+      "line": 896
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 50
+      },
+      "line": 897
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 51
+      },
+      "line": 898
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 52
+      },
+      "line": 899
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 53
+      },
+      "line": 900
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 54
+      },
+      "line": 901
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 55
+      },
+      "line": 902
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 56
+      },
+      "line": 903
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 57
+      },
+      "line": 904
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 58
+      },
+      "line": 905
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 59
+      },
+      "line": 906
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 60
+      },
+      "line": 907
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 61
+      },
+      "line": 908
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 62
+      },
+      "line": 909
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 63
+      },
+      "line": 910
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 64
+      },
+      "line": 911
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 65
+      },
+      "line": 912
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 66
+      },
+      "line": 913
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 67
+      },
+      "line": 914
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 68
+      },
+      "line": 915
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 69
+      },
+      "line": 916
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 70
+      },
+      "line": 917
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 71
+      },
+      "line": 918
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 72
+      },
+      "line": 919
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 73
+      },
+      "line": 920
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 74
+      },
+      "line": 921
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 75
+      },
+      "line": 922
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 76
+      },
+      "line": 923
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 77
+      },
+      "line": 924
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 78
+      },
+      "line": 925
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 79
+      },
+      "line": 926
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 80
+      },
+      "line": 927
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 81
+      },
+      "line": 928
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 82
+      },
+      "line": 929
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 83
+      },
+      "line": 930
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 84
+      },
+      "line": 931
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 85
+      },
+      "line": 932
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 86
+      },
+      "line": 933
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 87
+      },
+      "line": 934
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 88
+      },
+      "line": 935
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 89
+      },
+      "line": 936
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 90
+      },
+      "line": 937
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 91
+      },
+      "line": 938
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 92
+      },
+      "line": 939
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 93
+      },
+      "line": 940
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 94
+      },
+      "line": 941
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 95
+      },
+      "line": 942
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 96
+      },
+      "line": 943
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 97
+      },
+      "line": 944
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 98
+      },
+      "line": 945
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 99
+      },
+      "line": 946
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 100
+      },
+      "line": 947
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 101
+      },
+      "line": 948
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 102
+      },
+      "line": 949
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 103
+      },
+      "line": 950
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 104
+      },
+      "line": 951
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 105
+      },
+      "line": 952
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 106
+      },
+      "line": 953
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 107
+      },
+      "line": 954
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 108
+      },
+      "line": 955
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 109
+      },
+      "line": 956
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 110
+      },
+      "line": 957
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 111
+      },
+      "line": 958
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 112
+      },
+      "line": 959
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 113
+      },
+      "line": 960
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 114
+      },
+      "line": 961
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 115
+      },
+      "line": 962
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 116
+      },
+      "line": 963
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 117
+      },
+      "line": 964
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 118
+      },
+      "line": 965
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 119
+      },
+      "line": 966
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 120
+      },
+      "line": 967
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 121
+      },
+      "line": 968
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 122
+      },
+      "line": 969
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 123
+      },
+      "line": 970
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 124
+      },
+      "line": 971
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 125
+      },
+      "line": 972
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 126
+      },
+      "line": 973
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 127
+      },
+      "line": 974
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "output": 128
+      },
+      "line": 975
+    },
+    {
+      "tag": "CHOICE_TERMINAL",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "kind": "complete",
+        "status": 200,
+        "code": "",
+        "prompt": 13,
+        "cached": 0,
+        "output": 128,
+        "observed_prompt": 13,
+        "observed_cached": 0,
+        "observed_output": 128
+      },
+      "line": 981
+    },
+    {
+      "tag": "CHOICE_DROP",
+      "value": {
+        "id": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+        "terminal": true,
+        "prompt": 13,
+        "cached": 0,
+        "output": 128
+      },
+      "line": 982
+    }
+  ],
+  "worker_rows": [
+    {
+      "group": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+      "index": 0,
+      "seed": 101,
+      "prompt": 13,
+      "cached": 0,
+      "output": 32,
+      "token_sha256": "3a749d0fba75b2065f373a4e417be9a9e820c04163fef4edad355cbe48291d1d",
+      "reason": "MaxNew",
+      "sampling": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.0,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0
+      },
+      "think": "Default"
+    },
+    {
+      "group": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+      "index": 1,
+      "seed": 102,
+      "prompt": 13,
+      "cached": 0,
+      "output": 32,
+      "token_sha256": "7a22206dcb79dcf8b8bee76871174acd2ded022341af21bbd22ef500d8271dcd",
+      "reason": "MaxNew",
+      "sampling": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.0,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0
+      },
+      "think": "Default"
+    },
+    {
+      "group": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+      "index": 2,
+      "seed": 103,
+      "prompt": 13,
+      "cached": 0,
+      "output": 32,
+      "token_sha256": "9fb4ab5aa21ae11d8cb883b171911822c481b4bedd4433392c20baadc2cf07fc",
+      "reason": "MaxNew",
+      "sampling": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.0,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0
+      },
+      "think": "Default"
+    },
+    {
+      "group": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+      "index": 3,
+      "seed": 104,
+      "prompt": 13,
+      "cached": 0,
+      "output": 32,
+      "token_sha256": "b0adc02f4b57611967315b9809800336005d7d3506de784f1d756b848cf98cf8",
+      "reason": "MaxNew",
+      "sampling": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.0,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0
+      },
+      "think": "Default"
+    }
+  ],
+  "prime_events": [
+    {
+      "group": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+      "index": 0,
+      "rows": 1
+    },
+    {
+      "group": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+      "index": 0,
+      "rows": 1
+    },
+    {
+      "group": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+      "index": 0,
+      "rows": 1
+    },
+    {
+      "group": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+      "index": 0,
+      "rows": 1
+    },
+    {
+      "group": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+      "index": 0,
+      "rows": 1
+    },
+    {
+      "group": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+      "index": 0,
+      "rows": 1
+    },
+    {
+      "group": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+      "index": 0,
+      "rows": 1
+    },
+    {
+      "group": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+      "index": 0,
+      "rows": 1
+    },
+    {
+      "group": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+      "index": 0,
+      "rows": 1
+    },
+    {
+      "group": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+      "index": 0,
+      "rows": 1
+    },
+    {
+      "group": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+      "index": 0,
+      "rows": 1
+    },
+    {
+      "group": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+      "index": 0,
+      "rows": 1
+    },
+    {
+      "group": "cmpl-eed5c5b3fd570d0266b73fd771405f2b",
+      "index": 0,
+      "rows": 1
+    }
+  ],
+  "fork_lines": [
+    "[n-choice-prefill] group=cmpl-eed5c5b3fd570d0266b73fd771405f2b choices=4 prompt=13 cached=0 copies=3 bytes=52883968 leader=0"
+  ],
+  "masked_steps": 0
+}

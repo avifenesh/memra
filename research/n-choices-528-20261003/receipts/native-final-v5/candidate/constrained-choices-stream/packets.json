@@ -1,0 +1,106 @@
+[
+  {
+    "object": "chat.completion.chunk",
+    "model": "fixture",
+    "choices": [
+      {
+        "index": 0,
+        "delta": {
+          "tool_calls": [
+            {
+              "id": "call_b7c962f3111a24a5",
+              "type": "function",
+              "function": {
+                "name": "weather",
+                "arguments": "{\"city\":\"Paris\"}"
+              },
+              "index": 0
+            }
+          ],
+          "role": "assistant"
+        },
+        "finish_reason": null
+      }
+    ],
+    "id": "chatcmpl-4e1cd376876970f47981624615e1f62c",
+    "created": 1791020354,
+    "system_fingerprint": "memra-0.138.0-2a6bfaefd933",
+    "usage": null
+  },
+  {
+    "object": "chat.completion.chunk",
+    "model": "fixture",
+    "choices": [
+      {
+        "index": 1,
+        "delta": {
+          "tool_calls": [
+            {
+              "id": "call_b7c962f3111a24a5",
+              "type": "function",
+              "function": {
+                "name": "weather",
+                "arguments": "{\"city\":\"Paris\"}"
+              },
+              "index": 0
+            }
+          ],
+          "role": "assistant"
+        },
+        "finish_reason": null
+      }
+    ],
+    "id": "chatcmpl-4e1cd376876970f47981624615e1f62c",
+    "created": 1791020354,
+    "system_fingerprint": "memra-0.138.0-2a6bfaefd933",
+    "usage": null
+  },
+  {
+    "object": "chat.completion.chunk",
+    "model": "fixture",
+    "choices": [
+      {
+        "index": 0,
+        "delta": {},
+        "finish_reason": "tool_calls"
+      }
+    ],
+    "id": "chatcmpl-4e1cd376876970f47981624615e1f62c",
+    "created": 1791020354,
+    "system_fingerprint": "memra-0.138.0-2a6bfaefd933",
+    "usage": null
+  },
+  {
+    "object": "chat.completion.chunk",
+    "model": "fixture",
+    "choices": [
+      {
+        "index": 1,
+        "delta": {},
+        "finish_reason": "tool_calls"
+      }
+    ],
+    "id": "chatcmpl-4e1cd376876970f47981624615e1f62c",
+    "created": 1791020354,
+    "system_fingerprint": "memra-0.138.0-2a6bfaefd933",
+    "usage": null
+  },
+  {
+    "object": "chat.completion.chunk",
+    "model": "fixture",
+    "choices": [],
+    "usage": {
+      "prompt_tokens": 274,
+      "completion_tokens": 34,
+      "total_tokens": 308,
+      "prompt_tokens_details": {
+        "cached_tokens": 256
+      },
+      "elapsed_s": 0.25652144
+    },
+    "id": "chatcmpl-4e1cd376876970f47981624615e1f62c",
+    "created": 1791020354,
+    "system_fingerprint": "memra-0.138.0-2a6bfaefd933"
+  },
+  "[DONE]"
+]

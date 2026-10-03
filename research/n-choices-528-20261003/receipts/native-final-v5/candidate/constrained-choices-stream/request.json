@@ -1,0 +1,43 @@
+{
+  "model": "fixture",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Call weather for Paris."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "weather",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string",
+              "enum": [
+                "Paris"
+              ]
+            }
+          },
+          "required": [
+            "city"
+          ],
+          "additionalProperties": false
+        }
+      }
+    }
+  ],
+  "tool_choice": "required",
+  "parallel_tool_calls": false,
+  "n": 2,
+  "max_tokens": 128,
+  "reasoning_effort": "none",
+  "temperature": 0,
+  "seed": 530,
+  "stream": true,
+  "stream_options": {
+    "include_usage": true
+  }
+}

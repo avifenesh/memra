@@ -1,0 +1,2215 @@
+{
+  "name": "deadline-partial",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-request-id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+    "x-ratelimit-limit": "8",
+    "x-ratelimit-remaining": "6",
+    "x-ratelimit-reset": "0",
+    "content-length": "3136",
+    "date": "Sat, 03 Oct 2026 09:39:25 GMT"
+  },
+  "started": 612655.225704803,
+  "source_log_start": 21,
+  "disconnected": false,
+  "body": {
+    "object": "chat.completion",
+    "model": "fixture",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "",
+          "reasoning": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Task: List integers upward (1, 2, 3, ...).\n    *   Requirement: Include explanations for each integer.\n    *   Constraint: Keep going until the output limit is reached.\n    *   Goal: Generate as many numbered items as possible within the context window/output limit while adhering to the format (number + explanation).\n\n2.  **Determine Output Constraints & Strategy:**\n    *   There is a token/character limit per response. I need to maximize content without cutting off prematurely or triggering safety filters (",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "text": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Task: List integers upward (1, 2, 3, ...).\n    *   Requirement: Include explanations for each integer.\n    *   Constraint: Keep going until the output limit is reached.\n    *   Goal: Generate as many numbered items as possible within the context window/output limit while adhering to the format (number + explanation).\n\n2.  **Determine Output Constraints & Strategy:**\n    *   There is a token/character limit per response. I need to maximize content without cutting off prematurely or triggering safety filters ("
+            }
+          ]
+        },
+        "finish_reason": "error"
+      },
+      {
+        "index": 1,
+        "message": {
+          "role": "assistant",
+          "content": "",
+          "reasoning": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Task: List integers upward (0, 1, 2, 3, ...).\n    *   Requirement: Include explanations for each integer.\n    *   Constraint: \"Keep going until the output limit.\" This means I should continue generating numbers and explanations until I hit the maximum allowed response length/token limit for this specific model/session.\n\n2.  **Determine Feasibility & Risks:**\n    *   *Output Limit:* Generating a very long list of integers with explanations will quickly consume tokens. The goal is to go as high",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "text": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Task: List integers upward (0, 1, 2, 3, ...).\n    *   Requirement: Include explanations for each integer.\n    *   Constraint: \"Keep going until the output limit.\" This means I should continue generating numbers and explanations until I hit the maximum allowed response length/token limit for this specific model/session.\n\n2.  **Determine Feasibility & Risks:**\n    *   *Output Limit:* Generating a very long list of integers with explanations will quickly consume tokens. The goal is to go as high"
+            }
+          ]
+        },
+        "finish_reason": "error"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 23,
+      "completion_tokens": 260,
+      "total_tokens": 283,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "elapsed_s": 2.000926643
+    },
+    "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+    "created": 1791020363,
+    "system_fingerprint": "memra-0.138.0-2a6bfaefd933",
+    "error": {
+      "message": "deadline of 2000 ms (timeout_ms; default 90000) elapsed before the response completed; generation was cancelled and this request is not billed",
+      "type": "timeout",
+      "param": "timeout_ms",
+      "code": "deadline_exceeded"
+    }
+  },
+  "ended": 612657.230962882,
+  "source_log_end": 297,
+  "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+  "callbacks": [
+    {
+      "tag": "CHOICE_OPEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "model": "fixture",
+        "tenant": "default",
+        "max_tokens": null,
+        "reserved_ctx": 8169,
+        "stream": false
+      },
+      "line": 22
+    },
+    {
+      "tag": "CHOICE_PROMPT",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "prompt": 23,
+        "cached": 0
+      },
+      "line": 27
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 1
+      },
+      "line": 31
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 2
+      },
+      "line": 32
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 3
+      },
+      "line": 35
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 4
+      },
+      "line": 36
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 5
+      },
+      "line": 37
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 6
+      },
+      "line": 38
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 7
+      },
+      "line": 39
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 8
+      },
+      "line": 40
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 9
+      },
+      "line": 41
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 10
+      },
+      "line": 42
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 11
+      },
+      "line": 43
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 12
+      },
+      "line": 44
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 13
+      },
+      "line": 45
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 14
+      },
+      "line": 46
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 15
+      },
+      "line": 47
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 16
+      },
+      "line": 48
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 17
+      },
+      "line": 49
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 18
+      },
+      "line": 50
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 19
+      },
+      "line": 51
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 20
+      },
+      "line": 52
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 21
+      },
+      "line": 53
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 22
+      },
+      "line": 54
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 23
+      },
+      "line": 55
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 24
+      },
+      "line": 56
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 25
+      },
+      "line": 57
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 26
+      },
+      "line": 58
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 27
+      },
+      "line": 59
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 28
+      },
+      "line": 60
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 29
+      },
+      "line": 61
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 30
+      },
+      "line": 62
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 31
+      },
+      "line": 63
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 32
+      },
+      "line": 64
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 33
+      },
+      "line": 65
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 34
+      },
+      "line": 66
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 35
+      },
+      "line": 67
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 36
+      },
+      "line": 68
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 37
+      },
+      "line": 69
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 38
+      },
+      "line": 70
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 39
+      },
+      "line": 71
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 40
+      },
+      "line": 72
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 41
+      },
+      "line": 73
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 42
+      },
+      "line": 74
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 43
+      },
+      "line": 75
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 44
+      },
+      "line": 76
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 45
+      },
+      "line": 77
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 46
+      },
+      "line": 78
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 47
+      },
+      "line": 79
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 48
+      },
+      "line": 80
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 49
+      },
+      "line": 81
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 50
+      },
+      "line": 82
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 51
+      },
+      "line": 83
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 52
+      },
+      "line": 84
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 53
+      },
+      "line": 85
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 54
+      },
+      "line": 86
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 55
+      },
+      "line": 87
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 56
+      },
+      "line": 88
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 57
+      },
+      "line": 89
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 58
+      },
+      "line": 90
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 59
+      },
+      "line": 91
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 60
+      },
+      "line": 92
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 61
+      },
+      "line": 93
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 62
+      },
+      "line": 94
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 63
+      },
+      "line": 95
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 64
+      },
+      "line": 96
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 65
+      },
+      "line": 97
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 66
+      },
+      "line": 98
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 67
+      },
+      "line": 99
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 68
+      },
+      "line": 100
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 69
+      },
+      "line": 101
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 70
+      },
+      "line": 102
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 71
+      },
+      "line": 103
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 72
+      },
+      "line": 104
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 73
+      },
+      "line": 105
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 74
+      },
+      "line": 106
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 75
+      },
+      "line": 107
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 76
+      },
+      "line": 108
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 77
+      },
+      "line": 109
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 78
+      },
+      "line": 110
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 79
+      },
+      "line": 111
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 80
+      },
+      "line": 112
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 81
+      },
+      "line": 113
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 82
+      },
+      "line": 114
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 83
+      },
+      "line": 115
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 84
+      },
+      "line": 116
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 85
+      },
+      "line": 117
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 86
+      },
+      "line": 118
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 87
+      },
+      "line": 119
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 88
+      },
+      "line": 120
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 89
+      },
+      "line": 121
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 90
+      },
+      "line": 122
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 91
+      },
+      "line": 123
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 92
+      },
+      "line": 124
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 93
+      },
+      "line": 125
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 94
+      },
+      "line": 126
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 95
+      },
+      "line": 127
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 96
+      },
+      "line": 128
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 97
+      },
+      "line": 129
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 98
+      },
+      "line": 130
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 99
+      },
+      "line": 131
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 100
+      },
+      "line": 132
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 101
+      },
+      "line": 133
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 102
+      },
+      "line": 134
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 103
+      },
+      "line": 135
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 104
+      },
+      "line": 136
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 105
+      },
+      "line": 137
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 106
+      },
+      "line": 138
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 107
+      },
+      "line": 139
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 108
+      },
+      "line": 140
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 109
+      },
+      "line": 141
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 110
+      },
+      "line": 142
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 111
+      },
+      "line": 143
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 112
+      },
+      "line": 144
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 113
+      },
+      "line": 145
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 114
+      },
+      "line": 146
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 115
+      },
+      "line": 147
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 116
+      },
+      "line": 148
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 117
+      },
+      "line": 149
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 118
+      },
+      "line": 150
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 119
+      },
+      "line": 151
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 120
+      },
+      "line": 152
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 121
+      },
+      "line": 153
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 122
+      },
+      "line": 154
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 123
+      },
+      "line": 155
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 124
+      },
+      "line": 156
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 125
+      },
+      "line": 157
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 126
+      },
+      "line": 158
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 127
+      },
+      "line": 159
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 128
+      },
+      "line": 160
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 129
+      },
+      "line": 161
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 130
+      },
+      "line": 162
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 131
+      },
+      "line": 163
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 132
+      },
+      "line": 164
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 133
+      },
+      "line": 165
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 134
+      },
+      "line": 166
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 135
+      },
+      "line": 167
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 136
+      },
+      "line": 168
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 137
+      },
+      "line": 169
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 138
+      },
+      "line": 170
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 139
+      },
+      "line": 171
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 140
+      },
+      "line": 172
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 141
+      },
+      "line": 173
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 142
+      },
+      "line": 174
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 143
+      },
+      "line": 175
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 144
+      },
+      "line": 176
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 145
+      },
+      "line": 177
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 146
+      },
+      "line": 178
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 147
+      },
+      "line": 180
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 148
+      },
+      "line": 181
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 149
+      },
+      "line": 183
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 150
+      },
+      "line": 184
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 151
+      },
+      "line": 185
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 152
+      },
+      "line": 186
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 153
+      },
+      "line": 187
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 154
+      },
+      "line": 188
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 155
+      },
+      "line": 189
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 156
+      },
+      "line": 190
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 157
+      },
+      "line": 191
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 158
+      },
+      "line": 192
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 159
+      },
+      "line": 193
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 160
+      },
+      "line": 194
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 161
+      },
+      "line": 195
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 162
+      },
+      "line": 196
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 163
+      },
+      "line": 197
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 164
+      },
+      "line": 198
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 165
+      },
+      "line": 199
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 166
+      },
+      "line": 200
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 167
+      },
+      "line": 201
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 168
+      },
+      "line": 202
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 169
+      },
+      "line": 203
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 170
+      },
+      "line": 204
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 171
+      },
+      "line": 205
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 172
+      },
+      "line": 206
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 173
+      },
+      "line": 207
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 174
+      },
+      "line": 208
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 175
+      },
+      "line": 209
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 176
+      },
+      "line": 210
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 177
+      },
+      "line": 211
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 178
+      },
+      "line": 212
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 179
+      },
+      "line": 213
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 180
+      },
+      "line": 214
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 181
+      },
+      "line": 215
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 182
+      },
+      "line": 216
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 183
+      },
+      "line": 217
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 184
+      },
+      "line": 218
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 185
+      },
+      "line": 219
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 186
+      },
+      "line": 220
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 187
+      },
+      "line": 221
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 188
+      },
+      "line": 222
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 189
+      },
+      "line": 223
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 190
+      },
+      "line": 224
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 191
+      },
+      "line": 225
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 192
+      },
+      "line": 226
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 193
+      },
+      "line": 227
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 194
+      },
+      "line": 228
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 195
+      },
+      "line": 229
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 196
+      },
+      "line": 230
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 197
+      },
+      "line": 231
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 198
+      },
+      "line": 232
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 199
+      },
+      "line": 233
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 200
+      },
+      "line": 234
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 201
+      },
+      "line": 235
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 202
+      },
+      "line": 236
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 203
+      },
+      "line": 237
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 204
+      },
+      "line": 238
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 205
+      },
+      "line": 239
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 206
+      },
+      "line": 240
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 207
+      },
+      "line": 241
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 208
+      },
+      "line": 242
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 209
+      },
+      "line": 243
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 210
+      },
+      "line": 244
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 211
+      },
+      "line": 245
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 212
+      },
+      "line": 246
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 213
+      },
+      "line": 247
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 214
+      },
+      "line": 248
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 215
+      },
+      "line": 249
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 216
+      },
+      "line": 250
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 217
+      },
+      "line": 251
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 218
+      },
+      "line": 252
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 219
+      },
+      "line": 253
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 220
+      },
+      "line": 254
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 221
+      },
+      "line": 255
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 222
+      },
+      "line": 256
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 223
+      },
+      "line": 257
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 224
+      },
+      "line": 258
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 225
+      },
+      "line": 259
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 226
+      },
+      "line": 260
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 227
+      },
+      "line": 261
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 228
+      },
+      "line": 262
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 229
+      },
+      "line": 263
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 230
+      },
+      "line": 264
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 231
+      },
+      "line": 265
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 232
+      },
+      "line": 266
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 233
+      },
+      "line": 267
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 234
+      },
+      "line": 268
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 235
+      },
+      "line": 269
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 236
+      },
+      "line": 270
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 237
+      },
+      "line": 271
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 238
+      },
+      "line": 272
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 239
+      },
+      "line": 273
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 240
+      },
+      "line": 274
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 241
+      },
+      "line": 275
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 242
+      },
+      "line": 276
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 243
+      },
+      "line": 277
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 244
+      },
+      "line": 278
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 245
+      },
+      "line": 279
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 246
+      },
+      "line": 280
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 247
+      },
+      "line": 281
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 248
+      },
+      "line": 282
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 249
+      },
+      "line": 283
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 250
+      },
+      "line": 284
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 251
+      },
+      "line": 285
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 252
+      },
+      "line": 286
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 253
+      },
+      "line": 287
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 254
+      },
+      "line": 288
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 255
+      },
+      "line": 289
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 256
+      },
+      "line": 290
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 257
+      },
+      "line": 291
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 258
+      },
+      "line": 292
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 259
+      },
+      "line": 293
+    },
+    {
+      "tag": "CHOICE_TOKEN",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "output": 260
+      },
+      "line": 294
+    },
+    {
+      "tag": "CHOICE_TERMINAL",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "kind": "deadline_partial",
+        "status": 200,
+        "code": "deadline_exceeded",
+        "prompt": 23,
+        "cached": 0,
+        "output": 260,
+        "observed_prompt": 23,
+        "observed_cached": 0,
+        "observed_output": 260
+      },
+      "line": 295
+    },
+    {
+      "tag": "CHOICE_DROP",
+      "value": {
+        "id": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+        "terminal": true,
+        "prompt": 23,
+        "cached": 0,
+        "output": 260
+      },
+      "line": 296
+    }
+  ],
+  "worker_rows": [],
+  "prime_events": [
+    {
+      "group": "chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef",
+      "index": 0,
+      "rows": 23
+    }
+  ],
+  "fork_lines": [
+    "[n-choice-prefill] group=chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef choices=2 prompt=23 cached=0 copies=1 bytes=53032448 leader=0"
+  ],
+  "masked_steps": 0
+}

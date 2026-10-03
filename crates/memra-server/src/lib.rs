@@ -127,6 +127,7 @@ mod kv_vmm;
 /// deployment's own binary — engine-billing-extraction-20260829, owner razor
 /// 2026-08-29: "only engine is open, business is private").
 pub mod metering;
+mod multi_choice;
 mod prefill_receipt;
 pub mod prime_fairness;
 mod request_metrics;
@@ -2849,6 +2850,97 @@ fn reserve_pending_admit_with_ceiling(
     reserve_pending_admit_on(st, lane, rl, deadline, ceiling_s, AdmitCounters::GLOBAL)
 }
 
+/// A group is one arrival owning N waiting slots. Its own earlier rows are not backlog.
+#[allow(clippy::result_large_err)] // the response/outcome tuple matches the existing admission diagnostic contract
+fn reserve_pending_choices(
+    st: &AppState,
+    lane: lanes::Lane,
+    rl: &RateLimit,
+    deadline: RequestDeadline,
+    choices: usize,
+) -> Result<Vec<PendingAdmissionGuard>, (Response, &'static str)> {
+    if rl.route.is_some() {
+        return Err((
+            bad_request(
+                "n-choice generation requires the shared hybrid route",
+                Some("n"),
+            ),
+            "invalid_request",
+        ));
+    }
+    let counters = AdmitCounters::GLOBAL;
+    let cap = lane_cap(lane).max(1);
+    let bound = max_queue_depth(cap);
+    let lane_counter = &counters.lanes[lane.idx()];
+    loop {
+        let queued = lane_counter.load(std::sync::atomic::Ordering::Acquire);
+        let Some(next) = queued.checked_add(choices).filter(|&n| n <= bound) else {
+            return Err((
+                error_response_coded(
+                    StatusCode::TOO_MANY_REQUESTS,
+                    "choice group exceeds the bounded waiting queue; retry",
+                    "rate_limit_error",
+                    None,
+                    Some("shed_queue"),
+                ),
+                "shed_queue",
+            ));
+        };
+        // Match the shared-pool ownership used by acquire_request_slot. Headers are
+        // saturated and tenant-narrowed, so they cannot reconstruct raw occupancy.
+        let all = st.inflight[lane.idx()].load(std::sync::atomic::Ordering::SeqCst);
+        let routed: usize = served_routes(st)
+            .iter()
+            .map(|route| route.inflight(lane.idx()))
+            .sum();
+        let running = all
+            .saturating_sub(routed)
+            .saturating_sub(choices)
+            .saturating_sub(queued);
+        let waits = queued > 0 || running.saturating_add(choices) > cap;
+        let metrics = st.metrics.lock().map(|m| m.clone()).unwrap_or_default();
+        let estimate = reset_estimate_s(&metrics).saturating_mul((queued / cap + 1) as u64);
+        let ceiling = queue_wait_ceiling_s();
+        let outcome = if lane == lanes::Lane::Interactive
+            && waits
+            && estimate.saturating_mul(1_000) > deadline.remaining().as_millis() as u64
+        {
+            Some("shed_deadline")
+        } else if lane == lanes::Lane::Interactive && waits && ceiling > 0 && estimate > ceiling {
+            Some("shed_queue_wait")
+        } else {
+            None
+        };
+        if let Some(outcome) = outcome {
+            return Err((retry_contract_response((StatusCode::TOO_MANY_REQUESTS,
+                Json(error_body("choice group cannot enter within its queue/deadline budget; not billed",
+                    "rate_limit_error", None, Some(outcome)))).into_response(), Some(estimate)), outcome));
+        }
+        if lane_counter
+            .compare_exchange(
+                queued,
+                next,
+                std::sync::atomic::Ordering::AcqRel,
+                std::sync::atomic::Ordering::Acquire,
+            )
+            .is_ok()
+        {
+            counters
+                .pending
+                .fetch_add(choices, std::sync::atomic::Ordering::AcqRel);
+            return Ok((0..choices)
+                .map(|_| PendingAdmissionGuard {
+                    reserved: true,
+                    lane,
+                    counters,
+                    route_bound: false,
+                    ticket: None,
+                })
+                .collect());
+        }
+    }
+}
+
 /// The reservation path over the lane counters it reads and takes (WP-A day 56,
 /// `research/spill-a-20260919/DAY56.md`, OWED item 23). Every production path passes
 /// `worker::ADMISSION_RESERVATIONS`; the shed tests pass their own, so they need no order against
@@ -3588,6 +3680,9 @@ struct ChatCompletionReq {
     top_logprobs: Option<usize>,
     #[serde(default)]
     n: Option<usize>,
+    /// Captured to refuse candidate-ranking semantics rather than silently ignoring them.
+    #[serde(default)]
+    best_of: Option<usize>,
     /// OpenAI tool schemas: `[{"type":"function","function":{name,description?,parameters?}}]`.
     #[serde(default)]
     tools: Vec<serde_json::Value>,
@@ -8212,6 +8307,7 @@ fn model_entry_v1(
             // Every chat-shaped capability is FALSE off the chat surface: an embedder
             // does not stream, does not call tools, and does not reason.
             "streaming": is_chat,
+            "max_choices": if is_chat { caps.map_or(1, |c| c.max_choices.max(1)) } else { 1 },
             "tools": is_chat && caps.is_some_and(|c| c.tools_branch),
             "forced_tool_calls": is_chat && tool_constraint::ToolDialect::from_caps(caps).is_ok(),
             "parallel_tool_calls": is_chat && caps.is_some_and(|c| c.tools_branch && !c.gemma_think),
@@ -8708,6 +8804,7 @@ fn build_request_with_trace(
         // memra#522: the hybrid-lane queue-wait histogram's start. Every raw-prompt
         // request enters the worker's admission queue right after this builder returns.
         queued_at: std::time::Instant::now(),
+        choice: None,
         route_ticket: None,
         ttft,
         tx,
@@ -9263,6 +9360,7 @@ fn build_chat_request_with_trace(
             // memra#522: the hybrid-lane queue-wait histogram's start, same convention as
             // the raw-prompt builder above.
             queued_at: std::time::Instant::now(),
+            choice: None,
             route_ticket: None,
             ttft,
             tx,
@@ -9966,6 +10064,15 @@ fn admit_tenant_budget(
     tenant: &auth::TenantCtx,
     request: &mut Request,
 ) -> Result<BudgetAdmission, BudgetRejection> {
+    admit_tenant_budget_choices(st, tenant, request, 1)
+}
+
+fn admit_tenant_budget_choices(
+    st: &AppState,
+    tenant: &auth::TenantCtx,
+    request: &mut Request,
+    choices: usize,
+) -> Result<BudgetAdmission, BudgetRejection> {
     let Some(accounting) = st.metering.as_ref().filter(|m| m.enforces_limits()) else {
         return Ok(BudgetAdmission {
             permit: None,
@@ -10004,6 +10111,11 @@ fn admit_tenant_budget(
         .map_err(|_| BudgetRejection::Unavailable("prompt token count exceeds u64".into()))?;
     let completion_tokens = u64::try_from(completion_tokens)
         .map_err(|_| BudgetRejection::Unavailable("completion token bound exceeds u64".into()))?;
+    let completion_tokens = completion_tokens
+        .checked_mul(choices as u64)
+        .ok_or_else(|| {
+            BudgetRejection::Invalid("n-choice completion reservation exceeds u64".into())
+        })?;
     match accounting.reserve(
         &tenant.tenant,
         tenant.key_prefix.as_deref(),
@@ -10333,6 +10445,19 @@ async fn completions_with_admission(
         Ok(ns) => ns,
         Err(msg) => return with_request_id(&env.id, bad_request(msg, Some("cache_salt"))),
     };
+    let choices = match multi_choice::supported_count(req.n, st.caps.get(&req.model)) {
+        Ok(count) => count,
+        Err(message) => return with_request_id(&env.id, bad_request(&message, Some("n"))),
+    };
+    if background && choices > 1 {
+        return with_request_id(
+            &env.id,
+            bad_request(
+                "n-choice generation does not support background delivery; use n=1",
+                Some("n"),
+            ),
+        );
+    }
     // HONESTY GATE (gap-scan F4): semantic params we can't honor 400 loudly.
     if let Err((msg, param)) = reject_unsupported(&[
         (
@@ -10342,14 +10467,9 @@ async fn completions_with_admission(
         ),
         ("logprobs", req.logprobs.is_some(), ""),
         (
-            "n",
-            req.n.is_some_and(|n| n != 1),
-            " for n != 1 (single choice only)",
-        ),
-        (
             "best_of",
             req.best_of.is_some_and(|n| n != 1),
-            " (single choice only)",
+            " (best_of is not implemented; use n for multiple choices)",
         ),
     ]) {
         return with_request_id(&env.id, bad_request(&msg, Some(&param)));
@@ -10453,6 +10573,28 @@ async fn completions_with_admission(
             None,
         );
         return ledger_rejected(receipt, drain_response(), "draining", &env.id);
+    }
+    if choices > 1 {
+        if let Some(admission) = body_admission.as_mut() {
+            admission.release();
+        }
+        return multi_choice::respond(
+            &st,
+            &tenant,
+            request,
+            rx,
+            multi_choice::Reply {
+                model,
+                chat: false,
+                stream,
+                include_usage,
+                env,
+                deadline,
+                parsers: (0..choices).map(|_| None).collect(),
+            },
+            || Some(json!({"prompt": req.prompt})),
+        )
+        .await;
     }
     let budget = match admit_tenant_budget(&st, &tenant, &mut request) {
         Ok(budget) => budget,
@@ -10951,6 +11093,25 @@ async fn chat_completions_with_admission(
     // silent downgrades. response_format json_object/json_schema are now REAL
     // (constrained decoding, lane/constrained) — parsed below; bad forms 400 with the
     // parser's own message.
+    let choices = match multi_choice::supported_count(req.n, st.caps.get(&req.model)) {
+        Ok(count) => count,
+        Err(message) => return with_request_id(&env.id, bad_request(&message, Some("n"))),
+    };
+    if background && choices > 1 {
+        return with_request_id(
+            &env.id,
+            bad_request(
+                "n-choice generation does not support background delivery; use n=1",
+                Some("n"),
+            ),
+        );
+    }
+    if choices > 1 && request_has_vision(&req) {
+        return with_request_id(
+            &env.id,
+            bad_request("n-choice generation supports text requests only", Some("n")),
+        );
+    }
     if let Err((msg, param)) = reject_unsupported(&[
         (
             "logit_bias",
@@ -10966,9 +11127,9 @@ async fn chat_completions_with_admission(
         ),
         ("top_logprobs", req.top_logprobs.is_some(), ""),
         (
-            "n",
-            req.n.is_some_and(|n| n != 1),
-            " for n != 1 (single choice only)",
+            "best_of",
+            req.best_of.is_some_and(|n| n != 1),
+            " (best_of is not implemented; use n for multiple choices)",
         ),
     ]) {
         return with_request_id(&env.id, bad_request(&msg, Some(&param)));
@@ -11104,6 +11265,31 @@ async fn chat_completions_with_admission(
             None,
         );
         return ledger_rejected(receipt, drain_response(), "draining", &env.id);
+    }
+    if choices > 1 {
+        if let Some(admission) = body_admission.as_mut() {
+            admission.release();
+        }
+        let parsers = (0..choices)
+            .map(|_| plan.parser.as_ref().map(ToolStreamParser::fresh))
+            .collect();
+        return multi_choice::respond(
+            &st,
+            &tenant,
+            plan.request,
+            rx,
+            multi_choice::Reply {
+                model: model.clone(),
+                chat: true,
+                stream,
+                include_usage,
+                env,
+                deadline,
+                parsers,
+            },
+            || capture_prompt,
+        )
+        .await;
     }
     let budget = match admit_tenant_budget(&st, &tenant, &mut plan.request) {
         Ok(budget) => budget,
@@ -12424,6 +12610,8 @@ pub(crate) async fn collect_blocking_response(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    include!("multi_choice_ledger_tests.rs");
 
     /// Multi-item capture requests (`/v1/embeddings` N inputs, `/v1/rerank` N documents)
     /// give every capture its own ledger identity under the parent envelope: distinct per
@@ -25503,6 +25691,437 @@ temperature = 0.6
         }
     }
 
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // existing drain/env guards serialize real HTTP ingress against global writers
+    async fn choice_background_combination_refuses_before_worker_or_receipt() {
+        let _drain = drain_lock();
+        let _env = background_env_lock();
+        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
+        for chat in [false, true] {
+            let (mut state, mock, _, rx) = bg914_fixture(None);
+            state.caps = Arc::new(HashMap::from([(
+                "bg914".into(),
+                ModelCaps {
+                    max_choices: 4,
+                    chat_ok: true,
+                    context_length: 1024,
+                    n_vocab: 32,
+                    ..Default::default()
+                },
+            )]));
+            let app = bg914_router(state.clone());
+            let path = if chat {
+                "/v1/chat/completions"
+            } else {
+                "/v1/completions"
+            };
+            for n in [2, 4] {
+                let mut body = bg914_body(chat);
+                body["n"] = json!(n);
+                body["max_tokens"] = json!(8);
+                let response = bg914_http(app.clone(), "POST", path, Some("owner-key"), body).await;
+                assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+                let body = body_value(response).await;
+                assert_eq!(body["error"]["param"], "n");
+                assert!(
+                    body["error"]["message"]
+                        .as_str()
+                        .unwrap()
+                        .contains("background")
+                );
+                assert!(rx.try_recv().is_err());
+                assert!(mock.events().is_empty());
+                assert!(state.background_cancel.lock().unwrap().is_empty());
+            }
+        }
+        unsafe { std::env::remove_var(responses_api::BACKGROUND_RESPONSES_ENV) };
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // global drain/admission guards isolate the real HTTP fixture counters
+    async fn choice_http_shared_pool_isolation_and_pressure_controls() {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let _guard = global_counter_writer_guard();
+        for case in 0..3 {
+            let mut st = choice_http_state();
+            let cap = lane_cap(lanes::Lane::Interactive);
+            assert!(cap >= 3);
+            let tenant = auth::TenantCtx::default_tenant();
+            let mut held = Vec::new();
+            let mut key_file = None;
+            let mut key = None;
+            if case == 0 {
+                let name = "t528-dedicated-isolation";
+                let _route = route_telemetry::register(name, cap);
+                st.models = Arc::new(vec!["m".into(), name.into()]);
+                for _ in 0..cap {
+                    held.push(
+                        acquire_request_slot(
+                            &st,
+                            lanes::Lane::Interactive,
+                            Some(name),
+                            &tenant,
+                            &Envelope::new(false),
+                        )
+                        .unwrap()
+                        .0,
+                    );
+                }
+            } else if case == 1 {
+                for _ in 0..cap {
+                    held.push(
+                        acquire_request_slot(
+                            &st,
+                            lanes::Lane::Interactive,
+                            Some("m"),
+                            &tenant,
+                            &Envelope::new(false),
+                        )
+                        .unwrap()
+                        .0,
+                    );
+                }
+            } else {
+                let path = std::env::temp_dir().join(format!(
+                    "memra-choice-tenant-{}.toml",
+                    Envelope::new(false).id
+                ));
+                let mut file = std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .mode(0o600)
+                    .open(&path)
+                    .unwrap();
+                write!(
+                    file,
+                    "[[keys]]\nsha256 = \"{}\"\ntenant = \"choice_capped\"\nrate_limit = 1\n",
+                    auth::sha256_hex("choice-cap-key")
+                )
+                .unwrap();
+                st.api_auth = ApiAuth {
+                    keyring: Some(Box::leak(Box::new(
+                        auth::KeyStore::from_spec(path.to_str().unwrap()).unwrap(),
+                    ))),
+                    ..ApiAuth::default()
+                };
+                key_file = Some(path);
+                key = Some("choice-cap-key");
+            }
+            let response = bg914_http(bg914_router(st.clone()), "POST", "/v1/completions", key,
+                json!({"model":"m","prompt":"fixture","n":3,"seed":500,"max_tokens":2,"timeout_ms":1000})).await;
+            if case == 1 {
+                assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+                assert_eq!(body_value(response).await["error"]["code"], "shed_deadline");
+            } else {
+                assert_eq!(response.status(), StatusCode::OK, "case {case}");
+                if case == 2 {
+                    assert_eq!(response.headers()["x-ratelimit-limit"], "1");
+                }
+                assert_eq!(
+                    body_value(response).await["choices"]
+                        .as_array()
+                        .unwrap()
+                        .len(),
+                    3
+                );
+            }
+            drop(held);
+            if let Some(path) = key_file {
+                std::fs::remove_file(path).unwrap();
+            }
+            assert_eq!(
+                st.inflight[lanes::Lane::Interactive.idx()]
+                    .load(std::sync::atomic::Ordering::SeqCst),
+                0
+            );
+            assert!(st.tenant_inflight.lock().unwrap().is_empty());
+        }
+    }
+
+    fn choice_http_state() -> AppState {
+        let mut state = fake_worker_state();
+        state.caps = Arc::new(HashMap::from([(
+            "m".into(),
+            ModelCaps {
+                max_choices: 4,
+                chat_ok: true,
+                context_length: 1024,
+                n_vocab: 32,
+                ..Default::default()
+            },
+        )]));
+        let (tx, rx) = std::sync::mpsc::channel::<Cmd>();
+        state.cmd_tx = tx;
+        std::thread::spawn(move || {
+            while let Ok(command) = rx.recv() {
+                let requests = match command {
+                    Cmd::Generate(request) => vec![*request],
+                    Cmd::GenerateChoices(requests) => requests,
+                    _ => panic!("generation command expected"),
+                };
+                for (index, mut request) in requests.into_iter().enumerate() {
+                    assert_eq!(request.sampler_cfg.seed, 500 + index as u64);
+                    worker::release_pending_admit();
+                    worker::release_request_reservation(&mut request);
+                    if let Some(ready) = request.constraint_ready.take() {
+                        let _ = ready.send(Ok(()));
+                    }
+                    request
+                        .tx
+                        .send(Event::PromptUsage {
+                            n_prompt: 5,
+                            n_cached: 0,
+                        })
+                        .unwrap();
+                    request
+                        .tx
+                        .send(Event::Token {
+                            id: 1,
+                            text: format!("row{index}"),
+                        })
+                        .unwrap();
+                    request.tx.send(Event::TokenSnapshot(vec![1])).unwrap();
+                    request
+                        .tx
+                        .send(Event::Done {
+                            stop_reason: "MaxNew".into(),
+                            n_tokens: 1,
+                            n_prompt: 5,
+                            n_cached: 0,
+                            elapsed_s: 0.01,
+                            spec: None,
+                        })
+                        .unwrap();
+                }
+            }
+        });
+        state
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // shared drain/admission state is serialized across the HTTP contract
+    async fn choice_http_both_surfaces_return_every_index_and_prompt_once() {
+        let _lock = drain_lock();
+        for chat in [false, true] {
+            let state = choice_http_state();
+            let payload = if chat {
+                json!({"model":"m","messages":[{"role":"user","content":"fixture"}],"n":3,"max_tokens":1,"seed":500})
+            } else {
+                json!({"model":"m","prompt":"fixture","n":3,"max_tokens":1,"seed":500})
+            };
+            let response = if chat {
+                chat_completions(
+                    State(state.clone()),
+                    HeaderMap::new(),
+                    None,
+                    Json(serde_json::from_value(payload).unwrap()),
+                )
+                .await
+            } else {
+                completions(
+                    State(state.clone()),
+                    HeaderMap::new(),
+                    None,
+                    Json(serde_json::from_value(payload).unwrap()),
+                )
+                .await
+            };
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = body_value(response).await;
+            assert_eq!(body["choices"].as_array().unwrap().len(), 3);
+            for index in 0..3 {
+                assert_eq!(body["choices"][index]["index"], index);
+                assert_eq!(body["choices"][index]["finish_reason"], "length");
+            }
+            assert_eq!(body["usage"]["prompt_tokens"], 5);
+            assert_eq!(body["usage"]["completion_tokens"], 3);
+            assert_eq!(body["usage"]["total_tokens"], 8);
+            assert_eq!(
+                state.inflight[lanes::Lane::Interactive.idx()]
+                    .load(std::sync::atomic::Ordering::SeqCst),
+                0
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // all streamed rows and guards share the isolated HTTP state
+    async fn choice_http_stream_has_all_indexed_finishes_before_one_done() {
+        let _lock = drain_lock();
+        for include_usage in [false, true] {
+            let state = choice_http_state();
+            let response = chat_completions(State(state.clone()), HeaderMap::new(), None,
+                Json(serde_json::from_value(json!({"model":"m","messages":[{"role":"user","content":"fixture"}],
+                    "n":3,"stream":true,"stream_options":{"include_usage":include_usage},"max_tokens":1,"seed":500})).unwrap())).await;
+            assert_eq!(response.status(), StatusCode::OK);
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let wire = String::from_utf8(bytes.to_vec()).unwrap();
+            let packets: Vec<serde_json::Value> = wire
+                .lines()
+                .filter_map(|line| line.strip_prefix("data: "))
+                .filter(|line| *line != "[DONE]")
+                .map(|line| serde_json::from_str(line).unwrap())
+                .collect();
+            let mut finishes: Vec<_> = packets
+                .iter()
+                .flat_map(|p| p["choices"].as_array().unwrap())
+                .filter(|c| !c["finish_reason"].is_null())
+                .map(|c| c["index"].as_u64().unwrap())
+                .collect();
+            finishes.sort_unstable();
+            assert_eq!(finishes, vec![0, 1, 2]);
+            assert_eq!(wire.matches("[DONE]").count(), 1);
+            let last = packets.last().unwrap();
+            assert_eq!(last["usage"]["completion_tokens"], 3);
+            assert_eq!(last["usage"]["prompt_tokens"], 5);
+            assert_eq!(
+                last["choices"].as_array().unwrap().is_empty(),
+                include_usage
+            );
+            assert_eq!(
+                state.inflight[lanes::Lane::Interactive.idx()]
+                    .load(std::sync::atomic::Ordering::SeqCst),
+                0
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // the refusal must not reserve any worker/tenant state
+    async fn choice_http_both_endpoints_refuse_best_of_instead_of_ignoring_it() {
+        let _lock = drain_lock();
+        for chat in [false, true] {
+            let state = choice_http_state();
+            let body = if chat {
+                json!({"model":"m","messages":[{"role":"user","content":"fixture"}],"best_of":2,"seed":500})
+            } else {
+                json!({"model":"m","prompt":"fixture","best_of":2,"seed":500})
+            };
+            let response = if chat {
+                chat_completions(
+                    State(state.clone()),
+                    HeaderMap::new(),
+                    None,
+                    Json(serde_json::from_value(body).unwrap()),
+                )
+                .await
+            } else {
+                completions(
+                    State(state.clone()),
+                    HeaderMap::new(),
+                    None,
+                    Json(serde_json::from_value(body).unwrap()),
+                )
+                .await
+            };
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let body = body_value(response).await;
+            assert_eq!(body["error"]["param"], "best_of");
+            assert!(body["error"]["message"].as_str().unwrap().contains("use n"));
+            assert_eq!(
+                state.inflight[lanes::Lane::Interactive.idx()]
+                    .load(std::sync::atomic::Ordering::SeqCst),
+                0
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // real group deadline handler owns the same shared admission state
+    async fn choice_http_deadline_flushes_prefix_and_returns_one_flat_error() {
+        let _lock = drain_lock();
+        let mut state = choice_http_state();
+        let (tx, rx) = std::sync::mpsc::channel::<Cmd>();
+        state.cmd_tx = tx;
+        let (release, hold) = std::sync::mpsc::channel::<()>();
+        let worker = std::thread::spawn(move || {
+            let Cmd::GenerateChoices(mut requests) = rx.recv().unwrap() else {
+                panic!("choice group expected")
+            };
+            for request in &mut requests {
+                worker::release_pending_admit();
+                worker::release_request_reservation(request);
+                request
+                    .tx
+                    .send(Event::PromptUsage {
+                        n_prompt: 5,
+                        n_cached: 0,
+                    })
+                    .unwrap();
+            }
+            for (id, ch) in "abcE".chars().enumerate() {
+                requests[0]
+                    .tx
+                    .send(Event::Token {
+                        id: id as u32,
+                        text: ch.to_string(),
+                    })
+                    .unwrap();
+            }
+            // Event handshake keeps both channels open through the actual HTTP deadline.
+            hold.recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap();
+            assert!(requests.iter().all(|r| r.tx.is_closed()));
+        });
+        let response = completions(
+            State(state.clone()),
+            HeaderMap::new(),
+            None,
+            Json(
+                serde_json::from_value(json!({"model":"m","prompt":"fixture","n":2,
+                "stop":"END","timeout_ms":1000,"seed":500}))
+                .unwrap(),
+            ),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_value(response).await;
+        assert_eq!(body["choices"][0]["text"], "abcE");
+        assert_eq!(body["choices"][0]["finish_reason"], "error");
+        assert_eq!(body["usage"]["completion_tokens"], 4);
+        assert_eq!(body["error"]["code"], "deadline_exceeded");
+        assert!(body["error"].get("error").is_none());
+        release.send(()).unwrap();
+        worker.join().unwrap();
+        assert_eq!(
+            state.inflight[lanes::Lane::Interactive.idx()]
+                .load(std::sync::atomic::Ordering::SeqCst),
+            0
+        );
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // named refusals must touch neither a worker nor mutable global admission
+    async fn choice_http_refuses_bad_count_and_model_capability_before_intake() {
+        let _lock = drain_lock();
+        for count in [0, 5, 9] {
+            let state = choice_http_state();
+            let response = completions(
+                State(state.clone()),
+                HeaderMap::new(),
+                None,
+                Json(
+                    serde_json::from_value(
+                        json!({"model":"m","prompt":"fixture","n":count,"seed":500}),
+                    )
+                    .unwrap(),
+                ),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let body = body_value(response).await;
+            assert_eq!(body["error"]["param"], "n");
+            assert_eq!(
+                state.inflight[lanes::Lane::Interactive.idx()]
+                    .load(std::sync::atomic::Ordering::SeqCst),
+                0
+            );
+        }
+    }
+
     fn fake_worker_state() -> AppState {
         fake_worker_state_with_steps(1, std::time::Duration::ZERO)
     }
@@ -27756,6 +28375,7 @@ temperature = 0.6
     fn v1_models_entry_keeps_catalog_shape_with_honest_nulls() {
         // KNOWN plan metadata populates every OR-schema field from worker truth.
         let caps = ModelCaps {
+            max_choices: 1,
             tools_branch: true,
             hy3: false,
             qwen_think: true,

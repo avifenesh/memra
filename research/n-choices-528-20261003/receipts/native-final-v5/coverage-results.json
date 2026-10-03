@@ -1,0 +1,482 @@
+{
+  "native-composite": {
+    "contract_id": "e7c24ab0d5b8543465736efbd56ba605885f3ee9be93115f4c6980e1ff0d628c",
+    "context": {
+      "source": "c6db12b96bced55fa1d7b6e0b308f23f5699f1b7",
+      "binary_sha256": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "stock_sha256": "fead9d5d6acff8cb4b116b4aaaceaffe43f0ab040c4e04bf35d76cb1ea606965",
+      "baseline_sha256": "57a19f57e99e3a2a13519b61a85b77021d3f9e9b4389c59363b0800477958184",
+      "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "helper_sha256": {
+        "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "replay_helper_sha256": {
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "model": "Qwen3.5-9B Q8_0",
+      "artifact": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.91.07, 24463 MiB",
+      "numeric_program": "existing GGUF forward/sampler and ordinary leader prefix_snapshot/prefix_restore",
+      "binary": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "request_shape": "chat+text n1/2/3/4/8; sampled+greedy+SSE; constrained N2; isolated deadline and capacity boots"
+    },
+    "status": "passed",
+    "skipped": 0,
+    "executed": 16,
+    "edges": {
+      "n1_identity": "passed",
+      "greedy_row_identity": "passed",
+      "seeded_rng_isolation": "passed",
+      "shared_prefill": "passed",
+      "indexed_termination": "passed",
+      "stream_content_identity": "passed",
+      "prompt_once_output_sum": "passed",
+      "reservation": "passed",
+      "meter_attribution": "passed",
+      "n_slots": "passed",
+      "kv_exhaustion": "passed",
+      "prepaid_exhaustion": "passed",
+      "cancel_all_and_recover": "passed",
+      "bare_defaults": "passed",
+      "deadline_partial": "passed",
+      "constrained_choices": "passed"
+    }
+  },
+  "changed-context": {
+    "contract_id": "e7c24ab0d5b8543465736efbd56ba605885f3ee9be93115f4c6980e1ff0d628c",
+    "context": {
+      "source": "c6db12b96bced55fa1d7b6e0b308f23f5699f1b7",
+      "binary_sha256": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "stock_sha256": "fead9d5d6acff8cb4b116b4aaaceaffe43f0ab040c4e04bf35d76cb1ea606965",
+      "baseline_sha256": "57a19f57e99e3a2a13519b61a85b77021d3f9e9b4389c59363b0800477958184",
+      "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "helper_sha256": {
+        "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "replay_helper_sha256": {
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "model": "Qwen3.5-9B Q8_0",
+      "artifact": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.91.07, 24463 MiB",
+      "numeric_program": "existing GGUF forward/sampler and ordinary leader prefix_snapshot/prefix_restore",
+      "binary": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "request_shape": "chat+text n1/2/3/4/8; sampled+greedy+SSE; constrained N2; isolated deadline and capacity boots"
+    },
+    "status": "passed",
+    "skipped": 0,
+    "executed": 1,
+    "edges": {
+      "control.changed-context": "passed"
+    }
+  },
+  "missing-choice": {
+    "contract_id": "e7c24ab0d5b8543465736efbd56ba605885f3ee9be93115f4c6980e1ff0d628c",
+    "context": {
+      "source": "c6db12b96bced55fa1d7b6e0b308f23f5699f1b7",
+      "binary_sha256": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "stock_sha256": "fead9d5d6acff8cb4b116b4aaaceaffe43f0ab040c4e04bf35d76cb1ea606965",
+      "baseline_sha256": "57a19f57e99e3a2a13519b61a85b77021d3f9e9b4389c59363b0800477958184",
+      "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "helper_sha256": {
+        "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "replay_helper_sha256": {
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "model": "Qwen3.5-9B Q8_0",
+      "artifact": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.91.07, 24463 MiB",
+      "numeric_program": "existing GGUF forward/sampler and ordinary leader prefix_snapshot/prefix_restore",
+      "binary": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "request_shape": "chat+text n1/2/3/4/8; sampled+greedy+SSE; constrained N2; isolated deadline and capacity boots"
+    },
+    "status": "passed",
+    "skipped": 0,
+    "executed": 1,
+    "edges": {
+      "control.missing-choice": "passed"
+    }
+  },
+  "duplicate-choice": {
+    "contract_id": "e7c24ab0d5b8543465736efbd56ba605885f3ee9be93115f4c6980e1ff0d628c",
+    "context": {
+      "source": "c6db12b96bced55fa1d7b6e0b308f23f5699f1b7",
+      "binary_sha256": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "stock_sha256": "fead9d5d6acff8cb4b116b4aaaceaffe43f0ab040c4e04bf35d76cb1ea606965",
+      "baseline_sha256": "57a19f57e99e3a2a13519b61a85b77021d3f9e9b4389c59363b0800477958184",
+      "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "helper_sha256": {
+        "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "replay_helper_sha256": {
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "model": "Qwen3.5-9B Q8_0",
+      "artifact": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.91.07, 24463 MiB",
+      "numeric_program": "existing GGUF forward/sampler and ordinary leader prefix_snapshot/prefix_restore",
+      "binary": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "request_shape": "chat+text n1/2/3/4/8; sampled+greedy+SSE; constrained N2; isolated deadline and capacity boots"
+    },
+    "status": "passed",
+    "skipped": 0,
+    "executed": 1,
+    "edges": {
+      "control.duplicate-choice": "passed"
+    }
+  },
+  "premature-done": {
+    "contract_id": "e7c24ab0d5b8543465736efbd56ba605885f3ee9be93115f4c6980e1ff0d628c",
+    "context": {
+      "source": "c6db12b96bced55fa1d7b6e0b308f23f5699f1b7",
+      "binary_sha256": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "stock_sha256": "fead9d5d6acff8cb4b116b4aaaceaffe43f0ab040c4e04bf35d76cb1ea606965",
+      "baseline_sha256": "57a19f57e99e3a2a13519b61a85b77021d3f9e9b4389c59363b0800477958184",
+      "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "helper_sha256": {
+        "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "replay_helper_sha256": {
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "model": "Qwen3.5-9B Q8_0",
+      "artifact": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.91.07, 24463 MiB",
+      "numeric_program": "existing GGUF forward/sampler and ordinary leader prefix_snapshot/prefix_restore",
+      "binary": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "request_shape": "chat+text n1/2/3/4/8; sampled+greedy+SSE; constrained N2; isolated deadline and capacity boots"
+    },
+    "status": "passed",
+    "skipped": 0,
+    "executed": 1,
+    "edges": {
+      "control.premature-done": "passed"
+    }
+  },
+  "shared-rng": {
+    "contract_id": "e7c24ab0d5b8543465736efbd56ba605885f3ee9be93115f4c6980e1ff0d628c",
+    "context": {
+      "source": "c6db12b96bced55fa1d7b6e0b308f23f5699f1b7",
+      "binary_sha256": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "stock_sha256": "fead9d5d6acff8cb4b116b4aaaceaffe43f0ab040c4e04bf35d76cb1ea606965",
+      "baseline_sha256": "57a19f57e99e3a2a13519b61a85b77021d3f9e9b4389c59363b0800477958184",
+      "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "helper_sha256": {
+        "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "replay_helper_sha256": {
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "model": "Qwen3.5-9B Q8_0",
+      "artifact": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.91.07, 24463 MiB",
+      "numeric_program": "existing GGUF forward/sampler and ordinary leader prefix_snapshot/prefix_restore",
+      "binary": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "request_shape": "chat+text n1/2/3/4/8; sampled+greedy+SSE; constrained N2; isolated deadline and capacity boots"
+    },
+    "status": "passed",
+    "skipped": 0,
+    "executed": 1,
+    "edges": {
+      "control.shared-rng": "passed"
+    }
+  },
+  "output-sum": {
+    "contract_id": "e7c24ab0d5b8543465736efbd56ba605885f3ee9be93115f4c6980e1ff0d628c",
+    "context": {
+      "source": "c6db12b96bced55fa1d7b6e0b308f23f5699f1b7",
+      "binary_sha256": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "stock_sha256": "fead9d5d6acff8cb4b116b4aaaceaffe43f0ab040c4e04bf35d76cb1ea606965",
+      "baseline_sha256": "57a19f57e99e3a2a13519b61a85b77021d3f9e9b4389c59363b0800477958184",
+      "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "helper_sha256": {
+        "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "replay_helper_sha256": {
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "model": "Qwen3.5-9B Q8_0",
+      "artifact": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.91.07, 24463 MiB",
+      "numeric_program": "existing GGUF forward/sampler and ordinary leader prefix_snapshot/prefix_restore",
+      "binary": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "request_shape": "chat+text n1/2/3/4/8; sampled+greedy+SSE; constrained N2; isolated deadline and capacity boots"
+    },
+    "status": "passed",
+    "skipped": 0,
+    "executed": 1,
+    "edges": {
+      "control.output-sum": "passed"
+    }
+  },
+  "missing-fork": {
+    "contract_id": "e7c24ab0d5b8543465736efbd56ba605885f3ee9be93115f4c6980e1ff0d628c",
+    "context": {
+      "source": "c6db12b96bced55fa1d7b6e0b308f23f5699f1b7",
+      "binary_sha256": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "stock_sha256": "fead9d5d6acff8cb4b116b4aaaceaffe43f0ab040c4e04bf35d76cb1ea606965",
+      "baseline_sha256": "57a19f57e99e3a2a13519b61a85b77021d3f9e9b4389c59363b0800477958184",
+      "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "helper_sha256": {
+        "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "replay_helper_sha256": {
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "model": "Qwen3.5-9B Q8_0",
+      "artifact": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.91.07, 24463 MiB",
+      "numeric_program": "existing GGUF forward/sampler and ordinary leader prefix_snapshot/prefix_restore",
+      "binary": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "request_shape": "chat+text n1/2/3/4/8; sampled+greedy+SSE; constrained N2; isolated deadline and capacity boots"
+    },
+    "status": "passed",
+    "skipped": 0,
+    "executed": 1,
+    "edges": {
+      "control.missing-fork": "passed"
+    }
+  },
+  "follower-prime": {
+    "contract_id": "e7c24ab0d5b8543465736efbd56ba605885f3ee9be93115f4c6980e1ff0d628c",
+    "context": {
+      "source": "c6db12b96bced55fa1d7b6e0b308f23f5699f1b7",
+      "binary_sha256": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "stock_sha256": "fead9d5d6acff8cb4b116b4aaaceaffe43f0ab040c4e04bf35d76cb1ea606965",
+      "baseline_sha256": "57a19f57e99e3a2a13519b61a85b77021d3f9e9b4389c59363b0800477958184",
+      "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "helper_sha256": {
+        "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "replay_helper_sha256": {
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "model": "Qwen3.5-9B Q8_0",
+      "artifact": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.91.07, 24463 MiB",
+      "numeric_program": "existing GGUF forward/sampler and ordinary leader prefix_snapshot/prefix_restore",
+      "binary": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "request_shape": "chat+text n1/2/3/4/8; sampled+greedy+SSE; constrained N2; isolated deadline and capacity boots"
+    },
+    "status": "passed",
+    "skipped": 0,
+    "executed": 1,
+    "edges": {
+      "control.follower-prime": "passed"
+    }
+  },
+  "duplicate-prompt": {
+    "contract_id": "e7c24ab0d5b8543465736efbd56ba605885f3ee9be93115f4c6980e1ff0d628c",
+    "context": {
+      "source": "c6db12b96bced55fa1d7b6e0b308f23f5699f1b7",
+      "binary_sha256": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "stock_sha256": "fead9d5d6acff8cb4b116b4aaaceaffe43f0ab040c4e04bf35d76cb1ea606965",
+      "baseline_sha256": "57a19f57e99e3a2a13519b61a85b77021d3f9e9b4389c59363b0800477958184",
+      "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "helper_sha256": {
+        "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "replay_helper_sha256": {
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "model": "Qwen3.5-9B Q8_0",
+      "artifact": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.91.07, 24463 MiB",
+      "numeric_program": "existing GGUF forward/sampler and ordinary leader prefix_snapshot/prefix_restore",
+      "binary": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "request_shape": "chat+text n1/2/3/4/8; sampled+greedy+SSE; constrained N2; isolated deadline and capacity boots"
+    },
+    "status": "passed",
+    "skipped": 0,
+    "executed": 1,
+    "edges": {
+      "control.duplicate-prompt": "passed"
+    }
+  },
+  "prompt-multiplied": {
+    "contract_id": "e7c24ab0d5b8543465736efbd56ba605885f3ee9be93115f4c6980e1ff0d628c",
+    "context": {
+      "source": "c6db12b96bced55fa1d7b6e0b308f23f5699f1b7",
+      "binary_sha256": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "stock_sha256": "fead9d5d6acff8cb4b116b4aaaceaffe43f0ab040c4e04bf35d76cb1ea606965",
+      "baseline_sha256": "57a19f57e99e3a2a13519b61a85b77021d3f9e9b4389c59363b0800477958184",
+      "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "helper_sha256": {
+        "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "replay_helper_sha256": {
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "model": "Qwen3.5-9B Q8_0",
+      "artifact": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.91.07, 24463 MiB",
+      "numeric_program": "existing GGUF forward/sampler and ordinary leader prefix_snapshot/prefix_restore",
+      "binary": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "request_shape": "chat+text n1/2/3/4/8; sampled+greedy+SSE; constrained N2; isolated deadline and capacity boots"
+    },
+    "status": "passed",
+    "skipped": 0,
+    "executed": 1,
+    "edges": {
+      "control.prompt-multiplied": "passed"
+    }
+  },
+  "output-unscaled": {
+    "contract_id": "e7c24ab0d5b8543465736efbd56ba605885f3ee9be93115f4c6980e1ff0d628c",
+    "context": {
+      "source": "c6db12b96bced55fa1d7b6e0b308f23f5699f1b7",
+      "binary_sha256": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "stock_sha256": "fead9d5d6acff8cb4b116b4aaaceaffe43f0ab040c4e04bf35d76cb1ea606965",
+      "baseline_sha256": "57a19f57e99e3a2a13519b61a85b77021d3f9e9b4389c59363b0800477958184",
+      "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "helper_sha256": {
+        "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "replay_helper_sha256": {
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "model": "Qwen3.5-9B Q8_0",
+      "artifact": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.91.07, 24463 MiB",
+      "numeric_program": "existing GGUF forward/sampler and ordinary leader prefix_snapshot/prefix_restore",
+      "binary": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "request_shape": "chat+text n1/2/3/4/8; sampled+greedy+SSE; constrained N2; isolated deadline and capacity boots"
+    },
+    "status": "passed",
+    "skipped": 0,
+    "executed": 1,
+    "edges": {
+      "control.output-unscaled": "passed"
+    }
+  },
+  "duplicate-terminal": {
+    "contract_id": "e7c24ab0d5b8543465736efbd56ba605885f3ee9be93115f4c6980e1ff0d628c",
+    "context": {
+      "source": "c6db12b96bced55fa1d7b6e0b308f23f5699f1b7",
+      "binary_sha256": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "stock_sha256": "fead9d5d6acff8cb4b116b4aaaceaffe43f0ab040c4e04bf35d76cb1ea606965",
+      "baseline_sha256": "57a19f57e99e3a2a13519b61a85b77021d3f9e9b4389c59363b0800477958184",
+      "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "helper_sha256": {
+        "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "replay_helper_sha256": {
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "model": "Qwen3.5-9B Q8_0",
+      "artifact": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.91.07, 24463 MiB",
+      "numeric_program": "existing GGUF forward/sampler and ordinary leader prefix_snapshot/prefix_restore",
+      "binary": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "request_shape": "chat+text n1/2/3/4/8; sampled+greedy+SSE; constrained N2; isolated deadline and capacity boots"
+    },
+    "status": "passed",
+    "skipped": 0,
+    "executed": 1,
+    "edges": {
+      "control.duplicate-terminal": "passed"
+    }
+  },
+  "wire-content": {
+    "contract_id": "e7c24ab0d5b8543465736efbd56ba605885f3ee9be93115f4c6980e1ff0d628c",
+    "context": {
+      "source": "c6db12b96bced55fa1d7b6e0b308f23f5699f1b7",
+      "binary_sha256": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "stock_sha256": "fead9d5d6acff8cb4b116b4aaaceaffe43f0ab040c4e04bf35d76cb1ea606965",
+      "baseline_sha256": "57a19f57e99e3a2a13519b61a85b77021d3f9e9b4389c59363b0800477958184",
+      "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "helper_sha256": {
+        "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "replay_helper_sha256": {
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "model": "Qwen3.5-9B Q8_0",
+      "artifact": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.91.07, 24463 MiB",
+      "numeric_program": "existing GGUF forward/sampler and ordinary leader prefix_snapshot/prefix_restore",
+      "binary": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "request_shape": "chat+text n1/2/3/4/8; sampled+greedy+SSE; constrained N2; isolated deadline and capacity boots"
+    },
+    "status": "passed",
+    "skipped": 0,
+    "executed": 1,
+    "edges": {
+      "control.wire-content": "passed"
+    }
+  },
+  "token-hash": {
+    "contract_id": "e7c24ab0d5b8543465736efbd56ba605885f3ee9be93115f4c6980e1ff0d628c",
+    "context": {
+      "source": "c6db12b96bced55fa1d7b6e0b308f23f5699f1b7",
+      "binary_sha256": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "stock_sha256": "fead9d5d6acff8cb4b116b4aaaceaffe43f0ab040c4e04bf35d76cb1ea606965",
+      "baseline_sha256": "57a19f57e99e3a2a13519b61a85b77021d3f9e9b4389c59363b0800477958184",
+      "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "helper_sha256": {
+        "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "replay_helper_sha256": {
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "model": "Qwen3.5-9B Q8_0",
+      "artifact": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.91.07, 24463 MiB",
+      "numeric_program": "existing GGUF forward/sampler and ordinary leader prefix_snapshot/prefix_restore",
+      "binary": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "request_shape": "chat+text n1/2/3/4/8; sampled+greedy+SSE; constrained N2; isolated deadline and capacity boots"
+    },
+    "status": "passed",
+    "skipped": 0,
+    "executed": 1,
+    "edges": {
+      "control.token-hash": "passed"
+    }
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "name": "budget",
+  "status": 402,
+  "headers": {
+    "content-type": "application/json",
+    "x-should-retry": "false",
+    "x-request-id": "cmpl-e4461684afaffc5f94621beca259687c",
+    "content-length": "152",
+    "date": "Sat, 03 Oct 2026 09:39:36 GMT"
+  },
+  "started": 612668.581887227,
+  "source_log_start": 103,
+  "disconnected": false,
+  "body": {
+    "error": {
+      "message": "tenant prepaid balance is insufficient for this request",
+      "type": "insufficient_balance",
+      "param": null,
+      "code": "insufficient_balance"
+    }
+  },
+  "ended": 612668.582746807,
+  "source_log_end": 108,
+  "id": "cmpl-e4461684afaffc5f94621beca259687c",
+  "callbacks": [
+    {
+      "tag": "CHOICE_OPEN",
+      "value": {
+        "id": "cmpl-e4461684afaffc5f94621beca259687c",
+        "model": "fixture",
+        "tenant": "default",
+        "max_tokens": 256,
+        "reserved_ctx": null,
+        "stream": false
+      },
+      "line": 104
+    },
+    {
+      "tag": "CHOICE_TERMINAL",
+      "value": {
+        "id": "cmpl-e4461684afaffc5f94621beca259687c",
+        "kind": "reject",
+        "status": 402,
+        "code": "insufficient_balance",
+        "prompt": 0,
+        "cached": 0,
+        "output": 0,
+        "observed_prompt": 0,
+        "observed_cached": 0,
+        "observed_output": 0
+      },
+      "line": 105
+    },
+    {
+      "tag": "CHOICE_DROP",
+      "value": {
+        "id": "cmpl-e4461684afaffc5f94621beca259687c",
+        "terminal": true,
+        "prompt": 0,
+        "cached": 0,
+        "output": 0
+      },
+      "line": 106
+    }
+  ],
+  "worker_rows": [],
+  "prime_events": [],
+  "fork_lines": [],
+  "masked_steps": 0
+}

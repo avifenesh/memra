@@ -261,6 +261,15 @@ class ValidationPlanTests(unittest.TestCase):
                 self.put(path, '# fixture\n')
         self.put_support_data_reader_fixture()
         expected = {'q35-cache', 'physical-gpu', 'support-records', 'background-chat-text'}
+        required = {name for name, contract in vp.TOOL_CONTRACTS.items() if contract.get('required')}
+        if required:
+            with self.assertRaisesRegex(vp.Refused, 'selected contract input is missing'):
+                vp.cpu_contract_names(self.repo, '')
+        for name in required:
+            for path in vp.TOOL_CONTRACTS[name]['inputs']:
+                self.put(path, '# required contract fixture\n')
+        self.put_support_data_reader_fixture()
+        expected.update(required)
         self.assertEqual(set(vp.cpu_contract_names(self.repo, '')), expected)
         for name in ('serving-qualification', 'sampled-mtp'):
             for path in vp.TOOL_CONTRACTS[name]['inputs']:

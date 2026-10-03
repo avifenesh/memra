@@ -545,6 +545,11 @@ jobs:
         env:
           MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
           MEMRA_CUDA_ARCH: "120a"
+      - name: Compile n-choice accounting observer (no native execution)
+        run: cargo build --locked --release -p memra-server --example choice_accounting_gate
+        env:
+          MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+          MEMRA_CUDA_ARCH: "120a"
 
   # ── tier, KV and onboarding-CLI suites (memra #545) ─────────────────────────────────────────
   # Until 2026-09-21 these suites were COMPILED here (build, clippy) and EXECUTED by nobody:

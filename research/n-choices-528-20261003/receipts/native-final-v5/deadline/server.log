@@ -1,0 +1,333 @@
+[server] build: memra-0.138.0-2a6bfaefd933 (id: source-tree, git: c6db12b96bce)
+[env-audit] warning: 3 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: MEMRA_CI_LOCK, MEMRA_CI_LOCK_HELD, MEMRA_RIG_LOCK_FD. Left alone: launchers and gate scripts own names outside the engine's families.
+[server] OpenRouter metadata loaded: 1 model(s), sha256 9702a9b331f50a38b798c18531dccfbd22abc277560cf70c322c0b3f091c2380 from /home/avifenesh/.local/state/memra-rig-darklanes-20261002/scratch/C/n-choices-528/native-review-v8-ledger-fixed/deadline/metadata.toml
+[server] starting; models config = [("fixture", "/data/ai-ml/models/qwen3.5-9b-judge-q8_0.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "fixture" <- /data/ai-ml/models/qwen3.5-9b-judge-q8_0.gguf
+[tensor-contract] bound 427 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "fixture": 32 layers, eos=248046, stop=[248046]
+[worker] fixture: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="fixture" route=hybrid-worker capacity=8 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] fixture: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[admission] "fixture": plain 14848 B/token, spec 14848 B/token; fixed residual learns from effective-free deltas
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[server] worker ready; serving models: ["fixture"]
+[server] listening on http://127.0.0.1:18272
+CHOICE_RESERVE {"tenant":"default","model":"fixture","prompt":23,"output":8146,"limit":1000000,"accepted":true}
+CHOICE_OPEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","model":"fixture","tenant":"default","max_tokens":null,"reserved_ctx":8169,"stream":false}
+[meter] admit id=chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef tenant=default lane=interactive model="fixture"
+[admission] request cost: model="fixture" ctx=4160 path=plain = 14848 B/token x ctx + 8MB prefill-workspace + 0MB fixed = 70MB
+[admission] fixed residual high-water: model="fixture" 103MB (observed 164MB at ctx 4096 path=plain)
+[admission] request cost: model="fixture" ctx=4160 path=plain = 14848 B/token x ctx + 8MB prefill-workspace + 103MB fixed = 173MB
+CHOICE_PROMPT {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","prompt":23,"cached":0}
+[primeseg] call start=0 take=23 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=23 budget=1024 seed_at=None
+CHOICE_PRIME {"group":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","index":0,"rows":23}
+[n-choice-prefill] group=chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef choices=2 prompt=23 cached=0 copies=1 bytes=53032448 leader=0
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":1}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":2}
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+[device-penalty] sparse sampled rows=2 unique-counts=38 execution=one-ragged-launch raw-logits=preserved
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":3}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":4}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":5}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":6}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":7}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":8}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":9}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":10}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":11}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":12}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":13}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":14}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":15}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":16}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":17}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":18}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":19}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":20}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":21}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":22}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":23}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":24}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":25}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":26}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":27}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":28}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":29}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":30}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":31}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":32}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":33}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":34}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":35}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":36}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":37}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":38}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":39}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":40}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":41}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":42}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":43}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":44}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":45}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":46}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":47}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":48}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":49}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":50}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":51}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":52}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":53}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":54}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":55}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":56}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":57}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":58}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":59}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":60}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":61}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":62}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":63}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":64}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":65}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":66}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":67}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":68}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":69}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":70}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":71}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":72}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":73}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":74}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":75}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":76}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":77}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":78}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":79}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":80}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":81}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":82}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":83}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":84}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":85}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":86}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":87}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":88}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":89}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":90}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":91}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":92}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":93}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":94}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":95}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":96}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":97}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":98}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":99}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":100}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":101}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":102}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":103}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":104}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":105}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":106}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":107}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":108}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":109}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":110}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":111}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":112}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":113}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":114}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":115}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":116}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":117}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":118}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":119}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":120}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":121}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":122}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":123}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":124}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":125}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":126}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":127}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":128}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":129}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":130}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":131}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":132}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":133}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":134}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":135}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":136}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":137}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":138}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":139}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":140}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":141}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":142}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":143}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":144}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":145}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":146}
+[fa-pool] grow #1 dev=0 o_len 4096 -> 98304 ml_len 16 -> 384 (retired kept, zero=false)
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":147}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":148}
+[fa-pool] grow #2 dev=0 o_len 98304 -> 196608 ml_len 384 -> 768 (retired kept, zero=false)
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":149}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":150}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":151}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":152}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":153}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":154}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":155}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":156}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":157}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":158}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":159}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":160}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":161}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":162}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":163}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":164}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":165}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":166}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":167}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":168}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":169}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":170}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":171}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":172}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":173}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":174}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":175}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":176}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":177}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":178}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":179}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":180}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":181}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":182}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":183}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":184}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":185}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":186}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":187}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":188}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":189}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":190}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":191}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":192}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":193}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":194}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":195}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":196}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":197}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":198}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":199}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":200}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":201}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":202}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":203}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":204}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":205}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":206}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":207}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":208}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":209}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":210}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":211}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":212}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":213}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":214}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":215}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":216}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":217}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":218}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":219}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":220}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":221}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":222}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":223}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":224}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":225}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":226}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":227}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":228}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":229}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":230}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":231}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":232}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":233}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":234}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":235}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":236}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":237}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":238}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":239}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":240}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":241}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":242}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":243}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":244}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":245}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":246}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":247}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":248}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":249}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":250}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":251}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":252}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":253}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":254}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":255}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":256}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":257}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":258}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":259}
+CHOICE_TOKEN {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","output":260}
+CHOICE_TERMINAL {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","kind":"deadline_partial","status":200,"code":"deadline_exceeded","prompt":23,"cached":0,"output":260,"observed_prompt":23,"observed_cached":0,"observed_output":260}
+CHOICE_DROP {"id":"chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef","terminal":true,"prompt":23,"cached":0,"output":260}
+CHOICE_RESERVE {"tenant":"default","model":"fixture","prompt":16,"output":16,"limit":1000000,"accepted":true}
+CHOICE_OPEN {"id":"chatcmpl-a8399a34e3822daa0833195cc2b4e4b9","model":"fixture","tenant":"default","max_tokens":16,"reserved_ctx":32,"stream":false}
+[meter] admit id=chatcmpl-a8399a34e3822daa0833195cc2b4e4b9 tenant=default lane=interactive model="fixture"
+[admission] request cost: model="fixture" ctx=88 path=plain = 14848 B/token x ctx + 6MB prefill-workspace + 103MB fixed = 110MB
+CHOICE_PROMPT {"id":"chatcmpl-a8399a34e3822daa0833195cc2b4e4b9","prompt":16,"cached":0}
+[abort] client disconnected: model "fixture", prompt 23 (0 cached, 153 fed), 130 generated — billed to abort point, 2.01s
+[abort] client disconnected: model "fixture", prompt 23 (0 cached, 153 fed), 130 generated — billed to abort point, 2.01s
+[primeseg] call start=0 take=16 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=16 budget=1024 seed_at=None
+CHOICE_PRIME {"group":"chatcmpl-a8399a34e3822daa0833195cc2b4e4b9","index":0,"rows":16}
+[n-choice-prefill] group=chatcmpl-a8399a34e3822daa0833195cc2b4e4b9 choices=2 prompt=16 cached=0 copies=1 bytes=52928512 leader=0
+CHOICE_TOKEN {"id":"chatcmpl-a8399a34e3822daa0833195cc2b4e4b9","output":1}
+CHOICE_TOKEN {"id":"chatcmpl-a8399a34e3822daa0833195cc2b4e4b9","output":2}
+[sampler-order] model=fixture radix=0 comparison=1
+[sampler-order] model=fixture radix=0 comparison=1
+[ttft] id=chatcmpl-5ffb5dc4e2ebb9e111bb85d16d15a8ef model="fixture" path="/v1/chat/completions" prompt_tokens=23 outcome=ended_without_sse request_parse_ms=0.842 admission_ms=0.832 queue_wait_ms=0.000 tokenize_ms=0.750 prime_wait_ms=3.058 prime_ms=124.397 decode_wait_ms=4.520 sse_handoff_ms=na request_parse_end_ms=0.842 admission_end_ms=1.674 tokenize_start_ms=0.871 tokenize_end_ms=1.621 prime_start_ms=4.679 prime_end_ms=129.076 first_decode_ms=133.596 first_sse_byte_ms=na total_ms=133.596
+CHOICE_TOKEN {"id":"chatcmpl-a8399a34e3822daa0833195cc2b4e4b9","output":3}
+CHOICE_TOKEN {"id":"chatcmpl-a8399a34e3822daa0833195cc2b4e4b9","output":4}
+CHOICE_TOKEN {"id":"chatcmpl-a8399a34e3822daa0833195cc2b4e4b9","output":5}
+CHOICE_TOKEN {"id":"chatcmpl-a8399a34e3822daa0833195cc2b4e4b9","output":6}
+CHOICE_TOKEN {"id":"chatcmpl-a8399a34e3822daa0833195cc2b4e4b9","output":7}
+CHOICE_TOKEN {"id":"chatcmpl-a8399a34e3822daa0833195cc2b4e4b9","output":8}
+CHOICE_TOKEN {"id":"chatcmpl-a8399a34e3822daa0833195cc2b4e4b9","output":9}
+CHOICE_TOKEN {"id":"chatcmpl-a8399a34e3822daa0833195cc2b4e4b9","output":10}
+CHOICE_TOKEN {"id":"chatcmpl-a8399a34e3822daa0833195cc2b4e4b9","output":11}
+CHOICE_TOKEN {"id":"chatcmpl-a8399a34e3822daa0833195cc2b4e4b9","output":12}
+CHOICE_TOKEN {"id":"chatcmpl-a8399a34e3822daa0833195cc2b4e4b9","output":13}
+CHOICE_TOKEN {"id":"chatcmpl-a8399a34e3822daa0833195cc2b4e4b9","output":14}
+CHOICE_TOKEN {"id":"chatcmpl-a8399a34e3822daa0833195cc2b4e4b9","output":15}
+CHOICE_TOKEN {"id":"chatcmpl-a8399a34e3822daa0833195cc2b4e4b9","output":16}
+CHOICE_WORKER_ROW {"group":"chatcmpl-a8399a34e3822daa0833195cc2b4e4b9","index":0,"seed":73,"prompt":16,"cached":0,"output":8,"token_sha256":"42bccd2a025d9aa88008f2f4bc12e34263c4de651d457b5b98c44e3aac4c4a17","reason":"MaxNew","sampling":{"temperature":1.0,"top_p":0.95,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0},"think":"Default"}
+CHOICE_WORKER_ROW {"group":"chatcmpl-a8399a34e3822daa0833195cc2b4e4b9","index":1,"seed":74,"prompt":16,"cached":0,"output":8,"token_sha256":"42bccd2a025d9aa88008f2f4bc12e34263c4de651d457b5b98c44e3aac4c4a17","reason":"MaxNew","sampling":{"temperature":1.0,"top_p":0.95,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0},"think":"Default"}
+[sampler-order] model=fixture radix=0 comparison=1
+CHOICE_TERMINAL {"id":"chatcmpl-a8399a34e3822daa0833195cc2b4e4b9","kind":"complete","status":200,"code":"","prompt":16,"cached":0,"output":16,"observed_prompt":16,"observed_cached":0,"observed_output":16}
+CHOICE_DROP {"id":"chatcmpl-a8399a34e3822daa0833195cc2b4e4b9","terminal":true,"prompt":16,"cached":0,"output":16}
+[sampler-order] model=fixture radix=0 comparison=1
+[ttft] id=chatcmpl-a8399a34e3822daa0833195cc2b4e4b9 model="fixture" path="/v1/chat/completions" prompt_tokens=16 outcome=ended_without_sse request_parse_ms=0.057 admission_ms=0.184 queue_wait_ms=0.000 tokenize_ms=0.052 prime_wait_ms=6.538 prime_ms=39.649 decode_wait_ms=4.426 sse_handoff_ms=na request_parse_end_ms=0.057 admission_end_ms=0.241 tokenize_start_ms=0.146 tokenize_end_ms=0.198 prime_start_ms=6.736 prime_end_ms=46.385 first_decode_ms=50.811 first_sse_byte_ms=na total_ms=50.811

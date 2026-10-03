@@ -1,0 +1,614 @@
+{
+  "decision": "scoped",
+  "selected": [
+    "changed-context",
+    "duplicate-choice",
+    "duplicate-prompt",
+    "duplicate-terminal",
+    "follower-prime",
+    "missing-choice",
+    "missing-fork",
+    "native-composite",
+    "output-sum",
+    "output-unscaled",
+    "premature-done",
+    "prompt-multiplied",
+    "shared-rng",
+    "token-hash",
+    "wire-content"
+  ],
+  "context": {
+    "source": "c6db12b96bced55fa1d7b6e0b308f23f5699f1b7",
+    "binary_sha256": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+    "stock_sha256": "fead9d5d6acff8cb4b116b4aaaceaffe43f0ab040c4e04bf35d76cb1ea606965",
+    "baseline_sha256": "57a19f57e99e3a2a13519b61a85b77021d3f9e9b4389c59363b0800477958184",
+    "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+    "helper_sha256": {
+      "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+      "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+      "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+    },
+    "replay_helper_sha256": {
+      "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+      "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+    },
+    "model": "Qwen3.5-9B Q8_0",
+    "artifact": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+    "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.91.07, 24463 MiB",
+    "numeric_program": "existing GGUF forward/sampler and ordinary leader prefix_snapshot/prefix_restore",
+    "binary": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+    "request_shape": "chat+text n1/2/3/4/8; sampled+greedy+SSE; constrained N2; isolated deadline and capacity boots"
+  },
+  "contract": {
+    "schema": "memra-edge-contract-v1",
+    "required_edges": [
+      "bare_defaults",
+      "cancel_all_and_recover",
+      "constrained_choices",
+      "control.changed-context",
+      "control.duplicate-choice",
+      "control.duplicate-prompt",
+      "control.duplicate-terminal",
+      "control.follower-prime",
+      "control.missing-choice",
+      "control.missing-fork",
+      "control.output-sum",
+      "control.output-unscaled",
+      "control.premature-done",
+      "control.prompt-multiplied",
+      "control.shared-rng",
+      "control.token-hash",
+      "control.wire-content",
+      "deadline_partial",
+      "greedy_row_identity",
+      "indexed_termination",
+      "kv_exhaustion",
+      "meter_attribution",
+      "n1_identity",
+      "n_slots",
+      "prepaid_exhaustion",
+      "prompt_once_output_sum",
+      "reservation",
+      "seeded_rng_isolation",
+      "shared_prefill",
+      "stream_content_identity"
+    ],
+    "context": {
+      "source": "c6db12b96bced55fa1d7b6e0b308f23f5699f1b7",
+      "binary_sha256": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "stock_sha256": "fead9d5d6acff8cb4b116b4aaaceaffe43f0ab040c4e04bf35d76cb1ea606965",
+      "baseline_sha256": "57a19f57e99e3a2a13519b61a85b77021d3f9e9b4389c59363b0800477958184",
+      "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "helper_sha256": {
+        "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "replay_helper_sha256": {
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+        "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+      },
+      "model": "Qwen3.5-9B Q8_0",
+      "artifact": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.91.07, 24463 MiB",
+      "numeric_program": "existing GGUF forward/sampler and ordinary leader prefix_snapshot/prefix_restore",
+      "binary": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "request_shape": "chat+text n1/2/3/4/8; sampled+greedy+SSE; constrained N2; isolated deadline and capacity boots"
+    },
+    "tests": {
+      "changed-context": {
+        "id": "changed-context",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.changed-context"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
+        },
+        "mandatory": true
+      },
+      "duplicate-choice": {
+        "id": "duplicate-choice",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.duplicate-choice"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
+        },
+        "mandatory": true
+      },
+      "duplicate-prompt": {
+        "id": "duplicate-prompt",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.duplicate-prompt"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
+        },
+        "mandatory": true
+      },
+      "duplicate-terminal": {
+        "id": "duplicate-terminal",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.duplicate-terminal"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
+        },
+        "mandatory": true
+      },
+      "follower-prime": {
+        "id": "follower-prime",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.follower-prime"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
+        },
+        "mandatory": true
+      },
+      "missing-choice": {
+        "id": "missing-choice",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.missing-choice"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
+        },
+        "mandatory": true
+      },
+      "missing-fork": {
+        "id": "missing-fork",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.missing-fork"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
+        },
+        "mandatory": true
+      },
+      "native-composite": {
+        "id": "native-composite",
+        "kind": "gpu",
+        "cost": 600,
+        "covers": [
+          "n1_identity",
+          "greedy_row_identity",
+          "seeded_rng_isolation",
+          "shared_prefill",
+          "indexed_termination",
+          "stream_content_identity",
+          "prompt_once_output_sum",
+          "reservation",
+          "meter_attribution",
+          "n_slots",
+          "kv_exhaustion",
+          "prepaid_exhaustion",
+          "cancel_all_and_recover",
+          "bare_defaults",
+          "deadline_partial",
+          "constrained_choices"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
+        },
+        "scope": {
+          "source": "c6db12b96bced55fa1d7b6e0b308f23f5699f1b7",
+          "binary_sha256": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+          "stock_sha256": "fead9d5d6acff8cb4b116b4aaaceaffe43f0ab040c4e04bf35d76cb1ea606965",
+          "baseline_sha256": "57a19f57e99e3a2a13519b61a85b77021d3f9e9b4389c59363b0800477958184",
+          "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+          "helper_sha256": {
+            "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+            "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+            "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+          },
+          "replay_helper_sha256": {
+            "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+            "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
+          },
+          "model": "Qwen3.5-9B Q8_0",
+          "artifact": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+          "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.91.07, 24463 MiB",
+          "numeric_program": "existing GGUF forward/sampler and ordinary leader prefix_snapshot/prefix_restore",
+          "binary": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+          "request_shape": "chat+text n1/2/3/4/8; sampled+greedy+SSE; constrained N2; isolated deadline and capacity boots"
+        },
+        "controls": [
+          "changed-context",
+          "missing-choice",
+          "duplicate-choice",
+          "premature-done",
+          "shared-rng",
+          "output-sum",
+          "missing-fork",
+          "follower-prime",
+          "duplicate-prompt",
+          "prompt-multiplied",
+          "output-unscaled",
+          "duplicate-terminal",
+          "wire-content",
+          "token-hash"
+        ],
+        "mandatory": true
+      },
+      "output-sum": {
+        "id": "output-sum",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.output-sum"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
+        },
+        "mandatory": true
+      },
+      "output-unscaled": {
+        "id": "output-unscaled",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.output-unscaled"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
+        },
+        "mandatory": true
+      },
+      "premature-done": {
+        "id": "premature-done",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.premature-done"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
+        },
+        "mandatory": true
+      },
+      "prompt-multiplied": {
+        "id": "prompt-multiplied",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.prompt-multiplied"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
+        },
+        "mandatory": true
+      },
+      "shared-rng": {
+        "id": "shared-rng",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.shared-rng"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
+        },
+        "mandatory": true
+      },
+      "token-hash": {
+        "id": "token-hash",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.token-hash"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
+        },
+        "mandatory": true
+      },
+      "wire-content": {
+        "id": "wire-content",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.wire-content"
+        ],
+        "inputs": {
+          "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
+          "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
+        },
+        "mandatory": true
+      }
+    }
+  },
+  "contract_id": "e7c24ab0d5b8543465736efbd56ba605885f3ee9be93115f4c6980e1ff0d628c",
+  "uncovered": [],
+  "ineligible": {},
+  "choices": [],
+  "edge_decisions": [
+    {
+      "edge": "bare_defaults",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "cancel_all_and_recover",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "constrained_choices",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "control.changed-context",
+      "covered": true,
+      "tests": [
+        "changed-context"
+      ]
+    },
+    {
+      "edge": "control.duplicate-choice",
+      "covered": true,
+      "tests": [
+        "duplicate-choice"
+      ]
+    },
+    {
+      "edge": "control.duplicate-prompt",
+      "covered": true,
+      "tests": [
+        "duplicate-prompt"
+      ]
+    },
+    {
+      "edge": "control.duplicate-terminal",
+      "covered": true,
+      "tests": [
+        "duplicate-terminal"
+      ]
+    },
+    {
+      "edge": "control.follower-prime",
+      "covered": true,
+      "tests": [
+        "follower-prime"
+      ]
+    },
+    {
+      "edge": "control.missing-choice",
+      "covered": true,
+      "tests": [
+        "missing-choice"
+      ]
+    },
+    {
+      "edge": "control.missing-fork",
+      "covered": true,
+      "tests": [
+        "missing-fork"
+      ]
+    },
+    {
+      "edge": "control.output-sum",
+      "covered": true,
+      "tests": [
+        "output-sum"
+      ]
+    },
+    {
+      "edge": "control.output-unscaled",
+      "covered": true,
+      "tests": [
+        "output-unscaled"
+      ]
+    },
+    {
+      "edge": "control.premature-done",
+      "covered": true,
+      "tests": [
+        "premature-done"
+      ]
+    },
+    {
+      "edge": "control.prompt-multiplied",
+      "covered": true,
+      "tests": [
+        "prompt-multiplied"
+      ]
+    },
+    {
+      "edge": "control.shared-rng",
+      "covered": true,
+      "tests": [
+        "shared-rng"
+      ]
+    },
+    {
+      "edge": "control.token-hash",
+      "covered": true,
+      "tests": [
+        "token-hash"
+      ]
+    },
+    {
+      "edge": "control.wire-content",
+      "covered": true,
+      "tests": [
+        "wire-content"
+      ]
+    },
+    {
+      "edge": "deadline_partial",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "greedy_row_identity",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "indexed_termination",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "kv_exhaustion",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "meter_attribution",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "n1_identity",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "n_slots",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "prepaid_exhaustion",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "prompt_once_output_sum",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "reservation",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "seeded_rng_isolation",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "shared_prefill",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "stream_content_identity",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    }
+  ],
+  "cost": 614,
+  "optimization": "deterministic greedy set cover, not a claimed global optimum",
+  "isolation": "test boot/reset contracts are unchanged; selection never merges process state",
+  "qualification": false
+}
