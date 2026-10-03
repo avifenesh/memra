@@ -2,6 +2,29 @@
 
 CI executes all nine original generator CPU methods with independent identity, success-outcome and caller admission; generator bytes and native obligations remain unchanged.
 
+The current composition is `COMPOSED-PROOF.json` and
+`composed-cpu-controls.log`, on `24041a98b02d3e0ce53a8f7d75cd268a0ebbfdb5`
+rebased onto actual `567bad56ab8dc1333d1d4e15ceb36e500fdc05d5`. The source
+retains C's 194 framework floor, A's 14-control step and eight exact A/B/C input
+files. The entire base CI workflow differs only by the new SFT step. Original
+producer/test bytes remain unchanged. Actual relevant composition checks passed:
+SFT18/original9 before0-red1-restored0/10 assertion-failing mutations, A14, C15,
+B8, registry14 and workflow9. No unchanged broad framework, native, cache or
+model work was repeated.
+
+The first composed C15 fixture used a receipt-length TMPDIR and reported
+`OSError: AF_UNIX path too long`. Its failed job is retained. The SFT/A14 groups
+had passed on that exact source. C15 and the remaining checks then passed in a
+short owned temporary directory that was removed on exit. No source repair was
+made. The composed record binds both jobs to the same source and distinguishes
+their actual scopes.
+
+## Historical source tuple
+
+`PROOF.json` and `cpu-controls.log` remain byte-identical for the original
+`437b2bda`/`18ca040c` tuple carried by `fdac4e5b`. They are not relabelled as
+current composition evidence. The following records that original scope.
+
 The original generator and nine-method test file are byte-identical to the sealed
 `996a64af` intake and the `18ca040c` base. The new mandatory gates step executes
 the original nine controls plus nine admission controls. An independent literal
