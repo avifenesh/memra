@@ -1,0 +1,252 @@
+{
+  "before": "18ca040cc3bbdd07813dec75682f83c6fba1de17",
+  "source": "09a2fdf42fa865e8c312e9620a659cf761c1f2c3",
+  "before_wrapper_sha256": "ed60fab1ddfbefb218a23f6a19fa2bea9cec19de6466c00c98e50cbc9d69026c",
+  "source_sha256": {
+    "tools/unittest-floor.sh": "19b9d1ee25d8bc31de732a0284ac30be161cda7119fe15acfac1863eafff605d",
+    "tools/unittest_floor.py": "be5cff7c72f651c13829b3f07d35e13cb3ebd4ed7ad439bee5d9705a17551ac7",
+    "tools/test_unittest_floor.py": "83a853945e1f636c1da2995f19015a7aa6b1ebeb6f2846ef4a999404bdbc0b4c",
+    "tools/test_unittest_floor.sh": "ad0f490443ae39cc7069ec4e61cfaa4872a1dd2b491a68af9210423357ee2b77"
+  },
+  "controls": {
+    "healthy": {
+      "before": {
+        "exit": 0,
+        "stdout": "..\n----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK\nunittest-floor: OK: ran 2 tests (floor 2) for <fixture>/suite (test_*.py)\n",
+        "stderr": ""
+      },
+      "after": {
+        "exit": 0,
+        "stdout": "unittest-floor: OK: ran 2 tests (floor 2) for <fixture>/suite (test_*.py); skipped=0 expected_failures=0\n",
+        "stderr": "..\n----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK\n"
+      }
+    },
+    "skipped": {
+      "before": {
+        "exit": 0,
+        "stdout": ".s\n----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK (skipped=1)\nunittest-floor: OK: ran 2 tests (floor 2) for <fixture>/suite (test_*.py)\n",
+        "stderr": ""
+      },
+      "after": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": ".s\n----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK (skipped=1)\nunittest-floor: FAIL: required execution rejected for <fixture>/suite (test_*.py); floor=2; discovered=2 errors=0 expected_failures=0 failures=0 passed=1 run=2 skipped=1 unexpected_successes=0\n"
+      }
+    },
+    "expected_failure": {
+      "before": {
+        "exit": 0,
+        "stdout": ".x\n----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK (expected failures=1)\nunittest-floor: OK: ran 2 tests (floor 2) for <fixture>/suite (test_*.py)\n",
+        "stderr": ""
+      },
+      "after": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": ".x\n----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK (expected failures=1)\nunittest-floor: FAIL: required execution rejected for <fixture>/suite (test_*.py); floor=2; discovered=2 errors=0 expected_failures=1 failures=0 passed=1 run=2 skipped=0 unexpected_successes=0\n"
+      }
+    },
+    "failed": {
+      "before": {
+        "exit": 1,
+        "stdout": ".F\n======================================================================\nFAIL: test_two (test_fixture.A.test_two)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<fixture>/suite/test_fixture.py\", line 4, in test_two\n    def test_two(self): self.fail(\"planted\")\n                        ~~~~~~~~~^^^^^^^^^^^\nAssertionError: planted\n\n----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nFAILED (failures=1)\n",
+        "stderr": "unittest-floor: FAIL: unittest exited 1 for <fixture>/suite (test_*.py); ran 2\n"
+      },
+      "after": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": ".F\n======================================================================\nFAIL: test_two (test_fixture.A.test_two)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<fixture>/suite/test_fixture.py\", line 4, in test_two\n    def test_two(self): self.fail(\"planted\")\n                        ~~~~~~~~~^^^^^^^^^^^\nAssertionError: planted\n\n----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nFAILED (failures=1)\nunittest-floor: FAIL: required execution rejected for <fixture>/suite (test_*.py); floor=2; discovered=2 errors=0 expected_failures=0 failures=1 passed=1 run=2 skipped=0 unexpected_successes=0\n"
+      }
+    },
+    "error": {
+      "before": {
+        "exit": 1,
+        "stdout": ".E\n======================================================================\nERROR: test_two (test_fixture.A.test_two)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<fixture>/suite/test_fixture.py\", line 4, in test_two\n    def test_two(self): raise RuntimeError(\"planted\")\n                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nRuntimeError: planted\n\n----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nFAILED (errors=1)\n",
+        "stderr": "unittest-floor: FAIL: unittest exited 1 for <fixture>/suite (test_*.py); ran 2\n"
+      },
+      "after": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": ".E\n======================================================================\nERROR: test_two (test_fixture.A.test_two)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<fixture>/suite/test_fixture.py\", line 4, in test_two\n    def test_two(self): raise RuntimeError(\"planted\")\n                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nRuntimeError: planted\n\n----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nFAILED (errors=1)\nunittest-floor: FAIL: required execution rejected for <fixture>/suite (test_*.py); floor=2; discovered=2 errors=1 expected_failures=0 failures=0 passed=1 run=2 skipped=0 unexpected_successes=0\n"
+      }
+    },
+    "insufficient": {
+      "before": {
+        "exit": 1,
+        "stdout": "..\n----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK\n",
+        "stderr": "unittest-floor: FAIL: ran 2 tests, floor is 3 for <fixture>/suite (test_*.py); discovery lost tests\n"
+      },
+      "after": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "..\n----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK\nunittest-floor: FAIL: required execution rejected for <fixture>/suite (test_*.py); floor=3; discovered=2 errors=0 expected_failures=0 failures=0 passed=2 run=2 skipped=0 unexpected_successes=0\n"
+      }
+    },
+    "empty": {
+      "before": {
+        "exit": 1,
+        "stdout": "\n----------------------------------------------------------------------\nRan 0 tests in 0.000s\n\nNO TESTS RAN\n",
+        "stderr": "unittest-floor: FAIL: ran 0 tests, floor is 1 for <fixture>/suite (test_*.py); discovery lost tests\n"
+      },
+      "after": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "\n----------------------------------------------------------------------\nRan 0 tests in 0.000s\n\nNO TESTS RAN\nunittest-floor: FAIL: required execution rejected for <fixture>/suite (test_*.py); floor=1; discovered=0 errors=0 expected_failures=0 failures=0 passed=0 run=0 skipped=0 unexpected_successes=0\n"
+      }
+    },
+    "optimized": {
+      "before": {
+        "exit": 0,
+        "stdout": "..\n----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK\nunittest-floor: OK: ran 2 tests (floor 2) for <fixture>/suite (test_*.py)\n",
+        "stderr": ""
+      },
+      "after": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "unittest-floor: FAIL: assertions must be enabled before test imports\n"
+      }
+    },
+    "forged_console_count": {
+      "before": {
+        "exit": 0,
+        "stdout": ".\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\nRan 999 tests\nunittest-floor: OK: ran 999 tests (floor 2) for <fixture>/suite (test_*.py)\n",
+        "stderr": ""
+      },
+      "after": {
+        "exit": 1,
+        "stdout": "Ran 999 tests\n",
+        "stderr": ".\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\nunittest-floor: FAIL: required execution rejected for <fixture>/suite (test_*.py); floor=2; discovered=1 errors=0 expected_failures=0 failures=0 passed=1 run=1 skipped=0 unexpected_successes=0\n"
+      }
+    },
+    "repeated_selected_case": {
+      "before": {
+        "exit": 0,
+        "stdout": "..\n----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK\nunittest-floor: OK: ran 2 tests (floor 2) for <fixture>/suite (test_*.py)\n",
+        "stderr": ""
+      },
+      "after": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "..\n----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK\nunittest-floor: FAIL: selected, executed and successful test identities differ\n"
+      }
+    },
+    "help_short": {
+      "before": {
+        "exit": 1,
+        "stdout": "usage: python3 -m unittest discover [-h] [-v] [-q] [--locals] [--durations N]\n                                    [-f] [-c] [-b] [-k TESTNAMEPATTERNS]\n                                    [-s START] [-p PATTERN] [-t TOP]\n\noptions:\n  -h, --help            show this help message and exit\n  -v, --verbose         Verbose output\n  -q, --quiet           Quiet output\n  --locals              Show local variables in tracebacks\n  --durations N         Show the N slowest test cases (N=0 for all)\n  -f, --failfast        Stop on first fail or error\n  -c, --catch           Catch Ctrl-C and display results so far\n  -b, --buffer          Buffer stdout and stderr during tests\n  -k TESTNAMEPATTERNS   Only run tests which match the given substring\n  -s, --start-directory START\n                        Directory to start discovery ('.' default)\n  -p, --pattern PATTERN\n                        Pattern to match tests ('test*.py' default)\n  -t, --top-level-directory TOP\n                        Top level directory of project (defaults to start\n                        directory)\n\nFor test discovery all test modules must be importable from the top level\ndirectory of the project.\n",
+        "stderr": "unittest-floor: FAIL: no 'Ran N tests' line for <fixture>/suite (test_*.py)\n"
+      },
+      "after": {
+        "exit": 1,
+        "stdout": "usage: unittest-floor discover [-h] [-v] [-q] [--locals] [--durations N] [-f]\n                               [-c] [-b] [-k TESTNAMEPATTERNS] [-s START]\n                               [-p PATTERN] [-t TOP]\n\noptions:\n  -h, --help            show this help message and exit\n  -v, --verbose         Verbose output\n  -q, --quiet           Quiet output\n  --locals              Show local variables in tracebacks\n  --durations N         Show the N slowest test cases (N=0 for all)\n  -f, --failfast        Stop on first fail or error\n  -c, --catch           Catch Ctrl-C and display results so far\n  -b, --buffer          Buffer stdout and stderr during tests\n  -k TESTNAMEPATTERNS   Only run tests which match the given substring\n  -s, --start-directory START\n                        Directory to start discovery ('.' default)\n  -p, --pattern PATTERN\n                        Pattern to match tests ('test*.py' default)\n  -t, --top-level-directory TOP\n                        Top level directory of project (defaults to start\n                        directory)\n\nFor test discovery all test modules must be importable from the top level\ndirectory of the project.\n",
+        "stderr": "unittest-floor: FAIL: discovery exited without execution evidence\n"
+      }
+    },
+    "help_long": {
+      "before": {
+        "exit": 1,
+        "stdout": "usage: python3 -m unittest discover [-h] [-v] [-q] [--locals] [--durations N]\n                                    [-f] [-c] [-b] [-k TESTNAMEPATTERNS]\n                                    [-s START] [-p PATTERN] [-t TOP]\n\noptions:\n  -h, --help            show this help message and exit\n  -v, --verbose         Verbose output\n  -q, --quiet           Quiet output\n  --locals              Show local variables in tracebacks\n  --durations N         Show the N slowest test cases (N=0 for all)\n  -f, --failfast        Stop on first fail or error\n  -c, --catch           Catch Ctrl-C and display results so far\n  -b, --buffer          Buffer stdout and stderr during tests\n  -k TESTNAMEPATTERNS   Only run tests which match the given substring\n  -s, --start-directory START\n                        Directory to start discovery ('.' default)\n  -p, --pattern PATTERN\n                        Pattern to match tests ('test*.py' default)\n  -t, --top-level-directory TOP\n                        Top level directory of project (defaults to start\n                        directory)\n\nFor test discovery all test modules must be importable from the top level\ndirectory of the project.\n",
+        "stderr": "unittest-floor: FAIL: no 'Ran N tests' line for <fixture>/suite (test_*.py)\n"
+      },
+      "after": {
+        "exit": 1,
+        "stdout": "usage: unittest-floor discover [-h] [-v] [-q] [--locals] [--durations N] [-f]\n                               [-c] [-b] [-k TESTNAMEPATTERNS] [-s START]\n                               [-p PATTERN] [-t TOP]\n\noptions:\n  -h, --help            show this help message and exit\n  -v, --verbose         Verbose output\n  -q, --quiet           Quiet output\n  --locals              Show local variables in tracebacks\n  --durations N         Show the N slowest test cases (N=0 for all)\n  -f, --failfast        Stop on first fail or error\n  -c, --catch           Catch Ctrl-C and display results so far\n  -b, --buffer          Buffer stdout and stderr during tests\n  -k TESTNAMEPATTERNS   Only run tests which match the given substring\n  -s, --start-directory START\n                        Directory to start discovery ('.' default)\n  -p, --pattern PATTERN\n                        Pattern to match tests ('test*.py' default)\n  -t, --top-level-directory TOP\n                        Top level directory of project (defaults to start\n                        directory)\n\nFor test discovery all test modules must be importable from the top level\ndirectory of the project.\n",
+        "stderr": "unittest-floor: FAIL: discovery exited without execution evidence\n"
+      }
+    },
+    "exit256": {
+      "before": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "unittest-floor: FAIL: no 'Ran N tests' line for <fixture>/suite (test_*.py)\n"
+      },
+      "after": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "unittest-floor: FAIL: discovery interrupted without execution evidence\n"
+      }
+    },
+    "exit_negative256": {
+      "before": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "unittest-floor: FAIL: no 'Ran N tests' line for <fixture>/suite (test_*.py)\n"
+      },
+      "after": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "unittest-floor: FAIL: discovery interrupted without execution evidence\n"
+      }
+    },
+    "exit_large": {
+      "before": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "unittest-floor: FAIL: no 'Ran N tests' line for <fixture>/suite (test_*.py)\n"
+      },
+      "after": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "unittest-floor: FAIL: discovery interrupted without execution evidence\n"
+      }
+    },
+    "exit_none": {
+      "before": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "unittest-floor: FAIL: no 'Ran N tests' line for <fixture>/suite (test_*.py)\n"
+      },
+      "after": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "unittest-floor: FAIL: discovery exited without execution evidence\n"
+      }
+    },
+    "exit_string": {
+      "before": {
+        "exit": 1,
+        "stdout": "planted exit\n",
+        "stderr": "unittest-floor: FAIL: no 'Ran N tests' line for <fixture>/suite (test_*.py)\n"
+      },
+      "after": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "unittest-floor: FAIL: discovery interrupted without execution evidence\n"
+      }
+    }
+  },
+  "coherent_mutations": {
+    "disabled_assertion_guard": {
+      "exit": 1,
+      "stdout": "",
+      "stderr": ".............F...\n======================================================================\nFAIL: test_optimized_refusal_precedes_fixture_import (test_unittest_floor.Admission.test_optimized_refusal_precedes_fixture_import)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<fixture>/mirror/tools/test_unittest_floor.py\", line 88, in test_optimized_refusal_precedes_fixture_import\n    self.assertIn('assertions must be enabled before test imports', result.stderr)\n    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 'assertions must be enabled before test imports' not found in 'E\\n======================================================================\\nERROR: test_fixture (unittest.loader._FailedTest.test_fixture)\\n----------------------------------------------------------------------\\nImportError: Failed to import test module: test_fixture\\nTraceback (most recent call last):\\n  File \"/usr/lib/python3.14/unittest/loader.py\", line 426, in _find_test_path\\n    module = self._get_module_from_name(name)\\n  File \"/usr/lib/python3.14/unittest/loader.py\", line 367, in _get_module_from_name\\n    __import__(name)\\n    ~~~~~~~~~~^^^^^^\\n  File \"/tmp/unittest-admission-hj6ibdix/test_fixture.py\", line 2, in <module>\\n    raise RuntimeError(\"fixture imported before refusal\")\\nRuntimeError: fixture imported before refusal\\n\\n\\n----------------------------------------------------------------------\\nRan 1 test in 0.000s\\n\\nFAILED (errors=1)\\nunittest-floor: FAIL: required execution rejected for /tmp/unittest-admission-hj6ibdix (test_*.py); floor=2; discovered=1 errors=1 expected_failures=0 failures=0 passed=0 run=1 skipped=0 unexpected_successes=0\\n'\n\n----------------------------------------------------------------------\nRan 17 tests in 0.949s\n\nFAILED (failures=1)\n"
+    },
+    "admit_skipped_outcome": {
+      "exit": 1,
+      "stdout": "",
+      "stderr": ".F....F..........\n======================================================================\nFAIL: test_all_non_success_outcomes_refuse (test_unittest_floor.Admission.test_all_non_success_outcomes_refuse)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<fixture>/mirror/tools/test_unittest_floor.py\", line 54, in test_all_non_success_outcomes_refuse\n    self.assertFalse(floor.admit(self.evidence(**{name: 1}), 1))\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: True is not false\n\n======================================================================\nFAIL: test_empty_and_incomplete_execution (test_unittest_floor.Admission.test_empty_and_incomplete_execution)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<fixture>/mirror/tools/test_unittest_floor.py\", line 50, in test_empty_and_incomplete_execution\n    self.assertFalse(floor.admit(self.evidence(passed=1), 1))\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: True is not false\n\n----------------------------------------------------------------------\nRan 17 tests in 0.935s\n\nFAILED (failures=2)\n"
+    },
+    "admit_help_without_execution": {
+      "exit": 1,
+      "stdout": "",
+      "stderr": "...F.......F.....\n======================================================================\nFAIL: test_caught_discovery_exit_never_wraps_to_process_success (test_unittest_floor.Admission.test_caught_discovery_exit_never_wraps_to_process_success)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<fixture>/mirror/tools/test_unittest_floor.py\", line 147, in test_caught_discovery_exit_never_wraps_to_process_success\n    self.assertEqual(result.returncode, expected, result.stdout + result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 0 != 1 : unittest-floor: FAIL: discovery exited without execution evidence\n\n\n======================================================================\nFAIL: test_help_prints_text_but_never_admits_zero_execution (test_unittest_floor.Admission.test_help_prints_text_but_never_admits_zero_execution)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<fixture>/mirror/tools/test_unittest_floor.py\", line 136, in test_help_prints_text_but_never_admits_zero_execution\n    self.assertEqual(result.returncode, 1, result.stdout + result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 0 != 1 : usage: unittest-floor discover [-h] [-v] [-q] [--locals] [--durations N] [-f]\n                               [-c] [-b] [-k TESTNAMEPATTERNS] [-s START]\n                               [-p PATTERN] [-t TOP]\n\noptions:\n  -h, --help            show this help message and exit\n  -v, --verbose         Verbose output\n  -q, --quiet           Quiet output\n  --locals              Show local variables in tracebacks\n  --durations N         Show the N slowest test cases (N=0 for all)\n  -f, --failfast        Stop on first fail or error\n  -c, --catch           Catch Ctrl-C and display results so far\n  -b, --buffer          Buffer stdout and stderr during tests\n  -k TESTNAMEPATTERNS   Only run tests which match the given substring\n  -s, --start-directory START\n                        Directory to start discovery ('.' default)\n  -p, --pattern PATTERN\n                        Pattern to match tests ('test*.py' default)\n  -t, --top-level-directory TOP\n                        Top level directory of project (defaults to start\n                        directory)\n\nFor test discovery all test modules must be importable from the top level\ndirectory of the project.\nunittest-floor: FAIL: discovery exited without execution evidence\n\n\n----------------------------------------------------------------------\nRan 17 tests in 0.757s\n\nFAILED (failures=2)\n"
+    },
+    "unnormalized_discovery_status": {
+      "exit": 1,
+      "stdout": "",
+      "stderr": "...F.............\n======================================================================\nFAIL: test_caught_discovery_exit_never_wraps_to_process_success (test_unittest_floor.Admission.test_caught_discovery_exit_never_wraps_to_process_success)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<fixture>/mirror/tools/test_unittest_floor.py\", line 147, in test_caught_discovery_exit_never_wraps_to_process_success\n    self.assertEqual(result.returncode, expected, result.stdout + result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 0 != 1 : unittest-floor: FAIL: discovery interrupted without execution evidence\n\n\n----------------------------------------------------------------------\nRan 17 tests in 0.626s\n\nFAILED (failures=1)\n"
+    },
+    "disabled_identity_guard": {
+      "exit": 1,
+      "stdout": "",
+      "stderr": "..............F..\n======================================================================\nFAIL: test_repeating_one_case_cannot_replace_another_selected_case (test_unittest_floor.Admission.test_repeating_one_case_cannot_replace_another_selected_case)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<fixture>/mirror/tools/test_unittest_floor.py\", line 130, in test_repeating_one_case_cannot_replace_another_selected_case\n    self.assertEqual(result.returncode, 1, result.stdout + result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 0 != 1 : unittest-floor: OK: ran 2 tests (floor 2) for /tmp/unittest-admission-vx05_cuc (test_*.py); skipped=0 expected_failures=0\n..\n----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK\n\n\n----------------------------------------------------------------------\nRan 17 tests in 0.930s\n\nFAILED (failures=1)\n"
+    },
+    "admit_boolean_evidence": {
+      "exit": 1,
+      "stdout": "",
+      "stderr": "..F..............\n======================================================================\nFAIL: test_boolean_negative_string_and_missing_counts (test_unittest_floor.Admission.test_boolean_negative_string_and_missing_counts)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<fixture>/mirror/tools/test_unittest_floor.py\", line 42, in test_boolean_negative_string_and_missing_counts\n    self.assertFalse(floor.admit(self.evidence(**{name: value}), 1))\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: True is not false\n\n----------------------------------------------------------------------\nRan 17 tests in 0.926s\n\nFAILED (failures=1)\n"
+    }
+  },
+  "temporary_parent_removed": true,
+  "qualification": false,
+  "helper_sha256": "7e3a7516b0bba9687f96ff8eff35f67df70e0d6d1f07732da032d8380f3ff49e"
+}
