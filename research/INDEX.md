@@ -732,3 +732,5 @@ support-source-doc-copy-inputs-20261003 | 97 exact source/docs omissions repaire
 | coverage-input-io-984-20261003 | Four coverage reader paths use anchored regular opened inputs. Contained aliases and external CLI documents preserved. CPU evidence only. | [LANE.md](coverage-input-io-984-20261003/LANE.md) |
 
 | unittest-admission-20261003 | Generic selected, executed and successful identity/result admission. Five original controls, 17 admission tests, 17 before/after cases and 6 coherent mutants pass on the separate 206-test composition. CPU evidence only. | [CURRENT.json](unittest-admission-20261003/CURRENT.json) |
+
+| atomic-update-alias-978-20261003 | Twelve atomic API aliases preserve actual emitted operations. Same530 real CPU IDs perarm,18 copied boundary controls perarm and fault witnesses. No native qualification. | [LANE.md](atomic-update-alias-978-20261003/LANE.md) |

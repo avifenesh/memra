@@ -1,0 +1,6 @@
+{
+  "original_path": "boundary-controls/bytes-one-extra-tests.log",
+  "raw_sha256": "aa7b2fa95f64dc9964889abe7ceeb85aadc40db12dfbf81f9411caa224b00223",
+  "raw_bytes": 658,
+  "raw_output": "\nrunning 1 test\ntest site9_byte_bound_and_arithmetic_overflow ... FAILED\n\nfailures:\n\n---- site9_byte_bound_and_arithmetic_overflow stdout ----\n\nthread 'site9_byte_bound_and_arithmetic_overflow' (1649529) panicked at /home/avifenesh/.local/state/memra-rig-darklanes-20261002/receipts/B/atomic-update-978/boundary-controls/bytes-one-extra.rs:76:157:\nassertion `left == right` failed\n  left: Ok(8388608)\n right: Err(8388608)\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\n\nfailures:\n    site9_byte_bound_and_arithmetic_overflow\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s\n\n"
+}

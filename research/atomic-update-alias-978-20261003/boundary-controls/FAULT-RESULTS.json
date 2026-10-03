@@ -1,0 +1,43 @@
+{
+  "rows": [
+    {
+      "label": "overflow-wrap",
+      "source_sha256": "ad9d7704da129109e3a7e9ab4a1d111cb58654a35fbaabdeb1dd97e5ccbb636d",
+      "test": "site0_overflow_and_contention",
+      "compile_exit": 0,
+      "actual_test_exit": 101,
+      "raw_log": "overflow-wrap-tests.log"
+    },
+    {
+      "label": "underflow-success",
+      "source_sha256": "045c6819cea2f65f994af9f4e9c803d33d5fb27afd0ab8023cb5fcff6a0966df",
+      "test": "site6_underflow_and_contention",
+      "compile_exit": 0,
+      "actual_test_exit": 101,
+      "raw_log": "underflow-success-tests.log"
+    },
+    {
+      "label": "queue-one-extra",
+      "source_sha256": "db434c3b2cccfd702e88ab30c06e5e4d905b8983cc57ab8901bc10ae560d0671",
+      "test": "site8_queue_bound_and_contention",
+      "compile_exit": 0,
+      "actual_test_exit": 101,
+      "raw_log": "queue-one-extra-tests.log"
+    },
+    {
+      "label": "bytes-one-extra",
+      "source_sha256": "ce1e94b988b5741df71983f7063953d92d1d3eb26b0cb00e266de4ce29228610",
+      "test": "site9_byte_bound_and_arithmetic_overflow",
+      "compile_exit": 0,
+      "actual_test_exit": 101,
+      "raw_log": "bytes-one-extra-tests.log"
+    }
+  ],
+  "restored_command": [
+    "/home/avifenesh/.local/state/memra-rig-darklanes-20261002/receipts/B/atomic-update-978/boundary-controls/after-tests",
+    "--test-threads=1"
+  ],
+  "restored_exit": 0,
+  "restored_source_sha256": "451bbf512cb041d73ba671d50164e5809cfe86a2dc800d97bc996232e6f1a584",
+  "limits": "Source-copied expression oracle faults, with real rustc compile and failing executable tests. No original worktree mutation and no production execution claim."
+}
