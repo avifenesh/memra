@@ -96,7 +96,8 @@ TOOL_CONTRACTS = {
     'support-records': {
         'required': True,
         'inputs': ['tools/check-support-states.py', 'tools/test_check_support_states.py',
-                   'docs/support-records.toml'],
+                   'docs/support-records.toml', 'tools/support_record_inputs.py',
+                   'tools/test_validation_support_record_inputs.py'],
         'cpu': ['tools/unittest-floor.sh', 'tools', 'test_check_support_states.py', '21'],
         'native': [],
     },
@@ -132,6 +133,26 @@ class Refused(ValueError):
 
 
 _RUST_SCANNER = None
+_SUPPORT_DATA = None
+
+
+def support_record_data_inputs(tree, *, directory=False, allow_unknown_reader=False):
+    global _SUPPORT_DATA
+    if _SUPPORT_DATA is None:
+        spec = importlib.util.spec_from_file_location(
+            'support_record_data_inputs', Path(__file__).with_name('support_record_inputs.py'))
+        _SUPPORT_DATA = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_SUPPORT_DATA)
+    try:
+        if directory:
+            tree = _SUPPORT_DATA.DirectoryTree(tree)
+        return _SUPPORT_DATA.resolve(tree)
+    except _SUPPORT_DATA.UnmodelledReader as error:
+        if allow_unknown_reader:
+            return None
+        raise Refused(str(error)) from error
+    except _SUPPORT_DATA.InputContractError as error:
+        raise Refused(str(error)) from error
 
 
 def rust_code_view(text, string_spans=None):
@@ -160,6 +181,9 @@ class Tree:
             self.cache[path] = git(self.repo, 'show', f'{self.ref}:{path}').decode()
         return self.cache[path]
 
+    def read_bytes(self, path):
+        return git(self.repo, 'show', f'{self.ref}:{path}')
+
     def paths(self, *prefixes):
         return [x.decode() for x in git(self.repo, 'ls-tree', '-r', '--name-only', '-z',
                                        self.ref, '--', *prefixes).split(b'\0') if x]
@@ -167,6 +191,16 @@ class Tree:
     def symlinks(self, *prefixes):
         result = {}
         for row in git(self.repo, 'ls-tree', '-r', '-z', self.ref, '--', *prefixes).split(b'\0'):
+            if row:
+                metadata, path = row.split(b'\t', 1)
+                if metadata.startswith(b'120000 '):
+                    name = path.decode(); result[name] = self.read(name)
+        return result
+
+    def symlinks_exact(self, paths):
+        result = {}
+        for row in git(self.repo, '--literal-pathspecs', 'ls-tree', '-z',
+                       self.ref, '--', *sorted(paths)).split(b'\0'):
             if row:
                 metadata, path = row.split(b'\t', 1)
                 if metadata.startswith(b'120000 '):
@@ -184,12 +218,21 @@ class LocalTree(Tree):
             raise Refused('source symlink escapes checkout')
         return target.read_text()
 
+    def read_bytes(self, path):
+        target = (self.repo / path).resolve()
+        if not target.is_relative_to(self.repo.resolve()):
+            raise Refused('source symlink escapes checkout')
+        return target.read_bytes()
+
     def paths(self, *prefixes):
         return [x.decode() for x in git(self.repo, 'ls-files', '--cached', '--others',
                                        '--exclude-standard', '-z', '--', *prefixes).split(b'\0') if x]
 
     def symlinks(self, *prefixes):
         return {p: os.readlink(self.repo / p) for p in self.paths(*prefixes) if (self.repo / p).is_symlink()}
+
+    def symlinks_exact(self, paths):
+        return {p: os.readlink(self.repo / p) for p in paths if (self.repo / p).is_symlink()}
 
 
 def workspace(tree):
@@ -596,11 +639,19 @@ def make_plan(paths, base_tree, head_tree):
         for path, packages in included_inputs(base_tree, base_owners).items():
             includes[path].update(packages)
         direct, contracts, native_requirements = set(), set(), set()
+        support_data = set()
+        for tree in (base_tree, head_tree):
+            resolved = support_record_data_inputs(tree)
+            support_data.update(resolved['required'])
+            support_data.update(resolved['optional'])
         contract_paths = set(base_tree.paths('tools')) | set(head_tree.paths('tools'))
         probe_inputs = native_probe_inputs(head_tree)
         for pattern, probes in native_probe_inputs(base_tree).items():
             probe_inputs[pattern].update(probes)
         for path in paths:
+            if path in support_data:
+                contracts.add('support-records')
+                native_requirements.update(TOOL_CONTRACTS['support-records']['native'])
             for pattern, probes in probe_inputs.items():
                 if matches_input(path, pattern):
                     native_requirements.add('Changed native probe input ' + path + ': rerun pinned assertions for ' + ', '.join(sorted(probes)))
@@ -619,6 +670,8 @@ def make_plan(paths, base_tree, head_tree):
                 contracts.update(matches)
                 for name in matches:
                     native_requirements.update(TOOL_CONTRACTS[name]['native'])
+                continue
+            if path in support_data:
                 continue
             # Receipt data is not a compiler input unless a declared include, generated
             # input, or runtime fixture reader reaches it. Standalone research programs
@@ -750,16 +803,30 @@ def publish_packages(value, root):
 def cpu_contract_names(root, selected):
     # A successful classifier explicitly distinguishes no affected contracts from
     # missing/failed selection, which must still run all available contracts.
-    if selected == 'none':
-        return []
-    names = selected.split(',') if selected else []
+    names = selected.split(',') if selected and selected != 'none' else []
     if names and (len(set(names)) != len(names) or any(n not in TOOL_CONTRACTS for n in names)):
         raise Refused('unknown or duplicated CPU contract')
-    names = names or [n for n, c in TOOL_CONTRACTS.items()
-                     if c.get('required') or any((root / p).exists() for p in c.get('presence', c['inputs']))]
+    available = [n for n, c in TOOL_CONTRACTS.items()
+                 if c.get('required') or any((root / p).exists() for p in c.get('presence', c['inputs']))]
+    for name in names or (available if selected != 'none' else []):
+        if not all((root / p).is_file() for p in TOOL_CONTRACTS[name]['inputs']):
+            raise Refused('selected contract input is missing: ' + name)
+    data = support_record_data_inputs(root, directory=True, allow_unknown_reader=True)
+    if selected == 'none' and data is not None:
+        return []
+    if data is None:
+        # Planning expands unknown readers. Execution also expands stale subsets,
+        # then runs the real census without trusting the unsupported data graph.
+        names = available
+    else:
+        names = names or available
     for name in names:
         if not all((root / p).is_file() for p in TOOL_CONTRACTS[name]['inputs']):
             raise Refused('selected contract input is missing: ' + name)
+        if name == 'support-records' and data is not None:
+            for path in data['required']:
+                if not (root / path).is_file():
+                    raise Refused('selected contract input is missing: support-records: ' + path)
     return names
 
 

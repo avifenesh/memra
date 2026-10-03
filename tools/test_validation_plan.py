@@ -49,6 +49,13 @@ class ValidationPlanTests(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
 
+    def put_support_data_reader_fixture(self):
+        for path in ('tools/check-support-states.py', 'tools/test_check_support_states.py'):
+            self.put(path, (Path(__file__).parent / Path(path).name).read_text())
+        self.put('docs/support-records.toml',
+                 '[[record]]\n[record.gates]\nConfig="passed"\n'
+                 '[record.evidence]\nConfig=["ci:verify-tiny"]\n')
+
     def commit(self):
         self.g('add', '-A'); self.g('commit', '-qm', 'fixture')
         return self.g('rev-parse', 'HEAD')
@@ -252,6 +259,7 @@ class ValidationPlanTests(unittest.TestCase):
         for name in ('q35-cache', 'physical-gpu', 'support-records', 'background-chat-text'):
             for path in vp.TOOL_CONTRACTS[name]['inputs']:
                 self.put(path, '# fixture\n')
+        self.put_support_data_reader_fixture()
         expected = {'q35-cache', 'physical-gpu', 'support-records', 'background-chat-text'}
         self.assertEqual(set(vp.cpu_contract_names(self.repo, '')), expected)
         for name in ('serving-qualification', 'sampled-mtp'):
@@ -571,6 +579,7 @@ class ValidationPlanTests(unittest.TestCase):
                 expected.append(name)
                 for path in contract['inputs']:
                     self.put(path, '# fixture\n')
+        self.put_support_data_reader_fixture()
         self.assertEqual(vp.cpu_contract_names(self.repo, ''), expected)
 
     def test_default_contract_runner_refuses_partial_or_deleted_required_inputs(self):
