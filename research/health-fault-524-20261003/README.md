@@ -1,6 +1,6 @@
 # Health and readiness fault acceptance
 
-Readiness waits for a private planned cache, native prime and two route-aware eager decode calls. Every placement owner is fenced before the cache drops. Admission calibration controls cannot skip this warmup.
+Readiness waits for a private planned cache, native prime and two route-aware eager decode calls. Every placement owner context is synchronized before the cache drops, covering the separate PP stage and readback streams. The primary context is restored afterward. Admission calibration controls cannot skip this warmup.
 
 Serial OOM recovery retries only before output and within the retry budget. Terminal serial and prefill OOM paths fence device state before retirement. Diagnostic targets cover both prime scheduler paths and serial failures after output. Runtime defaults and native math are unchanged.
 
