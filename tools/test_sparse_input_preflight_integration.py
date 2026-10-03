@@ -104,6 +104,16 @@ def assert_green(root, module=preflight, checks=None):
     assert report['ok'], report
 
 
+def assert_cone_suggestions(root, module=preflight):
+    report = module.preflight(root, 'HEAD', list(preflight.CONTRACTS))
+    assert 'research/tune-data' in report['suggested_sparse_paths'], report
+    assert 'research' not in report['suggested_sparse_paths'], report
+    for addition in report['suggested_sparse_paths']:
+        assert git(root, 'cat-file', '-t', 'HEAD:' + addition) == 'tree', addition
+        assert not any(addition.startswith(other + '/') for other in report['suggested_sparse_paths']
+                       if other != addition), report
+
+
 def assert_refusal(root, needle, module=preflight, checks=None, ref='HEAD'):
     try:
         module.preflight(root, ref, checks or list(preflight.CONTRACTS))
@@ -170,7 +180,7 @@ def main():
 
         # Real sparse omission, not a malformed board or a synthetic reader.
         git(root, 'sparse-checkout', 'init', '--cone')
-        git(root, 'sparse-checkout', 'set', 'tools', 'docs', 'crates', 'links')
+        git(root, 'sparse-checkout', 'set', 'tools')
         failed = consumer(root, 'tools/update-perf-board.py', '--check', success=False)
         assert failed.returncode != 0 and 'current-board.json' in failed.stderr, failed
         consumer_witnesses.append({'phase': 'board-missing', 'rc': failed.returncode,
@@ -182,29 +192,52 @@ def main():
         assert cli.returncode == 1 and {'path': BOARD, 'reason': 'missing-materialization'} in payload['problems'], cli
         consumer_witnesses.append({'phase': 'board-preflight', 'diagnostic':
                                    next(p for p in report['problems'] if p['path'] == BOARD)})
-        assert BOARD in report['suggested_sparse_paths']
+        assert report['problem_count'] > 200 and report['problems_truncated'], report
+        receipt = sorted(cited)[0]
+        assert {'path': receipt, 'reason': 'missing-materialization'} in report['problems'], report
+        assert_cone_suggestions(root)
+        with mutant(scratch, 'leaf_suggestions', 'return sorted(minimal)',
+                    "return sorted({p['path'] for p in problems if p['reason'] == 'missing-materialization'})") as module:
+            killed(lambda m: assert_cone_suggestions(root, m), module)
+        with mutant(scratch, 'redundant_suggestions', 'return sorted(minimal)',
+                    'return sorted(parents)') as module:
+            killed(lambda m: assert_cone_suggestions(root, m), module)
+        with mutant(scratch, 'starve_direct_inputs',
+                    "problems.sort(key=lambda p: (p['path'] not in tree.direct_inputs, p['path']))",
+                    "problems.sort(key=lambda p: p['path'])") as module:
+            killed(lambda m: assert_problem(root, BOARD, 'missing-materialization', m), module)
         with mutant(scratch, 'ignore_board', "'research/tune-data/current-board.json', 'docs/MODELS.md'",
                     "'docs/MODELS.md'") as module:
             killed(lambda m: assert_problem(root, BOARD, 'missing-materialization', m), module)
         events.append('original-missing-board-to-specific-preflight-refusal')
-        git(root, 'sparse-checkout', 'add', 'research/tune-data')
+        git(root, 'sparse-checkout', 'add', *report['suggested_sparse_paths'])
+        assert preflight.preflight(root, pinned, list(preflight.CONTRACTS))['ok']
         result = consumer(root, 'tools/update-perf-board.py', '--check')
-        consumer_witnesses.append({'phase': 'board-materialized', 'rc': result.returncode,
+        consumer_witnesses.append({'phase': 'board-cone-suggestions-materialized', 'rc': result.returncode,
                                    'stdout': result.stdout, 'stderr': result.stderr})
+        events.append('tools-only-cone-suggestions-materialize-complete-closure')
 
-        receipt = sorted(cited)[0]
+        # Isolate the original receipt/link failure after restoring source/docs.
+        git(root, 'sparse-checkout', 'set', 'tools', 'docs', 'crates', 'links', 'research/tune-data')
+        report = assert_problem(root, receipt, 'missing-materialization')
         assert_problem(root, receipt, 'missing-materialization')
         failed = consumer(root, 'tools/check-support-states.py', '--root', str(root), success=False)
-        assert failed.returncode != 0, failed
+        assert failed.returncode != 0 and receipt in failed.stderr and 'evidence' in failed.stderr, failed
         consumer_witnesses.append({'phase': 'receipts-missing', 'rc': failed.returncode,
                                    'stdout': failed.stdout, 'stderr': failed.stderr})
+        # Keep tracked link sources present while their target roots stay sparse.
+        git(root, 'sparse-checkout', 'add', 'links')
         failed = consumer(root, 'tools/test_public_boundary.py',
                           'UnstatablePathTests.test_no_tracked_symlink_escapes_the_repo', success=False)
         assert failed.returncode != 0 and 'dangling' in failed.stderr, failed
         consumer_witnesses.append({'phase': 'link-target-missing', 'rc': failed.returncode,
                                    'stdout': failed.stdout, 'stderr': failed.stderr})
-        git(root, 'sparse-checkout', 'add', *sorted({str(PurePosixPath(p).parent) for p in cited} | {LEGACY}))
+        # Use the actual cone-safe suggestions, not hand-selected fixture paths.
+        git(root, 'sparse-checkout', 'add', *report['suggested_sparse_paths'])
         assert preflight.preflight(root, pinned, list(preflight.CONTRACTS))['ok']
+        result = consumer(root, 'tools/update-perf-board.py', '--check')
+        consumer_witnesses.append({'phase': 'board-materialized', 'rc': result.returncode,
+                                   'stdout': result.stdout, 'stderr': result.stderr})
         result = consumer(root, 'tools/check-support-states.py', '--root', str(root))
         consumer_witnesses.append({'phase': 'receipts-materialized', 'rc': result.returncode,
                                    'stdout': result.stdout, 'stderr': result.stderr})

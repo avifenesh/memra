@@ -71,6 +71,7 @@ class GitTree:
             raise Refusal('unknown Git object format')
         self.entries = {}
         self.copy_roots = set()
+        self.direct_inputs = set()
         for row in self.git('ls-tree', '-r', '-t', '-z', self.commit).split(b'\0'):
             if row:
                 meta, path = row.split(b'\t', 1)
@@ -100,6 +101,7 @@ class GitTree:
         entry = self.entries.get(canonical(name))
         if entry is None or entry[0] not in ('100644', '100755'):
             raise Refusal('required regular input missing or wrong Git type: ' + name)
+        self.direct_inputs.add(name)
         return name
 
     def subtree(self, name):
@@ -177,7 +179,9 @@ def modeled_inputs(tree, checks):
             required.update(tree.regular(n) for n in ('README.md', 'STATUS.md', 'AGENTS.md',
                                                        CLI_SOURCE, PACK_ROOT + '/mod.rs'))
         else:
-            required.update(n for n, entry in tree.entries.items() if entry[0] == '120000')
+            links = {n for n, entry in tree.entries.items() if entry[0] == '120000'}
+            required.update(links)
+            tree.direct_inputs.update(links)
     return required
 
 
@@ -220,6 +224,8 @@ def link_closure(tree, required):
                 raise Refusal('link targets repository root: ' + name)
             if tree.entries[target][0] == '040000':
                 closure.update(tree.subtree(target))
+            else:
+                tree.direct_inputs.add(target)
     # Directory target subtrees may include additional links. All links are
     # modeled when selecting the boundary contract; other contracts forbid them.
     for name in tuple(closure):
@@ -332,6 +338,18 @@ def copy_extras(root_fd, tree):
     return problems
 
 
+def sparse_suggestions(tree, problems):
+    """Cone additions use leaf parents, never omitted ancestor directories."""
+    parents = {str(PurePosixPath(p['path']).parent) for p in problems
+               if p['reason'] == 'missing-materialization' and
+               tree.entries[p['path']][0] != '040000'} - {'.'}
+    minimal = []
+    for parent in sorted(parents, key=lambda n: (len(PurePosixPath(n).parts), n)):
+        if not any(parent == root or parent.startswith(root + '/') for root in minimal):
+            minimal.append(parent)
+    return sorted(minimal)
+
+
 def preflight(root, ref, checks):
     root_fd = open_root(root)
     try:
@@ -342,11 +360,16 @@ def preflight(root, ref, checks):
             problem = inspect_path(root_fd, tree, name)
             if problem:
                 problems.append({'path': name, 'reason': problem})
+        # Required consumer leaves precede directories and recursively copied
+        # bulk files, so bounded diagnostics still identify the direct omission.
+        problems.sort(key=lambda p: (p['path'] not in tree.direct_inputs, p['path']))
+        suggestions = sparse_suggestions(tree, problems)
         return {'ok': not problems, 'commit': tree.commit, 'checks': checks,
                 'required_count': len(required), 'problem_count': len(problems),
-                'problems': problems[:200],
-                'suggested_sparse_paths': sorted({p['path'] for p in problems
-                                                   if p['reason'] == 'missing-materialization'})[:200],
+                'problems': problems[:200], 'problems_truncated': len(problems) > 200,
+                'suggested_sparse_paths': suggestions[:200],
+                'suggested_sparse_path_count': len(suggestions),
+                'suggestions_truncated': len(suggestions) > 200,
                 'qualification': False}
     finally:
         os.close(root_fd)

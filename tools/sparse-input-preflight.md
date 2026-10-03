@@ -28,8 +28,13 @@ Git targets, ambiguous copy types, unreadable inputs, and Git-reader failures
 refuse. Changed reader source hashes require a new input audit and updated pins.
 Git reads disable replacement objects and lazy blob fetching.
 
-For missing inputs, `suggested_sparse_paths` lists paths to consider adding with
-Git. The user chooses and executes materialization. The command never checks out
+For missing inputs, `suggested_sparse_paths` lists the minimal parent directories
+to consider adding with cone-mode `git sparse-checkout add`. Redundant descendants
+are removed; missing ancestors do not suggest whole unrelated research trees.
+Direct required leaves precede bulk copy contents in bounded diagnostics. Counts
+and truncation flags describe omitted output. Root-level files need Git restore
+if manually removed; cone additions already include them. The user chooses and
+executes materialization. The command never checks out
 files, changes permissions, regenerates facts, or suppresses an existing check.
 It establishes input materialization only. Run every original consumer and gate
 after it passes. It grants no model, runtime, serving, or native qualification.
@@ -49,7 +54,9 @@ One owned Git repository uses exact original source, documents, receipt bytes,
 and Git modes. It drives the original board and support consumers and the existing
 boundary link assertion. Real sparse omissions must cause the original failures
 and specific preflight diagnostics. Git then materializes the original inputs;
-the consumers pass without regenerated facts or changed commits.
+the consumers pass without regenerated facts or changed commits. The harness starts
+with a tools-only cone checkout, requires board and receipt diagnostics to survive
+the 200-entry bound, and feeds the actual suggested directories into Git.
 
 The same repository exercises regular-byte and mode drift, FIFO/type refusal,
 unreadability, physical parent links, pinned link targets and parent links,
