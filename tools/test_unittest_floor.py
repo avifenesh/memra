@@ -101,6 +101,24 @@ class Admission(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn('planted import failure', result.stderr)
 
+    def test_selected_suite_after_cli_filter_is_complete(self):
+        result = self.call('class A(unittest.TestCase):\n def test_one(self): pass\n'
+                           ' def test_two(self): pass\n', minimum=1, extra=('-k', 'one'))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('ran 1 tests (floor 1)', result.stdout)
+
+    def test_actual_early_stop_refuses_even_above_low_floor(self):
+        result = self.call('class A(unittest.TestCase):\n def test_one(self): pass\n'
+                           ' def test_two(self): pass\n'
+                           'class Early(unittest.TestSuite):\n'
+                           ' def run(self, result, debug=False):\n'
+                           '  self._tests[0].run(result)\n  return result\n'
+                           'def load_tests(loader, tests, pattern):\n'
+                           ' return Early([A("test_one"), A("test_two")])\n', minimum=1)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('discovered=2', result.stderr)
+        self.assertIn('run=1', result.stderr)
+
 
 if __name__ == '__main__':
     unittest.main()
