@@ -123,6 +123,11 @@ context, positive integer `executed`, zero integer `skipped`, and an `edges` map
 execution context. Source hashes are checked again when results are admitted. Every asserted
 edge of every selected regression and control must pass, including edges beyond the requested
 subset. A no-change plan says no validation ran; it cannot produce a pass.
+An empty requested-edge list produces no-change only when no mandatory test is requested.
+Explicit mandatory requests still select their complete control bundles and validate their
+scope and source pins. Unavailable mandatory tests expand selection. With zero requested
+edges, execution admission still requires every selected guard/control assertion, a real
+execution count and no skips; it grants no native qualification.
 Scope keys must be present in the execution context, including explicitly declared nulls.
 Context matching preserves JSON types recursively: booleans, integers and floating-point
 values cannot substitute for one another, even inside arrays or objects. Object key order
