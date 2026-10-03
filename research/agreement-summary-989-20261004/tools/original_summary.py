@@ -315,8 +315,6 @@ def write_layer_csv(result: dict[str, Any], path: Path) -> None:
 
 
 def self_test() -> None:
-    if not __debug__:
-        raise RuntimeError("agreement summary self-test requires enabled assertions")
     def make_plan(
         path: Path,
         pruned: dict[int, list[int]],

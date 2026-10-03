@@ -1,0 +1,172 @@
+{
+  "base": "4ba0d0cb0a5773ebfd9367c69851963612a94a78",
+  "working_diff": "f93fca669d1ba2a391ff8d174c9d303c7f06881b665ed0fc46c640ad5a3b34ba",
+  "source_pins": {
+    "tools/summarize_hy3_plan_agreement.py": "8440854bdbdcdc40f2387a47cf2fc53281861f0d910d3b79946464efa9f461a5",
+    "tools/run_agreement_summary_contract.py": "f19c24c4723a1cefc866dcacc52cfb61ddb94fc505986afb0f71015e139b69f8",
+    "tools/test_agreement_summary_contract.py": "a708ab3f170c15c87b7e854b6acf30a8353552909490b53c4ae8fb3f1b2ce343",
+    ".github/workflows/ci.yml": "f13890f8b38d2053cc988cf18056e8f7f955b5e6256b247f90f1e383b281a776",
+    "research/agreement-summary-989-20261004/tools/before_after.py": "47eab5a8190bba9f4160ba0cc35160594590577913cf7e26ea73b2379074893c",
+    "research/agreement-summary-989-20261004/tools/controls.py": "2202646f97b562855459c4fee679a98431fe7dc71d53579836ac0273f910979e",
+    "research/agreement-summary-989-20261004/tools/original_summary.py": "8f77b291cc59c1a5877c0c780ef72fc091d570b7db9185a3a86a1c514f989ce4"
+  },
+  "original_body_except_early_guard_byte_equal": true,
+  "predicate_sites": 8,
+  "dynamic_entries": 10,
+  "traffic_row_sequence": [
+    "a",
+    "b",
+    "c"
+  ],
+  "identified_controls": 16,
+  "identities": {
+    "discovered": [
+      "test_agreement_summary_contract.AgreementSummaryTests.test_each_wrong_predicate_fails_and_restores",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_exact_control_inventory",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_mandatory_ci_caller",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_missing_duplicate_and_reordered_traffic_iterations_refuse",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_missing_duplicate_or_no_success_execution_refuses",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_missing_or_replaced_predicate_refuses",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_missing_replaced_unrelated_duplicate_discovery_refuses",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_noop_selftest_or_csv_refuses",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_optimization_refuses_before_fixture",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_ordinary_selftest_cli",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_ordinary_summary_and_csv_bytes_unchanged_under_optimization",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_original_eight_predicates_ten_entries_and_real_calls",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_projection_fixture_and_original_assertions_preserved",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_removed_masked_swallowed_caller_refuses",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_skipped_failed_expected_failure_and_unexpected_success_refuse",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_summary_change_retains_full_native_selection"
+    ],
+    "executed": [
+      "test_agreement_summary_contract.AgreementSummaryTests.test_each_wrong_predicate_fails_and_restores",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_exact_control_inventory",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_mandatory_ci_caller",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_missing_duplicate_and_reordered_traffic_iterations_refuse",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_missing_duplicate_or_no_success_execution_refuses",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_missing_or_replaced_predicate_refuses",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_missing_replaced_unrelated_duplicate_discovery_refuses",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_noop_selftest_or_csv_refuses",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_optimization_refuses_before_fixture",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_ordinary_selftest_cli",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_ordinary_summary_and_csv_bytes_unchanged_under_optimization",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_original_eight_predicates_ten_entries_and_real_calls",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_projection_fixture_and_original_assertions_preserved",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_removed_masked_swallowed_caller_refuses",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_skipped_failed_expected_failure_and_unexpected_success_refuse",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_summary_change_retains_full_native_selection"
+    ],
+    "original": [
+      "test_agreement_summary_contract.AgreementSummaryTests.test_original_eight_predicates_ten_entries_and_real_calls"
+    ],
+    "succeeded": [
+      "test_agreement_summary_contract.AgreementSummaryTests.test_each_wrong_predicate_fails_and_restores",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_exact_control_inventory",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_mandatory_ci_caller",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_missing_duplicate_and_reordered_traffic_iterations_refuse",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_missing_duplicate_or_no_success_execution_refuses",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_missing_or_replaced_predicate_refuses",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_missing_replaced_unrelated_duplicate_discovery_refuses",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_noop_selftest_or_csv_refuses",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_optimization_refuses_before_fixture",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_ordinary_selftest_cli",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_ordinary_summary_and_csv_bytes_unchanged_under_optimization",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_original_eight_predicates_ten_entries_and_real_calls",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_projection_fixture_and_original_assertions_preserved",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_removed_masked_swallowed_caller_refuses",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_skipped_failed_expected_failure_and_unexpected_success_refuse",
+      "test_agreement_summary_contract.AgreementSummaryTests.test_summary_change_retains_full_native_selection"
+    ]
+  },
+  "actual_original_current_runs": 44,
+  "wrong_output_targets": 10,
+  "coherent_red_groups": 12,
+  "red_fixture_errors": 0,
+  "scope_components": {
+    "summary": 16,
+    "score_shard": 14,
+    "wrapper": 17,
+    "teeth": 5,
+    "expert_tier": 14,
+    "sft": 18,
+    "sft_original": 9,
+    "framework": 206,
+    "registry": 14,
+    "workflows": 9
+  },
+  "source_proof_job": "a3a3784c8004",
+  "closure_job": "defdb63d7180",
+  "source_v6_closure206_failed_due_sparse_inputs": true,
+  "final_materialized_closure206_success": true,
+  "sparse_materialization_only_no_source_changes": true,
+  "native_qualification": false,
+  "GPU_seconds": 0,
+  "CPython_local": "3.14.4",
+  "CPython_hosted_proof_required": true,
+  "historical_source_pins_before_trace_restore_refinement": {
+    "tools/summarize_hy3_plan_agreement.py": "8440854bdbdcdc40f2387a47cf2fc53281861f0d910d3b79946464efa9f461a5",
+    "tools/run_agreement_summary_contract.py": "f19c24c4723a1cefc866dcacc52cfb61ddb94fc505986afb0f71015e139b69f8",
+    "tools/test_agreement_summary_contract.py": "07eb58db3513ed37c3ccfbec64cefaa82c1281c92f935d0705d0b77c2281a171",
+    ".github/workflows/ci.yml": "f13890f8b38d2053cc988cf18056e8f7f955b5e6256b247f90f1e383b281a776",
+    "research/agreement-summary-989-20261004/tools/before_after.py": "47eab5a8190bba9f4160ba0cc35160594590577913cf7e26ea73b2379074893c",
+    "research/agreement-summary-989-20261004/tools/controls.py": "2202646f97b562855459c4fee679a98431fe7dc71d53579836ac0273f910979e",
+    "research/agreement-summary-989-20261004/tools/original_summary.py": "8f77b291cc59c1a5877c0c780ef72fc091d570b7db9185a3a86a1c514f989ce4"
+  },
+  "trace_state_refinement_job": "4cf1ff3d7f4f",
+  "actual_trace_events": {
+    "call": 1,
+    "line": 65,
+    "opcode": 380,
+    "return": 1
+  },
+  "actual_observation": {
+    "builds": [
+      [
+        [
+          "a.json",
+          "b.json",
+          "c.json"
+        ],
+        "scores.json"
+      ]
+    ],
+    "counts": {
+      "0": 1,
+      "1": 1,
+      "2": 1,
+      "3": 1,
+      "4": 1,
+      "5": 3,
+      "6": 1,
+      "7": 1
+    },
+    "csv": [
+      [
+        "layers.csv",
+        true
+      ]
+    ],
+    "entries": 10,
+    "order": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      5,
+      5,
+      6,
+      7
+    ],
+    "plans": [
+      "a",
+      "b",
+      "c"
+    ],
+    "sites": 8
+  },
+  "trace_global_and_caller_frame_flags_restored": true,
+  "current_summary_and_mutant_controls": 16,
+  "latest_mutant_fixture_errors": 0
+}
