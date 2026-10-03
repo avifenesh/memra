@@ -18,25 +18,25 @@
     "wire-content"
   ],
   "context": {
-    "source": "4ebe099459cfd2c1b05da6bdfb9c077e025abdd9",
-    "binary_sha256": "f2b95b5e50f1eb9ea053a910061333dc5ddb58e1c79ed9955f8fe08713efa746",
-    "stock_sha256": "c1769b8bf49ce3ba3cea9536a13ad8323848bf65667344a1a027aa1672c3ed9a",
+    "source": "c6db12b96bced55fa1d7b6e0b308f23f5699f1b7",
+    "binary_sha256": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+    "stock_sha256": "fead9d5d6acff8cb4b116b4aaaceaffe43f0ab040c4e04bf35d76cb1ea606965",
     "baseline_sha256": "57a19f57e99e3a2a13519b61a85b77021d3f9e9b4389c59363b0800477958184",
     "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
     "helper_sha256": {
       "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
-      "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+      "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
       "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
     },
     "replay_helper_sha256": {
-      "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+      "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
       "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
     },
     "model": "Qwen3.5-9B Q8_0",
     "artifact": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
     "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.91.07, 24463 MiB",
     "numeric_program": "existing GGUF forward/sampler and ordinary leader prefix_snapshot/prefix_restore",
-    "binary": "f2b95b5e50f1eb9ea053a910061333dc5ddb58e1c79ed9955f8fe08713efa746",
+    "binary": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
     "request_shape": "chat+text n1/2/3/4/8; sampled+greedy+SSE; constrained N2; isolated deadline and capacity boots"
   },
   "contract": {
@@ -63,6 +63,7 @@
       "greedy_row_identity",
       "indexed_termination",
       "kv_exhaustion",
+      "meter_attribution",
       "n1_identity",
       "n_slots",
       "prepaid_exhaustion",
@@ -73,25 +74,25 @@
       "stream_content_identity"
     ],
     "context": {
-      "source": "4ebe099459cfd2c1b05da6bdfb9c077e025abdd9",
-      "binary_sha256": "f2b95b5e50f1eb9ea053a910061333dc5ddb58e1c79ed9955f8fe08713efa746",
-      "stock_sha256": "c1769b8bf49ce3ba3cea9536a13ad8323848bf65667344a1a027aa1672c3ed9a",
+      "source": "c6db12b96bced55fa1d7b6e0b308f23f5699f1b7",
+      "binary_sha256": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+      "stock_sha256": "fead9d5d6acff8cb4b116b4aaaceaffe43f0ab040c4e04bf35d76cb1ea606965",
       "baseline_sha256": "57a19f57e99e3a2a13519b61a85b77021d3f9e9b4389c59363b0800477958184",
       "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
       "helper_sha256": {
         "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
-        "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
         "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
       },
       "replay_helper_sha256": {
-        "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+        "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
         "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
       },
       "model": "Qwen3.5-9B Q8_0",
       "artifact": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
       "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.91.07, 24463 MiB",
       "numeric_program": "existing GGUF forward/sampler and ordinary leader prefix_snapshot/prefix_restore",
-      "binary": "f2b95b5e50f1eb9ea053a910061333dc5ddb58e1c79ed9955f8fe08713efa746",
+      "binary": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
       "request_shape": "chat+text n1/2/3/4/8; sampled+greedy+SSE; constrained N2; isolated deadline and capacity boots"
     },
     "tests": {
@@ -104,10 +105,10 @@
         ],
         "inputs": {
           "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
-          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
           "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
-          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
-          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
         },
         "mandatory": true
       },
@@ -120,10 +121,10 @@
         ],
         "inputs": {
           "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
-          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
           "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
-          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
-          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
         },
         "mandatory": true
       },
@@ -136,10 +137,10 @@
         ],
         "inputs": {
           "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
-          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
           "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
-          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
-          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
         },
         "mandatory": true
       },
@@ -152,10 +153,10 @@
         ],
         "inputs": {
           "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
-          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
           "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
-          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
-          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
         },
         "mandatory": true
       },
@@ -168,10 +169,10 @@
         ],
         "inputs": {
           "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
-          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
           "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
-          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
-          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
         },
         "mandatory": true
       },
@@ -184,10 +185,10 @@
         ],
         "inputs": {
           "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
-          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
           "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
-          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
-          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
         },
         "mandatory": true
       },
@@ -200,10 +201,10 @@
         ],
         "inputs": {
           "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
-          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
           "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
-          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
-          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
         },
         "mandatory": true
       },
@@ -220,6 +221,7 @@
           "stream_content_identity",
           "prompt_once_output_sum",
           "reservation",
+          "meter_attribution",
           "n_slots",
           "kv_exhaustion",
           "prepaid_exhaustion",
@@ -230,31 +232,31 @@
         ],
         "inputs": {
           "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
-          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
           "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
-          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
-          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
         },
         "scope": {
-          "source": "4ebe099459cfd2c1b05da6bdfb9c077e025abdd9",
-          "binary_sha256": "f2b95b5e50f1eb9ea053a910061333dc5ddb58e1c79ed9955f8fe08713efa746",
-          "stock_sha256": "c1769b8bf49ce3ba3cea9536a13ad8323848bf65667344a1a027aa1672c3ed9a",
+          "source": "c6db12b96bced55fa1d7b6e0b308f23f5699f1b7",
+          "binary_sha256": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
+          "stock_sha256": "fead9d5d6acff8cb4b116b4aaaceaffe43f0ab040c4e04bf35d76cb1ea606965",
           "baseline_sha256": "57a19f57e99e3a2a13519b61a85b77021d3f9e9b4389c59363b0800477958184",
           "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
           "helper_sha256": {
             "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
-            "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+            "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
             "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
           },
           "replay_helper_sha256": {
-            "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+            "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
             "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
           },
           "model": "Qwen3.5-9B Q8_0",
           "artifact": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
           "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.91.07, 24463 MiB",
           "numeric_program": "existing GGUF forward/sampler and ordinary leader prefix_snapshot/prefix_restore",
-          "binary": "f2b95b5e50f1eb9ea053a910061333dc5ddb58e1c79ed9955f8fe08713efa746",
+          "binary": "eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0",
           "request_shape": "chat+text n1/2/3/4/8; sampled+greedy+SSE; constrained N2; isolated deadline and capacity boots"
         },
         "controls": [
@@ -284,10 +286,10 @@
         ],
         "inputs": {
           "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
-          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
           "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
-          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
-          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
         },
         "mandatory": true
       },
@@ -300,10 +302,10 @@
         ],
         "inputs": {
           "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
-          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
           "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
-          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
-          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
         },
         "mandatory": true
       },
@@ -316,10 +318,10 @@
         ],
         "inputs": {
           "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
-          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
           "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
-          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
-          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
         },
         "mandatory": true
       },
@@ -332,10 +334,10 @@
         ],
         "inputs": {
           "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
-          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
           "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
-          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
-          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
         },
         "mandatory": true
       },
@@ -348,10 +350,10 @@
         ],
         "inputs": {
           "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
-          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
           "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
-          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
-          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
         },
         "mandatory": true
       },
@@ -364,10 +366,10 @@
         ],
         "inputs": {
           "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
-          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
           "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
-          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
-          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
         },
         "mandatory": true
       },
@@ -380,16 +382,16 @@
         ],
         "inputs": {
           "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
-          "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+          "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
           "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8",
-          "test_choice_verifier.py": "e668a8e3eeb3ae91386f63654c719206c3bbba94c62db4d00f1b18301a37a7f8",
-          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+          "test_choice_verifier.py": "d9dcff268d32db8104dad49ddf26f5c72ef3dcc6d82bb42601bfb12f164053a5",
+          "validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a"
         },
         "mandatory": true
       }
     }
   },
-  "contract_id": "9a53a4a012e6fb35dba08ca19af6959f50d925ae0db1282e6b0e02d7d3a6c47b",
+  "contract_id": "e7c24ab0d5b8543465736efbd56ba605885f3ee9be93115f4c6980e1ff0d628c",
   "uncovered": [],
   "ineligible": {},
   "choices": [],
@@ -536,6 +538,13 @@
     },
     {
       "edge": "kv_exhaustion",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "meter_attribution",
       "covered": true,
       "tests": [
         "native-composite"

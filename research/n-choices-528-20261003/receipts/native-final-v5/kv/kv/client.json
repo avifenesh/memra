@@ -7,11 +7,11 @@
     "x-ratelimit-limit": "8",
     "x-ratelimit-remaining": "0",
     "x-ratelimit-reset": "1",
-    "x-request-id": "cmpl-6b526dd97b5c284abf3ba9826dea7073",
+    "x-request-id": "cmpl-b2c60d983553550e38f67458c37f992e",
     "content-length": "264",
-    "date": "Sat, 03 Oct 2026 02:59:26 GMT"
+    "date": "Sat, 03 Oct 2026 09:39:41 GMT"
   },
-  "started": 588658.126927662,
+  "started": 612673.773705243,
   "source_log_start": 47,
   "disconnected": false,
   "body": {
@@ -22,14 +22,14 @@
       "code": "context_length_exceeded"
     }
   },
-  "ended": 588658.128671003,
-  "source_log_end": 62,
-  "id": "cmpl-6b526dd97b5c284abf3ba9826dea7073",
+  "ended": 612673.77537949,
+  "source_log_end": 60,
+  "id": "cmpl-b2c60d983553550e38f67458c37f992e",
   "callbacks": [
     {
       "tag": "CHOICE_OPEN",
       "value": {
-        "id": "cmpl-6b526dd97b5c284abf3ba9826dea7073",
+        "id": "cmpl-b2c60d983553550e38f67458c37f992e",
         "model": "fixture",
         "tenant": "default",
         "max_tokens": 24576,
@@ -41,7 +41,7 @@
     {
       "tag": "CHOICE_TERMINAL",
       "value": {
-        "id": "cmpl-6b526dd97b5c284abf3ba9826dea7073",
+        "id": "cmpl-b2c60d983553550e38f67458c37f992e",
         "kind": "reject",
         "status": 400,
         "code": "context_length_exceeded",
@@ -52,18 +52,18 @@
         "observed_cached": 0,
         "observed_output": 0
       },
-      "line": 59
+      "line": 60
     },
     {
       "tag": "CHOICE_DROP",
       "value": {
-        "id": "cmpl-6b526dd97b5c284abf3ba9826dea7073",
+        "id": "cmpl-b2c60d983553550e38f67458c37f992e",
         "terminal": true,
         "prompt": 0,
         "cached": 0,
         "output": 0
       },
-      "line": 60
+      "line": 61
     }
   ],
   "worker_rows": [],

@@ -61,6 +61,13 @@ def main():
         expected['hardware']=json.loads((out/'candidate/manifest.json').read_text())['hardware']
         result=verify(out/phase,Path(args.baseline_receipt) if phase=='candidate' else None,expected)
         results[phase]['replay']=result
+    # Each successful group must carry the same one-parent attribution seam as n1.
+    for phase in ['candidate','deadline','slots','budget','kv']:
+        manifest=json.loads((out/phase/'manifest.json').read_text());lines=(out/phase/'server.log').read_text().splitlines()
+        for record in manifest['results']:
+            if record['status']==200:
+                admits=[line for line in lines if line.startswith('[meter] admit id='+record['id']+' ')]
+                require(len(admits)==1,'meter_attribution','exactly one admission record for '+record['name'])
     native=json.loads((out/'candidate/manifest.json').read_text());records={r['name']:r for r in native['results']}
     bad_expected={**expected,'source':'0'*40}
     try:verify(out/'candidate',Path(args.baseline_receipt),bad_expected)
@@ -99,7 +106,7 @@ def main():
     context['replay_helper_sha256']={n:digest(tools/n) for n in ['choice_verifier.py','replay_native_choices.py']}
     context.update(model='Qwen3.5-9B Q8_0',artifact=context['model_sha256'],hardware=native['hardware'],numeric_program='existing GGUF forward/sampler and ordinary leader prefix_snapshot/prefix_restore',binary=context['binary_sha256'],request_shape='chat+text n1/2/3/4/8; sampled+greedy+SSE; constrained N2; isolated deadline and capacity boots')
     spec=importlib.util.spec_from_file_location('coverage',tools/'validation_coverage.py');coverage=importlib.util.module_from_spec(spec);spec.loader.exec_module(coverage)
-    edges=['n1_identity','greedy_row_identity','seeded_rng_isolation','shared_prefill','indexed_termination','stream_content_identity','prompt_once_output_sum','reservation','n_slots','kv_exhaustion','prepaid_exhaustion','cancel_all_and_recover','bare_defaults','deadline_partial','constrained_choices']
+    edges=['n1_identity','greedy_row_identity','seeded_rng_isolation','shared_prefill','indexed_termination','stream_content_identity','prompt_once_output_sum','reservation','meter_attribution','n_slots','kv_exhaustion','prepaid_exhaustion','cancel_all_and_recover','bare_defaults','deadline_partial','constrained_choices']
     inputs={n:digest(tools/n) for n in ['native_choices.py','choice_verifier.py','replay_native_choices.py','test_choice_verifier.py','validation_coverage.py']}
     tests=[{'id':'native-composite','kind':'gpu','cost':600,'covers':edges,'inputs':inputs,'scope':context,'controls':list(controls),'mandatory':True}]+[{'id':n,'kind':'cpu','cost':1,'covers':['control.'+n],'inputs':inputs,'mandatory':True} for n in controls]
     selected=coverage.select(edges+['control.'+n for n in controls],tests,context,tools)

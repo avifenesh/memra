@@ -83,6 +83,8 @@ def check_stream_twin(stream, twin):
 def check_greedy(reference, group):
     expected=text(reference['choices'][0]) if 'choices' in reference else reference['text']
     require(all(text(c)==expected for c in group['choices']), 'greedy_identity', 'every row matches the n1 control')
+    finish=reference['choices'][0]['finish_reason'] if 'choices' in reference else ('length' if reference.get('stop_reason')=='MaxNew' else 'stop')
+    require(all(c['finish_reason']==finish for c in group['choices']), 'greedy_identity', 'every row preserves the control terminal reason')
 
 def check_seeded(singletons, group):
     require(all(text(choice)==text(singletons[choice['index']]['choices'][0] if 'choices' in singletons[choice['index']] else {'text':singletons[choice['index']]['text']}) for choice in group['choices']), 'rng_isolation', 'row i matches its independent seed+i request')

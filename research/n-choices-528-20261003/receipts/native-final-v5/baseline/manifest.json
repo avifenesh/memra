@@ -1,10 +1,10 @@
 {
   "status": "complete",
-  "source": "4ebe099459cfd2c1b05da6bdfb9c077e025abdd9",
-  "binary_sha256": "c1769b8bf49ce3ba3cea9536a13ad8323848bf65667344a1a027aa1672c3ed9a",
+  "source": "c6db12b96bced55fa1d7b6e0b308f23f5699f1b7",
+  "binary_sha256": "fead9d5d6acff8cb4b116b4aaaceaffe43f0ab040c4e04bf35d76cb1ea606965",
   "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
   "phase": "baseline",
-  "server_pid": 4124801,
+  "server_pid": 2533325,
   "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.91.07, 24463 MiB",
   "server_exit": -2,
   "results": [
@@ -13,14 +13,14 @@
       "status": 200,
       "headers": {
         "content-type": "application/json",
-        "x-request-id": "cmpl-2d341592d1bea76c3b504c192ade18a7",
+        "x-request-id": "cmpl-ac7cd3c61b49f68f00f1ce4de35c506d",
         "x-ratelimit-limit": "8",
         "x-ratelimit-remaining": "7",
         "x-ratelimit-reset": "0",
         "content-length": "338",
-        "date": "Sat, 03 Oct 2026 02:58:09 GMT"
+        "date": "Sat, 03 Oct 2026 09:38:29 GMT"
       },
-      "started": 588580.447807931,
+      "started": 612601.312681599,
       "source_log_start": 21,
       "disconnected": false,
       "body": {
@@ -64,11 +64,11 @@
         "n_tokens": 32,
         "prompt_tokens": 13,
         "cached_tokens": 0,
-        "elapsed_s": 0.597096337
+        "elapsed_s": 0.577572168
       },
-      "ended": 588581.051950665,
+      "ended": 612601.894945079,
       "source_log_end": 39,
-      "id": "cmpl-2d341592d1bea76c3b504c192ade18a7",
+      "id": "cmpl-ac7cd3c61b49f68f00f1ce4de35c506d",
       "worker_rows": [],
       "prime_events": [],
       "fork_lines": [],
@@ -79,14 +79,14 @@
       "status": 200,
       "headers": {
         "content-type": "application/json",
-        "x-request-id": "chatcmpl-d6b58a78e58b33490a26ffd20d3d5b40",
+        "x-request-id": "chatcmpl-cb174dff5d0a9b1924c33ba5dc8b5217",
         "x-ratelimit-limit": "8",
         "x-ratelimit-remaining": "7",
         "x-ratelimit-reset": "0",
         "content-length": "700",
-        "date": "Sat, 03 Oct 2026 02:58:09 GMT"
+        "date": "Sat, 03 Oct 2026 09:38:30 GMT"
       },
-      "started": 588581.052219991,
+      "started": 612601.895201097,
       "source_log_start": 39,
       "disconnected": false,
       "body": {
@@ -116,15 +116,15 @@
           "prompt_tokens_details": {
             "cached_tokens": 0
           },
-          "elapsed_s": 0.635293634
+          "elapsed_s": 0.598761339
         },
-        "id": "chatcmpl-d6b58a78e58b33490a26ffd20d3d5b40",
-        "created": 1790996289,
-        "system_fingerprint": "memra-0.138.0-4f633194e043"
+        "id": "chatcmpl-cb174dff5d0a9b1924c33ba5dc8b5217",
+        "created": 1791020309,
+        "system_fingerprint": "memra-0.138.0-2a6bfaefd933"
       },
-      "ended": 588581.6894036,
+      "ended": 612602.495325661,
       "source_log_end": 44,
-      "id": "chatcmpl-d6b58a78e58b33490a26ffd20d3d5b40",
+      "id": "chatcmpl-cb174dff5d0a9b1924c33ba5dc8b5217",
       "worker_rows": [],
       "prime_events": [],
       "fork_lines": [],
@@ -134,21 +134,21 @@
   "support_promotion": false,
   "helper_sha256": {
     "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
-    "choice_verifier.py": "484b187653789822c4f08edff2ae18c313c9970a5f61c9d2d40faf7e47d636cf",
+    "choice_verifier.py": "8de7a608fedceca9f83dc54c604d930f98cadf4434c742e9f22db2588dc07bb9",
     "replay_native_choices.py": "a952d9c4788ebaa534906deb84cb88110fe88742a04ec32313ce1194e76efae8"
   },
   "files": {
     "callback-events.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
-    "env.json": "d7eff89796ac614ea469294f31d56a157e95bdf2c4c1a048a0a7f35d11bab4bf",
+    "env.json": "1f4ef09091d7b2b97a373b426c87ecdde8b0dca186db274c2ce49b87e408e022",
     "metadata.toml": "9702a9b331f50a38b798c18531dccfbd22abc277560cf70c322c0b3f091c2380",
-    "server.log": "2efa8f206f6eb9ed9100d680825e35e600d35dc295b2f9e84d23b438f62cf608",
-    "v1-chat-completions-n1/wire.json": "18337f9e4ff41612d5ec764481a745a555808d05db348a783720090ce5af7757",
+    "server.log": "136d7282ea74f6a4dd3c35a526a8a1541fcfb0acbc2ad99f938f6b0b5d8036ae",
+    "v1-chat-completions-n1/wire.json": "b6b2f94fce801ff7591fd568146e00fc84d64a03809c8b65c6e8d58a50db3c2f",
     "v1-chat-completions-n1/request.json": "4fbfed9331efd7b42020dedc91bc7edd6da5d027aabfa84509f42c617eaaa882",
-    "v1-chat-completions-n1/client.json": "b7f4f44b4acc901043602fdb3f5556efeffb226f1d9483e84a6246c55e4db2db",
-    "v1-chat-completions-n1/headers.json": "2a39a182eb847a8035d3360dc1ef3b08af2fbe843665822cdd2072caaa29cac6",
-    "v1-completions-n1/wire.json": "4e0ecdaf557647fa65b7be175747f1fdddb064a36fed174526bcee459b2d35a5",
+    "v1-chat-completions-n1/client.json": "20076e6dcf2d541402735ceb76e2a0e7f2811eb82d4dbc946dae85095440a42c",
+    "v1-chat-completions-n1/headers.json": "6fe0c3248539486cb41e74550f2ef7610fb173710ba624f8d0d5b5e67b1a0c31",
+    "v1-completions-n1/wire.json": "cffa7e4102ecc078609a704e481eba1dcf4da56b5872a2734655b9a487c4ea7b",
     "v1-completions-n1/request.json": "ad0a57c8ed0fc85321f713244086f6e6913d5d251411f574dd8da11f48a74e85",
-    "v1-completions-n1/client.json": "ae29d75a172edbae8274dcd6616e45a397a1e9af8e2376a9580cfc2a6ac4ae4a",
-    "v1-completions-n1/headers.json": "22bd90f433f671288aa30a0dfcc33be8c78e262f3192fc90e5895f7c2d82692c"
+    "v1-completions-n1/client.json": "eb45050ab2c6a54e881bbb4aecb7139ad316ef28cd1fd3b5fe00db98abf524a7",
+    "v1-completions-n1/headers.json": "b982cb20087160d34be7b3176e0efde5a3d3fc311e0af6de66814823c26b6584"
   }
 }

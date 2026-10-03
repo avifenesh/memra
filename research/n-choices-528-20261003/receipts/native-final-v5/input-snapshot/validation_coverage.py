@@ -17,6 +17,21 @@ def contract_digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
 
 
+def same_json_value(left, right):
+    """Preserve JSON types and values instead of Python's bool/numeric coercion."""
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, dict):
+        return (all(type(key) is str for key in left) and all(type(key) is str for key in right)
+                and left.keys() == right.keys()
+                and all(same_json_value(left[key], right[key]) for key in left))
+    if isinstance(left, list):
+        return len(left) == len(right) and all(same_json_value(a, b) for a, b in zip(left, right))
+    if isinstance(left, float):
+        return math.isfinite(left) and math.isfinite(right) and left.hex() == right.hex()
+    return type(left) in (type(None), bool, int, str) and left == right
+
+
 def select(required, tests, context, root):
     if not isinstance(required, list):
         raise ValueError('required edges must be a list')
@@ -24,8 +39,12 @@ def select(required, tests, context, root):
     if any(not isinstance(edge, str) or not edge for edge in required):
         raise ValueError('edges must have nonempty names')
     if not required:
-        return {'decision': 'no-change', 'selected': [], 'uncovered': [],
-                'edge_decisions': [], 'qualification': False, 'reason': 'no validation requested or run'}
+        # A mandatory test is an explicit request even with no affected edges.
+        # Preserve iterable catalogs while inspecting the request before selection.
+        tests = list(tests)
+        if not any(test.get('mandatory') for test in tests):
+            return {'decision': 'no-change', 'selected': [], 'uncovered': [],
+                    'edge_decisions': [], 'qualification': False, 'reason': 'no validation requested or run'}
     catalog = {}
     ineligible = {}
     for test in tests:
@@ -40,7 +59,8 @@ def select(required, tests, context, root):
         catalog[name] = test
         reasons = []
         scope = test.get('scope', {})
-        if not isinstance(scope, dict) or any(context.get(k) != v for k, v in scope.items()):
+        if not isinstance(scope, dict) or any(k not in context or not same_json_value(context[k], v)
+                                               for k, v in scope.items()):
             reasons.append('model/hardware/numeric/request scope mismatch')
         if test.get('kind', 'cpu') not in ('cpu', 'gpu'):
             raise ValueError('unknown test execution kind')
@@ -130,12 +150,12 @@ def validate_results(plan, results, context, root):
     """A selected composite test must pass every independently named edge/control."""
     if plan['decision'] != 'scoped':
         raise ValueError('a plan with uncovered edges cannot produce a scoped pass')
-    if plan.get('context') != context:
+    if not same_json_value(plan.get('context'), context):
         raise ValueError('execution context changed after selection')
     contract = plan.get('contract')
     if not contract or contract_digest(contract) != plan.get('contract_id'):
         raise ValueError('missing or changed source/coverage contract')
-    if contract['context'] != context or set(contract['tests']) != set(plan['selected']):
+    if not same_json_value(contract['context'], context) or set(contract['tests']) != set(plan['selected']):
         raise ValueError('selected tests or context disagree with the bound contract')
     if set(results) != set(plan['selected']):
         raise ValueError('missing or unexpected selected test result')
@@ -148,7 +168,7 @@ def validate_results(plan, results, context, root):
             actual = (root / path).resolve()
             if not actual.is_relative_to(root.resolve()) or not actual.is_file() or hashlib.sha256(actual.read_bytes()).hexdigest() != expected:
                 raise ValueError('coverage source changed before result admission: ' + path)
-        if result.get('context') != context or result.get('status') != 'passed':
+        if not same_json_value(result.get('context'), context) or result.get('status') != 'passed':
             raise ValueError('failed or mismatched test result: ' + name)
         executed, skipped = result.get('executed'), result.get('skipped')
         if type(executed) is not int or executed <= 0 or type(skipped) is not int or skipped != 0:

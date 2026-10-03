@@ -290,6 +290,7 @@ TOOL_CONTRACTS = {
                 'input-snapshot/replay_native_choices.py',
                 'input-snapshot/test_choice_verifier.py',
                 'input-snapshot/validation_coverage.py',
+                'job.sh',
                 'kv.log',
                 'kv/callback-events.json',
                 'kv/env.json',
@@ -310,6 +311,7 @@ TOOL_CONTRACTS = {
                 'kv/pressure.json',
                 'kv/server.log',
                 'phase-results.json',
+                'result.json',
                 'slots.log',
                 'slots/callback-events.json',
                 'slots/env.json',
@@ -329,6 +331,7 @@ TOOL_CONTRACTS = {
                 'slots/slots-recovery/request.json',
                 'slots/slots-recovery/wire.json',
                 'source-binding.json',
+                'state.json',
             )
         ],
         'cpu': ['tools/unittest-floor.sh', 'tools', 'test_choice_verifier.py', '23'],
