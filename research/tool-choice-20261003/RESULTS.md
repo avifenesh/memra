@@ -3,7 +3,7 @@
 The two cached-artifact native streams passed the bounded #530 acceptance.
 Required and named calls obey the declared function/schema, and parallel=false
 completes exactly one call. Argument strings containing both dialect closing markers
-remain valid data. Ordinary auto/none generation and token/cache counts match the
+remain valid data. Auto with parallel policy omitted, and none, generation and token/cache counts match the
 retained baseline. Raw elapsed timing is preserved and excluded only from cross-time
 identity; changed token counts, cache counts or payload still fail.
 

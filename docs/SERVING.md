@@ -609,7 +609,11 @@ model from being announced as served.
 
 `/v1/chat/completions` and the Responses adapter accept `tools`, `tool_choice`
 (`"auto"`, `"none"`, `"required"` or a declared named function), and `parallel_tool_calls`.
-Ordinary auto/none requests preserve their existing rendering and parser. Required/named
+Auto requests with parallel omitted retain their existing rendering and parser; none
+disables tools. Explicit parallel_tool_calls=false is a single-call constraint on both
+Chat and Responses, including the Codex request shape. It uses the constrained path
+on Qwen/Gemma and returns a named 400 on unimplemented DSML/HY3/GLM dialects.
+The Responses adapter no longer silently drops that policy. Required/named
 requests use template-specific call frames with schema-checked JSON argument objects;
 unknown names, malformed/oversized schemas, incompatible response_format or explicit stops
 refuse before generation. Parallel=false permits ordinary content or one complete constrained
