@@ -1,0 +1,504 @@
+
+### identity-self-test-current.log
+expert tier plan self-test: PASS
+
+### identity-contract-current.log
+..............
+----------------------------------------------------------------------
+Ran 14 tests in 9.326s
+
+OK
+expert-tier contract: PASS: executed=14 floor=14 discovered=14 unique=14 skipped=0 expected_failures=0
+expert-tier contract identities: {"discovered": ["test_expert_tier_plan_contract.ExpertTierContractTests.test_builder_change_retains_full_selection", "test_expert_tier_plan_contract.ExpertTierContractTests.test_ci_wiring", "test_expert_tier_plan_contract.ExpertTierContractTests.test_cli_optimization_refuses", "test_expert_tier_plan_contract.ExpertTierContractTests.test_environment_optimization_refuses", "test_expert_tier_plan_contract.ExpertTierContractTests.test_import_optimization_refuses_before_fixture", "test_expert_tier_plan_contract.ExpertTierContractTests.test_noop_selftest_refuses_observation", "test_expert_tier_plan_contract.ExpertTierContractTests.test_ordinary_plan_generation_unchanged_under_optimization", "test_expert_tier_plan_contract.ExpertTierContractTests.test_ordinary_selftest_cli", "test_expert_tier_plan_contract.ExpertTierContractTests.test_planted_incorrect_result_fails", "test_expert_tier_plan_contract.ExpertTierContractTests.test_real_selftest_executes_nine_cases_and_26_assertions", "test_expert_tier_plan_contract.ExpertTierContractTests.test_removed_assertion_refuses_observation", "test_expert_tier_plan_contract.ExpertTierContractTests.test_removed_or_masked_ci_caller_refuses", "test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_empty_short_skipped_failed_and_expected_failures", "test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls"], "executed": ["test_expert_tier_plan_contract.ExpertTierContractTests.test_builder_change_retains_full_selection", "test_expert_tier_plan_contract.ExpertTierContractTests.test_ci_wiring", "test_expert_tier_plan_contract.ExpertTierContractTests.test_cli_optimization_refuses", "test_expert_tier_plan_contract.ExpertTierContractTests.test_environment_optimization_refuses", "test_expert_tier_plan_contract.ExpertTierContractTests.test_import_optimization_refuses_before_fixture", "test_expert_tier_plan_contract.ExpertTierContractTests.test_noop_selftest_refuses_observation", "test_expert_tier_plan_contract.ExpertTierContractTests.test_ordinary_plan_generation_unchanged_under_optimization", "test_expert_tier_plan_contract.ExpertTierContractTests.test_ordinary_selftest_cli", "test_expert_tier_plan_contract.ExpertTierContractTests.test_planted_incorrect_result_fails", "test_expert_tier_plan_contract.ExpertTierContractTests.test_real_selftest_executes_nine_cases_and_26_assertions", "test_expert_tier_plan_contract.ExpertTierContractTests.test_removed_assertion_refuses_observation", "test_expert_tier_plan_contract.ExpertTierContractTests.test_removed_or_masked_ci_caller_refuses", "test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_empty_short_skipped_failed_and_expected_failures", "test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls"]}
+
+### identity-direct-entry.log
+..............
+----------------------------------------------------------------------
+Ran 14 tests in 9.224s
+
+OK
+expert-tier contract: PASS: executed=14 floor=14 discovered=14 unique=14 skipped=0 expected_failures=0
+expert-tier contract identities: {"discovered": ["test_expert_tier_plan_contract.ExpertTierContractTests.test_builder_change_retains_full_selection", "test_expert_tier_plan_contract.ExpertTierContractTests.test_ci_wiring", "test_expert_tier_plan_contract.ExpertTierContractTests.test_cli_optimization_refuses", "test_expert_tier_plan_contract.ExpertTierContractTests.test_environment_optimization_refuses", "test_expert_tier_plan_contract.ExpertTierContractTests.test_import_optimization_refuses_before_fixture", "test_expert_tier_plan_contract.ExpertTierContractTests.test_noop_selftest_refuses_observation", "test_expert_tier_plan_contract.ExpertTierContractTests.test_ordinary_plan_generation_unchanged_under_optimization", "test_expert_tier_plan_contract.ExpertTierContractTests.test_ordinary_selftest_cli", "test_expert_tier_plan_contract.ExpertTierContractTests.test_planted_incorrect_result_fails", "test_expert_tier_plan_contract.ExpertTierContractTests.test_real_selftest_executes_nine_cases_and_26_assertions", "test_expert_tier_plan_contract.ExpertTierContractTests.test_removed_assertion_refuses_observation", "test_expert_tier_plan_contract.ExpertTierContractTests.test_removed_or_masked_ci_caller_refuses", "test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_empty_short_skipped_failed_and_expected_failures", "test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls"], "executed": ["test_expert_tier_plan_contract.ExpertTierContractTests.test_builder_change_retains_full_selection", "test_expert_tier_plan_contract.ExpertTierContractTests.test_ci_wiring", "test_expert_tier_plan_contract.ExpertTierContractTests.test_cli_optimization_refuses", "test_expert_tier_plan_contract.ExpertTierContractTests.test_environment_optimization_refuses", "test_expert_tier_plan_contract.ExpertTierContractTests.test_import_optimization_refuses_before_fixture", "test_expert_tier_plan_contract.ExpertTierContractTests.test_noop_selftest_refuses_observation", "test_expert_tier_plan_contract.ExpertTierContractTests.test_ordinary_plan_generation_unchanged_under_optimization", "test_expert_tier_plan_contract.ExpertTierContractTests.test_ordinary_selftest_cli", "test_expert_tier_plan_contract.ExpertTierContractTests.test_planted_incorrect_result_fails", "test_expert_tier_plan_contract.ExpertTierContractTests.test_real_selftest_executes_nine_cases_and_26_assertions", "test_expert_tier_plan_contract.ExpertTierContractTests.test_removed_assertion_refuses_observation", "test_expert_tier_plan_contract.ExpertTierContractTests.test_removed_or_masked_ci_caller_refuses", "test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_empty_short_skipped_failed_and_expected_failures", "test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls"]}
+
+### identity-proof-current.log
+MUTATION remove-optimization-guard baseline0 -> actual assertion failure
+MUTATION empty-selftest baseline0 -> actual assertion failure
+MUTATION remove-assertion baseline0 -> actual assertion failure
+MUTATION omit-recipe-case baseline0 -> actual assertion failure
+MUTATION allow-skipped-controls baseline0 -> actual assertion failure
+MUTATION allow-expected-failures baseline0 -> actual assertion failure
+MUTATION unwire-selftest-caller baseline0 -> actual assertion failure
+MUTATION unwire-admission-caller baseline0 -> actual assertion failure
+MUTATION erase-discovery-obligation baseline0 -> actual assertion failure
+MUTATION erase-discovery-uniqueness baseline0 -> actual assertion failure
+MUTATION erase-executed-obligation baseline0 -> actual assertion failure
+ACTUAL SELFTEST 26 assertion sites, 9 cases; 11 mutations;wholemoduleAST preserved
+
+### identity-workflow-current.log
+check-workflow-keys: .github/workflows/boundary-refs.yml: jobs refs
+check-workflow-keys: .github/workflows/ci.yml: jobs changes, gates, boundary, build, clippy, server-tests, portable-suites, engine-tests, arch-coverage, publish-dryrun
+check-workflow-keys: .github/workflows/gpu-ci.yml: jobs build, build-feedback-measurement, gpu, qualification-result
+check-workflow-keys: .github/workflows/mtp-context-receipts.yml: jobs reproduce
+check-workflow-keys: .github/workflows/mtp-depth-receipts.yml: jobs reproduce
+check-workflow-keys: .github/workflows/prompt-depth-router.yml: jobs classifier, native-build, native-receipts, upcoming-format, prefix-study
+check-workflow-keys: .github/workflows/prompt-prefix-depth.yml: jobs prefix-policy, native-build, prefix-v2-replay, confidence-replay, confidence-v3-cpu, confidence-v3-replay, joint-v4-history-pilot, joint-v4-native-cpu, joint-v4-native-release, joint-v5-native, joint-v6-draft-only-native, joint-v8-prime-probability-native, joint-v8-sealed-replay
+check-workflow-keys: .github/workflows/publish.yml: jobs publish
+check-workflow-keys: .github/workflows/release.yml: jobs guard, build, release
+check-workflow-keys: OK: 9 workflow files, no duplicate mapping keys (stdlib walker)
+
+### composed-transport.log
+........
+----------------------------------------------------------------------
+Ran 8 tests in 1.832s
+
+OK
+unittest-floor: OK: ran 8 tests (floor 8) for tools (test_validation_support_receipt_copies.py)
+
+### composed-census.log
+.....................
+----------------------------------------------------------------------
+Ran 21 tests in 2.051s
+
+OK
+unittest-floor: OK: ran 21 tests (floor 21) for tools (test_check_support_states.py)
+
+### composed-registry.log
+Validation registry covers all 14 workspace packages
+
+### remove-optimization-guard-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 1.195s
+
+OK
+
+### remove-optimization-guard-mutated.log
+FF
+======================================================================
+FAIL: test_cli_optimization_refuses (test_expert_tier_plan_contract.ExpertTierContractTests.test_cli_optimization_refuses) (flag='-O', script='build_expert_tier_plan.py')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 107, in test_cli_optimization_refuses
+    self.assertNotEqual(result.returncode, 0)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 == 0
+
+======================================================================
+FAIL: test_cli_optimization_refuses (test_expert_tier_plan_contract.ExpertTierContractTests.test_cli_optimization_refuses) (flag='-OO', script='build_expert_tier_plan.py')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 107, in test_cli_optimization_refuses
+    self.assertNotEqual(result.returncode, 0)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 == 0
+
+----------------------------------------------------------------------
+Ran 1 test in 0.901s
+
+FAILED (failures=2)
+
+### empty-selftest-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.011s
+
+OK
+
+### empty-selftest-mutated.log
+F
+======================================================================
+FAIL: test_real_selftest_executes_nine_cases_and_26_assertions (test_expert_tier_plan_contract.ExpertTierContractTests.test_real_selftest_executes_nine_cases_and_26_assertions)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 93, in test_real_selftest_executes_nine_cases_and_26_assertions
+    count, cases = observe(namespace['self_test'].__globals__, BUILDER.read_text())
+                   ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 58, in observe
+    raise ValueError('self-test did not execute all 26 assertion sites and nine recipe cases')
+ValueError: self-test did not execute all 26 assertion sites and nine recipe cases
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 95, in test_real_selftest_executes_nine_cases_and_26_assertions
+    self.fail(str(error))
+    ~~~~~~~~~^^^^^^^^^^^^
+AssertionError: self-test did not execute all 26 assertion sites and nine recipe cases
+
+----------------------------------------------------------------------
+Ran 1 test in 0.007s
+
+FAILED (failures=1)
+
+### remove-assertion-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.009s
+
+OK
+
+### remove-assertion-mutated.log
+F
+======================================================================
+FAIL: test_real_selftest_executes_nine_cases_and_26_assertions (test_expert_tier_plan_contract.ExpertTierContractTests.test_real_selftest_executes_nine_cases_and_26_assertions)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 93, in test_real_selftest_executes_nine_cases_and_26_assertions
+    count, cases = observe(namespace['self_test'].__globals__, BUILDER.read_text())
+                   ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 58, in observe
+    raise ValueError('self-test did not execute all 26 assertion sites and nine recipe cases')
+ValueError: self-test did not execute all 26 assertion sites and nine recipe cases
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 95, in test_real_selftest_executes_nine_cases_and_26_assertions
+    self.fail(str(error))
+    ~~~~~~~~~^^^^^^^^^^^^
+AssertionError: self-test did not execute all 26 assertion sites and nine recipe cases
+
+----------------------------------------------------------------------
+Ran 1 test in 0.009s
+
+FAILED (failures=1)
+
+### omit-recipe-case-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.009s
+
+OK
+
+### omit-recipe-case-mutated.log
+F
+======================================================================
+FAIL: test_real_selftest_executes_nine_cases_and_26_assertions (test_expert_tier_plan_contract.ExpertTierContractTests.test_real_selftest_executes_nine_cases_and_26_assertions)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 93, in test_real_selftest_executes_nine_cases_and_26_assertions
+    count, cases = observe(namespace['self_test'].__globals__, BUILDER.read_text())
+                   ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 58, in observe
+    raise ValueError('self-test did not execute all 26 assertion sites and nine recipe cases')
+ValueError: self-test did not execute all 26 assertion sites and nine recipe cases
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 95, in test_real_selftest_executes_nine_cases_and_26_assertions
+    self.fail(str(error))
+    ~~~~~~~~~^^^^^^^^^^^^
+AssertionError: self-test did not execute all 26 assertion sites and nine recipe cases
+
+----------------------------------------------------------------------
+Ran 1 test in 0.008s
+
+FAILED (failures=1)
+
+### allow-skipped-controls-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+OK
+
+### allow-skipped-controls-mutated.log
+F
+======================================================================
+FAIL: test_runner_refuses_empty_short_skipped_failed_and_expected_failures (test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_empty_short_skipped_failed_and_expected_failures) (mode='skip')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 213, in test_runner_refuses_empty_short_skipped_failed_and_expected_failures
+    self.assertEqual(runner.run(suite, stream=io.StringIO()), expected)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)
+
+### allow-expected-failures-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+OK
+
+### allow-expected-failures-mutated.log
+F
+======================================================================
+FAIL: test_runner_refuses_empty_short_skipped_failed_and_expected_failures (test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_empty_short_skipped_failed_and_expected_failures) (mode='expected-failure')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 213, in test_runner_refuses_empty_short_skipped_failed_and_expected_failures
+    self.assertEqual(runner.run(suite, stream=io.StringIO()), expected)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)
+
+### unwire-selftest-caller-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+OK
+
+### unwire-selftest-caller-mutated.log
+F
+======================================================================
+FAIL: test_ci_wiring (test_expert_tier_plan_contract.ExpertTierContractTests.test_ci_wiring)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 158, in test_ci_wiring
+    check_wiring((ROOT / '.github/workflows/ci.yml').read_text())
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 73, in check_wiring
+    raise ValueError('expert-tier caller commands or non-vacuity floor changed')
+ValueError: expert-tier caller commands or non-vacuity floor changed
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 160, in test_ci_wiring
+    self.fail(str(error))
+    ~~~~~~~~~^^^^^^^^^^^^
+AssertionError: expert-tier caller commands or non-vacuity floor changed
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)
+
+### unwire-admission-caller-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+OK
+
+### unwire-admission-caller-mutated.log
+F
+======================================================================
+FAIL: test_ci_wiring (test_expert_tier_plan_contract.ExpertTierContractTests.test_ci_wiring)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 158, in test_ci_wiring
+    check_wiring((ROOT / '.github/workflows/ci.yml').read_text())
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 73, in check_wiring
+    raise ValueError('expert-tier caller commands or non-vacuity floor changed')
+ValueError: expert-tier caller commands or non-vacuity floor changed
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 160, in test_ci_wiring
+    self.fail(str(error))
+    ~~~~~~~~~^^^^^^^^^^^^
+AssertionError: expert-tier caller commands or non-vacuity floor changed
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)
+
+### erase-discovery-obligation-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+OK
+
+### erase-discovery-obligation-mutated.log
+FFFFFFFFFFFFFFF
+======================================================================
+FAIL: test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls (test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls) (label='empty')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 240, in test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls
+    self.assertIn('FAIL: discovery:', output.getvalue())
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'FAIL: discovery:' not found in '\n----------------------------------------------------------------------\nRan 0 tests in 0.000s\n\nNO TESTS RAN\nexpert-tier contract: FAIL: executed=0 floor=14 skipped=0 expected_failures=0\n'
+
+======================================================================
+FAIL: test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls (test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls) (label='missing-test_ordinary_selftest_cli')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 240, in test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls
+    self.assertIn('FAIL: discovery:', output.getvalue())
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'FAIL: discovery:' not found in '.............\n----------------------------------------------------------------------\nRan 13 tests in 0.000s\n\nOK\nexpert-tier contract: FAIL: executed=13 floor=14 skipped=0 expected_failures=0\n'
+
+======================================================================
+FAIL: test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls (test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls) (label='missing-test_real_selftest_executes_nine_cases_and_26_assertions')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 240, in test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls
+    self.assertIn('FAIL: discovery:', output.getvalue())
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'FAIL: discovery:' not found in '.............\n----------------------------------------------------------------------\nRan 13 tests in 0.000s\n\nOK\nexpert-tier contract: FAIL: executed=13 floor=14 skipped=0 expected_failures=0\n'
+
+======================================================================
+FAIL: test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls (test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls) (label='missing-test_cli_optimization_refuses')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 240, in test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls
+    self.assertIn('FAIL: discovery:', output.getvalue())
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'FAIL: discovery:' not found in '.............\n----------------------------------------------------------------------\nRan 13 tests in 0.000s\n\nOK\nexpert-tier contract: FAIL: executed=13 floor=14 skipped=0 expected_failures=0\n'
+
+======================================================================
+FAIL: test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls (test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls) (label='missing-test_environment_optimization_refuses')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 240, in test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls
+    self.assertIn('FAIL: discovery:', output.getvalue())
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'FAIL: discovery:' not found in '.............\n----------------------------------------------------------------------\nRan 13 tests in 0.000s\n\nOK\nexpert-tier contract: FAIL: executed=13 floor=14 skipped=0 expected_failures=0\n'
+
+======================================================================
+FAIL: test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls (test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls) (label='missing-test_import_optimization_refuses_before_fixture')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 240, in test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls
+    self.assertIn('FAIL: discovery:', output.getvalue())
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'FAIL: discovery:' not found in '.............\n----------------------------------------------------------------------\nRan 13 tests in 0.000s\n\nOK\nexpert-tier contract: FAIL: executed=13 floor=14 skipped=0 expected_failures=0\n'
+
+======================================================================
+FAIL: test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls (test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls) (label='missing-test_planted_incorrect_result_fails')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 240, in test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls
+    self.assertIn('FAIL: discovery:', output.getvalue())
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'FAIL: discovery:' not found in '.............\n----------------------------------------------------------------------\nRan 13 tests in 0.000s\n\nOK\nexpert-tier contract: FAIL: executed=13 floor=14 skipped=0 expected_failures=0\n'
+
+======================================================================
+FAIL: test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls (test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls) (label='missing-test_noop_selftest_refuses_observation')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 240, in test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls
+    self.assertIn('FAIL: discovery:', output.getvalue())
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'FAIL: discovery:' not found in '.............\n----------------------------------------------------------------------\nRan 13 tests in 0.000s\n\nOK\nexpert-tier contract: FAIL: executed=13 floor=14 skipped=0 expected_failures=0\n'
+
+======================================================================
+FAIL: test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls (test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls) (label='missing-test_removed_assertion_refuses_observation')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 240, in test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls
+    self.assertIn('FAIL: discovery:', output.getvalue())
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'FAIL: discovery:' not found in '.............\n----------------------------------------------------------------------\nRan 13 tests in 0.000s\n\nOK\nexpert-tier contract: FAIL: executed=13 floor=14 skipped=0 expected_failures=0\n'
+
+======================================================================
+FAIL: test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls (test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls) (label='missing-test_ci_wiring')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 240, in test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls
+    self.assertIn('FAIL: discovery:', output.getvalue())
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'FAIL: discovery:' not found in '.............\n----------------------------------------------------------------------\nRan 13 tests in 0.000s\n\nOK\nexpert-tier contract: FAIL: executed=13 floor=14 skipped=0 expected_failures=0\n'
+
+======================================================================
+FAIL: test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls (test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls) (label='missing-test_removed_or_masked_ci_caller_refuses')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 240, in test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls
+    self.assertIn('FAIL: discovery:', output.getvalue())
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'FAIL: discovery:' not found in '.............\n----------------------------------------------------------------------\nRan 13 tests in 0.000s\n\nOK\nexpert-tier contract: FAIL: executed=13 floor=14 skipped=0 expected_failures=0\n'
+
+======================================================================
+FAIL: test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls (test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls) (label='missing-test_ordinary_plan_generation_unchanged_under_optimization')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 240, in test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls
+    self.assertIn('FAIL: discovery:', output.getvalue())
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'FAIL: discovery:' not found in '.............\n----------------------------------------------------------------------\nRan 13 tests in 0.000s\n\nOK\nexpert-tier contract: FAIL: executed=13 floor=14 skipped=0 expected_failures=0\n'
+
+======================================================================
+FAIL: test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls (test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls) (label='missing-test_builder_change_retains_full_selection')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 240, in test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls
+    self.assertIn('FAIL: discovery:', output.getvalue())
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'FAIL: discovery:' not found in '.............\n----------------------------------------------------------------------\nRan 13 tests in 0.000s\n\nOK\nexpert-tier contract: FAIL: executed=13 floor=14 skipped=0 expected_failures=0\n'
+
+======================================================================
+FAIL: test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls (test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls) (label='missing-test_runner_refuses_empty_short_skipped_failed_and_expected_failures')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 240, in test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls
+    self.assertIn('FAIL: discovery:', output.getvalue())
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'FAIL: discovery:' not found in '.............\n----------------------------------------------------------------------\nRan 13 tests in 0.000s\n\nOK\nexpert-tier contract: FAIL: executed=13 floor=14 skipped=0 expected_failures=0\n'
+
+======================================================================
+FAIL: test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls (test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls) (label='missing-test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 240, in test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls
+    self.assertIn('FAIL: discovery:', output.getvalue())
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'FAIL: discovery:' not found in '.............\n----------------------------------------------------------------------\nRan 13 tests in 0.000s\n\nOK\nexpert-tier contract: FAIL: executed=13 floor=14 skipped=0 expected_failures=0\n'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.004s
+
+FAILED (failures=15)
+
+### erase-discovery-uniqueness-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+OK
+
+### erase-discovery-uniqueness-mutated.log
+F
+======================================================================
+FAIL: test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls (test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls) (label='extra-duplicate')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 240, in test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls
+    self.assertIn('FAIL: discovery:', output.getvalue())
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'FAIL: discovery:' not found in '...............\n----------------------------------------------------------------------\nRan 15 tests in 0.000s\n\nOK\nexpert-tier contract: FAIL: executed control identities do not match discovery\n'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)
+
+### erase-executed-obligation-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+OK
+
+### erase-executed-obligation-mutated.log
+F
+======================================================================
+FAIL: test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls (test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 248, in test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls
+    self.assertIn('executed control identities', output.getvalue())
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'executed control identities' not found in '\n----------------------------------------------------------------------\nRan 0 tests in 0.000s\n\nNO TESTS RAN\nexpert-tier contract: FAIL: executed=0 floor=14 skipped=0 expected_failures=0\n'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)
