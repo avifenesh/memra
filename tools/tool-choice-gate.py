@@ -96,6 +96,14 @@ def assemble(frames):
     return result
 
 
+def regression_payload(frames):
+    result = assemble(frames)
+    # Actual timing remains in raw receipts; it cannot be byte-identical across boots.
+    if result['usage'] is not None:
+        result['usage'] = {key: value for key, value in result['usage'].items() if key != 'elapsed_s'}
+    return result
+
+
 def check_call(call):
     require(call['id'], 'call.id')
     args = json.loads(call['arguments'])
@@ -129,8 +137,8 @@ def validate(report, expected_context=None):
                     name + '.' + regression + '.request_identity')
             require(cases['candidate.' + regression]['request']['tool_choice'] == regression,
                     name + '.' + regression + '.request_choice')
-            before = assemble(cases['baseline.' + regression]['frames'])
-            after = assemble(cases['candidate.' + regression]['frames'])
+            before = regression_payload(cases['baseline.' + regression]['frames'])
+            after = regression_payload(cases['candidate.' + regression]['frames'])
             require(before == after, name + '.' + regression + '.identity')
             require(cases['baseline.' + regression]['done'] == 1 and cases['candidate.' + regression]['done'] == 1,
                     name + '.' + regression + '.done')

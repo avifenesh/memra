@@ -53,6 +53,20 @@ class ReceiptControls(unittest.TestCase):
     def test_positive_composite_covers_all_edges(self):
         self.assertEqual(len(gate.validate(self.report, self.context)), 15)
 
+    def test_wall_clock_timing_is_retained_but_not_an_identity_oracle(self):
+        self.report['models']['qwen']['cases']['baseline.auto']['frames'][-1]['usage']['elapsed_s'] = 1.2
+        self.report['models']['qwen']['cases']['candidate.auto']['frames'][-1]['usage']['elapsed_s'] = 2.3
+        gate.validate(self.report, self.context)
+        self.assertEqual(self.report['models']['qwen']['cases']['candidate.auto']['frames'][-1]['usage']['elapsed_s'],2.3)
+
+    def test_token_and_cache_counts_remain_mandatory_identity_controls(self):
+        for key in ['prompt_tokens','completion_tokens','total_tokens','prompt_tokens_details']:
+            with self.subTest(key=key):
+                self.report = report()
+                value = {'cached_tokens':1} if key=='prompt_tokens_details' else 999
+                self.report['models']['qwen']['cases']['candidate.auto']['frames'][-1]['usage'][key] = value
+                self.fails('qwen.auto.identity')
+
     def test_source_context_change_refuses(self):
         self.report['context']['source'] = 'different'
         self.fails('context.binding')
