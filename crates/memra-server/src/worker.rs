@@ -41659,8 +41659,20 @@ fn run_required_boot_warmup(
         )
         .map_err(|error| format!("required warmup {name:?} cache: {error}"))?;
         let decode_result = (|| -> Result<usize, Box<dyn std::error::Error>> {
-            let (mut logits, _hidden, _state) =
-                model.model.prime_cache(engine, &prompt, &mut cache, 0)?;
+            // Preserve the existing prime selector: a tokenwise override or
+            // frozen mixed expert residency must not transiently stage a bank.
+            let batched_prime = prompt.len() >= memra_engine::hybrid_forward::PRIME_MIN_T
+                && std::env::var("MEMRA_PRIME_TOKENWISE").is_err()
+                && !engine.frozen_cpu_experts_prefer_tokenwise_prime();
+            let mut logits = if batched_prime {
+                model.model.prime_cache(engine, &prompt, &mut cache, 0)?.0
+            } else {
+                let mut logits = Vec::new();
+                for &token in &prompt {
+                    logits = model.model.decode_step(engine, token, &mut cache)?;
+                }
+                logits
+            };
             for _ in 0..2 {
                 if logits.is_empty() {
                     return Err("warmup route returned empty logits".into());
@@ -49530,6 +49542,9 @@ mod tests {
         assert!(helper.contains("model.model.prime_cache(engine, &prompt, &mut cache, 0)"));
         assert!(helper.contains("model.model.decode_step(engine, token, &mut cache)"));
         assert!(helper.contains("for _ in 0..2"));
+        assert!(helper.contains("MEMRA_PRIME_TOKENWISE"));
+        assert!(helper.contains("!engine.frozen_cpu_experts_prefer_tokenwise_prime()"));
+        assert!(helper.contains("for &token in &prompt"));
         assert!(helper.contains("for owner in model_device_engines(engine, loaded)"));
         assert!(!helper.contains(".generate("));
         assert!(!helper.contains("decode_step_dc"));
