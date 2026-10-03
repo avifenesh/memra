@@ -857,7 +857,7 @@ class ValidationPlanTests(unittest.TestCase):
         self.assertFalse(any(plan['jobs'].values()))
         self.assertFalse(plan['requires_cuda'])
         self.assertEqual(plan['native']['scope'], 'none')
-        self.assertFalse(plan['qualification'])
+        self.assertFalse(plan['native']['qualification'])
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             vp.emit(plan)
@@ -875,7 +875,7 @@ class ValidationPlanTests(unittest.TestCase):
                 plan = vp.event_plan(self.repo, 'push', '', before, after)
                 self.assertEqual(plan['mode'], 'full')
                 self.assertTrue(all(plan['jobs'].values()))
-                self.assertFalse(plan['qualification'])
+                self.assertFalse(plan['native']['qualification'])
 
     def test_approved_workflow_addition_keeps_compiled_include_consumers(self):
         before, after = self.workflow_fixture(compiled_consumer=True)
