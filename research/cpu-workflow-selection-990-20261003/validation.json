@@ -1,0 +1,68 @@
+{
+  "source": "5d86400354c958006a85cde2165a9d1a5245eb99",
+  "scope": "CPU validation selection only",
+  "controls": {
+    "original_framework": 206,
+    "added": 32,
+    "current_framework": 238,
+    "policy": 25,
+    "compiling_guard_mutations": 5,
+    "original_and_restored_policy": true,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "other_checks": {
+    "expert": 14,
+    "sft": 18,
+    "score_shard": 14,
+    "workspace_registry": 14,
+    "classifier": 18,
+    "workflow_key_refusal": 30,
+    "workflow_files": 9
+  },
+  "selector_example": {
+    "source": "5d86400354c958006a85cde2165a9d1a5245eb99",
+    "old_program": "4ba0d0cb0a5773ebfd9367c69851963612a94a78",
+    "fixture_base": "7a840681c96a00d4b9f8c7dd84747b55c52546f5",
+    "fixture_head": "63d057d57061115168a6f62e4cfe929d7abe7e3d",
+    "real_workspace_packages": 14,
+    "fixture": "Owned two-commit workflow restoration on the actual current source tree, real Cargo/build/include/receipt graph. Not a historical production PR or runtime test.",
+    "workflow_residual_equal": true,
+    "old_jobs": {
+      "build": true,
+      "clippy": true,
+      "server": true,
+      "engine": true,
+      "portable": true,
+      "core": true,
+      "lanes": true,
+      "arch": true,
+      "publish": true
+    },
+    "new_jobs": {
+      "build": false,
+      "clippy": false,
+      "server": false,
+      "engine": false,
+      "portable": false,
+      "core": false,
+      "lanes": false,
+      "arch": false,
+      "publish": false
+    },
+    "selected_CPU": "sft-generator-caller",
+    "qualification": false,
+    "bundle_sha256": "7523d6f904e548c55e317d9c175cd9641923592c030c4852f17ddd8231849a6c"
+  },
+  "source_sha256": {
+    "tools/validation_plan.py": "122dd3fc1af6a2c820c2fe0dba9c2ebe8ddb61e43d4cb768d5d457d60f230189",
+    "tools/cpu_workflow_inputs.py": "d8041dac1acbdd232b1662f60673766fe55f639c488e8229c27f00b689aee937",
+    "tools/cpu_workflow_contracts.json": "a194f87e08000b8bf01dd5cb663574133a3e4f3f50ebcd61abfda7fd087c691f",
+    "tools/test_validation_workflow.py": "5ee297a44d5acd55fb90da9ffb114c0f7da95c57f5974c7a1132e29fa23f0a9f",
+    "tools/test_validation_plan.py": "4d0e89371b92e4d0c01b9d2140bc46d4b607e21c63852250f9bf2780ab3e620e",
+    ".github/workflows/ci.yml": "e6c63abe9357a9dc69cb172f40a0e51e31f88bf127c08cde3677663d2f05d9d3"
+  },
+  "native_model_runtime_qualification": false,
+  "previous_attempts": "Failed fixture/intake/export attempts and the source-unfrozen diagnostic cohort remain in the private evidence bank; none are relabelled as this accepted run."
+}
