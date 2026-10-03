@@ -16,3 +16,7 @@ research/scoped-validation-20261002/literal-path-red-control.txt -text whitespac
 # Keep trailing blank lines in the recorded test transcripts.
 research/scoped-validation-20261002/coalescer/original-jitter-failures.txt -text whitespace=-blank-at-eof
 research/image-url-fetch-20261002/raw/qwen-combined/on/transport-unit.log -text whitespace=-blank-at-eof
+
+# Preserve unified-diff context whitespace in immutable B914 source receipts.
+research/background-chat-text-20261002/receipts/**/source.diff -whitespace
+research/background-chat-text-20261002/receipts/**/broker-source.diff -whitespace

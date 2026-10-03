@@ -44,3 +44,11 @@ source, binary, model, requests, environments, hardware, callbacks and failed at
 Collector negative controls reject missing/double callbacks, incorrect usage,
 wrong envelopes, premature deadline success and cancellation without native progress.
 This is functional local delivery evidence, not performance tuning or model promotion.
+
+Implementation review controls added before final native acceptance: guarded terminal
+publication, failed/panicked settlement, incremental and escaped encoding bounds,
+dynamic worker-error bounds, tool-call budget-cut status, exact native token ids,
+phase/environment context binding, and current-source cache/spec/cancel recovery.
+The reusable collector lives in `tools/background-chat-text-gate.py`; its nine CPU
+controls have an owning `validation_plan.py` contract and the existing CI gates caller.
+Final native source/binary remained frozen across all four accepted cells.

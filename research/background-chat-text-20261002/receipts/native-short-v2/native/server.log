@@ -1,0 +1,430 @@
+[server] build: memra-0.138.0-76fbd5649d68 (id: source-tree, git: 39b3962f4bca)
+[env-audit] warning: 3 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: MEMRA_CI_LOCK, MEMRA_CI_LOCK_HELD, MEMRA_RIG_LOCK_FD. Left alone: launchers and gate scripts own names outside the engine's families.
+[auth] keyring loaded: 3 inline key(s)
+[server] OpenRouter metadata loaded: 1 model(s), sha256 a02a22ff5d95c0dedcd18305c9903a7173260a60d28d6a3b67ffc9e57a7911e3 from /home/avifenesh/.local/state/memra-rig-darklanes-20261002/scratch/B/vendor-profile.toml
+[server] starting; models config = [("q9", "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "q9" <- /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+[worker]   loaded "q9": 33 layers, eos=248046, stop=[248046]
+[worker] q9: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="q9" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] q9: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[admission] "q9": plain 14848 B/token, spec 16704 B/token; fixed residual learns from effective-free deltas
+[prime-walk] model="q9" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[fa-pool] grow #0 dev=0 o_len 0 -> 266240 ml_len 0 -> 1040 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q8_0_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[fa-pool] grow #1 dev=0 o_len 266240 -> 532480 ml_len 1040 -> 2080 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[spec] draft-session state high-water: 41MB (max of parked delta 41MB and capture-time pool peak 9MB; charged per spec admission and gating future captures)
+[skey] burst sampled=1 pure_temp=0 capturable=1 temp=0.7 top_k=0 top_p=0.9 min_p=0 pen_on=0 k=3 graph_draft=1 graph_s_parked=1 chain_s_parked=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[spec] stream_on=false env=false samp=true dg=false captured=false active=false session=true replay=false
+[skey] chain=graph_s round=0 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[fa-pool] grow #2 dev=0 o_len 532480 -> 1064960 ml_len 2080 -> 4160 (retired kept, zero=false)
+[R0] pos=4097 out_len=1 last_tok=279 draft=[15217, 5388, 13] n_acc=3 bonus=561 t_pred0=15217
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=1 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R1] pos=4100 out_len=5 last_tok=561 draft=[3841, 13477, 37550] n_acc=3 bonus=33075 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=2 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R2] pos=4104 out_len=9 last_tok=33075 draft=[888, 279, 15217] n_acc=3 bonus=5388 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=3 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R3] pos=4108 out_len=13 last_tok=5388 draft=[13, 561, 3841] n_acc=3 bonus=13477 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=4 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R4] pos=4112 out_len=17 last_tok=13477 draft=[37550, 33075, 888] n_acc=3 bonus=279 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=5 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R5] pos=4116 out_len=21 last_tok=279 draft=[15217, 5388, 13] n_acc=3 bonus=561 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=6 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R6] pos=4120 out_len=25 last_tok=561 draft=[3841, 13477, 37550] n_acc=3 bonus=33075 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=7 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R7] pos=4124 out_len=29 last_tok=33075 draft=[888, 279, 15217] n_acc=3 bonus=5388 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=8 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R8] pos=4128 out_len=33 last_tok=5388 draft=[13, 561, 3841] n_acc=3 bonus=13477 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=9 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R9] pos=4132 out_len=37 last_tok=13477 draft=[37550, 33075, 33075] n_acc=2 bonus=888 t_pred0=n/a
+  -> PARTIAL(replay-free j=3, bonus pending, prev-h seed)
+[skey] chain=graph_s round=10 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R10] pos=4135 out_len=40 last_tok=888 draft=[279, 15217, 5388] n_acc=3 bonus=13 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=11 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R11] pos=4139 out_len=44 last_tok=13 draft=[561, 3841, 13477] n_acc=3 bonus=37550 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=12 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R12] pos=4143 out_len=48 last_tok=37550 draft=[33075, 888, 279] n_acc=3 bonus=15217 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=13 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R13] pos=4147 out_len=52 last_tok=15217 draft=[5388, 13, 561] n_acc=3 bonus=3841 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=14 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R14] pos=4151 out_len=56 last_tok=3841 draft=[13477, 37550, 33075] n_acc=3 bonus=888 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=graph_s round=15 pure_temp=0 capturable=1 top_k=0 top_p=0.9 min_p=0 s_key_parked=Some(SampledGraphKey { seed: 2915158555, temp_bits: 1060320051, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false })
+[R15] pos=4155 out_len=60 last_tok=888 draft=[279, 15217, 5388] n_acc=3 bonus=13 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1442840576,"still_owned_bytes":8327347072,"pool_reserved_bytes":8455716864,"pool_cached_bytes":128369792,"driver_free_bytes":16294412288,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1376MB cached back to the driver
+[admit-cal] boot calibration done: model="q9" route=mtp transient floor 1536MB (static was 1536MB; measured 1266MB; probe kv charge 67MB, draft-state 41MB, drafted 48 accepted 47; [dev0 peak-mapped 9440MB rest-mapped 8064MB charged 109MB -> 1266MB]; 1.4s)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[server] worker ready; serving models: ["q9"]
+[server] listening on http://127.0.0.1:18121
+[meter] admit id=cmpl-af46b0dc10d49949da8520a48e62e647 tenant=acme lane=interactive model="q9"
+[admission] per-session draft-state charge: model="q9" +44MB (measured capture high-water)
+[admission] request cost: model="q9" ctx=139 path=spec = 16704 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 6MB
+[spec-k] model="q9" tenant="t:acme" K=3 source=cold-short prompt=11 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q9" 103MB (observed 105MB at ctx 83 path=spec)
+[skey] burst sampled=0 pure_temp=1 capturable=1 temp=0 top_k=0 top_p=1 min_p=0 pen_on=0 k=3 graph_draft=1 graph_s_parked=0 chain_s_parked=0 s_key_parked=None
+[spec] stream_on=false env=false samp=false dg=true captured=false active=false session=true replay=false
+[R0] pos=12 out_len=1 last_tok=271 draft=[17, 248046, 198] n_acc=0 bonus=19 t_pred0=19
+  -> ZERO-ROUND FOLD (bonus pending, fill_prev seed)
+[R1] pos=12 out_len=2 last_tok=19 draft=[248046, 198, 248044] n_acc=0 bonus=248044 t_pred0=248044
+  -> PARTIAL(replay-free j=1, bonus pending, prev-h seed)
+[R2] pos=13 out_len=3 last_tok=248044 draft=[248045, 198, 1] n_acc=1 bonus=846 t_pred0=248045
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[R3] pos=15 out_len=5 last_tok=846 draft=[198, 248045, 198] n_acc=1 bonus=3710 t_pred0=198
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[R4] pos=17 out_len=7 last_tok=3710 draft=[369, 279, 5289] n_acc=1 bonus=1330 t_pred0=369
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[R5] pos=19 out_len=9 last_tok=1330 draft=[5346, 1330, 30] n_acc=3 bonus=21134 t_pred0=5346
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[R6] pos=23 out_len=13 last_tok=21134 draft=[440, 799, 1324] n_acc=3 bonus=13 t_pred0=440
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[R7] pos=27 out_len=17 last_tok=13 draft=[248046, 198, 248045] n_acc=3 bonus=74455 t_pred0=248046
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[R8] pos=31 out_len=21 last_tok=74455 draft=[198, 332, 15666] n_acc=1 bonus=248068 t_pred0=198
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[R9] pos=33 out_len=23 last_tok=248068 draft=[271, 248069, 271] n_acc=0 bonus=198 t_pred0=198
+  -> PARTIAL(replay-free j=1, bonus pending, prev-h seed)
+[R10] pos=34 out_len=24 last_tok=198 draft=[90700, 8340, 25] n_acc=3 bonus=271 t_pred0=90700
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[R11] pos=38 out_len=28 last_tok=271 draft=[16, 13, 220] n_acc=3 bonus=2972 t_pred0=16
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[spec-acc] ctx=11 burst=19/36 cum=19/36=0.528
+GATE_RECEIPT {"id":"cmpl-af46b0dc10d49949da8520a48e62e647","tenant":"acme","outcome":"complete","status":200,"code":"","prompt_tokens":11,"cached_tokens":0,"completion_tokens":18}
+[meter] admit id=cmpl-0f5e0d43885b92da986a3307360e5294 tenant=acme lane=interactive model="q9"
+[admission] per-session draft-state charge: model="q9" +44MB (measured capture high-water)
+[admission] request cost: model="q9" ctx=139 path=spec = 16704 B/token x ctx + 4MB prefill-workspace + 103MB fixed = 109MB
+[spec-k] model="q9" tenant="t:acme" K=3 source=cold-short prompt=11 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[skey] burst sampled=0 pure_temp=1 capturable=1 temp=0 top_k=0 top_p=1 min_p=0 pen_on=0 k=3 graph_draft=1 graph_s_parked=0 chain_s_parked=0 s_key_parked=None
+[spec] stream_on=false env=false samp=false dg=true captured=false active=false session=true replay=false
+[R0] pos=12 out_len=1 last_tok=271 draft=[17, 248046, 198] n_acc=0 bonus=19 t_pred0=19
+  -> ZERO-ROUND FOLD (bonus pending, fill_prev seed)
+[R1] pos=12 out_len=2 last_tok=19 draft=[248046, 198, 248044] n_acc=0 bonus=248044 t_pred0=248044
+  -> PARTIAL(replay-free j=1, bonus pending, prev-h seed)
+[R2] pos=13 out_len=3 last_tok=248044 draft=[248045, 198, 1] n_acc=1 bonus=846 t_pred0=248045
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[R3] pos=15 out_len=5 last_tok=846 draft=[198, 248045, 198] n_acc=1 bonus=3710 t_pred0=198
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[R4] pos=17 out_len=7 last_tok=3710 draft=[369, 279, 5289] n_acc=1 bonus=1330 t_pred0=369
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[R5] pos=19 out_len=9 last_tok=1330 draft=[5346, 1330, 30] n_acc=3 bonus=21134 t_pred0=5346
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[R6] pos=23 out_len=13 last_tok=21134 draft=[440, 799, 1324] n_acc=3 bonus=13 t_pred0=440
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[R7] pos=27 out_len=17 last_tok=13 draft=[248046, 198, 248045] n_acc=3 bonus=74455 t_pred0=248046
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[R8] pos=31 out_len=21 last_tok=74455 draft=[198, 332, 15666] n_acc=1 bonus=248068 t_pred0=198
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[R9] pos=33 out_len=23 last_tok=248068 draft=[271, 248069, 271] n_acc=0 bonus=198 t_pred0=198
+  -> PARTIAL(replay-free j=1, bonus pending, prev-h seed)
+[R10] pos=34 out_len=24 last_tok=198 draft=[90700, 8340, 25] n_acc=3 bonus=271 t_pred0=90700
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[R11] pos=38 out_len=28 last_tok=271 draft=[16, 13, 220] n_acc=3 bonus=2972 t_pred0=16
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[spec-acc] ctx=11 burst=19/36 cum=19/36=0.528
+GATE_RECEIPT {"id":"cmpl-0f5e0d43885b92da986a3307360e5294","tenant":"acme","outcome":"complete","status":200,"code":"","prompt_tokens":11,"cached_tokens":0,"completion_tokens":18}
+GATE_STORED {"id":"cmpl-0f5e0d43885b92da986a3307360e5294","status":"Completed"}
+[meter] admit id=cmpl-7e95023c9192a162ff7fcaa484e25a7f tenant=acme lane=interactive model="q9"
+[admission] per-session draft-state charge: model="q9" +44MB (measured capture high-water)
+[admission] request cost: model="q9" ctx=8256 path=spec = 16704 B/token x ctx + 3MB prefill-workspace + 103MB fixed = 244MB
+[spec-k] model="q9" tenant="t:acme" K=3 source=cold-short prompt=9 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q9" 118MB (observed 255MB at ctx 8192 path=spec)
+[skey] burst sampled=1 pure_temp=0 capturable=0 temp=1 top_k=20 top_p=0.95 min_p=0 pen_on=1 k=3 graph_draft=1 graph_s_parked=0 chain_s_parked=0 s_key_parked=None
+[spec] stream_on=false env=false samp=true dg=false captured=false active=false session=true replay=false
+[skey] chain=eager round=0 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R0] pos=10 out_len=1 last_tok=271 draft=[18, 18, 21] n_acc=0 bonus=19 t_pred0=19
+  -> ZERO-ROUND FOLD (bonus pending, fill_prev seed)
+[skey] chain=eager round=1 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R1] pos=10 out_len=2 last_tok=19 draft=[248046, 198, 248044] n_acc=0 bonus=248044 t_pred0=n/a
+  -> PARTIAL(replay-free j=1, bonus pending, prev-h seed)
+[skey] chain=eager round=2 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R2] pos=11 out_len=3 last_tok=248044 draft=[1206, 1423, 264] n_acc=0 bonus=248045 t_pred0=n/a
+  -> PARTIAL(replay-free j=1, bonus pending, prev-h seed)
+[skey] chain=eager round=3 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R3] pos=12 out_len=4 last_tok=248045 draft=[220, 17, 35] n_acc=0 bonus=198 t_pred0=n/a
+  -> PARTIAL(replay-free j=1, bonus pending, prev-h seed)
+[skey] chain=eager round=4 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R4] pos=13 out_len=5 last_tok=198 draft=[248045, 271, 248069] n_acc=1 bonus=198 t_pred0=n/a
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[skey] chain=eager round=5 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R5] pos=15 out_len=7 last_tok=198 draft=[760, 1156, 6587] n_acc=0 bonus=248046 t_pred0=n/a
+  -> PARTIAL(replay-free j=1, bonus pending, prev-h seed)
+[skey] chain=eager round=6 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R6] pos=16 out_len=8 last_tok=248046 draft=[198, 248045, 846] n_acc=3 bonus=198 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=7 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R7] pos=20 out_len=12 last_tok=198 draft=[760, 3841, 13477] n_acc=0 bonus=9930 t_pred0=n/a
+  -> PARTIAL(replay-free j=1, bonus pending, prev-h seed)
+[skey] chain=eager round=8 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R8] pos=21 out_len=13 last_tok=9930 draft=[1459, 914, 488] n_acc=0 bonus=1503 t_pred0=n/a
+  -> PARTIAL(replay-free j=1, bonus pending, prev-h seed)
+[skey] chain=eager round=9 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R9] pos=22 out_len=14 last_tok=1503 draft=[264, 6561, 856] n_acc=1 bonus=41674 t_pred0=n/a
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[skey] chain=eager round=10 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R10] pos=24 out_len=16 last_tok=41674 draft=[2404, 13477, 30] n_acc=3 bonus=79091 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=11 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R11] pos=28 out_len=20 last_tok=79091 draft=[13, 248046, 198] n_acc=0 bonus=4777 t_pred0=n/a
+  -> PARTIAL(replay-free j=1, bonus pending, prev-h seed)
+[skey] chain=eager round=12 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R12] pos=29 out_len=21 last_tok=4777 draft=[13, 271, 332] n_acc=1 bonus=248046 t_pred0=n/a
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[skey] chain=eager round=13 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R13] pos=31 out_len=23 last_tok=248046 draft=[198, 248045, 846] n_acc=2 bonus=74455 t_pred0=n/a
+  -> PARTIAL(replay-free j=3, bonus pending, prev-h seed)
+[skey] chain=eager round=14 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R14] pos=34 out_len=26 last_tok=74455 draft=[198, 4350, 7515] n_acc=1 bonus=248068 t_pred0=n/a
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[skey] chain=eager round=15 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R15] pos=36 out_len=28 last_tok=248068 draft=[271, 248069, 271] n_acc=3 bonus=32 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[spec-acc] ctx=9 burst=15/48 cum=15/48=0.312
+GATE_RECEIPT {"id":"cmpl-7e95023c9192a162ff7fcaa484e25a7f","tenant":"acme","outcome":"complete","status":200,"code":"","prompt_tokens":9,"cached_tokens":0,"completion_tokens":8}
+GATE_STORED {"id":"cmpl-7e95023c9192a162ff7fcaa484e25a7f","status":"Completed"}
+[meter] admit id=chatcmpl-84a623883e17efeedae7b3ec57504c41 tenant=acme lane=interactive model="q9"
+[admission] per-session draft-state charge: model="q9" +44MB (measured capture high-water)
+[admission] request cost: model="q9" ctx=151 path=spec = 16704 B/token x ctx + 8MB prefill-workspace + 118MB fixed = 129MB
+[spec-k] model="q9" tenant="t:acme" K=3 source=cold-short prompt=23 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[skey] burst sampled=0 pure_temp=1 capturable=1 temp=0 top_k=0 top_p=1 min_p=0 pen_on=0 k=3 graph_draft=1 graph_s_parked=0 chain_s_parked=0 s_key_parked=None
+[spec] stream_on=false env=false samp=false dg=true captured=false active=false session=true replay=false
+[R0] pos=24 out_len=1 last_tok=19 draft=[248046, 198, 248044] n_acc=3 bonus=248045 t_pred0=248046
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[R1] pos=27 out_len=5 last_tok=248045 draft=[25, 328, 40] n_acc=0 bonus=846 t_pred0=846
+  -> PARTIAL(replay-free j=1, bonus pending, prev-h seed)
+[R2] pos=28 out_len=6 last_tok=846 draft=[198, 248045, 198] n_acc=1 bonus=3710 t_pred0=198
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[R3] pos=30 out_len=8 last_tok=3710 draft=[369, 279, 7063] n_acc=1 bonus=1330 t_pred0=369
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[R4] pos=32 out_len=10 last_tok=1330 draft=[5346, 1330, 30] n_acc=3 bonus=21134 t_pred0=5346
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[R5] pos=36 out_len=14 last_tok=21134 draft=[440, 799, 1324] n_acc=3 bonus=13 t_pred0=440
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[R6] pos=40 out_len=18 last_tok=13 draft=[248046, 198, 248045] n_acc=3 bonus=74455 t_pred0=248046
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[R7] pos=44 out_len=22 last_tok=74455 draft=[198, 3710, 369] n_acc=1 bonus=248068 t_pred0=198
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[R8] pos=46 out_len=24 last_tok=248068 draft=[271, 248069, 271] n_acc=3 bonus=19 t_pred0=271
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[R9] pos=50 out_len=28 last_tok=19 draft=[248046, 198, 248044] n_acc=3 bonus=248045 t_pred0=248046
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[spec-acc] ctx=23 burst=21/30 cum=21/30=0.700
+GATE_RECEIPT {"id":"chatcmpl-84a623883e17efeedae7b3ec57504c41","tenant":"acme","outcome":"complete","status":200,"code":"","prompt_tokens":23,"cached_tokens":0,"completion_tokens":2}
+[meter] admit id=chatcmpl-620fd5c49939e722c836d1cec6b85c26 tenant=acme lane=interactive model="q9"
+[spec-k] model="q9" tenant="t:acme" K=3 source=cold-short prompt=23 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[skey] burst sampled=0 pure_temp=1 capturable=1 temp=0 top_k=0 top_p=1 min_p=0 pen_on=0 k=3 graph_draft=1 graph_s_parked=0 chain_s_parked=0 s_key_parked=None
+[spec] stream_on=false env=false samp=false dg=true captured=false active=false session=true replay=false
+[R0] pos=24 out_len=1 last_tok=19 draft=[248046, 198, 248044] n_acc=3 bonus=248045 t_pred0=248046
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[R1] pos=27 out_len=5 last_tok=248045 draft=[25, 328, 40] n_acc=0 bonus=846 t_pred0=846
+  -> PARTIAL(replay-free j=1, bonus pending, prev-h seed)
+[R2] pos=28 out_len=6 last_tok=846 draft=[198, 248045, 198] n_acc=1 bonus=3710 t_pred0=198
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[R3] pos=30 out_len=8 last_tok=3710 draft=[369, 279, 7063] n_acc=1 bonus=1330 t_pred0=369
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[R4] pos=32 out_len=10 last_tok=1330 draft=[5346, 1330, 30] n_acc=3 bonus=21134 t_pred0=5346
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[R5] pos=36 out_len=14 last_tok=21134 draft=[440, 799, 1324] n_acc=3 bonus=13 t_pred0=440
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[R6] pos=40 out_len=18 last_tok=13 draft=[248046, 198, 248045] n_acc=3 bonus=74455 t_pred0=248046
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[R7] pos=44 out_len=22 last_tok=74455 draft=[198, 3710, 369] n_acc=1 bonus=248068 t_pred0=198
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[R8] pos=46 out_len=24 last_tok=248068 draft=[271, 248069, 271] n_acc=3 bonus=19 t_pred0=271
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[R9] pos=50 out_len=28 last_tok=19 draft=[248046, 198, 248044] n_acc=3 bonus=248045 t_pred0=248046
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[spec-acc] ctx=23 burst=21/30 cum=21/30=0.700
+GATE_RECEIPT {"id":"chatcmpl-620fd5c49939e722c836d1cec6b85c26","tenant":"acme","outcome":"complete","status":200,"code":"","prompt_tokens":23,"cached_tokens":0,"completion_tokens":2}
+GATE_STORED {"id":"chatcmpl-620fd5c49939e722c836d1cec6b85c26","status":"Completed"}
+[meter] admit id=chatcmpl-30d801a25fee0011fd85fc7a00faf043 tenant=acme lane=interactive model="q9"
+[admission] per-session draft-state charge: model="q9" +44MB (measured capture high-water)
+[admission] request cost: model="q9" ctx=8256 path=spec = 16704 B/token x ctx + 7MB prefill-workspace + 118MB fixed = 263MB
+[spec-k] model="q9" tenant="t:acme" K=3 source=cold-short prompt=19 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[skey] burst sampled=1 pure_temp=0 capturable=0 temp=1 top_k=20 top_p=0.95 min_p=0 pen_on=1 k=3 graph_draft=1 graph_s_parked=0 chain_s_parked=0 s_key_parked=None
+[spec] stream_on=false env=false samp=true dg=false captured=false active=false session=true replay=false
+[skey] chain=eager round=0 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R0] pos=20 out_len=1 last_tok=90700 draft=[8340, 25, 271] n_acc=3 bonus=16 t_pred0=8340
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=1 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R1] pos=23 out_len=5 last_tok=16 draft=[13, 220, 2972] n_acc=3 bonus=2014 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=2 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R2] pos=27 out_len=9 last_tok=2014 draft=[53983, 279, 5952] n_acc=3 bonus=64700 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=3 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R3] pos=31 out_len=13 last_tok=64700 draft=[198, 262, 348] n_acc=3 bonus=256 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=4 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R4] pos=35 out_len=17 last_tok=256 draft=[15380, 25, 328] n_acc=3 bonus=3710 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=5 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R5] pos=39 out_len=21 last_tok=3710 draft=[369, 1330, 7285] n_acc=2 bonus=5346 t_pred0=n/a
+  -> PARTIAL(replay-free j=3, bonus pending, prev-h seed)
+[skey] chain=eager round=6 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R6] pos=42 out_len=24 last_tok=5346 draft=[1330, 7285, 198] n_acc=3 bonus=262 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=7 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R7] pos=46 out_len=28 last_tok=262 draft=[348, 256, 5261] n_acc=2 bonus=42794 t_pred0=n/a
+  -> PARTIAL(replay-free j=3, bonus pending, prev-h seed)
+[skey] chain=eager round=8 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R8] pos=49 out_len=31 last_tok=42794 draft=[25, 328, 15666] n_acc=3 bonus=25899 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+GATE_PROGRESS {"id":"chatcmpl-30d801a25fee0011fd85fc7a00faf043","completion_tokens":32}
+[spec-acc] ctx=19 burst=25/27 cum=25/27=0.926
+[skey] burst sampled=1 pure_temp=0 capturable=0 temp=1 top_k=20 top_p=0.95 min_p=0 pen_on=1 k=3 graph_draft=1 graph_s_parked=0 chain_s_parked=0 s_key_parked=None
+[spec] stream_on=false env=false samp=true dg=false captured=false active=false session=true replay=false
+[skey] chain=eager round=0 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R0] pos=55 out_len=1 last_tok=1149 draft=[271, 17, 13] n_acc=3 bonus=220 t_pred0=271
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=1 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R1] pos=58 out_len=5 last_tok=220 draft=[2972, 35, 23544] n_acc=3 bonus=279 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=2 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R2] pos=62 out_len=9 last_tok=279 draft=[21134, 64700, 198] n_acc=3 bonus=262 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=3 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R3] pos=66 out_len=13 last_tok=262 draft=[348, 256, 87867] n_acc=3 bonus=2029 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=4 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R4] pos=70 out_len=17 last_tok=2029 draft=[25, 220, 17] n_acc=3 bonus=478 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=5 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R5] pos=74 out_len=21 last_tok=478 draft=[220, 17, 283] n_acc=3 bonus=220 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=6 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R6] pos=78 out_len=25 last_tok=220 draft=[19, 13, 271] n_acc=3 bonus=18 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=7 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R7] pos=82 out_len=29 last_tok=18 draft=[13, 220, 2972] n_acc=3 bonus=3840 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[spec-acc] ctx=54 burst=24/24 cum=49/51=0.961
+[skey] burst sampled=1 pure_temp=0 capturable=0 temp=1 top_k=20 top_p=0.95 min_p=0 pen_on=1 k=3 graph_draft=1 graph_s_parked=0 chain_s_parked=0 s_key_parked=None
+[spec] stream_on=false env=false samp=true dg=false captured=false active=false session=true replay=false
+[skey] chain=eager round=0 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R0] pos=88 out_len=1 last_tok=84457 draft=[64700, 198, 262] n_acc=3 bonus=348 t_pred0=64700
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=1 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R1] pos=91 out_len=5 last_tok=348 draft=[256, 417, 7055] n_acc=3 bonus=477 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=2 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R2] pos=95 out_len=9 last_tok=477 draft=[369, 1328, 13] n_acc=3 bonus=2233 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=3 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R3] pos=99 out_len=13 last_tok=2233 draft=[15673, 11, 2166] n_acc=0 bonus=39492 t_pred0=n/a
+  -> PARTIAL(replay-free j=1, bonus pending, prev-h seed)
+[skey] chain=eager round=4 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R4] pos=100 out_len=14 last_tok=39492 draft=[4221, 11, 1066] n_acc=1 bonus=13 t_pred0=n/a
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[skey] chain=eager round=5 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R5] pos=102 out_len=16 last_tok=13 draft=[271, 19, 13] n_acc=3 bonus=220 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=6 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R6] pos=106 out_len=20 last_tok=220 draft=[2972, 1774, 6134] n_acc=3 bonus=8984 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=7 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R7] pos=110 out_len=24 last_tok=8984 draft=[64700, 198, 262] n_acc=3 bonus=348 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=8 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R8] pos=114 out_len=28 last_tok=348 draft=[256, 328, 26108] n_acc=3 bonus=1 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[spec-acc] ctx=87 burst=22/27 cum=71/78=0.910
+[skey] burst sampled=1 pure_temp=0 capturable=0 temp=1 top_k=20 top_p=0.95 min_p=0 pen_on=1 k=3 graph_draft=1 graph_s_parked=0 chain_s_parked=0 s_key_parked=None
+[spec] stream_on=false env=false samp=true dg=false captured=false active=false session=true replay=false
+[skey] chain=eager round=0 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R0] pos=120 out_len=1 last_tok=466 draft=[328, 2064, 1] n_acc=1 bonus=19 t_pred0=328
+  -> PARTIAL(replay-free j=1, bonus pending, prev-h seed)
+[skey] chain=eager round=1 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R1] pos=121 out_len=3 last_tok=19 draft=[3158, 271, 20] n_acc=3 bonus=13 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=2 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R2] pos=125 out_len=7 last_tok=13 draft=[220, 2972, 18770] n_acc=3 bonus=23389 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=3 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R3] pos=129 out_len=11 last_tok=23389 draft=[64700, 198, 262] n_acc=1 bonus=328 t_pred0=n/a
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[skey] chain=eager round=4 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R4] pos=131 out_len=13 last_tok=328 draft=[19, 1, 369] n_acc=3 bonus=279 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=5 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R5] pos=135 out_len=17 last_tok=279 draft=[1379, 2050, 321] n_acc=3 bonus=9522 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=6 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R6] pos=139 out_len=21 last_tok=9522 draft=[13, 2441, 1066] n_acc=0 bonus=4087 t_pred0=n/a
+  -> PARTIAL(replay-free j=1, bonus pending, prev-h seed)
+[skey] chain=eager round=7 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R7] pos=140 out_len=22 last_tok=4087 draft=[13, 271, 21] n_acc=1 bonus=328 t_pred0=n/a
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[skey] chain=eager round=8 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R8] pos=142 out_len=24 last_tok=328 draft=[26108, 1, 369] n_acc=3 bonus=1048 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=9 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R9] pos=146 out_len=28 last_tok=1048 draft=[6699, 13, 6558] n_acc=3 bonus=579 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[spec-acc] ctx=119 burst=21/30 cum=92/108=0.852
+[skey] burst sampled=1 pure_temp=0 capturable=0 temp=1 top_k=20 top_p=0.95 min_p=0 pen_on=1 k=3 graph_draft=1 graph_s_parked=0 chain_s_parked=0 s_key_parked=None
+[spec] stream_on=false env=false samp=true dg=false captured=false active=false session=true replay=false
+[skey] chain=eager round=0 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R0] pos=152 out_len=1 last_tok=708 draft=[440, 264, 2708] n_acc=1 bonus=279 t_pred0=440
+  -> PARTIAL(replay-free j=1, bonus pending, prev-h seed)
+[skey] chain=eager round=1 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R1] pos=153 out_len=3 last_tok=279 draft=[1324, 13, 271] n_acc=3 bonus=21 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=2 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R2] pos=157 out_len=7 last_tok=21 draft=[13, 220, 2972] n_acc=3 bonus=18770 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=3 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R3] pos=161 out_len=11 last_tok=18770 draft=[8984, 64700, 328] n_acc=2 bonus=220 t_pred0=n/a
+  -> PARTIAL(replay-free j=3, bonus pending, prev-h seed)
+[skey] chain=eager round=4 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R4] pos=164 out_len=14 last_tok=220 draft=[19, 508, 86] n_acc=3 bonus=198 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=5 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R5] pos=168 out_len=18 last_tok=198 draft=[248069, 271, 19] n_acc=3 bonus=248046 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=6 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R6] pos=172 out_len=22 last_tok=248046 draft=[198, 248044, 248045] n_acc=3 bonus=846 t_pred0=n/a
+  -> FULL ACCEPT (bonus pending, prev-h seed)
+[skey] chain=eager round=7 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R7] pos=176 out_len=26 last_tok=846 draft=[198, 97237, 198] n_acc=1 bonus=4199 t_pred0=n/a
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[skey] chain=eager round=8 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R8] pos=178 out_len=28 last_tok=4199 draft=[1467, 488, 13371] n_acc=2 bonus=2445 t_pred0=n/a
+  -> PARTIAL(replay-free j=3, bonus pending, prev-h seed)
+[skey] chain=eager round=9 pure_temp=0 top_k=20 top_p=0.95 min_p=0 s_key_parked=None
+[R9] pos=181 out_len=31 last_tok=2445 draft=[310, 2199, 30] n_acc=1 bonus=421 t_pred0=n/a
+  -> PARTIAL(replay-free j=2, bonus pending, prev-h seed)
+[spec-acc] ctx=151 burst=22/30 cum=114/138=0.826
+GATE_RECEIPT {"id":"chatcmpl-30d801a25fee0011fd85fc7a00faf043","tenant":"acme","outcome":"complete","status":200,"code":"","prompt_tokens":19,"cached_tokens":0,"completion_tokens":154}
+GATE_STORED {"id":"chatcmpl-30d801a25fee0011fd85fc7a00faf043","status":"Completed"}
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

@@ -1,0 +1,5 @@
+{
+  "exit_code": 1,
+  "stderr": "Traceback (most recent call last):\n  File \"/home/avifenesh/projects/wt-memra-background-chat-text-20261002/tools/validation_coverage.py\", line 182, in <module>\n    raise SystemExit(main())\n                     ~~~~^^\n  File \"/home/avifenesh/projects/wt-memra-background-chat-text-20261002/tools/validation_coverage.py\", line 175, in main\n    print(json.dumps(validate_results(plan, json.loads(args.results.read_text()), manifest['context'], args.root), indent=2))\n                     ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/avifenesh/projects/wt-memra-background-chat-text-20261002/tools/validation_coverage.py\", line 158, in validate_results\n    raise ValueError('selected test/control lacks an explicit passing assertion: ' + name + '/' + edge)\nValueError: selected test/control lacks an explicit passing assertion: background-and-stock-publication-cpu-contracts/door-off-type-stream-refusal\n",
+  "qualification": false
+}

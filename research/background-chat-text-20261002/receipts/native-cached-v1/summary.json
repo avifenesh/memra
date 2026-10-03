@@ -1,0 +1,54 @@
+[
+  {
+    "cell": "cached",
+    "chat": false,
+    "usage": {
+      "prompt_tokens": 504,
+      "cached_tokens": 480,
+      "completion_tokens": 256
+    },
+    "warm": {
+      "cached_tokens": 480,
+      "restore_witness": "[prefix-cache] spec restore: 480 of 504 prompt tokens",
+      "spec_rounds_observed": 71,
+      "first_round": "[R0] pos=505 out_len=1 last_tok=760 draft=[3841, 13477, 37550] n_acc=3"
+    },
+    "cancel_usage": {
+      "prompt_tokens": 504,
+      "cached_tokens": 480,
+      "completion_tokens": 34
+    },
+    "sync_continuation": {
+      "cached_tokens": 480,
+      "restore_witness": "[prefix-cache] spec restore: 480 of 504 prompt tokens",
+      "spec_rounds_observed": 71,
+      "first_round": "[R0] pos=505 out_len=1 last_tok=760 draft=[3841, 13477, 37550] n_acc=3"
+    }
+  },
+  {
+    "cell": "cached",
+    "chat": true,
+    "usage": {
+      "prompt_tokens": 515,
+      "cached_tokens": 480,
+      "completion_tokens": 256
+    },
+    "warm": {
+      "cached_tokens": 480,
+      "restore_witness": "[prefix-cache] spec restore: 480 of 515 prompt tokens",
+      "spec_rounds_observed": 100,
+      "first_round": "[R0] pos=516 out_len=1 last_tok=760 draft=[20438, 314, 279] n_acc=0"
+    },
+    "cancel_usage": {
+      "prompt_tokens": 515,
+      "cached_tokens": 480,
+      "completion_tokens": 32
+    },
+    "sync_continuation": {
+      "cached_tokens": 480,
+      "restore_witness": "[prefix-cache] spec restore: 480 of 515 prompt tokens",
+      "spec_rounds_observed": 100,
+      "first_round": "[R0] pos=516 out_len=1 last_tok=760 draft=[20438, 314, 279] n_acc=0"
+    }
+  }
+]

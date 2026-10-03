@@ -1,0 +1,34 @@
+Running as unit: memra-rig-job-c3a07d92f8ac.service; invocation ID: da54b8681f2f4e1cafe70daa93292822
+WAITING canonical GPU lock /tmp/memra-5090.lock
+ACQUIRED canonical GPU lock on inherited FD9
+uuid, name, memory.total [MiB], memory.free [MiB], driver_version
+GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, NVIDIA GeForce RTX 5090 Laptop GPU, 24463 MiB, 23900 MiB, 595.91.07
+
+[
+  {
+    "cell": "long-chat",
+    "seconds": 303.2902883050265,
+    "usage": {
+      "prompt_tokens": 22,
+      "cached_tokens": 0,
+      "completion_tokens": 18001
+    },
+    "status": "completed",
+    "full_text_sha256": "f8ec2e4241876440e42b73ba1d79c31c067131f3b76803c5d0c33634aed988da"
+  },
+  {
+    "cell": "cancel",
+    "chat": true,
+    "usage": {
+      "prompt_tokens": 22,
+      "cached_tokens": 0,
+      "completion_tokens": 32
+    },
+    "prefix_preserved": true
+  }
+]
+          Finished with result: success
+Main processes terminated with: code=exited, status=0/SUCCESS
+               Service runtime: 10min 22.489s
+             CPU time consumed: 10min 15.857s
+                   Memory peak: 7.9G (swap: 0B)

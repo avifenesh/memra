@@ -1,0 +1,25 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-memra-background-chat-text-20261002/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 1m 15s
+     Running unittests src/lib.rs (target/B914/release/deps/memra_server-18a72fda78e92499)
+
+running 17 tests
+test responses_api::tests::background_door_off_still_refuses_background ... ok
+test responses_api::tests::background_door_on_accepts_background_but_still_refuses_cross_request_state ... ok
+test responses_api::tests::background_true_and_stream_true_together_is_refused_only_with_the_door_open ... ok
+test tests::background_chat_text_cancel_is_tenant_bound_and_retains_partial ... ok
+test tests::background_bypasses_the_nonstream_deadline_feasibility_gate ... ok
+test tests::background_chat_text_explicit_refusals_precede_generation ... ok
+test tests::background_chat_text_complete_after_deadline_preserves_native_data_and_defaults ... ok
+test tests::background_chat_text_oversized_worker_errors_are_bounded_and_unbilled ... ok
+test tests::background_chat_text_storage_refusal_and_terminal_fallback_are_settled ... ok
+test tests::background_chat_text_tool_call_budget_cut_keeps_incomplete_status ... ok
+test tests::background_chat_text_synchronous_deadline_control_still_delivers_explicit_partial ... ok
+test tests::background_chat_text_worker_failures_remain_explicit_and_settle_once ... ok
+test tests::background_door_off_route_refuses_and_creates_no_job ... ok
+test tests::background_storage_keys_are_unambiguous ... ok
+test tests::background_http_ack_is_separate_from_generation_and_polling ... ok
+test tests::background_submit_returns_queued_then_poll_reaches_completed ... ok
+test tests::background_tenant_isolation_on_submit_poll_and_cancel ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 1095 filtered out; finished in 4.23s

@@ -1,0 +1,65 @@
+Running as unit: memra-rig-job-10ea55fb036a.service; invocation ID: 1efa1abdce2c4a50bcd2287ed99a3207
+WAITING canonical GPU lock /tmp/memra-5090.lock
+ACQUIRED canonical GPU lock on inherited FD9
+uuid, name, memory.total [MiB], memory.free [MiB], driver_version
+GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, NVIDIA GeForce RTX 5090 Laptop GPU, 24463 MiB, 23899 MiB, 595.91.07
+
+[
+  {
+    "cell": "cached",
+    "chat": false,
+    "usage": {
+      "prompt_tokens": 504,
+      "cached_tokens": 480,
+      "completion_tokens": 256
+    },
+    "warm": {
+      "cached_tokens": 480,
+      "restore_witness": "[prefix-cache] spec restore: 480 of 504 prompt tokens",
+      "spec_rounds_observed": 71,
+      "first_round": "[R0] pos=505 out_len=1 last_tok=760 draft=[3841, 13477, 37550] n_acc=3"
+    },
+    "cancel_usage": {
+      "prompt_tokens": 504,
+      "cached_tokens": 480,
+      "completion_tokens": 34
+    },
+    "sync_continuation": {
+      "cached_tokens": 480,
+      "restore_witness": "[prefix-cache] spec restore: 480 of 504 prompt tokens",
+      "spec_rounds_observed": 71,
+      "first_round": "[R0] pos=505 out_len=1 last_tok=760 draft=[3841, 13477, 37550] n_acc=3"
+    }
+  },
+  {
+    "cell": "cached",
+    "chat": true,
+    "usage": {
+      "prompt_tokens": 515,
+      "cached_tokens": 480,
+      "completion_tokens": 256
+    },
+    "warm": {
+      "cached_tokens": 480,
+      "restore_witness": "[prefix-cache] spec restore: 480 of 515 prompt tokens",
+      "spec_rounds_observed": 100,
+      "first_round": "[R0] pos=516 out_len=1 last_tok=760 draft=[20438, 314, 279] n_acc=0"
+    },
+    "cancel_usage": {
+      "prompt_tokens": 515,
+      "cached_tokens": 480,
+      "completion_tokens": 32
+    },
+    "sync_continuation": {
+      "cached_tokens": 480,
+      "restore_witness": "[prefix-cache] spec restore: 480 of 515 prompt tokens",
+      "spec_rounds_observed": 100,
+      "first_round": "[R0] pos=516 out_len=1 last_tok=760 draft=[20438, 314, 279] n_acc=0"
+    }
+  }
+]
+          Finished with result: success
+Main processes terminated with: code=exited, status=0/SUCCESS
+               Service runtime: 19.699s
+             CPU time consumed: 18.054s
+                   Memory peak: 5.4G (swap: 0B)

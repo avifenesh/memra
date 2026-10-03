@@ -1,0 +1,326 @@
+{
+  "decision": "scoped",
+  "selected": [
+    "background-and-stock-publication-cpu-contracts",
+    "native-collector-negative-controls",
+    "native-long-chat + native-long-text"
+  ],
+  "context": {
+    "model": "Qwen3.5-9B",
+    "artifact": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+    "hardware": "GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d",
+    "numeric_program": "Memra native engine tree 2618cb81aadf10183131fea9805234d9c9bacb08; checkpoint bytes 0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c"
+  },
+  "contract": {
+    "schema": "memra-edge-contract-v1",
+    "required_edges": [
+      "cache-restore-spec-missing-and-wrong-grid-red",
+      "cancel-without-native-progress-red",
+      "deadline-exemption-and-sync-partial-regression",
+      "door-off-type-stream-refusal",
+      "incremental-and-escaped-encoding-bound",
+      "missing-and-double-terminal-red",
+      "native-cancel-after-recorded-token-32-preserves-prefix-error",
+      "native-chat-beyond-90s-complete-600-item-schema",
+      "native-exactly-one-terminal-worker-truth-callback",
+      "native-running-foreign-404",
+      "native-stream-background-full-text-and-usage-identity",
+      "native-terminal-repeat-rotation-conflict",
+      "native-text-beyond-90s-complete-original-envelope",
+      "phase-context-binding-red",
+      "premature-native-deadline-red",
+      "publication-hidden-reentrant-read-and-protection",
+      "queued-native-dialect-original-output",
+      "settlement-error-panic-fallback",
+      "storage-capacity-failure-unbilled-once",
+      "tenant-key-rotation-forged-key-isolation",
+      "tool-call-budget-cut-is-incomplete",
+      "usage-token-envelope-corruption-red",
+      "vendor-witness-startup-and-wrong-profile-red",
+      "worker-error-eof-unbilled",
+      "zero-and-partial-cancel"
+    ],
+    "context": {
+      "model": "Qwen3.5-9B",
+      "artifact": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "hardware": "GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d",
+      "numeric_program": "Memra native engine tree 2618cb81aadf10183131fea9805234d9c9bacb08; checkpoint bytes 0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c"
+    },
+    "tests": {
+      "background-and-stock-publication-cpu-contracts": {
+        "id": "background-and-stock-publication-cpu-contracts",
+        "cost": 25,
+        "kind": "cpu",
+        "mandatory": true,
+        "covers": [
+          "door-off-type-stream-refusal",
+          "deadline-exemption-and-sync-partial-regression",
+          "tenant-key-rotation-forged-key-isolation",
+          "queued-native-dialect-original-output",
+          "zero-and-partial-cancel",
+          "worker-error-eof-unbilled",
+          "storage-capacity-failure-unbilled-once",
+          "publication-hidden-reentrant-read-and-protection",
+          "settlement-error-panic-fallback",
+          "incremental-and-escaped-encoding-bound",
+          "tool-call-budget-cut-is-incomplete"
+        ],
+        "inputs": {
+          "crates/memra-server/src/lib.rs": "71805436cef8954858e8f2ef4261807901d8c8a214be2aa1ac7ee217dfb3b54e",
+          "crates/memra-server/src/background_jobs.rs": "dd583894c397decc3f09913ae515a7fd92bbe063c6cbcf647176e13ab2f615c2",
+          "crates/memra-server/src/job_publication.rs": "9d02e55407ac2a3cfd88af1870704b20a76148cdbc3afd93d6e08bffbe04891f",
+          "crates/memra-server/src/job_store.rs": "0959d39889631ef4beb28e9e1604f1444336f4ce73aba919dffcfdf4aa8d9003",
+          "crates/memra-server/src/metering.rs": "f4968c848bbd6247fee0c8a4b5f05943281c728d01eb7ee90ab1bc62f809cd51",
+          "crates/memra-server/src/responses_api.rs": "df5dc4f7de5e752cbd643680f3f9451c96d367666307a883b50986f1044a7a01",
+          "crates/memra-server/src/worker.rs": "59113a3d85a2b4eedb7500c8ffb244fa0672cc1644a0a886e6316beea0dd2ddd"
+        },
+        "execution": "17 focused background tests plus individually passed stock/publication tests in the full release server suite; no ignored test is treated as executed"
+      },
+      "native-collector-negative-controls": {
+        "id": "native-collector-negative-controls",
+        "cost": 0.01,
+        "kind": "cpu",
+        "mandatory": true,
+        "covers": [
+          "cache-restore-spec-missing-and-wrong-grid-red",
+          "phase-context-binding-red",
+          "missing-and-double-terminal-red",
+          "usage-token-envelope-corruption-red",
+          "premature-native-deadline-red",
+          "cancel-without-native-progress-red",
+          "vendor-witness-startup-and-wrong-profile-red"
+        ],
+        "inputs": {
+          "tools/background-chat-text-gate.py": "8d128c89774d2e48aac356a6cd311a7a8c8402c38c9afd7be363280b5a784b08",
+          "tools/test_background_chat_text_gate.py": "bcfed7d2129a13c71013090706cfee2c1c8d647d3487f1879948181fb6f338df",
+          "tools/cache_qualification.py": "48bd67dda86e39ff4836c8eee619b45ae9f94b4922a37e9ea48be39a9b489b15",
+          "research/background-chat-text-20261002/tools/vendor-profile.toml": "a02a22ff5d95c0dedcd18305c9903a7173260a60d28d6a3b67ffc9e57a7911e3",
+          "tools/validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+        }
+      },
+      "native-long-chat + native-long-text": {
+        "id": "native-long-chat + native-long-text",
+        "cost": 1100,
+        "kind": "gpu",
+        "mandatory": true,
+        "covers": [
+          "native-chat-beyond-90s-complete-600-item-schema",
+          "native-text-beyond-90s-complete-original-envelope",
+          "native-stream-background-full-text-and-usage-identity",
+          "native-cancel-after-recorded-token-32-preserves-prefix-error",
+          "native-running-foreign-404",
+          "native-terminal-repeat-rotation-conflict",
+          "native-exactly-one-terminal-worker-truth-callback"
+        ],
+        "controls": [
+          "native-collector-negative-controls"
+        ],
+        "inputs": {
+          "crates/memra-server/src/lib.rs": "71805436cef8954858e8f2ef4261807901d8c8a214be2aa1ac7ee217dfb3b54e",
+          "crates/memra-server/src/background_jobs.rs": "dd583894c397decc3f09913ae515a7fd92bbe063c6cbcf647176e13ab2f615c2",
+          "crates/memra-server/src/job_publication.rs": "9d02e55407ac2a3cfd88af1870704b20a76148cdbc3afd93d6e08bffbe04891f",
+          "crates/memra-server/src/job_store.rs": "0959d39889631ef4beb28e9e1604f1444336f4ce73aba919dffcfdf4aa8d9003",
+          "crates/memra-server/src/metering.rs": "f4968c848bbd6247fee0c8a4b5f05943281c728d01eb7ee90ab1bc62f809cd51",
+          "crates/memra-server/src/responses_api.rs": "df5dc4f7de5e752cbd643680f3f9451c96d367666307a883b50986f1044a7a01",
+          "crates/memra-server/src/worker.rs": "59113a3d85a2b4eedb7500c8ffb244fa0672cc1644a0a886e6316beea0dd2ddd",
+          "tools/background-chat-text-gate.py": "8d128c89774d2e48aac356a6cd311a7a8c8402c38c9afd7be363280b5a784b08",
+          "tools/test_background_chat_text_gate.py": "bcfed7d2129a13c71013090706cfee2c1c8d647d3487f1879948181fb6f338df",
+          "tools/cache_qualification.py": "48bd67dda86e39ff4836c8eee619b45ae9f94b4922a37e9ea48be39a9b489b15",
+          "research/background-chat-text-20261002/tools/vendor-profile.toml": "a02a22ff5d95c0dedcd18305c9903a7173260a60d28d6a3b67ffc9e57a7911e3",
+          "tools/validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+        },
+        "scope": {
+          "model": "Qwen3.5-9B",
+          "artifact": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+          "hardware": "GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d",
+          "numeric_program": "Memra native engine tree 2618cb81aadf10183131fea9805234d9c9bacb08; checkpoint bytes 0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c"
+        }
+      }
+    }
+  },
+  "contract_id": "58d59e0974786325176d4d55501a9c4a9a8fbd81c9095bc8d36694fe9ab29018",
+  "uncovered": [],
+  "ineligible": {},
+  "choices": [],
+  "edge_decisions": [
+    {
+      "edge": "cache-restore-spec-missing-and-wrong-grid-red",
+      "covered": true,
+      "tests": [
+        "native-collector-negative-controls"
+      ]
+    },
+    {
+      "edge": "cancel-without-native-progress-red",
+      "covered": true,
+      "tests": [
+        "native-collector-negative-controls"
+      ]
+    },
+    {
+      "edge": "deadline-exemption-and-sync-partial-regression",
+      "covered": true,
+      "tests": [
+        "background-and-stock-publication-cpu-contracts"
+      ]
+    },
+    {
+      "edge": "door-off-type-stream-refusal",
+      "covered": true,
+      "tests": [
+        "background-and-stock-publication-cpu-contracts"
+      ]
+    },
+    {
+      "edge": "incremental-and-escaped-encoding-bound",
+      "covered": true,
+      "tests": [
+        "background-and-stock-publication-cpu-contracts"
+      ]
+    },
+    {
+      "edge": "missing-and-double-terminal-red",
+      "covered": true,
+      "tests": [
+        "native-collector-negative-controls"
+      ]
+    },
+    {
+      "edge": "native-cancel-after-recorded-token-32-preserves-prefix-error",
+      "covered": true,
+      "tests": [
+        "native-long-chat + native-long-text"
+      ]
+    },
+    {
+      "edge": "native-chat-beyond-90s-complete-600-item-schema",
+      "covered": true,
+      "tests": [
+        "native-long-chat + native-long-text"
+      ]
+    },
+    {
+      "edge": "native-exactly-one-terminal-worker-truth-callback",
+      "covered": true,
+      "tests": [
+        "native-long-chat + native-long-text"
+      ]
+    },
+    {
+      "edge": "native-running-foreign-404",
+      "covered": true,
+      "tests": [
+        "native-long-chat + native-long-text"
+      ]
+    },
+    {
+      "edge": "native-stream-background-full-text-and-usage-identity",
+      "covered": true,
+      "tests": [
+        "native-long-chat + native-long-text"
+      ]
+    },
+    {
+      "edge": "native-terminal-repeat-rotation-conflict",
+      "covered": true,
+      "tests": [
+        "native-long-chat + native-long-text"
+      ]
+    },
+    {
+      "edge": "native-text-beyond-90s-complete-original-envelope",
+      "covered": true,
+      "tests": [
+        "native-long-chat + native-long-text"
+      ]
+    },
+    {
+      "edge": "phase-context-binding-red",
+      "covered": true,
+      "tests": [
+        "native-collector-negative-controls"
+      ]
+    },
+    {
+      "edge": "premature-native-deadline-red",
+      "covered": true,
+      "tests": [
+        "native-collector-negative-controls"
+      ]
+    },
+    {
+      "edge": "publication-hidden-reentrant-read-and-protection",
+      "covered": true,
+      "tests": [
+        "background-and-stock-publication-cpu-contracts"
+      ]
+    },
+    {
+      "edge": "queued-native-dialect-original-output",
+      "covered": true,
+      "tests": [
+        "background-and-stock-publication-cpu-contracts"
+      ]
+    },
+    {
+      "edge": "settlement-error-panic-fallback",
+      "covered": true,
+      "tests": [
+        "background-and-stock-publication-cpu-contracts"
+      ]
+    },
+    {
+      "edge": "storage-capacity-failure-unbilled-once",
+      "covered": true,
+      "tests": [
+        "background-and-stock-publication-cpu-contracts"
+      ]
+    },
+    {
+      "edge": "tenant-key-rotation-forged-key-isolation",
+      "covered": true,
+      "tests": [
+        "background-and-stock-publication-cpu-contracts"
+      ]
+    },
+    {
+      "edge": "tool-call-budget-cut-is-incomplete",
+      "covered": true,
+      "tests": [
+        "background-and-stock-publication-cpu-contracts"
+      ]
+    },
+    {
+      "edge": "usage-token-envelope-corruption-red",
+      "covered": true,
+      "tests": [
+        "native-collector-negative-controls"
+      ]
+    },
+    {
+      "edge": "vendor-witness-startup-and-wrong-profile-red",
+      "covered": true,
+      "tests": [
+        "native-collector-negative-controls"
+      ]
+    },
+    {
+      "edge": "worker-error-eof-unbilled",
+      "covered": true,
+      "tests": [
+        "background-and-stock-publication-cpu-contracts"
+      ]
+    },
+    {
+      "edge": "zero-and-partial-cancel",
+      "covered": true,
+      "tests": [
+        "background-and-stock-publication-cpu-contracts"
+      ]
+    }
+  ],
+  "cost": 1125.01,
+  "optimization": "deterministic greedy set cover, not a claimed global optimum",
+  "isolation": "test boot/reset contracts are unchanged; selection never merges process state",
+  "qualification": false
+}

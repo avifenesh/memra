@@ -1,0 +1,35 @@
+Running as unit: memra-rig-job-07a0bd97d556.service; invocation ID: 5d055d88456440a3af90aac48d2c0b1f
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-memra-background-chat-text-20261002/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 1m 10s
+     Running unittests src/lib.rs (target/B914/release/deps/memra_server-18a72fda78e92499)
+
+running 6 tests
+test tests::background_chat_text_cancel_is_tenant_bound_and_retains_partial ... ok
+test tests::background_chat_text_complete_after_deadline_preserves_native_data_and_defaults ... ok
+test tests::background_chat_text_explicit_refusals_precede_generation ... FAILED
+test tests::background_chat_text_storage_refusal_and_terminal_fallback_are_settled ... ok
+test tests::background_chat_text_synchronous_deadline_control_still_delivers_explicit_partial ... ok
+test tests::background_chat_text_worker_failures_remain_explicit_and_settle_once ... ok
+
+failures:
+
+---- tests::background_chat_text_explicit_refusals_precede_generation stdout ----
+[auth] keyring loaded: 3 inline key(s)
+
+thread 'tests::background_chat_text_explicit_refusals_precede_generation' (2866463) panicked at crates/memra-server/src/lib.rs:18266:40:
+json body: Error("expected value", line: 1, column: 1)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tests::background_chat_text_explicit_refusals_precede_generation
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 1099 filtered out; finished in 4.21s
+
+error: test failed, to rerun pass `-p memra-server --lib`
+          Finished with result: exit-code
+Main processes terminated with: code=exited, status=101/n/a
+               Service runtime: 1min 20.332s
+             CPU time consumed: 2min 5.923s
+                   Memory peak: 3.9G (swap: 0B)

@@ -1,0 +1,29 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-memra-background-chat-text-20261002/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 1m 07s
+     Running unittests src/lib.rs (target/B914/release/deps/memra_server-18a72fda78e92499)
+
+running 1 test
+test tests::background_chat_text_storage_refusal_and_terminal_fallback_are_settled ... FAILED
+
+failures:
+
+---- tests::background_chat_text_storage_refusal_and_terminal_fallback_are_settled stdout ----
+[auth] keyring loaded: 3 inline key(s)
+[meter] admit id=cmpl-51ccce840932bf7b2746f9f8bd23c369 tenant=acme lane=interactive model="bg914"
+[auth] keyring loaded: 3 inline key(s)
+[meter] admit id=cmpl-1bedc619301116194958d44a0e29274d tenant=acme lane=interactive model="bg914"
+
+thread 'tests::background_chat_text_storage_refusal_and_terminal_fallback_are_settled' (3287270) panicked at crates/memra-server/src/lib.rs:25152:21:
+assertion `left == right` failed
+  left: [Complete { prompt: 3, cached: 1, completion: 1 }]
+ right: [Unbilled { outcome: "background_storage_failed", status: 503, code: "background_job_store_capacity_exceeded" }]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tests::background_chat_text_storage_refusal_and_terminal_fallback_are_settled
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1104 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-server --lib`
