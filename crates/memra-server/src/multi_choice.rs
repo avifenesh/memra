@@ -504,10 +504,9 @@ pub(crate) async fn respond(
     let mut receipt = receipt;
     if receipt.as_ref().is_some_and(|r| r.wants_capture())
         && let Some(prompt) = capture_prompt()
+        && let Some(r) = receipt.as_mut()
     {
-        if let Some(r) = receipt.as_mut() {
-            r.arm_capture(json!({"n":count,"request":prompt}));
-        }
+        r.arm_capture(json!({"n":count,"request":prompt}));
     }
     let stop = request.stop_strings.clone();
     let (mut requests, receivers) = match crate::worker::choice_requests(request, rx, count) {

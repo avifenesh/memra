@@ -25485,6 +25485,185 @@ temperature = 0.6
         }
     }
 
+    fn choice_http_state() -> AppState {
+        let mut state = fake_worker_state();
+        state.caps = Arc::new(HashMap::from([(
+            "m".into(),
+            ModelCaps {
+                max_choices: 4,
+                chat_ok: true,
+                context_length: 1024,
+                n_vocab: 32,
+                ..Default::default()
+            },
+        )]));
+        let (tx, rx) = std::sync::mpsc::channel::<Cmd>();
+        state.cmd_tx = tx;
+        std::thread::spawn(move || {
+            while let Ok(command) = rx.recv() {
+                let requests = match command {
+                    Cmd::Generate(request) => vec![*request],
+                    Cmd::GenerateChoices(requests) => requests,
+                    _ => panic!("generation command expected"),
+                };
+                for (index, mut request) in requests.into_iter().enumerate() {
+                    assert_eq!(request.sampler_cfg.seed, 500 + index as u64);
+                    worker::release_pending_admit();
+                    worker::release_request_reservation(&mut request);
+                    if let Some(ready) = request.constraint_ready.take() {
+                        let _ = ready.send(Ok(()));
+                    }
+                    request
+                        .tx
+                        .send(Event::PromptUsage {
+                            n_prompt: 5,
+                            n_cached: 0,
+                        })
+                        .unwrap();
+                    request
+                        .tx
+                        .send(Event::Token {
+                            id: 1,
+                            text: format!("row{index}"),
+                        })
+                        .unwrap();
+                    request.tx.send(Event::TokenSnapshot(vec![1])).unwrap();
+                    request
+                        .tx
+                        .send(Event::Done {
+                            stop_reason: "MaxNew".into(),
+                            n_tokens: 1,
+                            n_prompt: 5,
+                            n_cached: 0,
+                            elapsed_s: 0.01,
+                            spec: None,
+                        })
+                        .unwrap();
+                }
+            }
+        });
+        state
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // shared drain/admission state is serialized across the HTTP contract
+    async fn choice_http_both_surfaces_return_every_index_and_prompt_once() {
+        let _lock = drain_lock();
+        for chat in [false, true] {
+            let state = choice_http_state();
+            let payload = if chat {
+                json!({"model":"m","messages":[{"role":"user","content":"fixture"}],"n":3,"max_tokens":1,"seed":500})
+            } else {
+                json!({"model":"m","prompt":"fixture","n":3,"max_tokens":1,"seed":500})
+            };
+            let response = if chat {
+                chat_completions(
+                    State(state.clone()),
+                    HeaderMap::new(),
+                    None,
+                    Json(serde_json::from_value(payload).unwrap()),
+                )
+                .await
+            } else {
+                completions(
+                    State(state.clone()),
+                    HeaderMap::new(),
+                    None,
+                    Json(serde_json::from_value(payload).unwrap()),
+                )
+                .await
+            };
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = body_value(response).await;
+            assert_eq!(body["choices"].as_array().unwrap().len(), 3);
+            for index in 0..3 {
+                assert_eq!(body["choices"][index]["index"], index);
+                assert_eq!(body["choices"][index]["finish_reason"], "length");
+            }
+            assert_eq!(body["usage"]["prompt_tokens"], 5);
+            assert_eq!(body["usage"]["completion_tokens"], 3);
+            assert_eq!(body["usage"]["total_tokens"], 8);
+            assert_eq!(
+                state.inflight[lanes::Lane::Interactive.idx()]
+                    .load(std::sync::atomic::Ordering::SeqCst),
+                0
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // all streamed rows and guards share the isolated HTTP state
+    async fn choice_http_stream_has_all_indexed_finishes_before_one_done() {
+        let _lock = drain_lock();
+        for include_usage in [false, true] {
+            let state = choice_http_state();
+            let response = chat_completions(State(state.clone()), HeaderMap::new(), None,
+                Json(serde_json::from_value(json!({"model":"m","messages":[{"role":"user","content":"fixture"}],
+                    "n":3,"stream":true,"stream_options":{"include_usage":include_usage},"max_tokens":1,"seed":500})).unwrap())).await;
+            assert_eq!(response.status(), StatusCode::OK);
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let wire = String::from_utf8(bytes.to_vec()).unwrap();
+            let packets: Vec<serde_json::Value> = wire
+                .lines()
+                .filter_map(|line| line.strip_prefix("data: "))
+                .filter(|line| *line != "[DONE]")
+                .map(|line| serde_json::from_str(line).unwrap())
+                .collect();
+            let mut finishes: Vec<_> = packets
+                .iter()
+                .flat_map(|p| p["choices"].as_array().unwrap())
+                .filter(|c| !c["finish_reason"].is_null())
+                .map(|c| c["index"].as_u64().unwrap())
+                .collect();
+            finishes.sort_unstable();
+            assert_eq!(finishes, vec![0, 1, 2]);
+            assert_eq!(wire.matches("[DONE]").count(), 1);
+            let last = packets.last().unwrap();
+            assert_eq!(last["usage"]["completion_tokens"], 3);
+            assert_eq!(last["usage"]["prompt_tokens"], 5);
+            assert_eq!(
+                last["choices"].as_array().unwrap().is_empty(),
+                include_usage
+            );
+            assert_eq!(
+                state.inflight[lanes::Lane::Interactive.idx()]
+                    .load(std::sync::atomic::Ordering::SeqCst),
+                0
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // named refusals must touch neither a worker nor mutable global admission
+    async fn choice_http_refuses_bad_count_and_model_capability_before_intake() {
+        let _lock = drain_lock();
+        for count in [0, 5, 9] {
+            let state = choice_http_state();
+            let response = completions(
+                State(state.clone()),
+                HeaderMap::new(),
+                None,
+                Json(
+                    serde_json::from_value(
+                        json!({"model":"m","prompt":"fixture","n":count,"seed":500}),
+                    )
+                    .unwrap(),
+                ),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let body = body_value(response).await;
+            assert_eq!(body["error"]["param"], "n");
+            assert_eq!(
+                state.inflight[lanes::Lane::Interactive.idx()]
+                    .load(std::sync::atomic::Ordering::SeqCst),
+                0
+            );
+        }
+    }
+
     fn fake_worker_state() -> AppState {
         fake_worker_state_with_steps(1, std::time::Duration::ZERO)
     }
