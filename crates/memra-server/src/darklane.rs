@@ -155,8 +155,8 @@ pub struct BgJobState {
     pub preempts: AtomicU64,
     pub ckpt_kills: AtomicU64,
     /// wall micros from busy-edge observation to the yield signal having been SENT (stop
-    /// mode: SIGSTOP returned; ckpt mode: SIGUSR1 returned). The detection half of the
-    /// yield bound; the full bound adds one poll interval. Last observed value.
+    /// mode: SIGSTOP returned; ckpt mode: SIGUSR1 returned). This measures signal
+    /// submission, not the later observed stop acknowledgement. Last observed value.
     pub last_yield_signal_us: AtomicU64,
     pub job_pid: AtomicU32, // 0 = no live child
     pub vram_budget_mb: AtomicU64,
@@ -740,6 +740,17 @@ mod tests {
     impl Drop for RunnerGuard {
         fn drop(&mut self) {
             if let Some(h) = self.0.take() {
+                if std::thread::panicking() {
+                    let st = &h.state;
+                    let pid = st.job_pid.load(Ordering::Acquire);
+                    eprintln!(
+                        "owned runner assertion failed: state={} pid={pid} child_state={:?} yields={} resumes={}",
+                        bg_state_str(st.state.load(Ordering::Acquire)),
+                        (pid != 0).then(|| proc_state(pid)).flatten(),
+                        st.yields.load(Ordering::Relaxed),
+                        st.resumes.load(Ordering::Relaxed)
+                    );
+                }
                 h.shutdown();
             }
         }
@@ -754,11 +765,12 @@ mod tests {
     }
 
     fn exit_between_wait_and_stop(code: i32, expected: u8) {
-        let dir = TestDir(std::env::temp_dir().join(format!(
+        let path = std::env::temp_dir().join(format!(
             "darklane-exit-window-{}-{code}",
             std::process::id()
-        )));
-        std::fs::create_dir(&dir.0).unwrap();
+        ));
+        std::fs::create_dir(&path).unwrap();
+        let dir = TestDir(path);
         let ready = dir.0.join("ready");
         let release = dir.0.join("release");
         let cmd = format!(
@@ -793,7 +805,12 @@ mod tests {
                     )
                 };
                 assert_eq!(rc, 0, "waitid: {}", std::io::Error::last_os_error());
-                info.si_code == libc::CLD_EXITED
+                if info.si_code == libc::CLD_EXITED {
+                    assert_eq!(unsafe { info.si_status() }, code);
+                    true
+                } else {
+                    false
+                }
             });
             observed.store(true, Ordering::Release);
             true
@@ -806,6 +823,7 @@ mod tests {
             st.state.load(Ordering::Acquire) == BG_RUNNING && dir.0.join("ready").exists()
         });
         let pid = st.job_pid.load(Ordering::Acquire);
+        assert_eq!(unsafe { libc::getpgid(pid as i32) }, pid as i32);
         sig.valley.store(false, Ordering::Release);
         sig.busy.store(true, Ordering::Release);
         wait_acknowledged("real exit classified and reaped", || {
@@ -863,6 +881,50 @@ mod tests {
         assert_eq!(st.resumes.load(Ordering::Relaxed), 0);
         assert!(proc_state(pid).is_none());
         guard.shutdown();
+    }
+
+    #[test]
+    fn repeated_stop_resume_has_fresh_acknowledgements_and_stopped_shutdown() {
+        let (sig, v, b) = sigs();
+        let h = spawn_runner(
+            cfg("while :; do sleep 0.01; done", YieldMode::Stop),
+            v,
+            b,
+            Arc::new(|| None),
+        );
+        let st = h.state.clone();
+        let guard = RunnerGuard(Some(h));
+        sig.valley.store(true, Ordering::Release);
+        wait_acknowledged("launch", || st.state.load(Ordering::Acquire) == BG_RUNNING);
+        let pid = st.job_pid.load(Ordering::Acquire);
+        for cycle in 1..=2 {
+            sig.valley.store(false, Ordering::Release);
+            sig.busy.store(true, Ordering::Release);
+            wait_acknowledged("fresh stop acknowledged", || {
+                st.state.load(Ordering::Acquire) == BG_YIELDED
+                    && st.yields.load(Ordering::Relaxed) == cycle
+            });
+            assert_eq!(proc_state(pid), Some('T'));
+            if cycle == 1 {
+                sig.busy.store(false, Ordering::Release);
+                sig.valley.store(true, Ordering::Release);
+                wait_acknowledged("first resume", || {
+                    st.resumes.load(Ordering::Relaxed) == 1
+                        && matches!(proc_state(pid), Some('R' | 'S'))
+                });
+                assert!(
+                    !child_stop_acknowledged(pid).unwrap(),
+                    "the first stop must not acknowledge a resumed child"
+                );
+            }
+        }
+        assert_eq!(st.resumes.load(Ordering::Relaxed), 1);
+        guard.shutdown();
+        assert!(
+            proc_state(pid).is_none(),
+            "stopped shutdown must reap the child"
+        );
+        assert_eq!(st.job_pid.load(Ordering::Acquire), 0);
     }
 
     #[test]
