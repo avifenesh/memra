@@ -718,3 +718,5 @@ shared-linkage-warnings-20261003 | All SASS/resource lines, instruction/data/sha
 support-record-data-contract-20261003 | Exact required and potential family data paths select the unchanged support census; optional presence and named missing-required controls pass. | support-record-data-contract-20261003/RESULTS.md
 
 support-source-doc-copy-inputs-20261003 | 97 exact source/docs omissions repaired with unchanged native obligations; real copied-consumer and type-preflight controls pass. | support-source-doc-copy-inputs-20261003/RESULTS.md
+
+| support-execution-type-967-20261003 | "CPU input admission refuses special files and symlinks before reads; 11 methods, 9 coherent reds and 20 source-bound edges pass. No native qualification." | [LANE.md](support-execution-type-967-20261003/LANE.md) |

@@ -1,0 +1,373 @@
+{
+  "required_edges": [
+    "execution/absent_fixture_and_partial_fixture_keep_original_contract",
+    "execution/ancestor_symlink_including_broken_parent_refuses_before_reads",
+    "execution/contracts_cli_refuses_fifo_before_any_cpu_command",
+    "execution/descriptors_close_on_success_and_refusal",
+    "execution/fifo_replacement_between_stat_and_open_refuses_without_blocking",
+    "execution/leaf_symlink_to_regular_fifo_or_missing_refuses_before_reads",
+    "execution/parent_replacement_keeps_read_anchored_to_opened_directory",
+    "execution/read_bytes_remains_exact_and_regular_metadata_still_resolves",
+    "execution/real_fifo_directory_and_socket_refuse_before_any_content_read",
+    "execution/symlink_replacement_between_stat_and_open_refuses",
+    "execution/unknown_reader_does_not_turn_fifo_into_typed_fallback",
+    "red/baseline-read-before-type",
+    "red/removed-parent-discovery",
+    "red/removed-preflight",
+    "red/removed-nonblocking-open",
+    "red/removed-leaf-nofollow",
+    "red/removed-opened-type-check",
+    "red/removed-parent-nofollow",
+    "red/normalized-reader-bytes",
+    "red/typed-type-error-fallback"
+  ],
+  "tests": [
+    {
+      "id": "test_absent_fixture_and_partial_fixture_keep_original_contract",
+      "cost": 1,
+      "covers": [
+        "execution/absent_fixture_and_partial_fixture_keep_original_contract"
+      ],
+      "inputs": {
+        "tools/support_record_inputs.py": "af68716b977ff4d9a16acce2b9872bc43664873b8b1dd18ec0fe417c5ac7ef9d",
+        "tools/test_validation_support_execution_inputs.py": "74ee3c4abee0f6520b1e883be4ea932e5c03a731915113642933e7479178dcf1",
+        "tools/validation_plan.py": "a69568d9cc26e4d3d81792ea2f609417bb362fafd75bf434649395d043668aa1",
+        "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+        "tools/check-support-states.py": "27b4a68fb545cfd434caab8764f42becd021a52d7d6a36fb9fba466d396cf8ec",
+        "tools/test_check_support_states.py": "366556ebf11d27173032f1fe9cd71ef59d18b3c1f2314f920f214a63e5482050",
+        "docs/support-records.toml": "18d75c943748b89a8bd9d9bc07054b19dafb37080c211e3d15ee18640ad13e19",
+        "research/support-execution-type-967-20261003/tools/controls.py": "bd65f4e026c74d93cee2a7994a1103c16c5d683dd9632812f73b57c8a71a82f0",
+        "research/support-execution-type-967-20261003/tools/admit.py": "36f39fc240c745bed3e734a0c1e6796b0db8e86c911a890a9398588339f4bdea",
+        "research/support-execution-type-967-20261003/tools/original_support_record_inputs.py": "bb1cb80f4e52ea75104bfb9bd70f6047a8de31d77a060ade656362aa0806f473"
+      },
+      "scope": {
+        "lane": "support-execution-type-967",
+        "program": "CPU admission only",
+        "source": "cf0871a8c2fbe40d0d570eb227d785baa4b4c87b"
+      },
+      "mandatory": true,
+      "controls": [
+        "coherent-red-controls"
+      ]
+    },
+    {
+      "id": "test_ancestor_symlink_including_broken_parent_refuses_before_reads",
+      "cost": 1,
+      "covers": [
+        "execution/ancestor_symlink_including_broken_parent_refuses_before_reads"
+      ],
+      "inputs": {
+        "tools/support_record_inputs.py": "af68716b977ff4d9a16acce2b9872bc43664873b8b1dd18ec0fe417c5ac7ef9d",
+        "tools/test_validation_support_execution_inputs.py": "74ee3c4abee0f6520b1e883be4ea932e5c03a731915113642933e7479178dcf1",
+        "tools/validation_plan.py": "a69568d9cc26e4d3d81792ea2f609417bb362fafd75bf434649395d043668aa1",
+        "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+        "tools/check-support-states.py": "27b4a68fb545cfd434caab8764f42becd021a52d7d6a36fb9fba466d396cf8ec",
+        "tools/test_check_support_states.py": "366556ebf11d27173032f1fe9cd71ef59d18b3c1f2314f920f214a63e5482050",
+        "docs/support-records.toml": "18d75c943748b89a8bd9d9bc07054b19dafb37080c211e3d15ee18640ad13e19",
+        "research/support-execution-type-967-20261003/tools/controls.py": "bd65f4e026c74d93cee2a7994a1103c16c5d683dd9632812f73b57c8a71a82f0",
+        "research/support-execution-type-967-20261003/tools/admit.py": "36f39fc240c745bed3e734a0c1e6796b0db8e86c911a890a9398588339f4bdea",
+        "research/support-execution-type-967-20261003/tools/original_support_record_inputs.py": "bb1cb80f4e52ea75104bfb9bd70f6047a8de31d77a060ade656362aa0806f473"
+      },
+      "scope": {
+        "lane": "support-execution-type-967",
+        "program": "CPU admission only",
+        "source": "cf0871a8c2fbe40d0d570eb227d785baa4b4c87b"
+      },
+      "mandatory": true,
+      "controls": [
+        "coherent-red-controls"
+      ]
+    },
+    {
+      "id": "test_contracts_cli_refuses_fifo_before_any_cpu_command",
+      "cost": 1,
+      "covers": [
+        "execution/contracts_cli_refuses_fifo_before_any_cpu_command"
+      ],
+      "inputs": {
+        "tools/support_record_inputs.py": "af68716b977ff4d9a16acce2b9872bc43664873b8b1dd18ec0fe417c5ac7ef9d",
+        "tools/test_validation_support_execution_inputs.py": "74ee3c4abee0f6520b1e883be4ea932e5c03a731915113642933e7479178dcf1",
+        "tools/validation_plan.py": "a69568d9cc26e4d3d81792ea2f609417bb362fafd75bf434649395d043668aa1",
+        "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+        "tools/check-support-states.py": "27b4a68fb545cfd434caab8764f42becd021a52d7d6a36fb9fba466d396cf8ec",
+        "tools/test_check_support_states.py": "366556ebf11d27173032f1fe9cd71ef59d18b3c1f2314f920f214a63e5482050",
+        "docs/support-records.toml": "18d75c943748b89a8bd9d9bc07054b19dafb37080c211e3d15ee18640ad13e19",
+        "research/support-execution-type-967-20261003/tools/controls.py": "bd65f4e026c74d93cee2a7994a1103c16c5d683dd9632812f73b57c8a71a82f0",
+        "research/support-execution-type-967-20261003/tools/admit.py": "36f39fc240c745bed3e734a0c1e6796b0db8e86c911a890a9398588339f4bdea",
+        "research/support-execution-type-967-20261003/tools/original_support_record_inputs.py": "bb1cb80f4e52ea75104bfb9bd70f6047a8de31d77a060ade656362aa0806f473"
+      },
+      "scope": {
+        "lane": "support-execution-type-967",
+        "program": "CPU admission only",
+        "source": "cf0871a8c2fbe40d0d570eb227d785baa4b4c87b"
+      },
+      "mandatory": true,
+      "controls": [
+        "coherent-red-controls"
+      ]
+    },
+    {
+      "id": "test_descriptors_close_on_success_and_refusal",
+      "cost": 1,
+      "covers": [
+        "execution/descriptors_close_on_success_and_refusal"
+      ],
+      "inputs": {
+        "tools/support_record_inputs.py": "af68716b977ff4d9a16acce2b9872bc43664873b8b1dd18ec0fe417c5ac7ef9d",
+        "tools/test_validation_support_execution_inputs.py": "74ee3c4abee0f6520b1e883be4ea932e5c03a731915113642933e7479178dcf1",
+        "tools/validation_plan.py": "a69568d9cc26e4d3d81792ea2f609417bb362fafd75bf434649395d043668aa1",
+        "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+        "tools/check-support-states.py": "27b4a68fb545cfd434caab8764f42becd021a52d7d6a36fb9fba466d396cf8ec",
+        "tools/test_check_support_states.py": "366556ebf11d27173032f1fe9cd71ef59d18b3c1f2314f920f214a63e5482050",
+        "docs/support-records.toml": "18d75c943748b89a8bd9d9bc07054b19dafb37080c211e3d15ee18640ad13e19",
+        "research/support-execution-type-967-20261003/tools/controls.py": "bd65f4e026c74d93cee2a7994a1103c16c5d683dd9632812f73b57c8a71a82f0",
+        "research/support-execution-type-967-20261003/tools/admit.py": "36f39fc240c745bed3e734a0c1e6796b0db8e86c911a890a9398588339f4bdea",
+        "research/support-execution-type-967-20261003/tools/original_support_record_inputs.py": "bb1cb80f4e52ea75104bfb9bd70f6047a8de31d77a060ade656362aa0806f473"
+      },
+      "scope": {
+        "lane": "support-execution-type-967",
+        "program": "CPU admission only",
+        "source": "cf0871a8c2fbe40d0d570eb227d785baa4b4c87b"
+      },
+      "mandatory": true,
+      "controls": [
+        "coherent-red-controls"
+      ]
+    },
+    {
+      "id": "test_fifo_replacement_between_stat_and_open_refuses_without_blocking",
+      "cost": 1,
+      "covers": [
+        "execution/fifo_replacement_between_stat_and_open_refuses_without_blocking"
+      ],
+      "inputs": {
+        "tools/support_record_inputs.py": "af68716b977ff4d9a16acce2b9872bc43664873b8b1dd18ec0fe417c5ac7ef9d",
+        "tools/test_validation_support_execution_inputs.py": "74ee3c4abee0f6520b1e883be4ea932e5c03a731915113642933e7479178dcf1",
+        "tools/validation_plan.py": "a69568d9cc26e4d3d81792ea2f609417bb362fafd75bf434649395d043668aa1",
+        "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+        "tools/check-support-states.py": "27b4a68fb545cfd434caab8764f42becd021a52d7d6a36fb9fba466d396cf8ec",
+        "tools/test_check_support_states.py": "366556ebf11d27173032f1fe9cd71ef59d18b3c1f2314f920f214a63e5482050",
+        "docs/support-records.toml": "18d75c943748b89a8bd9d9bc07054b19dafb37080c211e3d15ee18640ad13e19",
+        "research/support-execution-type-967-20261003/tools/controls.py": "bd65f4e026c74d93cee2a7994a1103c16c5d683dd9632812f73b57c8a71a82f0",
+        "research/support-execution-type-967-20261003/tools/admit.py": "36f39fc240c745bed3e734a0c1e6796b0db8e86c911a890a9398588339f4bdea",
+        "research/support-execution-type-967-20261003/tools/original_support_record_inputs.py": "bb1cb80f4e52ea75104bfb9bd70f6047a8de31d77a060ade656362aa0806f473"
+      },
+      "scope": {
+        "lane": "support-execution-type-967",
+        "program": "CPU admission only",
+        "source": "cf0871a8c2fbe40d0d570eb227d785baa4b4c87b"
+      },
+      "mandatory": true,
+      "controls": [
+        "coherent-red-controls"
+      ]
+    },
+    {
+      "id": "test_leaf_symlink_to_regular_fifo_or_missing_refuses_before_reads",
+      "cost": 1,
+      "covers": [
+        "execution/leaf_symlink_to_regular_fifo_or_missing_refuses_before_reads"
+      ],
+      "inputs": {
+        "tools/support_record_inputs.py": "af68716b977ff4d9a16acce2b9872bc43664873b8b1dd18ec0fe417c5ac7ef9d",
+        "tools/test_validation_support_execution_inputs.py": "74ee3c4abee0f6520b1e883be4ea932e5c03a731915113642933e7479178dcf1",
+        "tools/validation_plan.py": "a69568d9cc26e4d3d81792ea2f609417bb362fafd75bf434649395d043668aa1",
+        "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+        "tools/check-support-states.py": "27b4a68fb545cfd434caab8764f42becd021a52d7d6a36fb9fba466d396cf8ec",
+        "tools/test_check_support_states.py": "366556ebf11d27173032f1fe9cd71ef59d18b3c1f2314f920f214a63e5482050",
+        "docs/support-records.toml": "18d75c943748b89a8bd9d9bc07054b19dafb37080c211e3d15ee18640ad13e19",
+        "research/support-execution-type-967-20261003/tools/controls.py": "bd65f4e026c74d93cee2a7994a1103c16c5d683dd9632812f73b57c8a71a82f0",
+        "research/support-execution-type-967-20261003/tools/admit.py": "36f39fc240c745bed3e734a0c1e6796b0db8e86c911a890a9398588339f4bdea",
+        "research/support-execution-type-967-20261003/tools/original_support_record_inputs.py": "bb1cb80f4e52ea75104bfb9bd70f6047a8de31d77a060ade656362aa0806f473"
+      },
+      "scope": {
+        "lane": "support-execution-type-967",
+        "program": "CPU admission only",
+        "source": "cf0871a8c2fbe40d0d570eb227d785baa4b4c87b"
+      },
+      "mandatory": true,
+      "controls": [
+        "coherent-red-controls"
+      ]
+    },
+    {
+      "id": "test_parent_replacement_keeps_read_anchored_to_opened_directory",
+      "cost": 1,
+      "covers": [
+        "execution/parent_replacement_keeps_read_anchored_to_opened_directory"
+      ],
+      "inputs": {
+        "tools/support_record_inputs.py": "af68716b977ff4d9a16acce2b9872bc43664873b8b1dd18ec0fe417c5ac7ef9d",
+        "tools/test_validation_support_execution_inputs.py": "74ee3c4abee0f6520b1e883be4ea932e5c03a731915113642933e7479178dcf1",
+        "tools/validation_plan.py": "a69568d9cc26e4d3d81792ea2f609417bb362fafd75bf434649395d043668aa1",
+        "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+        "tools/check-support-states.py": "27b4a68fb545cfd434caab8764f42becd021a52d7d6a36fb9fba466d396cf8ec",
+        "tools/test_check_support_states.py": "366556ebf11d27173032f1fe9cd71ef59d18b3c1f2314f920f214a63e5482050",
+        "docs/support-records.toml": "18d75c943748b89a8bd9d9bc07054b19dafb37080c211e3d15ee18640ad13e19",
+        "research/support-execution-type-967-20261003/tools/controls.py": "bd65f4e026c74d93cee2a7994a1103c16c5d683dd9632812f73b57c8a71a82f0",
+        "research/support-execution-type-967-20261003/tools/admit.py": "36f39fc240c745bed3e734a0c1e6796b0db8e86c911a890a9398588339f4bdea",
+        "research/support-execution-type-967-20261003/tools/original_support_record_inputs.py": "bb1cb80f4e52ea75104bfb9bd70f6047a8de31d77a060ade656362aa0806f473"
+      },
+      "scope": {
+        "lane": "support-execution-type-967",
+        "program": "CPU admission only",
+        "source": "cf0871a8c2fbe40d0d570eb227d785baa4b4c87b"
+      },
+      "mandatory": true,
+      "controls": [
+        "coherent-red-controls"
+      ]
+    },
+    {
+      "id": "test_read_bytes_remains_exact_and_regular_metadata_still_resolves",
+      "cost": 1,
+      "covers": [
+        "execution/read_bytes_remains_exact_and_regular_metadata_still_resolves"
+      ],
+      "inputs": {
+        "tools/support_record_inputs.py": "af68716b977ff4d9a16acce2b9872bc43664873b8b1dd18ec0fe417c5ac7ef9d",
+        "tools/test_validation_support_execution_inputs.py": "74ee3c4abee0f6520b1e883be4ea932e5c03a731915113642933e7479178dcf1",
+        "tools/validation_plan.py": "a69568d9cc26e4d3d81792ea2f609417bb362fafd75bf434649395d043668aa1",
+        "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+        "tools/check-support-states.py": "27b4a68fb545cfd434caab8764f42becd021a52d7d6a36fb9fba466d396cf8ec",
+        "tools/test_check_support_states.py": "366556ebf11d27173032f1fe9cd71ef59d18b3c1f2314f920f214a63e5482050",
+        "docs/support-records.toml": "18d75c943748b89a8bd9d9bc07054b19dafb37080c211e3d15ee18640ad13e19",
+        "research/support-execution-type-967-20261003/tools/controls.py": "bd65f4e026c74d93cee2a7994a1103c16c5d683dd9632812f73b57c8a71a82f0",
+        "research/support-execution-type-967-20261003/tools/admit.py": "36f39fc240c745bed3e734a0c1e6796b0db8e86c911a890a9398588339f4bdea",
+        "research/support-execution-type-967-20261003/tools/original_support_record_inputs.py": "bb1cb80f4e52ea75104bfb9bd70f6047a8de31d77a060ade656362aa0806f473"
+      },
+      "scope": {
+        "lane": "support-execution-type-967",
+        "program": "CPU admission only",
+        "source": "cf0871a8c2fbe40d0d570eb227d785baa4b4c87b"
+      },
+      "mandatory": true,
+      "controls": [
+        "coherent-red-controls"
+      ]
+    },
+    {
+      "id": "test_real_fifo_directory_and_socket_refuse_before_any_content_read",
+      "cost": 1,
+      "covers": [
+        "execution/real_fifo_directory_and_socket_refuse_before_any_content_read"
+      ],
+      "inputs": {
+        "tools/support_record_inputs.py": "af68716b977ff4d9a16acce2b9872bc43664873b8b1dd18ec0fe417c5ac7ef9d",
+        "tools/test_validation_support_execution_inputs.py": "74ee3c4abee0f6520b1e883be4ea932e5c03a731915113642933e7479178dcf1",
+        "tools/validation_plan.py": "a69568d9cc26e4d3d81792ea2f609417bb362fafd75bf434649395d043668aa1",
+        "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+        "tools/check-support-states.py": "27b4a68fb545cfd434caab8764f42becd021a52d7d6a36fb9fba466d396cf8ec",
+        "tools/test_check_support_states.py": "366556ebf11d27173032f1fe9cd71ef59d18b3c1f2314f920f214a63e5482050",
+        "docs/support-records.toml": "18d75c943748b89a8bd9d9bc07054b19dafb37080c211e3d15ee18640ad13e19",
+        "research/support-execution-type-967-20261003/tools/controls.py": "bd65f4e026c74d93cee2a7994a1103c16c5d683dd9632812f73b57c8a71a82f0",
+        "research/support-execution-type-967-20261003/tools/admit.py": "36f39fc240c745bed3e734a0c1e6796b0db8e86c911a890a9398588339f4bdea",
+        "research/support-execution-type-967-20261003/tools/original_support_record_inputs.py": "bb1cb80f4e52ea75104bfb9bd70f6047a8de31d77a060ade656362aa0806f473"
+      },
+      "scope": {
+        "lane": "support-execution-type-967",
+        "program": "CPU admission only",
+        "source": "cf0871a8c2fbe40d0d570eb227d785baa4b4c87b"
+      },
+      "mandatory": true,
+      "controls": [
+        "coherent-red-controls"
+      ]
+    },
+    {
+      "id": "test_symlink_replacement_between_stat_and_open_refuses",
+      "cost": 1,
+      "covers": [
+        "execution/symlink_replacement_between_stat_and_open_refuses"
+      ],
+      "inputs": {
+        "tools/support_record_inputs.py": "af68716b977ff4d9a16acce2b9872bc43664873b8b1dd18ec0fe417c5ac7ef9d",
+        "tools/test_validation_support_execution_inputs.py": "74ee3c4abee0f6520b1e883be4ea932e5c03a731915113642933e7479178dcf1",
+        "tools/validation_plan.py": "a69568d9cc26e4d3d81792ea2f609417bb362fafd75bf434649395d043668aa1",
+        "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+        "tools/check-support-states.py": "27b4a68fb545cfd434caab8764f42becd021a52d7d6a36fb9fba466d396cf8ec",
+        "tools/test_check_support_states.py": "366556ebf11d27173032f1fe9cd71ef59d18b3c1f2314f920f214a63e5482050",
+        "docs/support-records.toml": "18d75c943748b89a8bd9d9bc07054b19dafb37080c211e3d15ee18640ad13e19",
+        "research/support-execution-type-967-20261003/tools/controls.py": "bd65f4e026c74d93cee2a7994a1103c16c5d683dd9632812f73b57c8a71a82f0",
+        "research/support-execution-type-967-20261003/tools/admit.py": "36f39fc240c745bed3e734a0c1e6796b0db8e86c911a890a9398588339f4bdea",
+        "research/support-execution-type-967-20261003/tools/original_support_record_inputs.py": "bb1cb80f4e52ea75104bfb9bd70f6047a8de31d77a060ade656362aa0806f473"
+      },
+      "scope": {
+        "lane": "support-execution-type-967",
+        "program": "CPU admission only",
+        "source": "cf0871a8c2fbe40d0d570eb227d785baa4b4c87b"
+      },
+      "mandatory": true,
+      "controls": [
+        "coherent-red-controls"
+      ]
+    },
+    {
+      "id": "test_unknown_reader_does_not_turn_fifo_into_typed_fallback",
+      "cost": 1,
+      "covers": [
+        "execution/unknown_reader_does_not_turn_fifo_into_typed_fallback"
+      ],
+      "inputs": {
+        "tools/support_record_inputs.py": "af68716b977ff4d9a16acce2b9872bc43664873b8b1dd18ec0fe417c5ac7ef9d",
+        "tools/test_validation_support_execution_inputs.py": "74ee3c4abee0f6520b1e883be4ea932e5c03a731915113642933e7479178dcf1",
+        "tools/validation_plan.py": "a69568d9cc26e4d3d81792ea2f609417bb362fafd75bf434649395d043668aa1",
+        "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+        "tools/check-support-states.py": "27b4a68fb545cfd434caab8764f42becd021a52d7d6a36fb9fba466d396cf8ec",
+        "tools/test_check_support_states.py": "366556ebf11d27173032f1fe9cd71ef59d18b3c1f2314f920f214a63e5482050",
+        "docs/support-records.toml": "18d75c943748b89a8bd9d9bc07054b19dafb37080c211e3d15ee18640ad13e19",
+        "research/support-execution-type-967-20261003/tools/controls.py": "bd65f4e026c74d93cee2a7994a1103c16c5d683dd9632812f73b57c8a71a82f0",
+        "research/support-execution-type-967-20261003/tools/admit.py": "36f39fc240c745bed3e734a0c1e6796b0db8e86c911a890a9398588339f4bdea",
+        "research/support-execution-type-967-20261003/tools/original_support_record_inputs.py": "bb1cb80f4e52ea75104bfb9bd70f6047a8de31d77a060ade656362aa0806f473"
+      },
+      "scope": {
+        "lane": "support-execution-type-967",
+        "program": "CPU admission only",
+        "source": "cf0871a8c2fbe40d0d570eb227d785baa4b4c87b"
+      },
+      "mandatory": true,
+      "controls": [
+        "coherent-red-controls"
+      ]
+    },
+    {
+      "id": "coherent-red-controls",
+      "cost": 1,
+      "covers": [
+        "red/baseline-read-before-type",
+        "red/removed-parent-discovery",
+        "red/removed-preflight",
+        "red/removed-nonblocking-open",
+        "red/removed-leaf-nofollow",
+        "red/removed-opened-type-check",
+        "red/removed-parent-nofollow",
+        "red/normalized-reader-bytes",
+        "red/typed-type-error-fallback"
+      ],
+      "inputs": {
+        "tools/support_record_inputs.py": "af68716b977ff4d9a16acce2b9872bc43664873b8b1dd18ec0fe417c5ac7ef9d",
+        "tools/test_validation_support_execution_inputs.py": "74ee3c4abee0f6520b1e883be4ea932e5c03a731915113642933e7479178dcf1",
+        "tools/validation_plan.py": "a69568d9cc26e4d3d81792ea2f609417bb362fafd75bf434649395d043668aa1",
+        "tools/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+        "tools/check-support-states.py": "27b4a68fb545cfd434caab8764f42becd021a52d7d6a36fb9fba466d396cf8ec",
+        "tools/test_check_support_states.py": "366556ebf11d27173032f1fe9cd71ef59d18b3c1f2314f920f214a63e5482050",
+        "docs/support-records.toml": "18d75c943748b89a8bd9d9bc07054b19dafb37080c211e3d15ee18640ad13e19",
+        "research/support-execution-type-967-20261003/tools/controls.py": "bd65f4e026c74d93cee2a7994a1103c16c5d683dd9632812f73b57c8a71a82f0",
+        "research/support-execution-type-967-20261003/tools/admit.py": "36f39fc240c745bed3e734a0c1e6796b0db8e86c911a890a9398588339f4bdea",
+        "research/support-execution-type-967-20261003/tools/original_support_record_inputs.py": "bb1cb80f4e52ea75104bfb9bd70f6047a8de31d77a060ade656362aa0806f473"
+      },
+      "scope": {
+        "lane": "support-execution-type-967",
+        "program": "CPU admission only",
+        "source": "cf0871a8c2fbe40d0d570eb227d785baa4b4c87b"
+      },
+      "mandatory": true
+    }
+  ],
+  "context": {
+    "lane": "support-execution-type-967",
+    "program": "CPU admission only",
+    "source": "cf0871a8c2fbe40d0d570eb227d785baa4b4c87b"
+  },
+  "cost_unit": "one mandatory control group, not wall time"
+}

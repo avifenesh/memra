@@ -1,0 +1,53 @@
+Running as unit: memra-rig-job-c31e60ec9af0.service; invocation ID: 924d60df7ab54b65a96e131a3acfa9fc
+{"controls_failed_as_expected": 9, "errors": 0, "scratch_removed": true}
+{"verdict": {"status": "passed", "edges": 20, "contract_id": "f4100f2ba3b32d9235cefa947f2a4e2ef42be22aefcb8b848552255e8903a24b", "qualification": false, "scope": "declared behavior assertions only; native receipt admission remains separate"}, "negative_controls": [{"control": "missing-edge", "refused": "selected test/control lacks an explicit passing assertion: test_absent_fixture_and_partial_fixture_keep_original_contract/execution/absent_fixture_and_partial_fixture_keep_original_contract"}, {"control": "skipped-mandatory", "refused": "empty or skipped test result: test_absent_fixture_and_partial_fixture_keep_original_contract"}]}
+.......................................................................................................................................................
+----------------------------------------------------------------------
+Ran 151 tests in 15.646s
+
+OK
+unittest-floor: OK: ran 151 tests (floor 151) for tools (test_validation_*.py)
+.....................
+----------------------------------------------------------------------
+Ran 21 tests in 2.074s
+
+OK
+unittest-floor: OK: ran 21 tests (floor 21) for tools (test_check_support_states.py)
+.......................................................
+----------------------------------------------------------------------
+Ran 55 tests in 0.334s
+
+OK
+unittest-floor: OK: ran 55 tests (floor 55) for tools (test_dense_control_cache.py)
+................
+----------------------------------------------------------------------
+Ran 16 tests in 7.663s
+
+OK
+unittest-floor: OK: ran 16 tests (floor 15) for tools (test_cache_qualification.py)
+.....synthetic_capsule_timings={"scope": "gpu-ci-capsule", "rows": [{"operation": "describe", "seconds": 0.030119}, {"operation": "store", "seconds": 0.06239}, {"operation": "load", "seconds": 0.04919}]}
+.......................synthetic_capsule_timings={"scope": "controlled-build-only", "rows": [{"operation": "describe", "seconds": 0.023304}, {"operation": "store", "seconds": 0.048578}, {"operation": "load", "seconds": 0.044933}]}
+....................
+----------------------------------------------------------------------
+Ran 48 tests in 8.643s
+
+OK
+unittest-floor: OK: ran 48 tests (floor 48) for tools (test_local_build_cache.py)
+.......................................
+----------------------------------------------------------------------
+Ran 39 tests in 3.981s
+
+OK
+unittest-floor: OK: ran 39 tests (floor 39) for tools/fast-gate (test_plan.py)
+Validation registry covers all 14 workspace packages
+check-support-states: 20 packs (12 with a support state), 14 records, 40 doc lines, all backed
+perf board is up to date
+check-flags: runtime literal reads=887
+check-flags: no uncovered runtime names
+check-flags: every runtime MEMRA_* name resolves against 'docs/FLAGS.md' (no grandfather list)
+flags-row-shape: 1082 rows within 4000 chars, default cells within 300, one decide-by each, 47 history sections all linked
+          Finished with result: success
+Main processes terminated with: code=exited, status=0/SUCCESS
+               Service runtime: 41.861s
+             CPU time consumed: 37.336s
+                   Memory peak: 119.5M (swap: 0B)

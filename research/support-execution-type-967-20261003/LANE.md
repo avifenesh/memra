@@ -22,7 +22,10 @@ A separate source-bound coverage admission rejects a missing assertion or skippe
 mandatory test. Framework, support census, cache, fast-gate and registry results
 passed at the 4b source: 151 framework, 21 census, 55 dense-cache, 16 cache
 qualification, 48 local-cache, 39 fast-gate and 14 registered workspace packages.
-Final proof-carrier and composition runs remain separate.
+The public helper/carrier run at `cf0871a8c2` repeats those counts, admits 20
+source/helper-bound edges and rejects missing-assertion and skipped-mandatory results.
+Its raw output and complete contracts are in `receipts/` and `PROOF.json`.
+Composition onto #964 remains separate.
 
 ## Limits
 

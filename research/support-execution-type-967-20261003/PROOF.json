@@ -1,0 +1,75 @@
+{
+  "schema": "support-execution-type-cpu-proof-v1",
+  "tested_source": "cf0871a8c2fbe40d0d570eb227d785baa4b4c87b",
+  "helper_source": "4b0db008c1f90bd35c4928172d4e2d43930ef8fb",
+  "baseline_helper_sha256": "bb1cb80f4e52ea75104bfb9bd70f6047a8de31d77a060ade656362aa0806f473",
+  "broker_job": "c31e60ec9af0",
+  "actual_counts": {
+    "framework": 151,
+    "support_census": 21,
+    "dense_cache": 55,
+    "cache_qualification": 16,
+    "local_cache": 48,
+    "fast_gate": 39,
+    "registry_packages": 14
+  },
+  "coverage": {
+    "status": "passed",
+    "edges": 20,
+    "contract_id": "f4100f2ba3b32d9235cefa947f2a4e2ef42be22aefcb8b848552255e8903a24b",
+    "qualification": false,
+    "scope": "declared behavior assertions only; native receipt admission remains separate"
+  },
+  "admission_negatives": [
+    {
+      "control": "missing-edge",
+      "refused": "selected test/control lacks an explicit passing assertion: test_absent_fixture_and_partial_fixture_keep_original_contract/execution/absent_fixture_and_partial_fixture_keep_original_contract"
+    },
+    {
+      "control": "skipped-mandatory",
+      "refused": "empty or skipped test result: test_absent_fixture_and_partial_fixture_keep_original_contract"
+    }
+  ],
+  "red_control_groups": 9,
+  "red_fixture_errors": 0,
+  "native_qualification": false,
+  "scope": "CPU filesystem execution-input refusal only",
+  "original_refusal_order": "actual owned FIFO observer blocked I/O before metadata read; original helper bytes match pinned8b baseline",
+  "preserved": [
+    "exact raw reader hashes",
+    "typed unknown-reader fallback",
+    "canonical evidence paths",
+    "selected-contract required evidence refusal",
+    "all native source/defaults/tolerances/gates"
+  ],
+  "receipt_sha256": {
+    "coverage-plan.json": "778b78cd0f916de3f00023f05e0ec93f5c2631a30084fd34f9c6180dc8092bd8",
+    "removed-leaf-nofollow.log": "3613be0ca9593abee2901073908659af200d9e05e7a3203ea74e270587c6384b",
+    "coverage-verdict.json": "fdc35b9d5a64e0b67027b55b54d313c53875932e3c215b2b4e70bdbd14bc8bac",
+    "coverage-results.json": "6bbffcba08f7485ebf0d6cbce0927b0f14cd9961349e73add79f71a5899d1ceb",
+    "test_real_fifo_directory_and_socket_refuse_before_any_content_read.log": "43c3b453818e0884a4d08e06e9915a582940325c12514f36d1fd417a3b49fa6d",
+    "test_fifo_replacement_between_stat_and_open_refuses_without_blocking.log": "5052bbb3a31fd06112b6f86be6951ba62b94ba09ea5ad318d5108fbaffe324cb",
+    "normalized-reader-bytes.log": "59176703756fe4e09dd02d0ee98bb9743455bb9f04edcc06ccec324bbd6edaa9",
+    "removed-nonblocking-open.log": "d693dc9d7c76001427e0d5a5b70f9807d1779cc23ed18b7bda67d05eef58c2cf",
+    "test_contracts_cli_refuses_fifo_before_any_cpu_command.log": "06f35496bc8768fc40069d851b1839ace581cd8fa2a4fb15b02a5385d9727374",
+    "cpu-cf087.log": "2e10896923e72bb92c28a99cb6dafe388aa7c7e75a460b0924466014c67ce4b4",
+    "mutation-results.json": "b58e2206d68ef410546bde9f3230be9daa2cebaa5faeed200da808967b3b8bc8",
+    "removed-parent-nofollow.log": "0d79bb2c6ed92957f7fc686ca3655f9123f9fd85588c7f00c9902ad565f4437c",
+    "source-pins.json": "7fc60ed0ef2041a81e3810aef0c00abd3d56dc5c6afbe120cdd05ff76ce2e9dc",
+    "coverage-manifest.json": "08a2fc78dfc2b2588ced20ba553f7091e99c085b3814c744aed780378f66bf72",
+    "baseline-read-before-type.log": "8a491b550748cd05ffc1464ab381c992f2b606d24eac76e1bf0b4a552e5965ae",
+    "test_descriptors_close_on_success_and_refusal.log": "a376770479673e3af261f9519b2f49d7831daf4d7b1781b00c760937c5f9ceb5",
+    "coverage-negative.json": "c9d97a107d3d9d1701e3d18254f1d1258d27dec923f386290c10d4a8bee10e5e",
+    "test_parent_replacement_keeps_read_anchored_to_opened_directory.log": "40901a96bf91318efb6a3f66f3508b5b2ea16409d4217dcb73c1324709f643da",
+    "test_ancestor_symlink_including_broken_parent_refuses_before_reads.log": "601c6e3040d1289fe1a7da3fdbc056cadd2ce876f2323bc9e6e9efeda762de2c",
+    "test_symlink_replacement_between_stat_and_open_refuses.log": "6558a856df03f1e68692f7bcb2ba5e28238d16b3cbf0c25a078f659c4972d127",
+    "test_unknown_reader_does_not_turn_fifo_into_typed_fallback.log": "4e79b3b415f6d26f1d9907a7636304b11e9793724c9d25d35912fc9120f113a6",
+    "test_absent_fixture_and_partial_fixture_keep_original_contract.log": "dcbe17a9e55d472e85f840fc4dc9645fc2d6c99e864ce55502f085bea6985b68",
+    "test_leaf_symlink_to_regular_fifo_or_missing_refuses_before_reads.log": "7b972dadb35055924b6af833144e982ddf1b113303b2ed6447c138ca9ef7e682",
+    "typed-type-error-fallback.log": "537438a07bc7e017a64e2b331133ed0fb88a7d7bff116dfbecacadccbc230f4d",
+    "removed-opened-type-check.log": "295bfb66ea8bbb6452950b6514f5fcf905540d6b55ac28b9feda63256bbc7953",
+    "removed-parent-discovery.log": "2e7bccd259c063a6d3f0fa3c5abdf36884a4747c5611c8d78bdc84087bc0a7a6",
+    "test_read_bytes_remains_exact_and_regular_metadata_still_resolves.log": "730bd6a2e5c023fc01d23f08f40e0f4bfb32794f302beca73481071259af46e3",
+    "removed-preflight.log": "9bfd2cc0662960280cb3117dbd6633f59680a5eedd6899e8b78c791212b8930f"
+  }
+}

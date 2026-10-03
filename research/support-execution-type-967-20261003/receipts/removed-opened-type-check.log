@@ -1,0 +1,15 @@
+test_fifo_replacement_between_stat_and_open_refuses_without_blocking (test_validation_support_execution_inputs.SupportExecutionInputs.test_fifo_replacement_between_stat_and_open_refuses_without_blocking) ... FAIL
+
+======================================================================
+FAIL: test_fifo_replacement_between_stat_and_open_refuses_without_blocking (test_validation_support_execution_inputs.SupportExecutionInputs.test_fifo_replacement_between_stat_and_open_refuses_without_blocking)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 159, in test_fifo_replacement_between_stat_and_open_refuses_without_blocking
+    with self.assertRaisesRegex(data.InputContractError, 'regular'):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: InputContractError not raised
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)
