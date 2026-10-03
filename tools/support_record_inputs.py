@@ -1,7 +1,8 @@
 """Exact data reads of the pinned support-record census, without running a model."""
 
 import hashlib
-from pathlib import PurePosixPath
+import os
+from pathlib import Path, PurePosixPath
 import tomllib
 
 
@@ -16,6 +17,27 @@ GATES = {'Config', 'TokenizerTemplate', 'TensorCensus', 'TinyParity',
 
 class InputContractError(ValueError):
     pass
+
+
+class DirectoryTree:
+    """Execution admission needs these exact files, not Git metadata."""
+
+    def __init__(self, root):
+        self.root = Path(root).resolve()
+
+    def paths(self, *prefixes):
+        return [name for name in (*READERS, RECORDS)
+                if (self.root / name).exists() or (self.root / name).is_symlink()]
+
+    def read(self, name):
+        path = (self.root / name).resolve()
+        if not path.is_relative_to(self.root):
+            raise InputContractError('support data reader path escapes root: ' + name)
+        return path.read_text()
+
+    def symlinks_exact(self, paths):
+        return {name: os.readlink(self.root / name) for name in paths
+                if (self.root / name).is_symlink()}
 
 
 def canonical_path(value):

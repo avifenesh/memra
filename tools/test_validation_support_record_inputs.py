@@ -71,6 +71,7 @@ class SupportRecordDataInputs(unittest.TestCase):
                     self.assertEqual([c['id'] for c in plan['cpu_contracts']], ['support-records'])
 
     def test_neither_optional_alternative_is_required_for_execution_selection(self):
+        shutil.rmtree(self.repo / '.git')
         self.assertFalse((self.repo / LOCK).exists())
         self.assertFalse((self.repo / TINY).exists())
         self.assertEqual(vp.cpu_contract_names(self.repo, 'support-records'), ['support-records'])

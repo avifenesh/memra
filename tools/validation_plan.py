@@ -136,7 +136,7 @@ _RUST_SCANNER = None
 _SUPPORT_DATA = None
 
 
-def support_record_data_inputs(tree):
+def support_record_data_inputs(tree, *, directory=False):
     global _SUPPORT_DATA
     if _SUPPORT_DATA is None:
         spec = importlib.util.spec_from_file_location(
@@ -144,6 +144,8 @@ def support_record_data_inputs(tree):
         _SUPPORT_DATA = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(_SUPPORT_DATA)
     try:
+        if directory:
+            tree = _SUPPORT_DATA.DirectoryTree(tree)
         return _SUPPORT_DATA.resolve(tree)
     except _SUPPORT_DATA.InputContractError as error:
         raise Refused(str(error)) from error
@@ -799,7 +801,7 @@ def cpu_contract_names(root, selected):
         if not all((root / p).is_file() for p in TOOL_CONTRACTS[name]['inputs']):
             raise Refused('selected contract input is missing: ' + name)
         if name == 'support-records':
-            data = support_record_data_inputs(LocalTree(root))
+            data = support_record_data_inputs(root, directory=True)
             for path in data['required']:
                 if not (root / path).is_file():
                     raise Refused('selected contract input is missing: support-records: ' + path)
