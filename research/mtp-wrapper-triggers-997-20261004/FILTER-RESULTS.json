@@ -1,0 +1,104 @@
+{
+  "rows": [
+    {
+      "workflow": ".github/workflows/mtp-context-receipts.yml",
+      "before_paths": [
+        "research/mtp-context-depth-20260921/**",
+        ".github/workflows/mtp-context-receipts.yml"
+      ],
+      "after_paths": [
+        "tools/unittest-floor.sh",
+        "tools/unittest_floor.py",
+        "research/mtp-context-depth-20260921/**",
+        ".github/workflows/mtp-context-receipts.yml"
+      ],
+      "old_wrapper_selected": [
+        false,
+        false
+      ],
+      "new_wrapper_selected": [
+        true,
+        true
+      ],
+      "all_other_workflow_bytes_equal": true
+    },
+    {
+      "workflow": ".github/workflows/mtp-depth-receipts.yml",
+      "before_paths": [
+        "research/mtp-calibrated-depth-20260920/**",
+        "research/mtp-continuing-session-20260921/**",
+        ".github/workflows/mtp-depth-receipts.yml"
+      ],
+      "after_paths": [
+        "tools/unittest-floor.sh",
+        "tools/unittest_floor.py",
+        "research/mtp-calibrated-depth-20260920/**",
+        "research/mtp-continuing-session-20260921/**",
+        ".github/workflows/mtp-depth-receipts.yml"
+      ],
+      "old_wrapper_selected": [
+        false,
+        false
+      ],
+      "new_wrapper_selected": [
+        true,
+        true
+      ],
+      "all_other_workflow_bytes_equal": true
+    }
+  ],
+  "coherent_wrong_target_controls": [
+    {
+      "workflow": ".github/workflows/mtp-context-receipts.yml",
+      "wrong_target": "tools/unittest-floor.sh.wrong-target",
+      "command": [
+        "/usr/bin/python3",
+        "/home/avifenesh/.local/state/memra-rig-darklanes-20261002/receipts/B/mtp-wrapper-triggers/filter_proof.py",
+        "/home/avifenesh/.local/state/memra-rig-darklanes-20261002/receipts/B/mtp-wrapper-triggers/mtp-context-receipts-unittest-floor.sh.mutant.json"
+      ],
+      "actual_exit": 1,
+      "raw_sha256": "a188e16a5656ff343debc31c93d729005870d937b9c15a72886c0ca215781a9a",
+      "actual_mutant": "mtp-context-receipts-unittest-floor.sh.mutant.json"
+    },
+    {
+      "workflow": ".github/workflows/mtp-context-receipts.yml",
+      "wrong_target": "tools/unittest_floor.py.wrong-target",
+      "command": [
+        "/usr/bin/python3",
+        "/home/avifenesh/.local/state/memra-rig-darklanes-20261002/receipts/B/mtp-wrapper-triggers/filter_proof.py",
+        "/home/avifenesh/.local/state/memra-rig-darklanes-20261002/receipts/B/mtp-wrapper-triggers/mtp-context-receipts-unittest_floor.py.mutant.json"
+      ],
+      "actual_exit": 1,
+      "raw_sha256": "f5b9ef2d5c5bd7970d1fc6b8ea360743f572b2ff20a107348a6a05f4af554a24",
+      "actual_mutant": "mtp-context-receipts-unittest_floor.py.mutant.json"
+    },
+    {
+      "workflow": ".github/workflows/mtp-depth-receipts.yml",
+      "wrong_target": "tools/unittest-floor.sh.wrong-target",
+      "command": [
+        "/usr/bin/python3",
+        "/home/avifenesh/.local/state/memra-rig-darklanes-20261002/receipts/B/mtp-wrapper-triggers/filter_proof.py",
+        "/home/avifenesh/.local/state/memra-rig-darklanes-20261002/receipts/B/mtp-wrapper-triggers/mtp-depth-receipts-unittest-floor.sh.mutant.json"
+      ],
+      "actual_exit": 1,
+      "raw_sha256": "05737131ff66673ec289be3607a8b57000f67bbdbd6d66fab31340d9db6abb58",
+      "actual_mutant": "mtp-depth-receipts-unittest-floor.sh.mutant.json"
+    },
+    {
+      "workflow": ".github/workflows/mtp-depth-receipts.yml",
+      "wrong_target": "tools/unittest_floor.py.wrong-target",
+      "command": [
+        "/usr/bin/python3",
+        "/home/avifenesh/.local/state/memra-rig-darklanes-20261002/receipts/B/mtp-wrapper-triggers/filter_proof.py",
+        "/home/avifenesh/.local/state/memra-rig-darklanes-20261002/receipts/B/mtp-wrapper-triggers/mtp-depth-receipts-unittest_floor.py.mutant.json"
+      ],
+      "actual_exit": 1,
+      "raw_sha256": "dc6bc911257523c72bf80404815cdc60839630673d10f49ff1ff59e5a85b25f1",
+      "actual_mutant": "mtp-depth-receipts-unittest_floor.py.mutant.json"
+    }
+  ],
+  "actual_original_wrapper_omissions": 4,
+  "candidate_selections": 4,
+  "no_job_command_action_pin_floor_default_or_tolerance_change": true,
+  "qualification": false
+}

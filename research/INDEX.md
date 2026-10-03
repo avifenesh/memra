@@ -736,3 +736,5 @@ support-source-doc-copy-inputs-20261003 | 97 exact source/docs omissions repaire
 | unittest-admission-20261003 | Generic selected, executed and successful identity/result admission. Five original controls, 17 admission tests, 17 before/after cases and 6 coherent mutants pass on the separate 206-test composition. CPU evidence only. | [CURRENT.json](unittest-admission-20261003/CURRENT.json) |
 
 | atomic-update-alias-978-20261003 | Twelve atomic API aliases preserve actual emitted operations. Same530 real CPU IDs perarm,18 copied boundary controls perarm and fault witnesses. No native qualification. | [LANE.md](atomic-update-alias-978-20261003/LANE.md) |
+
+| mtp-wrapper-triggers-997-20261004 | Four path entries select both shared wrapper files in both MTP workflows. Existing 39 CPU controls and seven retained-data workflow blocks verified. No qualification promotion. | [LANE.md](mtp-wrapper-triggers-997-20261004/LANE.md) |

@@ -1,0 +1,147 @@
+{
+  "arm": "before",
+  "actual_workflow_blocks": [
+    {
+      "workflow": "mtp-context-receipts.yml",
+      "step": 0,
+      "command": [
+        "/bin/bash",
+        "/home/avifenesh/.local/state/memra-rig-darklanes-20261002/receipts/B/mtp-wrapper-triggers/before/mtp-context-receipts-0.sh"
+      ],
+      "body_sha256": "0bbe7a476fcab74b3c8c33f8a905d11d01e376a6a919cae54ec60a7c57fd592b",
+      "actual_exit": 0,
+      "raw": "mtp-context-receipts-0.log",
+      "raw_sha256": "df9d851c1eea0723c06b7dc2a4c7c7abaf505b3bfa3944e65d80e6ab87c50488"
+    },
+    {
+      "workflow": "mtp-context-receipts.yml",
+      "step": 1,
+      "command": [
+        "/bin/bash",
+        "/home/avifenesh/.local/state/memra-rig-darklanes-20261002/receipts/B/mtp-wrapper-triggers/before/mtp-context-receipts-1.sh"
+      ],
+      "body_sha256": "1a77d3682644755aa5c4c8b7db2cf95bacb095f40861941f0cd34d47f62cbc61",
+      "actual_exit": 0,
+      "raw": "mtp-context-receipts-1.log",
+      "raw_sha256": "c8e81d21df14b79d977afeb36b685811b9766c988a23b1a61bdb744a12290a5c"
+    },
+    {
+      "workflow": "mtp-depth-receipts.yml",
+      "step": 0,
+      "command": [
+        "/bin/bash",
+        "/home/avifenesh/.local/state/memra-rig-darklanes-20261002/receipts/B/mtp-wrapper-triggers/before/mtp-depth-receipts-0.sh"
+      ],
+      "body_sha256": "21a199dea3a8455c0de1d09d2db865174cc007233b929be995cce92975a4aef5",
+      "actual_exit": 0,
+      "raw": "mtp-depth-receipts-0.log",
+      "raw_sha256": "56ede82be7f0beb66e58079e8688a6c003d64811f99b9cdfbcfdc037ddb619f8"
+    },
+    {
+      "workflow": "mtp-depth-receipts.yml",
+      "step": 1,
+      "command": [
+        "/bin/bash",
+        "/home/avifenesh/.local/state/memra-rig-darklanes-20261002/receipts/B/mtp-wrapper-triggers/before/mtp-depth-receipts-1.sh"
+      ],
+      "body_sha256": "cb9f0f4007db5c49d0c3965cabb09a5109ed2e98a9e139d5b0d2f714804dc367",
+      "actual_exit": 0,
+      "raw": "mtp-depth-receipts-1.log",
+      "raw_sha256": "2b26b72f5c416a5ac5c1febc00f993f05c0a50f820d0e8e3831fb5bb7818e483"
+    },
+    {
+      "workflow": "mtp-depth-receipts.yml",
+      "step": 2,
+      "command": [
+        "/bin/bash",
+        "/home/avifenesh/.local/state/memra-rig-darklanes-20261002/receipts/B/mtp-wrapper-triggers/before/mtp-depth-receipts-2.sh"
+      ],
+      "body_sha256": "05ea8a3ab7a73249d5c726e8bd06451aa330c016579e1a1bf0bbf514bfec383c",
+      "actual_exit": 0,
+      "raw": "mtp-depth-receipts-2.log",
+      "raw_sha256": "6bae110c3e232e9b5ca98f9d527868eee8d9b685eb023ef771a941fc02574722"
+    },
+    {
+      "workflow": "mtp-depth-receipts.yml",
+      "step": 3,
+      "command": [
+        "/bin/bash",
+        "/home/avifenesh/.local/state/memra-rig-darklanes-20261002/receipts/B/mtp-wrapper-triggers/before/mtp-depth-receipts-3.sh"
+      ],
+      "body_sha256": "bb781b4ac9bcfce2f7ed4f5548b1e3e0a9b8f052428537c8df520983287b2f92",
+      "actual_exit": 0,
+      "raw": "mtp-depth-receipts-3.log",
+      "raw_sha256": "fa0046cd3c2690bb7bdf3889170195925c7abbda3c2b11cdf1e8dfdff6a18e74"
+    },
+    {
+      "workflow": "mtp-depth-receipts.yml",
+      "step": 4,
+      "command": [
+        "/bin/bash",
+        "/home/avifenesh/.local/state/memra-rig-darklanes-20261002/receipts/B/mtp-wrapper-triggers/before/mtp-depth-receipts-4.sh"
+      ],
+      "body_sha256": "df3e1ab9a362585344e30005f9856a59665930d6a1e6ef9cb44c3997ad3a08b1",
+      "actual_exit": 0,
+      "raw": "mtp-depth-receipts-4.log",
+      "raw_sha256": "63a9307c496b50dee661603b9dde4de1e43b2b3e013435b51882bf6429d6423e"
+    }
+  ],
+  "existing_reader_actual_counts": [
+    16,
+    6,
+    17
+  ],
+  "raw_counts": [
+    [
+      "16",
+      "16"
+    ],
+    [
+      "6",
+      "6"
+    ],
+    [
+      "17",
+      "17"
+    ]
+  ],
+  "all39passed_zero_skips_expected_failures": true,
+  "report_bytes": [
+    {
+      "mode": "cold",
+      "family": "qwen",
+      "byte_equal": true,
+      "sha256": "b2a5ccec1e9e85f6daf701db458cf4798fdf84f11cab727080777662b8e8095f",
+      "bytes": 12039
+    },
+    {
+      "mode": "cold",
+      "family": "gemma",
+      "byte_equal": true,
+      "sha256": "23a0a01638adeadbd0e08353083de2855d20f7a4a2acc39e77b39d243ca05442",
+      "bytes": 11913
+    },
+    {
+      "mode": "warm",
+      "family": "qwen",
+      "byte_equal": true,
+      "sha256": "c149d84f78a618d276b1e13e3b15d8aaf754914905c34a49d8239b7901d70d86",
+      "bytes": 12115
+    },
+    {
+      "mode": "warm",
+      "family": "gemma",
+      "byte_equal": true,
+      "sha256": "fc52bbd8872406faa0af00af8d36e0cde89a47c39f983ee9d8d28b0416ec30d7",
+      "bytes": 11903
+    }
+  ],
+  "actual_refusal_count": 8,
+  "all135inputs_and_wrappers_unchanged": true,
+  "ownedtemp_removed": true,
+  "owned_empty_parent": "/home/avifenesh/.local/state/scratch/B/mtp-wrapper-997-before",
+  "original_job": "234ee2bc25d9",
+  "original_job_result": "failed onlyprivate finalstdout-format parser; all7workload exits0",
+  "independent_retained_output_readmission": true,
+  "qualification": false
+}

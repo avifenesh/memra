@@ -1,0 +1,1133 @@
+{
+  "files": [
+    {
+      "file": "research/mtp-context-depth-20260921/publication/reproduce.py",
+      "sha256": "0bd7479b8d69d4defbcbd303c63271975f2be6f30dd0e311d197444b68f1914b",
+      "imports": [
+        {
+          "line": 2,
+          "statement": "import argparse"
+        },
+        {
+          "line": 3,
+          "statement": "import hashlib"
+        },
+        {
+          "line": 4,
+          "statement": "import io"
+        },
+        {
+          "line": 5,
+          "statement": "import json"
+        },
+        {
+          "line": 6,
+          "statement": "import re"
+        },
+        {
+          "line": 7,
+          "statement": "import shutil"
+        },
+        {
+          "line": 8,
+          "statement": "import subprocess"
+        },
+        {
+          "line": 9,
+          "statement": "import sys"
+        },
+        {
+          "line": 10,
+          "statement": "import tarfile"
+        },
+        {
+          "line": 11,
+          "statement": "import tempfile"
+        },
+        {
+          "line": 12,
+          "statement": "from pathlib import Path"
+        },
+        {
+          "line": 13,
+          "statement": "from unpack_receipts import unpack"
+        }
+      ],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-context-depth-20260921/publication/reproduce_development.py",
+      "sha256": "612b35542609ab753fe9c813467c20b398924621123fc5c24c88bd6265161543",
+      "imports": [
+        {
+          "line": 2,
+          "statement": "import argparse"
+        },
+        {
+          "line": 3,
+          "statement": "import hashlib"
+        },
+        {
+          "line": 4,
+          "statement": "import importlib"
+        },
+        {
+          "line": 5,
+          "statement": "import io"
+        },
+        {
+          "line": 6,
+          "statement": "import json"
+        },
+        {
+          "line": 7,
+          "statement": "import math"
+        },
+        {
+          "line": 8,
+          "statement": "import sys"
+        },
+        {
+          "line": 9,
+          "statement": "import tarfile"
+        },
+        {
+          "line": 10,
+          "statement": "import tempfile"
+        },
+        {
+          "line": 11,
+          "statement": "from pathlib import Path"
+        },
+        {
+          "line": 12,
+          "statement": "from unpack_receipts import unpack"
+        }
+      ],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-context-depth-20260921/publication/reproduce_latest.py",
+      "sha256": "61b94d9774dc9cd4d45eaa3554ce85b40ded5514c495604b3bfb6b4a084306bb",
+      "imports": [
+        {
+          "line": 2,
+          "statement": "import argparse"
+        },
+        {
+          "line": 3,
+          "statement": "import hashlib"
+        },
+        {
+          "line": 4,
+          "statement": "import io"
+        },
+        {
+          "line": 5,
+          "statement": "import json"
+        },
+        {
+          "line": 6,
+          "statement": "import shutil"
+        },
+        {
+          "line": 7,
+          "statement": "import subprocess"
+        },
+        {
+          "line": 8,
+          "statement": "import sys"
+        },
+        {
+          "line": 9,
+          "statement": "import tarfile"
+        },
+        {
+          "line": 10,
+          "statement": "import tempfile"
+        },
+        {
+          "line": 11,
+          "statement": "from pathlib import Path"
+        },
+        {
+          "line": 12,
+          "statement": "from unpack_receipts import unpack"
+        }
+      ],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-context-depth-20260921/publication/scan_archives.py",
+      "sha256": "840c626ae0c9841cf1e8f82ef2abfb85f3615393fd8b7cf98a6eaf7290fef38d",
+      "imports": [
+        {
+          "line": 2,
+          "statement": "import argparse"
+        },
+        {
+          "line": 3,
+          "statement": "import hashlib"
+        },
+        {
+          "line": 4,
+          "statement": "import importlib.util"
+        },
+        {
+          "line": 5,
+          "statement": "import json"
+        },
+        {
+          "line": 6,
+          "statement": "import sys"
+        },
+        {
+          "line": 7,
+          "statement": "import tarfile"
+        },
+        {
+          "line": 8,
+          "statement": "import tempfile"
+        },
+        {
+          "line": 9,
+          "statement": "from pathlib import Path"
+        }
+      ],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-context-depth-20260921/publication/scored_sets.py",
+      "sha256": "72a3c67000bc96a6de0c396962e951e1ed399ff372bebe7bfdd29bb60719345a",
+      "imports": [],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-context-depth-20260921/publication/test_boundary_review.py",
+      "sha256": "dd837e65987a4ce81d89175b14b65036c3e9d7108d1bb65f043939d6466a7f2b",
+      "imports": [
+        {
+          "line": 1,
+          "statement": "import copy"
+        },
+        {
+          "line": 2,
+          "statement": "import json"
+        },
+        {
+          "line": 3,
+          "statement": "import tempfile"
+        },
+        {
+          "line": 4,
+          "statement": "import unittest"
+        },
+        {
+          "line": 5,
+          "statement": "from pathlib import Path"
+        },
+        {
+          "line": 6,
+          "statement": "from verify_boundary import verify, store, ARCHIVES"
+        }
+      ],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-context-depth-20260921/publication/test_scored_sets.py",
+      "sha256": "bfad753063fa6b5c717710fa615abf16d5157085585c1c5f9e1fc31b3615f563",
+      "imports": [
+        {
+          "line": 1,
+          "statement": "import unittest"
+        },
+        {
+          "line": 2,
+          "statement": "from collections import Counter"
+        },
+        {
+          "line": 3,
+          "statement": "from scored_sets import matched_report"
+        }
+      ],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-context-depth-20260921/publication/test_unpack.py",
+      "sha256": "6b969443d11d312cfd410d0bcd51f0cc50c3a78f1d46086efcd629834802c782",
+      "imports": [
+        {
+          "line": 1,
+          "statement": "import hashlib"
+        },
+        {
+          "line": 2,
+          "statement": "import io"
+        },
+        {
+          "line": 3,
+          "statement": "import json"
+        },
+        {
+          "line": 4,
+          "statement": "import tarfile"
+        },
+        {
+          "line": 5,
+          "statement": "import tempfile"
+        },
+        {
+          "line": 6,
+          "statement": "import unittest"
+        },
+        {
+          "line": 7,
+          "statement": "from pathlib import Path"
+        },
+        {
+          "line": 8,
+          "statement": "from unpack_receipts import unpack"
+        }
+      ],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-context-depth-20260921/publication/unpack_receipts.py",
+      "sha256": "81c89d52540ca338e27108e08de74914244191075f4006f17bd65dbac4de6682",
+      "imports": [
+        {
+          "line": 2,
+          "statement": "import hashlib"
+        },
+        {
+          "line": 3,
+          "statement": "import io"
+        },
+        {
+          "line": 4,
+          "statement": "import json"
+        },
+        {
+          "line": 5,
+          "statement": "import re"
+        },
+        {
+          "line": 6,
+          "statement": "import tarfile"
+        },
+        {
+          "line": 7,
+          "statement": "from pathlib import Path, PurePosixPath"
+        }
+      ],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-context-depth-20260921/publication/verify_boundary.py",
+      "sha256": "bdbef45c527f7f5b057465064ce755c6fb6130c80c477ea23bfc31f3d234f0bc",
+      "imports": [
+        {
+          "line": 2,
+          "statement": "import argparse"
+        },
+        {
+          "line": 3,
+          "statement": "import json"
+        },
+        {
+          "line": 4,
+          "statement": "import subprocess"
+        },
+        {
+          "line": 5,
+          "statement": "import sys"
+        },
+        {
+          "line": 6,
+          "statement": "import tempfile"
+        },
+        {
+          "line": 7,
+          "statement": "from pathlib import Path"
+        }
+      ],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-calibrated-depth-20260920/analyze.py",
+      "sha256": "119850858b052fabeb9f86d97b3622d2866650a2e1a3e8938ffb527c3035ce6c",
+      "imports": [
+        {
+          "line": 2,
+          "statement": "import argparse"
+        },
+        {
+          "line": 3,
+          "statement": "import csv"
+        },
+        {
+          "line": 4,
+          "statement": "import hashlib"
+        },
+        {
+          "line": 5,
+          "statement": "import json"
+        },
+        {
+          "line": 6,
+          "statement": "import math"
+        },
+        {
+          "line": 7,
+          "statement": "import re"
+        },
+        {
+          "line": 8,
+          "statement": "import statistics"
+        },
+        {
+          "line": 9,
+          "statement": "from collections import Counter"
+        },
+        {
+          "line": 10,
+          "statement": "from pathlib import Path"
+        }
+      ],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-calibrated-depth-20260920/audit_selection.py",
+      "sha256": "218413c6d57f27aee740ffa088f1fbe6e98ed9bb34a0aacfcb730a54c81ff136",
+      "imports": [
+        {
+          "line": 2,
+          "statement": "import argparse"
+        },
+        {
+          "line": 3,
+          "statement": "import hashlib"
+        },
+        {
+          "line": 4,
+          "statement": "import json"
+        },
+        {
+          "line": 5,
+          "statement": "import math"
+        },
+        {
+          "line": 6,
+          "statement": "from pathlib import Path"
+        },
+        {
+          "line": 8,
+          "statement": "from analyze import table"
+        },
+        {
+          "line": 9,
+          "statement": "from controller import select_depth"
+        }
+      ],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-calibrated-depth-20260920/check_audit_rejections.py",
+      "sha256": "94d492b66630a74c460cfa16689dc72e3c0e02e45cce5da24fac02f4ec7e14c3",
+      "imports": [
+        {
+          "line": 2,
+          "statement": "import argparse"
+        },
+        {
+          "line": 3,
+          "statement": "import copy"
+        },
+        {
+          "line": 4,
+          "statement": "import json"
+        },
+        {
+          "line": 5,
+          "statement": "import tempfile"
+        },
+        {
+          "line": 6,
+          "statement": "from pathlib import Path"
+        },
+        {
+          "line": 8,
+          "statement": "from audit_selection import audit"
+        }
+      ],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-calibrated-depth-20260920/controller.py",
+      "sha256": "75129f47dd095cf1c6037c3f06f23e3a4cd897de530a4eb78ea811b07765412b",
+      "imports": [
+        {
+          "line": 2,
+          "statement": "import argparse"
+        },
+        {
+          "line": 3,
+          "statement": "import collections"
+        },
+        {
+          "line": 4,
+          "statement": "import datetime"
+        },
+        {
+          "line": 5,
+          "statement": "import hashlib"
+        },
+        {
+          "line": 6,
+          "statement": "import json"
+        },
+        {
+          "line": 7,
+          "statement": "import subprocess"
+        },
+        {
+          "line": 8,
+          "statement": "import sys"
+        },
+        {
+          "line": 9,
+          "statement": "from pathlib import Path"
+        },
+        {
+          "line": 11,
+          "statement": "import run_study as study"
+        },
+        {
+          "line": 112,
+          "statement": "import analyze"
+        }
+      ],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-calibrated-depth-20260920/run_study.py",
+      "sha256": "43e4aca06328bfd2ce62c23b7a644d95f2d1d8f0c36c1d485000d8cfae412524",
+      "imports": [
+        {
+          "line": 6,
+          "statement": "import argparse"
+        },
+        {
+          "line": 7,
+          "statement": "import csv"
+        },
+        {
+          "line": 8,
+          "statement": "import fcntl"
+        },
+        {
+          "line": 9,
+          "statement": "import hashlib"
+        },
+        {
+          "line": 10,
+          "statement": "import itertools"
+        },
+        {
+          "line": 11,
+          "statement": "import json"
+        },
+        {
+          "line": 12,
+          "statement": "import os"
+        },
+        {
+          "line": 13,
+          "statement": "import re"
+        },
+        {
+          "line": 14,
+          "statement": "import statistics"
+        },
+        {
+          "line": 15,
+          "statement": "import subprocess"
+        },
+        {
+          "line": 16,
+          "statement": "import time"
+        },
+        {
+          "line": 17,
+          "statement": "from pathlib import Path"
+        }
+      ],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-calibrated-depth-20260920/test_followup.py",
+      "sha256": "3e374205b2c6f129b1ed9254191a79c2025191313fb5e36fa9be436967b26914",
+      "imports": [
+        {
+          "line": 1,
+          "statement": "import collections"
+        },
+        {
+          "line": 2,
+          "statement": "import unittest"
+        },
+        {
+          "line": 4,
+          "statement": "from controller import ARMS, schedule, select_depth"
+        }
+      ],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-calibrated-depth-20260920/test_unpack_receipts.py",
+      "sha256": "a3a92562810b54666e63856cf43ccf4b0edaa4a87992793e0eadfe8d151e9661",
+      "imports": [
+        {
+          "line": 1,
+          "statement": "import hashlib"
+        },
+        {
+          "line": 2,
+          "statement": "import io"
+        },
+        {
+          "line": 3,
+          "statement": "import json"
+        },
+        {
+          "line": 4,
+          "statement": "import tarfile"
+        },
+        {
+          "line": 5,
+          "statement": "import tempfile"
+        },
+        {
+          "line": 6,
+          "statement": "import unittest"
+        },
+        {
+          "line": 7,
+          "statement": "from pathlib import Path"
+        },
+        {
+          "line": 9,
+          "statement": "from unpack_receipts import unpack"
+        }
+      ],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-calibrated-depth-20260920/unpack_receipts.py",
+      "sha256": "def7edb795611dcb2b410223ec0b1380d90700161e545a0a59e38c98e244eed8",
+      "imports": [
+        {
+          "line": 2,
+          "statement": "import argparse"
+        },
+        {
+          "line": 3,
+          "statement": "import hashlib"
+        },
+        {
+          "line": 4,
+          "statement": "import io"
+        },
+        {
+          "line": 5,
+          "statement": "import json"
+        },
+        {
+          "line": 6,
+          "statement": "import re"
+        },
+        {
+          "line": 7,
+          "statement": "import tarfile"
+        },
+        {
+          "line": 8,
+          "statement": "from pathlib import Path, PurePosixPath"
+        }
+      ],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-continuing-session-20260921/analyze.py",
+      "sha256": "109d7f94f404182703126d16bc11df9112b9af32c66051b7cda218d57671a084",
+      "imports": [
+        {
+          "line": 2,
+          "statement": "import argparse"
+        },
+        {
+          "line": 3,
+          "statement": "import csv"
+        },
+        {
+          "line": 4,
+          "statement": "import hashlib"
+        },
+        {
+          "line": 5,
+          "statement": "import json"
+        },
+        {
+          "line": 6,
+          "statement": "import math"
+        },
+        {
+          "line": 7,
+          "statement": "import re"
+        },
+        {
+          "line": 8,
+          "statement": "import statistics"
+        },
+        {
+          "line": 9,
+          "statement": "from collections import Counter"
+        },
+        {
+          "line": 10,
+          "statement": "from pathlib import Path"
+        },
+        {
+          "line": 11,
+          "statement": "import audit_reuse as reuse_auditor"
+        },
+        {
+          "line": 12,
+          "statement": "from audit_reuse import audit_reuse"
+        }
+      ],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-continuing-session-20260921/audit_reuse.py",
+      "sha256": "97c18d6600a584590bf3a7663bb7f67ca3dc1c8d47734afd778a3df1013692d5",
+      "imports": [
+        {
+          "line": 2,
+          "statement": "import csv"
+        },
+        {
+          "line": 3,
+          "statement": "from pathlib import Path"
+        }
+      ],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-continuing-session-20260921/check_selection_rejections.py",
+      "sha256": "ce6abe14307152683cef02497bc89aa41b7c64094e06f5236a9d1fadb19754f8",
+      "imports": [
+        {
+          "line": 2,
+          "statement": "import argparse"
+        },
+        {
+          "line": 3,
+          "statement": "import hashlib"
+        },
+        {
+          "line": 4,
+          "statement": "import json"
+        },
+        {
+          "line": 5,
+          "statement": "import shutil"
+        },
+        {
+          "line": 6,
+          "statement": "import tempfile"
+        },
+        {
+          "line": 7,
+          "statement": "from pathlib import Path"
+        },
+        {
+          "line": 9,
+          "statement": "from analyze import analyze, audit_selection"
+        }
+      ],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-continuing-session-20260921/controller.py",
+      "sha256": "e30251ba844990694c1741dc8f65402ea0d4e9102252e44906c2f8f406b9972b",
+      "imports": [
+        {
+          "line": 2,
+          "statement": "import argparse"
+        },
+        {
+          "line": 3,
+          "statement": "import datetime"
+        },
+        {
+          "line": 4,
+          "statement": "import hashlib"
+        },
+        {
+          "line": 5,
+          "statement": "import json"
+        },
+        {
+          "line": 6,
+          "statement": "import statistics"
+        },
+        {
+          "line": 7,
+          "statement": "import subprocess"
+        },
+        {
+          "line": 8,
+          "statement": "import sys"
+        },
+        {
+          "line": 9,
+          "statement": "from pathlib import Path"
+        }
+      ],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-continuing-session-20260921/prepare_workloads.py",
+      "sha256": "34387920f6b5d531e9d016fc5f54de961900d30fcef9012e98bac1867e9c1c4d",
+      "imports": [
+        {
+          "line": 2,
+          "statement": "import argparse"
+        },
+        {
+          "line": 3,
+          "statement": "import hashlib"
+        },
+        {
+          "line": 4,
+          "statement": "import json"
+        },
+        {
+          "line": 5,
+          "statement": "import subprocess"
+        },
+        {
+          "line": 6,
+          "statement": "from pathlib import Path"
+        }
+      ],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-continuing-session-20260921/qualify.py",
+      "sha256": "c1954a16b1513c9315c0aeb49d85d6046097bcb9ffbc8c14fabcfee9c26bac28",
+      "imports": [
+        {
+          "line": 2,
+          "statement": "import argparse"
+        },
+        {
+          "line": 3,
+          "statement": "import datetime"
+        },
+        {
+          "line": 4,
+          "statement": "import json"
+        },
+        {
+          "line": 5,
+          "statement": "import subprocess"
+        },
+        {
+          "line": 6,
+          "statement": "import sys"
+        },
+        {
+          "line": 7,
+          "statement": "from pathlib import Path"
+        }
+      ],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-continuing-session-20260921/run_study.py",
+      "sha256": "9e7b78dacf07b95ded78a707da9a40808d1b9b10ef2b762185822d623cc40df6",
+      "imports": [
+        {
+          "line": 6,
+          "statement": "import argparse"
+        },
+        {
+          "line": 7,
+          "statement": "import csv"
+        },
+        {
+          "line": 8,
+          "statement": "import fcntl"
+        },
+        {
+          "line": 9,
+          "statement": "import hashlib"
+        },
+        {
+          "line": 10,
+          "statement": "import itertools"
+        },
+        {
+          "line": 11,
+          "statement": "import json"
+        },
+        {
+          "line": 12,
+          "statement": "import math"
+        },
+        {
+          "line": 13,
+          "statement": "import os"
+        },
+        {
+          "line": 14,
+          "statement": "import re"
+        },
+        {
+          "line": 15,
+          "statement": "import statistics"
+        },
+        {
+          "line": 16,
+          "statement": "import subprocess"
+        },
+        {
+          "line": 17,
+          "statement": "import time"
+        },
+        {
+          "line": 18,
+          "statement": "from pathlib import Path"
+        },
+        {
+          "line": 19,
+          "statement": "from audit_reuse import audit_reuse"
+        }
+      ],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-continuing-session-20260921/test_audit_reuse.py",
+      "sha256": "5d1df9ced88782b236df6584c45e9a426e596df762712b1aeefd969d9d38161d",
+      "imports": [
+        {
+          "line": 1,
+          "statement": "import csv"
+        },
+        {
+          "line": 2,
+          "statement": "import tempfile"
+        },
+        {
+          "line": 3,
+          "statement": "import unittest"
+        },
+        {
+          "line": 4,
+          "statement": "from pathlib import Path"
+        },
+        {
+          "line": 6,
+          "statement": "from audit_reuse import audit_reuse"
+        }
+      ],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-continuing-session-20260921/test_auditor_identity.py",
+      "sha256": "53acf0427421a0c2c2dd9db98490150e655385d93a539d8973d678effe670ad7",
+      "imports": [
+        {
+          "line": 1,
+          "statement": "import hashlib"
+        },
+        {
+          "line": 2,
+          "statement": "import tempfile"
+        },
+        {
+          "line": 3,
+          "statement": "import unittest"
+        },
+        {
+          "line": 4,
+          "statement": "from pathlib import Path"
+        },
+        {
+          "line": 5,
+          "statement": "from unittest.mock import patch"
+        },
+        {
+          "line": 7,
+          "statement": "import analyze"
+        }
+      ],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-continuing-session-20260921/test_boundary_verification.py",
+      "sha256": "da7e1c093e74cc260363dbe49da1f30aff704ee98a07bd28325cd0e0ceb4a0b0",
+      "imports": [
+        {
+          "line": 1,
+          "statement": "import hashlib"
+        },
+        {
+          "line": 2,
+          "statement": "import json"
+        },
+        {
+          "line": 3,
+          "statement": "import tempfile"
+        },
+        {
+          "line": 4,
+          "statement": "import tarfile"
+        },
+        {
+          "line": 5,
+          "statement": "import unittest"
+        },
+        {
+          "line": 6,
+          "statement": "from pathlib import Path"
+        },
+        {
+          "line": 7,
+          "statement": "from unittest.mock import patch"
+        },
+        {
+          "line": 9,
+          "statement": "import verify_archives"
+        }
+      ],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-continuing-session-20260921/test_unpack_receipts.py",
+      "sha256": "ce9246b769da5757f254828650b98af09dbe7ca8095adc0831af236a493a5250",
+      "imports": [
+        {
+          "line": 1,
+          "statement": "import hashlib"
+        },
+        {
+          "line": 2,
+          "statement": "import io"
+        },
+        {
+          "line": 3,
+          "statement": "import json"
+        },
+        {
+          "line": 4,
+          "statement": "import tarfile"
+        },
+        {
+          "line": 5,
+          "statement": "import tempfile"
+        },
+        {
+          "line": 6,
+          "statement": "import unittest"
+        },
+        {
+          "line": 7,
+          "statement": "from pathlib import Path"
+        },
+        {
+          "line": 9,
+          "statement": "from unpack_receipts import unpack"
+        }
+      ],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-continuing-session-20260921/unpack_receipts.py",
+      "sha256": "54938a38da34713d5600ce1beab174132d0e29f1b99fd1e03b1297d33d505843",
+      "imports": [
+        {
+          "line": 2,
+          "statement": "import argparse"
+        },
+        {
+          "line": 3,
+          "statement": "import hashlib"
+        },
+        {
+          "line": 4,
+          "statement": "import io"
+        },
+        {
+          "line": 5,
+          "statement": "import json"
+        },
+        {
+          "line": 6,
+          "statement": "import re"
+        },
+        {
+          "line": 7,
+          "statement": "import tarfile"
+        },
+        {
+          "line": 8,
+          "statement": "from pathlib import Path, PurePosixPath"
+        }
+      ],
+      "top_level_calls": []
+    },
+    {
+      "file": "research/mtp-continuing-session-20260921/verify_archives.py",
+      "sha256": "9c014988d417dab1b55e55f91c88c3d5c7ab6aa8761b423ea1471645f9c7c19f",
+      "imports": [
+        {
+          "line": 2,
+          "statement": "import argparse"
+        },
+        {
+          "line": 3,
+          "statement": "import hashlib"
+        },
+        {
+          "line": 4,
+          "statement": "import importlib.util"
+        },
+        {
+          "line": 5,
+          "statement": "import json"
+        },
+        {
+          "line": 6,
+          "statement": "import sys"
+        },
+        {
+          "line": 7,
+          "statement": "import tarfile"
+        },
+        {
+          "line": 8,
+          "statement": "import tempfile"
+        },
+        {
+          "line": 9,
+          "statement": "from pathlib import Path"
+        }
+      ],
+      "top_level_calls": []
+    }
+  ],
+  "scope": "All source/import statements in three retainedreader trees. Runtime study/controller/qualification programs remain data or importdefinitions, notcommands launched bytheworkflows. Only seven actualrunblocks execute. Sealed loaded auditcode separately bound."
+}

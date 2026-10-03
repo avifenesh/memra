@@ -1,0 +1,4 @@
+{
+  "raw_sha256": "a188e16a5656ff343debc31c93d729005870d937b9c15a72886c0ca215781a9a",
+  "raw_output": "Traceback (most recent call last):\n  File \"/home/avifenesh/.local/state/memra-rig-darklanes-20261002/receipts/B/mtp-wrapper-triggers/filter_proof.py\", line 21, in <module>\n    d=json.loads(Path(sys.argv[1]).read_text());print(json.dumps(oracle(d['before'],d['candidate'],d['workflow'])));sys.exit(0)\n                                                                 ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/avifenesh/.local/state/memra-rig-darklanes-20261002/receipts/B/mtp-wrapper-triggers/filter_proof.py\", line 12, in oracle\n    for w in wrappers:assert selected(after,w),('required wrapper change not selected',rel,w)\n                             ~~~~~~~~^^^^^^^^^\nAssertionError: ('required wrapper change not selected', '.github/workflows/mtp-context-receipts.yml', 'tools/unittest-floor.sh')\n"
+}
