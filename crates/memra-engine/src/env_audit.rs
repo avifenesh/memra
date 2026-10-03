@@ -60,6 +60,24 @@ fn family_is_owned(family: &str) -> bool {
     OWNED_FAMILIES.contains(&family)
 }
 
+#[derive(PartialEq, Eq)]
+enum AuditName {
+    Utf8(String),
+    Malformed {
+        display: String,
+        owned_family: Option<&'static str>,
+    },
+}
+
+impl AuditName {
+    fn display(&self) -> &str {
+        match self {
+            Self::Utf8(name) => name,
+            Self::Malformed { display, .. } => display,
+        }
+    }
+}
+
 /// Audit an explicit set of `(name, value)` pairs. Pure: tests feed it synthetic environments.
 pub fn audit_vars<I, K, V>(vars: I) -> EnvAudit
 where
@@ -67,20 +85,74 @@ where
     K: AsRef<str>,
     V: AsRef<str>,
 {
+    if LEGAL_NAMES.is_empty() && RETIRED.is_empty() {
+        return EnvAudit::default();
+    }
+    audit_names(
+        vars.into_iter()
+            .map(|(k, _)| k.as_ref().to_string())
+            .filter(|k| k.starts_with("MEMRA_"))
+            .map(AuditName::Utf8),
+    )
+}
+
+/// Audit OS names without interpreting values or discarding malformed MEMRA keys.
+pub fn audit_os_vars<I, K, V>(vars: I) -> EnvAudit
+where
+    I: IntoIterator<Item = (K, V)>,
+    K: AsRef<std::ffi::OsStr>,
+{
+    if LEGAL_NAMES.is_empty() && RETIRED.is_empty() {
+        return EnvAudit::default();
+    }
+    audit_names(vars.into_iter().filter_map(|(key, _)| {
+        let key = key.as_ref();
+        let bytes = key.as_encoded_bytes();
+        if !bytes.starts_with(b"MEMRA_") {
+            return None;
+        }
+        Some(match key.to_str() {
+            Some(name) => AuditName::Utf8(name.to_string()),
+            None => {
+                // Match the exact ASCII family before rendering: a malformed lookalike
+                // is unowned, and a byte after a real owned prefix cannot hide the key.
+                let owned_family = OWNED_FAMILIES
+                    .iter()
+                    .copied()
+                    .find(|family| bytes.starts_with(family.as_bytes()));
+                AuditName::Malformed {
+                    display: format!("{key:?}"),
+                    owned_family,
+                }
+            }
+        })
+    }))
+}
+
+fn audit_names(names: impl IntoIterator<Item = AuditName>) -> EnvAudit {
     let mut out = EnvAudit::default();
     let mut undocumented: Vec<String> = Vec::new();
-    if LEGAL_NAMES.is_empty() && RETIRED.is_empty() {
-        // packaged build without docs/FLAGS.md: nothing to compare against, say so once
-        return out;
-    }
-    let mut names: Vec<String> = vars
-        .into_iter()
-        .map(|(k, _)| k.as_ref().to_string())
-        .filter(|k| k.starts_with("MEMRA_"))
-        .collect();
-    names.sort();
+    let mut names: Vec<AuditName> = names.into_iter().collect();
+    names.sort_by(|a, b| a.display().cmp(b.display()));
     names.dedup();
     for name in names {
+        let name = match name {
+            AuditName::Utf8(name) => name,
+            AuditName::Malformed {
+                display,
+                owned_family,
+            } => {
+                if let Some(family) = owned_family {
+                    out.refusals.push(format!(
+                        "{display}: non-UTF-8 unknown {family}* name. This owned family \
+                         requires a documented UTF-8 name; the key would be read by nothing."
+                    ));
+                } else {
+                    undocumented.push(display);
+                }
+                continue;
+            }
+        };
         if name == "MEMRA_ENV_AUDIT" {
             continue;
         }
@@ -154,14 +226,8 @@ pub fn audit_process_env() -> Result<(), String> {
         );
         return Ok(());
     }
-    // `vars_os`, not `vars`: `std::env::vars()` panics on any non-UTF-8 key or value anywhere in
-    // the environment, and this runs on the boot path. A key that is not UTF-8 cannot be a
-    // `MEMRA_*` name; values are never read here.
-    let audit = audit_vars(
-        std::env::vars_os()
-            .filter_map(|(k, _)| k.into_string().ok())
-            .map(|k| (k, String::new())),
-    );
+    // Keep raw keys for namespace/family classification. Values remain unexamined.
+    let audit = audit_os_vars(std::env::vars_os());
     for w in &audit.warnings {
         eprintln!("[env-audit] warning: {w}");
     }
@@ -195,6 +261,122 @@ mod tests {
 
     fn audit(pairs: &[(&str, &str)]) -> EnvAudit {
         audit_vars(pairs.iter().map(|(k, v)| (*k, *v)))
+    }
+
+    #[test]
+    #[cfg(all(unix, memra_env_registry_present))]
+    fn os_audit_preserves_utf8_retired_wildcard_and_value_ignorance() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+        let wildcard = format!("{}SYNTHETIC_SUFFIX", LEGAL_PREFIXES.first().unwrap());
+        let unknown = format!(
+            "{}DEFINITELY_NOT_A_DOOR_ZZ",
+            OWNED_FAMILIES.first().unwrap()
+        );
+        let names = [
+            LEGAL_NAMES[0],
+            RETIRED[0].0,
+            &wildcard,
+            &unknown,
+            "MEMRA_ZZ_ORPHAN_LAUNCHER_ONLY",
+            "MEMRA_ENV_AUDIT",
+            "UNRELATED",
+        ];
+        let expected = audit_vars(names.iter().map(|name| (*name, "ignored")));
+        let actual = audit_os_vars(
+            names
+                .iter()
+                .map(|name| (OsString::from(name), OsString::from_vec(vec![0xff]))),
+        );
+        assert_eq!(actual, expected);
+        assert!(actual.refusals.iter().any(|r| r.contains("retired")));
+        assert!(actual.refusals.iter().any(|r| r.contains("unknown")));
+        assert_eq!(actual.warnings.len(), 1);
+    }
+
+    #[test]
+    #[cfg(all(unix, memra_env_registry_present))]
+    fn os_audit_refuses_owned_bytes_and_summarizes_deduplicated_unowned_names() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+        let owned = OWNED_FAMILIES.first().unwrap().to_string();
+        let mut owned_bytes = owned.as_bytes().to_vec();
+        owned_bytes.push(0xff);
+        let unknown = b"MEMRA_ZZ_ORPHAN_\xff".to_vec();
+        let pairs = [
+            owned_bytes.clone(),
+            owned_bytes,
+            unknown.clone(),
+            unknown,
+            b"MEMRA_ZZ_ORPHAN_UTF8".to_vec(),
+            b"MEMRA_ZZ_ORPHAN_UTF8".to_vec(),
+            b"MEMRA_\xff".to_vec(),
+            b"UNRELATED_\xff".to_vec(),
+            b"memra_ADMIT_\xff".to_vec(),
+        ];
+        let actual = audit_os_vars(pairs.into_iter().map(|key| {
+            (
+                OsString::from_vec(key),
+                OsString::from_vec(b"SECRET_SYNTHETIC_\xff".to_vec()),
+            )
+        }));
+        assert_eq!(actual.refusals.len(), 1, "{actual:?}");
+        assert!(actual.refusals[0].contains(&format!("unknown {owned}*")));
+        assert!(actual.refusals[0].contains("\\xFF"));
+        assert_eq!(actual.warnings.len(), 1, "{actual:?}");
+        assert!(actual.warnings[0].contains("3 MEMRA_*"), "{actual:?}");
+        assert!(actual.warnings[0].contains("MEMRA_ZZ_ORPHAN_UTF8"));
+        assert!(actual.warnings[0].contains("\\xFF"));
+        assert!(!format!("{actual:?}").contains("SECRET_SYNTHETIC"));
+    }
+
+    #[test]
+    #[cfg(all(unix, memra_env_registry_present))]
+    fn os_audit_classifies_raw_prefixes_before_rendering_and_keeps_utf8_distinct() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+        let family = OWNED_FAMILIES.first().unwrap();
+        let mut broken_owned = family.as_bytes().to_vec();
+        broken_owned.push(0xff);
+        let utf8_replacement = format!("{family}\u{fffd}");
+        let owned = audit_os_vars(
+            [
+                OsString::from_vec(broken_owned),
+                OsString::from(&utf8_replacement),
+            ]
+            .into_iter()
+            .map(|key| (key, ())),
+        );
+        assert_eq!(owned.refusals.len(), 2, "{owned:?}");
+        assert!(owned.refusals.iter().any(|r| r.contains("\\xFF")));
+        assert!(owned.refusals.iter().any(|r| r.contains(&utf8_replacement)));
+        let mut corrupt_family = family.trim_end_matches('_').as_bytes().to_vec();
+        corrupt_family.extend(b"\xff_X");
+        let unowned = audit_os_vars(
+            [
+                OsString::from_vec(corrupt_family),
+                OsString::from_vec(b"\xffMEMRA_ADMIT_X".to_vec()),
+            ]
+            .into_iter()
+            .map(|key| (key, ())),
+        );
+        assert!(unowned.refusals.is_empty(), "{unowned:?}");
+        assert_eq!(unowned.warnings.len(), 1);
+        assert!(unowned.warnings[0].contains("1 MEMRA_*"));
+    }
+
+    #[test]
+    #[cfg(all(unix, memra_env_registry_present))]
+    fn os_audit_all_legal_names_accept_uninterpretable_values() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+        assert!(LEGAL_NAMES.len() > 200);
+        let actual = audit_os_vars(
+            LEGAL_NAMES
+                .iter()
+                .map(|name| (OsString::from(name), OsString::from_vec(vec![0xff]))),
+        );
+        assert_eq!(actual, EnvAudit::default());
     }
 
     #[test]
