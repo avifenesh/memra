@@ -1,0 +1,29 @@
+{
+  "source": "9b67a78fa3f0ab97187ec5eb6b59cf889b0a3fab",
+  "production_matches_published_a05": true,
+  "capsule_sha256": "7602e6895e4c3d2dbdfa24c0de50a41cb995c8917aa4b7cf95e46f36e2fd85ba",
+  "function_hashes": {
+    "pub struct BgHandle {": "c6e00413d47d3f6a608cf9841b2af6b8ad938b0cd3fc34da8d44d1d5e96cdbe9",
+    "impl BgHandle {": "fae57521072f2fdf40de96619bf9effacfcb1e80414522700a96eafb2e79900d",
+    "pub fn spawn_runner(": "6686297a6cd290e65d24be3e720ccca2679df76036e787d8a079e0f0f84e2891",
+    "fn signal_group(": "a5fbbea4385f4a4f2051f9d68aa6a22269d29f6b86d3b5144cf71a1ba633db42",
+    "fn kill_group(": "d6ddea61609dbbeed364a895c004baf23cd0a51517262bf4a69dfe94a9a7db8d",
+    "fn child_stop_acknowledged(": "c83d42c23725bdd11974aff6e23fb1413d9652829a52aa8c6619afb62e01f4ee",
+    "fn runner_loop(": "ae711ec320d6f1c41a3d5ef1d363f50363224a747767946f14af03f147b809b6",
+    "fn launch(": "da119ccb54f08122bf5a0de4b17ad163b03a0eb87b5f849dbc7a8377f169de6b",
+    "fn handle_exit(": "16d9af1d391ffcf2b79a3938084d7a57692ab8baa98a80f2702c3bf590a62467",
+    "fn preempt_wait(": "1eb6e05cea5d5dca99a11e1fad46ec6a313bab59771ec7409bff92502ac7be05"
+  },
+  "test": "killing_only_yielded_leader_terminates_remaining_owned_group",
+  "expected_exit": 101,
+  "cleanup": "owned descendant held by pidfd; failure drop sends CONT/KILL through that exact descriptor",
+  "observed": {
+    "runner_state": "failed",
+    "job_pid": 0,
+    "owned_descendant": "alive through unchanged30s guard",
+    "yields": 1,
+    "resumes": 0,
+    "exit_code": 101
+  },
+  "log_sha256": "c7998493e513781a03b70dd48b1d0e2dc63c7ef64c9f7c65d929397a74f35b43"
+}
