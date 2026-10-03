@@ -1,0 +1,25 @@
+{
+  "before_sha256": "d20013b26d24c6d58d5e65d5822ecbcdc8291e1bcadd7f36ef97e091351310dd",
+  "candidate_sha256": "876e734af02ca81c30c9e5d904806c4d3969ab23ba70dd9fc5fb3359ff308f23",
+  "inverse_rename_exact_source_identity": true,
+  "changes": [
+    {
+      "function": "__global__ void dsv4_topk_idx_numeric_rows_kernel",
+      "old": "keys",
+      "new": "topk_row_keys",
+      "occurrences": 2
+    },
+    {
+      "function": "__device__ __forceinline__ void dsv4_indexer_score_f32acc_body",
+      "old": "shhf",
+      "new": "indexer_head_sums",
+      "occurrences": 3
+    },
+    {
+      "function": "__global__ void dsv4_dots_f32_mrow_kernel",
+      "old": "shd",
+      "new": "dots_row_sums",
+      "occurrences": 3
+    }
+  ]
+}
