@@ -2012,9 +2012,65 @@ mod tests {
         assert!(translated.get("cache_salt").is_none());
         // reasoning.summary alone sets no effort override.
         assert!(translated.get("reasoning_effort").is_none());
-        let req: ChatCompletionReq = serde_json::from_value(translated).expect("internal shape");
+        let req: ChatCompletionReq =
+            serde_json::from_value(translated.clone()).expect("internal shape");
         assert_eq!(req.model, "m");
         assert!(req.stream);
+        assert_eq!(req.parallel_tool_calls, Some(false));
+
+        let base_caps = crate::worker::ModelCaps {
+            chat_ok: true,
+            tools_branch: true,
+            qwen_think: true,
+            think_switch: true,
+            ..Default::default()
+        };
+        let build = |wire: &Value, caps: &crate::worker::ModelCaps| {
+            let req = serde_json::from_value(wire.clone()).unwrap();
+            let (tx, _rx) = crate::worker::event_channel();
+            crate::build_chat_request(req, Some(caps), tx, crate::lanes::Lane::Interactive, None)
+        };
+        for caps in [
+            crate::worker::ModelCaps {
+                dsv4: true,
+                ..base_caps.clone()
+            },
+            crate::worker::ModelCaps {
+                hy3: true,
+                ..base_caps.clone()
+            },
+            crate::worker::ModelCaps {
+                glm5: true,
+                ..base_caps.clone()
+            },
+        ] {
+            let err = build(&translated, &caps)
+                .err()
+                .expect("single-call policy cannot be ignored");
+            assert!(err.starts_with("parallel_tool_calls:"), "{err}");
+            let mut ordinary = translated.clone();
+            ordinary
+                .as_object_mut()
+                .unwrap()
+                .remove("parallel_tool_calls");
+            assert!(build(&ordinary, &caps).unwrap().request.grammar.is_none());
+            let mut none = translated.clone();
+            none["tool_choice"] = json!("none");
+            assert!(build(&none, &caps).unwrap().request.grammar.is_none());
+        }
+        for caps in [
+            base_caps.clone(),
+            crate::worker::ModelCaps {
+                gemma_think: true,
+                qwen_think: false,
+                ..base_caps
+            },
+        ] {
+            let plan = build(&translated, &caps).unwrap();
+            assert!(matches!(plan.request.grammar,
+                Some(crate::constrained::GrammarSpec::ToolCalls(ref language))
+                    if !language.required && !language.parallel));
+        }
     }
 
     #[test]

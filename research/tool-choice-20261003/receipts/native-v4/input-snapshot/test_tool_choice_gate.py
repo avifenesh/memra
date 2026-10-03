@@ -69,22 +69,19 @@ class ReceiptControls(unittest.TestCase):
 
     def test_committed_native_receipt_replay_and_mandatory_controls(self):
         import hashlib
-        receipts=Path(__file__).resolve().parents[1]/'research/tool-choice-20261003/receipts'
+        root=Path(__file__).resolve().parents[1]/'research/tool-choice-20261003/receipts/native-v3'
+        actual=json.loads((root/'report.json').read_text());context=json.loads((root/'expected-context.json').read_text())
+        self.assertEqual(len(gate.validate(actual,context)),15)
+        self.assertEqual(len(gate.red_controls(actual,context)),8)
+        hashes=json.loads((root/'file-sha256.json').read_text())
+        for name,expected in hashes.items():
+            self.assertEqual(hashlib.sha256((root/name).read_bytes()).hexdigest(),expected,name)
         spec=importlib.util.spec_from_file_location('native_coverage',Path(__file__).with_name('validation_coverage.py'))
         coverage=importlib.util.module_from_spec(spec);spec.loader.exec_module(coverage)
-        for run in ['native-v3', 'native-v4']:
-            with self.subTest(run=run):
-                root=receipts/run
-                actual=json.loads((root/'report.json').read_text());context=json.loads((root/'expected-context.json').read_text())
-                self.assertEqual(len(gate.validate(actual,context)),15)
-                self.assertEqual(len(gate.red_controls(actual,context)),8)
-                hashes=json.loads((root/'file-sha256.json').read_text())
-                for name,expected in hashes.items():
-                    self.assertEqual(hashlib.sha256((root/name).read_bytes()).hexdigest(),expected,name)
-                selected=json.loads((root/'coverage-plan.json').read_text());results=json.loads((root/'coverage-results.json').read_text())
-                admitted=coverage.validate_results(selected,results,context,root/'input-snapshot')
-                self.assertEqual(admitted['edges'],23)
-                self.assertFalse(admitted['qualification'])
+        selected=json.loads((root/'coverage-plan.json').read_text());results=json.loads((root/'coverage-results.json').read_text())
+        admitted=coverage.validate_results(selected,results,context,root/'input-snapshot')
+        self.assertEqual(admitted['edges'],23)
+        self.assertFalse(admitted['qualification'])
 
     def test_source_context_change_refuses(self):
         self.report['context']['source'] = 'different'
