@@ -283,11 +283,11 @@ class CpuWorkflowTests(unittest.TestCase):
     def test_real_git_policy_and_dependency_custody(self):
         with tempfile.TemporaryDirectory(prefix='memra-cpu-workflow-') as folder:
             root = Path(folder); repo = root / 'repo'; repo.mkdir()
-            for directory in ('home', 'hooks', 'templates'):
+            for directory in ('hooks', 'templates'):
                 (root / directory).mkdir()
             (root / 'gitconfig').write_text('')
             env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
-            env.update(HOME=str(root / 'home'), GIT_CONFIG_NOSYSTEM='1',
+            env.update(GIT_CONFIG_NOSYSTEM='1',
                        GIT_CONFIG_GLOBAL=str(root / 'gitconfig'))
             def git(*args):
                 return subprocess.check_output(['git', '-C', str(repo), *args],
