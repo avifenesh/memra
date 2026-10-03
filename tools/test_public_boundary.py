@@ -1149,6 +1149,105 @@ class VerifyAllowlistTests(unittest.TestCase):
             rc = boundary.cmd_verify(self.policy, prune)
         return rc, output.getvalue()
 
+    def test_drift_reads_only_pinned_paths_but_check_still_finds_new_violations(self) -> None:
+        self.commit("deploy/pinned.txt", b"alpha needle\n")
+        self.commit("deploy/new.txt", b"beta needle\n")
+        self.write_allowlist(self.pin("deploy/pinned.txt", ["alpha"]))
+        with mock.patch.object(boundary, "worktree_blob_bytes", wraps=boundary.worktree_blob_bytes) as reads:
+            rc, output = self.run_verify()
+        self.assertEqual(rc, 0, output)
+        self.assertEqual([call.args[0].relative_to(self.root).as_posix() for call in reads.call_args_list],
+                         ["deploy/pinned.txt"])
+        full_output = io.StringIO()
+        with mock.patch.object(boundary, "ROOT", self.root), \
+                mock.patch.object(boundary, "ALLOWLIST_PATH", self.allowlist_path), \
+                contextlib.redirect_stdout(full_output):
+            self.assertEqual(boundary.cmd_check(self.policy), 1)
+        self.assertIn("deploy/new.txt", full_output.getvalue())
+
+    def test_pinned_path_is_literal_not_a_git_glob(self) -> None:
+        self.commit("deploy/a[1].txt", b"alpha needle\n")
+        self.commit("deploy/a1.txt", b"beta needle\n")
+        self.write_allowlist(self.pin("deploy/a[1].txt", ["alpha"]))
+        rc, output = self.run_verify()
+        self.assertEqual(rc, 0, output)
+        self.assertIn("1 allowlist entries", output)
+
+    def test_git_magic_prefix_is_a_literal_tracked_filename(self) -> None:
+        literal = ":(glob)deploy/pinned.txt"
+        target = self.root / literal
+        target.parent.mkdir(parents=True)
+        target.write_bytes(b"alpha needle\n")
+        self.git("--literal-pathspecs", "add", literal)
+        self.git("commit", "-q", "-m", "literal magic-looking filename")
+        self.commit("deploy/pinned.txt", b"beta needle\n")
+        self.write_allowlist(self.pin(literal, ["alpha"]))
+        rc, output = self.run_verify()
+        self.assertEqual(rc, 0, output)
+        self.assertIn("1 allowlist entries", output)
+
+    def test_empty_allowlist_never_requests_a_whole_tree_grep(self) -> None:
+        self.commit("deploy/new.txt", b"alpha needle\n")
+        self.write_allowlist()
+        real_run = boundary.subprocess.run
+        with mock.patch.object(boundary.subprocess, "run", wraps=real_run) as calls:
+            rc, output = self.run_verify()
+        self.assertEqual(rc, 0, output)
+        self.assertIn("0 allowlist entries", output)
+        self.assertFalse(any("grep" in call.args[0] for call in calls.call_args_list))
+
+    def test_multiple_hashes_for_one_path_read_once_and_stale_hash_still_fails(self) -> None:
+        self.commit("deploy/pinned.txt", b"alpha needle\n")
+        live = self.pin("deploy/pinned.txt", ["alpha"])
+        stale = {**live, "sha256": "f" * 64}
+        self.write_allowlist(live, stale)
+        with mock.patch.object(boundary, "worktree_blob_bytes", wraps=boundary.worktree_blob_bytes) as reads:
+            rc, output = self.run_verify()
+        self.assertEqual(rc, 1, output)
+        self.assertEqual(reads.call_count, 1)
+        self.assertIn("1 allowlist entries no longer match", output)
+
+    def test_matching_untracked_file_cannot_keep_an_exemption_live(self) -> None:
+        self.commit("deploy/pinned.txt", b"alpha needle\n")
+        self.write_allowlist(self.pin("deploy/pinned.txt", ["alpha"]))
+        self.git("rm", "--cached", "deploy/pinned.txt")
+        self.assertTrue((self.root / "deploy/pinned.txt").is_file())
+        rc, output = self.run_verify()
+        self.assertEqual(rc, 1, output)
+        self.assertIn("no live violation", output)
+
+    def test_matching_untracked_symlink_cannot_keep_an_exemption_live(self) -> None:
+        path = "deploy/link"
+        link = self.root / path
+        link.parent.mkdir(parents=True)
+        link.symlink_to("alpha needle")
+        self.git("add", path)
+        self.git("commit", "-q", "-m", "tracked symlink")
+        digest = boundary.hashlib.sha256(b"alpha needle").hexdigest()
+        self.write_allowlist({"path": path, "sha256": digest, "category": "secret_pattern",
+                              "rules": ["alpha"], "reason": "fixture link text"})
+        self.git("rm", "--cached", path)
+        self.assertTrue(link.is_symlink())
+        rc, output = self.run_verify()
+        self.assertEqual(rc, 1, output)
+
+    def test_broken_symlink_pin_is_verified_from_link_text_not_target(self) -> None:
+        path = "deploy/link"
+        link = self.root / path
+        link.parent.mkdir(parents=True)
+        link.symlink_to("alpha needle")
+        self.git("add", path)
+        self.git("commit", "-q", "-m", "pin symlink")
+        digest = boundary.hashlib.sha256(b"alpha needle").hexdigest()
+        self.write_allowlist({"path": path, "sha256": digest, "category": "secret_pattern",
+                              "rules": ["alpha"], "reason": "fixture link text"})
+        rc, output = self.run_verify()
+        self.assertEqual(rc, 0, output)
+        link.unlink()
+        link.symlink_to("beta needle")
+        rc, output = self.run_verify()
+        self.assertEqual(rc, 1, output)
+
     def test_clean_allowlist_passes_and_prints_its_count(self) -> None:
         """A green run must SAY how many entries it verified.
 

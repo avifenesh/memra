@@ -1,0 +1,83 @@
+{
+  "base": "d5ba705d73ac50e3c3448b6f782eaea2fa8bbced",
+  "source_sha256": {
+    "tools/check-public-boundary.py": "33a35dc59df398a0dab24aba2fc8f73c1d29f35c49c688ffab25f108953ce4f1",
+    "tools/test_public_boundary.py": "8c56eb6bff531e71d80983294e2988bb9507173b37994ee138bca6d267004b0f",
+    "tools/public-boundary-policy.toml": "d33b84ffe866b92283080e59403ac72091b08003a40a4c501fcc2304ccb129db",
+    "tools/public-boundary-allowlist.jsonl": "9707a51943a01adc8499067ca66c08254de07ea2ff6d1d5907766ddc53f2b489"
+  },
+  "actual_repository_comparison": {
+    "base": "d5ba705d73ac50e3c3448b6f782eaea2fa8bbced",
+    "source_sha256": {
+      "tools/check-public-boundary.py": "33a35dc59df398a0dab24aba2fc8f73c1d29f35c49c688ffab25f108953ce4f1",
+      "tools/test_public_boundary.py": "c8bdf561b44c07f37e6fd9b4466bbfff73037f6826afa30b498d4cdc18e44fce",
+      "tools/public-boundary-policy.toml": "d33b84ffe866b92283080e59403ac72091b08003a40a4c501fcc2304ccb129db",
+      "tools/public-boundary-allowlist.jsonl": "9707a51943a01adc8499067ca66c08254de07ea2ff6d1d5907766ddc53f2b489"
+    },
+    "results": {
+      "before": {
+        "exit": 0,
+        "stdout": "verify: 627 allowlist entries all pin live tracked files for the rules they name.\n",
+        "seconds": 616.8936021539848
+      },
+      "after": {
+        "exit": 0,
+        "stdout": "verify: 627 allowlist entries all pin live tracked files for the rules they name.\n",
+        "seconds": 206.6723192030331
+      }
+    },
+    "identical_stdout_exit": true,
+    "tracked": 200810,
+    "pinned_paths": 627,
+    "pinned_entries": 627,
+    "policy_allowlist_unchanged": true,
+    "full_check_still_required": true,
+    "native_qualification": false
+  },
+  "final_test_bridge": {
+    "benchmark_program_policy_allowlist_exact": true,
+    "benchmark_test_source": "c8bdf561b44c07f37e6fd9b4466bbfff73037f6826afa30b498d4cdc18e44fce",
+    "final_test_source": "8c56eb6bff531e71d80983294e2988bb9507173b37994ee138bca6d267004b0f",
+    "additional_controls_only": [
+      "Git magic-prefixed literal filename",
+      "untracked readable symlink"
+    ],
+    "final_tests": 60,
+    "mutations": [
+      {
+        "case": "original-full-drift-scan",
+        "failures": 2,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "case": "nonliteral-paths",
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "case": "untracked-pin",
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "case": "weakened-full-check",
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "case": "empty-scope-grep",
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      }
+    ],
+    "qualification": false
+  },
+  "tests_output": "............................................................\n----------------------------------------------------------------------\nRan 60 tests in 0.549s\n\nOK\n",
+  "full_check_unchanged": true,
+  "native_qualification": false
+}
