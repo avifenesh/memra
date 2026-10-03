@@ -716,3 +716,5 @@ q35-fixture-data-contract-20261003 | "Three consumed data paths now select the Q
 shared-linkage-warnings-20261003 | All SASS/resource lines, instruction/data/shared sections and relocation bindings are exact. | shared-linkage-warnings-20261003/RESULTS.md
 
 support-record-data-contract-20261003 | Exact required and potential family data paths select the unchanged support census; optional presence and named missing-required controls pass. | support-record-data-contract-20261003/RESULTS.md
+
+support-source-doc-copy-inputs-20261003 | 97 exact source/docs omissions repaired with unchanged native obligations; real copied-consumer and type-preflight controls pass. | support-source-doc-copy-inputs-20261003/RESULTS.md
