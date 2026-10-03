@@ -1117,8 +1117,6 @@ def make_plan(paths, base_tree, head_tree):
                 for name in matches:
                     native_requirements.update(TOOL_CONTRACTS[name]['native'])
                 continue
-            if package or consumers:
-                continue
             if path in support_data or source_input:
                 continue
             # Receipt data is not a compiler input unless a declared include, generated

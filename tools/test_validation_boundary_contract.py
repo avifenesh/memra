@@ -46,7 +46,7 @@ class BoundaryContractTests(unittest.TestCase):
 
     def test_actual_committed_changes_and_old_include_keep_all_obligations(self):
         name = 'tools/public-boundary-policy.toml'
-        self.fixture.put('crates/memra-server/src/lib.rs', 'include_str!("../../../' + name + '");')
+        self.fixture.put('crates/memra-server/src/lib.rs', 'pub const POLICY: &str = include_str!("../../../' + name + '");')
         before = self.fixture.commit()
         self.fixture.put(name, (ROOT / name).read_text() + '\n# changed policy\n')
         self.fixture.put('crates/memra-server/src/lib.rs', '// include removed\n')
@@ -60,10 +60,28 @@ class BoundaryContractTests(unittest.TestCase):
         self.assertFalse(p['native']['qualification'])
 
     def test_cargo_owner_collision_retains_package_and_contract(self):
-        self.fixture.put('tools/Cargo.toml', '[package]\nname="memra-lanes"\n')
+        self.fixture.put('tools/Cargo.toml',
+                         '[package]\nname="memra-lanes"\nversion="0.0.0"\nedition="2024"\n')
+        self.fixture.put('tools/src/lib.rs', '// CPU Cargo owner fixture\n')
         members = ['crates/' + n for n in self.fixture.graph if n != 'memra-lanes'] + ['tools']
-        self.fixture.put('Cargo.toml', '[workspace]\nmembers=' + json.dumps(members) + '\n')
+        self.fixture.put('Cargo.toml', '[workspace]\nresolver="3"\nmembers=' + json.dumps(members) + '\n')
         shutil.rmtree(self.repo / 'crates/memra-lanes')
+        for name in self.fixture.graph:
+            if name == 'memra-lanes':
+                continue
+            manifest = self.repo / f'crates/{name}/Cargo.toml'
+            manifest.write_text(manifest.read_text().replace(
+                '[package]\n', '[package]\nversion="0.0.0"\nedition="2024"\n').replace(
+                'path = "../memra-lanes"', 'path = "../../tools"'))
+        actual = subprocess.run(['cargo', 'metadata', '--offline', '--no-deps', '--format-version', '1'],
+                                cwd=self.repo, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.assertEqual(actual.returncode, 0, actual.stderr)
+        metadata = json.loads(actual.stdout)
+        lanes = next(p for p in metadata['packages'] if p['name'] == 'memra-lanes')
+        server = next(p for p in metadata['packages'] if p['name'] == 'memra-server')
+        dependency = next(d for d in server['dependencies'] if d['name'] == 'memra-lanes')
+        self.assertEqual(Path(lanes['manifest_path']), self.repo / 'tools/Cargo.toml')
+        self.assertEqual(Path(dependency['path']), self.repo / 'tools')
         self.fixture.commit()
         p = self.plan(self.inputs[0])
         self.assertEqual(p['mode'], 'scoped')
