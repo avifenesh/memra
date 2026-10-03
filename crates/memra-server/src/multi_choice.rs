@@ -584,13 +584,10 @@ pub(crate) async fn respond(
             )
         }
     };
-    let mut pending = Vec::with_capacity(count);
-    for request in &mut requests {
-        match crate::reserve_pending_admit(st, lane, &reading, deadline.preheader(stream)) {
-            Ok(mut reservation) => {
-                reservation.bind(request);
-                pending.push(reservation);
-            }
+    let mut pending =
+        match crate::reserve_pending_choices(st, lane, &reading, deadline.preheader(stream), count)
+        {
+            Ok(reservations) => reservations,
             Err((response, outcome)) => {
                 return crate::ledger_unbilled(
                     receipt,
@@ -600,7 +597,9 @@ pub(crate) async fn respond(
                     &env.id,
                 );
             }
-        }
+        };
+    for (request, reservation) in requests.iter_mut().zip(&mut pending) {
+        reservation.bind(request);
     }
     if st
         .cmd_tx

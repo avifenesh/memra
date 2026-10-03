@@ -2849,6 +2849,89 @@ fn reserve_pending_admit_with_ceiling(
     reserve_pending_admit_on(st, lane, rl, deadline, ceiling_s, AdmitCounters::GLOBAL)
 }
 
+/// A group is one arrival owning N waiting slots. Its own earlier rows are not backlog.
+fn reserve_pending_choices(
+    st: &AppState,
+    lane: lanes::Lane,
+    rl: &RateLimit,
+    deadline: RequestDeadline,
+    choices: usize,
+) -> Result<Vec<PendingAdmissionGuard>, (Response, &'static str)> {
+    if rl.route.is_some() {
+        return Err((
+            bad_request(
+                "n-choice generation requires the shared hybrid route",
+                Some("n"),
+            ),
+            "invalid_request",
+        ));
+    }
+    let counters = AdmitCounters::GLOBAL;
+    let cap = lane_cap(lane).max(1);
+    let bound = max_queue_depth(cap);
+    let lane_counter = &counters.lanes[lane.idx()];
+    loop {
+        let queued = lane_counter.load(std::sync::atomic::Ordering::Acquire);
+        let Some(next) = queued.checked_add(choices).filter(|&n| n <= bound) else {
+            return Err((
+                error_response_coded(
+                    StatusCode::TOO_MANY_REQUESTS,
+                    "choice group exceeds the bounded waiting queue; retry",
+                    "rate_limit_error",
+                    None,
+                    Some("shed_queue"),
+                ),
+                "shed_queue",
+            ));
+        };
+        let running = st.inflight[lane.idx()]
+            .load(std::sync::atomic::Ordering::SeqCst)
+            .saturating_sub(choices)
+            .saturating_sub(queued);
+        let waits = queued > 0 || running.saturating_add(choices) > cap;
+        let metrics = st.metrics.lock().map(|m| m.clone()).unwrap_or_default();
+        let estimate = reset_estimate_s(&metrics).saturating_mul((queued / cap + 1) as u64);
+        let ceiling = queue_wait_ceiling_s();
+        let outcome = if lane == lanes::Lane::Interactive
+            && waits
+            && estimate.saturating_mul(1_000) > deadline.remaining().as_millis() as u64
+        {
+            Some("shed_deadline")
+        } else if lane == lanes::Lane::Interactive && waits && ceiling > 0 && estimate > ceiling {
+            Some("shed_queue_wait")
+        } else {
+            None
+        };
+        if let Some(outcome) = outcome {
+            return Err((retry_contract_response((StatusCode::TOO_MANY_REQUESTS,
+                Json(error_body("choice group cannot enter within its queue/deadline budget; not billed",
+                    "rate_limit_error", None, Some(outcome)))).into_response(), Some(estimate)), outcome));
+        }
+        if lane_counter
+            .compare_exchange(
+                queued,
+                next,
+                std::sync::atomic::Ordering::AcqRel,
+                std::sync::atomic::Ordering::Acquire,
+            )
+            .is_ok()
+        {
+            counters
+                .pending
+                .fetch_add(choices, std::sync::atomic::Ordering::AcqRel);
+            return Ok((0..choices)
+                .map(|_| PendingAdmissionGuard {
+                    reserved: true,
+                    lane,
+                    counters,
+                    route_bound: false,
+                    ticket: None,
+                })
+                .collect());
+        }
+    }
+}
+
 /// The reservation path over the lane counters it reads and takes (WP-A day 56,
 /// `research/spill-a-20260919/DAY56.md`, OWED item 23). Every production path passes
 /// `worker::ADMISSION_RESERVATIONS`; the shed tests pass their own, so they need no order against
