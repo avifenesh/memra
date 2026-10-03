@@ -57956,10 +57956,10 @@ mod tests {
                 let _ = std::fs::remove_dir_all(&self.0);
             }
         }
-        let fixture = Fixture(
-            std::env::temp_dir().join(format!("memra-tail-export-env-{}", std::process::id())),
-        );
-        std::fs::create_dir(&fixture.0).unwrap();
+        let path =
+            std::env::temp_dir().join(format!("memra-tail-export-env-{}", std::process::id()));
+        std::fs::create_dir(&path).unwrap();
+        let fixture = Fixture(path);
         std::fs::write(fixture.0.join("config.json"), b"{}\n").unwrap();
         std::fs::write(fixture.0.join("model.safetensors"), b"synthetic artifact\n").unwrap();
         let normal = super::HostTierTailSource::from_export(
