@@ -1,7 +1,7 @@
 """Exercise the actual self-test, its optimization refusal, and its mandatory CI caller."""
 
 import ast
-from contextlib import redirect_stdout
+from contextlib import ExitStack, redirect_stdout
 import io
 import json
 import os
@@ -195,22 +195,63 @@ class ExpertTierContractTests(unittest.TestCase):
         self.assertFalse(plan['native']['qualification'])
 
     def test_runner_refuses_empty_short_skipped_failed_and_expected_failures(self):
-        for count, skip, fail, expected_failure, expected in (
-                (13, False, False, False, 0), (0, False, False, False, 1),
-                (12, False, False, False, 1), (13, True, False, False, 1),
-                (13, False, True, False, 1), (13, False, True, True, 1),
-                (13, False, False, True, 1)):
-            with self.subTest(count=count, skip=skip, fail=fail, expected_failure=expected_failure):
-                class Case(unittest.TestCase):
-                    def runTest(self):
-                        if skip:
-                            self.skipTest('planted skip')
-                        if fail:
-                            self.fail('planted assertion failure')
-                if expected_failure:
-                    Case.runTest = unittest.expectedFailure(Case.runTest)
-                self.assertEqual(runner.run(unittest.TestSuite(Case() for _ in range(count)),
-                                            stream=io.StringIO()), expected)
+        # These are protocol fixtures, not evidence that the real predicates ran.
+        for mode, expected in (('healthy', 0), ('skip', 1), ('failure', 1),
+                               ('expected-failure', 1), ('unexpected-success', 1)):
+            with self.subTest(mode=mode), ExitStack() as stack:
+                for name in runner.REQUIRED_METHODS:
+                    stack.enter_context(mock.patch.object(type(self), name, lambda case: None))
+                def control(case):
+                    if mode == 'skip':
+                        case.skipTest('planted skip')
+                    if mode in ('failure', 'expected-failure'):
+                        case.fail('planted assertion failure')
+                if mode in ('expected-failure', 'unexpected-success'):
+                    control = unittest.expectedFailure(control)
+                stack.enter_context(mock.patch.object(type(self), runner.REQUIRED_METHODS[0], control))
+                suite = unittest.TestSuite(type(self)(name) for name in runner.REQUIRED_METHODS)
+                self.assertEqual(runner.run(suite, stream=io.StringIO()), expected)
+
+    def test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls(self):
+        methods = list(runner.REQUIRED_METHODS)
+        self.assertEqual(len(methods), 14)
+        self.assertEqual(len(set(methods)), 14)
+        class Unrelated(unittest.TestCase):
+            def runTest(self):
+                raise AssertionError('unrelated control must not execute')
+        cases = lambda: [type(self)(name) for name in methods]
+        for label, suite in (
+                ('empty', unittest.TestSuite()),
+                ('missing', unittest.TestSuite(cases()[:-1])),
+                ('replaced', unittest.TestSuite(cases()[:-1] + [Unrelated()])),
+                ('duplicate', unittest.TestSuite(cases()[:-1] + [type(self)(methods[0])])),
+                ('unrelated', unittest.TestSuite(Unrelated() for _ in range(14)))):
+            with self.subTest(label=label):
+                output = io.StringIO()
+                self.assertEqual(runner.run(suite, stream=output), 1)
+                self.assertIn('FAIL: discovery:', output.getvalue())
+                self.assertNotIn('Ran ', output.getvalue())
+        # A suite may discover every required method but run none or one twice.
+        class EmptyExecution(unittest.TestSuite):
+            def run(self, result, debug=False):
+                return result
+        output = io.StringIO()
+        self.assertEqual(runner.run(EmptyExecution(cases()), stream=output), 1)
+        self.assertIn('executed control identities', output.getvalue())
+        with ExitStack() as stack:
+            for name in methods:
+                stack.enter_context(mock.patch.object(type(self), name, lambda case: None))
+            class DuplicateExecution(unittest.TestSuite):
+                def run(self, result, debug=False):
+                    first = self._tests[0]
+                    first(result)
+                    first(result)
+                    for case in self._tests[1:]:
+                        case(result)
+                    return result
+            output = io.StringIO()
+            self.assertEqual(runner.run(DuplicateExecution(cases()), stream=output), 1)
+            self.assertIn('executed control identities', output.getvalue())
 
 
 if __name__ == '__main__':

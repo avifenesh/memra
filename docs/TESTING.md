@@ -60,8 +60,12 @@ python3 tools/build_expert_tier_plan.py --self-test
 python3 tools/run_expert_tier_contract.py
 ```
 
-The admission runner requires at least 13 real controls with zero skips and
-expected failures. The self-test refuses `-O`, `-OO` and `PYTHONOPTIMIZE=1/2` before creating a fixture.
+The admission runner carries an independent inventory of 14 required method
+identities. Discovery must contain exactly those unique methods on the real
+control class. Executed identities and counts must match discovery, with zero
+skips and expected failures. Empty, missing, replaced, unrelated and duplicate
+controls refuse before execution; omitted or duplicate execution also refuses.
+The self-test refuses `-O`, `-OO` and `PYTHONOPTIMIZE=1/2` before creating a fixture.
 Imported self-test calls retain that refusal. Controls observe all nine recipe
 cases and at least 26 assertion sites, reject an incorrect result and empty or
 shortened observation, and reject removal or masking of the CI caller. Ordinary
