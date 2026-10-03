@@ -478,7 +478,7 @@ pub(crate) async fn respond(
     } else {
         "/v1/completions"
     };
-    let bound = crate::effective_max_tokens(&request).and_then(|n| n.checked_mul(count));
+    let bound = crate::effective_max_tokens(&request).and_then(|n| n.checked_mul(count as u64));
     let budget = match crate::admit_tenant_budget_choices(st, tenant, &mut request, count) {
         Ok(budget) => budget,
         Err(rejection) => {

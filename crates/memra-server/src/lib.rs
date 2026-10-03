@@ -27738,6 +27738,7 @@ temperature = 0.6
     fn v1_models_entry_keeps_catalog_shape_with_honest_nulls() {
         // KNOWN plan metadata populates every OR-schema field from worker truth.
         let caps = ModelCaps {
+            max_choices: 1,
             tools_branch: true,
             hy3: false,
             qwen_think: true,

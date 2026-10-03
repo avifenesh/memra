@@ -31298,6 +31298,16 @@ pub fn run(
                     )
                 }) {
                     Ok(consumed) => {
+                        if consumed > 0
+                            && let Some(choice) = &s.choice
+                            && std::env::var("MEMRA_TTFT_TRACE").as_deref() == Ok("1")
+                        {
+                            eprintln!(
+                                "CHOICE_PRIME {}",
+                                serde_json::json!({"group":choice.group.id,
+                                "index":choice.index,"rows":consumed})
+                            );
+                        }
                         if consumed > 0 {
                             prefill_single_calls += 1;
                             prefill_single_tokens += consumed;
@@ -41882,6 +41892,22 @@ fn finish(s: &Session, reason: StopReason) {
                 c.draft_mask_ns as f64 / 1e6 / c.draft_masks.max(1) as f64
             );
         }
+    }
+    if let Some(choice) = &s.choice
+        && std::env::var("MEMRA_TTFT_TRACE").as_deref() == Ok("1")
+    {
+        let mut digest = Sha256::new();
+        for token in &s.generated {
+            digest.update(token.to_le_bytes());
+        }
+        eprintln!(
+            "CHOICE_WORKER_ROW {}",
+            serde_json::json!({
+                "group":choice.group.id, "index":choice.index, "seed":s.sampler.seed(),
+                "prompt":s.n_prompt, "cached":s.n_cached, "output":s.generated.len(),
+                "token_sha256":format!("{:x}",digest.finalize()), "reason":format!("{reason:?}")
+            })
+        );
     }
     let reason = format!("{reason:?}");
     // Per-request spec acceptance summary (lane/accept-telemetry): only when this request
