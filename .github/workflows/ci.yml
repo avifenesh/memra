@@ -117,6 +117,11 @@ jobs:
       - name: SFT generator CPU control admission
         run: python3 tools/run_sft_gen_contract.py
 
+      - name: Score-shard self-test assertion admission (CPU-only)
+        run: |
+          python3 tools/merge_expert_score_shards.py --self-test
+          python3 tools/run_score_shard_contract.py
+
       - name: Exact-source coalescer membership and wait contracts (CPU-only)
         if: ${{ needs.changes.result != 'success' || needs.changes.outputs.server != 'false' }}
         run: python3 tools/check-coalescer-contract.py --out "$RUNNER_TEMP/coalescer-contract"

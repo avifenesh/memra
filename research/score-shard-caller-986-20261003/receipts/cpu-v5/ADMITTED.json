@@ -1,0 +1,95 @@
+{
+  "base": "50f79338faceac1dfb6d343fe7e96ba74009e502",
+  "working_diff_sha256": "3e1612352db0f90cacc0191a78c5e3032b16c21a0ae0aa2152547d30faf7665a",
+  "exit": 0,
+  "duration_seconds": 64.14465665817261,
+  "proof": {
+    "source_pins": {
+      "tools/merge_expert_score_shards.py": "32e9892a54fc814f56ee344a87813242b65053059828e0b43519bfb90468f72b",
+      "tools/run_score_shard_contract.py": "71fe893b8e3cffee19b1e3bb9706be8cbeaad6302031d9c24e1472b86aa682e0",
+      "tools/test_score_shard_contract.py": "7172cfbc30b8a5056d0e79d1100c2361a7bc48a3b0fdcb3251ee3cd899859e00",
+      ".github/workflows/ci.yml": "dcb4ea4c3c63d67de2a30ed91ac9daeafedafbf75f76cd3642bf09ad2074b225",
+      "research/score-shard-caller-986-20261003/tools/original_merge_expert_score_shards.py": "dcdefb0b1a0337c1083dfb9512725c5d232e130e9d895301f5e724d9112a6d95",
+      "research/score-shard-caller-986-20261003/tools/controls.py": "4659bc40a132de4dc47d9d2d6833abf583b6a0988fe171c396cdaa1b00425d7e"
+    },
+    "ordinary_functions_ast_equal": true,
+    "original_sha256": "dcdefb0b1a0337c1083dfb9512725c5d232e130e9d895301f5e724d9112a6d95",
+    "before_wrong_restore_runs": 16,
+    "coherent_red_groups": 10,
+    "red_fixture_errors": 0,
+    "owned_roots_removed": true,
+    "qualification": false,
+    "scope": "CPU self-test/caller admission only; no model scoring or native execution"
+  },
+  "identities": {
+    "discovered": [
+      "test_score_shard_contract.ScoreShardContractTests.test_exact_control_inventory",
+      "test_score_shard_contract.ScoreShardContractTests.test_mandatory_ci_caller",
+      "test_score_shard_contract.ScoreShardContractTests.test_merger_change_retains_full_native_selection",
+      "test_score_shard_contract.ScoreShardContractTests.test_missing_duplicate_or_no_success_execution_refuses",
+      "test_score_shard_contract.ScoreShardContractTests.test_missing_or_replaced_assertion_refuses",
+      "test_score_shard_contract.ScoreShardContractTests.test_missing_replaced_unrelated_duplicate_discovery_refuses",
+      "test_score_shard_contract.ScoreShardContractTests.test_noop_selftest_refuses",
+      "test_score_shard_contract.ScoreShardContractTests.test_optimization_refuses_before_fixture",
+      "test_score_shard_contract.ScoreShardContractTests.test_ordinary_merge_cli_bytes_unchanged_under_optimization",
+      "test_score_shard_contract.ScoreShardContractTests.test_ordinary_selftest_cli",
+      "test_score_shard_contract.ScoreShardContractTests.test_original_two_predicates_execute_with_real_merge",
+      "test_score_shard_contract.ScoreShardContractTests.test_removed_masked_swallowed_and_optimized_caller_refuses",
+      "test_score_shard_contract.ScoreShardContractTests.test_skipped_failed_expected_failure_and_unexpected_success_refuse",
+      "test_score_shard_contract.ScoreShardContractTests.test_wrong_merge_each_original_predicate_fails_and_restores"
+    ],
+    "executed": [
+      "test_score_shard_contract.ScoreShardContractTests.test_exact_control_inventory",
+      "test_score_shard_contract.ScoreShardContractTests.test_mandatory_ci_caller",
+      "test_score_shard_contract.ScoreShardContractTests.test_merger_change_retains_full_native_selection",
+      "test_score_shard_contract.ScoreShardContractTests.test_missing_duplicate_or_no_success_execution_refuses",
+      "test_score_shard_contract.ScoreShardContractTests.test_missing_or_replaced_assertion_refuses",
+      "test_score_shard_contract.ScoreShardContractTests.test_missing_replaced_unrelated_duplicate_discovery_refuses",
+      "test_score_shard_contract.ScoreShardContractTests.test_noop_selftest_refuses",
+      "test_score_shard_contract.ScoreShardContractTests.test_optimization_refuses_before_fixture",
+      "test_score_shard_contract.ScoreShardContractTests.test_ordinary_merge_cli_bytes_unchanged_under_optimization",
+      "test_score_shard_contract.ScoreShardContractTests.test_ordinary_selftest_cli",
+      "test_score_shard_contract.ScoreShardContractTests.test_original_two_predicates_execute_with_real_merge",
+      "test_score_shard_contract.ScoreShardContractTests.test_removed_masked_swallowed_and_optimized_caller_refuses",
+      "test_score_shard_contract.ScoreShardContractTests.test_skipped_failed_expected_failure_and_unexpected_success_refuse",
+      "test_score_shard_contract.ScoreShardContractTests.test_wrong_merge_each_original_predicate_fails_and_restores"
+    ],
+    "original": [
+      "test_score_shard_contract.ScoreShardContractTests.test_original_two_predicates_execute_with_real_merge"
+    ],
+    "succeeded": [
+      "test_score_shard_contract.ScoreShardContractTests.test_exact_control_inventory",
+      "test_score_shard_contract.ScoreShardContractTests.test_mandatory_ci_caller",
+      "test_score_shard_contract.ScoreShardContractTests.test_merger_change_retains_full_native_selection",
+      "test_score_shard_contract.ScoreShardContractTests.test_missing_duplicate_or_no_success_execution_refuses",
+      "test_score_shard_contract.ScoreShardContractTests.test_missing_or_replaced_assertion_refuses",
+      "test_score_shard_contract.ScoreShardContractTests.test_missing_replaced_unrelated_duplicate_discovery_refuses",
+      "test_score_shard_contract.ScoreShardContractTests.test_noop_selftest_refuses",
+      "test_score_shard_contract.ScoreShardContractTests.test_optimization_refuses_before_fixture",
+      "test_score_shard_contract.ScoreShardContractTests.test_ordinary_merge_cli_bytes_unchanged_under_optimization",
+      "test_score_shard_contract.ScoreShardContractTests.test_ordinary_selftest_cli",
+      "test_score_shard_contract.ScoreShardContractTests.test_original_two_predicates_execute_with_real_merge",
+      "test_score_shard_contract.ScoreShardContractTests.test_removed_masked_swallowed_and_optimized_caller_refuses",
+      "test_score_shard_contract.ScoreShardContractTests.test_skipped_failed_expected_failure_and_unexpected_success_refuse",
+      "test_score_shard_contract.ScoreShardContractTests.test_wrong_merge_each_original_predicate_fails_and_restores"
+    ]
+  },
+  "peer_source_pins": {
+    "tools/validation_plan.py": "cf0966c7a293333317bfe976dd7362c9305266b01797ad9595a0f1d75da739b2",
+    "tools/unittest-floor.sh": "ed60fab1ddfbefb218a23f6a19fa2bea9cec19de6466c00c98e50cbc9d69026c",
+    "tools/run_sft_gen_contract.py": "177310b3a417cf4b359328fe0b50beac94ba984c9037d331289b4796f6dec29e",
+    "tools/run_expert_tier_contract.py": "93d2b44d0e6a3522c7650cd761ed6c65c576356c98a3f3b7adfe2fceaea188e8",
+    "tools/test_sft_gen.py": "e13f9549c608a7ab55c9ed9cbba2e056116d1bd8f7438e787a1411101a5623ee",
+    "tools/test_sft_gen_contract.py": "2107741d4354928580a22f1ada074aa8b0ccb1c33a5af3b3371e57fbd5447027",
+    "tools/test_expert_tier_plan_contract.py": "0292fae97d813a5a2449c08498b8b86e9e4cbb8874b214b5d91777b040d1023c",
+    "tools/validation_coverage.py": "a51dff0d449c03683dd34dc643e542854108f6639fdca19cd36997375f03880b"
+  },
+  "framework_controls": 206,
+  "expert_tier_controls": 14,
+  "sft_controls": 18,
+  "sft_original_controls": 9,
+  "workflow_files": 9,
+  "registry_packages": 14,
+  "native_qualification": false,
+  "raw_sha256": "df5f3f8eccfc1210c7eaf435d8835db1d0c58317d939bdb39114331264df382b"
+}
