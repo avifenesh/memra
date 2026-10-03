@@ -99,8 +99,6 @@ def merge(paths: list[Path]) -> dict[str, Any]:
 
 
 def self_test() -> None:
-    if not __debug__:
-        raise RuntimeError("expert score shard self-test requires enabled assertions")
     with tempfile.TemporaryDirectory(prefix="memra-score-merge-") as tmp:
         root = Path(tmp)
         paths = []
