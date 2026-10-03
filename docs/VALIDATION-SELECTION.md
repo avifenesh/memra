@@ -133,7 +133,12 @@ Unreadable local regular files also expand because the fixture cannot copy them.
 Exact local ancestor queries retain staged gitlink types when physical directories exist.
 Readable excluded archive/non-mod content does not gain a blanket census requirement. The
 independent always-run support checks and tested execution fallback remain unchanged. Broader
-cited-receipt-parent transport is a separate input-closure question.
+cited-receipt-parent transport is derived separately from required evidence parents plus the
+pinned test's explicit legacy tiny parent. Both event trees preflight those exact recursive
+roots and ancestors for unsafe types, ignored physical inputs, unreadable regular files,
+missing directories and enumeration errors before compiler-input I/O. This transport
+guard leaves readable unrelated receipt content outside the census content shortcut.
+A receipt at repository root expands checks because the test copies the entire repository.
 Its CPU shortcut requires every changed input to be a declared CPU contract or plain docs.
 Research/oracle inputs retain fast-gate's native expansion even when they do not rebuild a
 Cargo package; an absent compiler dependency does not prove an absent native probe dependency.

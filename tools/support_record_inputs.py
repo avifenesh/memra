@@ -213,3 +213,27 @@ def source_docs(tree):
     resolve(tree)
     paths = set(tree.paths(*COPY_ROOTS)) | ROOT_DOCS | {CLI_SOURCE, PACK_ROOT + '/mod.rs'}
     return {'active': True, 'inputs': sorted(name for name in paths if reads_source_doc(name))}
+
+
+def receipt_copies(tree):
+    """Exact recursive transport roots of the pinned census test, not content reads."""
+    expected = set(READERS) | {RECORDS}
+    if not (expected & set(tree.paths('tools', 'docs'))):
+        return {'active': False, 'roots': []}
+    data = resolve(tree)
+    roots = {str(PurePosixPath(name).parent) for name in data['required']}
+    roots.add('research/modelplan-onboarding-hy3-20260830/tiny')
+    if '.' in roots:
+        raise InputContractError('support fixture copies repository root; no narrow transport contract')
+    ancestors = {str(parent) for name in roots for parent in PurePosixPath(name).parents
+                 if str(parent) != '.'}
+    exact = tree.input_modes(*sorted(roots | ancestors), recursive=False)
+    missing = roots - exact.keys()
+    if missing:
+        raise InputContractError('support receipt copy directory is missing: ' + sorted(missing)[0])
+    bad = [name for name, mode in exact.items() if mode != '040000']
+    copied = tree.input_modes(*sorted(roots))
+    bad.extend(name for name, mode in copied.items() if mode not in ('100644', '100755'))
+    if bad:
+        raise InputContractError('ambiguous support receipt copy input type: ' + sorted(set(bad))[0])
+    return {'active': True, 'roots': sorted(roots)}

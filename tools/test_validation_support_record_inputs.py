@@ -33,6 +33,7 @@ class SupportRecordDataInputs(unittest.TestCase):
                 self.fixture.put(name, (ROOT / name).read_text())
         self.fixture.put(data.RECORDS, metadata())
         self.fixture.put(GATE, 'Config=passed\n')
+        self.fixture.put('research/modelplan-onboarding-hy3-20260830/tiny/gates.txt', 'Config=passed\n')
         self.base = self.fixture.commit()
 
     def plan(self, path):
@@ -208,6 +209,8 @@ class SupportRecordDataInputs(unittest.TestCase):
         self.assertEqual(self.plan(LOCK)['mode'], 'full')
 
     def test_derived_required_missing_after_deletion_still_selects_contract(self):
+        # Keep the copied parent present so this isolates required-file deletion.
+        self.fixture.put('research/support-fixture/retained.txt', 'unrelated receipt content\n')
         (self.repo / GATE).unlink()
         after = self.fixture.commit()
         plan = vp.event_plan(self.repo, 'push', '', self.base, after)
