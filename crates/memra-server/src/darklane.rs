@@ -820,6 +820,85 @@ mod tests {
         }
     }
 
+    struct OwnedChild(std::process::Child);
+
+    impl Drop for OwnedChild {
+        fn drop(&mut self) {
+            kill_group(self.0.id(), libc::SIGKILL);
+            let _ = self.0.wait();
+        }
+    }
+
+    #[test]
+    fn expired_checkpoint_deadline_does_not_grant_descendant_term_grace() {
+        let path = std::env::temp_dir().join(format!(
+            "darklane-expired-checkpoint-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir(&path).unwrap();
+        let dir = TestDir(path);
+        let script = dir.0.join("descendant.sh");
+        let ready = dir.0.join("ready");
+        let pid_file = dir.0.join("pid");
+        let release = dir.0.join("release");
+        let term = dir.0.join("term-after-deadline");
+        std::fs::write(
+            &script,
+            format!(
+                "trap 'echo TERM > \"{}\"; exit 0' TERM; echo ready > '{}'; while :; do sleep 0.01; done",
+                term.display(),
+                ready.display()
+            ),
+        )
+        .unwrap();
+        let cmd = format!(
+            "trap '' HUP; sh '{}' & echo $! > '{}'; while test ! -f '{}'; do sleep 0.005; done; exit 75",
+            script.display(),
+            pid_file.display(),
+            release.display()
+        );
+        let mut child = OwnedChild(launch(&cmd, 0).unwrap());
+        wait_acknowledged("owned checkpoint descendant ready", || ready.exists());
+        let pid: u32 = std::fs::read_to_string(&pid_file)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        let owned = OwnedDescendant::open(pid);
+        assert!(owned.alive());
+        assert_eq!(unsafe { libc::getpgid(pid as i32) }, child.0.id() as i32);
+        std::fs::write(release, []).unwrap();
+        wait_acknowledged("checkpoint leader exited without reaping", || {
+            let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+            let rc = unsafe {
+                libc::waitid(
+                    libc::P_PID,
+                    child.0.id(),
+                    &mut info,
+                    libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+                )
+            };
+            assert_eq!(rc, 0);
+            if info.si_code == libc::CLD_EXITED {
+                assert_eq!(unsafe { info.si_status() }, 75);
+                true
+            } else {
+                false
+            }
+        });
+        let state = BgJobState::default();
+        // The original checkpoint deadline is expired before cleanup begins. A TERM
+        // handler writing this marker proves that cleanup granted a new grace period.
+        preempt_wait(&mut child.0, &state, 0);
+        assert_eq!(state.state.load(Ordering::Acquire), BG_PREEMPTED);
+        assert!(
+            !term.exists(),
+            "an expired checkpoint deadline must not grant a fresh TERM grace"
+        );
+        wait_acknowledged("owned checkpoint descendant terminated", || !owned.alive());
+        assert_eq!(child.0.wait().unwrap().code(), Some(75));
+    }
+
     fn descendant_cleanup_case(action: &str) {
         let path = std::env::temp_dir().join(format!(
             "darklane-descendant-{}-{action}",
