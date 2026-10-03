@@ -27372,6 +27372,12 @@ pub fn run(
         &mut admission_costs,
         &health,
     );
+    // Calibration is optional and may skip a loaded route. Readiness warmup is
+    // separate: every loaded model must prime and decode before accepting work.
+    if let Err(error) = run_required_boot_warmup(&engine, &loaded, &health) {
+        let _ = ready_tx.send(Err(error));
+        return;
+    }
     let mut prime_policy = crate::prime_fairness::PrimePolicy::default();
 
     // ---- serving counters + engine-truth step stats (30s percentile window) ----
@@ -41526,6 +41532,53 @@ fn calibration_transient_floor(
 /// slabs, cuBLAS workspaces are materialized at boot instead of surprising request 1), and
 /// it supplies the first per-session draft-state observation the admission cost charges.
 /// Failure is LOUD and non-fatal: the static floor serves, headroom is trimmed back.
+fn run_required_boot_warmup(
+    engine: &Engine,
+    loaded: &HashMap<String, LoadedModel>,
+    health: &crate::health::SharedHealth,
+) -> Result<(), String> {
+    for (name, model) in loaded {
+        health.mark_warming();
+        let seed = model.tok.encode("A mutex protects shared state. ", true);
+        if seed.is_empty() {
+            return Err(format!(
+                "required warmup {name:?}: tokenizer returned no tokens"
+            ));
+        }
+        let mut prompt = seed.clone();
+        let minimum = memra_engine::hybrid_forward::PRIME_MIN_T.max(32);
+        while prompt.len() < minimum {
+            prompt.extend_from_slice(&seed);
+        }
+        prompt.truncate(minimum);
+        eprintln!(
+            "[boot-warmup] start: model={name:?} prompt_tokens={}",
+            prompt.len()
+        );
+        // A private deterministic warmup cache, with two outputs so a real decode
+        // follows the prompt prime. It does not consume a customer's sampler or
+        // publish reusable request state. The existing native program is unchanged.
+        let output = model
+            .model
+            .generate(engine, &prompt, 2)
+            .map_err(|error| format!("required warmup {name:?}: {error}"))?;
+        engine
+            .stream()
+            .synchronize()
+            .map_err(|error| format!("required warmup {name:?} fence: {error}"))?;
+        if output.len() != 2 {
+            return Err(format!("required warmup {name:?}: decode did not complete"));
+        }
+        eprintln!(
+            "[boot-warmup] complete: model={name:?} prompt_tokens={} generated_tokens={} \
+             private_cache=true graph_capability_requires_served_route_receipt=true",
+            prompt.len(),
+            output.len()
+        );
+    }
+    Ok(())
+}
+
 fn run_boot_calibration(
     engine: &Engine,
     loaded: &HashMap<String, LoadedModel>,
@@ -49298,6 +49351,34 @@ mod tests {
     /// send because `health.mark_ready()` follows it; until then `WorkerHealth` is in
     /// PHASE_LOADING (`health::tests::loading_is_not_live_and_not_ready`). Anchored on the
     /// comment-stripped production text so a reorder is a red test, not a log archaeology.
+    #[test]
+    fn required_warmup_precedes_readiness_independently_of_calibration() {
+        let src = include_str!("worker.rs");
+        let code: String = src
+            .lines()
+            .map(|line| line.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let prod = &code[..code.find("\nmod tests").expect("tests module")];
+        let run = &prod[prod.find("pub fn run(").expect("worker run")..];
+        let calibrate = run.find("run_boot_calibration(").expect("calibration call");
+        let warmup = run
+            .find("run_required_boot_warmup(")
+            .expect("required warmup call");
+        let ready = run.find("ready_tx.send(Ok(").expect("readiness success");
+        assert!(calibrate < warmup && warmup < ready);
+        let helper = &prod[prod.find("fn run_required_boot_warmup(").expect("helper")..];
+        let helper = &helper[..helper.find("\n}\n").expect("helper end")];
+        assert!(helper.contains("for (name, model) in loaded"));
+        assert!(helper.contains("health.mark_warming();"));
+        assert!(helper.contains(".generate(engine, &prompt, 2)"));
+        assert!(helper.contains(".synchronize()"));
+        assert!(!helper.contains("admit_calibrate_on"));
+        assert!(!helper.contains("serve_spec_enabled"));
+        assert!(!helper.contains("admit_reserve_override"));
+        assert!(run[warmup..ready].contains("ready_tx.send(Err(error))"));
+    }
+
     #[test]
     fn readiness_follows_the_boot_calibration_probe() {
         let src = include_str!("worker.rs");
