@@ -1,12 +1,12 @@
 # Compiled-input reach, 2026-10-03
 
-Two actual CPU compiler omissions are repaired. Conditional module roots and split
+Three actual CPU compiler omissions are repaired. Conditional and raw-identifier module roots, and split
 concat includes through symlink parents changed the independently compiled programs
 from BEFORE to AFTER. The baseline planner omitted server checks; the candidate selects
 full CPU checks. Direct module attributes and unsplit includes remain selected.
 
-PROOF.json records the four two-commit programs, eight real compiler/execution outputs,
-changed input paths, source/binary/helper/bundle/compiler hashes and both plans. The four
+PROOF.json records the five two-commit programs, ten real compiler/execution outputs,
+changed input paths, source/binary/helper/bundle/compiler hashes and both plans. The five
 fixture Git bundles retain their input states. replay.py recreates the builds without
 model weights or a GPU. B's complete runtime_target helper is preserved byte-for-byte,
 and now checks the complete compiled include before parent cancellation. Conditional
