@@ -1,0 +1,57 @@
+Running as unit: memra-rig-job-5be1d513fd26.service; invocation ID: 2a554ba5d16c4a1baf3589470b1a4aaf
+test_descriptor_cleanup_on_success_and_failure (test_validation_local_input_io.LocalInputIO.test_descriptor_cleanup_on_success_and_failure) ... ok
+test_fifo_and_directory_readers_refuse_before_content (test_validation_local_input_io.LocalInputIO.test_fifo_and_directory_readers_refuse_before_content) ... ok
+test_leaf_and_parent_links_are_refused_before_reading_target (test_validation_local_input_io.LocalInputIO.test_leaf_and_parent_links_are_refused_before_reading_target) ... ok
+test_missing_and_noncanonical_paths_remain_refusals (test_validation_local_input_io.LocalInputIO.test_missing_and_noncanonical_paths_remain_refusals) ... ok
+test_opened_parent_stays_anchored_when_its_path_is_replaced (test_validation_local_input_io.LocalInputIO.test_opened_parent_stays_anchored_when_its_path_is_replaced) ... ok
+test_own_registry_fifo_refuses_real_include_reader (test_validation_local_input_io.LocalInputIO.test_own_registry_fifo_refuses_real_include_reader) ... ok
+test_real_consumers_refuse_leaf_aliases_and_replacement_races (test_validation_local_input_io.LocalInputIO.test_real_consumers_refuse_leaf_aliases_and_replacement_races) ... ok
+test_real_descendant_consumers_refuse_ancestor_aliases_and_anchor_races (test_validation_local_input_io.LocalInputIO.test_real_descendant_consumers_refuse_ancestor_aliases_and_anchor_races) ... ok
+test_regular_text_and_raw_bytes_preserve_original_semantics (test_validation_local_input_io.LocalInputIO.test_regular_text_and_raw_bytes_preserve_original_semantics) ... ok
+test_root_cargo_fifo_expands_actual_planning_before_read (test_validation_local_input_io.LocalInputIO.test_root_cargo_fifo_expands_actual_planning_before_read) ... ok
+test_snapshot_reads_remain_git_bytes_not_local_filesystem (test_validation_local_input_io.LocalInputIO.test_snapshot_reads_remain_git_bytes_not_local_filesystem) ... ok
+test_stat_to_fifo_replacement_is_nonblocking_and_refused (test_validation_local_input_io.LocalInputIO.test_stat_to_fifo_replacement_is_nonblocking_and_refused) ... ok
+test_stat_to_symlink_replacement_refuses_actual_target_content (test_validation_local_input_io.LocalInputIO.test_stat_to_symlink_replacement_refuses_actual_target_content) ... ok
+test_tracked_census_reader_fifo_refuses_raw_byte_adapter (test_validation_local_input_io.LocalInputIO.test_tracked_census_reader_fifo_refuses_raw_byte_adapter) ... ok
+test_unrelated_cargo_manifest_fifo_refuses_command_planning (test_validation_local_input_io.LocalInputIO.test_unrelated_cargo_manifest_fifo_refuses_command_planning) ... ok
+
+----------------------------------------------------------------------
+Ran 15 tests in 0.461s
+
+OK
+expert tier plan self-test: PASS
+..............
+----------------------------------------------------------------------
+Ran 14 tests in 10.414s
+
+OK
+expert-tier contract: PASS: executed=14 floor=14 discovered=14 unique=14 skipped=0 expected_failures=0
+expert-tier contract identities: {"discovered": ["test_expert_tier_plan_contract.ExpertTierContractTests.test_builder_change_retains_full_selection", "test_expert_tier_plan_contract.ExpertTierContractTests.test_ci_wiring", "test_expert_tier_plan_contract.ExpertTierContractTests.test_cli_optimization_refuses", "test_expert_tier_plan_contract.ExpertTierContractTests.test_environment_optimization_refuses", "test_expert_tier_plan_contract.ExpertTierContractTests.test_import_optimization_refuses_before_fixture", "test_expert_tier_plan_contract.ExpertTierContractTests.test_noop_selftest_refuses_observation", "test_expert_tier_plan_contract.ExpertTierContractTests.test_ordinary_plan_generation_unchanged_under_optimization", "test_expert_tier_plan_contract.ExpertTierContractTests.test_ordinary_selftest_cli", "test_expert_tier_plan_contract.ExpertTierContractTests.test_planted_incorrect_result_fails", "test_expert_tier_plan_contract.ExpertTierContractTests.test_real_selftest_executes_nine_cases_and_26_assertions", "test_expert_tier_plan_contract.ExpertTierContractTests.test_removed_assertion_refuses_observation", "test_expert_tier_plan_contract.ExpertTierContractTests.test_removed_or_masked_ci_caller_refuses", "test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_empty_short_skipped_failed_and_expected_failures", "test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls"], "executed": ["test_expert_tier_plan_contract.ExpertTierContractTests.test_builder_change_retains_full_selection", "test_expert_tier_plan_contract.ExpertTierContractTests.test_ci_wiring", "test_expert_tier_plan_contract.ExpertTierContractTests.test_cli_optimization_refuses", "test_expert_tier_plan_contract.ExpertTierContractTests.test_environment_optimization_refuses", "test_expert_tier_plan_contract.ExpertTierContractTests.test_import_optimization_refuses_before_fixture", "test_expert_tier_plan_contract.ExpertTierContractTests.test_noop_selftest_refuses_observation", "test_expert_tier_plan_contract.ExpertTierContractTests.test_ordinary_plan_generation_unchanged_under_optimization", "test_expert_tier_plan_contract.ExpertTierContractTests.test_ordinary_selftest_cli", "test_expert_tier_plan_contract.ExpertTierContractTests.test_planted_incorrect_result_fails", "test_expert_tier_plan_contract.ExpertTierContractTests.test_real_selftest_executes_nine_cases_and_26_assertions", "test_expert_tier_plan_contract.ExpertTierContractTests.test_removed_assertion_refuses_observation", "test_expert_tier_plan_contract.ExpertTierContractTests.test_removed_or_masked_ci_caller_refuses", "test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_empty_short_skipped_failed_and_expected_failures", "test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_missing_replaced_duplicate_and_unexecuted_controls"]}
+........
+----------------------------------------------------------------------
+Ran 8 tests in 1.848s
+
+OK
+unittest-floor: OK: ran 8 tests (floor 8) for tools (test_validation_support_receipt_copies.py)
+.....................
+----------------------------------------------------------------------
+Ran 21 tests in 2.309s
+
+OK
+unittest-floor: OK: ran 21 tests (floor 21) for tools (test_check_support_states.py)
+Validation registry covers all 14 workspace packages
+check-workflow-keys: .github/workflows/boundary-refs.yml: jobs refs
+check-workflow-keys: .github/workflows/ci.yml: jobs changes, gates, boundary, build, clippy, server-tests, portable-suites, engine-tests, arch-coverage, publish-dryrun
+check-workflow-keys: .github/workflows/gpu-ci.yml: jobs build, build-feedback-measurement, gpu, qualification-result
+check-workflow-keys: .github/workflows/mtp-context-receipts.yml: jobs reproduce
+check-workflow-keys: .github/workflows/mtp-depth-receipts.yml: jobs reproduce
+check-workflow-keys: .github/workflows/prompt-depth-router.yml: jobs classifier, native-build, native-receipts, upcoming-format, prefix-study
+check-workflow-keys: .github/workflows/prompt-prefix-depth.yml: jobs prefix-policy, native-build, prefix-v2-replay, confidence-replay, confidence-v3-cpu, confidence-v3-replay, joint-v4-history-pilot, joint-v4-native-cpu, joint-v4-native-release, joint-v5-native, joint-v6-draft-only-native, joint-v8-prime-probability-native, joint-v8-sealed-replay
+check-workflow-keys: .github/workflows/publish.yml: jobs publish
+check-workflow-keys: .github/workflows/release.yml: jobs guard, build, release
+check-workflow-keys: OK: 9 workflow files, no duplicate mapping keys (stdlib walker)
+          Finished with result: success
+Main processes terminated with: code=exited, status=0/SUCCESS
+               Service runtime: 15.668s
+             CPU time consumed: 16.574s
+                   Memory peak: 181.4M (swap: 0B)

@@ -89,3 +89,11 @@ result/census refusals. The changed producer also refuses optimized startup.
 `ADMISSION-REPAIR.json` binds this new producer tuple. The 194/21/14 broad result
 remains the actual `173c031f61` result; all tracked paths outside research and CI
 are unchanged. It was not relabelled or rerun for a research-producer-only fix.
+
+Final actual A974 composition at `52ee640530` on merged `18ca040cc3` passes
+15 C input methods, 14 required A expert-tier identities, eight B transport methods,
+21 census tests, all 14 registered packages and nine workflow files. A/B sources
+are exact to the new base and all 13 C producer inputs still match `a68082973a`.
+The actual A14 CI step is preserved; only its inherited framework floor changes
+179 to 194. `FINAL-BASE-COMPOSITION.json` retains this new scoped run. The original
+194/21/14 and 44-edge tuples remain unchanged, not relabelled as repeated runs.
