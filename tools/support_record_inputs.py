@@ -35,6 +35,12 @@ class DirectoryTree:
             raise InputContractError('support data reader path escapes root: ' + name)
         return path.read_text()
 
+    def read_bytes(self, name):
+        path = (self.root / name).resolve()
+        if not path.is_relative_to(self.root):
+            raise InputContractError('support data reader path escapes root: ' + name)
+        return path.read_bytes()
+
     def symlinks_exact(self, paths):
         return {name: os.readlink(self.root / name) for name in paths
                 if (self.root / name).is_symlink()}
@@ -63,7 +69,7 @@ def resolve(tree):
     if not expected <= paths:
         raise InputContractError('support data reader inputs are incomplete')
     for name, digest in READERS.items():
-        if hashlib.sha256(tree.read(name).encode()).hexdigest() != digest:
+        if hashlib.sha256(tree.read_bytes(name)).hexdigest() != digest:
             raise InputContractError('unmodelled support data reader: ' + name)
     try:
         metadata = tomllib.loads(tree.read(RECORDS))

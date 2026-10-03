@@ -177,6 +177,9 @@ class Tree:
             self.cache[path] = git(self.repo, 'show', f'{self.ref}:{path}').decode()
         return self.cache[path]
 
+    def read_bytes(self, path):
+        return git(self.repo, 'show', f'{self.ref}:{path}')
+
     def paths(self, *prefixes):
         return [x.decode() for x in git(self.repo, 'ls-tree', '-r', '--name-only', '-z',
                                        self.ref, '--', *prefixes).split(b'\0') if x]
@@ -210,6 +213,12 @@ class LocalTree(Tree):
         if not target.is_relative_to(self.repo.resolve()):
             raise Refused('source symlink escapes checkout')
         return target.read_text()
+
+    def read_bytes(self, path):
+        target = (self.repo / path).resolve()
+        if not target.is_relative_to(self.repo.resolve()):
+            raise Refused('source symlink escapes checkout')
+        return target.read_bytes()
 
     def paths(self, *prefixes):
         return [x.decode() for x in git(self.repo, 'ls-files', '--cached', '--others',

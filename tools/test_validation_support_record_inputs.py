@@ -97,6 +97,19 @@ class SupportRecordDataInputs(unittest.TestCase):
                 self.assertEqual([c['id'] for c in plan['cpu_contracts']], ['support-records'])
 
     def test_changed_or_partial_reader_expands_checks(self):
+        self.fixture.g('config', 'core.autocrlf', 'false')
+        reader = self.repo / 'tools/check-support-states.py'
+        canonical = reader.read_bytes()
+        reader.write_bytes(canonical.replace(b'\n', b'\r\n'))
+        self.assertEqual(vp.local_plan(self.repo, self.base)['mode'], 'full')
+        with self.assertRaisesRegex(vp.Refused, 'unmodelled support data reader'):
+            vp.cpu_contract_names(self.repo, 'support-records')
+        self.fixture.commit()
+        self.assertEqual(self.plan(GATE)['mode'], 'full')
+        reader.write_bytes(canonical)
+        self.fixture.commit()
+        self.assertEqual(self.plan(GATE)['mode'], 'scoped')
+        self.assertEqual(vp.cpu_contract_names(self.repo, 'support-records'), ['support-records'])
         self.fixture.put('tools/check-support-states.py', '# changed reader\n')
         self.fixture.commit()
         self.assertEqual(self.plan(GATE)['mode'], 'full')
