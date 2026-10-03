@@ -143,6 +143,10 @@ class BoundaryContractTests(unittest.TestCase):
         (self.repo / 'tools').rename(self.repo / 'real-tools')
         (self.repo / 'tools').symlink_to('real-tools', target_is_directory=True)
         with self.assertRaisesRegex(vp.Refused, 'unsafe type'):
+            vp.boundary_contract_inputs(vp.LocalTree(self.repo), index_metadata=False)
+        # C's census guard may refuse this parent before boundary admission.
+        # Both actual entry points must refuse; neither may start the contract.
+        with self.assertRaises(vp.Refused):
             vp.cpu_contract_names(self.repo, 'public-boundary')
 
     def test_unmodelled_tool_reader_and_build_inputs_expand(self):

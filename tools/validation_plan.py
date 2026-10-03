@@ -19,7 +19,6 @@ import posixpath
 import re
 import stat
 import subprocess
-import stat
 import sys
 import tempfile
 import tomllib
