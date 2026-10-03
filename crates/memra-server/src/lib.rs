@@ -25740,8 +25740,7 @@ temperature = 0.6
     async fn choice_http_shared_pool_isolation_and_pressure_controls() {
         use std::io::Write;
         use std::os::unix::fs::OpenOptionsExt;
-        let _drain = drain_lock();
-        let _counters = admission_counters_guard();
+        let _guard = global_counter_writer_guard();
         for case in 0..3 {
             let mut st = choice_http_state();
             let cap = lane_cap(lanes::Lane::Interactive);
