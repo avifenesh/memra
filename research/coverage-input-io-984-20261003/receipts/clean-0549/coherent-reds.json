@@ -1,0 +1,58 @@
+[
+  {
+    "control": "remove-prestat",
+    "exit": 1,
+    "source_sha256": "7685ae9f5029b2122183cf142d3d7be7c199d18bdc509bd2b1b6b982dd5f1734",
+    "raw_sha256": "156e00cb0a02a0367abecf10070433ade15badec622ce5a51f49a44ee8a5cecc",
+    "assertion_method": "test_known_fifo_directory_socket_refuse_before_special_open"
+  },
+  {
+    "control": "remove-leaf-nofollow",
+    "exit": 1,
+    "source_sha256": "cd4d01d182733e91302ba56ab3bd9497bc7817bda10acb7170ab1226a2e6fd77",
+    "raw_sha256": "5be36f2492c3e8550bcf42ae0ca7960cfe3c8b00581e9ad12e6f8df8b36a3bdb",
+    "assertion_method": "test_leaf_replacement_alias_refuses_both_real_consumers"
+  },
+  {
+    "control": "remove-parent-nofollow",
+    "exit": 1,
+    "source_sha256": "0666e95fd1047b062593d1bc6d7599fc851edfc2b819847898860ad909e16350",
+    "raw_sha256": "03c77b74d044431bc47d4c8148424aaebda9851c0c2d1e9bf6ba4842094e57cf",
+    "assertion_method": "test_resolved_ancestor_replacement_refuses_opened_escape"
+  },
+  {
+    "control": "remove-nonblock",
+    "exit": 1,
+    "source_sha256": "227c43993e9fbb604ba636c72f3d415ae20107ada2fb9c868361d1cede9c99d5",
+    "raw_sha256": "2f045a2f473c9b72e11df4b4edf605c196439f5a00d1a258f1aea2ba02280de0",
+    "assertion_method": "test_leaf_replacement_fifo_is_nonblocking_and_refused"
+  },
+  {
+    "control": "remove-opened-type",
+    "exit": 1,
+    "source_sha256": "5af3520fb99fcffa50855f162baf5481aeaf6695497c9a290245205ef9e7b4ac",
+    "raw_sha256": "764d9fa68cffed398e7306074ddfcb6797a37a9d49fa50361dc31e39c9ea7157",
+    "assertion_method": "test_leaf_replacement_fifo_is_nonblocking_and_refused"
+  },
+  {
+    "control": "remove-root-bound",
+    "exit": 1,
+    "source_sha256": "83172f2b13a5e06fd09cc609f668b07ea62a9136c491eca91f1931c3a09ec50b",
+    "raw_sha256": "7ce6d8904696f2509f0041f70d141dfdfd072cde0ca700882845b67810e207e1",
+    "assertion_method": "test_missing_escaping_and_broken_sources_expand_or_refuse"
+  },
+  {
+    "control": "normalize-bytes",
+    "exit": 1,
+    "source_sha256": "7fe281d0d57c2359f3a9008b9c0784deecd768d28704cd2ed1b7a23aa604f0d5",
+    "raw_sha256": "e75b240cbae50a98b61e34a633135199c92e23b2bdb36b64f0e64b276fdda3fd",
+    "assertion_method": "test_regular_bytes_text_and_context_preserve_semantics"
+  },
+  {
+    "control": "leak-parent",
+    "exit": 1,
+    "source_sha256": "7c5cd065b88e8f8db5c24e1ba616698d45d29a87b1ec15d36556854f0ec82d1d",
+    "raw_sha256": "b2e063985942f9720112022e75deba3628506a254b24d451a90fa6489b6bfa34",
+    "assertion_method": "test_descriptors_close_on_success_type_and_open_failure"
+  }
+]

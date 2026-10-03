@@ -1,0 +1,93 @@
+diff --git a/tools/validation_coverage.py b/tools/validation_coverage.py
+index 7d6fdf2e32..23705b9e7d 100644
+--- a/tools/validation_coverage.py
++++ b/tools/validation_coverage.py
+@@ -10,7 +10,43 @@ import argparse
+ import hashlib
+ import json
+ import math
++import os
+ from pathlib import Path
++import stat
++
++
++def read_input(path, *, root=None, binary=True):
++    """Read a regular opened object, preserving contained resolved aliases."""
++    parent = leaf = None
++    try:
++        target = Path(path).resolve()
++        base = Path(root).resolve() if root is not None else target.parent
++        if not target.is_relative_to(base):
++            raise ValueError('coverage input escapes root')
++        relative = target.relative_to(base)
++        if not relative.parts:
++            raise ValueError('coverage input is not a regular file')
++        parent = os.open(base, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
++        for component in relative.parts[:-1]:
++            child = os.open(component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
++            os.close(parent)
++            parent = child
++        info = os.stat(relative.name, dir_fd=parent, follow_symlinks=False)
++        if not stat.S_ISREG(info.st_mode):
++            raise ValueError('coverage input is not a regular file')
++        leaf = os.open(relative.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
++        if not stat.S_ISREG(os.fstat(leaf).st_mode):
++            raise ValueError('opened coverage input is not a regular file')
++        with os.fdopen(leaf, 'rb' if binary else 'r') as source:
++            leaf = None
++            return source.read()
++    except (OSError, RuntimeError) as error:
++        raise ValueError('coverage input is missing, nonregular or changed during opening') from error
++    finally:
++        if leaf is not None:
++            os.close(leaf)
++        if parent is not None:
++            os.close(parent)
+ 
+ 
+ def contract_digest(value):
+@@ -75,11 +111,13 @@ def select(required, tests, context, root):
+         if not inputs:
+             reasons.append('no source-bound coverage contract')
+         for path, expected in inputs.items():
+-            resolved = (root / path).resolve()
+-            if not resolved.is_relative_to(root.resolve()) or not resolved.is_file():
++            try:
++                actual = hashlib.sha256(read_input(root / path, root=root)).hexdigest()
++            except ValueError:
+                 reasons.append('missing or escaping coverage input: ' + path)
+-            elif hashlib.sha256(resolved.read_bytes()).hexdigest() != expected:
+-                reasons.append('coverage input changed: ' + path)
++            else:
++                if actual != expected:
++                    reasons.append('coverage input changed: ' + path)
+         if reasons:
+             ineligible[name] = reasons
+ 
+@@ -165,8 +203,11 @@ def validate_results(plan, results, context, root):
+         if result.get('contract_id') != plan['contract_id']:
+             raise ValueError('result belongs to a different source/coverage contract: ' + name)
+         for path, expected in test['inputs'].items():
+-            actual = (root / path).resolve()
+-            if not actual.is_relative_to(root.resolve()) or not actual.is_file() or hashlib.sha256(actual.read_bytes()).hexdigest() != expected:
++            try:
++                actual = hashlib.sha256(read_input(root / path, root=root)).hexdigest()
++            except ValueError as error:
++                raise ValueError('coverage source changed before result admission: ' + path) from error
++            if actual != expected:
+                 raise ValueError('coverage source changed before result admission: ' + path)
+         if not same_json_value(result.get('context'), context) or result.get('status') != 'passed':
+             raise ValueError('failed or mismatched test result: ' + name)
+@@ -189,10 +230,10 @@ def main():
+     parser.add_argument('--root', type=Path, default=Path.cwd())
+     parser.add_argument('--results', type=Path)
+     args = parser.parse_args()
+-    manifest = json.loads(args.manifest.read_text())
++    manifest = json.loads(read_input(args.manifest, binary=False))
+     plan = select(manifest['required_edges'], manifest['tests'], manifest['context'], args.root)
+     if args.results:
+-        print(json.dumps(validate_results(plan, json.loads(args.results.read_text()), manifest['context'], args.root), indent=2))
++        print(json.dumps(validate_results(plan, json.loads(read_input(args.results, binary=False)), manifest['context'], args.root), indent=2))
+     else:
+         print(json.dumps(plan, indent=2))
+     return 2 if plan['decision'] == 'expand' else 0

@@ -1,0 +1,52 @@
+test_leaf_replacement_fifo_is_nonblocking_and_refused (test_validation_coverage_input_io.CoverageInputIO.test_leaf_replacement_fifo_is_nonblocking_and_refused) ... 
+  test_leaf_replacement_fifo_is_nonblocking_and_refused (test_validation_coverage_input_io.CoverageInputIO.test_leaf_replacement_fifo_is_nonblocking_and_refused) (consumer='select') ... FAIL
+test_leaf_replacement_fifo_is_nonblocking_and_refused (test_validation_coverage_input_io.CoverageInputIO.test_leaf_replacement_fifo_is_nonblocking_and_refused) ... FAIL
+
+======================================================================
+FAIL: test_leaf_replacement_fifo_is_nonblocking_and_refused (test_validation_coverage_input_io.CoverageInputIO.test_leaf_replacement_fifo_is_nonblocking_and_refused) (consumer='select')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-coverage-input-io-984/tools/test_validation_coverage_input_io.py", line 117, in test_leaf_replacement_fifo_is_nonblocking_and_refused
+    if execute.__name__ == 'select': self.assertEqual(execute()['decision'], 'expand')
+                                                      ~~~~~~~^^
+  File "/home/avifenesh/projects/wt-memra-coverage-input-io-984/tools/test_validation_coverage_input_io.py", line 39, in select
+    def select(self): return vc.select(['io'], [self.case], self.context, self.root)
+                             ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/memra-coverage-mutations-7d9tkmv0/remove-nonblock.py", line 115, in select
+    actual = hashlib.sha256(read_input(root / path, root=root)).hexdigest()
+                            ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/memra-coverage-mutations-7d9tkmv0/remove-nonblock.py", line 37, in read_input
+    leaf = os.open(relative.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent)
+  File "/usr/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1247, in _execute_mock_call
+    result = effect(*args, **kwargs)
+  File "/home/avifenesh/projects/wt-memra-coverage-input-io-984/tools/test_validation_coverage_input_io.py", line 107, in replace
+    self.assertTrue(flags & os.O_NONBLOCK)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 is not true
+
+======================================================================
+FAIL: test_leaf_replacement_fifo_is_nonblocking_and_refused (test_validation_coverage_input_io.CoverageInputIO.test_leaf_replacement_fifo_is_nonblocking_and_refused)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-coverage-input-io-984/tools/test_validation_coverage_input_io.py", line 120, in test_leaf_replacement_fifo_is_nonblocking_and_refused
+    self.assertEqual(swapped, [True])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [] != [True]
+
+Second list contains 1 additional elements.
+First extra element 0:
+True
+
+- []
++ [True]
+
+----------------------------------------------------------------------
+Ran 1 test in 0.002s
+
+FAILED (failures=2)
