@@ -3,7 +3,7 @@ import ctypes
 import tempfile
 from pathlib import Path
 from copy import deepcopy
-from choice_verifier import check_completed, check_refusal, check_repeat, check_tools, Invalid
+from choice_verifier import check_completed, check_refusal, check_repeat, check_tools, check_stream_twin, Invalid
 from native_choices import Pressure
 
 def fixture():
@@ -47,6 +47,13 @@ class Controls(unittest.TestCase):
         self.assertEqual(e.exception.edge,'refusal')
         check_refusal({'status':400,'body':{'error':{'param':'best_of'}},'worker_rows':[]},'best_of')
     def test_positive(self):self.assertTrue(check_completed(fixture())['pass'])
+    def test_stream_accumulator_compares_semantics_to_full_envelope(self):
+        body=fixture()['body'];full={**deepcopy(body),'object':'chat.completion','model':'fixture','id':'ephemeral','created':1}
+        check_stream_twin(body,full)
+    def test_stream_comparison_keeps_actual_output_bytes(self):
+        body=fixture()['body'];full=deepcopy(body);full['choices'][1]['text']='dropped bytes'
+        with self.assertRaises(Invalid) as e:check_stream_twin(body,full)
+        self.assertEqual(e.exception.edge,'stream_content_identity')
     def test_missing_choice(self):
         x=fixture();x['body']['choices'].pop();self.reject(x,'indexed_termination')
     def test_duplicate_choice(self):

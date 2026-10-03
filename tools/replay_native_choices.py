@@ -5,7 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
-from choice_verifier import check_completed, check_identity, check_greedy, check_seeded, check_refusal, check_repeat, check_tools, require
+from choice_verifier import check_completed, check_identity, check_stream_twin, check_greedy, check_seeded, check_refusal, check_repeat, check_tools, require
 
 TAG={'CHOICE_OPEN':'open','CHOICE_PROMPT':'prompt','CHOICE_TOKEN':'token','CHOICE_TERMINAL':'terminal','CHOICE_DROP':'drop'}
 
@@ -106,7 +106,7 @@ def verify(root,baseline=None,expected=None):
             for n in [2,4,8]:check_greedy(reference,records[route+f'-greedy-n{n}']['body'])
             check_seeded([records[route+f'-seed-{i}']['body'] for i in range(3)],records[route+'-sampled']['body'])
             check_repeat(cell(root,records[route+'-sampled']),cell(root,records[route+'-sampled-repeat']))
-            check_identity(cell(root,records[route+'-stream'])['body'],cell(root,records[route+'-stream-twin'])['body'])
+            check_stream_twin(cell(root,records[route+'-stream'])['body'],cell(root,records[route+'-stream-twin'])['body'])
         check_tools(records['constrained-choices']['body'])
         check_tools(cell(root,records['constrained-choices-stream'])['body'])
         require(all(records[name]['masked_steps']>0 for name in ['constrained-choices','constrained-choices-stream']),'constrained_choices','native grammar mask engagement')

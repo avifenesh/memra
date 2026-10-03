@@ -34,7 +34,7 @@ TOOL_CONTRACTS = {
         'required': True,
         'inputs': ['tools/native_choices.py', 'tools/choice_verifier.py',
                    'tools/replay_native_choices.py', 'tools/test_choice_verifier.py'],
-        'cpu': ['tools/unittest-floor.sh', 'tools', 'test_choice_verifier.py', '19'],
+        'cpu': ['tools/unittest-floor.sh', 'tools', 'test_choice_verifier.py', '21'],
         'native': ['Exact-source n1 before/after, shared-prefix fork, independent seeded choices, indexed termination, parent usage/reservation, slot/KV exhaustion and group cancellation/recovery on a pinned cached artifact; CPU controls do not qualify native execution'],
     },
     'tool-choice': {

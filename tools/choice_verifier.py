@@ -75,6 +75,11 @@ def check_completed(cell):
 def check_identity(before, after):
     require(normalized(before)==normalized(after), 'n1_identity', 'only identity/time fields are normalized')
 
+def check_stream_twin(stream, twin):
+    # A stream accumulator has no full-response envelope. Compare every rendered
+    # choice field and aggregate usage; no content, reasoning or finish field is dropped.
+    require(normalized({k:stream[k] for k in ['choices','usage']})==normalized({k:twin[k] for k in ['choices','usage']}), 'stream_content_identity', 'stream choices and usage match the same-seed JSON twin')
+
 def check_greedy(reference, group):
     expected=text(reference['choices'][0]) if 'choices' in reference else reference['text']
     require(all(text(c)==expected for c in group['choices']), 'greedy_identity', 'every row matches the n1 control')
