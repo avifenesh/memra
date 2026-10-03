@@ -25,7 +25,10 @@ qualification, 48 local-cache, 39 fast-gate and 14 registered workspace packages
 The public helper/carrier run at `cf0871a8c2` repeats those counts, admits 20
 source/helper-bound edges and rejects missing-assertion and skipped-mandatory results.
 Its raw output and complete contracts are in `receipts/` and `PROOF.json`.
-Composition onto #964 remains separate.
+Actual #964 composition at `f8e63fb4ca` passes 159 framework tests, 21 census tests
+and the 14-package registry. Its new 20-edge contract binds the actual composed helper
+and planner. `COMPOSED.json` and `receipts/composed/` retain that separate tuple.
+The original source and receipts are not relabelled.
 
 ## Limits
 

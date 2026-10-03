@@ -1,0 +1,22 @@
+Running as unit: memra-rig-job-36d50c597ec0.service; invocation ID: cb26471d1e6f4c8ba1e685d8adb83e10
+{"controls_failed_as_expected": 9, "errors": 0, "scratch_removed": true}
+{"verdict": {"status": "passed", "edges": 20, "contract_id": "2c28a4fbc2ea3687e6463bed5f49913a02f8699b932f5933eb5c3d8d497fb482", "qualification": false, "scope": "declared behavior assertions only; native receipt admission remains separate"}, "negative_controls": [{"control": "missing-edge", "refused": "selected test/control lacks an explicit passing assertion: test_absent_fixture_and_partial_fixture_keep_original_contract/execution/absent_fixture_and_partial_fixture_keep_original_contract"}, {"control": "skipped-mandatory", "refused": "empty or skipped test result: test_absent_fixture_and_partial_fixture_keep_original_contract"}]}
+...............................................................................................................................................................
+----------------------------------------------------------------------
+Ran 159 tests in 17.115s
+
+OK
+unittest-floor: OK: ran 159 tests (floor 159) for tools (test_validation_*.py)
+.....................
+----------------------------------------------------------------------
+Ran 21 tests in 1.968s
+
+OK
+unittest-floor: OK: ran 21 tests (floor 21) for tools (test_check_support_states.py)
+Validation registry covers all 14 workspace packages
+check-support-states: 20 packs (12 with a support state), 14 records, 40 doc lines, all backed
+          Finished with result: success
+Main processes terminated with: code=exited, status=0/SUCCESS
+               Service runtime: 20.620s
+             CPU time consumed: 23.118s
+                   Memory peak: 225.6M (swap: 0B)

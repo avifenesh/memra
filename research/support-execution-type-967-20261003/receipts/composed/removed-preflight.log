@@ -1,0 +1,222 @@
+test_real_fifo_directory_and_socket_refuse_before_any_content_read (test_validation_support_execution_inputs.SupportExecutionInputs.test_real_fifo_directory_and_socket_refuse_before_any_content_read) ... 
+  test_real_fifo_directory_and_socket_refuse_before_any_content_read (test_validation_support_execution_inputs.SupportExecutionInputs.test_real_fifo_directory_and_socket_refuse_before_any_content_read) (name='tools/check-support-states.py', kind='fifo') ... FAIL
+  test_real_fifo_directory_and_socket_refuse_before_any_content_read (test_validation_support_execution_inputs.SupportExecutionInputs.test_real_fifo_directory_and_socket_refuse_before_any_content_read) (name='tools/check-support-states.py', kind='directory') ... FAIL
+  test_real_fifo_directory_and_socket_refuse_before_any_content_read (test_validation_support_execution_inputs.SupportExecutionInputs.test_real_fifo_directory_and_socket_refuse_before_any_content_read) (name='tools/check-support-states.py', kind='socket') ... FAIL
+  test_real_fifo_directory_and_socket_refuse_before_any_content_read (test_validation_support_execution_inputs.SupportExecutionInputs.test_real_fifo_directory_and_socket_refuse_before_any_content_read) (name='tools/test_check_support_states.py', kind='fifo') ... FAIL
+  test_real_fifo_directory_and_socket_refuse_before_any_content_read (test_validation_support_execution_inputs.SupportExecutionInputs.test_real_fifo_directory_and_socket_refuse_before_any_content_read) (name='tools/test_check_support_states.py', kind='directory') ... FAIL
+  test_real_fifo_directory_and_socket_refuse_before_any_content_read (test_validation_support_execution_inputs.SupportExecutionInputs.test_real_fifo_directory_and_socket_refuse_before_any_content_read) (name='tools/test_check_support_states.py', kind='socket') ... FAIL
+  test_real_fifo_directory_and_socket_refuse_before_any_content_read (test_validation_support_execution_inputs.SupportExecutionInputs.test_real_fifo_directory_and_socket_refuse_before_any_content_read) (name='docs/support-records.toml', kind='fifo') ... FAIL
+  test_real_fifo_directory_and_socket_refuse_before_any_content_read (test_validation_support_execution_inputs.SupportExecutionInputs.test_real_fifo_directory_and_socket_refuse_before_any_content_read) (name='docs/support-records.toml', kind='directory') ... FAIL
+  test_real_fifo_directory_and_socket_refuse_before_any_content_read (test_validation_support_execution_inputs.SupportExecutionInputs.test_real_fifo_directory_and_socket_refuse_before_any_content_read) (name='docs/support-records.toml', kind='socket') ... FAIL
+
+======================================================================
+FAIL: test_real_fifo_directory_and_socket_refuse_before_any_content_read (test_validation_support_execution_inputs.SupportExecutionInputs.test_real_fifo_directory_and_socket_refuse_before_any_content_read) (name='tools/check-support-states.py', kind='fifo')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 56, in test_real_fifo_directory_and_socket_refuse_before_any_content_read
+    self.assert_no_content_read()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 39, in assert_no_content_read
+    data.resolve(self.tree)
+    ~~~~~~~~~~~~^^^^^^^^^^^
+  File "/tmp/memra-support-type-controls-q9nc3c5z/removed-preflight.py", line 125, in resolve
+    if hashlib.sha256(tree.read_bytes(name)).hexdigest() != digest]
+                      ~~~~~~~~~~~~~~~^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1241, in _execute_mock_call
+    raise effect
+AssertionError: byte read
+
+======================================================================
+FAIL: test_real_fifo_directory_and_socket_refuse_before_any_content_read (test_validation_support_execution_inputs.SupportExecutionInputs.test_real_fifo_directory_and_socket_refuse_before_any_content_read) (name='tools/check-support-states.py', kind='directory')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 56, in test_real_fifo_directory_and_socket_refuse_before_any_content_read
+    self.assert_no_content_read()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 39, in assert_no_content_read
+    data.resolve(self.tree)
+    ~~~~~~~~~~~~^^^^^^^^^^^
+  File "/tmp/memra-support-type-controls-q9nc3c5z/removed-preflight.py", line 125, in resolve
+    if hashlib.sha256(tree.read_bytes(name)).hexdigest() != digest]
+                      ~~~~~~~~~~~~~~~^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1241, in _execute_mock_call
+    raise effect
+AssertionError: byte read
+
+======================================================================
+FAIL: test_real_fifo_directory_and_socket_refuse_before_any_content_read (test_validation_support_execution_inputs.SupportExecutionInputs.test_real_fifo_directory_and_socket_refuse_before_any_content_read) (name='tools/check-support-states.py', kind='socket')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 56, in test_real_fifo_directory_and_socket_refuse_before_any_content_read
+    self.assert_no_content_read()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 39, in assert_no_content_read
+    data.resolve(self.tree)
+    ~~~~~~~~~~~~^^^^^^^^^^^
+  File "/tmp/memra-support-type-controls-q9nc3c5z/removed-preflight.py", line 125, in resolve
+    if hashlib.sha256(tree.read_bytes(name)).hexdigest() != digest]
+                      ~~~~~~~~~~~~~~~^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1241, in _execute_mock_call
+    raise effect
+AssertionError: byte read
+
+======================================================================
+FAIL: test_real_fifo_directory_and_socket_refuse_before_any_content_read (test_validation_support_execution_inputs.SupportExecutionInputs.test_real_fifo_directory_and_socket_refuse_before_any_content_read) (name='tools/test_check_support_states.py', kind='fifo')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 56, in test_real_fifo_directory_and_socket_refuse_before_any_content_read
+    self.assert_no_content_read()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 39, in assert_no_content_read
+    data.resolve(self.tree)
+    ~~~~~~~~~~~~^^^^^^^^^^^
+  File "/tmp/memra-support-type-controls-q9nc3c5z/removed-preflight.py", line 125, in resolve
+    if hashlib.sha256(tree.read_bytes(name)).hexdigest() != digest]
+                      ~~~~~~~~~~~~~~~^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1241, in _execute_mock_call
+    raise effect
+AssertionError: byte read
+
+======================================================================
+FAIL: test_real_fifo_directory_and_socket_refuse_before_any_content_read (test_validation_support_execution_inputs.SupportExecutionInputs.test_real_fifo_directory_and_socket_refuse_before_any_content_read) (name='tools/test_check_support_states.py', kind='directory')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 56, in test_real_fifo_directory_and_socket_refuse_before_any_content_read
+    self.assert_no_content_read()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 39, in assert_no_content_read
+    data.resolve(self.tree)
+    ~~~~~~~~~~~~^^^^^^^^^^^
+  File "/tmp/memra-support-type-controls-q9nc3c5z/removed-preflight.py", line 125, in resolve
+    if hashlib.sha256(tree.read_bytes(name)).hexdigest() != digest]
+                      ~~~~~~~~~~~~~~~^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1241, in _execute_mock_call
+    raise effect
+AssertionError: byte read
+
+======================================================================
+FAIL: test_real_fifo_directory_and_socket_refuse_before_any_content_read (test_validation_support_execution_inputs.SupportExecutionInputs.test_real_fifo_directory_and_socket_refuse_before_any_content_read) (name='tools/test_check_support_states.py', kind='socket')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 56, in test_real_fifo_directory_and_socket_refuse_before_any_content_read
+    self.assert_no_content_read()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 39, in assert_no_content_read
+    data.resolve(self.tree)
+    ~~~~~~~~~~~~^^^^^^^^^^^
+  File "/tmp/memra-support-type-controls-q9nc3c5z/removed-preflight.py", line 125, in resolve
+    if hashlib.sha256(tree.read_bytes(name)).hexdigest() != digest]
+                      ~~~~~~~~~~~~~~~^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1241, in _execute_mock_call
+    raise effect
+AssertionError: byte read
+
+======================================================================
+FAIL: test_real_fifo_directory_and_socket_refuse_before_any_content_read (test_validation_support_execution_inputs.SupportExecutionInputs.test_real_fifo_directory_and_socket_refuse_before_any_content_read) (name='docs/support-records.toml', kind='fifo')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 56, in test_real_fifo_directory_and_socket_refuse_before_any_content_read
+    self.assert_no_content_read()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 39, in assert_no_content_read
+    data.resolve(self.tree)
+    ~~~~~~~~~~~~^^^^^^^^^^^
+  File "/tmp/memra-support-type-controls-q9nc3c5z/removed-preflight.py", line 125, in resolve
+    if hashlib.sha256(tree.read_bytes(name)).hexdigest() != digest]
+                      ~~~~~~~~~~~~~~~^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1241, in _execute_mock_call
+    raise effect
+AssertionError: byte read
+
+======================================================================
+FAIL: test_real_fifo_directory_and_socket_refuse_before_any_content_read (test_validation_support_execution_inputs.SupportExecutionInputs.test_real_fifo_directory_and_socket_refuse_before_any_content_read) (name='docs/support-records.toml', kind='directory')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 56, in test_real_fifo_directory_and_socket_refuse_before_any_content_read
+    self.assert_no_content_read()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 39, in assert_no_content_read
+    data.resolve(self.tree)
+    ~~~~~~~~~~~~^^^^^^^^^^^
+  File "/tmp/memra-support-type-controls-q9nc3c5z/removed-preflight.py", line 125, in resolve
+    if hashlib.sha256(tree.read_bytes(name)).hexdigest() != digest]
+                      ~~~~~~~~~~~~~~~^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1241, in _execute_mock_call
+    raise effect
+AssertionError: byte read
+
+======================================================================
+FAIL: test_real_fifo_directory_and_socket_refuse_before_any_content_read (test_validation_support_execution_inputs.SupportExecutionInputs.test_real_fifo_directory_and_socket_refuse_before_any_content_read) (name='docs/support-records.toml', kind='socket')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 56, in test_real_fifo_directory_and_socket_refuse_before_any_content_read
+    self.assert_no_content_read()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 39, in assert_no_content_read
+    data.resolve(self.tree)
+    ~~~~~~~~~~~~^^^^^^^^^^^
+  File "/tmp/memra-support-type-controls-q9nc3c5z/removed-preflight.py", line 125, in resolve
+    if hashlib.sha256(tree.read_bytes(name)).hexdigest() != digest]
+                      ~~~~~~~~~~~~~~~^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1241, in _execute_mock_call
+    raise effect
+AssertionError: byte read
+
+----------------------------------------------------------------------
+Ran 1 test in 0.005s
+
+FAILED (failures=9)

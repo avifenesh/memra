@@ -1,0 +1,64 @@
+{
+  "base": "3c2036262da3216095f36f720948e441cbdd8bf3",
+  "tested_source": "f8e63fb4cab33496cbd40631000387981ff99c4a",
+  "job": "36d50c597ec0",
+  "actual_counts": {
+    "framework": 159,
+    "support_census": 21,
+    "registry_packages": 14
+  },
+  "coverage": {
+    "status": "passed",
+    "edges": 20,
+    "contract_id": "2c28a4fbc2ea3687e6463bed5f49913a02f8699b932f5933eb5c3d8d497fb482",
+    "qualification": false,
+    "scope": "declared behavior assertions only; native receipt admission remains separate"
+  },
+  "bridge": {
+    "base": "3c2036262da3216095f36f720948e441cbdd8bf3",
+    "head": "f8e63fb4cab33496cbd40631000387981ff99c4a",
+    "helper_AST_exact": {
+      "DirectoryTree": true,
+      "resolve": true,
+      "canonical_path": true,
+      "source_docs": true,
+      "reads_source_doc": true
+    },
+    "before_source_sha256": "f1235637c4e5d2c5dbd2c524534b381008c59e260156c6cfa4fd43c2bb326fb7",
+    "before_helper_sha256": "276a1dfd6f2bfc9121c521a2dbcc4f06ba4db3586e0b718afa2d079adfa77ad8",
+    "old_tuple_retained": "074de/cf087/4b, not relabelled",
+    "native_qualification": false
+  },
+  "native_qualification": false,
+  "historical_original": "PROOF.json and original28 receipts remain unchanged",
+  "receipt_sha256": {
+    "coverage-plan.json": "cde3de5d10a1f98cb7b6714aa6014b00886a295838c6ee6e16636e9767b6e273",
+    "removed-leaf-nofollow.log": "3613be0ca9593abee2901073908659af200d9e05e7a3203ea74e270587c6384b",
+    "coverage-verdict.json": "ceb603d7251cd5294b858e16a0f232474a623f7e144883ebb9662cf1cf4fbf5a",
+    "coverage-results.json": "5f5f25c8247743b22ff87640709b6672e13d65c15c4d5df03dc7ceb30622c23b",
+    "cpu-f8e63.log": "bfecdf17e3c02d937b477d3d4e466b956838de18d10fa59fc959c9e383180932",
+    "test_real_fifo_directory_and_socket_refuse_before_any_content_read.log": "21aa3860423b7e5570351fc83ebed142412eef17ac0f67bd73d8fe7b32810963",
+    "test_fifo_replacement_between_stat_and_open_refuses_without_blocking.log": "5052bbb3a31fd06112b6f86be6951ba62b94ba09ea5ad318d5108fbaffe324cb",
+    "normalized-reader-bytes.log": "59176703756fe4e09dd02d0ee98bb9743455bb9f04edcc06ccec324bbd6edaa9",
+    "removed-nonblocking-open.log": "0a72dbf8febcc3b562e224b029672ff07142d2a234539f01a64f186971f03836",
+    "test_contracts_cli_refuses_fifo_before_any_cpu_command.log": "5742f93def4d579192fd8984350e489878bf6fc541d0a41158a5a053172fad97",
+    "mutation-results.json": "0e6265eb77b21f9ca074bff058d64359243afed54db903dea2e28523215604df",
+    "removed-parent-nofollow.log": "d3daef437ad58759019d911f7cdabf3c08946387b321776b231c9428d4c709ff",
+    "source-pins.json": "ac5d9ac1cb6802f981c54e96611dabc5a2d13a93360ad15dfeeebc040946d140",
+    "coverage-manifest.json": "b37a839f44fee1c35522840ff086a7cf6a77c35b661c6e66d719c4a12b7d0c57",
+    "baseline-read-before-type.log": "dbc01a929a12afc69107712fe32adf6f71a30cc80273e5ff4367bc284bb25a03",
+    "test_descriptors_close_on_success_and_refusal.log": "a376770479673e3af261f9519b2f49d7831daf4d7b1781b00c760937c5f9ceb5",
+    "coverage-negative.json": "c9d97a107d3d9d1701e3d18254f1d1258d27dec923f386290c10d4a8bee10e5e",
+    "test_parent_replacement_keeps_read_anchored_to_opened_directory.log": "40901a96bf91318efb6a3f66f3508b5b2ea16409d4217dcb73c1324709f643da",
+    "test_ancestor_symlink_including_broken_parent_refuses_before_reads.log": "601c6e3040d1289fe1a7da3fdbc056cadd2ce876f2323bc9e6e9efeda762de2c",
+    "test_symlink_replacement_between_stat_and_open_refuses.log": "6558a856df03f1e68692f7bcb2ba5e28238d16b3cbf0c25a078f659c4972d127",
+    "test_unknown_reader_does_not_turn_fifo_into_typed_fallback.log": "4e79b3b415f6d26f1d9907a7636304b11e9793724c9d25d35912fc9120f113a6",
+    "test_absent_fixture_and_partial_fixture_keep_original_contract.log": "dcbe17a9e55d472e85f840fc4dc9645fc2d6c99e864ce55502f085bea6985b68",
+    "test_leaf_symlink_to_regular_fifo_or_missing_refuses_before_reads.log": "7b972dadb35055924b6af833144e982ddf1b113303b2ed6447c138ca9ef7e682",
+    "typed-type-error-fallback.log": "537438a07bc7e017a64e2b331133ed0fb88a7d7bff116dfbecacadccbc230f4d",
+    "removed-opened-type-check.log": "295bfb66ea8bbb6452950b6514f5fcf905540d6b55ac28b9feda63256bbc7953",
+    "removed-parent-discovery.log": "2e7bccd259c063a6d3f0fa3c5abdf36884a4747c5611c8d78bdc84087bc0a7a6",
+    "test_read_bytes_remains_exact_and_regular_metadata_still_resolves.log": "730bd6a2e5c023fc01d23f08f40e0f4bfb32794f302beca73481071259af46e3",
+    "removed-preflight.log": "40bed5856959aa150b024d07dc8c0d58ab23bff212594f40324d2af236b01932"
+  }
+}
