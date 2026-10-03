@@ -806,11 +806,14 @@ def cpu_contract_names(root, selected):
     names = selected.split(',') if selected and selected != 'none' else []
     if names and (len(set(names)) != len(names) or any(n not in TOOL_CONTRACTS for n in names)):
         raise Refused('unknown or duplicated CPU contract')
+    available = [n for n, c in TOOL_CONTRACTS.items()
+                 if c.get('required') or any((root / p).exists() for p in c.get('presence', c['inputs']))]
+    for name in names or (available if selected != 'none' else []):
+        if not all((root / p).is_file() for p in TOOL_CONTRACTS[name]['inputs']):
+            raise Refused('selected contract input is missing: ' + name)
     data = support_record_data_inputs(root, directory=True, allow_unknown_reader=True)
     if selected == 'none' and data is not None:
         return []
-    available = [n for n, c in TOOL_CONTRACTS.items()
-                 if c.get('required') or any((root / p).exists() for p in c.get('presence', c['inputs']))]
     if data is None:
         # Planning expands unknown readers. Execution also expands stale subsets,
         # then runs the real census without trusting the unsupported data graph.

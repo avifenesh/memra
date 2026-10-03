@@ -72,9 +72,8 @@ def resolve(tree):
         return {'required': [], 'optional': []}
     if not expected <= paths:
         raise InputContractError('support data reader inputs are incomplete')
-    for name, digest in READERS.items():
-        if hashlib.sha256(tree.read_bytes(name)).hexdigest() != digest:
-            raise UnmodelledReader('unmodelled support data reader: ' + name)
+    unknown_readers = [name for name, digest in READERS.items()
+                       if hashlib.sha256(tree.read_bytes(name)).hexdigest() != digest]
     try:
         metadata = tomllib.loads(tree.read(RECORDS))
     except (tomllib.TOMLDecodeError, UnicodeError) as error:
@@ -119,4 +118,6 @@ def resolve(tree):
     links = tree.symlinks_exact(checked)
     if links:
         raise InputContractError('support data reader path contains a symlink: ' + sorted(links)[0])
+    if unknown_readers:
+        raise UnmodelledReader('unmodelled support data reader: ' + unknown_readers[0])
     return {'required': sorted(required), 'optional': sorted(optional)}
