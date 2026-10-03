@@ -214,6 +214,7 @@ class Server:
 
     def __enter__(self):
         with socket.socket() as probe:
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             probe.bind(('127.0.0.1', self.port))
         env = {key: value for key, value in os.environ.items() if not key.startswith('MEMRA_') or key in {
             'MEMRA_GPU_LOCK', 'MEMRA_CI_LOCK', 'MEMRA_CI_LOCK_HELD', 'MEMRA_RIG_LOCK_FD'}}
@@ -310,11 +311,11 @@ def run(args):
     coverage, selected = plan_coverage(expected_context)
     (args.out/'coverage-plan.json').write_text(json.dumps(selected,indent=2)+'\n')
     (args.out / 'expected-context.json').write_text(json.dumps(expected_context, indent=2) + '\n')
-    for name, path in [('qwen', args.qwen), ('gemma', args.gemma)]:
+    for model_index, (name, path) in enumerate([('qwen', args.qwen), ('gemma', args.gemma)]):
         model = {**report['context']['artifacts'][name], 'cases': {}}
         report['models'][name] = model
-        for label, binary in [('baseline', args.baseline), ('candidate', args.candidate)]:
-            with Server(binary, path, args.port, args.out / name / label) as server:
+        for binary_index, (label, binary) in enumerate([('baseline', args.baseline), ('candidate', args.candidate)]):
+            with Server(binary, path, args.port + model_index * 2 + binary_index, args.out / name / label) as server:
                 for regression in ['auto', 'none']:
                     body = request_body(tool_choice=regression)
                     body['tools'][0]['function']['parameters']['properties'].pop('note')
