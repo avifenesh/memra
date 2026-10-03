@@ -58,3 +58,10 @@ manifest read before the FIFO was rejected by the blanket fdopen mock. The faile
 186-test run is non-admitted history under `receipts/failed-hosted-A/`. The repaired
 test allows regular reads and refuses unsafe content, and explicitly executes both
 FIFO-first and FIFO-last manifest orders. Production enumeration is unchanged.
+
+After the observer repair, actual `173c031f61` on `996a64af78` passes 194
+framework tests, 21 census tests, all 14 registered packages, the 44-edge proof and
+all admission/optimized-producer refusal controls. Both manifest orders are
+asserted by the executed method. `COMPOSED.json` and `receipts/composed-B-v6/` bind
+the repaired tuple. The earlier local-only composition remains separately in
+`COMPOSED-before-order-fix.json`. Current hosted CI and review still gate merge.

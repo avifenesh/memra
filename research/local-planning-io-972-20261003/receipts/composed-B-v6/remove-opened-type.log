@@ -1,0 +1,15 @@
+test_stat_to_fifo_replacement_is_nonblocking_and_refused (test_validation_local_input_io.LocalInputIO.test_stat_to_fifo_replacement_is_nonblocking_and_refused) ... FAIL
+
+======================================================================
+FAIL: test_stat_to_fifo_replacement_is_nonblocking_and_refused (test_validation_local_input_io.LocalInputIO.test_stat_to_fifo_replacement_is_nonblocking_and_refused)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-local-planning-io-972/tools/test_validation_local_input_io.py", line 76, in test_stat_to_fifo_replacement_is_nonblocking_and_refused
+    with self.assertRaisesRegex(vp.Refused, 'regular'):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Refused not raised
+
+----------------------------------------------------------------------
+Ran 1 test in 0.019s
+
+FAILED (failures=1)
