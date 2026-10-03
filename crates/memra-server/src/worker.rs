@@ -8425,10 +8425,22 @@ const STEP_OOM_FAULT_MSG: &str =
 enum StepOomFaultSite {
     Any,
     BatchMulti,
+    Prime,
+    SerialAfter(usize),
 }
 
-/// Parse the door's value: `<n>` or `batch:<n>`. `None` is malformed (the door stays OFF).
+/// Parse an explicit diagnostic target and count. Malformed values keep the door OFF.
 fn parse_step_oom_fault(raw: &str) -> Option<(StepOomFaultSite, u32)> {
+    if let Some(target) = raw.strip_prefix("serial-after:") {
+        let (generated, count) = target.split_once(':')?;
+        return Some((
+            StepOomFaultSite::SerialAfter(generated.parse::<usize>().ok()?),
+            count.parse::<u32>().ok()?,
+        ));
+    }
+    if let Some(n) = raw.strip_prefix("prime:") {
+        return n.parse::<u32>().ok().map(|n| (StepOomFaultSite::Prime, n));
+    }
     match raw.strip_prefix("batch:") {
         Some(n) => n
             .parse::<u32>()
@@ -8458,6 +8470,11 @@ fn step_oom_fault_state() -> &'static (StepOomFaultSite, std::sync::atomic::Atom
         if n > 0 {
             let (value, at) = match site {
                 StepOomFaultSite::Any => (n.to_string(), "session step(s)"),
+                StepOomFaultSite::Prime => (format!("prime:{n}"), "prefill tick(s)"),
+                StepOomFaultSite::SerialAfter(generated) => (
+                    format!("serial-after:{generated}:{n}"),
+                    "serial decode steps after generated output",
+                ),
                 StepOomFaultSite::BatchMulti => (
                     format!("batch:{n}"),
                     "batched decode chunk(s) of at least two sessions",
@@ -8491,6 +8508,7 @@ fn step_oom_fault_consume(remaining: &std::sync::atomic::AtomicU32) -> bool {
 fn step_oom_fault_site_admits(site: StepOomFaultSite, batch_sessions: Option<usize>) -> bool {
     match site {
         StepOomFaultSite::Any => true,
+        StepOomFaultSite::Prime | StepOomFaultSite::SerialAfter(_) => false,
         StepOomFaultSite::BatchMulti => batch_sessions.is_some_and(|k| k >= 2),
     }
 }
@@ -8504,6 +8522,19 @@ fn step_oom_fault_fire() -> bool {
 fn step_oom_fault_fire_batch(sessions: usize) -> bool {
     let (site, remaining) = step_oom_fault_state();
     step_oom_fault_site_admits(*site, Some(sessions)) && step_oom_fault_consume(remaining)
+}
+
+/// Target the serial honest-error path after output exists. Normal steps are unchanged.
+fn serial_after_oom_fault_fire(generated: usize) -> bool {
+    let (site, remaining) = step_oom_fault_state();
+    matches!(*site, StepOomFaultSite::SerialAfter(minimum) if generated >= minimum)
+        && step_oom_fault_consume(remaining)
+}
+
+/// A prime-targeted budget never fires in decode or required private boot warmup.
+fn prime_oom_fault_fire() -> bool {
+    let (site, remaining) = step_oom_fault_state();
+    *site == StepOomFaultSite::Prime && step_oom_fault_consume(remaining)
 }
 
 /// Run one allocation retry only when the first failure released reclaimable state. The caller
@@ -30176,19 +30207,37 @@ pub fn run(
                 let step_started = Instant::now();
                 let (fault_id, fault_route) =
                     (active[i].request_id.clone(), fault_route(&active[i]));
-                let step_result =
-                    guard_request(&engine, &fault_id, &fault_route, "decode step", || {
+                let step_result = guard_request(
+                    &engine,
+                    &fault_id,
+                    &fault_route,
+                    "decode step",
+                    || {
                         // MEMRA_STEP_OOM_FAULT's non-batching injection point (WP-B day 38
                         // addenda A and D): the forged quoted OOM stands in for this step, before
                         // any device work; the error arm below is production logic. It fires only
                         // on a session past its prime (a step that decodes), so the forged failure
                         // lands where an errored session could otherwise park.
-                        if active[i].prefill_done && step_oom_fault_fire() {
+                        if !active[i].prefill_done
+                            && !active[i].prefill_queue.is_empty()
+                            && prime_oom_fault_fire()
+                        {
+                            eprintln!(
+                                "[admit-oom] MEMRA_STEP_OOM_FAULT fired: this serial prime reports a SYNTHETIC CUDA OOM (request {}, model {})",
+                                active[i].request_id, active[i].model
+                            );
+                            return Err(STEP_OOM_FAULT_MSG.into());
+                        }
+                        if active[i].prefill_done
+                            && (step_oom_fault_fire()
+                                || serial_after_oom_fault_fire(active[i].generated.len()))
+                        {
                             eprintln!(
                                 "[admit-oom] MEMRA_STEP_OOM_FAULT fired: this non-batching step \
-                                 reports a synthetic CUDA OOM (model {}, generated {})",
+                                 reports a synthetic CUDA OOM (model {}, generated {}, streamed {})",
                                 active[i].model,
                                 active[i].generated.len(),
+                                active[i].tokens_emitted,
                             );
                             return Err(STEP_OOM_FAULT_MSG.into());
                         }
@@ -30199,7 +30248,8 @@ pub fn run(
                             }
                             Err(err) => Err(err),
                         }
-                    });
+                    },
+                );
                 record_output_progress(
                     generated_before,
                     active[i].generated.len(),
@@ -30215,6 +30265,7 @@ pub fn run(
                     Ok(false) => finished.push(i),
                     Err(err)
                         if is_cuda_oom(&err.to_string())
+                            && (active[i].prefill_done || admit_memory_cfg.armed)
                             && step_oom_parkable(
                                 active[i].generated.len(),
                                 active[i].tokens_emitted,
@@ -30248,6 +30299,8 @@ pub fn run(
                         finished.push(i);
                     }
                     Err(err) => {
+                        // Unparkable OOM still needs the retirement fence.
+                        active[i].oom_teardown |= is_cuda_oom(&err.to_string());
                         quarantine_request_fault(&mut active[i], err.as_ref());
                         active[i].errored = true;
                         let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
@@ -38558,6 +38611,17 @@ fn prefill_tick(
             trace.mark_prime_end();
         }
         return Ok(0);
+    }
+    if prime_oom_fault_fire() {
+        eprintln!(
+            "[admit-oom] MEMRA_STEP_OOM_FAULT fired: this prefill tick reports a \
+             SYNTHETIC CUDA OOM (request {}, model {}, generated {}, streamed {})",
+            s.request_id,
+            s.model,
+            s.generated.len(),
+            s.tokens_emitted,
+        );
+        return Err(STEP_OOM_FAULT_MSG.into());
     }
     let mut consumed = 0usize;
     // MONOLITHIC-PRIME shape (lane/gemma4-serve-gaps, 2026-08-07; narrowed by memra#535 P1a):
@@ -49357,6 +49421,30 @@ mod tests {
             .join("\n");
         let prod = &code[..code.find("\nmod tests").expect("tests module exists")];
         let flat: String = prod.chars().filter(|c| !c.is_whitespace()).collect();
+        let serial = flat
+            .find("matchstep_result{Ok(true)=>{}Ok(false)=>finished.push(i),")
+            .expect("serial error match");
+        let serial = &flat[serial
+            ..flat[serial..]
+                .find("// (a-)")
+                .map(|n| serial + n)
+                .unwrap_or(serial + 4000)
+                .min(flat.len())];
+        let mark = serial
+            .find("active[i].oom_teardown|=is_cuda_oom(&err.to_string());")
+            .expect("unparkable serial OOM fences");
+        let error = serial[mark..]
+            .find("quarantine_request_fault(&mutactive[i],err.as_ref());")
+            .expect("serial error follows mark");
+        assert!(error > 0);
+        let retire = flat
+            .find("if s.oom_teardown".replace(' ', "").as_str())
+            .expect("OOM retirement arm");
+        let retire = &flat[retire..retire + 500];
+        assert!(
+            retire.find("oom_teardown_fence(&engine,&loaded);").unwrap()
+                < retire.find("continue;").unwrap()
+        );
         let block = flat.find("ifoom_teardowns>0{").expect("teardown block");
         let end = flat[block..]
             .find("}else{oom_evict_streak=0;}")
@@ -61164,8 +61252,8 @@ mod tests {
             "both prefill arms must feed the prefill-OOM predicate the session's own markers"
         );
         let guard = format!(
-            "if is_cuda_oom(&err.to_string()) && {pred} active[i].generated.len(), \
-             active[i].tokens_emitted, active[i].oom_retries, step_oom_retries(), ) =>"
+            "{pred} active[i].generated.len(), active[i].tokens_emitted, \
+            active[i].oom_retries, step_oom_retries(), ) =>"
         );
         assert_eq!(
             live_sq.matches(guard.as_str()).count(),
@@ -61249,7 +61337,7 @@ mod tests {
     /// a plain `<n>` fires anywhere, as before; anything else is malformed (OFF).
     #[test]
     fn step_oom_fault_site_value_parses_and_aims() {
-        use super::StepOomFaultSite::{Any, BatchMulti};
+        use super::StepOomFaultSite::{Any, BatchMulti, Prime, SerialAfter};
         assert_eq!(super::parse_step_oom_fault("1"), Some((Any, 1)));
         assert_eq!(super::parse_step_oom_fault("0"), Some((Any, 0)));
         assert_eq!(
@@ -61259,12 +61347,56 @@ mod tests {
         for bad in ["", "batch:", "batch:x", "spec:1", "-1", "batch:-1", " 1"] {
             assert_eq!(super::parse_step_oom_fault(bad), None, "{bad:?}");
         }
+        assert_eq!(
+            super::parse_step_oom_fault("serial-after:1:1"),
+            Some((SerialAfter(1), 1))
+        );
+        assert!(!super::step_oom_fault_site_admits(SerialAfter(1), None));
+        assert_eq!(super::parse_step_oom_fault("prime:1"), Some((Prime, 1)));
+        assert_eq!(super::parse_step_oom_fault("prime:0"), Some((Prime, 0)));
+        for bad in ["prime:", "prime:x", "prime:-1"] {
+            assert_eq!(super::parse_step_oom_fault(bad), None);
+        }
+        assert!(!super::step_oom_fault_site_admits(Prime, None));
+        assert!(!super::step_oom_fault_site_admits(Prime, Some(8)));
         assert!(super::step_oom_fault_site_admits(Any, None));
         assert!(super::step_oom_fault_site_admits(Any, Some(1)));
         assert!(!super::step_oom_fault_site_admits(BatchMulti, None));
         assert!(!super::step_oom_fault_site_admits(BatchMulti, Some(1)));
         assert!(super::step_oom_fault_site_admits(BatchMulti, Some(2)));
         assert!(super::step_oom_fault_site_admits(BatchMulti, Some(8)));
+    }
+
+    #[test]
+    fn prime_oom_fault_target_uses_only_nonempty_prime_boundaries() {
+        let source = include_str!("worker.rs");
+        let live = &source[..source.find("mod tests").unwrap()];
+        let call = format!("prime_oom_fault_fire{}", "()");
+        assert_eq!(live.matches(call.as_str()).count(), 3);
+        let start = live.find("\nfn prefill_tick(").unwrap();
+        let body = &live[start
+            ..live[start + 1..]
+                .find("\nfn ")
+                .map(|n| start + 1 + n)
+                .unwrap_or(live.len())];
+        let flat: String = live.chars().filter(|c| !c.is_whitespace()).collect();
+        assert!(
+            flat.contains(
+                format!("!active[i].prefill_done&&!active[i].prefill_queue.is_empty()&&{call}")
+                    .as_str()
+            )
+        );
+        let injection = body.find(format!("if {call}").as_str()).unwrap();
+        assert!(body.find("if q == 0").unwrap() < injection);
+        assert!(injection < body.find("let mut consumed = 0usize;").unwrap());
+        let arm = &body[injection..body.find("let mut consumed = 0usize;").unwrap()];
+        assert!(arm.contains("return Err(STEP_OOM_FAULT_MSG.into());"));
+        let warmup = &live[live.find("fn run_required_boot_warmup(").unwrap()..];
+        let warmup = &warmup[..warmup[1..]
+            .find("\nfn ")
+            .map(|n| n + 1)
+            .unwrap_or(warmup.len())];
+        assert!(!warmup.contains(call.as_str()));
     }
 
     /// The door's SCOPE contract (battery-20260831 tenancy-gates T2): injection only in
@@ -61306,14 +61438,18 @@ mod tests {
             1
         );
         // Addendum D: the non-batching site fires only on a session past its prime.
-        let gated = format!("if active[i].prefill_done && {call}");
+        let gated = "serial_after_oom_fault_fire(active[i].generated.len())";
         let mut sites: Vec<usize> = live
             .match_indices(format!("if {call}").as_str())
             .map(|(at, _)| at)
             .collect();
         assert_eq!(sites.len(), 1, "the spec site fires on any step it reaches");
-        assert_eq!(live.matches(gated.as_str()).count(), 1);
-        sites.extend(live.match_indices(gated.as_str()).map(|(at, _)| at));
+        assert_eq!(live.matches(gated).count(), 1);
+        let serial_at = live.find(gated).unwrap();
+        assert!(
+            live[serial_at.saturating_sub(160)..serial_at].contains("if active[i].prefill_done")
+        );
+        sites.extend(live.match_indices(gated).map(|(at, _)| at));
         sites.extend(
             live.match_indices(format!("if {batch_call}").as_str())
                 .map(|(at, _)| at),

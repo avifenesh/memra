@@ -16,9 +16,8 @@
 #      sequence there (verdict line `a2`, `loading` then `warming`, memra#524 phase=warming).
 #   b  readiness after the probe reads ready and the first request completes (200, finish_reason,
 #      completion_tokens > 0), `/readyz` 200 before and after.
-#   c  the probe-skipped boots (MEMRA_ADMIT_CALIBRATE=0, MEMRA_SERVE_SPEC=0, MEMRA_ADMIT_RESERVE_MB)
-#      state what readiness means there: ready WITHOUT warmup, never `warming`. Recorded as the
-#      DOCUMENTED behaviour of those doors, not as a pass.
+#   c  calibration-skipped boots still complete required private native warmup before listening.
+#      The admission-calibration skip remains explicit; it cannot skip prime/decode readiness.
 #   d  a request that panics the worker (MEMRA_PANIC_AFTER=1, the one-shot fault door with its
 #      FLAGS row; MEMRA_WORKER_RESPAWN=1) leaves `/health` truthful: 503 with the quoted payload
 #      within seconds, never 200 while the worker is dead or reloading, 200 with generation 1 after
@@ -214,17 +213,19 @@ fi
 
 # ---------------------------------------------------------------- c: probe-skipped boots
 if in_arms c; then
-  echo "--- arm c: the probe-skipped boots (documented behaviour, not a pass) ---"
+  echo "--- arm c: calibration-skipped boots still require native warmup ---"
   run_c() { # <label> <expected skip line> ENV=VAL
     local label=$1 skip=$2; shift 2
     if boot "$label" "$@"; then
       skip_ln=$(lineno "$skip" "$D/server.log"); skip_ln=${skip_ln:-0}
       done_ln=$(lineno '[admit-cal] boot calibration done:' "$D/server.log"); done_ln=${done_ln:-0}
       warm=$(awk -F, '$4=="warming"' "$D/readyz-samples.csv" | wc -l)
+      required_ln=$(lineno '[boot-warmup] complete:' "$D/server.log"); required_ln=${required_ln:-0}
+      listen_ln=$(lineno '[server] listening on' "$D/server.log"); listen_ln=${listen_ln:-0}
       t0=$(now_ms); code=$(chat 32 false "$D/first"); t1=$(now_ms)
       v=FAIL
-      [ "$skip_ln" -gt 0 ] && [ "$done_ln" = 0 ] && [ "$warm" = 0 ] && [ "$code" = 200 ] && completes "$D/first" && v="DOCUMENTED (ready without warmup; the first request pays the cold route)"
-      verdict "HFG (c) probe-skipped $label [$*]: skip_line=$skip_ln probe_done_line=$done_ln warming_samples=$warm ready_ms=$((T_READY-T_LAUNCH)) first_request_http=$code first_request_ms=$((t1-t0)) (N=1) -> $v"
+      [ "$skip_ln" -gt 0 ] && [ "$done_ln" = 0 ] && [ "$required_ln" -gt 0 ] && [ "$listen_ln" -gt "$required_ln" ] && [ "$warm" = 0 ] && [ "$code" = 200 ] && completes "$D/first" && v=PASS
+      verdict "HFG (c) probe-skipped $label [$*]: skip_line=$skip_ln probe_done_line=$done_ln required_warmup_line=$required_ln listening_line=$listen_ln warming_samples=$warm ready_ms=$((T_READY-T_LAUNCH)) first_request_http=$code first_request_ms=$((t1-t0)) (N=1) -> $v"
       stop "$label"
     else
       verdict "HFG (c) probe-skipped $label [$*]: boot failed -> FAIL"; stop "$label"
