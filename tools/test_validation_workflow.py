@@ -226,8 +226,13 @@ class CpuWorkflowTests(unittest.TestCase):
             row['block'] = row['block'].replace(
                 'python3 tools/build_expert_tier_plan.py --self-test', changed)
             row['inputs'].append('tools/different_program.py')
-            with self.subTest(command=changed):
-                self.refuse_policy(json.dumps(data).encode())
+            base, head = self.pair()
+            for tree in (base, head):
+                tree.files[policy.POLICY_PATH] = json.dumps(data).encode()
+                tree.files['tools/different_program.py'] = b'# coherent wrong-program fixture\n'
+                tree.modes['tools/different_program.py'] = '100644'
+            with self.subTest(command=changed), self.assertRaises(ValueError):
+                policy.eligible_additions(base, head)
 
     def test_tabs_crlf_and_scalar_masking_refuse(self):
         for text in (self.workflow.replace('\n', '\r\n'),
@@ -245,6 +250,7 @@ class CpuWorkflowTests(unittest.TestCase):
     def test_unmodelled_base_gates_shape_cannot_authorize_insertions(self):
         for old, new in [('  gates:\n', '  gates: &shared\n'),
                          ('        run: |', '        run: >'),
+                         ('    if: ${{ !cancelled() }}', '    if: false'),
                          ('    needs: changes', '    needs: [changes]')]:
             with self.subTest(new=new), self.assertRaises(ValueError):
                 def changed(text):
