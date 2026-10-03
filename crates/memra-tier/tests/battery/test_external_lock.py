@@ -1,5 +1,4 @@
 """Inherited-flock lifetime and scoped process teardown, CPU-only."""
-import fcntl
 import importlib.util
 import json
 import os
