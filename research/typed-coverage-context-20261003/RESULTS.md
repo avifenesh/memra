@@ -35,3 +35,12 @@ Returned qualification remains false and GPU selection stays in shadow mode.
 
 Verdict: four mismatched or missing context controls refuse coverage after the
 repair, while the matching typed control remains admitted.
+
+After composing with tool-choice merge `45b6cba68e81e810840e4f38a95d0518d9dff894`,
+the four program/doc/floor files still match the tested code commit. All 109
+planner/coverage controls and the newly registered 16 tool-choice receiver controls
+passed. The stricter current global validator admitted both preserved tool-choice receipt
+bundles (`native-v3` and `native-v4`), each with 23 independently asserted edges
+and mandatory controls, keeping qualification false. `COMPOSED-REPLAY.json` binds
+the replay source and receipt hashes. This replay used CPU only and did not repeat
+native execution.

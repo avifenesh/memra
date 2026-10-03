@@ -1,0 +1,38 @@
+{
+  "candidate_head": "fe5c90763b304c01baaac2a979595ff1f3287a1c",
+  "composed_base": "45b6cba68e81e810840e4f38a95d0518d9dff894",
+  "global_coverage_sha256": "077495a2ca58d6ad833387ad602180d277d2d368602b6ba134c6a1d9686fe2db",
+  "receipts": [
+    {
+      "receipt": "native-v3",
+      "verdict": {
+        "status": "passed",
+        "edges": 23,
+        "contract_id": "35425281d7a4f47391d0443eea53364138377cb4bbf6dc80c03b5df1a94a9326",
+        "qualification": false,
+        "scope": "declared behavior assertions only; native receipt admission remains separate"
+      },
+      "files": {
+        "coverage-plan.json": "64f54dd0b4d7278f149f6197233fde9ad801a7c18af33d8f239bc8aedb924d6f",
+        "coverage-results.json": "19e50eb950f4f08e6f57e8bbeff8989580eb560b19572f4c2cf872672d4e50e6",
+        "expected-context.json": "9ecc01d834b0695cb541179cf47acb38a586cadd5db5e202fb861bebee6eb69a"
+      }
+    },
+    {
+      "receipt": "native-v4",
+      "verdict": {
+        "status": "passed",
+        "edges": 23,
+        "contract_id": "7cf31693b9994d8acd3c9141ee7536ca9a02c5dce85a39277c755b2cf4d5ecee",
+        "qualification": false,
+        "scope": "declared behavior assertions only; native receipt admission remains separate"
+      },
+      "files": {
+        "coverage-plan.json": "45e584c8bc370f8717d33946488c17a1ea99d7dabb540a275bbc6987cd035c2d",
+        "coverage-results.json": "c6ce3cd439987c0e97688149c91d330cb5db94fb0bab6c27eb0288ef9c423cce",
+        "expected-context.json": "83355dbfed70a4410c7c3bcdaf993614a2fd0369cf11a41a21b130a789078429"
+      }
+    }
+  ],
+  "execution": "CPU replay of preserved source-bound receipts; no native rerun or qualification"
+}
