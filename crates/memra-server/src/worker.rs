@@ -41682,11 +41682,13 @@ fn run_required_boot_warmup(
             }
             Ok(2)
         })();
+        // PP stage streams and readback share each owner context but are not
+        // the owner worker stream. Context-wide fences drain all of them.
         // Fence every placement owner before the private cache drops, including
         // an error from prime or decode. A failed fence cannot mark ready.
         let mut fence_error = None;
         for owner in model_device_engines(engine, loaded) {
-            if let Err(error) = owner.stream().synchronize() {
+            if let Err(error) = owner.ctx().synchronize() {
                 fence_error
                     .get_or_insert_with(|| format!("required warmup {name:?} fence: {error}"));
             }
@@ -49548,7 +49550,8 @@ mod tests {
         assert!(helper.contains("for owner in model_device_engines(engine, loaded)"));
         assert!(!helper.contains(".generate("));
         assert!(!helper.contains("decode_step_dc"));
-        assert!(helper.contains(".synchronize()"));
+        assert!(helper.contains("owner.ctx().synchronize()"));
+        assert!(!helper.contains("owner.stream().synchronize()"));
         assert!(!helper.contains("admit_calibrate_on"));
         assert!(!helper.contains("serve_spec_enabled"));
         assert!(!helper.contains("admit_reserve_override"));
@@ -49584,6 +49587,13 @@ mod tests {
             "self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::Pipeline)"
         ));
         let placement = include_str!("../../memra-engine/src/pp.rs");
+        assert!(placement.contains("let ctx = e.ctx().clone();"));
+        assert!(placement.contains("let ctx = eng.ctx().clone();"));
+        assert!(placement.contains("let stream = ctx.new_stream()?;"));
+        let owners = include_str!("../../memra-engine/src/model_memory.rs");
+        assert!(owners.contains("if let Some(pp) = crate::pp::PpNRt::initialized()"));
+        assert!(owners.contains("owners.push(pp.engine(stage, primary))"));
+
         let planned = &placement[placement.find("pub fn new_cache_planned(").unwrap()..];
         assert!(planned.contains("new_cache_inner(e, cfg, Some(plan), max_ctx)"));
         assert!(planned.contains("plan: Option<&memra_gguf::model_plan::ModelPlan>"));
