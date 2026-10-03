@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import shutil
+import socket
 import tempfile
 import unittest
 from unittest import mock
@@ -28,12 +29,25 @@ class LocalInputIO(unittest.TestCase):
         self.assertEqual(vp.cargo_packages('memra-lanes', self.root), ['-p', 'memra-lanes'])
 
     def test_fifo_and_directory_readers_refuse_before_content(self):
-        for kind in ('fifo', 'directory'):
+        for kind in ('fifo', 'directory', 'socket'):
             path = self.root / kind
-            os.mkfifo(path) if kind == 'fifo' else path.mkdir()
+            if kind == 'fifo':
+                os.mkfifo(path)
+            elif kind == 'directory':
+                path.mkdir()
+            else:
+                endpoint = socket.socket(socket.AF_UNIX)
+                self.addCleanup(endpoint.close)
+                endpoint.bind(str(path))
+            real_open = os.open
+            def refuse_special_open(name, *args, **kwargs):
+                if name == kind:
+                    raise AssertionError('known special input opened')
+                return real_open(name, *args, **kwargs)
             for reader in (self.tree.read, self.tree.read_bytes):
                 with self.subTest(kind=kind, reader=reader.__name__):
-                    with mock.patch.object(vp.os, 'fdopen', side_effect=AssertionError('content engaged')):
+                    with mock.patch.object(vp.os, 'fdopen', side_effect=AssertionError('content engaged')), \
+                            mock.patch.object(vp.os, 'open', side_effect=refuse_special_open):
                         with self.assertRaisesRegex(vp.Refused, 'regular'):
                             reader(kind)
 
@@ -126,6 +140,79 @@ class LocalInputIO(unittest.TestCase):
         for name in ('missing', '../outside', '/outside', 'a//b', './a', 'a\\b'):
             with self.subTest(name=name), self.assertRaises(vp.Refused):
                 self.tree.read(name)
+
+    def test_real_consumers_refuse_leaf_aliases_and_replacement_races(self):
+        import importlib.util
+        self.fixture.put_support_data_reader_fixture(); self.fixture.commit()
+        with tempfile.TemporaryDirectory(prefix='memra-consumer-registry-') as owned:
+            tools = Path(owned)
+            shutil.copyfile(vp.__file__, tools / 'validation_plan.py')
+            shutil.copyfile(Path(vp.__file__).with_name('validation_inputs.json'), tools / 'validation_inputs.json')
+            spec = importlib.util.spec_from_file_location('consumer_registry', tools / 'validation_plan.py')
+            module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+            cases = [
+                ('root', self.root / 'Cargo.toml', vp,
+                 lambda: vp.make_plan(['Cargo.toml'], vp.Tree(self.root, self.fixture.base), self.tree)),
+                ('cargo', self.root / 'crates/memra-server/Cargo.toml', vp,
+                 lambda: vp.cargo_packages('memra-lanes', self.root)),
+                ('reader', self.root / 'tools/check-support-states.py', vp,
+                 lambda: vp.support_record_data_inputs(self.tree)),
+                ('registry', tools / 'validation_inputs.json', module,
+                 lambda: module.included_inputs(self.tree, module.workspace(self.tree)[1])),
+            ]
+            for name, target, consumer, execute in cases:
+                original = target.read_bytes()
+                saved = target.with_name(target.name + '.saved'); saved.write_bytes(original)
+                for kind in ('alias', 'race-alias', 'race-fifo'):
+                    with self.subTest(consumer=name, kind=kind):
+                        real_open = os.open; swapped = []
+                        if kind == 'alias':
+                            target.unlink(); target.symlink_to(saved)
+                        def replace(leaf, flags, *args, **kwargs):
+                            if leaf == target.name and not swapped:
+                                self.assertTrue(flags & os.O_NONBLOCK)
+                                if kind != 'alias':
+                                    target.unlink()
+                                    if kind == 'race-fifo': os.mkfifo(target)
+                                    else: target.symlink_to(saved)
+                                swapped.append(True)
+                            return real_open(leaf, flags, *args, **kwargs)
+                        try:
+                            with mock.patch.object(consumer.os, 'open', side_effect=replace):
+                                if name == 'root':
+                                    plan = execute()
+                                    self.assertEqual(plan['mode'], 'full')
+                                    self.assertTrue(all(plan['jobs'].values()))
+                                    self.assertFalse(plan['native']['qualification'])
+                                else:
+                                    with self.assertRaises(consumer.Refused): execute()
+                            if kind != 'alias': self.assertEqual(swapped, [True])
+                        finally:
+                            target.unlink(); target.write_bytes(original)
+                saved.unlink()
+
+    def test_real_descendant_consumers_refuse_ancestor_aliases_and_anchor_races(self):
+        self.fixture.put_support_data_reader_fixture(); self.fixture.commit()
+        for relative, execute in (
+                ('crates/memra-server', lambda: vp.cargo_packages('memra-lanes', self.root)),
+                ('tools', lambda: vp.support_record_data_inputs(self.tree))):
+            target = self.root / relative
+            saved = target.with_name(target.name + '-saved')
+            real_open = os.open
+            for race in (False, True):
+                with self.subTest(relative=relative, race=race):
+                    swapped = []
+                    if not race: target.rename(saved); target.symlink_to(saved, target_is_directory=True)
+                    def replace(part, flags, *args, **kwargs):
+                        if race and part == target.name and not swapped:
+                            target.rename(saved); target.symlink_to(saved, target_is_directory=True); swapped.append(True)
+                        return real_open(part, flags, *args, **kwargs)
+                    try:
+                        with mock.patch.object(vp.os, 'open', side_effect=replace):
+                            with self.assertRaises(vp.Refused): execute()
+                        if race: self.assertEqual(swapped, [True])
+                    finally:
+                        target.unlink(); saved.rename(target)
 
 
 if __name__ == '__main__':

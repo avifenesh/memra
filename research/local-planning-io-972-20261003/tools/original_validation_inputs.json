@@ -1,0 +1,48 @@
+{
+  "schema": "memra-validation-build-inputs-v1",
+  "build_scripts": {
+    "crates/memra-probe/build.rs": {
+      "sha256": "a733b8713a3802187a6d0fde27664ce6824734aa14056caabeb0be5915ff93ee",
+      "package": "memra-probe",
+      "generated_env": [],
+      "external_inputs": [],
+      "note": "All crate-local sources are package inputs. Toolchain/environment changes require full validation."
+    },
+    "crates/memra-server/build.rs": {
+      "sha256": "50e5bf1f4ea5b8606f4c856461f749e6a4f3afd109c2d7818684af0bb7ea86c9",
+      "package": "memra-server",
+      "generated_env": [],
+      "external_inputs": [],
+      "note": "All crate-local sources are package inputs. Toolchain/environment changes require full validation."
+    },
+    "crates/memra-engine/build.rs": {
+      "sha256": "180121b171874735788cf45eddedd2ab82f284990db2d8f0774a640369fb5836",
+      "package": "memra-engine",
+      "generated_env": [
+        "MEMRA_ENGINE_FATBIN",
+        "MEMRA_FLASH_FATBIN",
+        "MEMRA_FLASH_FATBIN_KF8VF8",
+        "MEMRA_GEMM_FATBIN",
+        "MEMRA_HYBRID_FATBIN",
+        "MEMRA_KDA_FATBIN",
+        "MEMRA_QMATVEC_FATBIN",
+        "MEMRA_ROUTER_FATBIN",
+        "MEMRA_SAMPLE_FATBIN",
+        "MEMRA_TIER_RECEIPT_FATBIN"
+      ],
+      "external_inputs": [
+        "docs/FLAGS.md"
+      ],
+      "note": "All crate-local sources are package inputs. Toolchain/environment changes require full validation."
+    }
+  },
+  "dynamic_includes": {
+    "crates/memra-tokenizer/src/chat.rs": {
+      "sha256": "4a01b8cf428af06b36da3b87fd0d1db5bb51df1b69c7549c5c867dbc0207e3bc",
+      "inputs": [
+        "research/reasoning-schema-20260823/goldens/*.txt"
+      ],
+      "reason": "golden() g! macro concatenates reviewed literal names under this fixed prefix; changing the source invalidates the input contract"
+    }
+  }
+}
