@@ -507,6 +507,39 @@ def rust_code_view(text, string_spans=None):
         raise Refused(str(error)) from error
 
 
+def read_local_input(root, name, *, binary=False):
+    """Read a regular file anchored below the trusted root, without following links."""
+    root = Path(root).resolve()
+    if not isinstance(name, str) or not name or any(c in name for c in '\n\r\t\0\\'):
+        raise Refused('noncanonical local input path')
+    path = PurePosixPath(name)
+    if path.is_absolute() or '..' in path.parts or path.as_posix() != name or name == '.':
+        raise Refused('noncanonical local input path: ' + name)
+    parent = leaf = None
+    try:
+        parent = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        for part in path.parts[:-1]:
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+            os.close(parent)
+            parent = child
+        info = os.stat(path.name, dir_fd=parent, follow_symlinks=False)
+        if not stat.S_ISREG(info.st_mode):
+            raise Refused('local input contains a symlink or is not a regular file: ' + name)
+        leaf = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+        if not stat.S_ISREG(os.fstat(leaf).st_mode):
+            raise Refused('local input is not a regular file: ' + name)
+        with os.fdopen(leaf, 'rb' if binary else 'r') as source:
+            leaf = None
+            return source.read()
+    except OSError as error:
+        raise Refused('local input is missing, nonregular or contains a symlink: ' + name) from error
+    finally:
+        if leaf is not None:
+            os.close(leaf)
+        if parent is not None:
+            os.close(parent)
+
+
 def git(repo, *args):
     return subprocess.check_output(['git', '-C', str(repo), *args], stderr=subprocess.PIPE)
 
@@ -569,16 +602,10 @@ class LocalTree(Tree):
         super().__init__(repo, 'WORKTREE')
 
     def read(self, path):
-        target = (self.repo / path).resolve()
-        if not target.is_relative_to(self.repo.resolve()):
-            raise Refused('source symlink escapes checkout')
-        return target.read_text()
+        return read_local_input(self.repo, path)
 
     def read_bytes(self, path):
-        target = (self.repo / path).resolve()
-        if not target.is_relative_to(self.repo.resolve()):
-            raise Refused('source symlink escapes checkout')
-        return target.read_bytes()
+        return read_local_input(self.repo, path, binary=True)
 
     def input_modes(self, *prefixes, recursive=True):
         paths = set(prefixes)
@@ -765,7 +792,7 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
         # Source module resolution through symlinks depends on both lexical and
         # physical locations. Until that transitive graph is modelled, expand.
         raise Refused('crate symlink needs a transitive input contract: ' + path)
-    contracts = json.loads(Path(__file__).with_name('validation_inputs.json').read_text())
+    contracts = json.loads(read_local_input(Path(__file__).parent, 'validation_inputs.json'))
     if contracts.get('schema') != 'memra-validation-build-inputs-v1':
         raise Refused('unrecognized build input contracts')
     generated = defaultdict(set)
@@ -1234,7 +1261,8 @@ def cargo_packages(value, root):
     if not value:
         return ['--workspace']
     names = value.split(',')
-    known = {tomllib.loads(p.read_text())['package']['name'] for p in (root / 'crates').glob('*/Cargo.toml')}
+    known = {tomllib.loads(read_local_input(root, p.relative_to(root).as_posix()))['package']['name']
+             for p in (root / 'crates').glob('*/Cargo.toml')}
     if len(names) != len(set(names)) or any(not re.fullmatch(r'memra-[a-z0-9-]+', n) or n not in known for n in names):
         return ['--workspace']
     return [arg for n in sorted(names) for arg in ('-p', n)]
