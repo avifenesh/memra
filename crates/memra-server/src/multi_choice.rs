@@ -124,6 +124,7 @@ struct Row {
     finish: Option<&'static str>,
     elapsed: f64,
     role_sent: bool,
+    partial_finalized: bool,
 }
 
 pub(crate) struct Rows {
@@ -151,6 +152,7 @@ impl Rows {
                     finish: None,
                     elapsed: 0.0,
                     role_sent: false,
+                    partial_finalized: false,
                 })
                 .collect(),
             chat,
@@ -173,7 +175,7 @@ impl Rows {
             .rows
             .get_mut(index)
             .ok_or_else(|| EngineError::engine("choice index is out of range"))?;
-        if row.finish.is_some() {
+        if row.finish.is_some() || row.partial_finalized {
             return Err(EngineError::engine(
                 "choice produced an event after its terminal result",
             ));
@@ -339,6 +341,37 @@ impl Rows {
             });
         }
         Ok(packets)
+    }
+
+    /// A deadline delivers every already-consumed byte without inventing more token work.
+    /// Completed rows are immutable; a partial row can be finalized only once.
+    pub(crate) fn finalize_partial(&mut self) {
+        for row in &mut self.rows {
+            if row.finish.is_some() || row.partial_finalized {
+                continue;
+            }
+            let pieces = row
+                .parser
+                .as_mut()
+                .map_or_else(Vec::new, ToolStreamParser::finish);
+            for piece in pieces {
+                match piece {
+                    Piece::Content(text) => {
+                        let text = row
+                            .scrubber
+                            .as_mut()
+                            .map_or_else(|| text.clone(), |s| s.push(&text));
+                        row.text.push_str(&text);
+                    }
+                    Piece::Reasoning(text) => row.reasoning.push_str(&text),
+                    Piece::Call(call) => row.calls.push(call),
+                }
+            }
+            if let Some(scrubber) = row.scrubber.as_mut() {
+                row.text.push_str(&scrubber.finish());
+            }
+            row.partial_finalized = true;
+        }
     }
 
     pub(crate) fn usage(&self) -> UsageCounts {
@@ -659,6 +692,7 @@ pub(crate) async fn respond(
                 );
             }
             Err(_) => {
+                rows.finalize_partial();
                 let usage = rows.usage();
                 if usage.completion_tokens == 0 {
                     return crate::ledger_unbilled(
@@ -1008,6 +1042,129 @@ mod tests {
         };
         assert_eq!(supported_count(Some(4), Some(&caps)), Ok(4));
         assert!(supported_count(Some(5), Some(&caps)).is_err());
+    }
+
+    #[test]
+    fn deadline_flushes_stop_prefix_once_and_preserves_completed_rows_and_usage() {
+        let mut rows = Rows::new(false, vec![None, None], &["END".into()]);
+        let mut receipt = None;
+        for index in 0..2 {
+            rows.consume(
+                index,
+                Event::PromptUsage {
+                    n_prompt: 10,
+                    n_cached: 2,
+                },
+                &mut receipt,
+            )
+            .unwrap();
+        }
+        rows.consume(
+            0,
+            Event::Token {
+                id: 7,
+                text: "kept".into(),
+            },
+            &mut receipt,
+        )
+        .unwrap();
+        rows.consume(0, Event::TokenSnapshot(vec![7]), &mut receipt)
+            .unwrap();
+        rows.consume(0, done(1), &mut receipt).unwrap();
+        for (id, ch) in "abcE".chars().enumerate() {
+            rows.consume(
+                1,
+                Event::Token {
+                    id: id as u32,
+                    text: ch.to_string(),
+                },
+                &mut receipt,
+            )
+            .unwrap();
+        }
+        assert_eq!(rows.rows[1].text, "abc");
+        let before = rows.usage();
+        rows.finalize_partial();
+        rows.finalize_partial();
+        let after = rows.usage();
+        assert_eq!(
+            (
+                before.prompt_tokens,
+                before.cached_prompt_tokens,
+                before.completion_tokens
+            ),
+            (
+                after.prompt_tokens,
+                after.cached_prompt_tokens,
+                after.completion_tokens
+            )
+        );
+        let body = rows.body(&Envelope::new(false), "fixture", true);
+        assert_eq!(body["choices"][0]["text"], "kept");
+        assert_eq!(body["choices"][0]["finish_reason"], "length");
+        assert_eq!(body["choices"][1]["text"], "abcE");
+        assert_eq!(body["choices"][1]["finish_reason"], "error");
+        assert_eq!(body["usage"]["completion_tokens"], 5);
+        assert!(
+            rows.consume(
+                1,
+                Event::Token {
+                    id: 8,
+                    text: "late".into()
+                },
+                &mut receipt
+            )
+            .is_err()
+        );
+        assert!(!rows.complete());
+    }
+
+    #[test]
+    fn deadline_flushes_reasoning_and_unterminated_tool_buffers_as_the_n1_parser_does() {
+        let reasoning = ToolStreamParser::new(Default::default(), true);
+        let tool = ToolStreamParser::new(Default::default(), false);
+        let mut rows = Rows::new(true, vec![Some(reasoning), Some(tool)], &[]);
+        let mut receipt = None;
+        for index in 0..2 {
+            rows.consume(
+                index,
+                Event::PromptUsage {
+                    n_prompt: 10,
+                    n_cached: 2,
+                },
+                &mut receipt,
+            )
+            .unwrap();
+        }
+        rows.consume(
+            0,
+            Event::Token {
+                id: 7,
+                text: "reasoning<".into(),
+            },
+            &mut receipt,
+        )
+        .unwrap();
+        let partial = "<tool_call>\n<function=weather>\n<parameter=city>\nParis";
+        rows.consume(
+            1,
+            Event::Token {
+                id: 8,
+                text: partial.into(),
+            },
+            &mut receipt,
+        )
+        .unwrap();
+        let before = rows.usage().completion_tokens;
+        rows.finalize_partial();
+        let first = rows.body(&Envelope::new(true), "fixture", true);
+        rows.finalize_partial();
+        let second = rows.body(&Envelope::new(true), "fixture", true);
+        assert_eq!(first["choices"], second["choices"]);
+        assert_eq!(first["choices"][0]["message"]["reasoning"], "reasoning<");
+        assert_eq!(first["choices"][1]["message"]["content"], partial);
+        assert_eq!(rows.usage().completion_tokens, before);
+        assert_eq!(before, 2);
     }
 
     #[test]
