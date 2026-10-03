@@ -1,0 +1,2112 @@
+{
+  "base": "1371a817873322e203194dc6cfd763c6f49d077a",
+  "source": "12052d122209676e9d62f4d05f9820c1a3899d25",
+  "source_sha256": {
+    "tools/test_q35_cold_mixed_gate.py": "2d813f58adb5edb78c1759c3d481cb3e81417bf4298f08ba15d87a5185f4aa0b",
+    "tools/q35-cold-mixed-gate.py": "965bfddc1dd5524dace21693bdd894b9dde8ded636f6cc3902d92e5c90048bed",
+    "tools/cache_qualification.py": "48bd67dda86e39ff4836c8eee619b45ae9f94b4922a37e9ea48be39a9b489b15",
+    "research/sellgate-20260812/sellgate_replay.py": "7a5d4649bb0ec415a5b58f4f1df0e775fc4aee23124f177c344d77ec8eaac284",
+    "research/sellgate-20260812/workload.lock.json": "85597a0a28ed874f440b4a966c0b43fd3e31b94fe868266de9e299decc208c34",
+    "research/spill-lead-20260919/integration-day12/integ68-q35ab/main-q35-cold-mixed.log": "a4b4c9de5ebf5b2a3397ce082216bdb8a8e2a20facd5e4897964364c0fe8d9f4",
+    "research/spill-lead-20260919/integration-day12/integ68-q35ab/integ68-q35-cold-mixed.log": "587009e7c4c2610ea58a5d59d6467c3370598e2cdc607fb4486ab4e8ded77af8"
+  },
+  "candidate_planner_sha256": "3afcfc9d1677ffac04a4327b9c39375454bab966a75523e0c376c9ff8ed309d0",
+  "baseline_planner_sha256": "8f7bc999097e08b22e4aaf7b063dc1e8aeaf719f7d4152927188b2934c893662",
+  "helper_sha256": "0c29eb629c96e4153eae210f2b6db7a36115523b742ebb64a9b80941f831db59",
+  "actual_existing_consumer": {
+    "baseline": {
+      "exit": 0,
+      "stdout": "",
+      "stderr": ".............\n----------------------------------------------------------------------\nRan 13 tests in 0.006s\n\nOK\n"
+    },
+    "research/sellgate-20260812/workload.lock.json": {
+      "exit": 1,
+      "stdout": "",
+      "stderr": "Traceback (most recent call last):\n  File \"/home/avifenesh/.local/state/memra-rig-darklanes-20261002/scratch/B/B950-consumer-3nlk909k/tools/test_q35_cold_mixed_gate.py\", line 42, in <module>\n    WORKLOAD = GATE.load_frozen_workload(HARNESS, REPO)\n  File \"/home/avifenesh/.local/state/memra-rig-darklanes-20261002/scratch/B/B950-consumer-3nlk909k/tools/q35-cold-mixed-gate.py\", line 133, in load_frozen_workload\n    workload = harness.load_workload(repo / \"research/sellgate-20260812/workload.lock.json\")\n  File \"/home/avifenesh/.local/state/memra-rig-darklanes-20261002/scratch/B/B950-consumer-3nlk909k/research/sellgate-20260812/sellgate_replay.py\", line 194, in load_workload\n    raise ValueError(\"scored prompt ids do not match the workload lock\")\nValueError: scored prompt ids do not match the workload lock\n"
+    },
+    "research/spill-lead-20260919/integration-day12/integ68-q35ab/main-q35-cold-mixed.log": {
+      "exit": 1,
+      "stdout": "",
+      "stderr": "FF.....FF.F..\n======================================================================\nFAIL: test_both_banked_receipts_pass_under_the_grid_law (__main__.BankedReplay.test_both_banked_receipts_pass_under_the_grid_law) (log='main-q35-cold-mixed.log')\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/avifenesh/.local/state/memra-rig-darklanes-20261002/scratch/B/B950-consumer-3nlk909k/tools/test_q35_cold_mixed_gate.py\", line 111, in test_both_banked_receipts_pass_under_the_grid_law\n    self.assertEqual(summary[\"reported_hit_cached_tokens\"], [4832])\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: Lists differ: [4860] != [4832]\n\nFirst differing element 0:\n4860\n4832\n\n- [4860]\n+ [4832]\n\n======================================================================\nFAIL: test_red_twin_old_expectation_fails_as_usage_mismatch (__main__.BankedReplay.test_red_twin_old_expectation_fails_as_usage_mismatch) (log='main-q35-cold-mixed.log')\nThe pre-fix law (a hit caches the whole prompt) must go red on a grid-aligned receipt.\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/avifenesh/.local/state/memra-rig-darklanes-20261002/scratch/B/B950-consumer-3nlk909k/tools/test_q35_cold_mixed_gate.py\", line 126, in test_red_twin_old_expectation_fails_as_usage_mismatch\n    self.assertIn(\"usage_mismatch\", summary[\"failure_classes\"])\n    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 'usage_mismatch' not found in ['cell_accounting']\n\n======================================================================\nFAIL: test_counter_drift_is_cell_accounting (__main__.MutatedReceipts.test_counter_drift_is_cell_accounting)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/avifenesh/.local/state/memra-rig-darklanes-20261002/scratch/B/B950-consumer-3nlk909k/tools/test_q35_cold_mixed_gate.py\", line 190, in test_counter_drift_is_cell_accounting\n    self.assertEqual(summary[\"failure_classes\"], [\"cell_accounting\"])\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: Lists differ: ['usage_mismatch', 'cell_accounting'] != ['cell_accounting']\n\nFirst differing element 0:\n'usage_mismatch'\n'cell_accounting'\n\nFirst list contains 1 additional elements.\nFirst extra element 1:\n'cell_accounting'\n\n- ['usage_mismatch', 'cell_accounting']\n+ ['cell_accounting']\n\n======================================================================\nFAIL: test_hit_reporting_the_prompt_end_is_a_usage_mismatch (__main__.MutatedReceipts.test_hit_reporting_the_prompt_end_is_a_usage_mismatch)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/avifenesh/.local/state/memra-rig-darklanes-20261002/scratch/B/B950-consumer-3nlk909k/tools/test_q35_cold_mixed_gate.py\", line 168, in test_hit_reporting_the_prompt_end_is_a_usage_mismatch\n    self.assertEqual(summary[\"failure_classes\"], [\"usage_mismatch\"])\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: Lists differ: ['usage_mismatch', 'cell_accounting'] != ['usage_mismatch']\n\nFirst list contains 1 additional elements.\nFirst extra element 1:\n'cell_accounting'\n\n- ['usage_mismatch', 'cell_accounting']\n+ ['usage_mismatch']\n\n======================================================================\nFAIL: test_short_request_is_a_token_regression_not_a_usage_mismatch (__main__.MutatedReceipts.test_short_request_is_a_token_regression_not_a_usage_mismatch)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/avifenesh/.local/state/memra-rig-darklanes-20261002/scratch/B/B950-consumer-3nlk909k/tools/test_q35_cold_mixed_gate.py\", line 182, in test_short_request_is_a_token_regression_not_a_usage_mismatch\n    self.assertNotIn(\"usage_mismatch\", summary[\"failure_classes\"])\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 'usage_mismatch' unexpectedly found in ['token_regression', 'response_failure', 'usage_mismatch', 'cell_accounting']\n\n----------------------------------------------------------------------\nRan 13 tests in 0.006s\n\nFAILED (failures=5)\n"
+    },
+    "research/spill-lead-20260919/integration-day12/integ68-q35ab/integ68-q35-cold-mixed.log": {
+      "exit": 1,
+      "stdout": "",
+      "stderr": "FF...........\n======================================================================\nFAIL: test_both_banked_receipts_pass_under_the_grid_law (__main__.BankedReplay.test_both_banked_receipts_pass_under_the_grid_law) (log='integ68-q35-cold-mixed.log')\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/avifenesh/.local/state/memra-rig-darklanes-20261002/scratch/B/B950-consumer-3nlk909k/tools/test_q35_cold_mixed_gate.py\", line 111, in test_both_banked_receipts_pass_under_the_grid_law\n    self.assertEqual(summary[\"reported_hit_cached_tokens\"], [4832])\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: Lists differ: [4860] != [4832]\n\nFirst differing element 0:\n4860\n4832\n\n- [4860]\n+ [4832]\n\n======================================================================\nFAIL: test_red_twin_old_expectation_fails_as_usage_mismatch (__main__.BankedReplay.test_red_twin_old_expectation_fails_as_usage_mismatch) (log='integ68-q35-cold-mixed.log')\nThe pre-fix law (a hit caches the whole prompt) must go red on a grid-aligned receipt.\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/avifenesh/.local/state/memra-rig-darklanes-20261002/scratch/B/B950-consumer-3nlk909k/tools/test_q35_cold_mixed_gate.py\", line 126, in test_red_twin_old_expectation_fails_as_usage_mismatch\n    self.assertIn(\"usage_mismatch\", summary[\"failure_classes\"])\n    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 'usage_mismatch' not found in ['cell_accounting']\n\n----------------------------------------------------------------------\nRan 13 tests in 0.006s\n\nFAILED (failures=2)\n"
+    }
+  },
+  "plans": {
+    "research/sellgate-20260812/workload.lock.json": {
+      "before": {
+        "schema": "memra-validation-plan-v1",
+        "mode": "scoped",
+        "reason": "dependency closure plus declared input contracts",
+        "changed": [
+          "research/sellgate-20260812/workload.lock.json"
+        ],
+        "direct_packages": [],
+        "packages": [],
+        "dependency_reasons": {},
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "edge_decisions": [
+          {
+            "from": "changed-inputs",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-reference",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-kv",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-reference",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-runtime",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-sampling",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tier",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-validate",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-gguf",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tier",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-lanes",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-net-guard",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-probe",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-runtime",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-runtime",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-sampling",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-engine",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-lanes",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-net-guard",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-tier",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-tokenizer",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-tokenizer",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-validate",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          }
+        ],
+        "requires_cuda": false,
+        "cpu_contracts": [],
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        },
+        "omitted": {
+          "build": "No changed package or reverse dependency reaches this execution component",
+          "clippy": "No changed package or reverse dependency reaches this execution component",
+          "server": "No changed package or reverse dependency reaches this execution component",
+          "engine": "No changed package or reverse dependency reaches this execution component",
+          "portable": "No changed package or reverse dependency reaches this execution component",
+          "core": "No changed package or reverse dependency reaches this execution component",
+          "lanes": "No changed package or reverse dependency reaches this execution component",
+          "arch": "No changed package or reverse dependency reaches this execution component",
+          "publish": "No changed package or reverse dependency reaches this execution component"
+        }
+      },
+      "after": {
+        "schema": "memra-validation-plan-v1",
+        "mode": "scoped",
+        "reason": "dependency closure plus declared input contracts",
+        "changed": [
+          "research/sellgate-20260812/workload.lock.json"
+        ],
+        "direct_packages": [],
+        "packages": [],
+        "dependency_reasons": {},
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "edge_decisions": [
+          {
+            "from": "changed-inputs",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-reference",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-kv",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-reference",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-runtime",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-sampling",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tier",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-validate",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-gguf",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tier",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-lanes",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-net-guard",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-probe",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-runtime",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-runtime",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-sampling",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-engine",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-lanes",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-net-guard",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-tier",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-tokenizer",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-tokenizer",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-validate",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          }
+        ],
+        "requires_cuda": false,
+        "cpu_contracts": [
+          {
+            "id": "q35-cache",
+            "required": true,
+            "inputs": [
+              "tools/q35-cold-mixed-gate.py",
+              "tools/test_q35_cold_mixed_gate.py",
+              "research/sellgate-20260812/sellgate_replay.py",
+              "tools/cache_qualification.py",
+              "research/sellgate-20260812/workload.lock.json",
+              "research/spill-lead-20260919/integration-day12/integ68-q35ab/main-q35-cold-mixed.log",
+              "research/spill-lead-20260919/integration-day12/integ68-q35ab/integ68-q35-cold-mixed.log"
+            ],
+            "cpu": [
+              "tools/unittest-floor.sh",
+              "tools",
+              "test_q35_cold_mixed_gate.py",
+              "13"
+            ],
+            "native": [
+              "Qwen3.6 MoE mixed c=4 cache/usage/golden gate on the pinned artifact"
+            ]
+          }
+        ],
+        "native": {
+          "scope": "harness",
+          "requirements": [
+            "Qwen3.6 MoE mixed c=4 cache/usage/golden gate on the pinned artifact"
+          ],
+          "qualification": false
+        },
+        "omitted": {
+          "build": "No changed package or reverse dependency reaches this execution component",
+          "clippy": "No changed package or reverse dependency reaches this execution component",
+          "server": "No changed package or reverse dependency reaches this execution component",
+          "engine": "No changed package or reverse dependency reaches this execution component",
+          "portable": "No changed package or reverse dependency reaches this execution component",
+          "core": "No changed package or reverse dependency reaches this execution component",
+          "lanes": "No changed package or reverse dependency reaches this execution component",
+          "arch": "No changed package or reverse dependency reaches this execution component",
+          "publish": "No changed package or reverse dependency reaches this execution component"
+        }
+      }
+    },
+    "research/spill-lead-20260919/integration-day12/integ68-q35ab/main-q35-cold-mixed.log": {
+      "before": {
+        "schema": "memra-validation-plan-v1",
+        "mode": "scoped",
+        "reason": "dependency closure plus declared input contracts",
+        "changed": [
+          "research/spill-lead-20260919/integration-day12/integ68-q35ab/main-q35-cold-mixed.log"
+        ],
+        "direct_packages": [],
+        "packages": [],
+        "dependency_reasons": {},
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "edge_decisions": [
+          {
+            "from": "changed-inputs",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-reference",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-kv",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-reference",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-runtime",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-sampling",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tier",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-validate",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-gguf",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tier",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-lanes",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-net-guard",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-probe",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-runtime",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-runtime",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-sampling",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-engine",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-lanes",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-net-guard",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-tier",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-tokenizer",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-tokenizer",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-validate",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          }
+        ],
+        "requires_cuda": false,
+        "cpu_contracts": [],
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        },
+        "omitted": {
+          "build": "No changed package or reverse dependency reaches this execution component",
+          "clippy": "No changed package or reverse dependency reaches this execution component",
+          "server": "No changed package or reverse dependency reaches this execution component",
+          "engine": "No changed package or reverse dependency reaches this execution component",
+          "portable": "No changed package or reverse dependency reaches this execution component",
+          "core": "No changed package or reverse dependency reaches this execution component",
+          "lanes": "No changed package or reverse dependency reaches this execution component",
+          "arch": "No changed package or reverse dependency reaches this execution component",
+          "publish": "No changed package or reverse dependency reaches this execution component"
+        }
+      },
+      "after": {
+        "schema": "memra-validation-plan-v1",
+        "mode": "scoped",
+        "reason": "dependency closure plus declared input contracts",
+        "changed": [
+          "research/spill-lead-20260919/integration-day12/integ68-q35ab/main-q35-cold-mixed.log"
+        ],
+        "direct_packages": [],
+        "packages": [],
+        "dependency_reasons": {},
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "edge_decisions": [
+          {
+            "from": "changed-inputs",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-reference",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-kv",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-reference",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-runtime",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-sampling",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tier",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-validate",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-gguf",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tier",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-lanes",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-net-guard",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-probe",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-runtime",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-runtime",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-sampling",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-engine",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-lanes",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-net-guard",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-tier",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-tokenizer",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-tokenizer",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-validate",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          }
+        ],
+        "requires_cuda": false,
+        "cpu_contracts": [
+          {
+            "id": "q35-cache",
+            "required": true,
+            "inputs": [
+              "tools/q35-cold-mixed-gate.py",
+              "tools/test_q35_cold_mixed_gate.py",
+              "research/sellgate-20260812/sellgate_replay.py",
+              "tools/cache_qualification.py",
+              "research/sellgate-20260812/workload.lock.json",
+              "research/spill-lead-20260919/integration-day12/integ68-q35ab/main-q35-cold-mixed.log",
+              "research/spill-lead-20260919/integration-day12/integ68-q35ab/integ68-q35-cold-mixed.log"
+            ],
+            "cpu": [
+              "tools/unittest-floor.sh",
+              "tools",
+              "test_q35_cold_mixed_gate.py",
+              "13"
+            ],
+            "native": [
+              "Qwen3.6 MoE mixed c=4 cache/usage/golden gate on the pinned artifact"
+            ]
+          }
+        ],
+        "native": {
+          "scope": "harness",
+          "requirements": [
+            "Qwen3.6 MoE mixed c=4 cache/usage/golden gate on the pinned artifact"
+          ],
+          "qualification": false
+        },
+        "omitted": {
+          "build": "No changed package or reverse dependency reaches this execution component",
+          "clippy": "No changed package or reverse dependency reaches this execution component",
+          "server": "No changed package or reverse dependency reaches this execution component",
+          "engine": "No changed package or reverse dependency reaches this execution component",
+          "portable": "No changed package or reverse dependency reaches this execution component",
+          "core": "No changed package or reverse dependency reaches this execution component",
+          "lanes": "No changed package or reverse dependency reaches this execution component",
+          "arch": "No changed package or reverse dependency reaches this execution component",
+          "publish": "No changed package or reverse dependency reaches this execution component"
+        }
+      }
+    },
+    "research/spill-lead-20260919/integration-day12/integ68-q35ab/integ68-q35-cold-mixed.log": {
+      "before": {
+        "schema": "memra-validation-plan-v1",
+        "mode": "scoped",
+        "reason": "dependency closure plus declared input contracts",
+        "changed": [
+          "research/spill-lead-20260919/integration-day12/integ68-q35ab/integ68-q35-cold-mixed.log"
+        ],
+        "direct_packages": [],
+        "packages": [],
+        "dependency_reasons": {},
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "edge_decisions": [
+          {
+            "from": "changed-inputs",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-reference",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-kv",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-reference",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-runtime",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-sampling",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tier",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-validate",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-gguf",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tier",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-lanes",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-net-guard",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-probe",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-runtime",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-runtime",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-sampling",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-engine",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-lanes",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-net-guard",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-tier",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-tokenizer",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-tokenizer",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-validate",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          }
+        ],
+        "requires_cuda": false,
+        "cpu_contracts": [],
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        },
+        "omitted": {
+          "build": "No changed package or reverse dependency reaches this execution component",
+          "clippy": "No changed package or reverse dependency reaches this execution component",
+          "server": "No changed package or reverse dependency reaches this execution component",
+          "engine": "No changed package or reverse dependency reaches this execution component",
+          "portable": "No changed package or reverse dependency reaches this execution component",
+          "core": "No changed package or reverse dependency reaches this execution component",
+          "lanes": "No changed package or reverse dependency reaches this execution component",
+          "arch": "No changed package or reverse dependency reaches this execution component",
+          "publish": "No changed package or reverse dependency reaches this execution component"
+        }
+      },
+      "after": {
+        "schema": "memra-validation-plan-v1",
+        "mode": "scoped",
+        "reason": "dependency closure plus declared input contracts",
+        "changed": [
+          "research/spill-lead-20260919/integration-day12/integ68-q35ab/integ68-q35-cold-mixed.log"
+        ],
+        "direct_packages": [],
+        "packages": [],
+        "dependency_reasons": {},
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "edge_decisions": [
+          {
+            "from": "changed-inputs",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-reference",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-cli",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-kv",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-reference",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-runtime",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-sampling",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tier",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-validate",
+            "to": "memra-engine",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-gguf",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tier",
+            "to": "memra-kv",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-lanes",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-net-guard",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-probe",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-reference",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-runtime",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-runtime",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-sampling",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-engine",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-lanes",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-net-guard",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "memra-tokenizer",
+            "to": "memra-server",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-tier",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-tokenizer",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          },
+          {
+            "from": "memra-gguf",
+            "to": "memra-tokenizer",
+            "affected": false,
+            "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+          },
+          {
+            "from": "changed-inputs",
+            "to": "memra-validate",
+            "affected": false,
+            "reason": "No changed declared input directly belongs to this package"
+          }
+        ],
+        "requires_cuda": false,
+        "cpu_contracts": [
+          {
+            "id": "q35-cache",
+            "required": true,
+            "inputs": [
+              "tools/q35-cold-mixed-gate.py",
+              "tools/test_q35_cold_mixed_gate.py",
+              "research/sellgate-20260812/sellgate_replay.py",
+              "tools/cache_qualification.py",
+              "research/sellgate-20260812/workload.lock.json",
+              "research/spill-lead-20260919/integration-day12/integ68-q35ab/main-q35-cold-mixed.log",
+              "research/spill-lead-20260919/integration-day12/integ68-q35ab/integ68-q35-cold-mixed.log"
+            ],
+            "cpu": [
+              "tools/unittest-floor.sh",
+              "tools",
+              "test_q35_cold_mixed_gate.py",
+              "13"
+            ],
+            "native": [
+              "Qwen3.6 MoE mixed c=4 cache/usage/golden gate on the pinned artifact"
+            ]
+          }
+        ],
+        "native": {
+          "scope": "harness",
+          "requirements": [
+            "Qwen3.6 MoE mixed c=4 cache/usage/golden gate on the pinned artifact"
+          ],
+          "qualification": false
+        },
+        "omitted": {
+          "build": "No changed package or reverse dependency reaches this execution component",
+          "clippy": "No changed package or reverse dependency reaches this execution component",
+          "server": "No changed package or reverse dependency reaches this execution component",
+          "engine": "No changed package or reverse dependency reaches this execution component",
+          "portable": "No changed package or reverse dependency reaches this execution component",
+          "core": "No changed package or reverse dependency reaches this execution component",
+          "lanes": "No changed package or reverse dependency reaches this execution component",
+          "arch": "No changed package or reverse dependency reaches this execution component",
+          "publish": "No changed package or reverse dependency reaches this execution component"
+        }
+      }
+    }
+  },
+  "missing_data_refusals": {
+    "research/sellgate-20260812/workload.lock.json": "selected contract input is missing: q35-cache",
+    "research/spill-lead-20260919/integration-day12/integ68-q35ab/main-q35-cold-mixed.log": "selected contract input is missing: q35-cache",
+    "research/spill-lead-20260919/integration-day12/integ68-q35ab/integ68-q35-cold-mixed.log": "selected contract input is missing: q35-cache"
+  },
+  "preserved_shared_consumers": {
+    "schema": "memra-validation-plan-v1",
+    "mode": "scoped",
+    "reason": "dependency closure plus declared input contracts",
+    "changed": [
+      "tools/cache_qualification.py"
+    ],
+    "direct_packages": [],
+    "packages": [],
+    "dependency_reasons": {},
+    "jobs": {
+      "build": false,
+      "clippy": false,
+      "server": false,
+      "engine": false,
+      "portable": false,
+      "core": false,
+      "lanes": false,
+      "arch": false,
+      "publish": false
+    },
+    "edge_decisions": [
+      {
+        "from": "changed-inputs",
+        "to": "memra-cli",
+        "affected": false,
+        "reason": "No changed declared input directly belongs to this package"
+      },
+      {
+        "from": "memra-gguf",
+        "to": "memra-cli",
+        "affected": false,
+        "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+      },
+      {
+        "from": "memra-reference",
+        "to": "memra-cli",
+        "affected": false,
+        "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+      },
+      {
+        "from": "memra-tokenizer",
+        "to": "memra-cli",
+        "affected": false,
+        "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+      },
+      {
+        "from": "changed-inputs",
+        "to": "memra-engine",
+        "affected": false,
+        "reason": "No changed declared input directly belongs to this package"
+      },
+      {
+        "from": "memra-gguf",
+        "to": "memra-engine",
+        "affected": false,
+        "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+      },
+      {
+        "from": "memra-kv",
+        "to": "memra-engine",
+        "affected": false,
+        "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+      },
+      {
+        "from": "memra-reference",
+        "to": "memra-engine",
+        "affected": false,
+        "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+      },
+      {
+        "from": "memra-runtime",
+        "to": "memra-engine",
+        "affected": false,
+        "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+      },
+      {
+        "from": "memra-sampling",
+        "to": "memra-engine",
+        "affected": false,
+        "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+      },
+      {
+        "from": "memra-tier",
+        "to": "memra-engine",
+        "affected": false,
+        "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+      },
+      {
+        "from": "memra-tokenizer",
+        "to": "memra-engine",
+        "affected": false,
+        "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+      },
+      {
+        "from": "memra-validate",
+        "to": "memra-engine",
+        "affected": false,
+        "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+      },
+      {
+        "from": "changed-inputs",
+        "to": "memra-gguf",
+        "affected": false,
+        "reason": "No changed declared input directly belongs to this package"
+      },
+      {
+        "from": "changed-inputs",
+        "to": "memra-kv",
+        "affected": false,
+        "reason": "No changed declared input directly belongs to this package"
+      },
+      {
+        "from": "memra-gguf",
+        "to": "memra-kv",
+        "affected": false,
+        "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+      },
+      {
+        "from": "memra-tier",
+        "to": "memra-kv",
+        "affected": false,
+        "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+      },
+      {
+        "from": "changed-inputs",
+        "to": "memra-lanes",
+        "affected": false,
+        "reason": "No changed declared input directly belongs to this package"
+      },
+      {
+        "from": "changed-inputs",
+        "to": "memra-net-guard",
+        "affected": false,
+        "reason": "No changed declared input directly belongs to this package"
+      },
+      {
+        "from": "changed-inputs",
+        "to": "memra-probe",
+        "affected": false,
+        "reason": "No changed declared input directly belongs to this package"
+      },
+      {
+        "from": "changed-inputs",
+        "to": "memra-reference",
+        "affected": false,
+        "reason": "No changed declared input directly belongs to this package"
+      },
+      {
+        "from": "memra-gguf",
+        "to": "memra-reference",
+        "affected": false,
+        "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+      },
+      {
+        "from": "memra-tokenizer",
+        "to": "memra-reference",
+        "affected": false,
+        "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+      },
+      {
+        "from": "changed-inputs",
+        "to": "memra-runtime",
+        "affected": false,
+        "reason": "No changed declared input directly belongs to this package"
+      },
+      {
+        "from": "memra-gguf",
+        "to": "memra-runtime",
+        "affected": false,
+        "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+      },
+      {
+        "from": "changed-inputs",
+        "to": "memra-sampling",
+        "affected": false,
+        "reason": "No changed declared input directly belongs to this package"
+      },
+      {
+        "from": "changed-inputs",
+        "to": "memra-server",
+        "affected": false,
+        "reason": "No changed declared input directly belongs to this package"
+      },
+      {
+        "from": "memra-engine",
+        "to": "memra-server",
+        "affected": false,
+        "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+      },
+      {
+        "from": "memra-gguf",
+        "to": "memra-server",
+        "affected": false,
+        "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+      },
+      {
+        "from": "memra-lanes",
+        "to": "memra-server",
+        "affected": false,
+        "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+      },
+      {
+        "from": "memra-net-guard",
+        "to": "memra-server",
+        "affected": false,
+        "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+      },
+      {
+        "from": "memra-tokenizer",
+        "to": "memra-server",
+        "affected": false,
+        "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+      },
+      {
+        "from": "changed-inputs",
+        "to": "memra-tier",
+        "affected": false,
+        "reason": "No changed declared input directly belongs to this package"
+      },
+      {
+        "from": "changed-inputs",
+        "to": "memra-tokenizer",
+        "affected": false,
+        "reason": "No changed declared input directly belongs to this package"
+      },
+      {
+        "from": "memra-gguf",
+        "to": "memra-tokenizer",
+        "affected": false,
+        "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+      },
+      {
+        "from": "changed-inputs",
+        "to": "memra-validate",
+        "affected": false,
+        "reason": "No changed declared input directly belongs to this package"
+      }
+    ],
+    "requires_cuda": false,
+    "cpu_contracts": [
+      {
+        "id": "background-chat-text",
+        "presence": [
+          "tools/background-chat-text-gate.py",
+          "tools/test_background_chat_text_gate.py"
+        ],
+        "inputs": [
+          "tools/background-chat-text-gate.py",
+          "tools/test_background_chat_text_gate.py",
+          "tools/cache_qualification.py",
+          "research/background-chat-text-20261002/tools/vendor-profile.toml"
+        ],
+        "cpu": [
+          "tools/unittest-floor.sh",
+          "tools",
+          "test_background_chat_text_gate.py",
+          "9"
+        ],
+        "native": [
+          "Pinned-artifact fresh OFF/ON identity and bare-default probes; paired real chat/text delivery beyond 90 seconds, tenant isolation, native-progress cancellation and exactly-one final callback"
+        ]
+      },
+      {
+        "id": "q35-cache",
+        "required": true,
+        "inputs": [
+          "tools/q35-cold-mixed-gate.py",
+          "tools/test_q35_cold_mixed_gate.py",
+          "research/sellgate-20260812/sellgate_replay.py",
+          "tools/cache_qualification.py",
+          "research/sellgate-20260812/workload.lock.json",
+          "research/spill-lead-20260919/integration-day12/integ68-q35ab/main-q35-cold-mixed.log",
+          "research/spill-lead-20260919/integration-day12/integ68-q35ab/integ68-q35-cold-mixed.log"
+        ],
+        "cpu": [
+          "tools/unittest-floor.sh",
+          "tools",
+          "test_q35_cold_mixed_gate.py",
+          "13"
+        ],
+        "native": [
+          "Qwen3.6 MoE mixed c=4 cache/usage/golden gate on the pinned artifact"
+        ]
+      },
+      {
+        "id": "sampled-mtp",
+        "presence": [
+          "tools/collect-sampled-mtp.py",
+          "tools/test_collect_sampled_mtp.py",
+          "tools/sampled-mtp-requirements.txt"
+        ],
+        "inputs": [
+          "tools/collect-sampled-mtp.py",
+          "tools/test_collect_sampled_mtp.py",
+          "tools/sampled-mtp-requirements.txt",
+          "tools/collect-serving-qualification.py",
+          "tools/cache_qualification.py"
+        ],
+        "cpu": [
+          "tools/unittest-floor.sh",
+          "tools",
+          "test_collect_sampled_mtp.py",
+          "7"
+        ],
+        "python_requirements": "tools/sampled-mtp-requirements.txt",
+        "native": [
+          "Pinned positive-PMIN eager/graph/residual/bonus/zero-draft probes, distribution controls and vendor-default serving checks"
+        ]
+      },
+      {
+        "id": "serving-qualification",
+        "presence": [
+          "tools/collect-serving-qualification.py",
+          "tools/test_collect_serving_qualification.py"
+        ],
+        "inputs": [
+          "tools/collect-serving-qualification.py",
+          "tools/test_collect_serving_qualification.py",
+          "tools/cache_qualification.py"
+        ],
+        "cpu": [
+          "tools/unittest-floor.sh",
+          "tools",
+          "test_collect_serving_qualification.py",
+          "8"
+        ],
+        "native": [
+          "Source-bound composite streaming/cache/offered-concurrency/cancellation/context collector, with the separate cache-disabled red boot"
+        ]
+      }
+    ],
+    "native": {
+      "scope": "harness",
+      "requirements": [
+        "Pinned positive-PMIN eager/graph/residual/bonus/zero-draft probes, distribution controls and vendor-default serving checks",
+        "Pinned-artifact fresh OFF/ON identity and bare-default probes; paired real chat/text delivery beyond 90 seconds, tenant isolation, native-progress cancellation and exactly-one final callback",
+        "Qwen3.6 MoE mixed c=4 cache/usage/golden gate on the pinned artifact",
+        "Source-bound composite streaming/cache/offered-concurrency/cancellation/context collector, with the separate cache-disabled red boot"
+      ],
+      "qualification": false
+    },
+    "omitted": {
+      "build": "No changed package or reverse dependency reaches this execution component",
+      "clippy": "No changed package or reverse dependency reaches this execution component",
+      "server": "No changed package or reverse dependency reaches this execution component",
+      "engine": "No changed package or reverse dependency reaches this execution component",
+      "portable": "No changed package or reverse dependency reaches this execution component",
+      "core": "No changed package or reverse dependency reaches this execution component",
+      "lanes": "No changed package or reverse dependency reaches this execution component",
+      "arch": "No changed package or reverse dependency reaches this execution component",
+      "publish": "No changed package or reverse dependency reaches this execution component"
+    }
+  },
+  "historical_originals_unchanged": true,
+  "cpu_command_and_native_obligation_unchanged": true,
+  "qualification": false,
+  "schema": "cpu-q35-fixture-data-contract-proof-v1",
+  "source_bound_coverage": {
+    "admission": {
+      "status": "passed",
+      "edges": 20,
+      "contract_id": "05f724d099baa93ac642362e124b416b4f9a3c49fb5947018f942e25bfcfe8ae",
+      "qualification": false,
+      "scope": "declared behavior assertions only; native receipt admission remains separate"
+    },
+    "required_edges": [
+      "actual-consumer-baseline",
+      "actual-consumer-red/research/sellgate-20260812/workload.lock.json",
+      "actual-consumer-red/research/spill-lead-20260919/integration-day12/integ68-q35ab/integ68-q35-cold-mixed.log",
+      "actual-consumer-red/research/spill-lead-20260919/integration-day12/integ68-q35ab/main-q35-cold-mixed.log",
+      "all-native-obligations-preserved",
+      "four-shared-consumers",
+      "framework126-floor126",
+      "historical-originals-unchanged",
+      "missing-data-refusal/research/sellgate-20260812/workload.lock.json",
+      "missing-data-refusal/research/spill-lead-20260919/integration-day12/integ68-q35ab/integ68-q35-cold-mixed.log",
+      "missing-data-refusal/research/spill-lead-20260919/integration-day12/integ68-q35ab/main-q35-cold-mixed.log",
+      "original-omission/research/sellgate-20260812/workload.lock.json",
+      "original-omission/research/spill-lead-20260919/integration-day12/integ68-q35ab/integ68-q35-cold-mixed.log",
+      "original-omission/research/spill-lead-20260919/integration-day12/integ68-q35ab/main-q35-cold-mixed.log",
+      "registry14",
+      "repaired-selection/research/sellgate-20260812/workload.lock.json",
+      "repaired-selection/research/spill-lead-20260919/integration-day12/integ68-q35ab/integ68-q35-cold-mixed.log",
+      "repaired-selection/research/spill-lead-20260919/integration-day12/integ68-q35ab/main-q35-cold-mixed.log",
+      "six-original-behavior-reds",
+      "two-new-regression-methods"
+    ],
+    "mandatory_controls": {
+      "missing-data-refusal-edge": "selected test/control lacks an explicit passing assertion: actual-data-closure/missing-data-refusal/research/sellgate-20260812/workload.lock.json",
+      "skipped-original-regressions": "empty or skipped test result: original-regression-reds"
+    },
+    "helper_sha256": {
+      "execute.py": "0c29eb629c96e4153eae210f2b6db7a36115523b742ebb64a9b80941f831db59",
+      "admit_coverage.py": "dbb0717701ff491eada28dbc37624fc8d5e9d48418f3c50a1edddf27c042b0e8",
+      "baseline/validation_plan.py": "8f7bc999097e08b22e4aaf7b063dc1e8aeaf719f7d4152927188b2934c893662",
+      "baseline/skip-census.py": "d89ce391d748499214df2279a48d719b9e67cad6a2838c77ebcef46640883a7d",
+      "baseline/validation_inputs.json": "71e17d5f91f44bae768047ad4c9f2c40486a291e35e123e6a7e54f16fd34d377"
+    }
+  },
+  "checks": {
+    "framework": {
+      "passed": 126,
+      "failed": 0,
+      "floor": 126
+    },
+    "q35_existing_cpu": {
+      "passed": 13,
+      "failed": 0,
+      "floor": 13
+    },
+    "new_regression_methods": {
+      "passed": 2,
+      "failed": 0
+    },
+    "original_regressions": {
+      "expected_failures": 6,
+      "errors": 0
+    },
+    "package_registry": 14,
+    "diff": "passed"
+  },
+  "raw_check_output": {
+    "framework-final.log": "..............................................................................................................................\n----------------------------------------------------------------------\nRan 126 tests in 10.149s\n\nOK\nunittest-floor: OK: ran 126 tests (floor 126) for tools (test_validation_*.py)\n",
+    "q35-cpu.log": ".............\n----------------------------------------------------------------------\nRan 13 tests in 0.006s\n\nOK\nunittest-floor: OK: ran 13 tests (floor 13) for tools (test_q35_cold_mixed_gate.py)\n",
+    "registry.log": "Validation registry covers all 14 workspace packages\n",
+    "new-controls.log": "..\n----------------------------------------------------------------------\nRan 2 tests in 0.288s\n\nOK\n",
+    "original-regression-red.log": "FFFFFF\n======================================================================\nFAIL: test_q35_consumed_data_keeps_cpu_and_native_contract (test_validation_plan.ValidationPlanTests.test_q35_consumed_data_keeps_cpu_and_native_contract) (path='research/sellgate-20260812/workload.lock.json')\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/avifenesh/.local/state/memra-rig-darklanes-20261002/scratch/B/B950-old-planner-ct_dfb0d/test_validation_plan.py\", line 128, in test_q35_consumed_data_keeps_cpu_and_native_contract\n    self.assertEqual([c['id'] for c in plan['cpu_contracts']], ['q35-cache'])\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: Lists differ: [] != ['q35-cache']\n\nSecond list contains 1 additional elements.\nFirst extra element 0:\n'q35-cache'\n\n- []\n+ ['q35-cache']\n\n======================================================================\nFAIL: test_q35_consumed_data_keeps_cpu_and_native_contract (test_validation_plan.ValidationPlanTests.test_q35_consumed_data_keeps_cpu_and_native_contract) (path='research/spill-lead-20260919/integration-day12/integ68-q35ab/main-q35-cold-mixed.log')\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/avifenesh/.local/state/memra-rig-darklanes-20261002/scratch/B/B950-old-planner-ct_dfb0d/test_validation_plan.py\", line 128, in test_q35_consumed_data_keeps_cpu_and_native_contract\n    self.assertEqual([c['id'] for c in plan['cpu_contracts']], ['q35-cache'])\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: Lists differ: [] != ['q35-cache']\n\nSecond list contains 1 additional elements.\nFirst extra element 0:\n'q35-cache'\n\n- []\n+ ['q35-cache']\n\n======================================================================\nFAIL: test_q35_consumed_data_keeps_cpu_and_native_contract (test_validation_plan.ValidationPlanTests.test_q35_consumed_data_keeps_cpu_and_native_contract) (path='research/spill-lead-20260919/integration-day12/integ68-q35ab/integ68-q35-cold-mixed.log')\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/avifenesh/.local/state/memra-rig-darklanes-20261002/scratch/B/B950-old-planner-ct_dfb0d/test_validation_plan.py\", line 128, in test_q35_consumed_data_keeps_cpu_and_native_contract\n    self.assertEqual([c['id'] for c in plan['cpu_contracts']], ['q35-cache'])\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: Lists differ: [] != ['q35-cache']\n\nSecond list contains 1 additional elements.\nFirst extra element 0:\n'q35-cache'\n\n- []\n+ ['q35-cache']\n\n======================================================================\nFAIL: test_selected_q35_contract_refuses_each_missing_consumed_data_input (test_validation_plan.ValidationPlanTests.test_selected_q35_contract_refuses_each_missing_consumed_data_input) (path='research/sellgate-20260812/workload.lock.json')\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/avifenesh/.local/state/memra-rig-darklanes-20261002/scratch/B/B950-old-planner-ct_dfb0d/test_validation_plan.py\", line 147, in test_selected_q35_contract_refuses_each_missing_consumed_data_input\n    with self.assertRaisesRegex(vp.Refused, 'selected contract input is missing: q35-cache'):\n         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: Refused not raised\n\n======================================================================\nFAIL: test_selected_q35_contract_refuses_each_missing_consumed_data_input (test_validation_plan.ValidationPlanTests.test_selected_q35_contract_refuses_each_missing_consumed_data_input) (path='research/spill-lead-20260919/integration-day12/integ68-q35ab/main-q35-cold-mixed.log')\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/avifenesh/.local/state/memra-rig-darklanes-20261002/scratch/B/B950-old-planner-ct_dfb0d/test_validation_plan.py\", line 147, in test_selected_q35_contract_refuses_each_missing_consumed_data_input\n    with self.assertRaisesRegex(vp.Refused, 'selected contract input is missing: q35-cache'):\n         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: Refused not raised\n\n======================================================================\nFAIL: test_selected_q35_contract_refuses_each_missing_consumed_data_input (test_validation_plan.ValidationPlanTests.test_selected_q35_contract_refuses_each_missing_consumed_data_input) (path='research/spill-lead-20260919/integration-day12/integ68-q35ab/integ68-q35-cold-mixed.log')\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/avifenesh/.local/state/memra-rig-darklanes-20261002/scratch/B/B950-old-planner-ct_dfb0d/test_validation_plan.py\", line 147, in test_selected_q35_contract_refuses_each_missing_consumed_data_input\n    with self.assertRaisesRegex(vp.Refused, 'selected contract input is missing: q35-cache'):\n         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: Refused not raised\n\n----------------------------------------------------------------------\nRan 2 tests in 0.285s\n\nFAILED (failures=6)\n"
+  },
+  "raw_log_sha256": {
+    "framework-final.log": "4aded1e89da94caf0d6e99ed3d44466d405a00d5393bdf95ea4dae44e06233ca",
+    "q35-cpu.log": "7432599bf54fa919c6942bb59f021f5a91ac1be9f95c76a4a31418a9789ed889",
+    "registry.log": "d29a3eff345fae568378f53692307e0fd02164daa67b71f750c40508a5b3ad65",
+    "new-controls.log": "56c92528aa5576d3030142e40ad0b9bf8423693e3b5b577510c1c9b18dd72b54",
+    "original-regression-red.log": "cee4c27765c4df722e184d8071c8a72466fd92b55ce804af628a658f44cc609c"
+  },
+  "scope": "Exact three Q35 consumed data paths; CPU fixture graph repair only; no whole-repository fixture closure or native qualification",
+  "ci_coverage_limit": "Current CI retains an independent always-run Q35 13-test invocation. The proven defect is an omitted affected contract/native obligation, not a claim that existing hosted CI skipped that invocation."
+}

@@ -1,0 +1,29 @@
+{
+  "source": "fc8ce50a5dbdc1de38d3489c1e5d06c58693b6cc",
+  "production_source": "33530440e1f7a71405a03ef179fe1882aec97a5a",
+  "capsule_sha256": "46f2c245c0a8e63126102853654e1428e73b9feea1bd37465e2d5663ddadc538",
+  "functions": {
+    "pub struct BgHandle {": "c6e00413d47d3f6a608cf9841b2af6b8ad938b0cd3fc34da8d44d1d5e96cdbe9",
+    "impl BgHandle {": "fae57521072f2fdf40de96619bf9effacfcb1e80414522700a96eafb2e79900d",
+    "pub fn spawn_runner(": "6686297a6cd290e65d24be3e720ccca2679df76036e787d8a079e0f0f84e2891",
+    "fn signal_group(": "a5fbbea4385f4a4f2051f9d68aa6a22269d29f6b86d3b5144cf71a1ba633db42",
+    "fn kill_group(": "d6ddea61609dbbeed364a895c004baf23cd0a51517262bf4a69dfe94a9a7db8d",
+    "fn terminate_owned_group(": "22c07b6cfe6fdfc6c1fbca8848941c7c0c420b0d6b5b31fe59370b0138fa7773",
+    "fn child_stop_acknowledged(": "c83d42c23725bdd11974aff6e23fb1413d9652829a52aa8c6619afb62e01f4ee",
+    "fn runner_loop(": "67b89caddff8954aecb555bb597709c328ef326688f93d5c3705cf63f1575def",
+    "fn launch(": "da119ccb54f08122bf5a0de4b17ad163b03a0eb87b5f849dbc7a8377f169de6b",
+    "fn handle_exit(": "16d9af1d391ffcf2b79a3938084d7a57692ab8baa98a80f2702c3bf590a62467",
+    "fn preempt_wait(": "c7deda54a38c1fed3a59860de6b3b32a9b09dbf7d366b3d7540c3234c6a0cfbd"
+  },
+  "expected_exit": 101,
+  "test": "expired_checkpoint_deadline_does_not_grant_descendant_term_grace",
+  "assertion": "actual TERM handler marker must not be written after the original checkpoint deadline is expired; no tight wall-clock assertion",
+  "only_fixture_refinement": "print owned directory receipt; require complete PID record and verify group before owning pidfd",
+  "observed": {
+    "exit_code": 101,
+    "leader_exit_code": 75,
+    "original_checkpoint_deadline": "expired",
+    "descendant_term_handler_marker": "written, proving a new TERM grace was granted"
+  },
+  "log_sha256": "a0a0116b1c097e6a10e54de76760bda48cee1956d4baaf0430ce949fc0179d99"
+}

@@ -9,9 +9,9 @@ cuda_root=$(dirname "$(dirname "$(readlink -f "$MEMRA_NVCC")")")
 # lets GPU-free hosted CI load them; no driver API is called by --check-controls.
 ln -sf "$cuda_root/lib64/stubs/libcuda.so" "$out/libcuda.so.1"
 export LD_LIBRARY_PATH="$out:${LD_LIBRARY_PATH:-}"
+python3 tools/dense_control_cache.py --nvcc "$MEMRA_NVCC" --out "$out" \
+    --cache "$CARGO_TARGET_DIR/dsv4-control-cache"
 for name in dsv4-dense-exact-tail-gate dsv4-dense-tc-gate dsv4-dense-tc-gate-r4 dsv4-dense-tc-gate-r7-driver dsv4-dense-tc-gate-r8-driver dsv4-dense-tc-gate-r9-driver; do
-    "$MEMRA_NVCC" -t 2 -std=c++17 -O3 -fmad=false -Xcompiler=-ffp-contract=off \
-        -arch=sm_120a "tools/$name.cu" -lcublasLt -lcublas -ldl -L"$cuda_root/lib64/stubs" -lcuda -o "$out/$name"
     env -u MEMRA_DSV4_HC_DOT_SPLIT -u MEMRA_DSV4_DENSE_FAST "$out/$name" --check-controls
     env MEMRA_DSV4_HC_DOT_SPLIT=16 MEMRA_DSV4_DENSE_FAST=1 "$out/$name" --check-controls
     env MEMRA_DSV4_HC_DOT_SPLIT=0 MEMRA_DSV4_DENSE_FAST=0 "$out/$name" --check-controls

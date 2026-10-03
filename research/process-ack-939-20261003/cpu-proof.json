@@ -1,18 +1,18 @@
 {
-  "source": "7b1843194ee173c12d31a8425fe6bb3f75460066",
-  "source_darklane_sha256": "4ff6750b1dcea8ae70ed291d94238a461598e793e669bba11ca3ce482458580e",
+  "source": "20d58bd7be85b86d83a4bb8d37fcad244b6e25ac",
+  "source_darklane_sha256": "b7a0b7db4a24937ddc88d9e969f6869ccd83d0df2305b4d870e120585f2ec170",
   "cpu_tests": {
-    "passed": 1101,
+    "passed": 1102,
     "failed": 0,
     "ignored": 28,
     "filtered": 0
   },
   "lifecycle_tests": {
-    "passed": 14,
+    "passed": 15,
     "failed": 0
   },
   "exact_function_capsule": {
-    "passed": 9,
+    "passed": 10,
     "failed": 0,
     "warnings": "denied"
   },
@@ -21,84 +21,133 @@
   "strict_release_all_target_clippy": "passed",
   "format": "passed",
   "diff_check": "passed",
-  "raw_log_sha256": "17d036ce3dff1bfc5a3ff003478abc7f389ae2a9e5fb10432d5ddf3afd6e06e3",
+  "raw_log_sha256": "5a60c7de822ef62dfd1711ac5d6fb98db4a026f78fc954063813b563813a5de7",
   "capsule_binding": {
-    "source": "7b1843194ee173c12d31a8425fe6bb3f75460066",
-    "source_sha256": "4ff6750b1dcea8ae70ed291d94238a461598e793e669bba11ca3ce482458580e",
-    "capsule_sha256": "0856c4017fa72883a015fe20714647c6a305fbc3bfcec80b55a20f6864f6e579",
+    "source": "20d58bd7be85b86d83a4bb8d37fcad244b6e25ac",
+    "source_sha256": "b7a0b7db4a24937ddc88d9e969f6869ccd83d0df2305b4d870e120585f2ec170",
+    "capsule_sha256": "6acb0152f62fe8891c13b57d8a04d3c5d58391b2c1abfb931f103671d69532dd",
     "functions": {
       "pub struct BgHandle {": "c6e00413d47d3f6a608cf9841b2af6b8ad938b0cd3fc34da8d44d1d5e96cdbe9",
       "impl BgHandle {": "fae57521072f2fdf40de96619bf9effacfcb1e80414522700a96eafb2e79900d",
       "pub fn spawn_runner(": "6686297a6cd290e65d24be3e720ccca2679df76036e787d8a079e0f0f84e2891",
       "fn signal_group(": "a5fbbea4385f4a4f2051f9d68aa6a22269d29f6b86d3b5144cf71a1ba633db42",
       "fn kill_group(": "d6ddea61609dbbeed364a895c004baf23cd0a51517262bf4a69dfe94a9a7db8d",
-      "fn terminate_owned_group(": "22c07b6cfe6fdfc6c1fbca8848941c7c0c420b0d6b5b31fe59370b0138fa7773",
+      "fn terminate_owned_group(": "ba56083b3100ce5a8ed0bf3f3fd6c9cc955c8e8a77742b4a416cfa68d80a587b",
+      "fn terminate_owned_group_with_grace(": "665a8c8480b880b7cdb0f8e3984e980905f22a86d0b2f85ba0c8b3af91719065",
       "fn child_stop_acknowledged(": "c83d42c23725bdd11974aff6e23fb1413d9652829a52aa8c6619afb62e01f4ee",
-      "fn runner_loop(": "67b89caddff8954aecb555bb597709c328ef326688f93d5c3705cf63f1575def",
+      "fn runner_loop(": "63df00484e3d808c900d6782a8d44545c75f65853c1dabd8ec9a4819db050f35",
       "fn launch(": "da119ccb54f08122bf5a0de4b17ad163b03a0eb87b5f849dbc7a8377f169de6b",
       "fn handle_exit(": "16d9af1d391ffcf2b79a3938084d7a57692ab8baa98a80f2702c3bf590a62467",
-      "fn preempt_wait(": "c7deda54a38c1fed3a59860de6b3b32a9b09dbf7d366b3d7540c3234c6a0cfbd"
+      "fn preempt_wait(": "2ce4421bac4d2d1396124201e75d717ef6235356230782b4921b28ae6aa2bed3"
     },
     "expected_exit": 0,
-    "scope": "owned CPU groups; pidfd-bound descendant assertions/cleanup; no GPU"
+    "deadline_controls": "expired original checkpoint deadline disallows fresh TERM grace; live checkpoint TERM-ignoring descendant uses configured100ms; original30s guards retained"
   },
+  "checkpoint_budget": "original preempt_wait deadline; no fresh grace after expiry; 100ms descendant control plus expired-deadline TERM-handler marker",
   "scope": "owned CPU POSIX lifecycle; no GPU/model/runtime or release qualification",
   "original_intermittent_cause": "unproven",
   "prior_source_proof": {
-    "source": "fa3dfe73bb13b2dcdf1b9392eb10fd4915d0a0eb",
-    "source_darklane_sha256": "bc93b48bdbf8b81ee19edf9fc92ab8856adbcd9b315711e750e31d8aeec26715",
+    "source": "7b1843194ee173c12d31a8425fe6bb3f75460066",
+    "source_darklane_sha256": "4ff6750b1dcea8ae70ed291d94238a461598e793e669bba11ca3ce482458580e",
     "cpu_tests": {
-      "passed": 1097,
+      "passed": 1101,
       "failed": 0,
       "ignored": 28,
       "filtered": 0
     },
     "lifecycle_tests": {
-      "passed": 10,
+      "passed": 14,
       "failed": 0
+    },
+    "exact_function_capsule": {
+      "passed": 9,
+      "failed": 0,
+      "warnings": "denied"
     },
     "registry_packages": 14,
     "validation_floor_tests": 124,
     "strict_release_all_target_clippy": "passed",
     "format": "passed",
     "diff_check": "passed",
-    "raw_log_sha256": "659528183dcb28f2b285b8c7e50db152ede8ee21bc71e1df43b81a42390a00df",
+    "raw_log_sha256": "17d036ce3dff1bfc5a3ff003478abc7f389ae2a9e5fb10432d5ddf3afd6e06e3",
+    "capsule_binding": {
+      "source": "7b1843194ee173c12d31a8425fe6bb3f75460066",
+      "source_sha256": "4ff6750b1dcea8ae70ed291d94238a461598e793e669bba11ca3ce482458580e",
+      "capsule_sha256": "0856c4017fa72883a015fe20714647c6a305fbc3bfcec80b55a20f6864f6e579",
+      "functions": {
+        "pub struct BgHandle {": "c6e00413d47d3f6a608cf9841b2af6b8ad938b0cd3fc34da8d44d1d5e96cdbe9",
+        "impl BgHandle {": "fae57521072f2fdf40de96619bf9effacfcb1e80414522700a96eafb2e79900d",
+        "pub fn spawn_runner(": "6686297a6cd290e65d24be3e720ccca2679df76036e787d8a079e0f0f84e2891",
+        "fn signal_group(": "a5fbbea4385f4a4f2051f9d68aa6a22269d29f6b86d3b5144cf71a1ba633db42",
+        "fn kill_group(": "d6ddea61609dbbeed364a895c004baf23cd0a51517262bf4a69dfe94a9a7db8d",
+        "fn terminate_owned_group(": "22c07b6cfe6fdfc6c1fbca8848941c7c0c420b0d6b5b31fe59370b0138fa7773",
+        "fn child_stop_acknowledged(": "c83d42c23725bdd11974aff6e23fb1413d9652829a52aa8c6619afb62e01f4ee",
+        "fn runner_loop(": "67b89caddff8954aecb555bb597709c328ef326688f93d5c3705cf63f1575def",
+        "fn launch(": "da119ccb54f08122bf5a0de4b17ad163b03a0eb87b5f849dbc7a8377f169de6b",
+        "fn handle_exit(": "16d9af1d391ffcf2b79a3938084d7a57692ab8baa98a80f2702c3bf590a62467",
+        "fn preempt_wait(": "c7deda54a38c1fed3a59860de6b3b32a9b09dbf7d366b3d7540c3234c6a0cfbd"
+      },
+      "expected_exit": 0,
+      "scope": "owned CPU groups; pidfd-bound descendant assertions/cleanup; no GPU"
+    },
     "scope": "owned CPU POSIX lifecycle; no GPU/model/runtime or release qualification",
     "original_intermittent_cause": "unproven",
-    "expected_old_runner_red": "passed expected101 with observed zombie and falseyield; guard reapedchild and removedowned directory",
-    "warning_denied_old_runner_capsule": "passed; expected red101; owned directory removed",
-    "capsule_log_sha256": "951b9afd775fc9f0dbac0e0c8d06ded784fd9570dfe8a5a9cfae4731bc9fb38c",
-    "clean_capsule_binding": {
-      "fixture_source": "fa3dfe73bb13b2dcdf1b9392eb10fd4915d0a0eb",
-      "fixture_source_sha256": "bc93b48bdbf8b81ee19edf9fc92ab8856adbcd9b315711e750e31d8aeec26715",
-      "runner_source": "e8ef5e47ae4f38c420f602abd38aadd4fd59f181",
-      "capsule_sha256": "bedc609e35765b1b70f5a91137e392f6e9e2f4106f81164065dbfd9a92960a7d",
-      "runner_functions": {
-        "fn runner_loop(": "4144951218e52883f3867fc1136a971c81e419687868294650b6dcf325250835",
-        "fn launch(": "da119ccb54f08122bf5a0de4b17ad163b03a0eb87b5f849dbc7a8377f169de6b",
-        "fn kill_group(": "2edc31a8f20845eda4467aab2ce21fcd44fe2166e42a5b5f50a288a90de42b8c",
-        "fn handle_exit(": "16d9af1d391ffcf2b79a3938084d7a57692ab8baa98a80f2702c3bf590a62467",
-        "fn preempt_wait(": "1eb6e05cea5d5dca99a11e1fad46ec6a313bab59771ec7409bff92502ac7be05"
+    "prior_source_proof": {
+      "source": "fa3dfe73bb13b2dcdf1b9392eb10fd4915d0a0eb",
+      "source_darklane_sha256": "bc93b48bdbf8b81ee19edf9fc92ab8856adbcd9b315711e750e31d8aeec26715",
+      "cpu_tests": {
+        "passed": 1097,
+        "failed": 0,
+        "ignored": 28,
+        "filtered": 0
       },
-      "executed_test": "normal_exit_between_wait_and_stop_is_done_without_yield",
-      "expected_exit": 101,
-      "purpose": "same real owned-child regression is red with exact old runner; exercise panic snapshot and owned shutdown/dir cleanup; unchanged 30-second guard",
-      "only_change": "remove unused copied wait_for helper; no executed fixture/production function changes",
-      "removed_unused_helper_sha256": "5307e80269f8ccda690ebaf2cabf890f6c447772fead350f4b0fd71ade2a7828"
-    },
-    "libc_binding": {
-      "rlib": "liblibc-436a9c23a73f2f62.rlib",
-      "sha256": "799587d0ed0076f16be25c5ba198c49a66db5f425be2e8850feedec5a2db51bb",
-      "fingerprint_decimal": 8533174067110887054,
-      "memra_server_test_fingerprint": "18a72fda78e92499",
-      "reason": "matches the libc dependency fingerprint of the executed release test binary; alternate rlib has different profile and fingerprint"
-    },
-    "failed_attempts": [
-      {
-        "stage": "capsule dependency selection",
-        "exit_code": 1,
-        "reason": "two libc profile artifacts; refused ambiguous selection; fixed by exact release dependency fingerprint and rlib hash"
-      }
-    ]
+      "lifecycle_tests": {
+        "passed": 10,
+        "failed": 0
+      },
+      "registry_packages": 14,
+      "validation_floor_tests": 124,
+      "strict_release_all_target_clippy": "passed",
+      "format": "passed",
+      "diff_check": "passed",
+      "raw_log_sha256": "659528183dcb28f2b285b8c7e50db152ede8ee21bc71e1df43b81a42390a00df",
+      "scope": "owned CPU POSIX lifecycle; no GPU/model/runtime or release qualification",
+      "original_intermittent_cause": "unproven",
+      "expected_old_runner_red": "passed expected101 with observed zombie and falseyield; guard reapedchild and removedowned directory",
+      "warning_denied_old_runner_capsule": "passed; expected red101; owned directory removed",
+      "capsule_log_sha256": "951b9afd775fc9f0dbac0e0c8d06ded784fd9570dfe8a5a9cfae4731bc9fb38c",
+      "clean_capsule_binding": {
+        "fixture_source": "fa3dfe73bb13b2dcdf1b9392eb10fd4915d0a0eb",
+        "fixture_source_sha256": "bc93b48bdbf8b81ee19edf9fc92ab8856adbcd9b315711e750e31d8aeec26715",
+        "runner_source": "e8ef5e47ae4f38c420f602abd38aadd4fd59f181",
+        "capsule_sha256": "bedc609e35765b1b70f5a91137e392f6e9e2f4106f81164065dbfd9a92960a7d",
+        "runner_functions": {
+          "fn runner_loop(": "4144951218e52883f3867fc1136a971c81e419687868294650b6dcf325250835",
+          "fn launch(": "da119ccb54f08122bf5a0de4b17ad163b03a0eb87b5f849dbc7a8377f169de6b",
+          "fn kill_group(": "2edc31a8f20845eda4467aab2ce21fcd44fe2166e42a5b5f50a288a90de42b8c",
+          "fn handle_exit(": "16d9af1d391ffcf2b79a3938084d7a57692ab8baa98a80f2702c3bf590a62467",
+          "fn preempt_wait(": "1eb6e05cea5d5dca99a11e1fad46ec6a313bab59771ec7409bff92502ac7be05"
+        },
+        "executed_test": "normal_exit_between_wait_and_stop_is_done_without_yield",
+        "expected_exit": 101,
+        "purpose": "same real owned-child regression is red with exact old runner; exercise panic snapshot and owned shutdown/dir cleanup; unchanged 30-second guard",
+        "only_change": "remove unused copied wait_for helper; no executed fixture/production function changes",
+        "removed_unused_helper_sha256": "5307e80269f8ccda690ebaf2cabf890f6c447772fead350f4b0fd71ade2a7828"
+      },
+      "libc_binding": {
+        "rlib": "liblibc-436a9c23a73f2f62.rlib",
+        "sha256": "799587d0ed0076f16be25c5ba198c49a66db5f425be2e8850feedec5a2db51bb",
+        "fingerprint_decimal": 8533174067110887054,
+        "memra_server_test_fingerprint": "18a72fda78e92499",
+        "reason": "matches the libc dependency fingerprint of the executed release test binary; alternate rlib has different profile and fingerprint"
+      },
+      "failed_attempts": [
+        {
+          "stage": "capsule dependency selection",
+          "exit_code": 1,
+          "reason": "two libc profile artifacts; refused ambiguous selection; fixed by exact release dependency fingerprint and rlib hash"
+        }
+      ]
+    }
   }
 }
