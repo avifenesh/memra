@@ -92,6 +92,30 @@ not run SFT generation, provider/model calls, private corpus or scale pipelines.
 Generator edits retain full validation selection and native requirements. No
 model, runtime, serving or native qualification is granted.
 
+## Score-shard self-test admission
+
+The unconditional CI gates job runs the original score-shard self-test and its
+CPU admission controls:
+
+```sh
+python3 tools/merge_expert_score_shards.py --self-test
+python3 tools/run_score_shard_contract.py
+```
+
+Both original assertion predicates and a real merge of the two fixture shards
+must execute. The admission runner requires exactly 14 unique control identities,
+with equal discovered, executed and successful sets, no skips and no expected
+failures. Incorrect merge results, missing or replaced assertions, a no-op
+self-test, removed or masked callers, missing or duplicate controls and missing
+success callbacks refuse admission. Optimized startup refuses before fixtures
+or discovery; ordinary merging remains available under optimized Python.
+
+[Source-bound proof](../research/score-shard-caller-986-20261003/README.md)
+records actual before/wrong/restore runs and compiling failure controls. This is
+CPU caller admission. Ordinary merge functions, schema, metadata, row ordering
+and hashes are unchanged. Merger edits retain full native-plan selection; this
+caller grants no model, runtime or emitted native-plan qualification.
+
 ## DSV4 norm-fusion gates, REMOVED 2026-09-11
 
 The two sections that stood here documented `dsv4_compose_densefast_normfuse_gate`
