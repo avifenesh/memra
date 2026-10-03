@@ -4,7 +4,7 @@
     {
       "id": "expert-tier-caller",
       "block": "      - name: Expert-tier plan self-test assertion admission (CPU-only)\n        run: |\n          python3 tools/build_expert_tier_plan.py --self-test\n          python3 tools/run_expert_tier_contract.py\n\n",
-      "anchor": "      - name: Exact-source coalescer membership and wait contracts (CPU-only)\n",
+      "anchor": "      - name: Agreement-summary self-test assertion admission (CPU-only)\n",
       "inputs": [
         "tools/build_expert_tier_plan.py",
         "tools/run_expert_tier_contract.py",
@@ -19,7 +19,7 @@
     {
       "id": "sft-generator-caller",
       "block": "      - name: SFT generator CPU control admission\n        run: python3 tools/run_sft_gen_contract.py\n\n",
-      "anchor": "      - name: Exact-source coalescer membership and wait contracts (CPU-only)\n",
+      "anchor": "      - name: Agreement-summary self-test assertion admission (CPU-only)\n",
       "inputs": [
         "tools/sft-gen.py",
         "tools/test_sft_gen.py",
@@ -35,7 +35,7 @@
     {
       "id": "score-shard-caller",
       "block": "      - name: Score-shard self-test assertion admission (CPU-only)\n        run: |\n          python3 tools/merge_expert_score_shards.py --self-test\n          python3 tools/run_score_shard_contract.py\n\n",
-      "anchor": "      - name: Exact-source coalescer membership and wait contracts (CPU-only)\n",
+      "anchor": "      - name: Agreement-summary self-test assertion admission (CPU-only)\n",
       "inputs": [
         "tools/merge_expert_score_shards.py",
         "tools/run_score_shard_contract.py",
