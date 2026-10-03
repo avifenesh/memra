@@ -30,6 +30,13 @@ JOBS = ('build', 'clippy', 'server', 'engine', 'portable', 'core', 'lanes', 'arc
 # These are executable CPU/harness contracts, not a blanket tools/** exemption.
 # Their tests remain in the always-run gates job. Native reruns are named separately.
 TOOL_CONTRACTS = {
+    'tool-choice': {
+        'presence': ['tools/tool-choice-gate.py', 'tools/test_tool_choice_gate.py'],
+        'inputs': ['tools/tool-choice-gate.py', 'tools/test_tool_choice_gate.py',
+                   'tools/validation_coverage.py'],
+        'cpu': ['tools/unittest-floor.sh', 'tools', 'test_tool_choice_gate.py', '13'],
+        'native': ['Pinned Qwen/Gemma tool-choice streams: required/named schema and grammar engagement, single-call policy, explicit refusals, and unchanged-auto/tool-none identity with coherent receipt red controls'],
+    },
     'q35-cache': {
         'required': True,
         'inputs': ['tools/q35-cold-mixed-gate.py', 'tools/test_q35_cold_mixed_gate.py',
