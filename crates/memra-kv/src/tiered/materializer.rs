@@ -120,7 +120,7 @@ impl<'a> QwenMaterializer<'a> {
     pub fn new(owner: &'a DeviceOwner, program: ProgramIdentity, geometry: NativeGeometry) -> Self {
         Self {
             id: NEXT_MATERIALIZER
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+                .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
                 .expect("materializer id exhausted"),
             owner,
             program,
@@ -245,7 +245,7 @@ impl<'a> PackedMaterializer<'a> {
     pub fn new(owner: &'a DeviceOwner, program: ProgramIdentity, layout: RecordLayout) -> Self {
         Self {
             id: NEXT_MATERIALIZER
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+                .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
                 .expect("materializer id exhausted"),
             owner,
             program,

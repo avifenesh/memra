@@ -134,7 +134,7 @@ pub struct EvictionPermit(HashSet<Digest>);
 fn next_transaction_id() -> Result<u64> {
     use std::sync::atomic::{AtomicU64, Ordering};
     static NEXT: AtomicU64 = AtomicU64::new(1);
-    NEXT.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+    NEXT.try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
         .map_err(|_| Error::Overflow)
 }
 pub trait BlobBackend {

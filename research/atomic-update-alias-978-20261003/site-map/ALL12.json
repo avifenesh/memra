@@ -1,0 +1,282 @@
+{
+  "source": "89507cd5addc3ebd756d35f959842849731d7e37",
+  "rows": [
+    {
+      "site": 0,
+      "file": "crates/memra-tier/src/bank/residency.rs",
+      "line": 350,
+      "emitted_operation_witness": {
+        "kind": "actual emitted IR",
+        "function": "<memra_tier::bank::residency::BankService<memra_tier::contracts::ExpertDomain, bank::Heat, bank::Reader>>::new",
+        "symbol": "_RNvMs1_NtNtCs5dKjvJOfQoj_10memra_tier4bank9residencyINtB5_11BankServiceNtNtB9_9contracts12ExpertDomainNtCs4Ruu3DTBfHW_4bank4HeatNtB1E_6ReaderE3newB1E_",
+        "canonical_pair": "COMPARE-tier-kv/4aa687ec09e21dcb",
+        "equal": true,
+        "atomic_operations": [
+          {
+            "line": 37,
+            "instruction": "  %v67 = cmpxchg weak ptr @_RNvNtNtCs5dKjvJOfQoj_10memra_tier4bank9residency12NEXT_SERVICE, i64 %v63, i64 %v66 monotonic monotonic, align 8"
+          }
+        ],
+        "canonical_sha256": "930196f7471b81ffca67571a8c8ea94f4a6109cba22466b5903bc4ae35fe673e"
+      },
+      "copied_expression_boundary_control": "boundary-controls/SOURCE-MAP.json#site0",
+      "real_package_tests": "baseline-tier-kv/actual-successful-identities.json",
+      "limits": "Callees and constants are kept by exact target identity and independently compared direct witnesses. Actual operations are not inferred from Arc-support rows."
+    },
+    {
+      "site": 1,
+      "file": "crates/memra-tier/src/bank/owner_proxy.rs",
+      "line": 169,
+      "emitted_operation_witness": {
+        "kind": "actual emitted IR",
+        "function": "<memra_tier::bank::owner_proxy::ExpertBankOwner>::register",
+        "symbol": "_RNvMs1_NtNtCs5dKjvJOfQoj_10memra_tier4bank11owner_proxyNtB5_15ExpertBankOwner8register",
+        "canonical_pair": "COMPARE-tier-kv/152f529bedb6da8e",
+        "equal": true,
+        "atomic_operations": [
+          {
+            "line": 26,
+            "instruction": "  %v159 = cmpxchg weak ptr @_RNvNtNtCs5dKjvJOfQoj_10memra_tier4bank11owner_proxy10NEXT_OWNER, i64 %v155, i64 %v158 monotonic monotonic, align 8"
+          }
+        ],
+        "canonical_sha256": "9b0d56ca5605220eabb740641f6a69e1135cc5db75930d33ab66584bb4687f48"
+      },
+      "copied_expression_boundary_control": "boundary-controls/SOURCE-MAP.json#site1",
+      "real_package_tests": "baseline-tier-kv/actual-successful-identities.json",
+      "limits": "Callees and constants are kept by exact target identity and independently compared direct witnesses. Actual operations are not inferred from Arc-support rows."
+    },
+    {
+      "site": 2,
+      "file": "crates/memra-tier/src/object_store/mod.rs",
+      "line": 137,
+      "emitted_operation_witness": {
+        "kind": "actual emitted IR",
+        "function": "memra_tier::object_store::next_transaction_id",
+        "symbol": "_RNvNtCs5dKjvJOfQoj_10memra_tier12object_store19next_transaction_id",
+        "canonical_pair": "COMPARE-tier-kv/e8edbfe66b499161",
+        "equal": true,
+        "atomic_operations": [
+          {
+            "line": 11,
+            "instruction": "  %v11 = cmpxchg weak ptr @_RNvNvNtCs5dKjvJOfQoj_10memra_tier12object_store19next_transaction_id4NEXT, i64 %v7, i64 %v10 monotonic monotonic, align 8"
+          }
+        ],
+        "canonical_sha256": "e0a2025338475ee5633ecc6d49a10a314f2e29785a12216665243f27e00a2fb3"
+      },
+      "copied_expression_boundary_control": "boundary-controls/SOURCE-MAP.json#site2",
+      "real_package_tests": "baseline-tier-kv/actual-successful-identities.json",
+      "limits": "Callees and constants are kept by exact target identity and independently compared direct witnesses. Actual operations are not inferred from Arc-support rows."
+    },
+    {
+      "site": 3,
+      "file": "crates/memra-tier/src/contracts.rs",
+      "line": 952,
+      "emitted_operation_witness": {
+        "kind": "actual emitted IR",
+        "function": "<memra_tier::contracts::LeaseIssuer as core::default::Default>::default",
+        "symbol": "_RNvXsl_NtCs5dKjvJOfQoj_10memra_tier9contractsNtB5_11LeaseIssuerNtNtCs4NRVxsYgnAr_4core7default7Default7default",
+        "canonical_pair": "COMPARE-tier-kv/6f8123df4cf14fd8",
+        "equal": true,
+        "atomic_operations": [
+          {
+            "line": 12,
+            "instruction": "  %v15 = cmpxchg weak ptr @_RNvNtCs5dKjvJOfQoj_10memra_tier9contracts11NEXT_ISSUER, i64 %v11, i64 %v14 monotonic monotonic, align 8"
+          }
+        ],
+        "canonical_sha256": "1ae62d3b15bb22067c3215989f5836f72a7fe123d3da3acd7525dbcd23a8eb5f"
+      },
+      "copied_expression_boundary_control": "boundary-controls/SOURCE-MAP.json#site3",
+      "real_package_tests": "baseline-tier-kv/actual-successful-identities.json",
+      "limits": "Callees and constants are kept by exact target identity and independently compared direct witnesses. Actual operations are not inferred from Arc-support rows."
+    },
+    {
+      "site": 4,
+      "file": "crates/memra-kv/src/tiered/materializer.rs",
+      "line": 123,
+      "emitted_operation_witness": {
+        "kind": "actual emitted IR",
+        "function": "<memra_kv::tiered::materializer::QwenMaterializer>::new",
+        "symbol": "_RNvMs0_NtNtCskjzQ6PhiQTT_8memra_kv6tiered12materializerNtB5_16QwenMaterializer3new",
+        "canonical_pair": "COMPARE-tier-kv/e7ba0e4aa82df523",
+        "equal": true,
+        "atomic_operations": [
+          {
+            "line": 12,
+            "instruction": "  %v18 = cmpxchg weak ptr @_RNvNtNtCskjzQ6PhiQTT_8memra_kv6tiered12materializer17NEXT_MATERIALIZER, i64 %v14, i64 %v17 monotonic monotonic, align 8"
+          }
+        ],
+        "canonical_sha256": "28a1d137ab8d8dfe15461e48ab6607e9fa4d5042e4aca88b12a93980dd685364"
+      },
+      "copied_expression_boundary_control": "boundary-controls/SOURCE-MAP.json#site4",
+      "real_package_tests": "baseline-tier-kv/actual-successful-identities.json",
+      "limits": "Callees and constants are kept by exact target identity and independently compared direct witnesses. Actual operations are not inferred from Arc-support rows."
+    },
+    {
+      "site": 5,
+      "file": "crates/memra-kv/src/tiered/materializer.rs",
+      "line": 248,
+      "emitted_operation_witness": {
+        "kind": "actual emitted IR",
+        "function": "<memra_kv::tiered::materializer::PackedMaterializer>::new",
+        "symbol": "_RNvMs4_NtNtCskjzQ6PhiQTT_8memra_kv6tiered12materializerNtB5_18PackedMaterializer3new",
+        "canonical_pair": "COMPARE-tier-kv/5c93949176056b09",
+        "equal": true,
+        "atomic_operations": [
+          {
+            "line": 12,
+            "instruction": "  %v23 = cmpxchg weak ptr @_RNvNtNtCskjzQ6PhiQTT_8memra_kv6tiered12materializer17NEXT_MATERIALIZER, i64 %v19, i64 %v22 monotonic monotonic, align 8"
+          }
+        ],
+        "canonical_sha256": "d31e8d321488b2d6c7e446df35b2a12f6fe432ff913bff8865aa5d67ddeeb434"
+      },
+      "copied_expression_boundary_control": "boundary-controls/SOURCE-MAP.json#site5",
+      "real_package_tests": "baseline-tier-kv/actual-successful-identities.json",
+      "limits": "Callees and constants are kept by exact target identity and independently compared direct witnesses. Actual operations are not inferred from Arc-support rows."
+    },
+    {
+      "site": 6,
+      "file": "crates/memra-server/src/health.rs",
+      "line": 886,
+      "emitted_operation_witness": {
+        "kind": "actual linked test code",
+        "symbol": "_RNvMs3_NtCs3pwlnhBXFtN_12memra_server6healthNtB5_11RouteHealth11end_request",
+        "before_address": "0x3878690",
+        "after_address": "0x38786a0",
+        "instruction_count": 94,
+        "equal": true,
+        "receipt": "linked-proof/RESULTS.json"
+      },
+      "copied_expression_boundary_control": "boundary-controls/SOURCE-MAP.json#site6",
+      "real_package_tests": "server-controls-before/RESULTS.json",
+      "limits": "Callees and constants are kept by exact target identity and independently compared direct witnesses. Actual operations are not inferred from Arc-support rows."
+    },
+    {
+      "site": 7,
+      "file": "crates/memra-server/src/route_telemetry.rs",
+      "line": 334,
+      "emitted_operation_witness": {
+        "kind": "actual emitted IR",
+        "function": "<memra_server::route_telemetry::RouteTicket as core::ops::drop::Drop>::drop",
+        "symbol": "_RNvXs1_NtCs5dQV8cvEk5l_12memra_server15route_telemetryNtB5_11RouteTicketNtNtNtCs4NRVxsYgnAr_4core3ops4drop4Drop4drop",
+        "canonical_pair": "COMPARE-server/a7a43aaa43ac1b1b",
+        "equal": true,
+        "atomic_operations": [
+          {
+            "line": 19,
+            "instruction": "  %v18 = cmpxchg weak ptr %v12, i64 %v14, i64 %v17 acq_rel acquire, align 8"
+          }
+        ],
+        "canonical_sha256": "48e4d6462507425f79e461e32b81457171a3a81e0a45783d356d96f3efbc8e22"
+      },
+      "copied_expression_boundary_control": "boundary-controls/SOURCE-MAP.json#site7",
+      "real_package_tests": "server-controls-before/RESULTS.json",
+      "limits": "Callees and constants are kept by exact target identity and independently compared direct witnesses. Actual operations are not inferred from Arc-support rows."
+    },
+    {
+      "site": 8,
+      "file": "crates/memra-server/src/worker.rs",
+      "line": 1344,
+      "emitted_operation_witness": {
+        "kind": "actual emitted IR",
+        "function": "<memra_server::worker::EventSender>::send",
+        "symbol": "_RNvMs_NtCs5dQV8cvEk5l_12memra_server6workerNtB4_11EventSender4send",
+        "canonical_pair": "COMPARE-server/ef862c075d9e8fc0",
+        "equal": true,
+        "atomic_operations": [
+          {
+            "line": 20,
+            "instruction": "  %v49 = cmpxchg weak ptr %v40, i64 %v45, i64 %v48 acq_rel acquire, align 8"
+          },
+          {
+            "line": 105,
+            "instruction": "  %v92 = cmpxchg weak ptr %v84, i64 %v86, i64 %v88 acq_rel acquire, align 8, !noalias META9"
+          }
+        ],
+        "canonical_sha256": "07ec268c11d15e6033e59beb09587e4c96444bc11e41a5211da8a8a856d8656f",
+        "selected_source_atomic_operation": {
+          "line": 20,
+          "instruction": "  %v49 = cmpxchg weak ptr %v40, i64 %v45, i64 %v48 acq_rel acquire, align 8"
+        }
+      },
+      "copied_expression_boundary_control": "boundary-controls/SOURCE-MAP.json#site8",
+      "real_package_tests": "server-controls-before/RESULTS.json",
+      "limits": "Callees and constants are kept by exact target identity and independently compared direct witnesses. Actual operations are not inferred from Arc-support rows."
+    },
+    {
+      "site": 9,
+      "file": "crates/memra-server/src/worker.rs",
+      "line": 1356,
+      "emitted_operation_witness": {
+        "kind": "actual emitted IR",
+        "function": "<memra_server::worker::EventSender>::send",
+        "symbol": "_RNvMs_NtCs5dQV8cvEk5l_12memra_server6workerNtB4_11EventSender4send",
+        "canonical_pair": "COMPARE-server/ef862c075d9e8fc0",
+        "equal": true,
+        "atomic_operations": [
+          {
+            "line": 20,
+            "instruction": "  %v49 = cmpxchg weak ptr %v40, i64 %v45, i64 %v48 acq_rel acquire, align 8"
+          },
+          {
+            "line": 105,
+            "instruction": "  %v92 = cmpxchg weak ptr %v84, i64 %v86, i64 %v88 acq_rel acquire, align 8, !noalias META9"
+          }
+        ],
+        "canonical_sha256": "07ec268c11d15e6033e59beb09587e4c96444bc11e41a5211da8a8a856d8656f",
+        "selected_source_atomic_operation": {
+          "line": 105,
+          "instruction": "  %v92 = cmpxchg weak ptr %v84, i64 %v86, i64 %v88 acq_rel acquire, align 8, !noalias META9"
+        }
+      },
+      "copied_expression_boundary_control": "boundary-controls/SOURCE-MAP.json#site9",
+      "real_package_tests": "server-controls-before/RESULTS.json",
+      "limits": "Callees and constants are kept by exact target identity and independently compared direct witnesses. Actual operations are not inferred from Arc-support rows."
+    },
+    {
+      "site": 10,
+      "file": "crates/memra-server/src/worker.rs",
+      "line": 2127,
+      "emitted_operation_witness": {
+        "kind": "actual emitted IR",
+        "function": "<memra_server::PendingAdmissionGuard as core::ops::drop::Drop>::drop",
+        "symbol": "_RNvXsc_Cs5dQV8cvEk5l_12memra_serverNtB5_21PendingAdmissionGuardNtNtNtCs4NRVxsYgnAr_4core3ops4drop4Drop4drop",
+        "canonical_pair": "site-map/af04a10339e103df",
+        "equal": true,
+        "atomic_operations": [
+          {
+            "line": 20,
+            "instruction": "  %v20 = cmpxchg weak ptr %v14, i64 %v16, i64 %v19 acq_rel acquire, align 8"
+          },
+          {
+            "line": 43,
+            "instruction": "  %v35 = cmpxchg weak ptr %v29, i64 %v31, i64 %v34 acq_rel acquire, align 8"
+          }
+        ],
+        "canonical_sha256": "aa53cb06c1c77ec4d96168603419e0c55106df9768acf9402ac72ed5ef733f8d"
+      },
+      "copied_expression_boundary_control": "boundary-controls/SOURCE-MAP.json#site10",
+      "real_package_tests": "server-controls-before/RESULTS.json",
+      "limits": "Callees and constants are kept by exact target identity and independently compared direct witnesses. Actual operations are not inferred from Arc-support rows."
+    },
+    {
+      "site": 11,
+      "file": "crates/memra-server/src/lib.rs",
+      "line": 21248,
+      "emitted_operation_witness": {
+        "kind": "actual linked test code",
+        "symbol": "_RNvNtCs3pwlnhBXFtN_12memra_server5testss_62pending_admission_reservation_is_atomic_and_rolls_back_on_drop",
+        "before_address": "0x3710430",
+        "after_address": "0x3710430",
+        "instruction_count": 312,
+        "equal": true,
+        "receipt": "linked-proof/RESULTS.json"
+      },
+      "copied_expression_boundary_control": "boundary-controls/SOURCE-MAP.json#site11",
+      "real_package_tests": "server-controls-before/RESULTS.json",
+      "limits": "Callees and constants are kept by exact target identity and independently compared direct witnesses. Actual operations are not inferred from Arc-support rows."
+    }
+  ],
+  "actual_IR_pairs_total": 42,
+  "all12_mapped": true,
+  "qualification": false
+}

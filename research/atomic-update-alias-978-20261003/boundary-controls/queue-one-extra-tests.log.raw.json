@@ -1,0 +1,6 @@
+{
+  "original_path": "boundary-controls/queue-one-extra-tests.log",
+  "raw_sha256": "eac792584ec454447fdf79f716eb5895a992b03c6d31b2c835768714aa2c401b",
+  "raw_bytes": 618,
+  "raw_output": "\nrunning 1 test\ntest site8_queue_bound_and_contention ... FAILED\n\nfailures:\n\n---- site8_queue_bound_and_contention stdout ----\n\nthread 'site8_queue_bound_and_contention' (1649388) panicked at /home/avifenesh/.local/state/memra-rig-darklanes-20261002/receipts/B/atomic-update-978/boundary-controls/queue-one-extra.rs:75:148:\nassertion `left == right` failed\n  left: Ok(256)\n right: Err(256)\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\n\nfailures:\n    site8_queue_bound_and_contention\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s\n\n"
+}

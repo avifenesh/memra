@@ -883,7 +883,7 @@ impl RouteHealth {
         let _lanes = self.lanes.lock().unwrap_or_else(|p| p.into_inner());
         let before = self
             .in_flight
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |v| v.checked_sub(1))
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |v| v.checked_sub(1))
             .unwrap_or(0);
         if before <= 1 {
             self.set(PHASE_IDLE);

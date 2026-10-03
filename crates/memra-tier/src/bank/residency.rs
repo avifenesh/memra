@@ -347,7 +347,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             return Err(Error::Capacity);
         }
         let issuer = NEXT_SERVICE
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
             .map_err(|_| Error::Overflow)?;
         Ok(Self {
             catalog,

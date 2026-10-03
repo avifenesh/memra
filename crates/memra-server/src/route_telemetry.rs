@@ -331,7 +331,7 @@ impl RouteLoad {
 }
 
 fn decrement(counter: &AtomicUsize) {
-    let _ = counter.fetch_update(Ordering::AcqRel, Ordering::Acquire, |v| v.checked_sub(1));
+    let _ = counter.try_update(Ordering::AcqRel, Ordering::Acquire, |v| v.checked_sub(1));
 }
 
 /// A request's waiting slot on its route. Moved into `Request::route_ticket` before the send,

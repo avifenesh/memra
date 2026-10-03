@@ -1,0 +1,6 @@
+{
+  "original_path": "boundary-controls/overflow-wrap-tests.log",
+  "raw_sha256": "868a59967e9519487a7bbc9e5e518d12a727dcd0e8f52e065f75c64619c71f1c",
+  "raw_bytes": 637,
+  "raw_output": "\nrunning 1 test\ntest site0_overflow_and_contention ... FAILED\n\nfailures:\n\n---- site0_overflow_and_contention stdout ----\n\nthread 'site0_overflow_and_contention' (1649106) panicked at /home/avifenesh/.local/state/memra-rig-darklanes-20261002/receipts/B/atomic-update-978/boundary-controls/overflow-wrap.rs:45:73:\nassertion `left == right` failed\n  left: Ok(18446744073709551615)\n right: Err(18446744073709551615)\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\n\nfailures:\n    site0_overflow_and_contention\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s\n\n"
+}

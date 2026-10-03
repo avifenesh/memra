@@ -949,7 +949,7 @@ impl Drop for LeasePin {
 static NEXT_ISSUER: AtomicU64 = AtomicU64::new(1);
 fn issuer() -> u64 {
     NEXT_ISSUER
-        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+        .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
         .expect("issuer space exhausted")
 }
 /// Capability issuance/accounting helper, NOT an allocator or a second admission policy.

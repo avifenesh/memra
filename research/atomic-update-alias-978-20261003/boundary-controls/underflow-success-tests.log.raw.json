@@ -1,0 +1,6 @@
+{
+  "original_path": "boundary-controls/underflow-success-tests.log",
+  "raw_sha256": "6e45dff65bc7bf8be9bc66c69671f19866c988a491390b92cf7b4951475cd17a",
+  "raw_bytes": 607,
+  "raw_output": "\nrunning 1 test\ntest site6_underflow_and_contention ... FAILED\n\nfailures:\n\n---- site6_underflow_and_contention stdout ----\n\nthread 'site6_underflow_and_contention' (1649221) panicked at /home/avifenesh/.local/state/memra-rig-darklanes-20261002/receipts/B/atomic-update-978/boundary-controls/underflow-success.rs:73:72:\nassertion `left == right` failed\n  left: Ok(0)\n right: Err(0)\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\n\nfailures:\n    site6_underflow_and_contention\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s\n\n"
+}
