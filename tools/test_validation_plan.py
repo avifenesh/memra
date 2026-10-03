@@ -268,6 +268,7 @@ class ValidationPlanTests(unittest.TestCase):
         for name in required:
             for path in vp.TOOL_CONTRACTS[name]['inputs']:
                 self.put(path, '# required contract fixture\n')
+        self.put_support_data_reader_fixture()
         expected.update(required)
         self.assertEqual(set(vp.cpu_contract_names(self.repo, '')), expected)
         for name in ('serving-qualification', 'sampled-mtp'):
