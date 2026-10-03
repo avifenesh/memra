@@ -138,6 +138,16 @@ class Admission(unittest.TestCase):
             self.assertIn('without execution evidence', result.stderr)
             self.assertNotIn('help must not import fixture', result.stderr)
 
+    def test_caught_discovery_exit_never_wraps_to_process_success(self):
+        for code in (256, -256, 65536, -1, None, 'planted exit', True, 2, 255):
+            result = self.call('class A(unittest.TestCase):\n def test_one(self): pass\n'
+                               'def load_tests(loader, tests, pattern):\n'
+                               f' raise SystemExit({code!r})\n', minimum=1)
+            expected = code if type(code) is int and 1 <= code <= 255 else 1
+            self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+            self.assertIn('without execution evidence', result.stderr)
+            self.assertNotIn('unittest-floor: OK', result.stdout)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -20,6 +20,8 @@ controls['repeated_selected_case']=(repeat,2,'',0,1)
 controls['help_short']=(healthy,2,'',1,1)
 controls['help_long']=(healthy,2,'',1,1)
 extra_args={'help_short':['-h'],'help_long':['--help']}
+for label,code in [('exit256',256),('exit_negative256',-256),('exit_large',65536),('exit_none',None),('exit_string','planted exit')]:
+ controls[label]=('import unittest\nclass A(unittest.TestCase):\n def test_one(self): pass\ndef load_tests(loader,tests,pattern):\n raise SystemExit('+repr(code)+')\n',1,'',1,1)
 results={}
 with tempfile.TemporaryDirectory(prefix='unittest-proof-',dir=OUT) as directory:
  root=Path(directory);suite=root/'suite';suite.mkdir();wrapper=root/'before.sh';wrapper.write_bytes(old);wrapper.chmod(0o755)
@@ -40,6 +42,7 @@ with tempfile.TemporaryDirectory(prefix='unittest-proof-',dir=OUT) as directory:
  'disabled_assertion_guard':current['tools/unittest_floor.py'].decode().replace('if not __debug__ or sys.flags.optimize:','if False:'),
  'admit_skipped_outcome':current['tools/unittest_floor.py'].decode().replace("and evidence['discovered'] == evidence['run'] == evidence['passed']","and evidence['discovered'] == evidence['run']").replace("FIELDS - {'discovered', 'run', 'passed'}","FIELDS - {'discovered', 'run', 'passed', 'skipped'}"),
  'admit_help_without_execution':current['tools/unittest_floor.py'].decode().replace("print('unittest-floor: FAIL: discovery exited without execution evidence', file=sys.stderr)\n            return 1", "print('unittest-floor: FAIL: discovery exited without execution evidence', file=sys.stderr)\n            return 0"),
+ 'unnormalized_discovery_status':current['tools/unittest_floor.py'].decode().replace('type(error.code) is int and 1 <= error.code <= 255','type(error.code) is int'),
  'disabled_identity_guard':current['tools/unittest_floor.py'].decode().replace('if not same_cases(program.result.selected_ids, program.result.executed_ids,','if False and not same_cases(program.result.selected_ids, program.result.executed_ids,'),
  'admit_boolean_evidence':current['tools/unittest_floor.py'].decode().replace("type(value) is not int", "type(value) not in (int, bool)")}
  mutated={}
@@ -51,4 +54,4 @@ with tempfile.TemporaryDirectory(prefix='unittest-proof-',dir=OUT) as directory:
   mutated[label]={'exit':value.returncode,'stdout':value.stdout.replace(directory,'<fixture>'),'stderr':value.stderr.replace(directory,'<fixture>')}
 assert not root.exists()
 record={'before':before,'source':head,'before_wrapper_sha256':hashlib.sha256(old).hexdigest(),'source_sha256':{n:hashlib.sha256(b).hexdigest() for n,b in current.items()},'controls':results,'coherent_mutations':mutated,'temporary_parent_removed':True,'qualification':False,'helper_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
-OUT.joinpath('actual-controls.json').write_text(json.dumps(record,indent=2)+'\n');print('PASS actual12 before/after controls and5 coherent source mutations; temporaryparentremoved; no native qualification')
+OUT.joinpath('actual-controls.json').write_text(json.dumps(record,indent=2)+'\n');print('PASS actual17 before/after controls and6 coherent source mutations; temporaryparentremoved; no native qualification')

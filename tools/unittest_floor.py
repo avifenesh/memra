@@ -109,7 +109,8 @@ def main(argv=None):
         if error.code in (0, None):
             print('unittest-floor: FAIL: discovery exited without execution evidence', file=sys.stderr)
             return 1
-        return error.code if type(error.code) is int else 1
+        print('unittest-floor: FAIL: discovery interrupted without execution evidence', file=sys.stderr)
+        return error.code if type(error.code) is int and 1 <= error.code <= 255 else 1
     try:
         evidence = execution_evidence(program.result)
     except (AttributeError, TypeError, ValueError) as error:
