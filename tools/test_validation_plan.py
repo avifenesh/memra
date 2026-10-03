@@ -535,6 +535,110 @@ class ValidationPlanTests(unittest.TestCase):
                 self.commit()
                 self.assertEqual(self.plan(['research/real.md'])['mode'], 'full')
 
+    def test_runtime_parent_traversal_selects_the_canonical_fixture(self):
+        for spelling, target in (
+                ('research/fixtures/../expected.md', 'research/expected.md'),
+                ('docs/fixtures/../expected.md', 'docs/expected.md'),
+                ('research/../docs/expected.md', 'docs/expected.md'),
+                ('research/../README.md', 'README.md')):
+            with self.subTest(spelling=spelling):
+                self.put('research/fixtures/.keep', '')
+                self.put('docs/fixtures/.keep', '')
+                self.put('crates/memra-server/src/lib.rs',
+                         f'let fixture = std::fs::read_to_string("{spelling}");')
+                self.put(target, 'before')
+                before = self.commit()
+                self.put(target, 'after')
+                after = self.commit()
+                plan = vp.event_plan(self.repo, 'push', '', before, after)
+                self.assertEqual(plan['mode'], 'scoped')
+                self.assertEqual(plan['packages'], ['memra-server'])
+                self.assertTrue(plan['jobs']['server'])
+
+    def test_runtime_parent_traversal_keeps_deleted_and_renamed_inputs(self):
+        for rename in (False, True):
+            with self.subTest(rename=rename):
+                self.put('research/fixtures/.keep', '')
+                self.put('research/expected.md', 'fixture')
+                self.put('crates/memra-server/src/lib.rs',
+                         'let fixture = std::fs::read_to_string("research/fixtures/../expected.md");')
+                before = self.commit()
+                if rename:
+                    (self.repo / 'research/expected.md').rename(self.repo / 'research/renamed.md')
+                else:
+                    (self.repo / 'research/expected.md').unlink()
+                after = self.commit()
+                plan = vp.event_plan(self.repo, 'push', '', before, after)
+                self.assertEqual(plan['mode'], 'scoped')
+                self.assertEqual(plan['packages'], ['memra-server'])
+                self.assertIn('research/expected.md', plan['changed'])
+
+    def test_runtime_parent_traversal_to_root_retains_the_whole_subtree(self):
+        self.put('research/fixtures/.keep', '')
+        self.put('crates/memra-server/src/lib.rs',
+                 'let fixture = std::fs::read_dir("research/fixtures/../..");')
+        self.commit()
+        self.assertEqual(self.plan(['README.md'])['packages'], ['memra-server'])
+        self.assertEqual(self.plan(['crates/memra-probe/src/lib.rs'])['packages'],
+                         ['memra-probe', 'memra-server'])
+
+    def test_runtime_parent_traversal_through_a_symlink_expands(self):
+        self.put('research/actual/nested/.keep', '')
+        self.put('research/actual/expected.md', 'before')
+        (self.repo / 'research/alias').symlink_to('actual/nested')
+        self.put('crates/memra-server/src/lib.rs',
+                 'let fixture = std::fs::read_to_string("research/./alias/../expected.md");')
+        before = self.commit()
+        self.put('research/actual/expected.md', 'after')
+        after = self.commit()
+        plan = vp.event_plan(self.repo, 'push', '', before, after)
+        self.assertEqual(plan['mode'], 'full')
+        self.assertTrue(plan['jobs']['server'])
+        self.assertIn('symlink', plan['reason'])
+
+    def test_runtime_parent_traversal_old_symlink_side_expands(self):
+        self.put('research/actual/nested/.keep', '')
+        alias = self.repo / 'research/alias'
+        alias.symlink_to('actual/nested')
+        self.put('crates/memra-server/src/lib.rs',
+                 'let fixture = std::fs::read_to_string("research/./alias/../expected.md");')
+        before = self.commit()
+        alias.unlink()
+        self.put('research/alias/.keep', '')
+        self.put('research/expected.md', 'fixture')
+        after = self.commit()
+        self.assertEqual(vp.event_plan(self.repo, 'push', '', before, after)['mode'], 'full')
+
+    def test_runtime_unresolved_or_escaping_parent_traversal_expands(self):
+        for spelling, reason in (
+                ('research/missing/../expected.md', 'unresolved'),
+                ('research/../../outside.md', 'escapes'),
+                ('research/{directory}/../expected.md', 'pattern'),
+                ('research/*/../expected.md', 'pattern'),
+                ('research/[ab]/../expected.md', 'pattern')):
+            with self.subTest(spelling=spelling):
+                self.put('research/expected.md', 'fixture')
+                self.put('crates/memra-server/src/lib.rs',
+                         f'let fixture = std::fs::read_to_string("{spelling}");')
+                self.commit()
+                plan = self.plan(['research/expected.md'])
+                self.assertEqual(plan['mode'], 'full')
+                self.assertIn(reason, plan['reason'])
+
+    def test_runtime_normalized_paths_preserve_literal_and_format_reach(self):
+        for spelling in ('research/expected.md', 'research/./expected.md',
+                         'research/{family}/expected.md',
+                         'research/fixtures/../{family}/expected.md'):
+            with self.subTest(spelling=spelling):
+                self.put('research/fixtures/.keep', '')
+                self.put('crates/memra-server/src/lib.rs',
+                         f'let fixture = std::fs::read_to_string("{spelling}");')
+                self.commit()
+                target = 'research/one/expected.md' if '{' in spelling else 'research/expected.md'
+                plan = self.plan([target])
+                self.assertEqual(plan['mode'], 'scoped')
+                self.assertEqual(plan['packages'], ['memra-server'])
+
     def test_include_tokens_can_be_separated_by_whitespace_and_comments(self):
         for separator in (' ', '\n', ' /* note */ '):
             for path in ('README.md', 'research/input.txt'):
