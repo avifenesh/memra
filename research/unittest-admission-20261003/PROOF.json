@@ -1,0 +1,42 @@
+{
+  "base": "18ca040cc3bbdd07813dec75682f83c6fba1de17",
+  "source": "ab2e165225e28df52ab895b21233c2cb7df97354",
+  "source_sha256": {
+    "docs/VALIDATION-SELECTION.md": "f7b6d6374c502b5a56e7f4ac5aa64d18420c9664a19fac597e8f2f1ac2bfa108",
+    "research/unittest-admission-20261003/LANE.md": "8735e89222bf3fbb5aa22bd90575d2b950598c25fa8121209fc58af6ba9297df",
+    "research/unittest-admission-20261003/actual_controls.py": "7b2d579753f5cb1d1d333f45607ef36884d4027fd60e489789924bc36554b45c",
+    "tools/fast-gate/test_plan.py": "ac961010ecdd2dad2c3f0784fd2882a8d22d181bddd4d1bb61b2aaacdf6427db",
+    "tools/test_unittest_floor.py": "821b0c349967f30263bf5559d22fc18a582e0d97d25fe7fd034ff8d7565a52fb",
+    "tools/test_unittest_floor.sh": "9a043d027330f8440bccae7c75ea42fa8261010f0eef3f997bf44db9bb1160a7",
+    "tools/unittest-floor.sh": "19b9d1ee25d8bc31de732a0284ac30be161cda7119fe15acfac1863eafff605d",
+    "tools/unittest_floor.py": "c1b32e6068aa7bf7b076b09f8175050adaa8c31d75d4500acd415febf2608d87"
+  },
+  "artifact_sha256": {
+    "actual-controls.json": "8c5c11281393aa9a254dd8abe804ca1a596ce5f17d74697af84571b976f3dc61",
+    "teeth.log": "e5bee740a7e97e239bcd9b16c03810a9b97e570a6e21e1b8e4f9da657c02df2e",
+    "framework.log": "a9aa1b8a501bdfd4a3ae5c6c331803942a0b43c731f66f43be7c085c6dd936b6",
+    "fastgate.log": "5346fb2cd10c780d36346dc209b03280e4b64fc424bfa29e8cd01816f9815892",
+    "component.log": "50c37679e876af3acab145c985c684317d7d4c1d4e195de5584a5dfc4224fc97",
+    "cache.log": "720c3ea5e83051d98f0a524ddfd48ae1d4088b021bcdd66eb1d456d2695d6c29",
+    "contracts.log": "fbc33e6ca6cbc7053ec90c2583fb2e994fd223df04b906e4633e6d24e1989d6d",
+    "controls.log": "81e4d063542ca62d4fac597d59ddd40e47280d3c840e3e99f35ec96067b5c745"
+  },
+  "actual": {
+    "original_controls": 5,
+    "new_tests": 14,
+    "framework": 179,
+    "fastgate": 39,
+    "component": 4,
+    "dense_cache": 55,
+    "dynamic_floor_contracts": 10,
+    "before_after_cases": 9,
+    "coherent_guard_mutations": 3
+  },
+  "preserved": [
+    "caller selection",
+    "CLI selectors and floors",
+    "A expert-tier runner and workflow steps",
+    "native/model/default/qualification requirements"
+  ],
+  "qualification": false
+}
