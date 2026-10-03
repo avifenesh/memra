@@ -60,7 +60,8 @@ No CUDA/kernel math,model numerical program,model support-state record,serving p
 or runtime-default promotion changed. Evidence applies to these artifacts,binary,
 requests and hardware; it does not establish model-family qualification.
 
-publicity: skipped: maintenance release
+publicity: X/LinkedIn and blog drafts are prepared privately in Darklanes PR #1223.
+Owner posting follows final proof, review and merge.
 
 qwen artifact SHA256: `0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c`;bytes 9527501696.
 
