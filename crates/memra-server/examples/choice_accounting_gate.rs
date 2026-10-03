@@ -25,7 +25,7 @@ impl Metering for Counts {
         prompt: u64,
         output: u64,
     ) -> Result<Option<Permit>, AdmitError> {
-        println!(
+        eprintln!(
             "CHOICE_RESERVE {}",
             json!({"tenant":tenant,"model":model,"prompt":prompt,"output":output,"limit":self.bound,"accepted":output<=self.bound})
         );
@@ -36,7 +36,7 @@ impl Metering for Counts {
         }
     }
     fn open(&self, m: &RequestMeta<'_>, _: Option<Permit>) -> Box<dyn Receipt> {
-        println!(
+        eprintln!(
             "CHOICE_OPEN {}",
             json!({"id":m.request_id,"model":m.model,"tenant":m.tenant,"max_tokens":m.max_tokens,"reserved_ctx":m.reserved_ctx,"stream":m.stream})
         );
@@ -61,7 +61,7 @@ impl Row {
         if self.terminal {
             return Err("duplicate terminal call".into());
         }
-        println!(
+        eprintln!(
             "CHOICE_TERMINAL {}",
             json!({"id":self.id,"kind":kind,"status":status,"code":code,"prompt":usage.prompt_tokens,"cached":usage.cached_prompt_tokens,"output":usage.completion_tokens,"observed_prompt":self.seen.prompt_tokens,"observed_cached":self.seen.cached_prompt_tokens,"observed_output":self.seen.completion_tokens})
         );
@@ -82,7 +82,7 @@ impl Receipt for Row {
     fn record_prompt_usage(&mut self, p: u64, c: u64) -> Result<(), String> {
         self.seen.prompt_tokens = p;
         self.seen.cached_prompt_tokens = c;
-        println!(
+        eprintln!(
             "CHOICE_PROMPT {}",
             json!({"id":self.id,"prompt":p,"cached":c})
         );
@@ -90,7 +90,7 @@ impl Receipt for Row {
     }
     fn record_completion_token(&mut self) -> Result<(), String> {
         self.seen.completion_tokens += 1;
-        println!(
+        eprintln!(
             "CHOICE_TOKEN {}",
             json!({"id":self.id,"output":self.seen.completion_tokens})
         );
@@ -111,7 +111,7 @@ impl Receipt for Row {
 }
 impl Drop for Row {
     fn drop(&mut self) {
-        println!(
+        eprintln!(
             "CHOICE_DROP {}",
             json!({"id":self.id,"terminal":self.terminal,"prompt":self.seen.prompt_tokens,"cached":self.seen.cached_prompt_tokens,"output":self.seen.completion_tokens})
         );

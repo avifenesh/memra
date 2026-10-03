@@ -15,18 +15,25 @@ def cell(root,record):
     packets=json.loads((root/record['name']/'packets.json').read_text()) if (root/record['name']/'packets.json').exists() else None
     body=record.get('body')
     if packets is not None:
-        texts={i:'' for i in range(n)};reasons={};usage=None;calls={i:[] for i in range(n)}
+        texts={i:'' for i in range(n)};reasons={};usage=None;calls={i:[] for i in range(n)};reasoning={i:'' for i in range(n)}
         for packet in packets:
             if not isinstance(packet,dict):continue
             if packet.get('usage'):usage=packet['usage']
             for c in packet.get('choices',[]):
                 i=c['index']; d=c.get('delta',{})
                 texts[i]+=c.get('text','') or d.get('content','') or ''
-                calls[i].extend(d.get('tool_calls',[]))
+                reasoning[i]+=d.get('reasoning','') or ''
+                calls[i].extend({k:v for k,v in call.items() if k!='index'} for call in d.get('tool_calls',[]))
                 if c.get('finish_reason') is not None:reasons[i]=c['finish_reason']
         body={'choices':[{'index':i,'text':texts[i],'finish_reason':reasons.get(i)} for i in range(n)],'usage':usage}
-        if any(calls.values()):
-            body['choices']=[{'index':i,'message':{'tool_calls':calls[i]},'finish_reason':reasons.get(i)} for i in range(n)]
+        if 'messages' in request:
+            choices=[]
+            for i in range(n):
+                message={'role':'assistant','content':None if not texts[i] and calls[i] else texts[i]}
+                if reasoning[i]:message.update(reasoning=reasoning[i],reasoning_details=[{'type':'reasoning.text','text':reasoning[i]}])
+                if calls[i]:message['tool_calls']=calls[i]
+                choices.append({'index':i,'message':message,'finish_reason':reasons.get(i)})
+            body['choices']=choices
     if n==1 and 'choices' not in body:
         body={**body,'choices':[{'index':0,'text':body['text'],'finish_reason':'length' if body.get('stop_reason')=='MaxNew' else 'stop'}],
               'usage':{'prompt_tokens':body['prompt_tokens'],'completion_tokens':body['n_tokens'],
@@ -63,6 +70,23 @@ def verify(root,baseline=None,expected=None):
 
     records={r['name']:r for r in manifest['results']}
     require(len(records)==len(manifest['results']) and records,'required_cells','nonempty unique request records')
+    logs=(root/'server.log').read_text().splitlines()
+    events=[]
+    for index,line in enumerate(logs):
+        if line.startswith('CHOICE_'):
+            tag,payload=line.split(' ',1)
+            events.append({'tag':tag,'value':json.loads(payload),'line':index})
+    require(events==json.loads((root/'callback-events.json').read_text()),'raw_binding','callback inventory is derived from retained server bytes')
+    for name,r in records.items():
+        folder=root/name
+        require(r==json.loads((folder/'client.json').read_text()),'raw_binding','manifest result agrees with retained client '+name)
+        if 'body' in r:require(r['body']==json.loads((folder/'wire.json').read_text()),'raw_binding','body agrees with actual HTTP bytes '+name)
+        require(r['callbacks']==[e for e in events if e['value'].get('id')==r['id']],'raw_binding','one parent callback history '+name)
+        require(r['worker_rows']==[e['value'] for e in events if e['tag']=='CHOICE_WORKER_ROW' and e['value'].get('group')==r['id']],'raw_binding','independent producer history '+name)
+        if (folder/'packets.json').exists():
+            raw=[line[5:].strip() for line in (folder/'wire.sse').read_text().splitlines() if line.startswith('data:')]
+            packets=['[DONE]' if value=='[DONE]' else json.loads(value) for value in raw]
+            require(packets==json.loads((folder/'packets.json').read_text()),'raw_binding','packets agree with actual SSE bytes '+name)
     positive={name for name in records if '-refuse-' not in name and name not in {'cancel','deadline-partial','slots-contender','budget','kv'}}
     require(all(records[name]['status']==200 and not records[name]['disconnected'] for name in positive),'required_cells','every intended successful request completed')
     completed=[]
@@ -82,6 +106,7 @@ def verify(root,baseline=None,expected=None):
             for n in [2,4,8]:check_greedy(reference,records[route+f'-greedy-n{n}']['body'])
             check_seeded([records[route+f'-seed-{i}']['body'] for i in range(3)],records[route+'-sampled']['body'])
             check_repeat(cell(root,records[route+'-sampled']),cell(root,records[route+'-sampled-repeat']))
+            check_identity(cell(root,records[route+'-stream'])['body'],cell(root,records[route+'-stream-twin'])['body'])
         check_tools(records['constrained-choices']['body'])
         check_tools(cell(root,records['constrained-choices-stream'])['body'])
         require(all(records[name]['masked_steps']>0 for name in ['constrained-choices','constrained-choices-stream']),'constrained_choices','native grammar mask engagement')
@@ -94,6 +119,11 @@ def verify(root,baseline=None,expected=None):
         bare=json.loads((root/'bare-default'/'request.json').read_text())
         n_only=json.loads((root/'n-only-default'/'request.json').read_text())
         require(set(bare)=={'model','messages'} and set(n_only)=={'model','messages','n'},'bare_defaults','no decoder/mode knobs')
+        vendor={'temperature':1.,'top_p':.95,'top_k':20,'min_p':0.,'presence_penalty':1.5,'repetition_penalty':1.}
+        for name in ['n-only-default','n-only-default-fresh']:
+            for row in records[name]['worker_rows']:
+                require(row['think']=='Default' and all(abs(row['sampling'][key]-value)<1e-6 for key,value in vendor.items()),'bare_defaults','actual row receives full pinned vendor profile and default thinking mode')
+        require(bool(records['bare-default']['body']['choices'][0]['message'].get('reasoning')),'bare_defaults','bare n1 default thinking path engaged')
     elif manifest['phase']=='deadline':
         partial=records['deadline-partial']
         require(partial['status']==200 and partial['body'].get('error',{}).get('code')=='deadline_exceeded','deadline_partial','actual native partial deadline required')

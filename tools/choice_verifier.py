@@ -46,6 +46,8 @@ def check_completed(cell):
             usage['completion_tokens']==terminal['output']==terminal['observed_output']==len(tokens) and
             usage['total_tokens']==usage['prompt_tokens']+usage['completion_tokens'], 'accounting', identity)
     if n>1:
+        prompts=[c for c in callbacks if c['kind']=='prompt']
+        require(len(prompts)==1 and prompts[0]['prompt']==usage['prompt_tokens'] and prompts[0]['cached']==terminal['cached'], 'prompt_once', identity)
         row_events=cell['worker_rows']
         require(len(row_events)==n and Counter(r['index'] for r in row_events)==Counter(range(n)), 'producer_rows', identity)
         require(all(r['group']==identity for r in row_events), 'producer_rows', identity)

@@ -41912,7 +41912,12 @@ fn finish(s: &Session, reason: StopReason) {
             serde_json::json!({
                 "group":choice.group.id, "index":choice.index, "seed":s.sampler.seed(),
                 "prompt":s.n_prompt, "cached":s.n_cached, "output":s.generated.len(),
-                "token_sha256":format!("{:x}",digest.finalize()), "reason":format!("{reason:?}")
+                "token_sha256":format!("{:x}",digest.finalize()), "reason":format!("{reason:?}"),
+                "sampling": {"temperature":s.replay.sampler_cfg.temperature,
+                    "top_p":s.replay.sampler_cfg.top_p,"top_k":s.replay.sampler_cfg.top_k,
+                    "min_p":s.replay.sampler_cfg.min_p,"presence_penalty":s.replay.sampler_cfg.penalty_present,
+                    "repetition_penalty":s.replay.sampler_cfg.penalty_repeat},
+                "think":format!("{:?}",s.replay.think)
             })
         );
     }

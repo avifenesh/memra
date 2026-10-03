@@ -92,7 +92,8 @@ class Native:
         identity=headers.get('x-request-id') or record.get('body',{}).get('id')
         record['id']=identity
         if identity and self.args.phase!='baseline':
-            with self.cv:self.cv.wait_for(lambda:any(e['tag']=='CHOICE_DROP' and e['value']['id']==identity for e in self.events) or self.process.poll() is not None,10)
+            if '-refuse-' not in name:
+                with self.cv:self.cv.wait_for(lambda:any(e['tag']=='CHOICE_DROP' and e['value']['id']==identity for e in self.events) or self.process.poll() is not None,10)
             record['callbacks']=[e for e in self.events if e['value'].get('id')==identity]
         record['worker_rows']=[e['value'] for e in self.events if e['tag']=='CHOICE_WORKER_ROW' and e['value'].get('group')==identity]
         record['prime_events']=[e['value'] for e in self.events if e['tag']=='CHOICE_PRIME' and e['value'].get('group')==identity]
@@ -128,6 +129,7 @@ def main():
                 results.append(native.request(label+'-n1','/v1/'+route,{**body,'temperature':0,'max_tokens':32,'seed':73}))
                 for n in [2,4,8]:results.append(native.request(label+f'-greedy-n{n}','/v1/'+route,{**body,'n':n,'temperature':0,'max_tokens':32,'seed':73}))
                 results.append(native.request(label+'-stream','/v1/'+route,{**body,'n':4,'stream':True,'stream_options':{'include_usage':True},'max_tokens':32,'seed':101}))
+                results.append(native.request(label+'-stream-twin','/v1/'+route,{**body,'n':4,'max_tokens':32,'seed':101}))
                 results.append(native.request(label+'-sampled','/v1/'+route,{**body,'n':3,'max_tokens':32,'seed':101}))
                 results.append(native.request(label+'-sampled-repeat','/v1/'+route,{**body,'n':3,'max_tokens':32,'seed':101}))
                 for i in range(3):results.append(native.request(label+f'-seed-{i}','/v1/'+route,{**body,'max_tokens':32,'seed':101+i}))

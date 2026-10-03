@@ -10442,6 +10442,15 @@ async fn completions_with_admission(
         Ok(count) => count,
         Err(message) => return with_request_id(&env.id, bad_request(&message, Some("n"))),
     };
+    if background && choices > 1 {
+        return with_request_id(
+            &env.id,
+            bad_request(
+                "n-choice generation does not support background delivery; use n=1",
+                Some("n"),
+            ),
+        );
+    }
     // HONESTY GATE (gap-scan F4): semantic params we can't honor 400 loudly.
     if let Err((msg, param)) = reject_unsupported(&[
         (
@@ -11081,6 +11090,15 @@ async fn chat_completions_with_admission(
         Ok(count) => count,
         Err(message) => return with_request_id(&env.id, bad_request(&message, Some("n"))),
     };
+    if background && choices > 1 {
+        return with_request_id(
+            &env.id,
+            bad_request(
+                "n-choice generation does not support background delivery; use n=1",
+                Some("n"),
+            ),
+        );
+    }
     if choices > 1 && request_has_vision(&req) {
         return with_request_id(
             &env.id,
@@ -25662,6 +25680,52 @@ temperature = 0.6
                 .await
                 .unwrap();
         }
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // existing drain/env guards serialize real HTTP ingress against global writers
+    async fn choice_background_combination_refuses_before_worker_or_receipt() {
+        let _drain = drain_lock();
+        let _env = background_env_lock();
+        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
+        for chat in [false, true] {
+            let (mut state, mock, _, rx) = bg914_fixture(None);
+            state.caps = Arc::new(HashMap::from([(
+                "bg914".into(),
+                ModelCaps {
+                    max_choices: 4,
+                    chat_ok: true,
+                    context_length: 1024,
+                    n_vocab: 32,
+                    ..Default::default()
+                },
+            )]));
+            let app = bg914_router(state.clone());
+            let path = if chat {
+                "/v1/chat/completions"
+            } else {
+                "/v1/completions"
+            };
+            for n in [2, 4] {
+                let mut body = bg914_body(chat);
+                body["n"] = json!(n);
+                body["max_tokens"] = json!(8);
+                let response = bg914_http(app.clone(), "POST", path, Some("owner-key"), body).await;
+                assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+                let body = body_value(response).await;
+                assert_eq!(body["error"]["param"], "n");
+                assert!(
+                    body["error"]["message"]
+                        .as_str()
+                        .unwrap()
+                        .contains("background")
+                );
+                assert!(rx.try_recv().is_err());
+                assert!(mock.events().is_empty());
+                assert!(state.background_cancel.lock().unwrap().is_empty());
+            }
+        }
+        unsafe { std::env::remove_var(responses_api::BACKGROUND_RESPONSES_ENV) };
     }
 
     fn choice_http_state() -> AppState {
