@@ -5,7 +5,8 @@ registry could open a FIFO before checking its type. The shared reader now ancho
 directory descriptors below the trusted root, rejects nonregular leaves before
 opening, uses nofollow and nonblocking flags, and checks the opened file with fstat.
 
-Four actual original-consumer FIFO observations prevent content I/O. Four current
+Four actual original-consumer FIFO observations prevent content I/O. Six original
+alias reads are observed at the four leaf paths and two descendant ancestors. Four current
 consumers exercise leaf aliases and FIFO/symlink stat-to-open replacements. The two
 descendant readers also exercise ancestor aliases and replacement before directory
 open. A replacement after directory open retains the original file bytes through
@@ -37,3 +38,9 @@ default, model artifact/default, qualification tolerance or required native gate
 coverage changed. No native or serving qualification is claimed.
 
 Publicity: skipped: maintenance release.
+
+Actual A968 composition at `487494f8ec` passes 186 framework tests, 21 census
+tests and all 14 registered packages. The 15 methods and original consumer/CLI/red
+groups admit 44 edges. Two admission mutations and four optimized-producer startups
+are refused. `PROOF.json` binds that actual source and base. B970 composition remains
+separate; the A-only receipt is not final-base evidence.

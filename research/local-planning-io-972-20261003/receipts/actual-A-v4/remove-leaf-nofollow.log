@@ -1,0 +1,15 @@
+test_stat_to_symlink_replacement_refuses_actual_target_content (test_validation_local_input_io.LocalInputIO.test_stat_to_symlink_replacement_refuses_actual_target_content) ... FAIL
+
+======================================================================
+FAIL: test_stat_to_symlink_replacement_refuses_actual_target_content (test_validation_local_input_io.LocalInputIO.test_stat_to_symlink_replacement_refuses_actual_target_content)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-local-planning-io-972/tools/test_validation_local_input_io.py", line 87, in test_stat_to_symlink_replacement_refuses_actual_target_content
+    with self.assertRaisesRegex(vp.Refused, 'symlink'):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Refused not raised
+
+----------------------------------------------------------------------
+Ran 1 test in 0.016s
+
+FAILED (failures=1)

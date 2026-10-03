@@ -104,6 +104,12 @@ jobs:
           tools/unittest-floor.sh tools 'test_validation_*.py' 194
           tools/unittest-floor.sh tools test_model_memory_fixture.py 3
 
+      - name: Local planning input proof and admission controls
+        run: |
+          proof_output=$(mktemp -d)
+          trap 'rm -rf "$proof_output"' EXIT
+          python3 research/local-planning-io-972-20261003/tools/prove.py "$PWD" "$proof_output"
+
       - name: Declared changed-input CPU contracts (missing selection runs all available)
         run: python3 tools/validation_plan.py contracts
         env:
