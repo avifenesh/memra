@@ -87,6 +87,12 @@ compiled suite is omitted. A malformed skip declaration cannot hide behind a ski
 
 Known Python contract changes run their actual tests without Cargo or GPU loading. Fast-gate
 reports that CPU result separately from any live-evidence campaign the issue still owes.
+The Q35 cache contract also includes its consumed `research/sellgate-20260812/workload.lock.json`
+and the two banked logs under `research/spill-lead-20260919/integration-day12/integ68-q35ab/`:
+`main-q35-cold-mixed.log` and `integ68-q35-cold-mixed.log`. Prompt IDs are generated from the
+workload fields; replay goldens come from seed rows in those logs. This exact input inventory
+does not infer all repository fixture dependencies. The historical inputs and Q35 native
+obligation remain unchanged. Its always-run CI replay is retained independently of selection.
 Its CPU shortcut requires every changed input to be a declared CPU contract or plain docs.
 Research/oracle inputs retain fast-gate's native expansion even when they do not rebuild a
 Cargo package; an absent compiler dependency does not prove an absent native probe dependency.

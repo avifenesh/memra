@@ -106,6 +106,48 @@ class ValidationPlanTests(unittest.TestCase):
         self.assertEqual(p['native']['scope'], 'harness')
         self.assertTrue(p['native']['requirements'])
 
+    def test_q35_consumed_data_keeps_cpu_and_native_contract(self):
+        data = (
+            'research/sellgate-20260812/workload.lock.json',
+            'research/spill-lead-20260919/integration-day12/integ68-q35ab/main-q35-cold-mixed.log',
+            'research/spill-lead-20260919/integration-day12/integ68-q35ab/integ68-q35-cold-mixed.log',
+        )
+        for path in data:
+            self.put(path, 'original fixture\n')
+        before = self.commit()
+        for path in data:
+            with self.subTest(path=path):
+                self.put(path, 'changed consumed fixture\n')
+                after = self.commit()
+                plan = vp.event_plan(self.repo, 'push', '', before, after)
+                before = after
+                self.assertEqual(plan['changed'], [path])
+                self.assertEqual(plan['mode'], 'scoped')
+                self.assertFalse(any(plan['jobs'].values()))
+                self.assertEqual(plan['packages'], [])
+                self.assertEqual([c['id'] for c in plan['cpu_contracts']], ['q35-cache'])
+                self.assertEqual(plan['cpu_contracts'][0]['cpu'],
+                                 ['tools/unittest-floor.sh', 'tools', 'test_q35_cold_mixed_gate.py', '13'])
+                self.assertIn('Qwen3.6 MoE mixed c=4 cache/usage/golden gate on the pinned artifact',
+                              plan['native']['requirements'])
+                self.assertFalse(plan['native']['qualification'])
+
+    def test_selected_q35_contract_refuses_each_missing_consumed_data_input(self):
+        data = (
+            'research/sellgate-20260812/workload.lock.json',
+            'research/spill-lead-20260919/integration-day12/integ68-q35ab/main-q35-cold-mixed.log',
+            'research/spill-lead-20260919/integration-day12/integ68-q35ab/integ68-q35-cold-mixed.log',
+        )
+        for path in (*vp.TOOL_CONTRACTS['q35-cache']['inputs'], *data):
+            self.put(path, 'fixture\n')
+        for path in data:
+            with self.subTest(path=path):
+                missing = self.repo / path
+                missing.unlink()
+                with self.assertRaisesRegex(vp.Refused, 'selected contract input is missing: q35-cache'):
+                    vp.cpu_contract_names(self.repo, 'q35-cache')
+                self.put(path, 'fixture\n')
+
     def test_metrics_collectors_select_separate_floors_and_keep_native_obligations(self):
         for name in ('cache-meter', 'metrics-live'):
             for path in vp.TOOL_CONTRACTS[name]['inputs']:
