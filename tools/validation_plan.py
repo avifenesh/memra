@@ -370,7 +370,10 @@ TOOL_CONTRACTS = {
     'q35-cache': {
         'required': True,
         'inputs': ['tools/q35-cold-mixed-gate.py', 'tools/test_q35_cold_mixed_gate.py',
-                   'research/sellgate-20260812/sellgate_replay.py'],
+                   'research/sellgate-20260812/sellgate_replay.py', 'tools/cache_qualification.py',
+                   'research/sellgate-20260812/workload.lock.json',
+                   'research/spill-lead-20260919/integration-day12/integ68-q35ab/main-q35-cold-mixed.log',
+                   'research/spill-lead-20260919/integration-day12/integ68-q35ab/integ68-q35-cold-mixed.log'],
         'cpu': ['tools/unittest-floor.sh', 'tools', 'test_q35_cold_mixed_gate.py', '13'],
         'native': ['Qwen3.6 MoE mixed c=4 cache/usage/golden gate on the pinned artifact'],
     },
@@ -402,7 +405,9 @@ TOOL_CONTRACTS = {
         'native': [],
     },
     'serving-qualification': {
-        'inputs': ['tools/collect-serving-qualification.py', 'tools/test_collect_serving_qualification.py'],
+        'presence': ['tools/collect-serving-qualification.py', 'tools/test_collect_serving_qualification.py'],
+        'inputs': ['tools/collect-serving-qualification.py', 'tools/test_collect_serving_qualification.py',
+                   'tools/cache_qualification.py'],
         'cpu': ['tools/unittest-floor.sh', 'tools', 'test_collect_serving_qualification.py', '8'],
         'native': ['Source-bound composite streaming/cache/offered-concurrency/cancellation/context collector, with the separate cache-disabled red boot'],
     },
@@ -417,7 +422,8 @@ TOOL_CONTRACTS = {
         'presence': ['tools/collect-sampled-mtp.py', 'tools/test_collect_sampled_mtp.py',
                      'tools/sampled-mtp-requirements.txt'],
         'inputs': ['tools/collect-sampled-mtp.py', 'tools/test_collect_sampled_mtp.py',
-                   'tools/sampled-mtp-requirements.txt', 'tools/collect-serving-qualification.py'],
+                   'tools/sampled-mtp-requirements.txt', 'tools/collect-serving-qualification.py',
+                   'tools/cache_qualification.py'],
         'cpu': ['tools/unittest-floor.sh', 'tools', 'test_collect_sampled_mtp.py', '7'],
         'python_requirements': 'tools/sampled-mtp-requirements.txt',
         'native': ['Pinned positive-PMIN eager/graph/residual/bonus/zero-draft probes, distribution controls and vendor-default serving checks'],
@@ -665,6 +671,20 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
         string_spans = []
         code = rust_code_view(source, string_spans)
         prefix = next(k for k, v in owners.items() if v == package)
+        # A conditional path can select a module whose own includes are outside
+        # the scanned crate. Do not guess cfg truth or treat it as a data reader.
+        for match in re.finditer(r'#\s*\[\s*(?:r#)?cfg_attr\b', code):
+            end, depth = match.end(), 1
+            while end < len(code) and depth:
+                if code[end] == '[':
+                    depth += 1
+                elif code[end] == ']':
+                    depth -= 1
+                end += 1
+            if depth:
+                raise Refused('unterminated conditional Rust attribute')
+            if re.search(r'\bpath\s*=', code[match.end():end - 1]):
+                raise Refused('conditional Rust module path needs a transitive input contract')
         literals = []
         for match in pattern.finditer(code):
             start, end, depth = match.end(), match.end(), 1
@@ -688,7 +708,7 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
             if literal.startswith('\0GENERATED'):
                 continue  # the build-script contract below owns these inputs
             literals.append((literal, match.group(1) == 'include'))
-        for match in re.finditer(r'#\s*\[\s*path\s*=', code):
+        for match in re.finditer(r'#\s*\[\s*(?:r#)?path\s*=', code):
             spans = [(start, end) for start, end in string_spans
                      if start >= match.end() and not code[match.end():start].strip()]
             if not spans:
@@ -697,13 +717,16 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
             literals.append((include_argument(source[start:end], prefix, generated[package]), True))
         for literal, compiled_source in literals:
             if literal.startswith('\0REPO/'):
-                target = posixpath.normpath(literal[len('\0REPO/'):])
+                spelling = literal[len('\0REPO/'):]
             elif literal.startswith('/'):
                 raise Refused('absolute include is outside the declared checkout')
             else:
-                target = posixpath.normpath(posixpath.join(posixpath.dirname(path), literal))
-            if target.startswith('../') or '\0' in target:
+                spelling = posixpath.join(posixpath.dirname(path), literal)
+            if '\0' in spelling:
                 raise Refused('include escapes repository')
+            # Check the complete resolved literal before cancelling parents. Rust
+            # follows aliases first, including ones hidden across concat! pieces.
+            target = runtime_target(spelling)
             if linked_input(target):
                 raise Refused('included symlink needs a transitive input contract: ' + target)
             if compiled_source:

@@ -106,6 +106,48 @@ class ValidationPlanTests(unittest.TestCase):
         self.assertEqual(p['native']['scope'], 'harness')
         self.assertTrue(p['native']['requirements'])
 
+    def test_q35_consumed_data_keeps_cpu_and_native_contract(self):
+        data = (
+            'research/sellgate-20260812/workload.lock.json',
+            'research/spill-lead-20260919/integration-day12/integ68-q35ab/main-q35-cold-mixed.log',
+            'research/spill-lead-20260919/integration-day12/integ68-q35ab/integ68-q35-cold-mixed.log',
+        )
+        for path in data:
+            self.put(path, 'original fixture\n')
+        before = self.commit()
+        for path in data:
+            with self.subTest(path=path):
+                self.put(path, 'changed consumed fixture\n')
+                after = self.commit()
+                plan = vp.event_plan(self.repo, 'push', '', before, after)
+                before = after
+                self.assertEqual(plan['changed'], [path])
+                self.assertEqual(plan['mode'], 'scoped')
+                self.assertFalse(any(plan['jobs'].values()))
+                self.assertEqual(plan['packages'], [])
+                self.assertEqual([c['id'] for c in plan['cpu_contracts']], ['q35-cache'])
+                self.assertEqual(plan['cpu_contracts'][0]['cpu'],
+                                 ['tools/unittest-floor.sh', 'tools', 'test_q35_cold_mixed_gate.py', '13'])
+                self.assertIn('Qwen3.6 MoE mixed c=4 cache/usage/golden gate on the pinned artifact',
+                              plan['native']['requirements'])
+                self.assertFalse(plan['native']['qualification'])
+
+    def test_selected_q35_contract_refuses_each_missing_consumed_data_input(self):
+        data = (
+            'research/sellgate-20260812/workload.lock.json',
+            'research/spill-lead-20260919/integration-day12/integ68-q35ab/main-q35-cold-mixed.log',
+            'research/spill-lead-20260919/integration-day12/integ68-q35ab/integ68-q35-cold-mixed.log',
+        )
+        for path in (*vp.TOOL_CONTRACTS['q35-cache']['inputs'], *data):
+            self.put(path, 'fixture\n')
+        for path in data:
+            with self.subTest(path=path):
+                missing = self.repo / path
+                missing.unlink()
+                with self.assertRaisesRegex(vp.Refused, 'selected contract input is missing: q35-cache'):
+                    vp.cpu_contract_names(self.repo, 'q35-cache')
+                self.put(path, 'fixture\n')
+
     def test_metrics_collectors_select_separate_floors_and_keep_native_obligations(self):
         for name in ('cache-meter', 'metrics-live'):
             for path in vp.TOOL_CONTRACTS[name]['inputs']:
@@ -129,8 +171,10 @@ class ValidationPlanTests(unittest.TestCase):
         for path in contract['inputs']:
             with self.subTest(path=path):
                 plan = self.plan([path])
-                self.assertEqual([c['id'] for c in plan['cpu_contracts']], ['background-chat-text'])
-                self.assertEqual(plan['cpu_contracts'][0]['cpu'][-1], '9')
+                expected = {'background-chat-text'}
+                if path == 'tools/cache_qualification.py': expected.add('q35-cache')
+                self.assertEqual({c['id'] for c in plan['cpu_contracts']}, expected)
+                self.assertEqual(next(c for c in plan['cpu_contracts'] if c['id'] == 'background-chat-text')['cpu'][-1], '9')
                 self.assertTrue(plan['native']['requirements'])
                 self.assertFalse(plan['native']['qualification'])
 
@@ -177,12 +221,59 @@ class ValidationPlanTests(unittest.TestCase):
 
     def test_shared_collector_selects_sampled_tests_only_when_present(self):
         paths = ['tools/collect-serving-qualification.py']
+        self.put(paths[0], '# actual serving collector\n')
+        self.commit()
         self.assertEqual([c['id'] for c in self.plan(paths)['cpu_contracts']], ['serving-qualification'])
         self.put('tools/collect-sampled-mtp.py', '# imports serving collector\n')
         self.commit()
         p = self.plan(paths)
         self.assertEqual({c['id'] for c in p['cpu_contracts']}, {'serving-qualification', 'sampled-mtp'})
         self.assertFalse(any(p['jobs'].values()))
+
+    def test_shared_cache_helper_selects_present_consumers_and_keeps_native_obligations(self):
+        names = ('q35-cache', 'background-chat-text', 'serving-qualification', 'sampled-mtp')
+        present = set()
+        for name in names:
+            for path in vp.TOOL_CONTRACTS[name]['inputs']:
+                self.put(path, '# fixture\n')
+            self.commit()
+            present.add(name)
+            with self.subTest(present=sorted(present)):
+                plan = self.plan(['tools/cache_qualification.py'])
+                self.assertEqual({c['id'] for c in plan['cpu_contracts']}, present)
+                self.assertEqual({tuple(c['cpu']) for c in plan['cpu_contracts']},
+                                 {tuple(vp.TOOL_CONTRACTS[n]['cpu']) for n in present})
+                self.assertEqual(set(plan['native']['requirements']),
+                                 set().union(*(vp.TOOL_CONTRACTS[n]['native'] for n in present)))
+                self.assertFalse(any(plan['jobs'].values()))
+                self.assertFalse(plan['native']['qualification'])
+
+    def test_shared_cache_helper_does_not_invent_absent_contracts_in_fallback(self):
+        for name in ('q35-cache', 'physical-gpu', 'support-records', 'background-chat-text'):
+            for path in vp.TOOL_CONTRACTS[name]['inputs']:
+                self.put(path, '# fixture\n')
+        expected = {'q35-cache', 'physical-gpu', 'support-records', 'background-chat-text'}
+        self.assertEqual(set(vp.cpu_contract_names(self.repo, '')), expected)
+        for name in ('serving-qualification', 'sampled-mtp'):
+            for path in vp.TOOL_CONTRACTS[name]['inputs']:
+                self.put(path, '# fixture\n')
+            expected.add(name)
+            self.assertEqual(set(vp.cpu_contract_names(self.repo, '')), expected)
+
+    def test_shared_cache_helper_deletion_keeps_obligations_and_refuses_execution(self):
+        names = ('q35-cache', 'background-chat-text', 'serving-qualification', 'sampled-mtp')
+        for name in names:
+            for path in vp.TOOL_CONTRACTS[name]['inputs']:
+                self.put(path, '# fixture\n')
+        before = self.commit()
+        (self.repo / 'tools/cache_qualification.py').unlink()
+        after = self.commit()
+        plan = vp.event_plan(self.repo, 'push', '', before, after)
+        self.assertEqual({c['id'] for c in plan['cpu_contracts']}, set(names))
+        self.assertFalse(any(plan['jobs'].values()))
+        for name in names:
+            with self.subTest(contract=name), self.assertRaisesRegex(vp.Refused, name):
+                vp.cpu_contract_names(self.repo, name)
 
     def test_sampled_dependency_pin_selects_its_contract(self):
         self.put('tools/sampled-mtp-requirements.txt', 'numpy==2.3.5\n')
@@ -655,6 +746,61 @@ class ValidationPlanTests(unittest.TestCase):
                 self.put('crates/memra-server/src/lib.rs', attribute + ' mod outer;')
                 self.commit()
                 self.assertEqual(self.plan(['research/outer.rs'])['mode'], 'full')
+
+    def test_module_path_attributes_expand_transitive_inputs_without_cfg_guessing(self):
+        for attribute in (
+            '#[r#path="../../../research/outer.rs"]',
+            '#[r#cfg_attr(all(), path="../../../research/outer.rs")]',
+            '#[cfg_attr(all(), path="../../../research/outer.rs")]',
+            '#[cfg_attr(any(), path="../../../research/outer.rs")]',
+            '#[cfg_attr(feature="variant", path="../../../research/outer.rs")]',
+            '#[cfg_attr(all(), cfg_attr(all(), path="../../../research/outer.rs"))]',
+            '#[cfg_attr(all(), path=concat!("../../../", "research/outer.rs"))]',
+            '#[cfg_attr(all(), r#path="../../../research/outer.rs")]',
+        ):
+            with self.subTest(attribute=attribute):
+                self.put('crates/memra-server/src/lib.rs', attribute + ' mod outer;')
+                self.put('research/outer.rs', 'pub const INPUT: &str = include_str!("inner.md");')
+                self.put('research/inner.md', 'changed')
+                self.commit()
+                plan = self.plan(['research/inner.md'])
+                self.assertEqual(plan['mode'], 'full')
+                self.assertTrue(plan['jobs']['server'])
+                self.assertFalse(plan['native']['qualification'])
+
+    def test_conditional_attribute_comments_strings_and_nonpath_do_not_invent_modules(self):
+        for source in (
+            '// #[cfg_attr(all(), path="../../../other.rs")] mod outer;',
+            'const TEXT: &str = r#"#[cfg_attr(all(), path="../../../other.rs")] mod outer;"#;',
+            '#[cfg_attr(all(), allow(dead_code))] fn harmless() {}',
+        ):
+            with self.subTest(source=source):
+                self.put('crates/memra-server/src/lib.rs', source)
+                self.commit()
+                self.assertEqual(self.plan(['README.md'])['mode'], 'scoped')
+
+    def test_unterminated_conditional_attribute_expands(self):
+        self.put('crates/memra-server/src/lib.rs', '#[cfg_attr(all(), path="outer.rs") mod outer;')
+        self.commit()
+        self.assertEqual(self.plan(['README.md'])['mode'], 'full')
+
+    def test_split_concat_compiled_include_keeps_physical_symlink_traversal(self):
+        self.put('research/actual/nested/directory.md', 'directory')
+        self.put('research/actual/expected.md', 'changed')
+        self.put('research/expected.md', 'different lexical target')
+        (self.repo / 'research/alias').symlink_to('actual/nested')
+        for source in (
+            'const INPUT: &str = include_str!("../../../research/alias/../expected.md");',
+            'const INPUT: &str = include_str!(concat!("../../../", "re", "search/alias/../expected.md"));',
+            'const INPUT: &[u8] = include_bytes!(concat!("../../../", "re", "search/alias/../expected.md"));',
+        ):
+            with self.subTest(source=source):
+                self.put('crates/memra-server/src/lib.rs', source)
+                self.commit()
+                plan = self.plan(['research/actual/expected.md'])
+                self.assertEqual(plan['mode'], 'full')
+                self.assertTrue(plan['jobs']['server'])
+                self.assertFalse(plan['native']['qualification'])
 
     def test_external_source_symlink_expands(self):
         link = self.repo / 'crates/memra-server/src/linked.rs'

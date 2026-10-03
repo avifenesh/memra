@@ -41,6 +41,14 @@ Runtime fixture paths under `research` and `docs` retain their canonical targets
 `.` and proven `..` traversal. Removing a parent component requires a known directory in
 the inspected tree and no symlink along the traversed spelling. Symlinks, missing
 directories, escaping traversal and pattern-dependent parents expand validation.
+Compiled include literals use the same physical traversal check after their complete
+`concat!` or registered environment expression is resolved. A symlink cannot disappear
+through `..` cancellation, even when its path is split across string fragments.
+Conditional `cfg_attr` module path attributes expand validation until their transitive
+module graph has a contract; the selector does not evaluate cfg truth. Raw identifiers
+for path and cfg_attr retain the same input reach as their ordinary spellings. Comments and
+quoted example code cannot create those attribute readers.
+
 Format and glob suffixes keep their conservative reach. Traversal to the repository root
 covers the whole subtree, and the census inspects both sides of deletions and renames.
 
@@ -55,6 +63,12 @@ The existing check names remain stable. Each job uses its own affected-component
 Missing outputs or a failed classifier select the full job and clear partial package lists.
 An explicit `contracts=none` skips unaffected Python contracts; a missing contract output runs
 all available contracts. Thus a documentation-only change does not install sampled-test dependencies.
+
+Shared Python inputs select every declared present consumer. For example,
+`cache_qualification.py` reaches Q35 consistency tests, the background and serving
+collectors directly, and sampled-MTP through the serving collector. Each keeps its existing CPU command and
+native obligations. An absent collector is not invented; a selected incomplete or
+deleted input refuses execution instead of silently skipping the contract.
 `validation-plan.json` is retained with the run, including the omission explanations.
 
 Builds filter binary targets while retaining workspace feature unification. Clippy targets
@@ -73,6 +87,12 @@ compiled suite is omitted. A malformed skip declaration cannot hide behind a ski
 
 Known Python contract changes run their actual tests without Cargo or GPU loading. Fast-gate
 reports that CPU result separately from any live-evidence campaign the issue still owes.
+The Q35 cache contract also includes its consumed `research/sellgate-20260812/workload.lock.json`
+and the two banked logs under `research/spill-lead-20260919/integration-day12/integ68-q35ab/`:
+`main-q35-cold-mixed.log` and `integ68-q35-cold-mixed.log`. Prompt IDs are generated from the
+workload fields; replay goldens come from seed rows in those logs. This exact input inventory
+does not infer all repository fixture dependencies. The historical inputs and Q35 native
+obligation remain unchanged. Its always-run CI replay is retained independently of selection.
 Its CPU shortcut requires every changed input to be a declared CPU contract or plain docs.
 Research/oracle inputs retain fast-gate's native expansion even when they do not rebuild a
 Cargo package; an absent compiler dependency does not prove an absent native probe dependency.
@@ -115,6 +135,11 @@ context, positive integer `executed`, zero integer `skipped`, and an `edges` map
 execution context. Source hashes are checked again when results are admitted. Every asserted
 edge of every selected regression and control must pass, including edges beyond the requested
 subset. A no-change plan says no validation ran; it cannot produce a pass.
+An empty requested-edge list produces no-change only when no mandatory test is requested.
+Explicit mandatory requests still select their complete control bundles and validate their
+scope and source pins. Unavailable mandatory tests expand selection. With zero requested
+edges, execution admission still requires every selected guard/control assertion, a real
+execution count and no skips; it grants no native qualification.
 Scope keys must be present in the execution context, including explicitly declared nulls.
 Context matching preserves JSON types recursively: booleans, integers and floating-point
 values cannot substitute for one another, even inside arrays or objects. Object key order

@@ -39,8 +39,12 @@ def select(required, tests, context, root):
     if any(not isinstance(edge, str) or not edge for edge in required):
         raise ValueError('edges must have nonempty names')
     if not required:
-        return {'decision': 'no-change', 'selected': [], 'uncovered': [],
-                'edge_decisions': [], 'qualification': False, 'reason': 'no validation requested or run'}
+        # A mandatory test is an explicit request even with no affected edges.
+        # Preserve iterable catalogs while inspecting the request before selection.
+        tests = list(tests)
+        if not any(test.get('mandatory') for test in tests):
+            return {'decision': 'no-change', 'selected': [], 'uncovered': [],
+                    'edge_decisions': [], 'qualification': False, 'reason': 'no validation requested or run'}
     catalog = {}
     ineligible = {}
     for test in tests:

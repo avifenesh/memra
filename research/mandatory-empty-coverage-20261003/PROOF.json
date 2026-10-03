@@ -1,0 +1,392 @@
+{
+  "baseline_commit": "79ac1f8cdbbd0dc4056c1f65e4e382758da1466b",
+  "candidate_commit": "cc217cfb472142e880fb0eb002caa1c257d75c67",
+  "candidate_worktree_dirty": false,
+  "source_sha256": {
+    "baseline/validation_coverage.py": "077495a2ca58d6ad833387ad602180d277d2d368602b6ba134c6a1d9686fe2db",
+    "candidate/validation_coverage.py": "df20d12bab5edf4aaa31237c9e6c384bcc020a3d4eff9682bd7667ed9195668a",
+    "mandatory-executable-proof.py": "74c6abebaacf30a7d9043cbaaffbb07168c48e767ce1806f080778868519b721"
+  },
+  "executions": {
+    "positive.py": {
+      "source": "assert 2 + 2 == 4\nprint(\"guard assertion passed\")\n",
+      "sha256": "05080aa60b76f6bb0a7572fa6fc0b4cb12de9c4695fe87a729dd806a34b64ac0",
+      "exit_code": 0,
+      "stdout": "guard assertion passed\n",
+      "stderr": ""
+    },
+    "negative.py": {
+      "source": "raise SystemExit(42)\n",
+      "sha256": "2bcb83f925d5050121e6dae3358782e76637ddbabd8910470af461db8200582f",
+      "exit_code": 42,
+      "stdout": "",
+      "stderr": ""
+    }
+  },
+  "rows": [
+    {
+      "case": "mandatory-bundle",
+      "manifest": {
+        "required_edges": [],
+        "context": {
+          "hardware": "cpu",
+          "request": {
+            "n": 1
+          }
+        },
+        "tests": [
+          {
+            "id": "guard",
+            "mandatory": true,
+            "cost": 1,
+            "covers": [
+              "guard"
+            ],
+            "scope": {
+              "hardware": "cpu",
+              "request": {
+                "n": 1
+              }
+            },
+            "controls": [
+              "red"
+            ],
+            "inputs": {
+              "positive.py": "05080aa60b76f6bb0a7572fa6fc0b4cb12de9c4695fe87a729dd806a34b64ac0"
+            }
+          },
+          {
+            "id": "red",
+            "cost": 1,
+            "covers": [
+              "red"
+            ],
+            "scope": {
+              "hardware": "cpu",
+              "request": {
+                "n": 1
+              }
+            },
+            "inputs": {
+              "negative.py": "2bcb83f925d5050121e6dae3358782e76637ddbabd8910470af461db8200582f"
+            }
+          }
+        ]
+      },
+      "outcomes": {
+        "original": {
+          "exit_code": 0,
+          "stdout": "{\n  \"decision\": \"no-change\",\n  \"selected\": [],\n  \"uncovered\": [],\n  \"edge_decisions\": [],\n  \"qualification\": false,\n  \"reason\": \"no validation requested or run\"\n}\n",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_reason": ""
+        },
+        "repaired": {
+          "exit_code": 0,
+          "stdout": "{\n  \"decision\": \"scoped\",\n  \"selected\": [\n    \"guard\",\n    \"red\"\n  ],\n  \"context\": {\n    \"hardware\": \"cpu\",\n    \"request\": {\n      \"n\": 1\n    }\n  },\n  \"contract\": {\n    \"schema\": \"memra-edge-contract-v1\",\n    \"required_edges\": [],\n    \"context\": {\n      \"hardware\": \"cpu\",\n      \"request\": {\n        \"n\": 1\n      }\n    },\n    \"tests\": {\n      \"guard\": {\n        \"id\": \"guard\",\n        \"mandatory\": true,\n        \"cost\": 1,\n        \"covers\": [\n          \"guard\"\n        ],\n        \"scope\": {\n          \"hardware\": \"cpu\",\n          \"request\": {\n            \"n\": 1\n          }\n        },\n        \"controls\": [\n          \"red\"\n        ],\n        \"inputs\": {\n          \"positive.py\": \"05080aa60b76f6bb0a7572fa6fc0b4cb12de9c4695fe87a729dd806a34b64ac0\"\n        }\n      },\n      \"red\": {\n        \"id\": \"red\",\n        \"cost\": 1,\n        \"covers\": [\n          \"red\"\n        ],\n        \"scope\": {\n          \"hardware\": \"cpu\",\n          \"request\": {\n            \"n\": 1\n          }\n        },\n        \"inputs\": {\n          \"negative.py\": \"2bcb83f925d5050121e6dae3358782e76637ddbabd8910470af461db8200582f\"\n        }\n      }\n    }\n  },\n  \"contract_id\": \"bbaf4156ec2f3026428d44a22eec748cca2cd013b90fb49a5664e2f0b2c058ca\",\n  \"uncovered\": [],\n  \"ineligible\": {},\n  \"choices\": [],\n  \"edge_decisions\": [],\n  \"cost\": 2,\n  \"optimization\": \"deterministic greedy set cover, not a claimed global optimum\",\n  \"isolation\": \"test boot/reset contracts are unchanged; selection never merges process state\",\n  \"qualification\": false\n}\n",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_reason": ""
+        }
+      }
+    },
+    {
+      "case": "requested-failing-guard",
+      "manifest": {
+        "required_edges": [],
+        "context": {
+          "hardware": "cpu",
+          "request": {
+            "n": 1
+          }
+        },
+        "tests": [
+          {
+            "id": "guard",
+            "mandatory": true,
+            "cost": 1,
+            "covers": [
+              "guard"
+            ],
+            "scope": {
+              "hardware": "cpu",
+              "request": {
+                "n": 1
+              }
+            },
+            "controls": [],
+            "inputs": {
+              "negative.py": "2bcb83f925d5050121e6dae3358782e76637ddbabd8910470af461db8200582f"
+            }
+          }
+        ]
+      },
+      "outcomes": {
+        "original": {
+          "exit_code": 0,
+          "stdout": "{\n  \"decision\": \"no-change\",\n  \"selected\": [],\n  \"uncovered\": [],\n  \"edge_decisions\": [],\n  \"qualification\": false,\n  \"reason\": \"no validation requested or run\"\n}\n",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_reason": ""
+        },
+        "repaired": {
+          "exit_code": 0,
+          "stdout": "{\n  \"decision\": \"scoped\",\n  \"selected\": [\n    \"guard\"\n  ],\n  \"context\": {\n    \"hardware\": \"cpu\",\n    \"request\": {\n      \"n\": 1\n    }\n  },\n  \"contract\": {\n    \"schema\": \"memra-edge-contract-v1\",\n    \"required_edges\": [],\n    \"context\": {\n      \"hardware\": \"cpu\",\n      \"request\": {\n        \"n\": 1\n      }\n    },\n    \"tests\": {\n      \"guard\": {\n        \"id\": \"guard\",\n        \"mandatory\": true,\n        \"cost\": 1,\n        \"covers\": [\n          \"guard\"\n        ],\n        \"scope\": {\n          \"hardware\": \"cpu\",\n          \"request\": {\n            \"n\": 1\n          }\n        },\n        \"controls\": [],\n        \"inputs\": {\n          \"negative.py\": \"2bcb83f925d5050121e6dae3358782e76637ddbabd8910470af461db8200582f\"\n        }\n      }\n    }\n  },\n  \"contract_id\": \"9da2dced21a934282c023754fc2f295879b467480a7dd5665afbd2fb00912eb3\",\n  \"uncovered\": [],\n  \"ineligible\": {},\n  \"choices\": [],\n  \"edge_decisions\": [],\n  \"cost\": 1,\n  \"optimization\": \"deterministic greedy set cover, not a claimed global optimum\",\n  \"isolation\": \"test boot/reset contracts are unchanged; selection never merges process state\",\n  \"qualification\": false\n}\n",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_reason": ""
+        }
+      }
+    },
+    {
+      "case": "stale-mandatory",
+      "manifest": {
+        "required_edges": [],
+        "context": {
+          "hardware": "cpu",
+          "request": {
+            "n": 1
+          }
+        },
+        "tests": [
+          {
+            "id": "guard",
+            "mandatory": true,
+            "cost": 1,
+            "covers": [
+              "guard"
+            ],
+            "scope": {
+              "hardware": "cpu",
+              "request": {
+                "n": 1
+              }
+            },
+            "controls": [],
+            "inputs": {
+              "positive.py": "0000000000000000000000000000000000000000000000000000000000000000"
+            }
+          }
+        ]
+      },
+      "outcomes": {
+        "original": {
+          "exit_code": 0,
+          "stdout": "{\n  \"decision\": \"no-change\",\n  \"selected\": [],\n  \"uncovered\": [],\n  \"edge_decisions\": [],\n  \"qualification\": false,\n  \"reason\": \"no validation requested or run\"\n}\n",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_reason": ""
+        },
+        "repaired": {
+          "exit_code": 2,
+          "stdout": "{\n  \"decision\": \"expand\",\n  \"selected\": [],\n  \"uncovered\": [],\n  \"ineligible\": {\n    \"guard\": [\n      \"coverage input changed: positive.py\",\n      \"ineligible required test/control: guard\"\n    ]\n  },\n  \"reason\": \"mandatory regression/control is unavailable\",\n  \"qualification\": false\n}\n",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_reason": ""
+        }
+      }
+    },
+    {
+      "case": "missing-control",
+      "manifest": {
+        "required_edges": [],
+        "context": {
+          "hardware": "cpu",
+          "request": {
+            "n": 1
+          }
+        },
+        "tests": [
+          {
+            "id": "guard",
+            "mandatory": true,
+            "cost": 1,
+            "covers": [
+              "guard"
+            ],
+            "scope": {
+              "hardware": "cpu",
+              "request": {
+                "n": 1
+              }
+            },
+            "controls": [
+              "red"
+            ],
+            "inputs": {
+              "positive.py": "05080aa60b76f6bb0a7572fa6fc0b4cb12de9c4695fe87a729dd806a34b64ac0"
+            }
+          }
+        ]
+      },
+      "outcomes": {
+        "original": {
+          "exit_code": 0,
+          "stdout": "{\n  \"decision\": \"no-change\",\n  \"selected\": [],\n  \"uncovered\": [],\n  \"edge_decisions\": [],\n  \"qualification\": false,\n  \"reason\": \"no validation requested or run\"\n}\n",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_reason": ""
+        },
+        "repaired": {
+          "exit_code": 1,
+          "stdout": "",
+          "stderr_sha256": "06640d33212ff79226c6c924d575131d00566f72d52584b43fd1aa8d4024d0a0",
+          "stderr_reason": "ValueError: unknown control: red"
+        }
+      }
+    },
+    {
+      "case": "optional-no-request",
+      "manifest": {
+        "required_edges": [],
+        "context": {
+          "hardware": "cpu",
+          "request": {
+            "n": 1
+          }
+        },
+        "tests": [
+          {
+            "id": "guard",
+            "mandatory": false,
+            "cost": 1,
+            "covers": [
+              "guard"
+            ],
+            "scope": {
+              "hardware": "cpu",
+              "request": {
+                "n": 1
+              }
+            },
+            "controls": [
+              "red"
+            ],
+            "inputs": {
+              "positive.py": "05080aa60b76f6bb0a7572fa6fc0b4cb12de9c4695fe87a729dd806a34b64ac0"
+            }
+          }
+        ]
+      },
+      "outcomes": {
+        "original": {
+          "exit_code": 0,
+          "stdout": "{\n  \"decision\": \"no-change\",\n  \"selected\": [],\n  \"uncovered\": [],\n  \"edge_decisions\": [],\n  \"qualification\": false,\n  \"reason\": \"no validation requested or run\"\n}\n",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_reason": ""
+        },
+        "repaired": {
+          "exit_code": 0,
+          "stdout": "{\n  \"decision\": \"no-change\",\n  \"selected\": [],\n  \"uncovered\": [],\n  \"edge_decisions\": [],\n  \"qualification\": false,\n  \"reason\": \"no validation requested or run\"\n}\n",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_reason": ""
+        }
+      }
+    }
+  ],
+  "selected_positive_bundle": {
+    "decision": "scoped",
+    "selected": [
+      "guard",
+      "red"
+    ],
+    "context": {
+      "hardware": "cpu",
+      "request": {
+        "n": 1
+      }
+    },
+    "contract": {
+      "schema": "memra-edge-contract-v1",
+      "required_edges": [],
+      "context": {
+        "hardware": "cpu",
+        "request": {
+          "n": 1
+        }
+      },
+      "tests": {
+        "guard": {
+          "id": "guard",
+          "mandatory": true,
+          "cost": 1,
+          "covers": [
+            "guard"
+          ],
+          "scope": {
+            "hardware": "cpu",
+            "request": {
+              "n": 1
+            }
+          },
+          "controls": [
+            "red"
+          ],
+          "inputs": {
+            "positive.py": "05080aa60b76f6bb0a7572fa6fc0b4cb12de9c4695fe87a729dd806a34b64ac0"
+          }
+        },
+        "red": {
+          "id": "red",
+          "cost": 1,
+          "covers": [
+            "red"
+          ],
+          "scope": {
+            "hardware": "cpu",
+            "request": {
+              "n": 1
+            }
+          },
+          "inputs": {
+            "negative.py": "2bcb83f925d5050121e6dae3358782e76637ddbabd8910470af461db8200582f"
+          }
+        }
+      }
+    },
+    "contract_id": "bbaf4156ec2f3026428d44a22eec748cca2cd013b90fb49a5664e2f0b2c058ca",
+    "uncovered": [],
+    "ineligible": {},
+    "choices": [],
+    "edge_decisions": [],
+    "cost": 2,
+    "optimization": "deterministic greedy set cover, not a claimed global optimum",
+    "isolation": "test boot/reset contracts are unchanged; selection never merges process state",
+    "qualification": false
+  },
+  "genuine_results": {
+    "guard": {
+      "contract_id": "bbaf4156ec2f3026428d44a22eec748cca2cd013b90fb49a5664e2f0b2c058ca",
+      "status": "passed",
+      "context": {
+        "hardware": "cpu",
+        "request": {
+          "n": 1
+        }
+      },
+      "executed": 1,
+      "skipped": 0,
+      "edges": {
+        "guard": "passed"
+      }
+    },
+    "red": {
+      "contract_id": "bbaf4156ec2f3026428d44a22eec748cca2cd013b90fb49a5664e2f0b2c058ca",
+      "status": "passed",
+      "context": {
+        "hardware": "cpu",
+        "request": {
+          "n": 1
+        }
+      },
+      "executed": 1,
+      "skipped": 0,
+      "edges": {
+        "red": "passed"
+      }
+    }
+  },
+  "genuine_admission": {
+    "status": "passed",
+    "edges": 0,
+    "contract_id": "bbaf4156ec2f3026428d44a22eec748cca2cd013b90fb49a5664e2f0b2c058ca",
+    "qualification": false,
+    "scope": "declared behavior assertions only; native receipt admission remains separate"
+  },
+  "requested_failure_refusal": "failed or mismatched test result: guard",
+  "optional_no_change_nonpass": "a plan with uncovered edges cannot produce a scoped pass",
+  "native_qualification": false
+}

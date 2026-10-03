@@ -700,3 +700,15 @@ background-chat-text-20261002 | Background Chat/Text retained original native ou
 runtime-fixture-traversal-20261003 | Two executed CPU reader controls reproduced omitted fixture consumers; proven traversal now selects the consumer and ambiguous symlink traversal expands validation. | runtime-fixture-traversal-20261003/RESULTS.md
 
 typed-coverage-context-20261003 | Three CLI red controls and one execution-context API red rejected typed or missing coverage contexts after repair; matching typed coverage context remains admitted. | typed-coverage-context-20261003/RESULTS.md
+
+compiled-input-graph-20261003 | "Three actual CPU compiler omissions are repaired; both independent positive controls remain selected." | compiled-input-graph-20261003/RESULTS.md
+mandatory-empty-coverage-20261003 | Explicit mandatory guards retain selection and admission with zero requested edges; real guard success/failure and optional no-change controls passed. | mandatory-empty-coverage-20261003/RESULTS.md
+
+shared-cache-contract-20261003 | The repaired registry selects all four affected contracts and preserves their CPU commands and native obligations. | shared-cache-contract-20261003/RESULTS.md
+non-utf8-drafter-environment-20261003 | "Unrelated non-UTF8 exports no longer panic drafter collection; relevant bytes refuse without changing valid identity strings." | [RESULTS.md](non-utf8-drafter-environment-20261003/RESULTS.md)
+
+raw-os-environment-name-audit-20261003 | "Owned malformed OS names refuse; unowned names warn; UTF8 and value-ignorance controls preserve baseline bytes." | raw-os-environment-name-audit-20261003/RESULTS.md
+
+process-ack-939-20261003 | Verdict: CPU owned-process yield state now requires an observed stop; the original intermittent failure remains unproven. | process-ack-939-20261003/LANE.md
+dense-control-cache-20261003 | "Six actual native payloads restored byte-identically; all 18 CPU controls run after build and restore; 55 refusal/regression checks pass." | [RESULTS.md](dense-control-cache-20261003/RESULTS.md)
+q35-fixture-data-contract-20261003 | "Three consumed data paths now select the Q35 contract; copied-data positives and independent failure controls preserve historical originals." | q35-fixture-data-contract-20261003/RESULTS.md
