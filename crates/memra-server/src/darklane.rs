@@ -779,6 +779,12 @@ mod tests {
         }
     }
 
+    fn owned_pid_record(path: &std::path::Path) -> Option<u32> {
+        let record = std::fs::read_to_string(path).ok()?;
+        record.ends_with('\n').then_some(())?;
+        record.trim().parse().ok()
+    }
+
     // Keep cleanup bound to the exact owned descendant even after it is orphaned.
     struct OwnedDescendant(std::os::fd::OwnedFd);
 
@@ -838,6 +844,7 @@ mod tests {
         std::fs::create_dir(&path).unwrap();
         let dir = TestDir(path);
         let script = dir.0.join("descendant.sh");
+        println!("owned checkpoint receipt dir={}", dir.0.display());
         let ready = dir.0.join("ready");
         let pid_file = dir.0.join("pid");
         let release = dir.0.join("release");
@@ -858,15 +865,13 @@ mod tests {
             release.display()
         );
         let mut child = OwnedChild(launch(&cmd, 0).unwrap());
-        wait_acknowledged("owned checkpoint descendant ready", || ready.exists());
-        let pid: u32 = std::fs::read_to_string(&pid_file)
-            .unwrap()
-            .trim()
-            .parse()
-            .unwrap();
+        wait_acknowledged("owned checkpoint descendant ready", || {
+            ready.exists() && owned_pid_record(&pid_file).is_some()
+        });
+        let pid = owned_pid_record(&pid_file).unwrap();
+        assert_eq!(unsafe { libc::getpgid(pid as i32) }, child.0.id() as i32);
         let owned = OwnedDescendant::open(pid);
         assert!(owned.alive());
-        assert_eq!(unsafe { libc::getpgid(pid as i32) }, child.0.id() as i32);
         std::fs::write(release, []).unwrap();
         wait_acknowledged("checkpoint leader exited without reaping", || {
             let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
@@ -934,18 +939,13 @@ mod tests {
         let guard = RunnerGuard(Some(h));
         sig.valley.store(true, Ordering::Release);
         wait_acknowledged("owned descendant ready", || {
-            st.state.load(Ordering::Acquire) == BG_RUNNING
-                && std::fs::read_to_string(&ready).is_ok_and(|s| s.trim().parse::<u32>().is_ok())
+            st.state.load(Ordering::Acquire) == BG_RUNNING && owned_pid_record(&ready).is_some()
         });
         let pid = st.job_pid.load(Ordering::Acquire);
-        let descendant: u32 = std::fs::read_to_string(&ready)
-            .unwrap()
-            .trim()
-            .parse()
-            .unwrap();
+        let descendant = owned_pid_record(&ready).unwrap();
+        assert_eq!(unsafe { libc::getpgid(descendant as i32) }, pid as i32);
         let owned = OwnedDescendant::open(descendant);
         assert!(owned.alive());
-        assert_eq!(unsafe { libc::getpgid(descendant as i32) }, pid as i32);
         sig.valley.store(false, Ordering::Release);
         match action {
             "normal" => {
@@ -1009,18 +1009,13 @@ mod tests {
         let guard = RunnerGuard(Some(h));
         sig.valley.store(true, Ordering::Release);
         wait_acknowledged("owned descendant ready", || {
-            st.state.load(Ordering::Acquire) == BG_RUNNING
-                && std::fs::read_to_string(&ready).is_ok_and(|s| s.trim().parse::<u32>().is_ok())
+            st.state.load(Ordering::Acquire) == BG_RUNNING && owned_pid_record(&ready).is_some()
         });
         let pid = st.job_pid.load(Ordering::Acquire);
-        let descendant: u32 = std::fs::read_to_string(&ready)
-            .unwrap()
-            .trim()
-            .parse()
-            .unwrap();
+        let descendant = owned_pid_record(&ready).unwrap();
+        assert_eq!(unsafe { libc::getpgid(descendant as i32) }, pid as i32);
         let owned = OwnedDescendant::open(descendant);
         assert!(owned.alive());
-        assert_eq!(unsafe { libc::getpgid(descendant as i32) }, pid as i32);
         sig.valley.store(false, Ordering::Release);
         sig.busy.store(true, Ordering::Release);
         wait_acknowledged("owned group stopped", || {
