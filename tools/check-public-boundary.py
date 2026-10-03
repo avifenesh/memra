@@ -355,14 +355,22 @@ def tracked_files() -> List[str]:
     return [line for line in out.splitlines() if line]
 
 
-def secret_candidate_files(patterns: Dict[str, str]) -> set[str]:
+def secret_candidate_files(
+    patterns: Dict[str, str], paths: Optional[Iterable[str]] = None
+) -> set[str]:
     """Use git's optimized PCRE walker to prefilter files with any structural secret hit."""
-    if not patterns:
+    selected = None if paths is None else list(paths)
+    if not patterns or selected == []:
         return set()
-    args = ["git", "grep", "--text", "-z", "-l", "-P"]
+    args = ["git"]
+    if selected is not None:
+        args.append("--literal-pathspecs")
+    args.extend(("grep", "--text", "-z", "-l", "-P"))
     for source in patterns.values():
         args.extend(("-e", source))
     args.append("--")
+    if selected is not None:
+        args.extend(selected)
     result = subprocess.run(args, cwd=ROOT, capture_output=True)
     if result.returncode == 1:
         return set()
@@ -790,10 +798,18 @@ def raw_bytes_prefilter(data: bytes, sources: Dict[str, str]) -> bool:
     return False
 
 
-def evaluate(policy: Policy) -> List[Violation]:
+def evaluate(
+    policy: Policy, paths: Optional[Iterable[str]] = None
+) -> List[Violation]:
     violations: List[Violation] = []
-    secret_candidates = secret_candidate_files(policy.secret_sources)
-    for rel in tracked_files():
+    files = tracked_files()
+    if paths is None:
+        secret_candidates = secret_candidate_files(policy.secret_sources)
+    else:
+        selected = set(paths)
+        files = [rel for rel in files if rel in selected]
+        secret_candidates = secret_candidate_files(policy.secret_sources, files)
+    for rel in files:
         full = ROOT / rel
         # Do not ask is_file() to follow a symlink. Python 3.12 raises PermissionError when an
         # absolute target crosses an unreadable parent (the hosted-runner failure that motivated
@@ -1146,7 +1162,9 @@ def cmd_seed(policy: Policy, force: bool) -> int:
 def cmd_verify(policy: Policy, prune: bool) -> int:
     allowlist = load_allowlist(ALLOWLIST_PATH)
     enforce_expiry_metadata(allowlist, policy)
-    live_violations = evaluate(policy)
+    # Drift concerns declared exemptions only. The separate check command still scans
+    # every tracked blob for new violations, including paths with no exemption.
+    live_violations = evaluate(policy, paths={path for path, _ in allowlist})
     drifted = stale_entries(allowlist, live_violations)
     if not drifted:
         print(
