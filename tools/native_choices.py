@@ -39,7 +39,7 @@ class Native:
         env.update(MEMRA_MODELS=f'fixture={a.model}',MEMRA_CTX=str(a.context),MEMRA_ADDR=f'127.0.0.1:{a.port}',MEMRA_MAX_SESSIONS=str(a.sessions),MEMRA_PREFIX_CACHE_MB='0',MEMRA_MODEL_METADATA=str(self.out/'metadata.toml'),MEMRA_TTFT_TRACE='1',MEMRA_DEBUG_PRIMESEG='1',CHOICE_GATE_OUTPUT_BUDGET=str(a.output_budget))
         if a.reserve_mb is not None:env['MEMRA_ADMIT_RESERVE_MB']=str(a.reserve_mb)
         save(self.out/'env.json',{k:v for k,v in env.items() if k.startswith('MEMRA_') or k=='CHOICE_GATE_OUTPUT_BUDGET'})
-        self.hardware=subprocess.check_output(['nvidia-smi','--query-gpu=name,uuid,driver_version,memory.total','--format=csv,noheader'],text=True).strip()
+        self.hardware=subprocess.check_output(['nvidia-smi','-i',os.environ['CUDA_VISIBLE_DEVICES'],'--query-gpu=name,uuid,driver_version,memory.total','--format=csv,noheader'],text=True).strip()
         self.process=subprocess.Popen([str(a.binary)],env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,bufsize=1,pass_fds=(9,))
         def read():
             try:
@@ -127,6 +127,7 @@ def main():
                 for n in [2,4,8]:results.append(native.request(label+f'-greedy-n{n}','/v1/'+route,{**body,'n':n,'temperature':0,'max_tokens':32,'seed':73}))
                 results.append(native.request(label+'-stream','/v1/'+route,{**body,'n':4,'stream':True,'stream_options':{'include_usage':True},'max_tokens':32,'seed':101}))
                 results.append(native.request(label+'-sampled','/v1/'+route,{**body,'n':3,'max_tokens':32,'seed':101}))
+                results.append(native.request(label+'-sampled-repeat','/v1/'+route,{**body,'n':3,'max_tokens':32,'seed':101}))
                 for i in range(3):results.append(native.request(label+f'-seed-{i}','/v1/'+route,{**body,'max_tokens':32,'seed':101+i}))
                 for key,value in [('n',0),('n',9),('best_of',2)]:results.append(native.request(label+f'-refuse-{key}-{value}','/v1/'+route,{**body,key:value,'max_tokens':8}))
                 results.append(native.request(label+'-n1-after','/v1/'+route,{**body,'temperature':0,'max_tokens':32,'seed':73}))
@@ -134,6 +135,10 @@ def main():
             results.append(native.request('bare-default','/v1/chat/completions',bare))
             results.append(native.request('n-only-default','/v1/chat/completions',{**bare,'n':2}))
             results.append(native.request('n-only-default-fresh','/v1/chat/completions',{**bare,'n':2}))
+            tools=[{'type':'function','function':{'name':'weather','parameters':{'type':'object','properties':{'city':{'type':'string','enum':['Paris']}},'required':['city'],'additionalProperties':False}}}]
+            constrained={**bare,'messages':[{'role':'user','content':'Call weather for Paris.'}],'tools':tools,'tool_choice':'required','parallel_tool_calls':False,'n':2,'max_tokens':128,'reasoning_effort':'none','temperature':0,'seed':530}
+            results.append(native.request('constrained-choices','/v1/chat/completions',constrained))
+            results.append(native.request('constrained-choices-stream','/v1/chat/completions',{**constrained,'stream':True,'stream_options':{'include_usage':True}}))
             results.append(native.request('cancel','/v1/chat/completions',{'model':'fixture','messages':[{'role':'user','content':'List the integers from one upward. Continue until the output limit.'}],'n':4,'stream':True,'max_tokens':512,'seed':103},reset_after=8))
             results.append(native.request('cancel-recovery','/v1/chat/completions',{**bare,'temperature':0,'max_tokens':8,'seed':73}))
         elif args.phase=='deadline':
@@ -159,14 +164,20 @@ def main():
             assert conn.sock is not None
             conn.sock.setsockopt(socket.SOL_SOCKET,socket.SO_LINGER,struct.pack('ii',1,0));conn.close()
             (folder/'wire.sse').write_bytes(b''.join(raw))
+            identity=dict(response.getheaders()).get('x-request-id')
+            with native.cv:
+                assert native.cv.wait_for(lambda:any(e['tag']=='CHOICE_DROP' and e['value']['id']==identity for e in native.events) or native.process.poll() is not None,10),'occupier drop missing'
+            save(folder/'client.json',{'id':identity,'status':response.status,'disconnected':True,'callbacks':[e for e in native.events if e['value'].get('id')==identity]})
             results.append(native.request('slots-recovery','/v1/chat/completions',{'model':'fixture','messages':[{'role':'user','content':'Reply with one short sentence.'}],'n':4,'max_tokens':8,'seed':73}))
         else:
             body={'model':'fixture','prompt':'Write a long numbered list.','n':4,'max_tokens':64,'seed':73}
+            if args.phase=='budget':
+                results.append(native.request('budget-singleton','/v1/completions',{**body,'n':1}))
             results.append(native.request(args.phase,'/v1/completions',body))
         status='complete'
     finally:
         if hasattr(native,'process'):native.stop()
-        manifest={'status':status,'source':args.source,'binary_sha256':args.binary_sha,'model_sha256':args.model_sha,'phase':args.phase,'server_pid':getattr(getattr(native,'process',None),'pid',None),'hardware':getattr(native,'hardware',None),'server_exit':getattr(getattr(native,'process',None),'returncode',None),'results':results,'support_promotion':False,'files':{str(f.relative_to(args.out)):sha(f) for f in args.out.rglob('*') if f.is_file()}}
+        manifest={'status':status,'source':args.source,'binary_sha256':args.binary_sha,'model_sha256':args.model_sha,'phase':args.phase,'server_pid':getattr(getattr(native,'process',None),'pid',None),'hardware':getattr(native,'hardware',None),'server_exit':getattr(getattr(native,'process',None),'returncode',None),'results':results,'support_promotion':False,'helper_sha256':{name:sha(Path(__file__).with_name(name)) for name in ['native_choices.py','choice_verifier.py','replay_native_choices.py']},'files':{str(f.relative_to(args.out)):sha(f) for f in args.out.rglob('*') if f.is_file()}}
         save(args.out/'manifest.json',manifest)
     print(json.dumps({'status':status,'requests':len(results)}),flush=True)
 if __name__=='__main__':main()

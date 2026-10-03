@@ -80,6 +80,19 @@ def check_greedy(reference, group):
 def check_seeded(singletons, group):
     require(all(text(choice)==text(singletons[choice['index']]['choices'][0] if 'choices' in singletons[choice['index']] else {'text':singletons[choice['index']]['text']}) for choice in group['choices']), 'rng_isolation', 'row i matches its independent seed+i request')
 
+def check_repeat(first, second):
+    check_identity(first['body'], second['body'])
+    def witnesses(cell):
+        return sorted((r['index'],r['seed'],r['output'],r['token_sha256']) for r in cell['worker_rows'])
+    require(witnesses(first)==witnesses(second), 'token_identity', 'repeated seed+i rows retain exact producer token hashes')
+
+def check_tools(body):
+    for choice in body['choices']:
+        calls=choice['message'].get('tool_calls',[])
+        require(choice['finish_reason']=='tool_calls' and len(calls)==1, 'constrained_choices', 'one call per private parser')
+        call=calls[0]['function']
+        require(call['name']=='weather' and json.loads(call['arguments'])=={'city':'Paris'}, 'constrained_choices', 'each row follows the declared name/schema')
+
 if __name__=='__main__':
     import argparse
     cli=argparse.ArgumentParser();cli.add_argument('receipt',type=Path)

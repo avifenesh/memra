@@ -1,6 +1,6 @@
 import unittest
 from copy import deepcopy
-from choice_verifier import check_completed, check_refusal, Invalid
+from choice_verifier import check_completed, check_refusal, check_repeat, check_tools, Invalid
 
 def fixture():
     identity='fixture'; output=3
@@ -37,5 +37,25 @@ class Controls(unittest.TestCase):
         x=fixture();x['reserve']['output']=16;self.reject(x,'reservation')
     def test_duplicate_terminal(self):
         x=fixture();x['callbacks'].append(deepcopy(x['callbacks'][-2]));self.reject(x,'callback_lifetime')
+    def test_repeated_producer_hash_must_match(self):
+        x=fixture()
+        for r in x['worker_rows']:r['token_sha256']='a'*64
+        y=deepcopy(x);check_repeat(x,y);y['worker_rows'][1]['token_sha256']='b'*64
+        with self.assertRaises(Invalid) as e:check_repeat(x,y)
+        self.assertEqual(e.exception.edge,'token_identity')
+    def test_coherent_http_accounting_cannot_change_independent_output(self):
+        x=fixture();x['body']['usage'].update(completion_tokens=4,total_tokens=14)
+        x['callbacks'][-2].update(output=4,observed_output=4)
+        self.reject(x,'accounting')
+    def test_each_constrained_row_has_its_own_complete_call(self):
+        call={'function':{'name':'weather','arguments':'{"city":"Paris"}'}}
+        body={'choices':[{'index':i,'finish_reason':'tool_calls','message':{'tool_calls':[deepcopy(call)]}} for i in range(2)]}
+        check_tools(body);body['choices'][1]['message']['tool_calls'].clear()
+        with self.assertRaises(Invalid) as e:check_tools(body)
+        self.assertEqual(e.exception.edge,'constrained_choices')
+    def test_constrained_schema_cannot_be_substituted(self):
+        body={'choices':[{'index':0,'finish_reason':'tool_calls','message':{'tool_calls':[{'function':{'name':'weather','arguments':'{"city":"Berlin"}'}}]}}]}
+        with self.assertRaises(Invalid) as e:check_tools(body)
+        self.assertEqual(e.exception.edge,'constrained_choices')
 
 if __name__=='__main__':unittest.main()

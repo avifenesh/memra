@@ -5,7 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
-from choice_verifier import check_completed, check_identity, check_greedy, check_seeded, check_refusal, require
+from choice_verifier import check_completed, check_identity, check_greedy, check_seeded, check_refusal, check_repeat, check_tools, require
 
 TAG={'CHOICE_OPEN':'open','CHOICE_PROMPT':'prompt','CHOICE_TOKEN':'token','CHOICE_TERMINAL':'terminal','CHOICE_DROP':'drop'}
 
@@ -15,15 +15,18 @@ def cell(root,record):
     packets=json.loads((root/record['name']/'packets.json').read_text()) if (root/record['name']/'packets.json').exists() else None
     body=record.get('body')
     if packets is not None:
-        texts={i:'' for i in range(n)};reasons={};usage=None
+        texts={i:'' for i in range(n)};reasons={};usage=None;calls={i:[] for i in range(n)}
         for packet in packets:
             if not isinstance(packet,dict):continue
             if packet.get('usage'):usage=packet['usage']
             for c in packet.get('choices',[]):
                 i=c['index']; d=c.get('delta',{})
                 texts[i]+=c.get('text','') or d.get('content','') or ''
+                calls[i].extend(d.get('tool_calls',[]))
                 if c.get('finish_reason') is not None:reasons[i]=c['finish_reason']
         body={'choices':[{'index':i,'text':texts[i],'finish_reason':reasons.get(i)} for i in range(n)],'usage':usage}
+        if any(calls.values()):
+            body['choices']=[{'index':i,'message':{'tool_calls':calls[i]},'finish_reason':reasons.get(i)} for i in range(n)]
     if n==1 and 'choices' not in body:
         body={**body,'choices':[{'index':0,'text':body['text'],'finish_reason':'length' if body.get('stop_reason')=='MaxNew' else 'stop'}],
               'usage':{'prompt_tokens':body['prompt_tokens'],'completion_tokens':body['n_tokens'],
@@ -45,18 +48,23 @@ def cell(root,record):
     reserves=[e['value'] for e in events[:index] if e['tag']=='CHOICE_RESERVE']
     reserve=reserves[-1] if reserves else None
     primes=record.get('prime_events',[])
-    output_bound=(opened.get('reserved_ctx',0)-reserve['prompt'])//n if reserve else request.get('max_tokens')
+    output_bound=request.get('max_tokens', (opened.get('reserved_ctx',0)-reserve['prompt'])//n if reserve else None)
     return {'id':record['id'],'n':n,'seed':request.get('seed',next((r['seed'] for r in record.get('worker_rows',[]) if r['index']==0),None)),'body':body,'callbacks':callbacks,'worker_rows':record.get('worker_rows',[]),'forks':forks,'leader_prime_segments':sum(e['index']==0 for e in primes),'follower_prime_segments':sum(e['index']!=0 for e in primes),'reserve':reserve,'resolved_output_bound':output_bound,'packets':packets}
 
-def verify(root,baseline=None):
+def verify(root,baseline=None,expected=None):
     manifest=json.loads((root/'manifest.json').read_text())
     require(manifest['status']=='complete','manifest','native invocation must complete')
     require(manifest['support_promotion'] is False,'manifest','no support-state promotion')
+    if expected is not None:
+        require(all(manifest.get(k)==v for k,v in expected.items()),'context_binding','source/ELF/model/hardware/helper context')
     for name,digest in manifest['files'].items():
         path=(root/name).resolve()
         require(path.is_relative_to(root.resolve()) and hashlib.sha256(path.read_bytes()).hexdigest()==digest,'retained_hash',name)
 
     records={r['name']:r for r in manifest['results']}
+    require(len(records)==len(manifest['results']) and records,'required_cells','nonempty unique request records')
+    positive={name for name in records if '-refuse-' not in name and name not in {'cancel','deadline-partial','slots-contender','budget','kv'}}
+    require(all(records[name]['status']==200 and not records[name]['disconnected'] for name in positive),'required_cells','every intended successful request completed')
     completed=[]
     for name,r in records.items():
         if '-refuse-' in name:
@@ -73,6 +81,9 @@ def verify(root,baseline=None):
                 check_identity(before,reference)
             for n in [2,4,8]:check_greedy(reference,records[route+f'-greedy-n{n}']['body'])
             check_seeded([records[route+f'-seed-{i}']['body'] for i in range(3)],records[route+'-sampled']['body'])
+            check_repeat(cell(root,records[route+'-sampled']),cell(root,records[route+'-sampled-repeat']))
+        check_tools(records['constrained-choices']['body'])
+        check_tools(cell(root,records['constrained-choices-stream'])['body'])
         cancel=records['cancel']
         require(cancel['disconnected'],'cancel','real connection reset required')
         terminal=[e for e in cancel['callbacks'] if e['tag']=='CHOICE_TERMINAL']
@@ -89,10 +100,18 @@ def verify(root,baseline=None):
         calls=[e['value'] for e in partial['callbacks'] if e['tag']=='CHOICE_TERMINAL']
         require(len(calls)==1 and calls[0]['kind']=='deadline_partial' and calls[0]['output']==calls[0]['observed_output']==partial['body']['usage']['completion_tokens']>0,'deadline_partial','observed count unchanged by buffer flush')
         require(records['deadline-recovery']['status']==200,'deadline_partial','all group slots recover')
-    elif manifest['phase']=='budget':require(records['budget']['status']==402,'prepaid_exhaustion','aggregate reservation refuses')
-    elif manifest['phase']=='kv':require(records['kv']['status']==429,'kv_exhaustion','native allocation refused before priming')
+    elif manifest['phase']=='budget':
+        require(records['budget-singleton']['status']==200 and records['budget']['status']==402,'prepaid_exhaustion','same per-row bound passes alone and fails after N multiplication')
+        require(not records['budget'].get('prime_events') and not records['budget'].get('worker_rows'),'prepaid_exhaustion','refusal precedes native work')
+    elif manifest['phase']=='kv':
+        r=records['kv']
+        require(r['status']==400 and r.get('body',{}).get('error',{}).get('code')=='context_length_exceeded','kv_exhaustion','idle native state admission uses the existing non-retryable capacity contract')
+        require(not r.get('prime_events') and not r.get('fork_lines') and not r.get('worker_rows'),'kv_exhaustion','native allocation refused before priming')
     elif manifest['phase']=='slots':
         require(records['slots-contender']['status'] in [408,429],'n_slots','four active choices prevent extra immediate admission')
+        require(not records['slots-contender'].get('worker_rows') and not records['slots-contender'].get('prime_events'),'n_slots','contender never reached generation')
+        occupier=json.loads((root/'occupier/client.json').read_text())
+        require(occupier['status']==200 and occupier['disconnected'] and any(e['tag']=='CHOICE_DROP' and not e['value']['terminal'] for e in occupier['callbacks']),'n_slots','retained real overlap and group reset')
         require(records['slots-recovery']['status']==200,'n_slots','all four slots become usable after group reset')
     return {'pass':True,'completed':completed,'scope':'this exact native receipt and declared assertion edges; no support promotion'}
 
