@@ -41693,6 +41693,11 @@ fn run_required_boot_warmup(
                     .get_or_insert_with(|| format!("required warmup {name:?} fence: {error}"));
             }
         }
+        if let Err(error) = engine.ctx().bind_to_thread() {
+            fence_error.get_or_insert_with(|| {
+                format!("required warmup {name:?} primary context: {error}")
+            });
+        }
         if let Some(error) = fence_error {
             return Err(error);
         }
