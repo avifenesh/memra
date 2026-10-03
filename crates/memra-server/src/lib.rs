@@ -21245,7 +21245,7 @@ default_reasoning_effort = "always"
             reset_s: 1,
             route: None,
         };
-        let _ = worker::PENDING_ADMITS.fetch_update(
+        let _ = worker::PENDING_ADMITS.try_update(
             std::sync::atomic::Ordering::AcqRel,
             std::sync::atomic::Ordering::Acquire,
             |_| Some(0),
@@ -27455,6 +27455,7 @@ temperature = 0.6
                 ".store(",
                 "fetch_add(",
                 "fetch_update(",
+                "try_update(",
                 "fetch_sub(",
             ]
             .iter()

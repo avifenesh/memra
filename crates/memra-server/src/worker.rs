@@ -1341,7 +1341,7 @@ impl EventSender {
         if self
             .state
             .events
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |events| {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |events| {
                 (events < MAX_EVENT_QUEUE_EVENTS).then_some(events + 1)
             })
             .is_err()
@@ -1353,7 +1353,7 @@ impl EventSender {
         if self
             .state
             .bytes
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |bytes| {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |bytes| {
                 bytes
                     .checked_add(retained)
                     .filter(|next| *next <= MAX_EVENT_QUEUE_BYTES)
@@ -2124,7 +2124,7 @@ pub static ADMISSION_RESERVATIONS: [std::sync::atomic::AtomicUsize; 3] = [
 ];
 
 fn decrement_atomic(counter: &std::sync::atomic::AtomicUsize) {
-    let _ = counter.fetch_update(
+    let _ = counter.try_update(
         std::sync::atomic::Ordering::AcqRel,
         std::sync::atomic::Ordering::Acquire,
         |value| value.checked_sub(1),

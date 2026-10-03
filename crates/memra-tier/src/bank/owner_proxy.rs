@@ -166,7 +166,7 @@ impl ExpertBankOwner {
             return Err(Error::Capacity);
         }
         let id = NEXT_OWNER
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| v.checked_add(1))
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |v| v.checked_add(1))
             .map_err(|_| Error::Overflow)?;
         OWNERS.with(|owners| {
             owners.borrow_mut().insert(
