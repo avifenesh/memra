@@ -1006,9 +1006,12 @@ def native_probe_inputs(tree):
     return inputs
 
 
-def boundary_contract_inputs(tree, *, missing_ok=False):
+def boundary_contract_inputs(tree, *, missing_ok=False, index_metadata=True):
     """Admit exact regular inputs without following a symlink or opening a FIFO."""
     inputs = TOOL_CONTRACTS['public-boundary']['inputs']
+    checked = set(inputs)
+    for name in inputs:
+        checked.update(str(p) for p in PurePosixPath(name).parents if str(p) != '.')
     if isinstance(tree, LocalTree):
         for name in inputs:
             current = tree.repo
@@ -1023,20 +1026,34 @@ def boundary_contract_inputs(tree, *, missing_ok=False):
                 expected = stat.S_ISREG if current == tree.repo / name else stat.S_ISDIR
                 if not expected(mode):
                     raise Refused('public-boundary input has unsafe type: ' + name)
+        if index_metadata:
+            rows = git(tree.repo, '--literal-pathspecs', 'ls-files', '--stage', '-z',
+                       '--', *sorted(checked))
+            for row in rows.split(b'\0'):
+                if not row:
+                    continue
+                metadata, path = row.split(b'\t', 1)
+                name = path.decode()
+                if name in checked and (name not in inputs or
+                        metadata.split()[0] not in (b'100644', b'100755') or
+                        metadata.split()[2] != b'0'):
+                    raise Refused('public-boundary input has unsafe index metadata: ' + name)
         return
-    checked = set(inputs)
-    for name in inputs:
-        checked.update(str(p) for p in PurePosixPath(name).parents if str(p) != '.')
     if tree.symlinks_exact(checked):
         raise Refused('public-boundary input contains a symlink')
-    rows = git(tree.repo, '--literal-pathspecs', 'ls-tree', '-z', tree.ref, '--', *inputs)
+    rows = git(tree.repo, '--literal-pathspecs', 'ls-tree', '-z', tree.ref, '--', *sorted(checked))
     regular = set()
     for row in rows.split(b'\0'):
         if row:
             metadata, path = row.split(b'\t', 1)
-            if metadata.split()[0] not in (b'100644', b'100755'):
-                raise Refused('public-boundary input has unsafe type: ' + path.decode())
-            regular.add(path.decode())
+            name = path.decode()
+            mode = metadata.split()[0]
+            if name in inputs:
+                if mode not in (b'100644', b'100755'):
+                    raise Refused('public-boundary input has unsafe type: ' + name)
+                regular.add(name)
+            elif name in checked and mode != b'040000':
+                raise Refused('public-boundary ancestor has unsafe type: ' + name)
     if not missing_ok and set(inputs) - regular:
         raise Refused('public-boundary input is missing: ' + sorted(set(inputs) - regular)[0])
 
@@ -1253,7 +1270,7 @@ def cpu_contract_names(root, selected):
         names = names or available
     for name in names:
         if name == 'public-boundary':
-            boundary_contract_inputs(LocalTree(root))
+            boundary_contract_inputs(LocalTree(root), index_metadata=False)
         if not all((root / p).is_file() for p in TOOL_CONTRACTS[name]['inputs']):
             raise Refused('selected contract input is missing: ' + name)
         if name == 'support-records' and data is not None:

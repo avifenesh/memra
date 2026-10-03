@@ -1,11 +1,12 @@
 """Boundary selection collisions, refusal paths, and actual strict runner controls."""
 
 import io
+import json
+import re
 import os
 from pathlib import Path
 import shutil
 import subprocess
-import sys
 import unittest
 
 import run_public_boundary_contract as runner
@@ -21,7 +22,9 @@ class BoundaryContractTests(unittest.TestCase):
         self.fixture.setUp()
         self.addCleanup(self.fixture.doCleanups)
         self.repo = self.fixture.repo
-        self.inputs = vp.TOOL_CONTRACTS['public-boundary']['inputs']
+        self.inputs = ['tools/check-public-boundary.py', 'tools/test_public_boundary.py',
+                       'tools/public-boundary-policy.toml', 'tools/public-boundary-allowlist.jsonl',
+                       'tools/run_public_boundary_contract.py']
         for name in self.inputs:
             self.fixture.put(name, (ROOT / name).read_text())
         self.base = self.fixture.commit()
@@ -30,6 +33,7 @@ class BoundaryContractTests(unittest.TestCase):
         return vp.make_plan([path], vp.Tree(self.repo, 'HEAD'), vp.Tree(self.repo, 'HEAD'))
 
     def test_each_real_boundary_input_selects_only_cpu_contract(self):
+        self.assertEqual(vp.TOOL_CONTRACTS['public-boundary']['inputs'], self.inputs)
         for name in self.inputs:
             with self.subTest(name=name):
                 p = self.plan(name)
@@ -58,7 +62,6 @@ class BoundaryContractTests(unittest.TestCase):
     def test_cargo_owner_collision_retains_package_and_contract(self):
         self.fixture.put('tools/Cargo.toml', '[package]\nname="memra-lanes"\n')
         members = ['crates/' + n for n in self.fixture.graph if n != 'memra-lanes'] + ['tools']
-        import json
         self.fixture.put('Cargo.toml', '[workspace]\nmembers=' + json.dumps(members) + '\n')
         shutil.rmtree(self.repo / 'crates/memra-lanes')
         self.fixture.commit()
@@ -95,6 +98,17 @@ class BoundaryContractTests(unittest.TestCase):
         path.unlink(); path.write_bytes(original)
         after = self.fixture.commit()
         self.assertEqual(vp.event_plan(self.repo, 'push', '', before, after)['mode'], 'full')
+
+    def test_populated_gitlink_ancestor_expands_local_and_git_tree_plans(self):
+        self.fixture.g('rm', '-r', '--cached', 'tools')
+        self.fixture.g('update-index', '--add', '--cacheinfo', '160000,' + self.base + ',tools')
+        self.assertTrue((self.repo / self.inputs[0]).is_file())
+        indexed = self.fixture.g('write-tree')
+        for head in (vp.LocalTree(self.repo), vp.Tree(self.repo, indexed)):
+            with self.subTest(tree=head.ref):
+                p = vp.make_plan([self.inputs[0]], vp.Tree(self.repo, self.base), head)
+                self.assertEqual(p['mode'], 'full')
+                self.assertFalse(p['native']['qualification'])
 
     def test_directory_fifo_and_parent_symlink_refuse_before_contract_start(self):
         name = self.inputs[0]
@@ -139,10 +153,13 @@ class BoundaryContractTests(unittest.TestCase):
         result = subprocess.run(vp.TOOL_CONTRACTS['public-boundary']['cpu'], cwd=ROOT,
                                 text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertIn('executed=60 floor=60 skipped=0', result.stdout)
+        count = re.search(r'public-boundary contract: PASS: executed=(\d+) floor=60 skipped=0', result.stdout)
+        self.assertIsNotNone(count, result.stdout)
+        self.assertGreaterEqual(int(count.group(1)), runner.MINIMUM)
 
     def test_unconditional_workflow_security_coverage_and_prepush_unchanged(self):
         workflow = (ROOT / '.github/workflows/ci.yml').read_text()
+        workflow = '\n'.join(line for line in workflow.splitlines() if not line.lstrip().startswith('#'))
         job = workflow.split('\n  boundary:', 1)[1].split('\n  build:', 1)[0]
         self.assertNotRegex(job, r'(?m)^\s+(?:if|needs):')
         for command in ('python3 tools/test_public_boundary.py',
@@ -154,11 +171,13 @@ class BoundaryContractTests(unittest.TestCase):
 
 
 class BoundaryRunnerTests(unittest.TestCase):
-    def suite(self, count, *, skip=False, fail=False):
+    def suite(self, count, *, skip=False, fail=False, expected_failure=False):
         class Case(unittest.TestCase):
             def runTest(self):
                 if skip: self.skipTest('planted skip')
                 if fail: self.fail('planted failure')
+        if expected_failure:
+            Case.runTest = unittest.expectedFailure(Case.runTest)
         return unittest.TestSuite(Case() for _ in range(count))
 
     def test_complete_suite_passes_and_empty_short_skipped_failed_suites_refuse(self):
@@ -167,6 +186,10 @@ class BoundaryRunnerTests(unittest.TestCase):
                                           (60, False, True, 1)):
             with self.subTest(count=count, skip=skip, fail=fail):
                 self.assertEqual(runner.run(self.suite(count, skip=skip, fail=fail), stream=io.StringIO()), expected)
+        for fail in (True, False):
+            with self.subTest(expected_failure=True, assertion_fails=fail):
+                self.assertEqual(runner.run(self.suite(60, fail=fail, expected_failure=True),
+                                            stream=io.StringIO()), 1)
 
 
 if __name__ == '__main__':
