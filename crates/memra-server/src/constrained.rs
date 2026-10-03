@@ -990,10 +990,11 @@ mod tests {
             "parameters":{"type":"object","properties":{"hour":{"type":"integer"}},
             "required":["hour"],"additionalProperties":false}}}),
         ];
-        let accepts = |text: &str, required, named, dialect| {
+        let accepts_with_parallel = |text: &str, required, named, dialect, parallel| {
             let env = ApproximateTokEnv::single_byte_env();
             let factory = ParserFactory::new_simple(&env).unwrap();
-            let language = ToolLanguage::new(&tools, named, required, dialect).unwrap();
+            let mut language = ToolLanguage::new(&tools, named, required, dialect).unwrap();
+            language.parallel = parallel;
             let grammar =
                 TopLevelGrammar::from_lark(language.lark(|s| serde_json::to_string(s).unwrap()));
             let mut matcher = Matcher::new(factory.create_parser(grammar));
@@ -1008,6 +1009,9 @@ mod tests {
                 .compute_mask_or_eos()
                 .unwrap()
                 .is_allowed(env.tok_trie().eos_token())
+        };
+        let accepts = |text: &str, required, named, dialect| {
+            accepts_with_parallel(text, required, named, dialect, false)
         };
         let qwen = r#"<tool_call><function=weather>{"city":"Paris"}</function></tool_call>"#;
         let gemma = r#"<|tool_call>call:weather{"city":"Paris"}<tool_call|>"#;
@@ -1064,6 +1068,43 @@ mod tests {
         ));
         let clock = r#"<tool_call><function=clock>{"hour":3}</function></tool_call>"#;
         assert!(accepts(clock, true, None, ToolDialect::Qwen));
+        let declared_pair = format!("{qwen}{clock}");
+        assert!(accepts_with_parallel(
+            &declared_pair,
+            true,
+            None,
+            ToolDialect::Qwen,
+            true
+        ));
+        assert!(!accepts_with_parallel(
+            &declared_pair,
+            true,
+            None,
+            ToolDialect::Qwen,
+            false
+        ));
+        let named_pair = format!("{qwen}{qwen}");
+        assert!(accepts_with_parallel(
+            &named_pair,
+            true,
+            Some("weather"),
+            ToolDialect::Qwen,
+            true
+        ));
+        assert!(!accepts_with_parallel(
+            &named_pair,
+            true,
+            Some("weather"),
+            ToolDialect::Qwen,
+            false
+        ));
+        assert!(!accepts_with_parallel(
+            &declared_pair,
+            true,
+            Some("weather"),
+            ToolDialect::Qwen,
+            true
+        ));
     }
 
     #[test]

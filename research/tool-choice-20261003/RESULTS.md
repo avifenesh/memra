@@ -21,7 +21,8 @@ identity; changed token counts, cache counts or payload still fail.
 - Every source/helper input checked before and after the cell; exact executable retained privately.
 
 The current receipt carrier adds documentation, immutable receipts and CPU replay
-registration only. All compiled runtime inputs match the tested source. The raw
+registration and CPU-only grammar test controls. All production runtime inputs
+match the tested source. The raw
 frozen-input manifest and source-binding.json retain the exact custody details.
 
 ## Assertions
@@ -43,7 +44,10 @@ helper snapshots and the independent expected context allow offline CI admission
 all23 edges. The optimizer reports qualification=false; it is not a model-support gate.
 
 CPU validation:1090 server tests passed;28 declared manual/hardware ignores remain
-listed in the private static census. Strict same-feature-program release Clippy,
+listed in the private static census. The final carrier adds paired CPU grammar
+controls for two required or named Qwen calls with parallel=true, rejection of the
+same pairs with false, and rejection of a non-selected function in the named union.
+Hosted server CI runs these added controls; the native arms use parallel=false. Strict same-feature-program release Clippy,
 formatting,flags checks,16 receiver/replay controls,94 validation-framework checks and the
 14-package registry passed. The committed actual-receipt replay checks both native-v3 and native-v4.
 Native-v3 remains evidence for its own earlier source only. The conservative full CI fallback remains required before merge.
