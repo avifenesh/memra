@@ -1,0 +1,341 @@
+
+### self-test-current.log
+expert tier plan self-test: PASS
+
+### contract-current.log
+.............
+----------------------------------------------------------------------
+Ran 13 tests in 9.230s
+
+OK
+expert-tier contract: PASS: executed=13 floor=13 skipped=0 expected_failures=0
+
+### proof-current.log
+MUTATION remove-optimization-guard baseline0 -> actual assertion failure
+MUTATION empty-selftest baseline0 -> actual assertion failure
+MUTATION remove-assertion baseline0 -> actual assertion failure
+MUTATION omit-recipe-case baseline0 -> actual assertion failure
+MUTATION lower-control-floor baseline0 -> actual assertion failure
+MUTATION allow-skipped-controls baseline0 -> actual assertion failure
+MUTATION allow-expected-failures baseline0 -> actual assertion failure
+MUTATION unwire-selftest-caller baseline0 -> actual assertion failure
+MUTATION unwire-admission-caller baseline0 -> actual assertion failure
+ACTUAL SELFTEST 26 assertion sites, 9 cases;9mutations;wholemoduleAST preserved
+
+### workflow-current.log
+check-workflow-keys: .github/workflows/boundary-refs.yml: jobs refs
+check-workflow-keys: .github/workflows/ci.yml: jobs changes, gates, boundary, build, clippy, server-tests, portable-suites, engine-tests, arch-coverage, publish-dryrun
+check-workflow-keys: .github/workflows/gpu-ci.yml: jobs build, build-feedback-measurement, gpu, qualification-result
+check-workflow-keys: .github/workflows/mtp-context-receipts.yml: jobs reproduce
+check-workflow-keys: .github/workflows/mtp-depth-receipts.yml: jobs reproduce
+check-workflow-keys: .github/workflows/prompt-depth-router.yml: jobs classifier, native-build, native-receipts, upcoming-format, prefix-study
+check-workflow-keys: .github/workflows/prompt-prefix-depth.yml: jobs prefix-policy, native-build, prefix-v2-replay, confidence-replay, confidence-v3-cpu, confidence-v3-replay, joint-v4-history-pilot, joint-v4-native-cpu, joint-v4-native-release, joint-v5-native, joint-v6-draft-only-native, joint-v8-prime-probability-native, joint-v8-sealed-replay
+check-workflow-keys: .github/workflows/publish.yml: jobs publish
+check-workflow-keys: .github/workflows/release.yml: jobs guard, build, release
+check-workflow-keys: OK: 9 workflow files, no duplicate mapping keys (stdlib walker)
+
+### remove-optimization-guard-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 1.216s
+
+OK
+
+### remove-optimization-guard-mutated.log
+FF
+======================================================================
+FAIL: test_cli_optimization_refuses (test_expert_tier_plan_contract.ExpertTierContractTests.test_cli_optimization_refuses) (flag='-O', script='build_expert_tier_plan.py')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 107, in test_cli_optimization_refuses
+    self.assertNotEqual(result.returncode, 0)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 == 0
+
+======================================================================
+FAIL: test_cli_optimization_refuses (test_expert_tier_plan_contract.ExpertTierContractTests.test_cli_optimization_refuses) (flag='-OO', script='build_expert_tier_plan.py')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 107, in test_cli_optimization_refuses
+    self.assertNotEqual(result.returncode, 0)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 == 0
+
+----------------------------------------------------------------------
+Ran 1 test in 0.898s
+
+FAILED (failures=2)
+
+### empty-selftest-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.009s
+
+OK
+
+### empty-selftest-mutated.log
+F
+======================================================================
+FAIL: test_real_selftest_executes_nine_cases_and_26_assertions (test_expert_tier_plan_contract.ExpertTierContractTests.test_real_selftest_executes_nine_cases_and_26_assertions)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 93, in test_real_selftest_executes_nine_cases_and_26_assertions
+    count, cases = observe(namespace['self_test'].__globals__, BUILDER.read_text())
+                   ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 58, in observe
+    raise ValueError('self-test did not execute all 26 assertion sites and nine recipe cases')
+ValueError: self-test did not execute all 26 assertion sites and nine recipe cases
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 95, in test_real_selftest_executes_nine_cases_and_26_assertions
+    self.fail(str(error))
+    ~~~~~~~~~^^^^^^^^^^^^
+AssertionError: self-test did not execute all 26 assertion sites and nine recipe cases
+
+----------------------------------------------------------------------
+Ran 1 test in 0.008s
+
+FAILED (failures=1)
+
+### remove-assertion-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.009s
+
+OK
+
+### remove-assertion-mutated.log
+F
+======================================================================
+FAIL: test_real_selftest_executes_nine_cases_and_26_assertions (test_expert_tier_plan_contract.ExpertTierContractTests.test_real_selftest_executes_nine_cases_and_26_assertions)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 93, in test_real_selftest_executes_nine_cases_and_26_assertions
+    count, cases = observe(namespace['self_test'].__globals__, BUILDER.read_text())
+                   ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 58, in observe
+    raise ValueError('self-test did not execute all 26 assertion sites and nine recipe cases')
+ValueError: self-test did not execute all 26 assertion sites and nine recipe cases
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 95, in test_real_selftest_executes_nine_cases_and_26_assertions
+    self.fail(str(error))
+    ~~~~~~~~~^^^^^^^^^^^^
+AssertionError: self-test did not execute all 26 assertion sites and nine recipe cases
+
+----------------------------------------------------------------------
+Ran 1 test in 0.009s
+
+FAILED (failures=1)
+
+### omit-recipe-case-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.009s
+
+OK
+
+### omit-recipe-case-mutated.log
+F
+======================================================================
+FAIL: test_real_selftest_executes_nine_cases_and_26_assertions (test_expert_tier_plan_contract.ExpertTierContractTests.test_real_selftest_executes_nine_cases_and_26_assertions)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 93, in test_real_selftest_executes_nine_cases_and_26_assertions
+    count, cases = observe(namespace['self_test'].__globals__, BUILDER.read_text())
+                   ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 58, in observe
+    raise ValueError('self-test did not execute all 26 assertion sites and nine recipe cases')
+ValueError: self-test did not execute all 26 assertion sites and nine recipe cases
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 95, in test_real_selftest_executes_nine_cases_and_26_assertions
+    self.fail(str(error))
+    ~~~~~~~~~^^^^^^^^^^^^
+AssertionError: self-test did not execute all 26 assertion sites and nine recipe cases
+
+----------------------------------------------------------------------
+Ran 1 test in 0.009s
+
+FAILED (failures=1)
+
+### lower-control-floor-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.003s
+
+OK
+
+### lower-control-floor-mutated.log
+FF
+======================================================================
+FAIL: test_runner_refuses_empty_short_skipped_failed_and_expected_failures (test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_empty_short_skipped_failed_and_expected_failures) (count=0, skip=False, fail=False, expected_failure=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 212, in test_runner_refuses_empty_short_skipped_failed_and_expected_failures
+    self.assertEqual(runner.run(unittest.TestSuite(Case() for _ in range(count)),
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                stream=io.StringIO()), expected)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_runner_refuses_empty_short_skipped_failed_and_expected_failures (test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_empty_short_skipped_failed_and_expected_failures) (count=12, skip=False, fail=False, expected_failure=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 212, in test_runner_refuses_empty_short_skipped_failed_and_expected_failures
+    self.assertEqual(runner.run(unittest.TestSuite(Case() for _ in range(count)),
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                stream=io.StringIO()), expected)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+----------------------------------------------------------------------
+Ran 1 test in 0.003s
+
+FAILED (failures=2)
+
+### allow-skipped-controls-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.002s
+
+OK
+
+### allow-skipped-controls-mutated.log
+F
+======================================================================
+FAIL: test_runner_refuses_empty_short_skipped_failed_and_expected_failures (test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_empty_short_skipped_failed_and_expected_failures) (count=13, skip=True, fail=False, expected_failure=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 212, in test_runner_refuses_empty_short_skipped_failed_and_expected_failures
+    self.assertEqual(runner.run(unittest.TestSuite(Case() for _ in range(count)),
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                stream=io.StringIO()), expected)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+----------------------------------------------------------------------
+Ran 1 test in 0.003s
+
+FAILED (failures=1)
+
+### allow-expected-failures-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.003s
+
+OK
+
+### allow-expected-failures-mutated.log
+F
+======================================================================
+FAIL: test_runner_refuses_empty_short_skipped_failed_and_expected_failures (test_expert_tier_plan_contract.ExpertTierContractTests.test_runner_refuses_empty_short_skipped_failed_and_expected_failures) (count=13, skip=False, fail=True, expected_failure=True)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 212, in test_runner_refuses_empty_short_skipped_failed_and_expected_failures
+    self.assertEqual(runner.run(unittest.TestSuite(Case() for _ in range(count)),
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                stream=io.StringIO()), expected)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+----------------------------------------------------------------------
+Ran 1 test in 0.003s
+
+FAILED (failures=1)
+
+### unwire-selftest-caller-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+OK
+
+### unwire-selftest-caller-mutated.log
+F
+======================================================================
+FAIL: test_ci_wiring (test_expert_tier_plan_contract.ExpertTierContractTests.test_ci_wiring)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 158, in test_ci_wiring
+    check_wiring((ROOT / '.github/workflows/ci.yml').read_text())
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 73, in check_wiring
+    raise ValueError('expert-tier caller commands or non-vacuity floor changed')
+ValueError: expert-tier caller commands or non-vacuity floor changed
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 160, in test_ci_wiring
+    self.fail(str(error))
+    ~~~~~~~~~^^^^^^^^^^^^
+AssertionError: expert-tier caller commands or non-vacuity floor changed
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)
+
+### unwire-admission-caller-baseline.log
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+OK
+
+### unwire-admission-caller-mutated.log
+F
+======================================================================
+FAIL: test_ci_wiring (test_expert_tier_plan_contract.ExpertTierContractTests.test_ci_wiring)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 158, in test_ci_wiring
+    check_wiring((ROOT / '.github/workflows/ci.yml').read_text())
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 73, in check_wiring
+    raise ValueError('expert-tier caller commands or non-vacuity floor changed')
+ValueError: expert-tier caller commands or non-vacuity floor changed
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<fixture>/tools/test_expert_tier_plan_contract.py", line 160, in test_ci_wiring
+    self.fail(str(error))
+    ~~~~~~~~~^^^^^^^^^^^^
+AssertionError: expert-tier caller commands or non-vacuity floor changed
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)
+
+### historical optimized-intake-control
+source_head=9efd457949a7580593f133492b5592c79ddfb72a
+builder_sha256=c88a2dda2d880162fc9459056b05dc61ecdb527ce77bba42ee67567e0bdd6b0a
+
+normal exit=0
+expert tier plan self-test: PASS
+
+optimized exit=0
+expert tier plan self-test: PASS
+
+normal-corrupted-result exit=1
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import runpy; m=runpy.run_path('<baseline>/tools/build_expert_tier_plan.py'); f=m["build_plan"]; g=m["self_test"].__globals__; g["build_plan"]=lambda args: dict(f(args), pruned_experts={}); m["self_test"]()
+                                                                                                                                                                                                                      ~~~~~~~~~~~~~~^^
+  File "<baseline>/tools/build_expert_tier_plan.py", line 344, in self_test
+    assert plan["pruned_experts"] == {"1": [4]}
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+
+optimized-corrupted-result exit=0
+expert tier plan self-test: PASS

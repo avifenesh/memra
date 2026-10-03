@@ -1,0 +1,258 @@
+{
+  "source_head": "3001d3b01c868277612704e660fc5db0b4d9af96",
+  "base": "a409e51bef511e1a850cad8730f5d85a93fa4db9",
+  "source_sha256": {
+    "tools/build_expert_tier_plan.py": "268ceb304798e1dce2dde176d4ace643b06931457a2edd773e2ef6b6cefc4a4a",
+    "tools/run_expert_tier_contract.py": "3b0f12967302876db1bb646f1be1a9b44631fd2311cd7665bf03910ec3bf1e20",
+    "tools/test_expert_tier_plan_contract.py": "ff41ead4e12cc6a3fc3ab0920aef8173b860264458d46ed64b9e6b5b588f80dd",
+    ".github/workflows/ci.yml": "af665c11eb59ba496fe8d2c229c5213ff44a00404db47896af795741de86147a",
+    "docs/TESTING.md": "31f56fb779b261611ff2f29825d4faa91fff33b05c351ede012f0a4b58db8a86",
+    "tools/validation_plan.py": "a40c721a3d6b4bbd9ef337147349b171dbd58bdeb583d883871308570d075ca0",
+    "tools/support_record_inputs.py": "6e34dfd7747b018feed2395c817835693bfb9720a471ab82ae08a70bf470fa80",
+    "tools/validation_inputs.json": "71e17d5f91f44bae768047ad4c9f2c40486a291e35e123e6a7e54f16fd34d377",
+    "tools/skip-census.py": "d89ce391d748499214df2279a48d719b9e67cad6a2838c77ebcef46640883a7d"
+  },
+  "assertion_sites_observed": 26,
+  "recipe_cases_observed": [
+    "usage-pyramid",
+    "uniform-nvfp4",
+    "reap50-plus25",
+    "uniform-nvfp4",
+    "quartile-prune",
+    "traffic-ladder",
+    "traffic-ladder",
+    "traffic-ladder",
+    "traffic-ladder"
+  ],
+  "whole_module_ast_equal_after_removing_only_guard": true,
+  "native_qualification": false,
+  "gpu_selection": "shadow-only",
+  "builder_plan": {
+    "mode": "full",
+    "reason": "unmodelled input: tools/build_expert_tier_plan.py",
+    "jobs": {
+      "build": true,
+      "clippy": true,
+      "server": true,
+      "engine": true,
+      "portable": true,
+      "core": true,
+      "lanes": true,
+      "arch": true,
+      "publish": true
+    },
+    "native": {
+      "scope": "full",
+      "requirements": [
+        "unmodelled input: tools/build_expert_tier_plan.py"
+      ],
+      "qualification": false
+    },
+    "full_plan_sha256": "c42752bd98c48dfd6e3f69a6481ae9cbee7527b2e290b14cb7e935ab4c9e96ab"
+  },
+  "mutations": {
+    "remove-optimization-guard": {
+      "test": "test_cli_optimization_refuses",
+      "source_sha256": "268ceb304798e1dce2dde176d4ace643b06931457a2edd773e2ef6b6cefc4a4a",
+      "mutated_source_sha256": "c88a2dda2d880162fc9459056b05dc61ecdb527ce77bba42ee67567e0bdd6b0a",
+      "baseline_exit": 0,
+      "mutated_exit": 1,
+      "baseline_log_sha256": "925039885ba53fc1127108b24991de14e94aca8e147ce1fa9f1c165fe54d6e75",
+      "mutated_log_sha256": "6f85c12be11cf9b8934d177f2760568f54b0e8cf0bb179ea0c7ee1649c7395dd",
+      "assertion_failure": true
+    },
+    "empty-selftest": {
+      "test": "test_real_selftest_executes_nine_cases_and_26_assertions",
+      "source_sha256": "268ceb304798e1dce2dde176d4ace643b06931457a2edd773e2ef6b6cefc4a4a",
+      "mutated_source_sha256": "4db6bf425acb7e9e0b2b88b7ab1082b3722f42fb77b4935d7c12c5dde6d5d833",
+      "baseline_exit": 0,
+      "mutated_exit": 1,
+      "baseline_log_sha256": "d0bbd3fb4fcf80c9cbf5ce59bf4ce44bb927e9e40a6269d0b33dc8c4a94c4755",
+      "mutated_log_sha256": "ded2768fda8223f43bc432e4feafde09303301b4727e8e9157bc4694a24c9096",
+      "assertion_failure": true
+    },
+    "remove-assertion": {
+      "test": "test_real_selftest_executes_nine_cases_and_26_assertions",
+      "source_sha256": "268ceb304798e1dce2dde176d4ace643b06931457a2edd773e2ef6b6cefc4a4a",
+      "mutated_source_sha256": "ffbd89d46f484b95783a1a0f7e21324fc54987a3ddea140d3b1a62d794292811",
+      "baseline_exit": 0,
+      "mutated_exit": 1,
+      "baseline_log_sha256": "d0bbd3fb4fcf80c9cbf5ce59bf4ce44bb927e9e40a6269d0b33dc8c4a94c4755",
+      "mutated_log_sha256": "1da80fba96d71e5afd5dc3b4028c2d5d4461a605fa5c011e555c77972075d8c6",
+      "assertion_failure": true
+    },
+    "omit-recipe-case": {
+      "test": "test_real_selftest_executes_nine_cases_and_26_assertions",
+      "source_sha256": "268ceb304798e1dce2dde176d4ace643b06931457a2edd773e2ef6b6cefc4a4a",
+      "mutated_source_sha256": "4e0670edce9fa99d9116b4d9ccc3af69e0d9432aefef4968773dffe146aeb5f2",
+      "baseline_exit": 0,
+      "mutated_exit": 1,
+      "baseline_log_sha256": "d0bbd3fb4fcf80c9cbf5ce59bf4ce44bb927e9e40a6269d0b33dc8c4a94c4755",
+      "mutated_log_sha256": "1da80fba96d71e5afd5dc3b4028c2d5d4461a605fa5c011e555c77972075d8c6",
+      "assertion_failure": true
+    },
+    "lower-control-floor": {
+      "test": "test_runner_refuses_empty_short_skipped_failed_and_expected_failures",
+      "source_sha256": "3b0f12967302876db1bb646f1be1a9b44631fd2311cd7665bf03910ec3bf1e20",
+      "mutated_source_sha256": "d541ccb5dad3d4014e6cc2f168f198b65bc66132bacab485d7cf6e360c49521b",
+      "baseline_exit": 0,
+      "mutated_exit": 1,
+      "baseline_log_sha256": "24cefc2bc38a1c71e18591075993695fc72546b32ff6b5baab3d98032ce96fb5",
+      "mutated_log_sha256": "fcf8a33618f4e679494586a749622a378e1162fe6265693136e3706136a459c6",
+      "assertion_failure": true
+    },
+    "allow-skipped-controls": {
+      "test": "test_runner_refuses_empty_short_skipped_failed_and_expected_failures",
+      "source_sha256": "3b0f12967302876db1bb646f1be1a9b44631fd2311cd7665bf03910ec3bf1e20",
+      "mutated_source_sha256": "1901aee9d795abff5099c16f9503e64fe3e76df03aeaf41e61a60a679e964d27",
+      "baseline_exit": 0,
+      "mutated_exit": 1,
+      "baseline_log_sha256": "c346f1228fe88f4ab3cb336ffa610dc3a34ec7c7bb7d05df7a1c222f2d928881",
+      "mutated_log_sha256": "5e194d72985c93cf1871b1e44481102fab54b7ecdb33a7b3d29b63158432c862",
+      "assertion_failure": true
+    },
+    "allow-expected-failures": {
+      "test": "test_runner_refuses_empty_short_skipped_failed_and_expected_failures",
+      "source_sha256": "3b0f12967302876db1bb646f1be1a9b44631fd2311cd7665bf03910ec3bf1e20",
+      "mutated_source_sha256": "d3161af12051264434a7c6cac5942f96632a1e49673b59bbc0ee053616a7e041",
+      "baseline_exit": 0,
+      "mutated_exit": 1,
+      "baseline_log_sha256": "24cefc2bc38a1c71e18591075993695fc72546b32ff6b5baab3d98032ce96fb5",
+      "mutated_log_sha256": "ee81d1f37f13b33a81c61858600f9549e0b97f5305709db7d25b99f1c779ad61",
+      "assertion_failure": true
+    },
+    "unwire-selftest-caller": {
+      "test": "test_ci_wiring",
+      "source_sha256": "af665c11eb59ba496fe8d2c229c5213ff44a00404db47896af795741de86147a",
+      "mutated_source_sha256": "0d23f302269ec37b37035c7fa154acebb75b9696ddd8b8724debd61a22d07df3",
+      "baseline_exit": 0,
+      "mutated_exit": 1,
+      "baseline_log_sha256": "d10ffbd9f0faa72cd6837063279524e199b59fbc3d035051302a1e8dbc4b36ad",
+      "mutated_log_sha256": "28719697a318f13912d5ef9bc694a2fa9c66e5f5b449cd5dc3a9f798b34fac73",
+      "assertion_failure": true
+    },
+    "unwire-admission-caller": {
+      "test": "test_ci_wiring",
+      "source_sha256": "af665c11eb59ba496fe8d2c229c5213ff44a00404db47896af795741de86147a",
+      "mutated_source_sha256": "279717841081559654233d216ea1e741b14084affd0c4d604b8d6d3645d272a3",
+      "baseline_exit": 0,
+      "mutated_exit": 1,
+      "baseline_log_sha256": "d10ffbd9f0faa72cd6837063279524e199b59fbc3d035051302a1e8dbc4b36ad",
+      "mutated_log_sha256": "28719697a318f13912d5ef9bc694a2fa9c66e5f5b449cd5dc3a9f798b34fac73",
+      "assertion_failure": true
+    }
+  },
+  "proof_helper_sha256": "f2b9b7fe5ef6df3828a74116e2133487bda1d171dfe641aee59b7bd02b2ff1ef",
+  "schema": "expert-tier-selftest-admission-proof-v1",
+  "actual_contract": {
+    "executed": 13,
+    "floor": 13,
+    "skipped": 0,
+    "expected_failures": 0,
+    "passed": true
+  },
+  "baseline_builder_sha256": "c88a2dda2d880162fc9459056b05dc61ecdb527ce77bba42ee67567e0bdd6b0a",
+  "baseline_optimization_failure": {
+    "normal_corrupted_result_exit": 1,
+    "optimized_corrupted_result_exit": 0,
+    "builder_sha256": "c88a2dda2d880162fc9459056b05dc61ecdb527ce77bba42ee67567e0bdd6b0a",
+    "scope": "In-memory incorrect pruned_experts result on original builder bytes, preserved private intake receipt; no generated native artifact.",
+    "source_head": "9efd457949a7580593f133492b5592c79ddfb72a",
+    "base_bridge": "Original source builder bytes match the builder on the current a409 base; historical command context is retained."
+  },
+  "raw_log_normalization": "Temporary fixture and source checkout prefixes become <fixture> and <source>. No other log content changed. Original and public hashes are retained per log.",
+  "raw_logs": {
+    "self-test-current.log": {
+      "original_sha256": "f961743d924bbe906dba69a9e3301940612231c54b51a81bf085e9a65775f08d",
+      "public_sha256": "f961743d924bbe906dba69a9e3301940612231c54b51a81bf085e9a65775f08d"
+    },
+    "contract-current.log": {
+      "original_sha256": "90c865ca55d52e4d214e3a08d193abe097604230375950e22d46807899e811ce",
+      "public_sha256": "90c865ca55d52e4d214e3a08d193abe097604230375950e22d46807899e811ce"
+    },
+    "proof-current.log": {
+      "original_sha256": "5fd0f2366ee1dc0c151f7483c321e8372e18a38f76e718e5936d79cdd0262b80",
+      "public_sha256": "5fd0f2366ee1dc0c151f7483c321e8372e18a38f76e718e5936d79cdd0262b80"
+    },
+    "workflow-current.log": {
+      "original_sha256": "127a73ec491940debf8343f1f1728d263ffdab72c80e6084dfdbbe620a488260",
+      "public_sha256": "127a73ec491940debf8343f1f1728d263ffdab72c80e6084dfdbbe620a488260"
+    },
+    "remove-optimization-guard-baseline.log": {
+      "original_sha256": "925039885ba53fc1127108b24991de14e94aca8e147ce1fa9f1c165fe54d6e75",
+      "public_sha256": "925039885ba53fc1127108b24991de14e94aca8e147ce1fa9f1c165fe54d6e75"
+    },
+    "remove-optimization-guard-mutated.log": {
+      "original_sha256": "6f85c12be11cf9b8934d177f2760568f54b0e8cf0bb179ea0c7ee1649c7395dd",
+      "public_sha256": "61e092a00c57a7e286bc798a4095699728536031f756d06988d6b63d61333989"
+    },
+    "empty-selftest-baseline.log": {
+      "original_sha256": "d0bbd3fb4fcf80c9cbf5ce59bf4ce44bb927e9e40a6269d0b33dc8c4a94c4755",
+      "public_sha256": "d0bbd3fb4fcf80c9cbf5ce59bf4ce44bb927e9e40a6269d0b33dc8c4a94c4755"
+    },
+    "empty-selftest-mutated.log": {
+      "original_sha256": "ded2768fda8223f43bc432e4feafde09303301b4727e8e9157bc4694a24c9096",
+      "public_sha256": "02ff88e935994ed0f2cebefb3e579627cfe9a70ac1ef7eaad5031bd53477b6c6"
+    },
+    "remove-assertion-baseline.log": {
+      "original_sha256": "d0bbd3fb4fcf80c9cbf5ce59bf4ce44bb927e9e40a6269d0b33dc8c4a94c4755",
+      "public_sha256": "d0bbd3fb4fcf80c9cbf5ce59bf4ce44bb927e9e40a6269d0b33dc8c4a94c4755"
+    },
+    "remove-assertion-mutated.log": {
+      "original_sha256": "1da80fba96d71e5afd5dc3b4028c2d5d4461a605fa5c011e555c77972075d8c6",
+      "public_sha256": "25e0c95cbfea2cd1a8923462ac691fd677ca313dac9addc6d6738c1cfcb51f94"
+    },
+    "omit-recipe-case-baseline.log": {
+      "original_sha256": "d0bbd3fb4fcf80c9cbf5ce59bf4ce44bb927e9e40a6269d0b33dc8c4a94c4755",
+      "public_sha256": "d0bbd3fb4fcf80c9cbf5ce59bf4ce44bb927e9e40a6269d0b33dc8c4a94c4755"
+    },
+    "omit-recipe-case-mutated.log": {
+      "original_sha256": "1da80fba96d71e5afd5dc3b4028c2d5d4461a605fa5c011e555c77972075d8c6",
+      "public_sha256": "25e0c95cbfea2cd1a8923462ac691fd677ca313dac9addc6d6738c1cfcb51f94"
+    },
+    "lower-control-floor-baseline.log": {
+      "original_sha256": "24cefc2bc38a1c71e18591075993695fc72546b32ff6b5baab3d98032ce96fb5",
+      "public_sha256": "24cefc2bc38a1c71e18591075993695fc72546b32ff6b5baab3d98032ce96fb5"
+    },
+    "lower-control-floor-mutated.log": {
+      "original_sha256": "fcf8a33618f4e679494586a749622a378e1162fe6265693136e3706136a459c6",
+      "public_sha256": "594670f9d4217f4fc94250fabc71e6f37af70f3281ab764a3362389f3f49bf0e"
+    },
+    "allow-skipped-controls-baseline.log": {
+      "original_sha256": "c346f1228fe88f4ab3cb336ffa610dc3a34ec7c7bb7d05df7a1c222f2d928881",
+      "public_sha256": "c346f1228fe88f4ab3cb336ffa610dc3a34ec7c7bb7d05df7a1c222f2d928881"
+    },
+    "allow-skipped-controls-mutated.log": {
+      "original_sha256": "5e194d72985c93cf1871b1e44481102fab54b7ecdb33a7b3d29b63158432c862",
+      "public_sha256": "92eb9c97f52d9df1ae947aa448e9c5bddea81b16257d73424a4c28eb580d2d06"
+    },
+    "allow-expected-failures-baseline.log": {
+      "original_sha256": "24cefc2bc38a1c71e18591075993695fc72546b32ff6b5baab3d98032ce96fb5",
+      "public_sha256": "24cefc2bc38a1c71e18591075993695fc72546b32ff6b5baab3d98032ce96fb5"
+    },
+    "allow-expected-failures-mutated.log": {
+      "original_sha256": "ee81d1f37f13b33a81c61858600f9549e0b97f5305709db7d25b99f1c779ad61",
+      "public_sha256": "d8631a4508f6a5bbcfa9373dfb1848defe51cbf26f4f52e33ddb4de836b6ed9b"
+    },
+    "unwire-selftest-caller-baseline.log": {
+      "original_sha256": "d10ffbd9f0faa72cd6837063279524e199b59fbc3d035051302a1e8dbc4b36ad",
+      "public_sha256": "d10ffbd9f0faa72cd6837063279524e199b59fbc3d035051302a1e8dbc4b36ad"
+    },
+    "unwire-selftest-caller-mutated.log": {
+      "original_sha256": "28719697a318f13912d5ef9bc694a2fa9c66e5f5b449cd5dc3a9f798b34fac73",
+      "public_sha256": "ecc011227fca0d7b9dfaaecf3c4a1e11e0bd35b5c0e6565a305d7afa4035a525"
+    },
+    "unwire-admission-caller-baseline.log": {
+      "original_sha256": "d10ffbd9f0faa72cd6837063279524e199b59fbc3d035051302a1e8dbc4b36ad",
+      "public_sha256": "d10ffbd9f0faa72cd6837063279524e199b59fbc3d035051302a1e8dbc4b36ad"
+    },
+    "unwire-admission-caller-mutated.log": {
+      "original_sha256": "28719697a318f13912d5ef9bc694a2fa9c66e5f5b449cd5dc3a9f798b34fac73",
+      "public_sha256": "ecc011227fca0d7b9dfaaecf3c4a1e11e0bd35b5c0e6565a305d7afa4035a525"
+    }
+  },
+  "public_log_sha256": "36a74d57947d6c9d4c325827570152b620e2e626378e5a640fc6fc801550f04e",
+  "limits": "CPU self-test/CI admission only. No native model, runtime, serving or emitted-plan qualification. Normal builder functions and existing self-test assertions/cases remain unchanged. Conservative native obligations stay intact; GPU selection remains shadow-only.",
+  "historical_intake_original_sha256": "4ff6494a1fecdca86436d7a9e6adb5be637cf8427653efc07df5ebc17fb43818",
+  "historical_intake_public_log_sha256": "467d737ac717f02d53eb73044114e46e69f6b444a1af99c8f1c130dc539042e1"
+}
