@@ -9,3 +9,5 @@ Scope: CPU OS input admission only. No native model execution or serving qualifi
 Proof: [PROOF.json](PROOF.json). Original source: 75bac45b8acc0cb96190689a2e11a882310ebdbd. Candidate source: 2e136048b21d9b151a7cb27ae4e52e4714e2ead1. Both extracted collectors compile with the same streaming SHA256 implementation. Raw assertion outputs and immutable source/helper/executable hashes are included.
 
 publicity: skipped: maintenance release.
+
+Composition on PR #943 preserves its tools, docs, workflows, all four helper consumers and INDEX row. The full validation framework passed 124 tests at floor 124; the four consumer groups passed 13, 9, 8 and 7 CPU tests. The current global coverage verifier again admitted the 17 asserted CPU edges with qualification false. The entire worker source still byte-matches the tested source. Details: [COMPOSED.json](COMPOSED.json).
