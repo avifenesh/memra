@@ -15,6 +15,7 @@ import unittest
 from unittest import mock
 
 import validation_plan as vp
+import run_expert_tier_contract as runner
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -23,7 +24,7 @@ REFUSAL = 'expert tier plan self-test requires enabled assertions'
 CASES = ['usage-pyramid', 'uniform-nvfp4', 'reap50-plus25', 'uniform-nvfp4',
          'quartile-prune', 'traffic-ladder', 'traffic-ladder', 'traffic-ladder', 'traffic-ladder']
 COMMANDS = ['python3 tools/build_expert_tier_plan.py --self-test',
-            'tools/unittest-floor.sh tools test_expert_tier_plan_contract.py 12']
+            'python3 tools/run_expert_tier_contract.py']
 
 
 def observe(namespace, source):
@@ -151,7 +152,7 @@ class ExpertTierContractTests(unittest.TestCase):
     def test_removed_or_masked_ci_caller_refuses(self):
         text = (ROOT / '.github/workflows/ci.yml').read_text()
         for changed in (text.replace(COMMANDS[0], '# removed caller'),
-                        text.replace(COMMANDS[1], COMMANDS[1].replace(' 12', ' 0')),
+                        text.replace(COMMANDS[1], 'true'),
                         text.replace(COMMANDS[0], COMMANDS[0] + ' || true'),
                         text.replace('      - name: Expert-tier plan self-test assertion admission (CPU-only)\n',
                                      '      - name: Expert-tier plan self-test assertion admission (CPU-only)\n        if: false\n'),
@@ -182,6 +183,24 @@ class ExpertTierContractTests(unittest.TestCase):
         self.assertTrue(all(plan['jobs'].values()))
         self.assertEqual(plan['native']['scope'], 'full')
         self.assertFalse(plan['native']['qualification'])
+
+    def test_runner_refuses_empty_short_skipped_failed_and_expected_failures(self):
+        for count, skip, fail, expected_failure, expected in (
+                (13, False, False, False, 0), (0, False, False, False, 1),
+                (12, False, False, False, 1), (13, True, False, False, 1),
+                (13, False, True, False, 1), (13, False, True, True, 1),
+                (13, False, False, True, 1)):
+            with self.subTest(count=count, skip=skip, fail=fail, expected_failure=expected_failure):
+                class Case(unittest.TestCase):
+                    def runTest(self):
+                        if skip:
+                            self.skipTest('planted skip')
+                        if fail:
+                            self.fail('planted assertion failure')
+                if expected_failure:
+                    Case.runTest = unittest.expectedFailure(Case.runTest)
+                self.assertEqual(runner.run(unittest.TestSuite(Case() for _ in range(count)),
+                                            stream=io.StringIO()), expected)
 
 
 if __name__ == '__main__':

@@ -57,10 +57,11 @@ admission controls:
 
 ```sh
 python3 tools/build_expert_tier_plan.py --self-test
-tools/unittest-floor.sh tools test_expert_tier_plan_contract.py 12
+python3 tools/run_expert_tier_contract.py
 ```
 
-The self-test refuses `-O`, `-OO` and `PYTHONOPTIMIZE=1/2` before creating a fixture.
+The admission runner requires at least 13 real controls with zero skips and
+expected failures. The self-test refuses `-O`, `-OO` and `PYTHONOPTIMIZE=1/2` before creating a fixture.
 Imported self-test calls retain that refusal. Controls observe all nine recipe
 cases and at least 26 assertion sites, reject an incorrect result and empty or
 shortened observation, and reject removal or masking of the CI caller. Ordinary
