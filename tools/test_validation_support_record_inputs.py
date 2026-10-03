@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 import shutil
+import tomllib
 import unittest
 
 import support_record_inputs as data
@@ -37,10 +38,17 @@ class SupportRecordDataInputs(unittest.TestCase):
     def plan(self, path):
         return vp.make_plan([path], vp.Tree(self.repo, 'HEAD'), vp.Tree(self.repo, 'HEAD'))
 
-    def test_current_record_data_has_seven_required_and_fourteen_potential_paths(self):
+    def test_current_record_data_matches_independent_evidence_and_sibling_inventory(self):
         resolved = data.resolve(vp.LocalTree(ROOT))
-        self.assertEqual(len(resolved['required']), 7)
-        self.assertEqual(len(resolved['optional']), 14)
+        records = tomllib.loads((ROOT / data.RECORDS).read_text())['record']
+        required = {path for record in records for gate, paths in record['evidence'].items()
+                    if record['gates'][gate] == 'passed' for path in paths
+                    if path != 'ci:verify-tiny'}
+        siblings = {str(Path(path).parent / name) for path in required
+                    for name in ('artifact.lock', 'tiny-gate.tsv')}
+        self.assertEqual(set(resolved['required']), required)
+        self.assertEqual(set(resolved['optional']), siblings)
+        self.assertTrue(all((ROOT / path).is_file() for path in required))
         self.assertIn('research/modelplan-onboarding-hy3-20260830/tiny/artifact.lock', resolved['optional'])
 
     def test_required_gate_and_both_potential_sidecars_select_the_contract(self):
@@ -98,12 +106,19 @@ class SupportRecordDataInputs(unittest.TestCase):
 
     def test_changed_or_partial_reader_expands_checks(self):
         self.fixture.g('config', 'core.autocrlf', 'false')
+        for contract in vp.TOOL_CONTRACTS.values():
+            for path in contract['inputs']:
+                if not (self.repo / path).exists():
+                    self.fixture.put(path, '# static execution fixture\n')
+        available = list(vp.TOOL_CONTRACTS)
         reader = self.repo / 'tools/check-support-states.py'
         canonical = reader.read_bytes()
         reader.write_bytes(canonical.replace(b'\n', b'\r\n'))
         self.assertEqual(vp.local_plan(self.repo, self.base)['mode'], 'full')
+        for selected in ('support-records', 'none', 'q35-cache', ''):
+            self.assertEqual(vp.cpu_contract_names(self.repo, selected), available)
         with self.assertRaisesRegex(vp.Refused, 'unmodelled support data reader'):
-            vp.cpu_contract_names(self.repo, 'support-records')
+            vp.support_record_data_inputs(vp.LocalTree(self.repo))
         self.fixture.commit()
         self.assertEqual(self.plan(GATE)['mode'], 'full')
         reader.write_bytes(canonical)
@@ -113,6 +128,13 @@ class SupportRecordDataInputs(unittest.TestCase):
         self.fixture.put('tools/check-support-states.py', '# changed reader\n')
         self.fixture.commit()
         self.assertEqual(self.plan(GATE)['mode'], 'full')
+        self.assertEqual(vp.cpu_contract_names(self.repo, 'none'), available)
+        self.fixture.put('tools/check-support-states.py', canonical.decode())
+        self.fixture.put('tools/test_check_support_states.py',
+                         (ROOT / 'tools/test_check_support_states.py').read_text() + '# valid test edit\n')
+        self.fixture.commit()
+        self.assertEqual(self.plan(GATE)['mode'], 'full')
+        self.assertEqual(vp.cpu_contract_names(self.repo, 'support-records'), available)
         (self.repo / 'tools/check-support-states.py').unlink()
         self.fixture.commit()
         self.assertEqual(self.plan(GATE)['mode'], 'full')

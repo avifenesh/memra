@@ -19,6 +19,10 @@ class InputContractError(ValueError):
     pass
 
 
+class UnmodelledReader(InputContractError):
+    pass
+
+
 class DirectoryTree:
     """Execution admission needs these exact files, not Git metadata."""
 
@@ -70,7 +74,7 @@ def resolve(tree):
         raise InputContractError('support data reader inputs are incomplete')
     for name, digest in READERS.items():
         if hashlib.sha256(tree.read_bytes(name)).hexdigest() != digest:
-            raise InputContractError('unmodelled support data reader: ' + name)
+            raise UnmodelledReader('unmodelled support data reader: ' + name)
     try:
         metadata = tomllib.loads(tree.read(RECORDS))
     except (tomllib.TOMLDecodeError, UnicodeError) as error:

@@ -136,7 +136,7 @@ _RUST_SCANNER = None
 _SUPPORT_DATA = None
 
 
-def support_record_data_inputs(tree, *, directory=False):
+def support_record_data_inputs(tree, *, directory=False, allow_unknown_reader=False):
     global _SUPPORT_DATA
     if _SUPPORT_DATA is None:
         spec = importlib.util.spec_from_file_location(
@@ -147,6 +147,10 @@ def support_record_data_inputs(tree, *, directory=False):
         if directory:
             tree = _SUPPORT_DATA.DirectoryTree(tree)
         return _SUPPORT_DATA.resolve(tree)
+    except _SUPPORT_DATA.UnmodelledReader as error:
+        if allow_unknown_reader:
+            return None
+        raise Refused(str(error)) from error
     except _SUPPORT_DATA.InputContractError as error:
         raise Refused(str(error)) from error
 
@@ -799,18 +803,24 @@ def publish_packages(value, root):
 def cpu_contract_names(root, selected):
     # A successful classifier explicitly distinguishes no affected contracts from
     # missing/failed selection, which must still run all available contracts.
-    if selected == 'none':
-        return []
-    names = selected.split(',') if selected else []
+    names = selected.split(',') if selected and selected != 'none' else []
     if names and (len(set(names)) != len(names) or any(n not in TOOL_CONTRACTS for n in names)):
         raise Refused('unknown or duplicated CPU contract')
-    names = names or [n for n, c in TOOL_CONTRACTS.items()
-                     if c.get('required') or any((root / p).exists() for p in c.get('presence', c['inputs']))]
+    data = support_record_data_inputs(root, directory=True, allow_unknown_reader=True)
+    if selected == 'none' and data is not None:
+        return []
+    available = [n for n, c in TOOL_CONTRACTS.items()
+                 if c.get('required') or any((root / p).exists() for p in c.get('presence', c['inputs']))]
+    if data is None:
+        # Planning expands unknown readers. Execution also expands stale subsets,
+        # then runs the real census without trusting the unsupported data graph.
+        names = available
+    else:
+        names = names or available
     for name in names:
         if not all((root / p).is_file() for p in TOOL_CONTRACTS[name]['inputs']):
             raise Refused('selected contract input is missing: ' + name)
-        if name == 'support-records':
-            data = support_record_data_inputs(root, directory=True)
+        if name == 'support-records' and data is not None:
             for path in data['required']:
                 if not (root / path).is_file():
                     raise Refused('selected contract input is missing: support-records: ' + path)
