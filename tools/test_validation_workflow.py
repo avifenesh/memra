@@ -247,8 +247,11 @@ class CpuWorkflowTests(unittest.TestCase):
                          ('        run: |', '        run: >'),
                          ('    needs: changes', '    needs: [changes]')]:
             with self.subTest(new=new), self.assertRaises(ValueError):
-                policy.eligible_additions(self.tree(self.bare.replace(old, new, 1)),
-                                          self.tree(self.workflow.replace(old, new, 1)))
+                def changed(text):
+                    start = text.index('  gates:\n')
+                    return text[:start] + text[start:].replace(old, new, 1)
+                policy.eligible_additions(self.tree(changed(self.bare)),
+                                          self.tree(changed(self.workflow)))
 
     def test_native_bytes_and_existing_floor_changes_refuse(self):
         floor = re.search(r"'test_validation_\*\.py' ([0-9]+)", self.workflow)
