@@ -101,11 +101,27 @@ class SftGenContractTests(unittest.TestCase):
                 for case in self._tests[2:]:
                     case(result)
                 return result
-        for cls in (Empty, Duplicate):
+        class NoOutcome(unittest.TestSuite):
+            def run(self, result, debug=False):
+                for case in self:
+                    result.startTest(case)
+                    result.stopTest(case)
+                return result
+        class FloatCount(unittest.TestSuite):
+            def run(self, result, debug=False):
+                super().run(result, debug)
+                result.testsRun = float(result.testsRun)
+                return result
+        class Malformed(unittest.TestSuite):
+            def run(self, result, debug=False):
+                super().run(result, debug)
+                result.skipped = None
+                return result
+        for cls in (Empty, Duplicate, NoOutcome, FloatCount, Malformed):
             with self.subTest(kind=cls.__name__), protocol_fixture():
                 output = io.StringIO()
                 self.assertEqual(runner.run(cls(cases()), stream=output), 1)
-                self.assertIn('executed identities', output.getvalue())
+                self.assertIn('SFT CPU contract: FAIL:', output.getvalue())
 
     def test_non_successful_results_refuse(self):
         for mode, expected in (('healthy', 0), ('skip', 1), ('failure', 1), ('error', 1),
@@ -182,6 +198,13 @@ class SftGenContractTests(unittest.TestCase):
             self.assertEqual(os.environ['GIT_CONFIG_COUNT'], '1')
             retained = root
         self.assertFalse(retained.exists())
+        self.assertEqual(tempfile.tempdir, old_tempdir)
+        self.assertEqual({key: os.environ.get(key) for key in previous}, previous)
+        with self.assertRaisesRegex(RuntimeError, 'planted fixture failure'):
+            with runner.owned_fixture() as root:
+                failed_root = root
+                raise RuntimeError('planted fixture failure')
+        self.assertFalse(failed_root.exists())
         self.assertEqual(tempfile.tempdir, old_tempdir)
         self.assertEqual({key: os.environ.get(key) for key in previous}, previous)
 

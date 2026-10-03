@@ -77,17 +77,25 @@ def run(suite, *, stream=sys.stderr):
     except ValueError as error:
         print('SFT CPU contract: FAIL: discovery: ' + str(error), file=stream)
         return 1
-    executed = []
+    executed, succeeded = [], []
     class Result(unittest.TextTestResult):
         def startTest(self, test):
             executed.append(control_id(test))
             super().startTest(test)
+        def addSuccess(self, test):
+            succeeded.append(control_id(test))
+            super().addSuccess(test)
     result = unittest.TextTestRunner(stream=stream, verbosity=1, resultclass=Result).run(suite)
-    if (len(executed) != len(set(executed)) or set(executed) != set(discovered)
-            or result.testsRun != len(discovered)):
+    if (type(result.testsRun) is not int or len(executed) != len(set(executed))
+            or set(executed) != set(discovered) or result.testsRun != len(discovered)):
         print('SFT CPU contract: FAIL: executed identities do not match discovery', file=stream)
         return 1
-    if not result.wasSuccessful() or result.skipped or result.expectedFailures:
+    fields = ('failures', 'errors', 'skipped', 'expectedFailures', 'unexpectedSuccesses')
+    if any(type(getattr(result, name, None)) is not list for name in fields):
+        print('SFT CPU contract: FAIL: malformed result evidence', file=stream)
+        return 1
+    if (len(succeeded) != len(set(succeeded)) or set(succeeded) != set(discovered)
+            or not result.wasSuccessful() or any(getattr(result, name) for name in fields)):
         print(f'SFT CPU contract: FAIL: executed={result.testsRun} skipped={len(result.skipped)} '
               f'expected_failures={len(result.expectedFailures)}', file=stream)
         return 1
@@ -95,7 +103,7 @@ def run(suite, *, stream=sys.stderr):
     print(f'SFT CPU contract: PASS: original={len(original)} executed={result.testsRun} '
           f'discovered={len(discovered)} unique={len(set(executed))} skipped=0 expected_failures=0', file=stream)
     print('SFT CPU contract identities: ' + json.dumps({'discovered': discovered,
-          'executed': executed, 'original': original}, sort_keys=True), file=stream)
+          'executed': executed, 'succeeded': succeeded, 'original': original}, sort_keys=True), file=stream)
     return 0
 
 
