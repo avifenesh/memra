@@ -109,6 +109,11 @@ jobs:
         env:
           CI_VALIDATION_CONTRACTS: ${{ needs.changes.result == 'success' && needs.changes.outputs.contracts || '' }}
 
+      - name: Expert-tier plan self-test assertion admission (CPU-only)
+        run: |
+          python3 tools/build_expert_tier_plan.py --self-test
+          python3 tools/run_expert_tier_contract.py
+
       - name: Exact-source coalescer membership and wait contracts (CPU-only)
         if: ${{ needs.changes.result != 'success' || needs.changes.outputs.server != 'false' }}
         run: python3 tools/check-coalescer-contract.py --out "$RUNNER_TEMP/coalescer-contract"
