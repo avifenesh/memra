@@ -1,0 +1,53 @@
+{
+  "source_sha256": "d20013b26d24c6d58d5e65d5822ecbcdc8291e1bcadd7f36ef97e091351310dd",
+  "head": "62a9da5dc0b1407fdce483174b8c56f197b9b987",
+  "recipe": [
+    "/usr/local/cuda-13.1/bin/nvcc",
+    "-gencode",
+    "arch=compute_ARCH,code=sm_ARCH",
+    "-O3",
+    "-std=c++17",
+    "--expt-relaxed-constexpr",
+    "-fmad=false",
+    "-c",
+    "crates/memra-engine/cu/dsv4_gpu.cu",
+    "-o",
+    "OUTPUT"
+  ],
+  "targets": [
+    "89",
+    "90a",
+    "100a",
+    "120a"
+  ],
+  "compiler_release": "13.1.115",
+  "pinned_input_hashes": {
+    "moe_kq_prims.cuh": "aa729a2d8410c62a072d5b39e91b96b68eb44db0f8af80d94b17fe9ccfc7fbf6",
+    "dsv4_dense_m1_exact_tail.cuh": "0e6f4e1a5fa4771862d6937fda5f8f937a2fe2f5cdbbc39cf9ab1c451121e32c",
+    "mmq_mma_i8.cuh": "814b3a0a1d48cdfb7871eeb078f898aa064b74a3710282147133373fedfb0678",
+    "dsv4_dense_census.cuh": "f05e94f0168f6a43a2000b74ed0c7f44a416460e78b1602065bbac18d9a3f3d5",
+    "wgmma_common.cuh": "cdea7a4f35b561f3000780d5d0a8cbe29d6b0315c1c7aba39be44bcff38d30d9",
+    "dsv4_replay_control.cuh": "b5260b48c4e9f3398abe52c1de135d9c69fd1ff4999deb7fccc02094a8acc869",
+    "mmq_common.cuh": "44a50ea017d4bb0d04ca85cd59cac8bcd0d811647338d1856d35ce69413808a1",
+    "sm100_blockscale_layout.cuh": "5bee8854626dd8430446a5306c4c70b681ddecea2b0ed5b7291bacb80f96a5d6",
+    "dsv4_dense_tile.cuh": "3db85a8e9680d2d842524f8edeaa18723667a03ca12681b07031f52c922e2f24",
+    "mma_tile.cuh": "2ffd3f25a4ddbac6b2733645a0c3979aeea5cc8573f09962427d76dda03c61ac",
+    "memra_pdl_chain.cuh": "2ae785346a5c52973dcab973320c2369cc979f805c99c5abb469f0dcbdd38f3d",
+    "/usr/local/cuda-13.1/bin/nvcc": "6ce80365abc2f14ff5f9e069fe687a93d4eaacc555dbf1d1696ee899d39df52a",
+    "/usr/local/cuda-13.1/bin/nvcc.profile": "135fbe6d8713262e11502af05d18818b905fde4e0afd97f8452b2182888377e8",
+    "/usr/local/cuda-13.1/bin/ptxas": "85836303aeca1a2ac9387a6d364b276a3603907c95c3b06c9e3aadf46195b0d8",
+    "/usr/local/cuda-13.1/bin/fatbinary": "54ad3cda647855ac018eb6829513d80d65dfdc320b526f6817ba8df606951c10"
+  },
+  "fallback_assembly_recipe": [
+    "/usr/local/cuda-13.1/bin/ptxas",
+    "-arch=sm_120",
+    "--fmad",
+    "false",
+    "ACTUAL_EXTRACTED_PTX",
+    "-o",
+    "OUTPUT"
+  ],
+  "harness_recipe_source": "tools/dense_control_cache.py",
+  "harness_recipe_source_sha256": "9a0af38b9ea599a4ac3bbdd0dc28ee04f414ddabee0ff3d10a67bd8faeb9b65e",
+  "harness_wrapper_sha256": "f35cc5f5a0abecc33d3ab750b63d705d2d6a7fac923bb07580987106005e3f89"
+}

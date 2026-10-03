@@ -710,3 +710,5 @@ raw-os-environment-name-audit-20261003 | "Owned malformed OS names refuse; unown
 process-ack-939-20261003 | Verdict: CPU owned-process yield state now requires an observed stop; the original intermittent failure remains unproven. | process-ack-939-20261003/LANE.md
 dense-control-cache-20261003 | "Six actual native payloads restored byte-identically; all 18 CPU controls run after build and restore; 55 refusal/regression checks pass." | [RESULTS.md](dense-control-cache-20261003/RESULTS.md)
 q35-fixture-data-contract-20261003 | "Three consumed data paths now select the Q35 contract; copied-data positives and independent failure controls preserve historical originals." | q35-fixture-data-contract-20261003/RESULTS.md
+
+shared-linkage-warnings-20261003 | All SASS/resource lines, instruction/data/shared sections and relocation bindings are exact. | shared-linkage-warnings-20261003/RESULTS.md

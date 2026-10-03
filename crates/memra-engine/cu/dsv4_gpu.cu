@@ -2426,9 +2426,9 @@ __global__ void dsv4_topk_idx_numeric_rows_kernel(const float* score, long score
     kk = min(kk, nb);
     int npow2 = 1;
     while (npow2 < nb) npow2 <<= 1;
-    extern __shared__ unsigned long long keys[];
+    extern __shared__ unsigned long long topk_row_keys[];
     dsv4_topk_idx_body<true>(score + y * score_row, nb, kk, win, idx_tail + (long)y * stride,
-                             npow2, keys);
+                             npow2, topk_row_keys);
 }
 
 template<bool NumericZero>
@@ -3649,7 +3649,7 @@ __device__ __forceinline__ void dsv4_indexer_score_f32acc_body(
     int t = (int)(i / nb);
     int j = (int)(i % nb);
     int lim = (lim0 >= 0) ? lim0 : (t + 1) / ratio;
-    extern __shared__ float shhf[];
+    extern __shared__ float indexer_head_sums[];
     if (j >= lim) {
         if (threadIdx.x == 0) score[i] = -INFINITY;
         return;
@@ -3662,12 +3662,12 @@ __device__ __forceinline__ void dsv4_indexer_score_f32acc_body(
         for (int x = 0; x < hd; x++) dacc += qr[x] * kr[x];
         float r = fmaxf(dacc, 0.0f);
         float ws = w[(long)t * heads + h] * wscale;
-        shhf[h] = r * ws;
+        indexer_head_sums[h] = r * ws;
     }
     __syncthreads();
     if (threadIdx.x == 0) {
         float acc = 0.0f;
-        for (int hh = 0; hh < heads; hh++) acc += shhf[hh];  // oracle h order
+        for (int hh = 0; hh < heads; hh++) acc += indexer_head_sums[hh];  // oracle h order
         score[i] = acc;
     }
 }
@@ -5396,11 +5396,11 @@ __global__ void dsv4_dots_f32_mrow_kernel(const float* __restrict__ x,
             for (int t = 0; t < M; t++) acc[t] += (double)x[(long)t * k + i] * wv;
         }
     }
-    extern __shared__ double shd[];
+    extern __shared__ double dots_row_sums[];
 #pragma unroll
     for (int t = 0; t < M; t++) {
-        __syncthreads();  // shd free from the previous row's tree
-        double tot = dsv4_block_sum(acc[t], shd);
+        __syncthreads();  // dots_row_sums free from the previous row's tree
+        double tot = dsv4_block_sum(acc[t], dots_row_sums);
         if (threadIdx.x == 0) y[(long)t * n + j] = (float)tot;
     }
 }
