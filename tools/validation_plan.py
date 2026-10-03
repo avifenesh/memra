@@ -31,6 +31,26 @@ JOBS = ('build', 'clippy', 'server', 'engine', 'portable', 'core', 'lanes', 'arc
 # These are executable CPU/harness contracts, not a blanket tools/** exemption.
 # Their tests remain in the always-run gates job. Native reruns are named separately.
 TOOL_CONTRACTS = {
+    # These entries name workflow execution. Source changes still expand until
+    # their own impact is modelled; only base-known unchanged steps may omit builds.
+    'expert-tier-caller': {
+        'workflow_only': True,
+        'inputs': ['tools/run_expert_tier_contract.py', 'tools/test_expert_tier_plan_contract.py'],
+        'cpu': ['python3', 'tools/run_expert_tier_contract.py'],
+        'native': [],
+    },
+    'sft-generator-caller': {
+        'workflow_only': True,
+        'inputs': ['tools/run_sft_gen_contract.py', 'tools/test_sft_gen_contract.py'],
+        'cpu': ['python3', 'tools/run_sft_gen_contract.py'],
+        'native': [],
+    },
+    'score-shard-caller': {
+        'workflow_only': True,
+        'inputs': ['tools/run_score_shard_contract.py', 'tools/test_score_shard_contract.py'],
+        'cpu': ['python3', 'tools/run_score_shard_contract.py'],
+        'native': [],
+    },
     'public-boundary': {
         'required': True,
         'inputs': ['tools/check-public-boundary.py', 'tools/test_public_boundary.py',
@@ -452,6 +472,20 @@ class Refused(ValueError):
 
 _RUST_SCANNER = None
 _SUPPORT_DATA = None
+_CPU_WORKFLOW = None
+
+
+def workflow_cpu_additions(before, after):
+    global _CPU_WORKFLOW
+    if _CPU_WORKFLOW is None:
+        spec = importlib.util.spec_from_file_location(
+            'cpu_workflow_inputs', Path(__file__).with_name('cpu_workflow_inputs.py'))
+        _CPU_WORKFLOW = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_CPU_WORKFLOW)
+    additions = set(_CPU_WORKFLOW.eligible_additions(before, after))
+    if not additions or not additions <= TOOL_CONTRACTS.keys():
+        raise Refused('CPU workflow addition has no registered execution contract')
+    return additions
 
 
 def support_record_data_inputs(tree, *, directory=False, allow_unknown_reader=False):
@@ -1115,14 +1149,20 @@ def make_plan(paths, base_tree, head_tree):
         graph, owners = workspace(head_tree)
         if graph != base_graph or owners != base_owners:
             return full('workspace dependency or membership changed', paths)
+        workflow_path = '.github/workflows/ci.yml'
+        workflow_contracts = (workflow_cpu_additions(base_tree, head_tree)
+                              if workflow_path in paths else set())
         if any(p in ('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml') or
-               p.startswith('.cargo/') or (p.startswith('.github/') and not p.startswith('.github/ISSUE_TEMPLATE/')) or p.endswith(('/Cargo.toml', '/build.rs'))
+               p.startswith('.cargo/') or (p.startswith('.github/')
+               and not p.startswith('.github/ISSUE_TEMPLATE/')
+               and not (p == workflow_path and workflow_contracts))
+               or p.endswith(('/Cargo.toml', '/build.rs'))
                for p in paths):
             return full('compiler/build/workflow/dependency input changed', paths)
         includes = included_inputs(head_tree, owners)
         for path, packages in included_inputs(base_tree, base_owners).items():
             includes[path].update(packages)
-        direct, contracts, native_requirements = set(), set(), set()
+        direct, contracts, native_requirements = set(), set(workflow_contracts), set()
         contract_paths = set(base_tree.paths('tools')) | set(head_tree.paths('tools'))
         probe_inputs = native_probe_inputs(head_tree)
         for pattern, probes in native_probe_inputs(base_tree).items():
@@ -1140,7 +1180,8 @@ def make_plan(paths, base_tree, head_tree):
             if package:
                 direct.add(package)
             direct.update(consumers)
-            matches = [name for name, c in TOOL_CONTRACTS.items() if path in c['inputs']
+            matches = [name for name, c in TOOL_CONTRACTS.items() if not c.get('workflow_only')
+                       and path in c['inputs']
                        and ('presence' not in c or any(p in contract_paths for p in c['presence']))]
             # Resolve ownership first. Only this boundary contract is additive
             # to a package/include collision; other tool contracts retain their policy.
@@ -1153,6 +1194,8 @@ def make_plan(paths, base_tree, head_tree):
                 contracts.update(matches)
                 for name in matches:
                     native_requirements.update(TOOL_CONTRACTS[name]['native'])
+                continue
+            if path == workflow_path and workflow_contracts:
                 continue
             if path in support_data or source_input:
                 continue
@@ -1168,6 +1211,8 @@ def make_plan(paths, base_tree, head_tree):
             if path == 'LICENSE' or path.startswith('.github/ISSUE_TEMPLATE/'):
                 continue
             return full('unmodelled input: ' + path, paths)
+        if workflow_contracts and (direct or native_requirements):
+            return full('CPU workflow addition also reaches compiled or native inputs', paths)
         affected, dependency_reasons = closure(direct, graph)
         jobs = {
             'build': bool(affected), 'clippy': bool(affected),
@@ -1224,7 +1269,7 @@ def local_plan(repo, base):
         if masked:
             return full('index-masked inputs prevent a scoped decision', sorted(paths))
         ignored = git(repo, 'ls-files', '--others', '--ignored', '--exclude-standard', '-z',
-                      '--', '.cargo', 'crates', 'tools').split(b'\0')
+                      '--', '.cargo', '.github', 'crates', 'tools').split(b'\0')
         if any(x and not (b'/__pycache__/' in x and x.endswith(b'.pyc')) for x in ignored):
             return full('ignored build/test inputs prevent a scoped decision', sorted(paths))
         plan = make_plan(paths, Tree(repo, base), LocalTree(repo))

@@ -828,6 +828,106 @@ class ValidationPlanTests(unittest.TestCase):
         self.assertEqual(self.plan(['README.md'])['mode'], 'full')
 
 
+    def workflow_fixture(self, *, compiled_consumer=False):
+        root = Path(__file__).parent.parent
+        policy = json.loads((root / 'tools/cpu_workflow_contracts.json').read_text())
+        for path in {p for row in policy['contracts'] for p in row['inputs']}:
+            self.put(path, (root / path).read_text())
+        self.put('tools/cpu_workflow_contracts.json',
+                 (root / 'tools/cpu_workflow_contracts.json').read_text())
+        workflow = (root / '.github/workflows/ci.yml').read_text()
+        block = next(row['block'] for row in policy['contracts']
+                     if row['id'] == 'sft-generator-caller')
+        self.assertEqual(workflow.count(block), 1)
+        self.put('.github/workflows/ci.yml', workflow.replace(block, ''))
+        if compiled_consumer:
+            self.put('crates/memra-server/src/lib.rs',
+                     'const INPUT: &str = include_str!("../../../.github/workflows/ci.yml");\n')
+        before = self.commit()
+        self.put('.github/workflows/ci.yml', workflow)
+        return before, self.commit()
+
+    def test_approved_workflow_addition_selects_real_cpu_execution_contract(self):
+        before, after = self.workflow_fixture()
+        plan = vp.event_plan(self.repo, 'push', '', before, after)
+        self.assertEqual(plan['mode'], 'scoped', plan['reason'])
+        self.assertEqual([c['id'] for c in plan['cpu_contracts']], ['sft-generator-caller'])
+        self.assertEqual(plan['cpu_contracts'][0]['cpu'],
+                         ['python3', 'tools/run_sft_gen_contract.py'])
+        self.assertFalse(any(plan['jobs'].values()))
+        self.assertFalse(plan['requires_cuda'])
+        self.assertEqual(plan['native']['scope'], 'none')
+        self.assertFalse(plan['qualification'])
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            vp.emit(plan)
+        for name in vp.JOBS:
+            self.assertIn(name + '=false\n', output.getvalue())
+        self.assertIn('contracts=sft-generator-caller\n', output.getvalue())
+
+    def test_approved_workflow_addition_with_rust_or_cuda_expands(self):
+        before, _ = self.workflow_fixture()
+        for path in ('crates/memra-server/src/lib.rs', 'crates/memra-engine/cu/cell.cu'):
+            with self.subTest(path=path):
+                self.put('crates/memra-server/src/lib.rs', '// fixture\n')
+                self.put(path, '// changed native input\n')
+                after = self.commit()
+                plan = vp.event_plan(self.repo, 'push', '', before, after)
+                self.assertEqual(plan['mode'], 'full')
+                self.assertTrue(all(plan['jobs'].values()))
+                self.assertFalse(plan['qualification'])
+
+    def test_approved_workflow_addition_keeps_compiled_include_consumers(self):
+        before, after = self.workflow_fixture(compiled_consumer=True)
+        plan = vp.event_plan(self.repo, 'push', '', before, after)
+        self.assertEqual(plan['mode'], 'full')
+        self.assertTrue(all(plan['jobs'].values()))
+        self.assertIn('compiled or native', plan['reason'])
+
+    def test_approved_workflow_addition_keeps_native_probe_obligations(self):
+        before, _ = self.workflow_fixture()
+        self.put('tools/q35-cold-mixed-gate.py', '# native collector input\n')
+        after = self.commit()
+        plan = vp.event_plan(self.repo, 'push', '', before, after)
+        self.assertEqual(plan['mode'], 'full')
+        self.assertTrue(all(plan['jobs'].values()))
+        self.assertIn('q35-cache', [c['id'] for c in plan['cpu_contracts']])
+        self.assertFalse(plan['native']['qualification'])
+
+    def test_workflow_execution_registration_does_not_exempt_caller_or_producer_edits(self):
+        _, before = self.workflow_fixture()
+        for path in ('tools/run_expert_tier_contract.py', 'tools/test_expert_tier_plan_contract.py',
+                     'tools/run_sft_gen_contract.py', 'tools/test_sft_gen_contract.py',
+                     'tools/run_score_shard_contract.py', 'tools/test_score_shard_contract.py',
+                     'tools/build_expert_tier_plan.py', 'tools/sft-gen.py',
+                     'tools/merge_expert_score_shards.py'):
+            with self.subTest(path=path):
+                self.put(path, (self.repo / path).read_text() + '\n# changed input\n')
+                after = self.commit()
+                plan = vp.event_plan(self.repo, 'push', '', before, after)
+                self.assertEqual(plan['mode'], 'full')
+                self.assertTrue(all(plan['jobs'].values()))
+                before = after
+
+    def test_ignored_workflow_input_prevents_local_cpu_omission(self):
+        self.put('.gitignore', '.github/ignored.yml\n')
+        before = self.commit()
+        self.put('README.md', 'changed docs\n')
+        self.assertEqual(vp.local_plan(self.repo, before)['mode'], 'scoped')
+        self.put('.github/ignored.yml', 'hidden workflow input\n')
+        plan = vp.local_plan(self.repo, before)
+        self.assertEqual(plan['mode'], 'full')
+        self.assertIn('ignored', plan['reason'])
+
+    def test_workflow_classifier_failure_expands_every_component(self):
+        before, after = self.workflow_fixture()
+        with mock.patch.object(vp, 'workflow_cpu_additions', side_effect=ValueError('refused policy')):
+            plan = vp.event_plan(self.repo, 'push', '', before, after)
+        self.assertTrue(all(plan['jobs'].values()))
+        self.assertIn('refused policy', plan['reason'])
+        self.assertFalse(plan['native']['qualification'])
+
+
 class FeatureProgramTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='memra-feature-program-')
