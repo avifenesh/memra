@@ -12611,6 +12611,8 @@ pub(crate) async fn collect_blocking_response(
 mod tests {
     use super::*;
 
+    include!("multi_choice_ledger_tests.rs");
+
     /// Multi-item capture requests (`/v1/embeddings` N inputs, `/v1/rerank` N documents)
     /// give every capture its own ledger identity under the parent envelope: distinct per
     /// index, prefixed by the parent id, same `created`. The ledger keys debits by request
