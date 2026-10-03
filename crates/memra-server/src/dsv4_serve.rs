@@ -1173,6 +1173,7 @@ pub fn caps(m: &Dsv4Model) -> ModelCaps {
     // string (rung-3 serve finding) — the detected encoding revision is the caps truth.
     let enc = m.tok.dsv4_encoding().is_some();
     ModelCaps {
+        max_choices: 1,
         hy3: false,
         tools_branch: enc || t.is_some_and(chat::template_has_tools_branch),
         qwen_think: t.is_some_and(|t| t.contains("<think>") && t.contains("add_generation_prompt")),

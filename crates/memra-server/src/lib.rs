@@ -126,6 +126,7 @@ mod kv_vmm;
 /// deployment's own binary — engine-billing-extraction-20260829, owner razor
 /// 2026-08-29: "only engine is open, business is private").
 pub mod metering;
+mod multi_choice;
 mod prefill_receipt;
 pub mod prime_fairness;
 mod request_metrics;
@@ -8219,6 +8220,7 @@ fn model_entry_v1(
             // Every chat-shaped capability is FALSE off the chat surface: an embedder
             // does not stream, does not call tools, and does not reason.
             "streaming": is_chat,
+            "max_choices": if is_chat { caps.map_or(1, |c| c.max_choices.max(1)) } else { 1 },
             "tools": is_chat && caps.is_some_and(|c| c.tools_branch),
             // A switchless force-open `<think>` tail refuses `response_format` ONLY when
             // its think-close contract is unknown (`think_close` empty — GLM-5.3-Flash);
@@ -8713,6 +8715,7 @@ fn build_request_with_trace(
         // memra#522: the hybrid-lane queue-wait histogram's start. Every raw-prompt
         // request enters the worker's admission queue right after this builder returns.
         queued_at: std::time::Instant::now(),
+        choice: None,
         route_ticket: None,
         ttft,
         tx,
@@ -9223,6 +9226,7 @@ fn build_chat_request_with_trace(
             // memra#522: the hybrid-lane queue-wait histogram's start, same convention as
             // the raw-prompt builder above.
             queued_at: std::time::Instant::now(),
+            choice: None,
             route_ticket: None,
             ttft,
             tx,
@@ -9926,6 +9930,15 @@ fn admit_tenant_budget(
     tenant: &auth::TenantCtx,
     request: &mut Request,
 ) -> Result<BudgetAdmission, BudgetRejection> {
+    admit_tenant_budget_choices(st, tenant, request, 1)
+}
+
+fn admit_tenant_budget_choices(
+    st: &AppState,
+    tenant: &auth::TenantCtx,
+    request: &mut Request,
+    choices: usize,
+) -> Result<BudgetAdmission, BudgetRejection> {
     let Some(accounting) = st.metering.as_ref().filter(|m| m.enforces_limits()) else {
         return Ok(BudgetAdmission {
             permit: None,
@@ -9964,6 +9977,11 @@ fn admit_tenant_budget(
         .map_err(|_| BudgetRejection::Unavailable("prompt token count exceeds u64".into()))?;
     let completion_tokens = u64::try_from(completion_tokens)
         .map_err(|_| BudgetRejection::Unavailable("completion token bound exceeds u64".into()))?;
+    let completion_tokens = completion_tokens
+        .checked_mul(choices as u64)
+        .ok_or_else(|| {
+            BudgetRejection::Invalid("n-choice completion reservation exceeds u64".into())
+        })?;
     match accounting.reserve(
         &tenant.tenant,
         tenant.key_prefix.as_deref(),
@@ -10293,6 +10311,10 @@ async fn completions_with_admission(
         Ok(ns) => ns,
         Err(msg) => return with_request_id(&env.id, bad_request(msg, Some("cache_salt"))),
     };
+    let choices = match multi_choice::supported_count(req.n, st.caps.get(&req.model)) {
+        Ok(count) => count,
+        Err(message) => return with_request_id(&env.id, bad_request(&message, Some("n"))),
+    };
     // HONESTY GATE (gap-scan F4): semantic params we can't honor 400 loudly.
     if let Err((msg, param)) = reject_unsupported(&[
         (
@@ -10302,14 +10324,9 @@ async fn completions_with_admission(
         ),
         ("logprobs", req.logprobs.is_some(), ""),
         (
-            "n",
-            req.n.is_some_and(|n| n != 1),
-            " for n != 1 (single choice only)",
-        ),
-        (
             "best_of",
             req.best_of.is_some_and(|n| n != 1),
-            " (single choice only)",
+            " (best_of is not implemented; use n for multiple choices)",
         ),
     ]) {
         return with_request_id(&env.id, bad_request(&msg, Some(&param)));
@@ -10413,6 +10430,28 @@ async fn completions_with_admission(
             None,
         );
         return ledger_rejected(receipt, drain_response(), "draining", &env.id);
+    }
+    if choices > 1 {
+        if let Some(admission) = body_admission.as_mut() {
+            admission.release();
+        }
+        return multi_choice::respond(
+            &st,
+            &tenant,
+            request,
+            rx,
+            multi_choice::Reply {
+                model,
+                chat: false,
+                stream,
+                include_usage,
+                env,
+                deadline,
+                parsers: (0..choices).map(|_| None).collect(),
+            },
+            || Some(json!({"prompt": req.prompt})),
+        )
+        .await;
     }
     let budget = match admit_tenant_budget(&st, &tenant, &mut request) {
         Ok(budget) => budget,
@@ -10911,6 +10950,16 @@ async fn chat_completions_with_admission(
     // silent downgrades. response_format json_object/json_schema are now REAL
     // (constrained decoding, lane/constrained) — parsed below; bad forms 400 with the
     // parser's own message.
+    let choices = match multi_choice::supported_count(req.n, st.caps.get(&req.model)) {
+        Ok(count) => count,
+        Err(message) => return with_request_id(&env.id, bad_request(&message, Some("n"))),
+    };
+    if choices > 1 && request_has_vision(&req) {
+        return with_request_id(
+            &env.id,
+            bad_request("n-choice generation supports text requests only", Some("n")),
+        );
+    }
     if let Err((msg, param)) = reject_unsupported(&[
         (
             "logit_bias",
@@ -10925,11 +10974,6 @@ async fn chat_completions_with_admission(
             "",
         ),
         ("top_logprobs", req.top_logprobs.is_some(), ""),
-        (
-            "n",
-            req.n.is_some_and(|n| n != 1),
-            " for n != 1 (single choice only)",
-        ),
     ]) {
         return with_request_id(&env.id, bad_request(&msg, Some(&param)));
     }
@@ -11064,6 +11108,31 @@ async fn chat_completions_with_admission(
             None,
         );
         return ledger_rejected(receipt, drain_response(), "draining", &env.id);
+    }
+    if choices > 1 {
+        if let Some(admission) = body_admission.as_mut() {
+            admission.release();
+        }
+        let parsers = (0..choices)
+            .map(|_| plan.parser.as_ref().map(ToolStreamParser::fresh))
+            .collect();
+        return multi_choice::respond(
+            &st,
+            &tenant,
+            plan.request,
+            rx,
+            multi_choice::Reply {
+                model: model.clone(),
+                chat: true,
+                stream,
+                include_usage,
+                env,
+                deadline,
+                parsers,
+            },
+            || capture_prompt,
+        )
+        .await;
     }
     let budget = match admit_tenant_budget(&st, &tenant, &mut plan.request) {
         Ok(budget) => budget,

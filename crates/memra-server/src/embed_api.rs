@@ -177,6 +177,7 @@ async fn run_capture(
         // crosses the same admission queue as any generating request (it just never emits
         // a token, so it contributes no TTFT sample).
         queued_at: std::time::Instant::now(),
+        choice: None,
         route_ticket: None,
         ttft: None,
         tx,

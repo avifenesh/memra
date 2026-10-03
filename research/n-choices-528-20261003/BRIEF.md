@@ -1,0 +1,15 @@
+# Bounded n-choice serving
+
+Question: can the existing ordinary prefill and exact prefix copy programs implement bounded n choices without another numerical path?
+
+Scope: OpenAI chat/text completions, one ordinary leader prefill, independent seed+i samplers and state, indexed terminal rows, prompt-once/output-sum accounting, N decode slots and conservative state/snapshot admission, cancellation and n=1 compatibility. best_of>1 remains refused and points to n. Selected speculative, multimodal, parallel, sliding-window and unsupported state routes refuse explicitly. Per-model max_choices is logical route eligibility, not model qualification.
+
+Source: base42e9ed7447a19aa27d6be88b3341296b9ba16661. A's isolated fresh-parser factory is integrated; its later json_arguments field must survive combined integration. Existing prefix_snapshot/prefix_restore and sampling/forward programs are reused. No engine, CUDA, FFI, numeric dispatch, tolerance, compiler default or support-state change is admitted.
+
+Budget: owner-admitted C, cash ceiling $0. Cached local artifacts only. Every heavy build and native cell uses the shared rig.py broker, 4 CPU/32GiB/swap0, two compiler jobs, private target, canonical FD9 GPU lock, owned-process cleanup and immutable source/script/binary. Builds <=3600s; bounded correctness GPU cells <=1200s. No rentals, production access, accelerator-owner access, release tag or performance/default promotion.
+
+Checks: retain tools/validation_plan.py dependency closure and omissions before builds. Run selected complete server CPU suite and strict selected-package Clippy. Bind a coverage/assertion manifest to composite native checks for one-prime/fork engagement, seeded per-choice isolation/reproducibility, indexed completion, prompt-once/output-sum usage, slot/KV and prepaid exhaustion, disconnect/cancellation/recovery, and n=1 before/after identity. Mandatory missing/duplicate choice, premature termination, shared-RNG/count/charge/fork-corruption controls cannot be omitted. Source planning never narrows native/model qualification by itself.
+
+Fixture: existing Qwen3.5-9B Q8_0, expected SHA2560825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c. Full thinking/non-thinking vendor profiles come from the pinned official README revisionc202236235762e1c871ad0ccb60c8ee5ba337b9a; artifact/template default is preserved. Include a bare request, and a separate n-only extension probe. Greedy is an exactness control only. Native claims stay bound to actual source, ELF, artifact, resolved sampling/template, request, hardware and topology.
+
+Stop: an identified failing fixture/contract may be corrected and replayed with failed raw evidence retained. A necessary new shared numerical program or required PRO qualification is outside this rig scope: record exact cause and release this claim without calling partial proof full closure. Manager owns review/merge; author self-review and Revuto or a documented cap plus green CI are required. Complete cleanup and preserve exact receipts/ELFs after merge.
