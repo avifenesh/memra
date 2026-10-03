@@ -102,7 +102,13 @@ required. Missing required evidence retains a named refusal. Changed census/test
 unknown record shapes or CI tokens, noncanonical paths and symlink ambiguity expand planning.
 Unknown-reader execution expands to all available CPU names, including explicit none and stale
 subsets, and runs the actual census without trusting derived required-evidence assumptions.
-Static inputs, metadata syntax, canonical paths and symlink checks remain mandatory. Known
+Static inputs, metadata syntax, canonical paths and symlink checks remain mandatory. Execution admission validates every census reader and
+record as a regular file before reading any of their content. Reads anchor each path
+component to directory descriptors with nofollow opens. A nonblocking leaf open and
+fstat refuse a FIFO replacement between metadata inspection and opening. Hashes still
+use the exact raw reader bytes; type or symlink failures remain hard refusals even
+when unknown-reader expansion is enabled. The checkout root remains the trusted base.
+ Known
 reader evidence keeps its named missing-file refusal.
 The same pinned readers select exact current and potential one-level pack modules, root pack
 lists, CLI source, root README/STATUS/AGENTS and non-archive docs Markdown. Rust package and probe

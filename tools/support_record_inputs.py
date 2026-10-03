@@ -2,6 +2,7 @@
 
 import hashlib
 import os
+import stat
 from pathlib import Path, PurePosixPath
 import tomllib
 
@@ -34,20 +35,61 @@ class DirectoryTree:
         self.root = Path(root).resolve()
 
     def paths(self, *prefixes):
-        return [name for name in (*READERS, RECORDS)
-                if (self.root / name).exists() or (self.root / name).is_symlink()]
+        found = []
+        for name in (*READERS, RECORDS):
+            path = self.root / name
+            # A broken parent link still constitutes an unsafe input, even if
+            # exists() would hide all of its children.
+            if (path.exists() or path.is_symlink() or
+                    any(parent.is_symlink() for parent in path.parents
+                        if parent.is_relative_to(self.root))):
+                found.append(name)
+        return found
+
+    def _open_regular(self, name):
+        """Anchor each component; never read a FIFO or follow a replaced link."""
+        parts = PurePosixPath(canonical_path(name)).parts
+        parent = None
+        leaf = None
+        try:
+            parent = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            for part in parts[:-1]:
+                child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                                dir_fd=parent)
+                os.close(parent)
+                parent = child
+            info = os.stat(parts[-1], dir_fd=parent, follow_symlinks=False)
+            if not stat.S_ISREG(info.st_mode):
+                raise InputContractError('support data reader input contains a symlink or '
+                                         'is not a regular file: ' + name)
+            # NONBLOCK protects the open itself if a regular file is replaced by
+            # a FIFO after stat. fstat checks the object actually opened.
+            leaf = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                           dir_fd=parent)
+            if not stat.S_ISREG(os.fstat(leaf).st_mode):
+                raise InputContractError('support data reader input is not a regular file: ' + name)
+            result, leaf = leaf, None
+            return result
+        except OSError as error:
+            raise InputContractError('support data reader input is missing, nonregular or '
+                                     'contains a symlink: ' + name) from error
+        finally:
+            if leaf is not None:
+                os.close(leaf)
+            if parent is not None:
+                os.close(parent)
+
+    def validate_inputs(self, names):
+        for name in sorted(names):
+            os.close(self._open_regular(name))
 
     def read(self, name):
-        path = (self.root / name).resolve()
-        if not path.is_relative_to(self.root):
-            raise InputContractError('support data reader path escapes root: ' + name)
-        return path.read_text()
+        with os.fdopen(self._open_regular(name), 'r') as source:
+            return source.read()
 
     def read_bytes(self, name):
-        path = (self.root / name).resolve()
-        if not path.is_relative_to(self.root):
-            raise InputContractError('support data reader path escapes root: ' + name)
-        return path.read_bytes()
+        with os.fdopen(self._open_regular(name), 'rb') as source:
+            return source.read()
 
     def symlinks_exact(self, paths):
         return {name: os.readlink(self.root / name) for name in paths
@@ -76,6 +118,8 @@ def resolve(tree):
         return {'required': [], 'optional': []}
     if not expected <= paths:
         raise InputContractError('support data reader inputs are incomplete')
+    if isinstance(tree, DirectoryTree):
+        tree.validate_inputs(expected)
     unknown_readers = [name for name, digest in READERS.items()
                        if hashlib.sha256(tree.read_bytes(name)).hexdigest() != digest]
     try:
