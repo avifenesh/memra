@@ -1,0 +1,446 @@
+{
+  "decision": "scoped",
+  "selected": [
+    "changed-auto",
+    "changed-context",
+    "changed-none",
+    "duplicate-call",
+    "missing-mask",
+    "native-composite",
+    "wrong-name",
+    "wrong-request-policy",
+    "wrong-schema"
+  ],
+  "context": {
+    "source": "a19a907d7402b2a5378c1cb1aeab22037fce2775",
+    "candidate_sha256": "5a1e23aad8e6ada860d704f97764a406a77cd2c1da7e6553007f664dc4b5ce65",
+    "baseline_sha256": "6ca4ea6a08606c459605ac65f9b40f458d928a63c9fc9af3afae5a347c6a4514",
+    "helper_sha256": "a295b3e219f4b69242ce54f21dee282d393c451c544725391a88c3113996b065",
+    "gpu_uuid": "GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d",
+    "context": 4096,
+    "artifacts": {
+      "qwen": {
+        "sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+        "bytes": 9527501696
+      },
+      "gemma": {
+        "sha256": "93567e57a8fe10b23569b9d9ec38cd005deedf71e29477c421a4b83f418a538b",
+        "bytes": 6975879296
+      }
+    },
+    "model": "Qwen3.5-9B Q8_0 + Gemma4-12B Q4_0",
+    "artifact": "qwen:0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c;gemma:93567e57a8fe10b23569b9d9ec38cd005deedf71e29477c421a4b83f418a538b",
+    "hardware": "GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, NVIDIA GeForce RTX 5090 Laptop GPU, 595.91.07, 24463 MiB",
+    "numeric_program": "existing GGUF forward and llguidance mask/sampling primitives",
+    "binary": "5a1e23aad8e6ada860d704f97764a406a77cd2c1da7e6553007f664dc4b5ce65",
+    "request_shape": "context4096 max512 greedy seed530; schema-framed tool calls"
+  },
+  "contract": {
+    "schema": "memra-edge-contract-v1",
+    "required_edges": [
+      "control.changed-auto",
+      "control.changed-context",
+      "control.changed-none",
+      "control.duplicate-call",
+      "control.missing-mask",
+      "control.wrong-name",
+      "control.wrong-request-policy",
+      "control.wrong-schema",
+      "gemma.auto.identity",
+      "gemma.invalid-schema.refusal",
+      "gemma.named.stream-schema-mask-single",
+      "gemma.none.identity",
+      "gemma.parallel_true.refusal",
+      "gemma.required.stream-schema-mask-single",
+      "gemma.single-auto.stream-schema-mask-single",
+      "gemma.unknown-name.refusal",
+      "qwen.auto.identity",
+      "qwen.invalid-schema.refusal",
+      "qwen.named.stream-schema-mask-single",
+      "qwen.none.identity",
+      "qwen.required.stream-schema-mask-single",
+      "qwen.single-auto.stream-schema-mask-single",
+      "qwen.unknown-name.refusal"
+    ],
+    "context": {
+      "source": "a19a907d7402b2a5378c1cb1aeab22037fce2775",
+      "candidate_sha256": "5a1e23aad8e6ada860d704f97764a406a77cd2c1da7e6553007f664dc4b5ce65",
+      "baseline_sha256": "6ca4ea6a08606c459605ac65f9b40f458d928a63c9fc9af3afae5a347c6a4514",
+      "helper_sha256": "a295b3e219f4b69242ce54f21dee282d393c451c544725391a88c3113996b065",
+      "gpu_uuid": "GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d",
+      "context": 4096,
+      "artifacts": {
+        "qwen": {
+          "sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+          "bytes": 9527501696
+        },
+        "gemma": {
+          "sha256": "93567e57a8fe10b23569b9d9ec38cd005deedf71e29477c421a4b83f418a538b",
+          "bytes": 6975879296
+        }
+      },
+      "model": "Qwen3.5-9B Q8_0 + Gemma4-12B Q4_0",
+      "artifact": "qwen:0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c;gemma:93567e57a8fe10b23569b9d9ec38cd005deedf71e29477c421a4b83f418a538b",
+      "hardware": "GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, NVIDIA GeForce RTX 5090 Laptop GPU, 595.91.07, 24463 MiB",
+      "numeric_program": "existing GGUF forward and llguidance mask/sampling primitives",
+      "binary": "5a1e23aad8e6ada860d704f97764a406a77cd2c1da7e6553007f664dc4b5ce65",
+      "request_shape": "context4096 max512 greedy seed530; schema-framed tool calls"
+    },
+    "tests": {
+      "changed-auto": {
+        "id": "changed-auto",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.changed-auto"
+        ],
+        "inputs": {
+          "tool-choice-gate.py": "a295b3e219f4b69242ce54f21dee282d393c451c544725391a88c3113996b065",
+          "test_tool_choice_gate.py": "95ef8e3bc0ddc03149ae1318a458898a1ec89d363c396ac7a97353f3c3c14b5b",
+          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+        },
+        "mandatory": true
+      },
+      "changed-context": {
+        "id": "changed-context",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.changed-context"
+        ],
+        "inputs": {
+          "tool-choice-gate.py": "a295b3e219f4b69242ce54f21dee282d393c451c544725391a88c3113996b065",
+          "test_tool_choice_gate.py": "95ef8e3bc0ddc03149ae1318a458898a1ec89d363c396ac7a97353f3c3c14b5b",
+          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+        },
+        "mandatory": true
+      },
+      "changed-none": {
+        "id": "changed-none",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.changed-none"
+        ],
+        "inputs": {
+          "tool-choice-gate.py": "a295b3e219f4b69242ce54f21dee282d393c451c544725391a88c3113996b065",
+          "test_tool_choice_gate.py": "95ef8e3bc0ddc03149ae1318a458898a1ec89d363c396ac7a97353f3c3c14b5b",
+          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+        },
+        "mandatory": true
+      },
+      "duplicate-call": {
+        "id": "duplicate-call",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.duplicate-call"
+        ],
+        "inputs": {
+          "tool-choice-gate.py": "a295b3e219f4b69242ce54f21dee282d393c451c544725391a88c3113996b065",
+          "test_tool_choice_gate.py": "95ef8e3bc0ddc03149ae1318a458898a1ec89d363c396ac7a97353f3c3c14b5b",
+          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+        },
+        "mandatory": true
+      },
+      "missing-mask": {
+        "id": "missing-mask",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.missing-mask"
+        ],
+        "inputs": {
+          "tool-choice-gate.py": "a295b3e219f4b69242ce54f21dee282d393c451c544725391a88c3113996b065",
+          "test_tool_choice_gate.py": "95ef8e3bc0ddc03149ae1318a458898a1ec89d363c396ac7a97353f3c3c14b5b",
+          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+        },
+        "mandatory": true
+      },
+      "native-composite": {
+        "id": "native-composite",
+        "kind": "gpu",
+        "cost": 600,
+        "covers": [
+          "qwen.auto.identity",
+          "qwen.none.identity",
+          "qwen.required.stream-schema-mask-single",
+          "qwen.named.stream-schema-mask-single",
+          "qwen.single-auto.stream-schema-mask-single",
+          "qwen.unknown-name.refusal",
+          "qwen.invalid-schema.refusal",
+          "gemma.auto.identity",
+          "gemma.none.identity",
+          "gemma.required.stream-schema-mask-single",
+          "gemma.named.stream-schema-mask-single",
+          "gemma.single-auto.stream-schema-mask-single",
+          "gemma.unknown-name.refusal",
+          "gemma.invalid-schema.refusal",
+          "gemma.parallel_true.refusal"
+        ],
+        "inputs": {
+          "tool-choice-gate.py": "a295b3e219f4b69242ce54f21dee282d393c451c544725391a88c3113996b065",
+          "test_tool_choice_gate.py": "95ef8e3bc0ddc03149ae1318a458898a1ec89d363c396ac7a97353f3c3c14b5b",
+          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+        },
+        "scope": {
+          "model": "Qwen3.5-9B Q8_0 + Gemma4-12B Q4_0",
+          "artifact": "qwen:0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c;gemma:93567e57a8fe10b23569b9d9ec38cd005deedf71e29477c421a4b83f418a538b",
+          "hardware": "GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, NVIDIA GeForce RTX 5090 Laptop GPU, 595.91.07, 24463 MiB",
+          "numeric_program": "existing GGUF forward and llguidance mask/sampling primitives",
+          "source": "a19a907d7402b2a5378c1cb1aeab22037fce2775",
+          "binary": "5a1e23aad8e6ada860d704f97764a406a77cd2c1da7e6553007f664dc4b5ce65",
+          "request_shape": "context4096 max512 greedy seed530; schema-framed tool calls"
+        },
+        "controls": [
+          "missing-mask",
+          "wrong-name",
+          "wrong-schema",
+          "duplicate-call",
+          "changed-auto",
+          "changed-none",
+          "changed-context",
+          "wrong-request-policy"
+        ]
+      },
+      "wrong-name": {
+        "id": "wrong-name",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.wrong-name"
+        ],
+        "inputs": {
+          "tool-choice-gate.py": "a295b3e219f4b69242ce54f21dee282d393c451c544725391a88c3113996b065",
+          "test_tool_choice_gate.py": "95ef8e3bc0ddc03149ae1318a458898a1ec89d363c396ac7a97353f3c3c14b5b",
+          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+        },
+        "mandatory": true
+      },
+      "wrong-request-policy": {
+        "id": "wrong-request-policy",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.wrong-request-policy"
+        ],
+        "inputs": {
+          "tool-choice-gate.py": "a295b3e219f4b69242ce54f21dee282d393c451c544725391a88c3113996b065",
+          "test_tool_choice_gate.py": "95ef8e3bc0ddc03149ae1318a458898a1ec89d363c396ac7a97353f3c3c14b5b",
+          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+        },
+        "mandatory": true
+      },
+      "wrong-schema": {
+        "id": "wrong-schema",
+        "kind": "cpu",
+        "cost": 1,
+        "covers": [
+          "control.wrong-schema"
+        ],
+        "inputs": {
+          "tool-choice-gate.py": "a295b3e219f4b69242ce54f21dee282d393c451c544725391a88c3113996b065",
+          "test_tool_choice_gate.py": "95ef8e3bc0ddc03149ae1318a458898a1ec89d363c396ac7a97353f3c3c14b5b",
+          "validation_coverage.py": "307cd9e03531518b04ff1c970330929b2099304e9f0437dc78ec646b5134fcf7"
+        },
+        "mandatory": true
+      }
+    }
+  },
+  "contract_id": "7cf31693b9994d8acd3c9141ee7536ca9a02c5dce85a39277c755b2cf4d5ecee",
+  "uncovered": [],
+  "ineligible": {},
+  "choices": [
+    {
+      "test": "native-composite",
+      "adds": [
+        "native-composite"
+      ],
+      "new_edges": [
+        "gemma.auto.identity",
+        "gemma.invalid-schema.refusal",
+        "gemma.named.stream-schema-mask-single",
+        "gemma.none.identity",
+        "gemma.parallel_true.refusal",
+        "gemma.required.stream-schema-mask-single",
+        "gemma.single-auto.stream-schema-mask-single",
+        "gemma.unknown-name.refusal",
+        "qwen.auto.identity",
+        "qwen.invalid-schema.refusal",
+        "qwen.named.stream-schema-mask-single",
+        "qwen.none.identity",
+        "qwen.required.stream-schema-mask-single",
+        "qwen.single-auto.stream-schema-mask-single",
+        "qwen.unknown-name.refusal"
+      ],
+      "cost": 600
+    }
+  ],
+  "edge_decisions": [
+    {
+      "edge": "control.changed-auto",
+      "covered": true,
+      "tests": [
+        "changed-auto"
+      ]
+    },
+    {
+      "edge": "control.changed-context",
+      "covered": true,
+      "tests": [
+        "changed-context"
+      ]
+    },
+    {
+      "edge": "control.changed-none",
+      "covered": true,
+      "tests": [
+        "changed-none"
+      ]
+    },
+    {
+      "edge": "control.duplicate-call",
+      "covered": true,
+      "tests": [
+        "duplicate-call"
+      ]
+    },
+    {
+      "edge": "control.missing-mask",
+      "covered": true,
+      "tests": [
+        "missing-mask"
+      ]
+    },
+    {
+      "edge": "control.wrong-name",
+      "covered": true,
+      "tests": [
+        "wrong-name"
+      ]
+    },
+    {
+      "edge": "control.wrong-request-policy",
+      "covered": true,
+      "tests": [
+        "wrong-request-policy"
+      ]
+    },
+    {
+      "edge": "control.wrong-schema",
+      "covered": true,
+      "tests": [
+        "wrong-schema"
+      ]
+    },
+    {
+      "edge": "gemma.auto.identity",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "gemma.invalid-schema.refusal",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "gemma.named.stream-schema-mask-single",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "gemma.none.identity",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "gemma.parallel_true.refusal",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "gemma.required.stream-schema-mask-single",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "gemma.single-auto.stream-schema-mask-single",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "gemma.unknown-name.refusal",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "qwen.auto.identity",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "qwen.invalid-schema.refusal",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "qwen.named.stream-schema-mask-single",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "qwen.none.identity",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "qwen.required.stream-schema-mask-single",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "qwen.single-auto.stream-schema-mask-single",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    },
+    {
+      "edge": "qwen.unknown-name.refusal",
+      "covered": true,
+      "tests": [
+        "native-composite"
+      ]
+    }
+  ],
+  "cost": 608,
+  "optimization": "deterministic greedy set cover, not a claimed global optimum",
+  "isolation": "test boot/reset contracts are unchanged; selection never merges process state",
+  "qualification": false
+}

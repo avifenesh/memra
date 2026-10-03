@@ -30,6 +30,39 @@ JOBS = ('build', 'clippy', 'server', 'engine', 'portable', 'core', 'lanes', 'arc
 # These are executable CPU/harness contracts, not a blanket tools/** exemption.
 # Their tests remain in the always-run gates job. Native reruns are named separately.
 TOOL_CONTRACTS = {
+    'tool-choice': {
+        'presence': ['tools/tool-choice-gate.py', 'tools/test_tool_choice_gate.py'],
+        'inputs': ['tools/tool-choice-gate.py', 'tools/test_tool_choice_gate.py',
+                   'tools/validation_coverage.py'] + [
+            f'research/tool-choice-20261003/receipts/{run}/{name}'
+            for run in ('native-v3', 'native-v4')
+            for name in (
+                'candidate.sha256',
+                'coverage-plan.json',
+                'coverage-results.json',
+                'expected-context.json',
+                'file-sha256.json',
+                'frozen-inputs.sha256',
+                'gemma/baseline/environment.json',
+                'gemma/baseline/server.log',
+                'gemma/candidate/environment.json',
+                'gemma/candidate/server.log',
+                'gpu-250ms.csv',
+                'gpu-after.txt',
+                'gpu-before.txt',
+                'input-snapshot/test_tool_choice_gate.py',
+                'input-snapshot/tool-choice-gate.py',
+                'input-snapshot/validation_coverage.py',
+                'qwen/baseline/environment.json',
+                'qwen/baseline/server.log',
+                'qwen/candidate/environment.json',
+                'qwen/candidate/server.log',
+                'report.json',
+            )
+        ] + ['research/tool-choice-20261003/receipts/native-v4/source-binding.json'],
+        'cpu': ['tools/unittest-floor.sh', 'tools', 'test_tool_choice_gate.py', '16'],
+        'native': ['Pinned Qwen/Gemma tool-choice streams: required/named schema and grammar engagement, single-call policy, explicit refusals, and unchanged-auto/tool-none identity with coherent receipt red controls'],
+    },
     'q35-cache': {
         'required': True,
         'inputs': ['tools/q35-cold-mixed-gate.py', 'tools/test_q35_cold_mixed_gate.py',

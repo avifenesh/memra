@@ -1,0 +1,31 @@
+[server] build: memra-0.138.0-fb485dfcbb76 (id: source-tree, git: bef76711297e)
+[env-audit] warning: 3 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: MEMRA_CI_LOCK, MEMRA_CI_LOCK_HELD, MEMRA_RIG_LOCK_FD. Left alone: launchers and gate scripts own names outside the engine's families.
+[auth] keyring loaded: 1 inline key(s)
+[server] starting; models config = [("tool-fixture", "/data/ai-ml/models/qwen3.5-9b-judge-q8_0.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "tool-fixture" <- /data/ai-ml/models/qwen3.5-9b-judge-q8_0.gguf
+[tensor-contract] bound 427 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "tool-fixture": 32 layers, eos=248046, stop=[248046]
+[worker] tool-fixture: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="tool-fixture" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] tool-fixture: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[admission] "tool-fixture": plain 14848 B/token, spec 14848 B/token; fixed residual learns from effective-free deltas
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[server] worker ready; serving models: ["tool-fixture"]
+[server] listening on http://127.0.0.1:18250
+[meter] admit id=chatcmpl-e3a259c50fc468899e97094788ea8789 tenant=fixture lane=interactive model="tool-fixture"
+[admission] request cost: model="tool-fixture" ctx=964 path=plain = 14848 B/token x ctx + 140MB prefill-workspace + 0MB fixed = 154MB
+[admission] fixed residual high-water: model="tool-fixture" 103MB (observed 117MB at ctx 908 path=plain)
+[fa-pool] grow #0 dev=0 o_len 0 -> 200704 ml_len 0 -> 784 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 200704 -> 401408 ml_len 784 -> 1568 (retired kept, zero=false)
+[meter] admit id=chatcmpl-f1903dd2b0a028a2543905182a384d44 tenant=fixture lane=interactive model="tool-fixture"
+[admission] request cost: model="tool-fixture" ctx=604 path=plain = 14848 B/token x ctx + 10MB prefill-workspace + 103MB fixed = 122MB
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete
