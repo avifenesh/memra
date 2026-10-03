@@ -306,11 +306,12 @@ fn kill_group(pgid: u32, sig: i32) {
 
 /// A reaped leader does not imply that its owned process group is empty. Keep the
 /// group's identity until remaining members have exited or received SIGKILL.
-fn terminate_owned_group(c: &mut std::process::Child) {
+fn terminate_owned_group(c: &mut std::process::Child, deadline: std::time::Instant) {
     let pgid = c.id();
-    kill_group(pgid, libc::SIGCONT);
-    kill_group(pgid, libc::SIGTERM);
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    if std::time::Instant::now() < deadline {
+        kill_group(pgid, libc::SIGCONT);
+        kill_group(pgid, libc::SIGTERM);
+    }
     loop {
         let child_alive = matches!(c.try_wait(), Ok(None));
         let group_gone = matches!(
@@ -328,8 +329,18 @@ fn terminate_owned_group(c: &mut std::process::Child) {
             let _ = c.wait();
             return;
         }
-        std::thread::sleep(std::time::Duration::from_millis(10));
+        std::thread::sleep(
+            std::time::Duration::from_millis(10)
+                .min(deadline.saturating_duration_since(std::time::Instant::now())),
+        );
     }
+}
+
+fn terminate_owned_group_with_grace(c: &mut std::process::Child) {
+    terminate_owned_group(
+        c,
+        std::time::Instant::now() + std::time::Duration::from_secs(2),
+    );
 }
 
 /// Observe a stop without reaping an exit that Child::try_wait must classify.
@@ -470,7 +481,7 @@ fn runner_loop(
                 // exit first: a finished job must not be signaled.
                 match c.try_wait() {
                     Ok(Some(status)) => {
-                        terminate_owned_group(c);
+                        terminate_owned_group_with_grace(c);
                         handle_exit(status, &st, /*preempting=*/ false);
                         st.job_pid.store(0, Ordering::Release);
                         child = None;
@@ -507,7 +518,7 @@ fn runner_loop(
                                             // An exit racing the signal retains its real status.
                                             match c.try_wait() {
                                                 Ok(Some(status)) => {
-                                                    terminate_owned_group(c);
+                                                    terminate_owned_group_with_grace(c);
                                                     handle_exit(status, &st, false);
                                                     st.job_pid.store(0, Ordering::Release);
                                                     child = None;
@@ -536,7 +547,7 @@ fn runner_loop(
                     }
                     Err(err) => {
                         eprintln!("[darklane] try_wait failed: {err}; treating job as failed");
-                        terminate_owned_group(c);
+                        terminate_owned_group_with_grace(c);
                         st.state.store(BG_FAILED, Ordering::Release);
                         st.job_pid.store(0, Ordering::Release);
                         child = None;
@@ -548,7 +559,7 @@ fn runner_loop(
                 let c = child.as_mut().expect("yielded state implies child");
                 match c.try_wait() {
                     Ok(Some(status)) => {
-                        terminate_owned_group(c);
+                        terminate_owned_group_with_grace(c);
                         handle_exit(status, &st, false);
                         st.job_pid.store(0, Ordering::Release);
                         child = None;
@@ -579,7 +590,7 @@ fn runner_loop(
     // cannot act on TERM), then TERM (checkpoint-class jobs get their handler), brief
     // grace, then KILL the group.
     if let Some(mut c) = child.take() {
-        terminate_owned_group(&mut c);
+        terminate_owned_group_with_grace(&mut c);
         eprintln!("[darklane] owned process group terminated at shutdown");
         st.job_pid.store(0, Ordering::Release);
     }
@@ -642,7 +653,7 @@ fn preempt_wait(c: &mut std::process::Child, st: &BgJobState, grace_ms: u64) {
     loop {
         match c.try_wait() {
             Ok(Some(status)) => {
-                terminate_owned_group(c);
+                terminate_owned_group(c, deadline);
                 handle_exit(status, st, /*preempting=*/ true);
                 return;
             }
@@ -934,7 +945,11 @@ mod tests {
             YieldMode::Stop
         };
         let (sig, v, b) = sigs();
-        let h = spawn_runner(cfg(&cmd, mode), v, b, Arc::new(|| None));
+        let mut config = cfg(&cmd, mode);
+        if action == "checkpoint" {
+            config.ckpt_grace_ms = 100;
+        }
+        let h = spawn_runner(config, v, b, Arc::new(|| None));
         let st = h.state.clone();
         let guard = RunnerGuard(Some(h));
         sig.valley.store(true, Ordering::Release);
