@@ -119,6 +119,17 @@ class Admission(unittest.TestCase):
         self.assertIn('discovered=2', result.stderr)
         self.assertIn('run=1', result.stderr)
 
+    def test_repeating_one_case_cannot_replace_another_selected_case(self):
+        result = self.call('class A(unittest.TestCase):\n def test_one(self): pass\n'
+                           ' def test_two(self): pass\n'
+                           'class Repeat(unittest.TestSuite):\n'
+                           ' def run(self, result, debug=False):\n'
+                           '  self._tests[0].run(result)\n  self._tests[0].run(result)\n  return result\n'
+                           'def load_tests(loader, tests, pattern):\n'
+                           ' return Repeat([A("test_one"), A("test_two")])\n')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('test identities differ', result.stderr)
+
 
 if __name__ == '__main__':
     unittest.main()

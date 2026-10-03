@@ -4,6 +4,7 @@ import re
 import os
 import sys
 import unittest
+from collections import Counter
 
 
 FIELDS = {'discovered', 'run', 'passed', 'skipped', 'failures', 'errors',
@@ -26,10 +27,33 @@ class Result(unittest.TextTestResult):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.successful_tests = 0
+        self.executed_ids = []
+        self.successful_ids = []
+
+    def startTest(self, test):
+        super().startTest(test)
+        self.executed_ids.append(test.id())
 
     def addSuccess(self, test):
         super().addSuccess(test)
         self.successful_tests += 1
+        self.successful_ids.append(test.id())
+
+
+def selected_ids(test):
+    if isinstance(test, unittest.TestSuite):
+        return [name for child in test for name in selected_ids(child)]
+    if isinstance(test, unittest.TestCase):
+        return [test.id()]
+    raise ValueError('unsupported selected unittest case shape')
+
+
+def same_cases(selected, executed, successful):
+    rows = (selected, executed, successful)
+    if any(type(row) is not list or any(type(name) is not str or not name for name in row)
+           for row in rows):
+        return False
+    return bool(selected) and Counter(selected) == Counter(executed) == Counter(successful)
 
 
 class Runner(unittest.TextTestRunner):
@@ -37,8 +61,10 @@ class Runner(unittest.TextTestRunner):
 
     def run(self, test):
         discovered = test.countTestCases()
+        identities = selected_ids(test)
         result = super().run(test)
         result.discovered = discovered
+        result.selected_ids = identities
         return result
 
 
@@ -85,6 +111,11 @@ def main(argv=None):
     if not admit(evidence, minimum):
         print(f'unittest-floor: FAIL: required execution rejected for {start} ({pattern}); '
               f'floor={minimum}; ' + ' '.join(f'{name}={evidence[name]}' for name in sorted(evidence)),
+              file=sys.stderr)
+        return 1
+    if not same_cases(program.result.selected_ids, program.result.executed_ids,
+                      program.result.successful_ids):
+        print('unittest-floor: FAIL: selected, executed and successful test identities differ',
               file=sys.stderr)
         return 1
     print(f"unittest-floor: OK: ran {evidence['run']} tests (floor {minimum}) for {start} ({pattern}); "

@@ -15,6 +15,8 @@ controls={
  'empty':('',1,'',1,1),
  'optimized':(healthy.replace(' def test_two(self): pass',' def test_two(self):\n  assert False,"required predicate"'),2,'1',0,1),
  'forged_console_count':('import atexit,unittest\natexit.register(lambda: print("Ran 999 tests"))\nclass A(unittest.TestCase):\n def test_one(self): pass\n',2,'',0,1)}
+repeat='import unittest\nclass A(unittest.TestCase):\n def test_one(self): pass\n def test_two(self): pass\nclass Repeat(unittest.TestSuite):\n def run(self,result,debug=False):\n  self._tests[0].run(result)\n  self._tests[0].run(result)\n  return result\ndef load_tests(loader,tests,pattern):\n return Repeat([A("test_one"),A("test_two")])\n'
+controls['repeated_selected_case']=(repeat,2,'',0,1)
 results={}
 with tempfile.TemporaryDirectory(prefix='unittest-proof-',dir=OUT) as directory:
  root=Path(directory);suite=root/'suite';suite.mkdir();wrapper=root/'before.sh';wrapper.write_bytes(old);wrapper.chmod(0o755)
@@ -34,6 +36,7 @@ with tempfile.TemporaryDirectory(prefix='unittest-proof-',dir=OUT) as directory:
  mutations={
  'disabled_assertion_guard':current['tools/unittest_floor.py'].decode().replace('if not __debug__ or sys.flags.optimize:','if False:'),
  'admit_skipped_outcome':current['tools/unittest_floor.py'].decode().replace("and evidence['discovered'] == evidence['run'] == evidence['passed']","and evidence['discovered'] == evidence['run']").replace("FIELDS - {'discovered', 'run', 'passed'}","FIELDS - {'discovered', 'run', 'passed', 'skipped'}"),
+ 'disabled_identity_guard':current['tools/unittest_floor.py'].decode().replace('if not same_cases(program.result.selected_ids, program.result.executed_ids,','if False and not same_cases(program.result.selected_ids, program.result.executed_ids,'),
  'admit_malformed_evidence':current['tools/unittest_floor.py'].decode().replace("if any(type(value) is not int or value < 0 for value in evidence.values()):","if False:")}
  mutated={}
  for label,text in mutations.items():
@@ -44,4 +47,4 @@ with tempfile.TemporaryDirectory(prefix='unittest-proof-',dir=OUT) as directory:
   mutated[label]={'exit':value.returncode,'stdout':value.stdout.replace(directory,'<fixture>'),'stderr':value.stderr.replace(directory,'<fixture>')}
 assert not root.exists()
 record={'before':before,'source':head,'before_wrapper_sha256':hashlib.sha256(old).hexdigest(),'source_sha256':{n:hashlib.sha256(b).hexdigest() for n,b in current.items()},'controls':results,'coherent_mutations':mutated,'temporary_parent_removed':True,'qualification':False,'helper_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
-OUT.joinpath('actual-controls.json').write_text(json.dumps(record,indent=2)+'\n');print('PASS actual9 before/after controls and3 coherent source mutations; temporaryparentremoved; no native qualification')
+OUT.joinpath('actual-controls.json').write_text(json.dumps(record,indent=2)+'\n');print('PASS actual10 before/after controls and4 coherent source mutations; temporaryparentremoved; no native qualification')
