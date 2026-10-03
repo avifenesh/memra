@@ -1,0 +1,65 @@
+[
+  {
+    "control": "remove-prestat-type",
+    "exit": 1,
+    "changed_source_sha256": "e4a8bf67b8fc78ef091950296d04db962ddb4d0c10c9ad2e3ebbe025252cd2db",
+    "log_sha256": "4a2ce0c1d6923aec39c20122a69d9a275096fb4a1372bdacf557fe8d71d5f90e",
+    "tests": [
+      "test_validation_local_input_io.LocalInputIO.test_fifo_and_directory_readers_refuse_before_content"
+    ]
+  },
+  {
+    "control": "remove-leaf-nofollow",
+    "exit": 1,
+    "changed_source_sha256": "3d5e5b5bff710d1ea4f95f5e1e46a6d2cbcab88f710f5af06d933f5a18384c05",
+    "log_sha256": "8e5c782570bc630a35878d68aef541bdc7970d0cdddef032f0423ad864979b7d",
+    "tests": [
+      "test_validation_local_input_io.LocalInputIO.test_stat_to_symlink_replacement_refuses_actual_target_content"
+    ]
+  },
+  {
+    "control": "remove-parent-nofollow",
+    "exit": 1,
+    "changed_source_sha256": "e73aa9e64046929475f8fa7d8a875e23cc0ecc62652dbea7c64c481025ab9cfd",
+    "log_sha256": "ab010eb12e62770e685c46ea2862ce7623dcc9a0da441561fc08610697e588a7",
+    "tests": [
+      "test_validation_local_input_io.LocalInputIO.test_leaf_and_parent_links_are_refused_before_reading_target"
+    ]
+  },
+  {
+    "control": "remove-nonblock",
+    "exit": 1,
+    "changed_source_sha256": "12d2bcea89210b237078c359f7717392ac97a63f4c7ffabe47907500229abb64",
+    "log_sha256": "6d0eaf92cb7e40ec4444760636dc9b8c8e5d7a8621484608e2bc9ad20b1885b2",
+    "tests": [
+      "test_validation_local_input_io.LocalInputIO.test_stat_to_fifo_replacement_is_nonblocking_and_refused"
+    ]
+  },
+  {
+    "control": "remove-opened-type",
+    "exit": 1,
+    "changed_source_sha256": "3b1ff3e11c7c5fc231baf0e02a451da60738cafaad370d2439cc579d64c1b87e",
+    "log_sha256": "7cd79c2df6adff71d0f807742ee42db00091ec2a50794a76da514224a988aa6e",
+    "tests": [
+      "test_validation_local_input_io.LocalInputIO.test_stat_to_fifo_replacement_is_nonblocking_and_refused"
+    ]
+  },
+  {
+    "control": "normalize-raw-bytes",
+    "exit": 1,
+    "changed_source_sha256": "34c20c90e9dd5327dbcbe428ba615fde1451687bd270b19e88cd2e701a0ea8a5",
+    "log_sha256": "7009986d594b0567c0677e93e32c2f4998cecbaff55d6550d7ba99075b5aa8c8",
+    "tests": [
+      "test_validation_local_input_io.LocalInputIO.test_regular_text_and_raw_bytes_preserve_original_semantics"
+    ]
+  },
+  {
+    "control": "leak-parent-fd",
+    "exit": 1,
+    "changed_source_sha256": "ea9dc55dc86fa2667c98128c7a2c4e1f4c5e394c2ec33d1b2732dcdfe3fe5865",
+    "log_sha256": "4472937e8c80b1bc2ff795eec84a89eef477efe56fe88dc147d1229a6a11172a",
+    "tests": [
+      "test_validation_local_input_io.LocalInputIO.test_descriptor_cleanup_on_success_and_failure"
+    ]
+  }
+]

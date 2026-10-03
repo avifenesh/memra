@@ -81,3 +81,11 @@ observation. The producer now refuses expected failures, unexpected successes,
 skips, failures, errors and empty results before admitting an edge. Real unittest
 controls and missing/extra/duplicate census controls exercise the same admission
 helpers independently.
+
+The admission repair at `a68082973a` passes all 15 methods, the same 44 edges,
+four original FIFO and six alias observations, seven mutation groups with zero
+fixture errors, 12 CLI cases, two missing/skipped-edge refusals and nine actual
+result/census refusals. The changed producer also refuses optimized startup.
+`ADMISSION-REPAIR.json` binds this new producer tuple. The 194/21/14 broad result
+remains the actual `173c031f61` result; all tracked paths outside research and CI
+are unchanged. It was not relabelled or rerun for a research-producer-only fix.

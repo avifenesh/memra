@@ -1,0 +1,18 @@
+test_descriptor_cleanup_on_success_and_failure (test_validation_local_input_io.LocalInputIO.test_descriptor_cleanup_on_success_and_failure) ... FAIL
+
+======================================================================
+FAIL: test_descriptor_cleanup_on_success_and_failure (test_validation_local_input_io.LocalInputIO.test_descriptor_cleanup_on_success_and_failure)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-local-planning-io-972/tools/test_validation_local_input_io.py", line 98, in test_descriptor_cleanup_on_success_and_failure
+    self.assertEqual(before, set(os.listdir('/proc/self/fd')))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Items in the second set but not the first:
+'4'
+'6'
+'5'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.014s
+
+FAILED (failures=1)

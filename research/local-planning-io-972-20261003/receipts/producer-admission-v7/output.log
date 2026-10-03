@@ -1,0 +1,17 @@
+Running as unit: memra-rig-job-60d9e1c0259c.service; invocation ID: f35c5dfa89fa4b7ea55851d1200ab1ea
+{"test_methods": 15, "admitted_edges": 44, "verdict": {"status": "passed", "edges": 44, "contract_id": "882f922db1022e88be7c3d128f9ea4ae8896f784ec9c736dbb394649d72ce13c", "qualification": false, "scope": "declared behavior assertions only; native receipt admission remains separate"}, "admission_negatives": 2, "mandatory_result_negatives": 9, "native_qualification": false}
+check-workflow-keys: .github/workflows/boundary-refs.yml: jobs refs
+check-workflow-keys: .github/workflows/ci.yml: jobs changes, gates, boundary, build, clippy, server-tests, portable-suites, engine-tests, arch-coverage, publish-dryrun
+check-workflow-keys: .github/workflows/gpu-ci.yml: jobs build, build-feedback-measurement, gpu, qualification-result
+check-workflow-keys: .github/workflows/mtp-context-receipts.yml: jobs reproduce
+check-workflow-keys: .github/workflows/mtp-depth-receipts.yml: jobs reproduce
+check-workflow-keys: .github/workflows/prompt-depth-router.yml: jobs classifier, native-build, native-receipts, upcoming-format, prefix-study
+check-workflow-keys: .github/workflows/prompt-prefix-depth.yml: jobs prefix-policy, native-build, prefix-v2-replay, confidence-replay, confidence-v3-cpu, confidence-v3-replay, joint-v4-history-pilot, joint-v4-native-cpu, joint-v4-native-release, joint-v5-native, joint-v6-draft-only-native, joint-v8-prime-probability-native, joint-v8-sealed-replay
+check-workflow-keys: .github/workflows/publish.yml: jobs publish
+check-workflow-keys: .github/workflows/release.yml: jobs guard, build, release
+check-workflow-keys: OK: 9 workflow files, no duplicate mapping keys (stdlib walker)
+          Finished with result: success
+Main processes terminated with: code=exited, status=0/SUCCESS
+               Service runtime: 4.832s
+             CPU time consumed: 5.231s
+                   Memory peak: 95.1M (swap: 0B)
