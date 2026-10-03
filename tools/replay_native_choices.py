@@ -84,6 +84,7 @@ def verify(root,baseline=None,expected=None):
             check_repeat(cell(root,records[route+'-sampled']),cell(root,records[route+'-sampled-repeat']))
         check_tools(records['constrained-choices']['body'])
         check_tools(cell(root,records['constrained-choices-stream'])['body'])
+        require(all(records[name]['masked_steps']>0 for name in ['constrained-choices','constrained-choices-stream']),'constrained_choices','native grammar mask engagement')
         cancel=records['cancel']
         require(cancel['disconnected'],'cancel','real connection reset required')
         terminal=[e for e in cancel['callbacks'] if e['tag']=='CHOICE_TERMINAL']
@@ -116,5 +117,6 @@ def verify(root,baseline=None,expected=None):
     return {'pass':True,'completed':completed,'scope':'this exact native receipt and declared assertion edges; no support promotion'}
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('root',type=Path);p.add_argument('--baseline',type=Path)
-    args=p.parse_args();print(json.dumps(verify(args.root,args.baseline),indent=2))
+    p=argparse.ArgumentParser();p.add_argument('root',type=Path);p.add_argument('--baseline',type=Path);p.add_argument('--expected',type=Path)
+    args=p.parse_args();expected=json.loads(args.expected.read_text()) if args.expected else None
+    print(json.dumps(verify(args.root,args.baseline,expected),indent=2))

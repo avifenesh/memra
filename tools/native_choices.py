@@ -5,6 +5,7 @@ import hashlib
 import http.client
 import json
 import os
+import re
 from pathlib import Path
 import signal
 import socket
@@ -96,6 +97,7 @@ class Native:
         record['worker_rows']=[e['value'] for e in self.events if e['tag']=='CHOICE_WORKER_ROW' and e['value'].get('group')==identity]
         record['prime_events']=[e['value'] for e in self.events if e['tag']=='CHOICE_PRIME' and e['value'].get('group')==identity]
         record['fork_lines']=[line for line in self.lines if line.startswith('[n-choice-prefill]') and ('group='+str(identity)+' ') in line]
+        record['masked_steps']=sum(map(int,re.findall(r'\[constrained\] .*?: (\d+) masked steps','\n'.join(self.lines[line_start:]))))
         save(folder/'client.json',record);return record
     def stop(self):
         if self.process.poll() is None:
