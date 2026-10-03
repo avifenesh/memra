@@ -207,7 +207,7 @@ impl ConstraintCompiler {
                 };
                 let constraint = factory.matcher(spec);
                 if let Some(err) = constraint.error() {
-                    return Err(format!("response_format: {err}"));
+                    return Err(format!("{}: {err}", spec.parameter()));
                 }
                 Ok(constraint)
             }

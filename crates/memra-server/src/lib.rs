@@ -5174,6 +5174,19 @@ fn validate_parallel_tool_calls(
     Ok(())
 }
 
+fn chat_build_error_response(error: &str) -> Response {
+    let param = if error.starts_with("parallel_tool_calls") {
+        Some("parallel_tool_calls")
+    } else if error.starts_with("tool_choice") || error.starts_with("bad tool_choice") {
+        Some("tool_choice")
+    } else if error.starts_with("response_format") {
+        Some("response_format")
+    } else {
+        None
+    };
+    bad_request(error, param)
+}
+
 /// Map OpenAI `reasoning_effort` / OpenRouter `reasoning` onto the model's native thinking
 /// control — ONE serve surface, per-arch mechanism (owner directive 2026-08-07: every
 /// supported model is a thinking model).
@@ -11029,7 +11042,7 @@ async fn chat_completions_with_admission(
     ) {
         Ok(plan) => plan,
         Err(err) => {
-            return with_request_id(&env.id, bad_request(&err, None));
+            return with_request_id(&env.id, chat_build_error_response(&err));
         }
     };
     plan.request.cache_ns = cache_ns;
@@ -15565,6 +15578,48 @@ mod tests {
             plan.request.stop_strings.is_empty(),
             "grammar EOS owns completion, not substrings inside JSON"
         );
+    }
+
+    #[tokio::test]
+    async fn tool_policy_builder_error_body_names_the_actual_field() {
+        let gemma = ModelCaps {
+            gemma_think: true,
+            qwen_think: false,
+            ..tool_caps()
+        };
+        for (extra, caps, param) in [
+            (
+                json!({"tool_choice":{"type":"function","function":{"name":"missing"}}}),
+                tool_caps(),
+                "tool_choice",
+            ),
+            (
+                json!({"parallel_tool_calls":true}),
+                gemma,
+                "parallel_tool_calls",
+            ),
+            (
+                json!({"tool_choice":"required","response_format":{"type":"json_object"}}),
+                tool_caps(),
+                "response_format",
+            ),
+        ] {
+            let (tx, _rx) = worker::event_channel();
+            let error = build_chat_request(
+                weather_request(extra),
+                Some(&caps),
+                tx,
+                lanes::Lane::Interactive,
+                None,
+            )
+            .err()
+            .unwrap();
+            let response = chat_build_error_response(&error);
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let body = body_value(response).await;
+            assert_eq!(body["error"]["type"], "invalid_request_error");
+            assert_eq!(body["error"]["param"], param);
+        }
     }
 
     #[test]
