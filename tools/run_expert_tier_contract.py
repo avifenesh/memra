@@ -2,6 +2,7 @@
 """Run the expert-tier admission controls with a non-vacuity and zero-skip gate."""
 
 from pathlib import Path
+import json
 import sys
 import unittest
 
@@ -83,6 +84,8 @@ def run(suite, *, stream=sys.stderr):
     print(f'expert-tier contract: PASS: executed={result.testsRun} floor={MINIMUM} '
           f'discovered={len(discovered)} unique={len(set(executed))} '
           'skipped=0 expected_failures=0', file=stream)
+    print('expert-tier contract identities: ' + json.dumps({
+        'discovered': discovered, 'executed': executed}, sort_keys=True), file=stream)
     return 0
 
 
