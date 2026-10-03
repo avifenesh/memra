@@ -656,6 +656,59 @@ class ValidationPlanTests(unittest.TestCase):
                 self.commit()
                 self.assertEqual(self.plan(['research/outer.rs'])['mode'], 'full')
 
+    def test_conditional_module_path_expands_transitive_inputs_without_cfg_guessing(self):
+        for attribute in (
+            '#[cfg_attr(all(), path="../../../research/outer.rs")]',
+            '#[cfg_attr(any(), path="../../../research/outer.rs")]',
+            '#[cfg_attr(feature="variant", path="../../../research/outer.rs")]',
+            '#[cfg_attr(all(), cfg_attr(all(), path="../../../research/outer.rs"))]',
+            '#[cfg_attr(all(), path=concat!("../../../", "research/outer.rs"))]',
+            '#[cfg_attr(all(), r#path="../../../research/outer.rs")]',
+        ):
+            with self.subTest(attribute=attribute):
+                self.put('crates/memra-server/src/lib.rs', attribute + ' mod outer;')
+                self.put('research/outer.rs', 'pub const INPUT: &str = include_str!("inner.md");')
+                self.put('research/inner.md', 'changed')
+                self.commit()
+                plan = self.plan(['research/inner.md'])
+                self.assertEqual(plan['mode'], 'full')
+                self.assertTrue(plan['jobs']['server'])
+                self.assertFalse(plan['native']['qualification'])
+
+    def test_conditional_attribute_comments_strings_and_nonpath_do_not_invent_modules(self):
+        for source in (
+            '// #[cfg_attr(all(), path="../../../other.rs")] mod outer;',
+            'const TEXT: &str = r#"#[cfg_attr(all(), path="../../../other.rs")] mod outer;"#;',
+            '#[cfg_attr(all(), allow(dead_code))] fn harmless() {}',
+        ):
+            with self.subTest(source=source):
+                self.put('crates/memra-server/src/lib.rs', source)
+                self.commit()
+                self.assertEqual(self.plan(['README.md'])['mode'], 'scoped')
+
+    def test_unterminated_conditional_attribute_expands(self):
+        self.put('crates/memra-server/src/lib.rs', '#[cfg_attr(all(), path="outer.rs") mod outer;')
+        self.commit()
+        self.assertEqual(self.plan(['README.md'])['mode'], 'full')
+
+    def test_split_concat_compiled_include_keeps_physical_symlink_traversal(self):
+        self.put('research/actual/nested/directory.md', 'directory')
+        self.put('research/actual/expected.md', 'changed')
+        self.put('research/expected.md', 'different lexical target')
+        (self.repo / 'research/alias').symlink_to('actual/nested')
+        for source in (
+            'const INPUT: &str = include_str!("../../../research/alias/../expected.md");',
+            'const INPUT: &str = include_str!(concat!("../../../", "re", "search/alias/../expected.md"));',
+            'const INPUT: &[u8] = include_bytes!(concat!("../../../", "re", "search/alias/../expected.md"));',
+        ):
+            with self.subTest(source=source):
+                self.put('crates/memra-server/src/lib.rs', source)
+                self.commit()
+                plan = self.plan(['research/actual/expected.md'])
+                self.assertEqual(plan['mode'], 'full')
+                self.assertTrue(plan['jobs']['server'])
+                self.assertFalse(plan['native']['qualification'])
+
     def test_external_source_symlink_expands(self):
         link = self.repo / 'crates/memra-server/src/linked.rs'
         link.symlink_to('/outside/source.rs')
