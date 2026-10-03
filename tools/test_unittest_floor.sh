@@ -41,4 +41,4 @@ for name in "${EXPECTED[@]}"; do
 done
 echo "test_unittest_floor: ${#SEEN[@]} original controls executed, $FAILS FAIL"
 [ "$FAILS" -eq 0 ]
-tools/unittest-floor.sh tools test_unittest_floor.py 15
+tools/unittest-floor.sh tools test_unittest_floor.py 16

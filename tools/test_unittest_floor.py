@@ -130,6 +130,14 @@ class Admission(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn('test identities differ', result.stderr)
 
+    def test_help_prints_text_but_never_admits_zero_execution(self):
+        for option in ('-h', '--help'):
+            result = self.call('raise RuntimeError("help must not import fixture")\n', extra=(option,))
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn('usage:', result.stdout)
+            self.assertIn('without execution evidence', result.stderr)
+            self.assertNotIn('help must not import fixture', result.stderr)
+
 
 if __name__ == '__main__':
     unittest.main()

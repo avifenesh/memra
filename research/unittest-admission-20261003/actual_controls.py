@@ -17,6 +17,9 @@ controls={
  'forged_console_count':('import atexit,unittest\natexit.register(lambda: print("Ran 999 tests"))\nclass A(unittest.TestCase):\n def test_one(self): pass\n',2,'',0,1)}
 repeat='import unittest\nclass A(unittest.TestCase):\n def test_one(self): pass\n def test_two(self): pass\nclass Repeat(unittest.TestSuite):\n def run(self,result,debug=False):\n  self._tests[0].run(result)\n  self._tests[0].run(result)\n  return result\ndef load_tests(loader,tests,pattern):\n return Repeat([A("test_one"),A("test_two")])\n'
 controls['repeated_selected_case']=(repeat,2,'',0,1)
+controls['help_short']=(healthy,2,'',1,1)
+controls['help_long']=(healthy,2,'',1,1)
+extra_args={'help_short':['-h'],'help_long':['--help']}
 results={}
 with tempfile.TemporaryDirectory(prefix='unittest-proof-',dir=OUT) as directory:
  root=Path(directory);suite=root/'suite';suite.mkdir();wrapper=root/'before.sh';wrapper.write_bytes(old);wrapper.chmod(0o755)
@@ -25,7 +28,7 @@ with tempfile.TemporaryDirectory(prefix='unittest-proof-',dir=OUT) as directory:
   source=source.replace('\\n','\n');(suite/'test_fixture.py').write_text(source)
   env=dict(os.environ,PYTHONDONTWRITEBYTECODE='1',PYTHONOPTIMIZE=optimize,TMPDIR=directory)
   rows={}
-  for name,command,expected in [('before',[str(wrapper),str(suite),'test_*.py',str(minimum)],old_rc),('after',[str(ROOT/'tools/unittest-floor.sh'),str(suite),'test_*.py',str(minimum)],new_rc)]:
+  for name,command,expected in [('before',[str(wrapper),str(suite),'test_*.py',str(minimum),*extra_args.get(label,[])],old_rc),('after',[str(ROOT/'tools/unittest-floor.sh'),str(suite),'test_*.py',str(minimum),*extra_args.get(label,[])],new_rc)]:
    value=subprocess.run(command,env=env,capture_output=True,text=True,timeout=15)
    rows[name]={'exit':value.returncode,'stdout':value.stdout.replace(directory,'<fixture>').replace(str(ROOT),'<repository>'),'stderr':value.stderr.replace(directory,'<fixture>').replace(str(ROOT),'<repository>')}
    assert value.returncode==expected,(label,name,expected,rows[name])
@@ -36,6 +39,7 @@ with tempfile.TemporaryDirectory(prefix='unittest-proof-',dir=OUT) as directory:
  mutations={
  'disabled_assertion_guard':current['tools/unittest_floor.py'].decode().replace('if not __debug__ or sys.flags.optimize:','if False:'),
  'admit_skipped_outcome':current['tools/unittest_floor.py'].decode().replace("and evidence['discovered'] == evidence['run'] == evidence['passed']","and evidence['discovered'] == evidence['run']").replace("FIELDS - {'discovered', 'run', 'passed'}","FIELDS - {'discovered', 'run', 'passed', 'skipped'}"),
+ 'admit_help_without_execution':current['tools/unittest_floor.py'].decode().replace("print('unittest-floor: FAIL: discovery exited without execution evidence', file=sys.stderr)\n            return 1", "print('unittest-floor: FAIL: discovery exited without execution evidence', file=sys.stderr)\n            return 0"),
  'disabled_identity_guard':current['tools/unittest_floor.py'].decode().replace('if not same_cases(program.result.selected_ids, program.result.executed_ids,','if False and not same_cases(program.result.selected_ids, program.result.executed_ids,'),
  'admit_boolean_evidence':current['tools/unittest_floor.py'].decode().replace("type(value) is not int", "type(value) not in (int, bool)")}
  mutated={}
@@ -47,4 +51,4 @@ with tempfile.TemporaryDirectory(prefix='unittest-proof-',dir=OUT) as directory:
   mutated[label]={'exit':value.returncode,'stdout':value.stdout.replace(directory,'<fixture>'),'stderr':value.stderr.replace(directory,'<fixture>')}
 assert not root.exists()
 record={'before':before,'source':head,'before_wrapper_sha256':hashlib.sha256(old).hexdigest(),'source_sha256':{n:hashlib.sha256(b).hexdigest() for n,b in current.items()},'controls':results,'coherent_mutations':mutated,'temporary_parent_removed':True,'qualification':False,'helper_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
-OUT.joinpath('actual-controls.json').write_text(json.dumps(record,indent=2)+'\n');print('PASS actual10 before/after controls and4 coherent source mutations; temporaryparentremoved; no native qualification')
+OUT.joinpath('actual-controls.json').write_text(json.dumps(record,indent=2)+'\n');print('PASS actual12 before/after controls and5 coherent source mutations; temporaryparentremoved; no native qualification')

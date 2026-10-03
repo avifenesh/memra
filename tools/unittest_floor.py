@@ -100,9 +100,16 @@ def main(argv=None):
         return 1
     # Preserve the import root of the original `python3 -m unittest` invocation.
     sys.path.insert(0, os.getcwd())
-    program = unittest.main(module=None, argv=['unittest-floor', 'discover', '-s', start,
-                                             '-p', pattern, *extra],
-                            testRunner=Runner, exit=False)
+    try:
+        program = unittest.main(module=None, argv=['unittest-floor', 'discover', '-s', start,
+                                                 '-p', pattern, *extra],
+                                testRunner=Runner, exit=False)
+    except SystemExit as error:
+        # Argparse help exits 0 without discovering or running the selected suite.
+        if error.code in (0, None):
+            print('unittest-floor: FAIL: discovery exited without execution evidence', file=sys.stderr)
+            return 1
+        return error.code if type(error.code) is int else 1
     try:
         evidence = execution_evidence(program.result)
     except (AttributeError, TypeError, ValueError) as error:
