@@ -41621,7 +41621,8 @@ fn calibration_transient_floor(
 }
 
 /// Required readiness warmup, independent of admission calibration doors.
-/// Every loaded model runs the existing native generate API on a private cache.
+/// Every loaded model uses planned stage-owned cache allocation and existing
+/// route-aware prime/decode entry points.
 /// Two outputs execute real decode calls after the prompt prime; a stream fence
 /// completes them before readiness. No customer sampler or reusable state is used.
 /// Graph engagement is a separate served-route property, not implied by this API.
@@ -41648,25 +41649,46 @@ fn run_required_boot_warmup(
             "[boot-warmup] start: model={name:?} prompt_tokens={}",
             prompt.len()
         );
-        // A private deterministic warmup cache, with two outputs so a real decode
-        // follows the prompt prime. It does not consume a customer's sampler or
-        // publish reusable request state. The existing native program is unchanged.
-        let output = model
-            .model
-            .generate(engine, &prompt, 2)
-            .map_err(|error| format!("required warmup {name:?}: {error}"))?;
-        engine
-            .stream()
-            .synchronize()
-            .map_err(|error| format!("required warmup {name:?} fence: {error}"))?;
-        if output.len() != 2 {
-            return Err(format!("required warmup {name:?}: decode did not complete"));
+        // Use the same placement-aware cache and eager dispatch as serving.
+        // The legacy generate/DC convenience loop rejects HC and sharded PP.
+        let mut cache = memra_engine::pp::new_cache_planned(
+            engine,
+            &model.model.cfg,
+            &model.model.plan,
+            prompt.len() + 2 + 8,
+        )
+        .map_err(|error| format!("required warmup {name:?} cache: {error}"))?;
+        let decode_result = (|| -> Result<usize, Box<dyn std::error::Error>> {
+            let (mut logits, _hidden, _state) =
+                model.model.prime_cache(engine, &prompt, &mut cache, 0)?;
+            for _ in 0..2 {
+                if logits.is_empty() {
+                    return Err("warmup route returned empty logits".into());
+                }
+                let token = memra_engine::forward::argmax(&logits) as u32;
+                logits = model.model.decode_step(engine, token, &mut cache)?;
+            }
+            Ok(2)
+        })();
+        // Fence every placement owner before the private cache drops, including
+        // an error from prime or decode. A failed fence cannot mark ready.
+        let mut fence_error = None;
+        for owner in model_device_engines(engine, loaded) {
+            if let Err(error) = owner.stream().synchronize() {
+                fence_error
+                    .get_or_insert_with(|| format!("required warmup {name:?} fence: {error}"));
+            }
         }
+        if let Some(error) = fence_error {
+            return Err(error);
+        }
+        let generated =
+            decode_result.map_err(|error| format!("required warmup {name:?}: {error}"))?;
         eprintln!(
             "[boot-warmup] complete: model={name:?} prompt_tokens={} generated_tokens={} \
-             private_cache=true warmup_api=generate",
+             private_cache=true warmup_api=planned_prime_eager_decode",
             prompt.len(),
-            output.len()
+            generated
         );
     }
     Ok(())
@@ -49504,12 +49526,38 @@ mod tests {
         let helper = &helper[..helper.find("\n}\n").expect("helper end")];
         assert!(helper.contains("for (name, model) in loaded"));
         assert!(helper.contains("health.mark_warming();"));
-        assert!(helper.contains(".generate(engine, &prompt, 2)"));
+        assert!(helper.contains("memra_engine::pp::new_cache_planned("));
+        assert!(helper.contains("model.model.prime_cache(engine, &prompt, &mut cache, 0)"));
+        assert!(helper.contains("model.model.decode_step(engine, token, &mut cache)"));
+        assert!(helper.contains("for _ in 0..2"));
+        assert!(helper.contains("for owner in model_device_engines(engine, loaded)"));
+        assert!(!helper.contains(".generate("));
+        assert!(!helper.contains("decode_step_dc"));
         assert!(helper.contains(".synchronize()"));
         assert!(!helper.contains("admit_calibrate_on"));
         assert!(!helper.contains("serve_spec_enabled"));
         assert!(!helper.contains("admit_reserve_override"));
         assert!(run[warmup..ready].contains("ready_tx.send(Err(error))"));
+    }
+
+    #[test]
+    fn required_warmup_keeps_hyper_and_pipeline_dispatch_contracts() {
+        let decode = include_str!("../../memra-engine/src/decode.rs");
+        let eager = &decode[decode.find("    pub fn decode_step(").unwrap()..];
+        let eager = &eager[..eager.find("    /// Dense-FFN").unwrap()];
+        assert!(eager.contains("self.decode_step_h(e, token, cache)?.0"));
+        let routed = &decode[decode.find("    pub fn decode_step_h(").unwrap()..];
+        let routed = &routed[..routed.find("        let cfg = &self.cfg;").unwrap()];
+        assert!(routed.contains("return self.decode_step_hyper(e, token, cache)"));
+        assert!(routed.contains(
+            "self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::Pipeline)"
+        ));
+        assert!(routed.contains("self.decode_step_h_ppn(e, token, cache, &fence)"));
+        assert!(!routed.contains("refuse_hyper"));
+        let placement = include_str!("../../memra-engine/src/pp.rs");
+        let planned = &placement[placement.find("pub fn new_cache_planned(").unwrap()..];
+        assert!(planned.contains("new_cache_inner(e, cfg, Some(plan), max_ctx)"));
+        assert!(planned.contains("plan: Option<&memra_gguf::model_plan::ModelPlan>"));
     }
 
     #[test]
