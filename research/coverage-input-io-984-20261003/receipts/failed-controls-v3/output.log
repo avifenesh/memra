@@ -1,0 +1,11 @@
+Running as unit: memra-rig-job-edfa7eeddfe0.service
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-coverage-input-io-984/research/coverage-input-io-984-20261003/tools/controls.py", line 102, in <module>
+    assert run.returncode == 1 and b'FAIL:' in raw and b'ERROR:' not in raw, (name, raw.decode())
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ('normalize-bytes', 'test_regular_bytes_text_and_context_preserve_semantics (test_validation_coverage_input_io.CoverageInputIO.test_regular_bytes_text_and_context_preserve_semantics) ... ERROR\n\n======================================================================\nERROR: test_regular_bytes_text_and_context_preserve_semantics (test_validation_coverage_input_io.CoverageInputIO.test_regular_bytes_text_and_context_preserve_semantics)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File "/home/avifenesh/projects/wt-memra-coverage-input-io-984/tools/test_validation_coverage_input_io.py", line 31, in setUp\n    self.results = {\'owned\': {\'contract_id\': self.plan[\'contract_id\'], \'status\': \'passed\',\n                                             ~~~~~~~~~^^^^^^^^^^^^^^^\nKeyError: \'contract_id\'\n\n----------------------------------------------------------------------\nRan 1 test in 0.001s\n\nFAILED (errors=1)\n')
+          Finished with result: exit-code
+Main processes terminated with: code=exited, status=1/FAILURE
+               Service runtime: 662ms
+             CPU time consumed: 969ms
+                   Memory peak: 87.5M (swap: 0B)

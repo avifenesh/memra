@@ -728,3 +728,5 @@ support-source-doc-copy-inputs-20261003 | 97 exact source/docs omissions repaire
 | support-execution-type-967-20261003 | "CPU input admission refuses special files and symlinks before reads; 11 methods, 9 coherent reds and 20 source-bound edges pass. No native qualification." | [LANE.md](support-execution-type-967-20261003/LANE.md) |
 
 | local-planning-io-972-20261003 | CPU local read refusal, four real consumers, alias/race controls and source-bound coverage. No native qualification. | [LANE.md](local-planning-io-972-20261003/LANE.md) |
+
+| coverage-input-io-984-20261003 | Four coverage reader paths use anchored regular opened inputs. Contained aliases and external CLI documents preserved. CPU evidence only. | [LANE.md](coverage-input-io-984-20261003/LANE.md) |
