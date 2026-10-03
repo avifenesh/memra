@@ -72,3 +72,12 @@ and applies source-text mutations, so it is not an always-on CI gate for future
 intentional planner changes. CI keeps all 15 behavioral methods through the
 194-test framework floor. Revuto identified the added permanent proof step as too
 strict; that unmerged step was removed without changing existing gate commands.
+
+Root exercised the exact mandatory result block at `096509c73a` with a failing
+expectedFailure method. Unittest reported success and the producer falsely emitted
+a passing edge. The partial exact-block observation is retained separately under
+`receipts/false-admission-0965/`; later subprocess groups were not run in that
+observation. The producer now refuses expected failures, unexpected successes,
+skips, failures, errors and empty results before admitting an edge. Real unittest
+controls and missing/extra/duplicate census controls exercise the same admission
+helpers independently.

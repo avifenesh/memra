@@ -1,0 +1,23 @@
+{
+  "producer_sha256": "a5792f866f00018740cab371e2621d7ebb965a3086d7286f60af20d1025d9d19",
+  "scope": "Actual production discovery/assertion/result block, one selected method, later subprocess groups not executed",
+  "planted_expected_failure": true,
+  "admitted_result": {
+    "status": "passed",
+    "context": {
+      "lane": "local-planning-io-972",
+      "program": "CPU planning input reads",
+      "source": "096509c73aea60fea8453c4232e04dd49beade2f"
+    },
+    "executed": 1,
+    "skipped": 0,
+    "edges": {
+      "input/test_descriptor_cleanup_on_success_and_failure": "passed"
+    }
+  },
+  "raw_test_output": "test_descriptor_cleanup_on_success_and_failure (test_validation_local_input_io.LocalInputIO.test_descriptor_cleanup_on_success_and_failure) ... expected failure\n\n----------------------------------------------------------------------\nRan 1 test in 0.015s\n\nOK (expected failures=1)\n",
+  "previous_reported_head": "41131718cc",
+  "actual_execution_context_head": "096509c73aea60fea8453c4232e04dd49beade2f",
+  "producer_matches_actual_context_head": true,
+  "finding": "ExpectedFailure admitted as a passed edge by exact actual production block; source hash verified against actual execution-context commit"
+}

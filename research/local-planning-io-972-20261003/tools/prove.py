@@ -35,7 +35,55 @@ names = [
     'test_tracked_census_reader_fifo_refuses_raw_byte_adapter',
     'test_unrelated_cargo_manifest_fifo_refuses_command_planning',
 ]
-assert unittest.defaultTestLoader.getTestCaseNames(suite.LocalInputIO) == names
+def require_census(actual):
+    if actual != names:
+        raise AssertionError('mandatory method census differs')
+
+
+def require_real_pass(result, name):
+    if (not result.wasSuccessful() or result.testsRun != 1 or result.skipped
+            or result.expectedFailures or result.unexpectedSuccesses):
+        raise AssertionError('mandatory method did not actually pass: ' + name)
+
+
+require_census(unittest.defaultTestLoader.getTestCaseNames(suite.LocalInputIO))
+
+# Exercise the exact admission helpers with real unittest outcomes. Expected
+# failures are successful to unittest, but cannot establish a passing edge here.
+class ResultControls(unittest.TestCase):
+    @unittest.expectedFailure
+    def test_expected_failure(self): self.fail('intentional expected failure')
+
+    @unittest.expectedFailure
+    def test_unexpected_success(self): pass
+
+    @unittest.skip('intentional mandatory skip')
+    def test_skipped(self): pass
+
+    def test_failed(self): self.fail('intentional assertion failure')
+
+    def test_error(self): raise RuntimeError('intentional fixture error')
+
+
+mandatory_negatives = []
+for name in unittest.defaultTestLoader.getTestCaseNames(ResultControls) + ['empty-result']:
+    control = unittest.TestSuite([] if name == 'empty-result' else [ResultControls(name)])
+    buffer = io.StringIO()
+    result = unittest.TextTestRunner(stream=buffer, verbosity=2).run(control)
+    (out / (name + '.log')).write_text(buffer.getvalue())
+    try: require_real_pass(result, name)
+    except AssertionError as error:
+        mandatory_negatives.append({'control': name, 'refused': str(error), 'executed': result.testsRun,
+                                    'skipped': len(result.skipped), 'expected_failures': len(result.expectedFailures),
+                                    'unexpected_successes': len(result.unexpectedSuccesses),
+                                    'failures': len(result.failures), 'errors': len(result.errors)})
+    else: raise AssertionError('false mandatory pass admitted: ' + name)
+for name, census in [('missing-method', names[1:]), ('extra-method', names + ['test_extra']),
+                     ('duplicate-method', names + [names[0]])]:
+    try: require_census(census)
+    except AssertionError as error: mandatory_negatives.append({'control': name, 'refused': str(error)})
+    else: raise AssertionError('false mandatory census admitted: ' + name)
+(out / 'mandatory-result-negative.json').write_text(json.dumps(mandatory_negatives, indent=2) + '\n')
 inputs = ['tools/validation_plan.py', 'tools/support_record_inputs.py',
           'tools/validation_inputs.json', 'tools/test_validation_local_input_io.py',
           'tools/test_validation_plan.py', 'tools/validation_coverage.py', 'tools/skip-census.py']
@@ -48,7 +96,7 @@ for name in names:
     buffer = io.StringIO()
     result = unittest.TextTestRunner(stream=buffer, verbosity=2).run(unittest.TestSuite([suite.LocalInputIO(name)]))
     (out / (name + '.log')).write_text(buffer.getvalue())
-    assert result.wasSuccessful() and result.testsRun == 1 and not result.skipped, name
+    require_real_pass(result, name)
     edge = 'input/' + name
     edges.append(edge)
     tests.append({'id': name, 'cost': 1, 'covers': [edge], 'inputs': pins, 'scope': context, 'mandatory': True})
@@ -106,4 +154,5 @@ for name, value in [('source-pins.json', pins), ('coverage-plan.json', plan),
                     ('coverage-negative.json', negatives)]:
     (out / name).write_text(json.dumps(value, indent=2) + '\n')
 print(json.dumps({'test_methods': len(names), 'admitted_edges': len(edges), 'verdict': verdict,
-                  'admission_negatives': len(negatives), 'native_qualification': False}))
+                  'admission_negatives': len(negatives), 'mandatory_result_negatives': len(mandatory_negatives),
+                  'native_qualification': False}))
