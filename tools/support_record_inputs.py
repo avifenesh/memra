@@ -148,7 +148,6 @@ def source_docs(tree):
     expected = set(READERS) | {RECORDS}
     if not (expected & set(tree.paths('tools', 'docs'))):
         return {'active': False, 'inputs': []}
-    resolve(tree)
     roots = set(COPY_ROOTS) | ROOT_DOCS | {CLI_SOURCE}
     ancestors = {str(parent) for name in roots for parent in PurePosixPath(name).parents
                  if str(parent) != '.'}
@@ -156,9 +155,16 @@ def source_docs(tree):
     directories = set(COPY_ROOTS) | ancestors
     bad = [name for name, mode in exact.items()
            if (mode != '040000' if name in directories else mode not in ('100644', '100755'))]
+    if bad:
+        raise InputContractError('ambiguous support fixture copy input type: ' + sorted(set(bad))[0])
     copied = tree.input_modes(*COPY_ROOTS)
     bad.extend(name for name, mode in copied.items() if mode not in ('100644', '100755'))
     if bad:
         raise InputContractError('ambiguous support fixture copy input type: ' + sorted(set(bad))[0])
+    ignored = [name for name in tree.ignored_paths(*COPY_ROOTS, *sorted(ROOT_DOCS), CLI_SOURCE)
+               if reads_source_doc(name)]
+    if ignored:
+        raise InputContractError('ignored support content input prevents scoped planning: ' + sorted(ignored)[0])
+    resolve(tree)
     paths = set(tree.paths(*COPY_ROOTS)) | ROOT_DOCS | {CLI_SOURCE, PACK_ROOT + '/mod.rs'}
     return {'active': True, 'inputs': sorted(name for name in paths if reads_source_doc(name))}

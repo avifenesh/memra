@@ -1,9 +1,11 @@
 """Content and fixture-copy type closure of the pinned CPU census readers."""
 
 import importlib.util
+import os
 from pathlib import Path
 import shutil
 import unittest
+from unittest import mock
 
 import support_record_inputs as data
 import validation_plan as vp
@@ -110,6 +112,23 @@ class SupportSourceInputs(unittest.TestCase):
                 self.assertEqual(vp.local_plan(self.repo, self.base)['mode'], 'full')
                 link.unlink()
                 self.fixture.fixture.commit()
+        self.fixture.fixture.put('.gitignore', 'docs/archive/ignored.md\ndocs/ignored.md\n')
+        self.fixture.fixture.commit()
+        ignored = self.repo / 'docs/archive/ignored.md'
+        ignored.parent.mkdir(parents=True, exist_ok=True)
+        ignored.symlink_to('absent-owned-target')
+        tree = vp.LocalTree(self.repo)
+        self.assertEqual(tree.input_modes('docs')[str(ignored.relative_to(self.repo))], '120000')
+        with self.assertRaisesRegex(data.InputContractError, 'ambiguous support fixture copy input type'):
+            data.source_docs(tree)
+        ignored.unlink()
+        ignored.write_text('excluded readable content\n')
+        self.assertTrue(data.source_docs(tree)['active'])
+        (self.repo / 'docs/ignored.md').write_text('actual ignored reader content\n')
+        with self.assertRaisesRegex(data.InputContractError, 'ignored support content input'):
+            data.source_docs(tree)
+        (self.repo / 'docs/ignored.md').unlink()
+        ignored.unlink()
         shutil.rmtree(self.repo / 'docs')
         (self.repo / 'docs').symlink_to('absent-owned-docs', target_is_directory=True)
         self.fixture.fixture.commit()
@@ -134,6 +153,18 @@ class SupportSourceInputs(unittest.TestCase):
         self.fixture.fixture.put(data.PACK_ROOT, 'wrong copy-root type\n')
         self.fixture.fixture.commit()
         self.assertEqual(self.plan(data.PACK_ROOT)['mode'], 'full')
+        (self.repo / data.PACK_ROOT).unlink()
+        self.fixture.fixture.commit()
+        record = self.repo / data.RECORDS
+        canonical = record.read_bytes()
+        record.unlink()
+        os.mkfifo(record)
+        tree = vp.LocalTree(self.repo)
+        with mock.patch.object(tree, 'read', side_effect=AssertionError('type preflight must precede content I/O')):
+            with self.assertRaisesRegex(data.InputContractError, 'ambiguous support fixture copy input type'):
+                data.source_docs(tree)
+        record.unlink()
+        record.write_bytes(canonical)
 
     def test_unknown_reader_and_noncanonical_source_paths_expand(self):
         for path in ('docs/a/../new.md', data.PACK_ROOT + '/../mod.rs', 'docs/with\nnewline.md'):
