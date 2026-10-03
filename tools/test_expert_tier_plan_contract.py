@@ -220,13 +220,21 @@ class ExpertTierContractTests(unittest.TestCase):
             def runTest(self):
                 raise AssertionError('unrelated control must not execute')
         cases = lambda: [type(self)(name) for name in methods]
-        for label, suite in (
+        probes = [
                 ('empty', unittest.TestSuite()),
-                ('missing', unittest.TestSuite(cases()[:-1])),
                 ('replaced', unittest.TestSuite(cases()[:-1] + [Unrelated()])),
                 ('duplicate', unittest.TestSuite(cases()[:-1] + [type(self)(methods[0])])),
-                ('unrelated', unittest.TestSuite(Unrelated() for _ in range(14)))):
-            with self.subTest(label=label):
+                ('extra-duplicate', unittest.TestSuite(cases() + [type(self)(methods[0])])),
+                ('unrelated', unittest.TestSuite(Unrelated() for _ in range(14)))
+        ]
+        probes.extend(('missing-' + missing, unittest.TestSuite(type(self)(name)
+                      for name in methods if name != missing)) for missing in methods)
+        for label, suite in probes:
+            with self.subTest(label=label), ExitStack() as stack:
+                # Keep a removed preflight guard from recursively invoking this
+                # protocol test. Any execution still fails the no-Ran assertion.
+                for name in methods:
+                    stack.enter_context(mock.patch.object(type(self), name, lambda case: None))
                 output = io.StringIO()
                 self.assertEqual(runner.run(suite, stream=output), 1)
                 self.assertIn('FAIL: discovery:', output.getvalue())
@@ -246,7 +254,9 @@ class ExpertTierContractTests(unittest.TestCase):
                     first = self._tests[0]
                     first(result)
                     first(result)
-                    for case in self._tests[1:]:
+                    # Replace the second execution with a duplicate of the first:
+                    # the count is still fourteen, so identity coverage is needed.
+                    for case in self._tests[2:]:
                         case(result)
                     return result
             output = io.StringIO()
