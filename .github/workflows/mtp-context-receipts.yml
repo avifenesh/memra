@@ -3,6 +3,8 @@ name: Contextual MTP receipts
 on:
   pull_request:
     paths:
+      - tools/unittest-floor.sh
+      - tools/unittest_floor.py
       - research/mtp-context-depth-20260921/**
       - .github/workflows/mtp-context-receipts.yml
   workflow_dispatch:
