@@ -134,6 +134,57 @@ struct Row {
     partial_finalized: bool,
 }
 
+/// Receipt failures belong to the HTTP accounting contract, not the model executor.
+#[derive(Debug)]
+pub(crate) enum RowFailure {
+    Engine(EngineError),
+    Ledger(String),
+}
+
+impl RowFailure {
+    fn engine(message: impl Into<String>) -> Self {
+        Self::Engine(EngineError::engine(message))
+    }
+
+    fn ledger(message: String) -> Self {
+        Self::Ledger(message)
+    }
+
+    fn code(&self) -> &'static str {
+        match self {
+            Self::Engine(error) => crate::engine_error_code(error.class),
+            Self::Ledger(_) => "request_ledger_unavailable",
+        }
+    }
+
+    fn status(&self) -> u16 {
+        match self {
+            Self::Engine(error) => crate::class_http(error.class).0.as_u16(),
+            Self::Ledger(_) => 500,
+        }
+    }
+
+    fn response(&self, request_id: &str) -> axum::response::Response {
+        match self {
+            Self::Engine(error) => crate::engine_error_response(error),
+            Self::Ledger(message) => {
+                eprintln!("[ledger] ERROR: request {request_id} partial receipt failed: {message}");
+                crate::request_ledger_error_response()
+            }
+        }
+    }
+
+    fn body(&self, request_id: &str) -> Value {
+        match self {
+            Self::Engine(error) => crate::engine_error_body(error),
+            Self::Ledger(message) => {
+                eprintln!("[ledger] ERROR: request {request_id} partial receipt failed: {message}");
+                crate::request_ledger_error_body()
+            }
+        }
+    }
+}
+
 pub(crate) struct Rows {
     rows: Vec<Row>,
     chat: bool,
@@ -177,13 +228,13 @@ impl Rows {
         index: usize,
         event: Event,
         receipt: &mut Option<Box<dyn Receipt>>,
-    ) -> Result<Vec<Value>, EngineError> {
+    ) -> Result<Vec<Value>, RowFailure> {
         let row = self
             .rows
             .get_mut(index)
-            .ok_or_else(|| EngineError::engine("choice index is out of range"))?;
+            .ok_or_else(|| RowFailure::engine("choice index is out of range"))?;
         if row.finish.is_some() || row.partial_finalized {
-            return Err(EngineError::engine(
+            return Err(RowFailure::engine(
                 "choice produced an event after its terminal result",
             ));
         }
@@ -192,30 +243,30 @@ impl Rows {
         match event {
             Event::PromptUsage { n_prompt, n_cached } => {
                 if n_cached > n_prompt {
-                    return Err(EngineError::engine("invalid choice cached-token count"));
+                    return Err(RowFailure::engine("invalid choice cached-token count"));
                 }
                 row.prompt = Some((n_prompt, n_cached));
                 if index == 0
                     && let Some(r) = receipt.as_mut()
                 {
                     r.record_prompt_usage(n_prompt as u64, n_cached as u64)
-                        .map_err(EngineError::engine)?;
+                        .map_err(RowFailure::ledger)?;
                 }
             }
             Event::Token { id, text } => {
                 if row.snapshot {
-                    return Err(EngineError::engine(
+                    return Err(RowFailure::engine(
                         "choice emitted a token after its token snapshot",
                     ));
                 }
                 if row.prompt.is_none() {
-                    return Err(EngineError::engine(
+                    return Err(RowFailure::engine(
                         "choice emitted a token before prompt accounting",
                     ));
                 }
                 row.tokens.push(id);
                 if let Some(r) = receipt.as_mut() {
-                    r.record_completion_token().map_err(EngineError::engine)?;
+                    r.record_completion_token().map_err(RowFailure::ledger)?;
                     if r.wants_capture() {
                         r.capture_completion_delta(&format!(
                             "{}\n",
@@ -230,7 +281,7 @@ impl Rows {
             }
             Event::TokenSnapshot(tokens) => {
                 if row.snapshot || tokens != row.tokens {
-                    return Err(EngineError::engine(
+                    return Err(RowFailure::engine(
                         "choice token snapshot differs from emitted token events",
                     ));
                 }
@@ -249,7 +300,7 @@ impl Rows {
                     || row.prompt != Some((n_prompt, n_cached))
                     || spec.is_some()
                 {
-                    return Err(EngineError::engine(
+                    return Err(RowFailure::engine(
                         "choice terminal usage differs from observed events",
                     ));
                 }
@@ -260,14 +311,14 @@ impl Rows {
                 row.elapsed = elapsed_s;
                 finish = Some(crate::stop_reason_to_finish(&stop_reason));
             }
-            Event::Error(error) => return Err(error),
+            Event::Error(error) => return Err(RowFailure::Engine(error)),
             Event::DeadlineExceeded { ms } => {
-                return Err(EngineError::engine(format!(
+                return Err(RowFailure::engine(format!(
                     "choice first-token deadline exceeded after {ms} ms"
                 )));
             }
             Event::PromptCapture { .. } => {
-                return Err(EngineError::engine(
+                return Err(RowFailure::engine(
                     "unexpected capture event on n-choice generation",
                 ));
             }
@@ -659,8 +710,8 @@ pub(crate) async fn respond(
                 Err(error) => {
                     return crate::ledger_rejected(
                         receipt,
-                        reading.attach(crate::engine_error_response(&error)),
-                        crate::engine_error_code(error.class),
+                        reading.attach(error.response(&env.id)),
+                        error.code(),
                         &env.id,
                     );
                 }
@@ -687,8 +738,8 @@ pub(crate) async fn respond(
                 if let Err(error) = rows.consume(index, event, &mut receipt) {
                     return crate::ledger_rejected(
                         receipt,
-                        reading.attach(crate::engine_error_response(&error)),
-                        crate::engine_error_code(error.class),
+                        reading.attach(error.response(&env.id)),
+                        error.code(),
                         &env.id,
                     );
                 }
@@ -790,8 +841,8 @@ fn stream_reply(
                 }
 
                 Err(error) => {
-                    if let Some(r) = receipt.as_mut() { let _ = r.reject(crate::class_http(error.class).0.as_u16(), crate::engine_error_code(error.class)); }
-                    yield Ok(SseEvent::default().data(crate::engine_error_body(&error).to_string()));
+                    if let Some(r) = receipt.as_mut() { let _ = r.reject(error.status(), error.code()); }
+                    yield Ok(SseEvent::default().data(error.body(&env.id).to_string()));
                     return;
                 }
             }
