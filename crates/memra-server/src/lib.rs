@@ -25728,6 +25728,109 @@ temperature = 0.6
         unsafe { std::env::remove_var(responses_api::BACKGROUND_RESPONSES_ENV) };
     }
 
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // global drain/admission guards isolate the real HTTP fixture counters
+    async fn choice_http_shared_pool_isolation_and_pressure_controls() {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let _drain = drain_lock();
+        let _counters = admission_counters_guard();
+        for case in 0..3 {
+            let mut st = choice_http_state();
+            let cap = lane_cap(lanes::Lane::Interactive);
+            assert!(cap >= 3);
+            let tenant = auth::TenantCtx::default_tenant();
+            let mut held = Vec::new();
+            let mut key_file = None;
+            let mut key = None;
+            if case == 0 {
+                let name = "t528-dedicated-isolation";
+                let _route = route_telemetry::register(name, cap);
+                st.models = Arc::new(vec!["m".into(), name.into()]);
+                for _ in 0..cap {
+                    held.push(
+                        acquire_request_slot(
+                            &st,
+                            lanes::Lane::Interactive,
+                            Some(name),
+                            &tenant,
+                            &Envelope::new(false),
+                        )
+                        .unwrap()
+                        .0,
+                    );
+                }
+            } else if case == 1 {
+                for _ in 0..cap {
+                    held.push(
+                        acquire_request_slot(
+                            &st,
+                            lanes::Lane::Interactive,
+                            Some("m"),
+                            &tenant,
+                            &Envelope::new(false),
+                        )
+                        .unwrap()
+                        .0,
+                    );
+                }
+            } else {
+                let path = std::env::temp_dir().join(format!(
+                    "memra-choice-tenant-{}.toml",
+                    Envelope::new(false).id
+                ));
+                let mut file = std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .mode(0o600)
+                    .open(&path)
+                    .unwrap();
+                write!(
+                    file,
+                    "[[keys]]\nsha256 = \"{}\"\ntenant = \"choice_capped\"\nrate_limit = 1\n",
+                    auth::sha256_hex("choice-cap-key")
+                )
+                .unwrap();
+                st.api_auth = ApiAuth {
+                    keyring: Some(Box::leak(Box::new(
+                        auth::KeyStore::from_spec(path.to_str().unwrap()).unwrap(),
+                    ))),
+                    ..ApiAuth::default()
+                };
+                key_file = Some(path);
+                key = Some("choice-cap-key");
+            }
+            let response = bg914_http(bg914_router(st.clone()), "POST", "/v1/completions", key,
+                json!({"model":"m","prompt":"fixture","n":3,"seed":500,"max_tokens":2,"timeout_ms":1000})).await;
+            if case == 1 {
+                assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+                assert_eq!(body_value(response).await["error"]["code"], "shed_deadline");
+            } else {
+                assert_eq!(response.status(), StatusCode::OK, "case {case}");
+                if case == 2 {
+                    assert_eq!(response.headers()["x-ratelimit-limit"], "1");
+                }
+                assert_eq!(
+                    body_value(response).await["choices"]
+                        .as_array()
+                        .unwrap()
+                        .len(),
+                    3
+                );
+            }
+            drop(held);
+            if let Some(path) = key_file {
+                std::fs::remove_file(path).unwrap();
+            }
+            assert_eq!(
+                st.inflight[lanes::Lane::Interactive.idx()]
+                    .load(std::sync::atomic::Ordering::SeqCst),
+                0
+            );
+            assert!(st.tenant_inflight.lock().unwrap().is_empty());
+        }
+    }
+
     fn choice_http_state() -> AppState {
         let mut state = fake_worker_state();
         state.caps = Arc::new(HashMap::from([(
