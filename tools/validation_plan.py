@@ -414,7 +414,8 @@ TOOL_CONTRACTS = {
         'inputs': ['tools/check-support-states.py', 'tools/test_check_support_states.py',
                    'docs/support-records.toml', 'tools/support_record_inputs.py',
                    'tools/test_validation_support_record_inputs.py',
-                   'tools/test_validation_support_source_inputs.py'],
+                   'tools/test_validation_support_source_inputs.py',
+                   'tools/test_validation_support_receipt_copies.py'],
         'cpu': ['tools/unittest-floor.sh', 'tools', 'test_check_support_states.py', '21'],
         'native': [],
     },
@@ -481,6 +482,15 @@ def support_record_source_inputs(tree):
         spec.loader.exec_module(_SUPPORT_DATA)
     try:
         return _SUPPORT_DATA.source_docs(tree)
+    except _SUPPORT_DATA.InputContractError as error:
+        raise Refused(str(error)) from error
+
+
+def support_record_receipt_copy_inputs(tree):
+    # The preceding source-doc preflight loads the pinned helper and protects
+    # metadata content reads. Transport adds no blanket content requirement.
+    try:
+        return _SUPPORT_DATA.receipt_copies(tree)
     except _SUPPORT_DATA.InputContractError as error:
         raise Refused(str(error)) from error
 
@@ -1070,6 +1080,7 @@ def make_plan(paths, base_tree, head_tree):
             sources = support_record_source_inputs(tree)
             support_sources.update(sources['inputs'])
             source_reader_active = source_reader_active or sources['active']
+            support_record_receipt_copy_inputs(tree)
             resolved = support_record_data_inputs(tree)
             support_data.update(resolved['required'])
             support_data.update(resolved['optional'])

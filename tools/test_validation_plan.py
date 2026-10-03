@@ -50,6 +50,7 @@ class ValidationPlanTests(unittest.TestCase):
         path.write_text(content)
 
     def put_support_data_reader_fixture(self):
+        self.put('research/modelplan-onboarding-hy3-20260830/tiny/gates.txt', 'Config=passed\n')
         for path in ('tools/check-support-states.py', 'tools/test_check_support_states.py'):
             self.put(path, (Path(__file__).parent / Path(path).name).read_text())
         self.put('docs/support-records.toml',
