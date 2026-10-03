@@ -2850,6 +2850,7 @@ fn reserve_pending_admit_with_ceiling(
 }
 
 /// A group is one arrival owning N waiting slots. Its own earlier rows are not backlog.
+#[allow(clippy::result_large_err)] // the response/outcome tuple matches the existing admission diagnostic contract
 fn reserve_pending_choices(
     st: &AppState,
     lane: lanes::Lane,
