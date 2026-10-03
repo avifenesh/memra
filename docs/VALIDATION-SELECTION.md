@@ -115,6 +115,12 @@ context, positive integer `executed`, zero integer `skipped`, and an `edges` map
 execution context. Source hashes are checked again when results are admitted. Every asserted
 edge of every selected regression and control must pass, including edges beyond the requested
 subset. A no-change plan says no validation ran; it cannot produce a pass.
+Scope keys must be present in the execution context, including explicitly declared nulls.
+Context matching preserves JSON types recursively: booleans, integers and floating-point
+values cannot substitute for one another, even inside arrays or objects. Object key order
+does not change identity. Signed floating-point zero retains the distinction already bound
+by the contract digest. The same comparison protects the selected, bound and per-result
+contexts; a typed mismatch expands selection or refuses result admission.
 This validation is for the declared behavior assertions, not model or release admission.
 
 A composite serving collector can, for example, assert streaming termination, cold/warm cache
