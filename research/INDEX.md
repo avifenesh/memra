@@ -703,3 +703,4 @@ compiled-input-graph-20261003 | "Three actual CPU compiler omissions are repaire
 mandatory-empty-coverage-20261003 | Explicit mandatory guards retain selection and admission with zero requested edges; real guard success/failure and optional no-change controls passed. | mandatory-empty-coverage-20261003/RESULTS.md
 
 shared-cache-contract-20261003 | The repaired registry selects all four affected contracts and preserves their CPU commands and native obligations. | shared-cache-contract-20261003/RESULTS.md
+non-utf8-drafter-environment-20261003 | "Unrelated non-UTF8 exports no longer panic drafter collection; relevant bytes refuse without changing valid identity strings." | [RESULTS.md](non-utf8-drafter-environment-20261003/RESULTS.md)

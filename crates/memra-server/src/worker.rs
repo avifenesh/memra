@@ -5013,7 +5013,7 @@ impl HostTierTailSource {
     fn from_export(
         dir: &std::path::Path,
         cfg_debug: String,
-        env: impl IntoIterator<Item = (String, String)>,
+        env: impl IntoIterator<Item = (std::ffi::OsString, std::ffi::OsString)>,
     ) -> Result<Self, String> {
         let mut manifest = Vec::new();
         for name in ["config.json", "model.safetensors"] {
@@ -5026,23 +5026,40 @@ impl HostTierTailSource {
         Ok(Self {
             manifest: manifest.join(";"),
             cfg_debug,
-            knobs: host_tier_tail_knobs(env),
+            knobs: host_tier_tail_knobs(env)?,
         })
     }
 }
 
 /// The drafter's numeric knobs from an environment listing (C day 56, `HostTierTailSource`).
-fn host_tier_tail_knobs(env: impl IntoIterator<Item = (String, String)>) -> String {
-    let mut knobs: Vec<String> = env
-        .into_iter()
-        .filter(|(k, _)| {
-            (k.starts_with("MEMRA_DFLASH_") || k.starts_with("MEMRA_DSPARK_"))
-                && k != "MEMRA_DSPARK_DRAFT"
-        })
-        .map(|(k, v)| format!("{k}={v}"))
-        .collect();
+fn host_tier_tail_knobs<K, V>(env: impl IntoIterator<Item = (K, V)>) -> Result<String, String>
+where
+    K: AsRef<std::ffi::OsStr>,
+    V: AsRef<std::ffi::OsStr>,
+{
+    let mut knobs = Vec::new();
+    for (key, value) in env {
+        let key = key.as_ref();
+        // Classify the ASCII prefixes before decoding: unrelated OS exports cannot name
+        // this program, but malformed names inside either family must not disappear.
+        let bytes = key.as_encoded_bytes();
+        if !(bytes.starts_with(b"MEMRA_DFLASH_") || bytes.starts_with(b"MEMRA_DSPARK_"))
+            || key == "MEMRA_DSPARK_DRAFT"
+        {
+            continue;
+        }
+        let key = key.to_str().ok_or_else(|| {
+            "drafter environment name under MEMRA_DFLASH_* or MEMRA_DSPARK_* is not UTF-8"
+                .to_string()
+        })?;
+        let value = value
+            .as_ref()
+            .to_str()
+            .ok_or_else(|| format!("drafter environment value for {key} is not UTF-8"))?;
+        knobs.push(format!("{key}={value}"));
+    }
     knobs.sort();
-    knobs.join(";")
+    Ok(knobs.join(";"))
 }
 
 /// The tail-bearing program of one model (C day 56): the plain base with the drafter folded into
@@ -27011,7 +27028,7 @@ pub fn run(
                 match HostTierTailSource::from_export(
                     std::path::Path::new(&dir),
                     cfg_debug,
-                    std::env::vars(),
+                    std::env::vars_os(),
                 ) {
                     Ok(source) => {
                         tails.insert(name.clone(), source);
@@ -57866,7 +57883,129 @@ mod tests {
             ("MEMRA_DSPARK_SPEC".to_string(), "1".to_string()),
             ("MEMRA_KV_HOST_MB".to_string(), "8192".to_string()),
         ]);
+        assert_eq!(knobs.unwrap(), "MEMRA_DFLASH_PREC=q4;MEMRA_DSPARK_SPEC=1");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn host_tier_tail_knobs_ignore_unrelated_os_bytes_and_excluded_export_path() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+        let knobs = super::host_tier_tail_knobs([
+            (OsString::from("MEMRA_DSPARK_SPEC"), OsString::from("1")),
+            (OsString::from("UNRELATED"), OsString::from_vec(vec![0xff])),
+            (
+                OsString::from_vec(b"UNRELATED_\xff".to_vec()),
+                OsString::from("x"),
+            ),
+            (
+                OsString::from("MEMRA_DSPARK_DRAFT"),
+                OsString::from_vec(vec![0xff]),
+            ),
+            (OsString::from("MEMRA_DFLASH_PREC"), OsString::from("q4")),
+        ])
+        .unwrap();
         assert_eq!(knobs, "MEMRA_DFLASH_PREC=q4;MEMRA_DSPARK_SPEC=1");
+        assert_eq!(
+            super::host_tier_tail_knobs([("MEMRA_DFLASH_PREC", "q4"), ("MEMRA_DSPARK_SPEC", "1"),])
+                .unwrap(),
+            knobs,
+        );
+        assert_eq!(
+            super::host_tier_tail_knobs([("MEMRA_DFLASH_PREC", "")]).unwrap(),
+            "MEMRA_DFLASH_PREC="
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn host_tier_tail_knobs_refuse_relevant_os_bytes_without_lossy_identity() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+        for prefix in ["MEMRA_DFLASH_", "MEMRA_DSPARK_"] {
+            let key = format!("{prefix}SYNTHETIC");
+            let err = super::host_tier_tail_knobs([(
+                OsString::from(&key),
+                OsString::from_vec(vec![0xff]),
+            )])
+            .unwrap_err();
+            assert!(
+                err.contains(&key) && err.contains("value") && err.contains("not UTF-8"),
+                "{err}"
+            );
+            let mut bytes = prefix.as_bytes().to_vec();
+            bytes.push(0xff);
+            let err =
+                super::host_tier_tail_knobs([(OsString::from_vec(bytes), OsString::from("1"))])
+                    .unwrap_err();
+            assert!(
+                err.contains("environment name") && err.contains("not UTF-8"),
+                "{err}"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn host_tier_tail_export_preserves_manifest_and_cfg_and_propagates_os_refusal() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+        struct Fixture(std::path::PathBuf);
+        impl Drop for Fixture {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let path =
+            std::env::temp_dir().join(format!("memra-tail-export-env-{}", std::process::id()));
+        std::fs::create_dir(&path).unwrap();
+        let fixture = Fixture(path);
+        std::fs::write(fixture.0.join("config.json"), b"{}\n").unwrap();
+        std::fs::write(fixture.0.join("model.safetensors"), b"synthetic artifact\n").unwrap();
+        let normal = super::HostTierTailSource::from_export(
+            &fixture.0,
+            "synthetic cfg".into(),
+            [(OsString::from("MEMRA_DFLASH_PREC"), OsString::from("q4"))],
+        )
+        .unwrap();
+        let unrelated = super::HostTierTailSource::from_export(
+            &fixture.0,
+            "synthetic cfg".into(),
+            [
+                (OsString::from("MEMRA_DFLASH_PREC"), OsString::from("q4")),
+                (OsString::from("UNRELATED"), OsString::from_vec(vec![0xff])),
+            ],
+        )
+        .unwrap();
+        assert_eq!(normal, unrelated);
+        assert_eq!(
+            normal.manifest,
+            "config.json=ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356;model.safetensors=3c1e79825287ad56cf4dc687c4838d401014a0c8e911e8c039779c8e7b2baf49"
+        );
+        assert_eq!(normal.cfg_debug, "synthetic cfg");
+        assert_eq!(normal.knobs, "MEMRA_DFLASH_PREC=q4");
+        let err = super::HostTierTailSource::from_export(
+            &fixture.0,
+            "synthetic cfg".into(),
+            [(
+                OsString::from("MEMRA_DFLASH_PREC"),
+                OsString::from_vec(vec![0xff]),
+            )],
+        )
+        .unwrap_err();
+        assert!(
+            err.contains("MEMRA_DFLASH_PREC") && err.contains("not UTF-8"),
+            "{err}"
+        );
+        std::fs::remove_file(fixture.0.join("model.safetensors")).unwrap();
+        assert!(
+            super::HostTierTailSource::from_export(
+                &fixture.0,
+                "synthetic cfg".into(),
+                std::iter::empty()
+            )
+            .is_err()
+        );
     }
 
     /// C day 56: a tail image's shape blob is the v2 blob with the tail framed after it; the

@@ -1,0 +1,214 @@
+{
+  "schema": "cpu-drafter-environment-proof-v1",
+  "execution": {
+    "sources": {
+      "base": "75bac45b8acc0cb96190689a2e11a882310ebdbd",
+      "candidate": "2e136048b21d9b151a7cb27ae4e52e4714e2ead1",
+      "worker_sha256": "4b5ef3a04c0f4d0040fa0e630774e836e3d0aeeb49bba9ca12f4e20170b7df0c",
+      "parts": {
+        "baseline": {
+          "sha256_helper": "4620857bc2984f41e9b143f8423d6eb574dc37195edb6bbfe66f57be5bfe56f1",
+          "tail_helper": "a56126402aa3b73d7059122d5d20ca3a9d5f0fde5902bef78e06288807e58afa",
+          "program": "281aa17ba4d0195b6ce7945e2b4d13adb5e1ace3bc6480429a221d4dfa04d7d6"
+        },
+        "candidate": {
+          "sha256_helper": "4620857bc2984f41e9b143f8423d6eb574dc37195edb6bbfe66f57be5bfe56f1",
+          "tail_helper": "fe14b03ae9ab3f4dbda0fa86d515c6dd7d293d9f1614af1143f6ad8e83903f6a",
+          "program": "8c2c005efe8e3158e7f0ee7aa2e19c59799a5f97fb4bcbf841935b86e4882deb"
+        }
+      }
+    },
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)\nbinary: rustc\ncommit-hash: 8bab26f4f68e0e26f0bb7960be334d5b520ea452\ncommit-date: 2026-07-14\nhost: x86_64-unknown-linux-gnu\nrelease: 1.97.1\nLLVM version: 22.1.6\n",
+    "programs": {
+      "baseline": {
+        "sha256": "d747aa104b8d8443ae391af4163a69d97f21fada41723621bcac50c044744afe",
+        "cases": {
+          "valid": {
+            "exit": 0,
+            "stdout": "HostTierTailSource { manifest: \"config.json=ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356;model.safetensors=3c1e79825287ad56cf4dc687c4838d401014a0c8e911e8c039779c8e7b2baf49\", cfg_debug: \"synthetic cfg\", knobs: \"MEMRA_DFLASH_PREC=q4;MEMRA_DSPARK_SPEC=1\" }\n",
+            "stderr": ""
+          },
+          "irrelevant-value": {
+            "exit": 101,
+            "stdout": "",
+            "stderr": "\nthread 'main' (1873171) panicked at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/env.rs:162:83:\ncalled `Result::unwrap()` on an `Err` value: \"\\xFF\"\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+          },
+          "irrelevant-key": {
+            "exit": 101,
+            "stdout": "",
+            "stderr": "\nthread 'main' (1873172) panicked at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/env.rs:162:57:\ncalled `Result::unwrap()` on an `Err` value: \"UNRELATED_\\xFF\"\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+          },
+          "relevant-dflash-value": {
+            "exit": 101,
+            "stdout": "",
+            "stderr": "\nthread 'main' (1873173) panicked at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/env.rs:162:83:\ncalled `Result::unwrap()` on an `Err` value: \"\\xFF\"\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+          },
+          "relevant-dspark-value": {
+            "exit": 101,
+            "stdout": "",
+            "stderr": "\nthread 'main' (1873174) panicked at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/env.rs:162:83:\ncalled `Result::unwrap()` on an `Err` value: \"\\xFF\"\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+          },
+          "relevant-dflash-key": {
+            "exit": 101,
+            "stdout": "",
+            "stderr": "\nthread 'main' (1873175) panicked at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/env.rs:162:57:\ncalled `Result::unwrap()` on an `Err` value: \"MEMRA_DFLASH_\\xFF\"\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+          },
+          "relevant-dspark-key": {
+            "exit": 101,
+            "stdout": "",
+            "stderr": "\nthread 'main' (1873176) panicked at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/env.rs:162:57:\ncalled `Result::unwrap()` on an `Err` value: \"MEMRA_DSPARK_\\xFF\"\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+          },
+          "excluded-export-value": {
+            "exit": 101,
+            "stdout": "",
+            "stderr": "\nthread 'main' (1873177) panicked at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/env.rs:162:83:\ncalled `Result::unwrap()` on an `Err` value: \"\\xFF\"\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+          },
+          "moved-relevant": {
+            "exit": 0,
+            "stdout": "HostTierTailSource { manifest: \"config.json=ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356;model.safetensors=3c1e79825287ad56cf4dc687c4838d401014a0c8e911e8c039779c8e7b2baf49\", cfg_debug: \"synthetic cfg\", knobs: \"MEMRA_DFLASH_PREC=bf16;MEMRA_DSPARK_SPEC=1\" }\n",
+            "stderr": ""
+          },
+          "empty-relevant": {
+            "exit": 0,
+            "stdout": "HostTierTailSource { manifest: \"config.json=ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356;model.safetensors=3c1e79825287ad56cf4dc687c4838d401014a0c8e911e8c039779c8e7b2baf49\", cfg_debug: \"synthetic cfg\", knobs: \"MEMRA_DFLASH_PREC=\" }\n",
+            "stderr": ""
+          }
+        }
+      },
+      "candidate": {
+        "sha256": "0b04ad4304f833ee3f1a6abbac8c7f6d627de6ea0565a6b96592052067d6a51b",
+        "cases": {
+          "valid": {
+            "exit": 0,
+            "stdout": "HostTierTailSource { manifest: \"config.json=ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356;model.safetensors=3c1e79825287ad56cf4dc687c4838d401014a0c8e911e8c039779c8e7b2baf49\", cfg_debug: \"synthetic cfg\", knobs: \"MEMRA_DFLASH_PREC=q4;MEMRA_DSPARK_SPEC=1\" }\n",
+            "stderr": ""
+          },
+          "irrelevant-value": {
+            "exit": 0,
+            "stdout": "HostTierTailSource { manifest: \"config.json=ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356;model.safetensors=3c1e79825287ad56cf4dc687c4838d401014a0c8e911e8c039779c8e7b2baf49\", cfg_debug: \"synthetic cfg\", knobs: \"\" }\n",
+            "stderr": ""
+          },
+          "irrelevant-key": {
+            "exit": 0,
+            "stdout": "HostTierTailSource { manifest: \"config.json=ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356;model.safetensors=3c1e79825287ad56cf4dc687c4838d401014a0c8e911e8c039779c8e7b2baf49\", cfg_debug: \"synthetic cfg\", knobs: \"\" }\n",
+            "stderr": ""
+          },
+          "relevant-dflash-value": {
+            "exit": 2,
+            "stdout": "",
+            "stderr": "REFUSED: drafter environment value for MEMRA_DFLASH_PREC is not UTF-8\n"
+          },
+          "relevant-dspark-value": {
+            "exit": 2,
+            "stdout": "",
+            "stderr": "REFUSED: drafter environment value for MEMRA_DSPARK_SPEC is not UTF-8\n"
+          },
+          "relevant-dflash-key": {
+            "exit": 2,
+            "stdout": "",
+            "stderr": "REFUSED: drafter environment name under MEMRA_DFLASH_* or MEMRA_DSPARK_* is not UTF-8\n"
+          },
+          "relevant-dspark-key": {
+            "exit": 2,
+            "stdout": "",
+            "stderr": "REFUSED: drafter environment name under MEMRA_DFLASH_* or MEMRA_DSPARK_* is not UTF-8\n"
+          },
+          "excluded-export-value": {
+            "exit": 0,
+            "stdout": "HostTierTailSource { manifest: \"config.json=ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356;model.safetensors=3c1e79825287ad56cf4dc687c4838d401014a0c8e911e8c039779c8e7b2baf49\", cfg_debug: \"synthetic cfg\", knobs: \"\" }\n",
+            "stderr": ""
+          },
+          "moved-relevant": {
+            "exit": 0,
+            "stdout": "HostTierTailSource { manifest: \"config.json=ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356;model.safetensors=3c1e79825287ad56cf4dc687c4838d401014a0c8e911e8c039779c8e7b2baf49\", cfg_debug: \"synthetic cfg\", knobs: \"MEMRA_DFLASH_PREC=bf16;MEMRA_DSPARK_SPEC=1\" }\n",
+            "stderr": ""
+          },
+          "empty-relevant": {
+            "exit": 0,
+            "stdout": "HostTierTailSource { manifest: \"config.json=ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356;model.safetensors=3c1e79825287ad56cf4dc687c4838d401014a0c8e911e8c039779c8e7b2baf49\", cfg_debug: \"synthetic cfg\", knobs: \"MEMRA_DFLASH_PREC=\" }\n",
+            "stderr": ""
+          }
+        }
+      }
+    }
+  },
+  "unicode_positive": {
+    "baseline": {
+      "exit": 0,
+      "stdout": "HostTierTailSource { manifest: \"config.json=ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356;model.safetensors=3c1e79825287ad56cf4dc687c4838d401014a0c8e911e8c039779c8e7b2baf49\", cfg_debug: \"synthetic cfg\", knobs: \"MEMRA_DFLASH_PREC=q4;MEMRA_DFLASH_λ=value🌟;MEMRA_DSPARK_SPEC=1\" }\n",
+      "stderr": ""
+    },
+    "candidate": {
+      "exit": 0,
+      "stdout": "HostTierTailSource { manifest: \"config.json=ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356;model.safetensors=3c1e79825287ad56cf4dc687c4838d401014a0c8e911e8c039779c8e7b2baf49\", cfg_debug: \"synthetic cfg\", knobs: \"MEMRA_DFLASH_PREC=q4;MEMRA_DFLASH_λ=value🌟;MEMRA_DSPARK_SPEC=1\" }\n",
+      "stderr": ""
+    }
+  },
+  "source_bound_coverage": {
+    "admission": {
+      "status": "passed",
+      "edges": 17,
+      "contract_id": "79e0e0ed23b98e79e5694b1df87f467a84267ebc3717decde14e47cf78aa7087",
+      "qualification": false,
+      "scope": "declared behavior assertions only; native receipt admission remains separate"
+    },
+    "mandatory_controls": {
+      "omitted_edge": "selected test/control lacks an explicit passing assertion: actual-os-admission/relevant-dflash-value",
+      "skipped_mandatory": "empty or skipped test result: original-panic"
+    },
+    "required_edges": [
+      "valid",
+      "irrelevant-value",
+      "irrelevant-key",
+      "relevant-dflash-value",
+      "relevant-dspark-value",
+      "relevant-dflash-key",
+      "relevant-dspark-key",
+      "excluded-export-value",
+      "moved-relevant",
+      "empty-relevant",
+      "exact-unicode-identity",
+      "actual-export-manifest-cfg",
+      "missing-export-refusal",
+      "original-irrelevant-panic",
+      "complete-server-cpu",
+      "existing-identity-mutations",
+      "strict-clippy"
+    ]
+  },
+  "checks": {
+    "fixture_tests": {
+      "passed": 3,
+      "failed": 0,
+      "ignored": 0
+    },
+    "server_cpu_suite": {
+      "passed": 1093,
+      "failed": 0,
+      "ignored": 28
+    },
+    "clippy": "release all-targets, -D warnings, passed"
+  },
+  "raw_log_sha256": {
+    "fixture-tests.log": "e6541b672890f1c59cf007112cabd84104854876a248d44aa926095d426c6920",
+    "server-suite.log": "10d46e68f3826b86442acc7bbda8b5ec370604380e04473cb2c67cf184943406",
+    "clippy.log": "15831ab9e2fc7b36dce74139c3ff8e7fb11029758d7b50fbcd274a3048db4df1",
+    "coverage-admission.json": "fc96f4535be7d9bdb07bb7620119ee1700085658d898097afeac7c6abb0e51aa"
+  },
+  "scope": "CPU OS input admission at drafter identity collection; no native model execution or qualification",
+  "qualification": false,
+  "fixture_dependency_locks": {
+    "baseline": {
+      "sha256": "e6c188f6fca9ceef5b04ba8bdf72fa6fe197c383e809596b77a8cea18a59f306",
+      "text": "# This file is automatically @generated by Cargo.\n# It is not intended for manual editing.\nversion = 4\n\n[[package]]\nname = \"block-buffer\"\nversion = \"0.10.4\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = \"3078c7629b62d3f0439517fa394996acacc5cbc91c5a20d8c658e77abd503a71\"\ndependencies = [\n \"generic-array\",\n]\n\n[[package]]\nname = \"cfg-if\"\nversion = \"1.0.5\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = \"4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600\"\n\n[[package]]\nname = \"cpufeatures\"\nversion = \"0.2.17\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = \"59ed5838eebb26a2bb2e58f6d5b5316989ae9d08bab10e0e6d103e656d1b0280\"\ndependencies = [\n \"libc\",\n]\n\n[[package]]\nname = \"crypto-common\"\nversion = \"0.1.7\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = \"78c8292055d1c1df0cce5d180393dc8cce0abec0a7102adb6c7b1eef6016d60a\"\ndependencies = [\n \"generic-array\",\n \"typenum\",\n]\n\n[[package]]\nname = \"digest\"\nversion = \"0.10.7\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = \"9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292\"\ndependencies = [\n \"block-buffer\",\n \"crypto-common\",\n]\n\n[[package]]\nname = \"env-fixture-baseline\"\nversion = \"0.1.0\"\ndependencies = [\n \"sha2\",\n]\n\n[[package]]\nname = \"generic-array\"\nversion = \"0.14.7\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = \"85649ca51fd72272d7821adaf274ad91c288277713d9c18820d8499a7ff69e9a\"\ndependencies = [\n \"typenum\",\n \"version_check\",\n]\n\n[[package]]\nname = \"libc\"\nversion = \"0.2.189\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = \"3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2\"\n\n[[package]]\nname = \"sha2\"\nversion = \"0.10.9\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = \"a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283\"\ndependencies = [\n \"cfg-if\",\n \"cpufeatures\",\n \"digest\",\n]\n\n[[package]]\nname = \"typenum\"\nversion = \"1.20.1\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = \"b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20\"\n\n[[package]]\nname = \"version_check\"\nversion = \"0.9.5\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = \"0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a\"\n"
+    },
+    "candidate": {
+      "sha256": "375d053c301361e602a502ba8b2bad53e7160df0f0181591575e2c3611246c2b",
+      "text": "# This file is automatically @generated by Cargo.\n# It is not intended for manual editing.\nversion = 4\n\n[[package]]\nname = \"block-buffer\"\nversion = \"0.10.4\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = \"3078c7629b62d3f0439517fa394996acacc5cbc91c5a20d8c658e77abd503a71\"\ndependencies = [\n \"generic-array\",\n]\n\n[[package]]\nname = \"cfg-if\"\nversion = \"1.0.5\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = \"4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600\"\n\n[[package]]\nname = \"cpufeatures\"\nversion = \"0.2.17\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = \"59ed5838eebb26a2bb2e58f6d5b5316989ae9d08bab10e0e6d103e656d1b0280\"\ndependencies = [\n \"libc\",\n]\n\n[[package]]\nname = \"crypto-common\"\nversion = \"0.1.7\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = \"78c8292055d1c1df0cce5d180393dc8cce0abec0a7102adb6c7b1eef6016d60a\"\ndependencies = [\n \"generic-array\",\n \"typenum\",\n]\n\n[[package]]\nname = \"digest\"\nversion = \"0.10.7\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = \"9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292\"\ndependencies = [\n \"block-buffer\",\n \"crypto-common\",\n]\n\n[[package]]\nname = \"env-fixture-candidate\"\nversion = \"0.1.0\"\ndependencies = [\n \"sha2\",\n]\n\n[[package]]\nname = \"generic-array\"\nversion = \"0.14.7\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = \"85649ca51fd72272d7821adaf274ad91c288277713d9c18820d8499a7ff69e9a\"\ndependencies = [\n \"typenum\",\n \"version_check\",\n]\n\n[[package]]\nname = \"libc\"\nversion = \"0.2.189\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = \"3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2\"\n\n[[package]]\nname = \"sha2\"\nversion = \"0.10.9\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = \"a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283\"\ndependencies = [\n \"cfg-if\",\n \"cpufeatures\",\n \"digest\",\n]\n\n[[package]]\nname = \"typenum\"\nversion = \"1.20.1\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = \"b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20\"\n\n[[package]]\nname = \"version_check\"\nversion = \"0.9.5\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = \"0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a\"\n"
+    }
+  },
+  "verification_helpers_sha256": {
+    "execute.py": "f37de8fee77cdad76a672c8fec8c756bd463f4927e13fb0181f90c8465796c1c",
+    "admit_coverage.py": "71fa43f68928d4d5c7d5612bedcb87a32a2653a21acecb89e01c8096e8416d9b"
+  }
+}
