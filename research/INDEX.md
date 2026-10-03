@@ -714,3 +714,5 @@ dense-control-cache-20261003 | "Six actual native payloads restored byte-identic
 q35-fixture-data-contract-20261003 | "Three consumed data paths now select the Q35 contract; copied-data positives and independent failure controls preserve historical originals." | q35-fixture-data-contract-20261003/RESULTS.md
 
 shared-linkage-warnings-20261003 | All SASS/resource lines, instruction/data/shared sections and relocation bindings are exact. | shared-linkage-warnings-20261003/RESULTS.md
+
+support-record-data-contract-20261003 | Exact required and potential family data paths select the unchanged support census; optional presence and named missing-required controls pass. | support-record-data-contract-20261003/RESULTS.md
