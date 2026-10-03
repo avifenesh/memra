@@ -30213,6 +30213,40 @@ pub fn run(
                 match step_result {
                     Ok(true) => {}
                     Ok(false) => finished.push(i),
+                    Err(err)
+                        if is_cuda_oom(&err.to_string())
+                            && step_oom_parkable(
+                                active[i].generated.len(),
+                                active[i].tokens_emitted,
+                                active[i].oom_retries,
+                                step_oom_retries(),
+                            ) =>
+                    {
+                        // The serial scheduler owns the same pre-emission park
+                        // contract as the speculative step. Never restart emitted
+                        // output or relax the retry bound.
+                        let session = &mut active[i];
+                        session.oom_retries += 1;
+                        session.oom_teardown = true;
+                        eprintln!(
+                            "[admit-oom] step OOM parked session back to queue \
+                             (serial model {}, retry {}/{}): {err}",
+                            session.model,
+                            session.oom_retries,
+                            step_oom_retries()
+                        );
+                        if let Some(request) = park_requeue(&loaded, session) {
+                            n_step_oom_parks += 1;
+                            reserve_internal_admission(request.lane);
+                            requeue_oom.push_back(request);
+                        } else {
+                            session.errored = true;
+                            let _ = session.tx.send(Event::Error(EngineError::engine(format!(
+                                "step error: {err}"
+                            ))));
+                        }
+                        finished.push(i);
+                    }
                     Err(err) => {
                         quarantine_request_fault(&mut active[i], err.as_ref());
                         active[i].errored = true;
@@ -61095,13 +61129,12 @@ mod tests {
         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
         let live_sq = squash(live);
         let pred = format!("step_oom_parkable{}", "(");
-        // 1. Exactly one definition, the step guard's call, the memra#680 prefill-OOM
-        //    predicate's call, and the WP-B day 37 on-demand ensure guard (MEMRA_KV_ALLOCATOR=vmm)
-        //    in live code.
+        // 1. Exactly one definition, both scheduler step guards, the memra#680
+        //    prefill-OOM predicate and the on-demand ensure guard in live code.
         assert_eq!(
             live.matches(pred.as_str()).count(),
-            4,
-            "expected the predicate's definition, the step guard, the prefill-OOM predicate and \
+            5,
+            "expected the predicate's definition, both step guards, the prefill-OOM predicate and \
              the on-demand ensure guard"
         );
         // 1a. The on-demand ensure guard feeds BOTH markers too.
@@ -61134,9 +61167,10 @@ mod tests {
             "if is_cuda_oom(&err.to_string()) && {pred} active[i].generated.len(), \
              active[i].tokens_emitted, active[i].oom_retries, step_oom_retries(), ) =>"
         );
-        assert!(
-            live_sq.contains(guard.as_str()),
-            "the park arm must gate on the predicate fed BOTH markers"
+        assert_eq!(
+            live_sq.matches(guard.as_str()).count(),
+            2,
+            "both scheduler park arms must gate on the predicate fed BOTH markers"
         );
         // 2. The glm5 round-cadence hook advances the marker at the send, before the burst.
         let glm5 = live
