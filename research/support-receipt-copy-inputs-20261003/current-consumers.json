@@ -1,0 +1,246 @@
+{
+  "source": "c498dbd1001e672f8adcb8af68ddaf007f2a45f3",
+  "source_sha256": {
+    "tools/support_record_inputs.py": "d3548a8fa3f765046e1864efd78c028d596151971a45908dad38230f021276d5",
+    "tools/validation_plan.py": "65c423f50220d31df33d229f624624a482e5610130e4dd7e3c5891ba65b7b402",
+    "tools/test_validation_support_receipt_copies.py": "29f028a17aa471a696845b6c4f5b0f42ff0386958a773e1696bc927b7c9fdbf0",
+    "tools/skip-census.py": "d89ce391d748499214df2279a48d719b9e67cad6a2838c77ebcef46640883a7d",
+    "docs/support-records.toml": "18d75c943748b89a8bd9d9bc07054b19dafb37080c211e3d15ee18640ad13e19"
+  },
+  "roots": [
+    "research/glm53-flash-bringup-20260827/inspect-receipts",
+    "research/modelplan-onboarding-20260822/qwen3",
+    "research/modelplan-onboarding-20260822/qwen35",
+    "research/modelplan-onboarding-hy3-20260830/bf16-inspect",
+    "research/modelplan-onboarding-hy3-20260830/fp8-inspect",
+    "research/modelplan-onboarding-hy3-20260830/tiny",
+    "research/spill-c-20260919/pro-single-day11/inspect"
+  ],
+  "readers": {
+    "tools/check-support-states.py": "27b4a68fb545cfd434caab8764f42becd021a52d7d6a36fb9fba466d396cf8ec",
+    "tools/test_check_support_states.py": "366556ebf11d27173032f1fe9cd71ef59d18b3c1f2314f920f214a63e5482050"
+  },
+  "outcomes": [
+    {
+      "case": "baseline-direct",
+      "consumer": {
+        "exit": 0,
+        "stdout": "check-support-states: 20 packs (12 with a support state), 14 records, 40 doc lines, all backed\n",
+        "stderr": ""
+      }
+    },
+    {
+      "case": "baseline",
+      "consumer": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ".\n----------------------------------------------------------------------\nRan 1 test in 0.081s\n\nOK\n"
+      }
+    },
+    {
+      "case": "research/glm53-flash-bringup-20260827/inspect-receipts/CPU_TRANSPORT_CONTROL.txt",
+      "direct_checker": {
+        "exit": 0,
+        "stdout": "check-support-states: 20 packs (12 with a support state), 14 records, 40 doc lines, all backed\n",
+        "stderr": ""
+      },
+      "broken_link_consumer": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "E\n======================================================================\nERROR: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<fixture>/repo/tools/test_check_support_states.py\", line 43, in setUp\n    shutil.copytree(src, self.root / pathlib.Path(rel).parent, dirs_exist_ok=True)\n    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.14/shutil.py\", line 654, in copytree\n    return _copytree(entries=entries, src=src, dst=dst, symlinks=symlinks,\n                     ignore=ignore, copy_function=copy_function,\n                     ignore_dangling_symlinks=ignore_dangling_symlinks,\n                     dirs_exist_ok=dirs_exist_ok)\n  File \"/usr/lib/python3.14/shutil.py\", line 608, in _copytree\n    raise Error(errors)\nshutil.Error: [('<fixture>/repo/research/glm53-flash-bringup-20260827/inspect-receipts/CPU_TRANSPORT_CONTROL.txt', '/tmp/memra-support-states-qu2sjqwl/research/glm53-flash-bringup-20260827/inspect-receipts/CPU_TRANSPORT_CONTROL.txt', \"[Errno 2] No such file or directory: '<fixture>/repo/research/glm53-flash-bringup-20260827/inspect-receipts/CPU_TRANSPORT_CONTROL.txt'\")]\n\n----------------------------------------------------------------------\nRan 1 test in 0.018s\n\nFAILED (errors=1)\n"
+      },
+      "transport_refusal": "ambiguous support receipt copy input type: research/glm53-flash-bringup-20260827/inspect-receipts/CPU_TRANSPORT_CONTROL.txt",
+      "regular_consumer": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ".\n----------------------------------------------------------------------\nRan 1 test in 0.083s\n\nOK\n"
+      },
+      "regular_plan": {
+        "mode": "scoped",
+        "cpu_contracts": [],
+        "packages": [],
+        "native_qualification": false
+      }
+    },
+    {
+      "case": "research/glm53-flash-bringup-20260827/inspect-receipts/CPU_TRANSPORT_CONTROL.txt",
+      "fifo_refusal": "ambiguous support receipt copy input type: research/glm53-flash-bringup-20260827/inspect-receipts/CPU_TRANSPORT_CONTROL.txt"
+    },
+    {
+      "case": "research/modelplan-onboarding-20260822/qwen3/CPU_TRANSPORT_CONTROL.txt",
+      "direct_checker": {
+        "exit": 0,
+        "stdout": "check-support-states: 20 packs (12 with a support state), 14 records, 40 doc lines, all backed\n",
+        "stderr": ""
+      },
+      "broken_link_consumer": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "E\n======================================================================\nERROR: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<fixture>/repo/tools/test_check_support_states.py\", line 43, in setUp\n    shutil.copytree(src, self.root / pathlib.Path(rel).parent, dirs_exist_ok=True)\n    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.14/shutil.py\", line 654, in copytree\n    return _copytree(entries=entries, src=src, dst=dst, symlinks=symlinks,\n                     ignore=ignore, copy_function=copy_function,\n                     ignore_dangling_symlinks=ignore_dangling_symlinks,\n                     dirs_exist_ok=dirs_exist_ok)\n  File \"/usr/lib/python3.14/shutil.py\", line 608, in _copytree\n    raise Error(errors)\nshutil.Error: [('<fixture>/repo/research/modelplan-onboarding-20260822/qwen3/CPU_TRANSPORT_CONTROL.txt', '/tmp/memra-support-states-x9dh9cb9/research/modelplan-onboarding-20260822/qwen3/CPU_TRANSPORT_CONTROL.txt', \"[Errno 2] No such file or directory: '<fixture>/repo/research/modelplan-onboarding-20260822/qwen3/CPU_TRANSPORT_CONTROL.txt'\")]\n\n----------------------------------------------------------------------\nRan 1 test in 0.015s\n\nFAILED (errors=1)\n"
+      },
+      "transport_refusal": "ambiguous support receipt copy input type: research/modelplan-onboarding-20260822/qwen3/CPU_TRANSPORT_CONTROL.txt",
+      "regular_consumer": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ".\n----------------------------------------------------------------------\nRan 1 test in 0.085s\n\nOK\n"
+      },
+      "regular_plan": {
+        "mode": "scoped",
+        "cpu_contracts": [],
+        "packages": [],
+        "native_qualification": false
+      }
+    },
+    {
+      "case": "research/modelplan-onboarding-20260822/qwen3/CPU_TRANSPORT_CONTROL.txt",
+      "fifo_refusal": "ambiguous support receipt copy input type: research/modelplan-onboarding-20260822/qwen3/CPU_TRANSPORT_CONTROL.txt"
+    },
+    {
+      "case": "research/modelplan-onboarding-20260822/qwen35/CPU_TRANSPORT_CONTROL.txt",
+      "direct_checker": {
+        "exit": 0,
+        "stdout": "check-support-states: 20 packs (12 with a support state), 14 records, 40 doc lines, all backed\n",
+        "stderr": ""
+      },
+      "broken_link_consumer": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "E\n======================================================================\nERROR: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<fixture>/repo/tools/test_check_support_states.py\", line 43, in setUp\n    shutil.copytree(src, self.root / pathlib.Path(rel).parent, dirs_exist_ok=True)\n    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.14/shutil.py\", line 654, in copytree\n    return _copytree(entries=entries, src=src, dst=dst, symlinks=symlinks,\n                     ignore=ignore, copy_function=copy_function,\n                     ignore_dangling_symlinks=ignore_dangling_symlinks,\n                     dirs_exist_ok=dirs_exist_ok)\n  File \"/usr/lib/python3.14/shutil.py\", line 608, in _copytree\n    raise Error(errors)\nshutil.Error: [('<fixture>/repo/research/modelplan-onboarding-20260822/qwen35/CPU_TRANSPORT_CONTROL.txt', '/tmp/memra-support-states-q8vqjeo4/research/modelplan-onboarding-20260822/qwen35/CPU_TRANSPORT_CONTROL.txt', \"[Errno 2] No such file or directory: '<fixture>/repo/research/modelplan-onboarding-20260822/qwen35/CPU_TRANSPORT_CONTROL.txt'\")]\n\n----------------------------------------------------------------------\nRan 1 test in 0.010s\n\nFAILED (errors=1)\n"
+      },
+      "transport_refusal": "ambiguous support receipt copy input type: research/modelplan-onboarding-20260822/qwen35/CPU_TRANSPORT_CONTROL.txt",
+      "regular_consumer": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ".\n----------------------------------------------------------------------\nRan 1 test in 0.085s\n\nOK\n"
+      },
+      "regular_plan": {
+        "mode": "scoped",
+        "cpu_contracts": [],
+        "packages": [],
+        "native_qualification": false
+      }
+    },
+    {
+      "case": "research/modelplan-onboarding-20260822/qwen35/CPU_TRANSPORT_CONTROL.txt",
+      "fifo_refusal": "ambiguous support receipt copy input type: research/modelplan-onboarding-20260822/qwen35/CPU_TRANSPORT_CONTROL.txt"
+    },
+    {
+      "case": "research/modelplan-onboarding-hy3-20260830/bf16-inspect/CPU_TRANSPORT_CONTROL.txt",
+      "direct_checker": {
+        "exit": 0,
+        "stdout": "check-support-states: 20 packs (12 with a support state), 14 records, 40 doc lines, all backed\n",
+        "stderr": ""
+      },
+      "broken_link_consumer": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "E\n======================================================================\nERROR: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<fixture>/repo/tools/test_check_support_states.py\", line 43, in setUp\n    shutil.copytree(src, self.root / pathlib.Path(rel).parent, dirs_exist_ok=True)\n    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.14/shutil.py\", line 654, in copytree\n    return _copytree(entries=entries, src=src, dst=dst, symlinks=symlinks,\n                     ignore=ignore, copy_function=copy_function,\n                     ignore_dangling_symlinks=ignore_dangling_symlinks,\n                     dirs_exist_ok=dirs_exist_ok)\n  File \"/usr/lib/python3.14/shutil.py\", line 608, in _copytree\n    raise Error(errors)\nshutil.Error: [('<fixture>/repo/research/modelplan-onboarding-hy3-20260830/bf16-inspect/CPU_TRANSPORT_CONTROL.txt', '/tmp/memra-support-states-5i24ul5d/research/modelplan-onboarding-hy3-20260830/bf16-inspect/CPU_TRANSPORT_CONTROL.txt', \"[Errno 2] No such file or directory: '<fixture>/repo/research/modelplan-onboarding-hy3-20260830/bf16-inspect/CPU_TRANSPORT_CONTROL.txt'\")]\n\n----------------------------------------------------------------------\nRan 1 test in 0.017s\n\nFAILED (errors=1)\n"
+      },
+      "transport_refusal": "ambiguous support receipt copy input type: research/modelplan-onboarding-hy3-20260830/bf16-inspect/CPU_TRANSPORT_CONTROL.txt",
+      "regular_consumer": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ".\n----------------------------------------------------------------------\nRan 1 test in 0.081s\n\nOK\n"
+      },
+      "regular_plan": {
+        "mode": "scoped",
+        "cpu_contracts": [],
+        "packages": [],
+        "native_qualification": false
+      }
+    },
+    {
+      "case": "research/modelplan-onboarding-hy3-20260830/bf16-inspect/CPU_TRANSPORT_CONTROL.txt",
+      "fifo_refusal": "ambiguous support receipt copy input type: research/modelplan-onboarding-hy3-20260830/bf16-inspect/CPU_TRANSPORT_CONTROL.txt"
+    },
+    {
+      "case": "research/modelplan-onboarding-hy3-20260830/fp8-inspect/CPU_TRANSPORT_CONTROL.txt",
+      "direct_checker": {
+        "exit": 0,
+        "stdout": "check-support-states: 20 packs (12 with a support state), 14 records, 40 doc lines, all backed\n",
+        "stderr": ""
+      },
+      "broken_link_consumer": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "E\n======================================================================\nERROR: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<fixture>/repo/tools/test_check_support_states.py\", line 43, in setUp\n    shutil.copytree(src, self.root / pathlib.Path(rel).parent, dirs_exist_ok=True)\n    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.14/shutil.py\", line 654, in copytree\n    return _copytree(entries=entries, src=src, dst=dst, symlinks=symlinks,\n                     ignore=ignore, copy_function=copy_function,\n                     ignore_dangling_symlinks=ignore_dangling_symlinks,\n                     dirs_exist_ok=dirs_exist_ok)\n  File \"/usr/lib/python3.14/shutil.py\", line 608, in _copytree\n    raise Error(errors)\nshutil.Error: [('<fixture>/repo/research/modelplan-onboarding-hy3-20260830/fp8-inspect/CPU_TRANSPORT_CONTROL.txt', '/tmp/memra-support-states-8fmcr34o/research/modelplan-onboarding-hy3-20260830/fp8-inspect/CPU_TRANSPORT_CONTROL.txt', \"[Errno 2] No such file or directory: '<fixture>/repo/research/modelplan-onboarding-hy3-20260830/fp8-inspect/CPU_TRANSPORT_CONTROL.txt'\")]\n\n----------------------------------------------------------------------\nRan 1 test in 0.015s\n\nFAILED (errors=1)\n"
+      },
+      "transport_refusal": "ambiguous support receipt copy input type: research/modelplan-onboarding-hy3-20260830/fp8-inspect/CPU_TRANSPORT_CONTROL.txt",
+      "regular_consumer": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ".\n----------------------------------------------------------------------\nRan 1 test in 0.087s\n\nOK\n"
+      },
+      "regular_plan": {
+        "mode": "scoped",
+        "cpu_contracts": [],
+        "packages": [],
+        "native_qualification": false
+      }
+    },
+    {
+      "case": "research/modelplan-onboarding-hy3-20260830/fp8-inspect/CPU_TRANSPORT_CONTROL.txt",
+      "fifo_refusal": "ambiguous support receipt copy input type: research/modelplan-onboarding-hy3-20260830/fp8-inspect/CPU_TRANSPORT_CONTROL.txt"
+    },
+    {
+      "case": "research/modelplan-onboarding-hy3-20260830/tiny/CPU_TRANSPORT_CONTROL.txt",
+      "direct_checker": {
+        "exit": 0,
+        "stdout": "check-support-states: 20 packs (12 with a support state), 14 records, 40 doc lines, all backed\n",
+        "stderr": ""
+      },
+      "broken_link_consumer": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "E\n======================================================================\nERROR: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<fixture>/repo/tools/test_check_support_states.py\", line 43, in setUp\n    shutil.copytree(src, self.root / pathlib.Path(rel).parent, dirs_exist_ok=True)\n    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.14/shutil.py\", line 654, in copytree\n    return _copytree(entries=entries, src=src, dst=dst, symlinks=symlinks,\n                     ignore=ignore, copy_function=copy_function,\n                     ignore_dangling_symlinks=ignore_dangling_symlinks,\n                     dirs_exist_ok=dirs_exist_ok)\n  File \"/usr/lib/python3.14/shutil.py\", line 608, in _copytree\n    raise Error(errors)\nshutil.Error: [('<fixture>/repo/research/modelplan-onboarding-hy3-20260830/tiny/CPU_TRANSPORT_CONTROL.txt', '/tmp/memra-support-states-r0vjiolu/research/modelplan-onboarding-hy3-20260830/tiny/CPU_TRANSPORT_CONTROL.txt', \"[Errno 2] No such file or directory: '<fixture>/repo/research/modelplan-onboarding-hy3-20260830/tiny/CPU_TRANSPORT_CONTROL.txt'\")]\n\n----------------------------------------------------------------------\nRan 1 test in 0.010s\n\nFAILED (errors=1)\n"
+      },
+      "transport_refusal": "ambiguous support receipt copy input type: research/modelplan-onboarding-hy3-20260830/tiny/CPU_TRANSPORT_CONTROL.txt",
+      "regular_consumer": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ".\n----------------------------------------------------------------------\nRan 1 test in 0.085s\n\nOK\n"
+      },
+      "regular_plan": {
+        "mode": "scoped",
+        "cpu_contracts": [],
+        "packages": [],
+        "native_qualification": false
+      }
+    },
+    {
+      "case": "research/modelplan-onboarding-hy3-20260830/tiny/CPU_TRANSPORT_CONTROL.txt",
+      "fifo_refusal": "ambiguous support receipt copy input type: research/modelplan-onboarding-hy3-20260830/tiny/CPU_TRANSPORT_CONTROL.txt"
+    },
+    {
+      "case": "research/spill-c-20260919/pro-single-day11/inspect/CPU_TRANSPORT_CONTROL.txt",
+      "direct_checker": {
+        "exit": 0,
+        "stdout": "check-support-states: 20 packs (12 with a support state), 14 records, 40 doc lines, all backed\n",
+        "stderr": ""
+      },
+      "broken_link_consumer": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "E\n======================================================================\nERROR: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<fixture>/repo/tools/test_check_support_states.py\", line 43, in setUp\n    shutil.copytree(src, self.root / pathlib.Path(rel).parent, dirs_exist_ok=True)\n    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.14/shutil.py\", line 654, in copytree\n    return _copytree(entries=entries, src=src, dst=dst, symlinks=symlinks,\n                     ignore=ignore, copy_function=copy_function,\n                     ignore_dangling_symlinks=ignore_dangling_symlinks,\n                     dirs_exist_ok=dirs_exist_ok)\n  File \"/usr/lib/python3.14/shutil.py\", line 608, in _copytree\n    raise Error(errors)\nshutil.Error: [('<fixture>/repo/research/spill-c-20260919/pro-single-day11/inspect/CPU_TRANSPORT_CONTROL.txt', '/tmp/memra-support-states-_d0c6tat/research/spill-c-20260919/pro-single-day11/inspect/CPU_TRANSPORT_CONTROL.txt', \"[Errno 2] No such file or directory: '<fixture>/repo/research/spill-c-20260919/pro-single-day11/inspect/CPU_TRANSPORT_CONTROL.txt'\")]\n\n----------------------------------------------------------------------\nRan 1 test in 0.016s\n\nFAILED (errors=1)\n"
+      },
+      "transport_refusal": "ambiguous support receipt copy input type: research/spill-c-20260919/pro-single-day11/inspect/CPU_TRANSPORT_CONTROL.txt",
+      "regular_consumer": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ".\n----------------------------------------------------------------------\nRan 1 test in 0.085s\n\nOK\n"
+      },
+      "regular_plan": {
+        "mode": "scoped",
+        "cpu_contracts": [],
+        "packages": [],
+        "native_qualification": false
+      }
+    },
+    {
+      "case": "research/spill-c-20260919/pro-single-day11/inspect/CPU_TRANSPORT_CONTROL.txt",
+      "fifo_refusal": "ambiguous support receipt copy input type: research/spill-c-20260919/pro-single-day11/inspect/CPU_TRANSPORT_CONTROL.txt"
+    }
+  ],
+  "qualification": false,
+  "helper_sha256": "2d8849d4d968552a8324530d9127ad40ce3b98a1e2bac3b90d882df311a8e3b0"
+}

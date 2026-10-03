@@ -1,0 +1,48 @@
+{
+  "base": "a409e51bef511e1a850cad8730f5d85a93fa4db9",
+  "source": "c498dbd1001e672f8adcb8af68ddaf007f2a45f3",
+  "source_tree": "597a135dec006bbce8ef83543df824e8a1d26549",
+  "source_sha256": {
+    ".github/workflows/ci.yml": "26fb3abd3b9f08d5d94fd9966749d5c5f134b3c374c0949f47fef9a8da2c7c1d",
+    "docs/VALIDATION-SELECTION.md": "fbac0ece52a31871356baee7db8604e85bb11bddd23f826ef76eb7d07265ab09",
+    "docs/support-records.toml": "18d75c943748b89a8bd9d9bc07054b19dafb37080c211e3d15ee18640ad13e19",
+    "research/support-receipt-copy-inputs-20261003/LANE.md": "5342dd6cee2f62f87935a5301b263a47007c63e763c71e13fc742caba12585b8",
+    "research/support-receipt-copy-inputs-20261003/consumer_controls.py": "2d8849d4d968552a8324530d9127ad40ce3b98a1e2bac3b90d882df311a8e3b0",
+    "research/support-receipt-copy-inputs-20261003/verify_controls.py": "77ff648332b9bf605f745b7fe642e7ae9680296f11ff567eb2b0f5f6d002e136",
+    "tools/check-support-states.py": "27b4a68fb545cfd434caab8764f42becd021a52d7d6a36fb9fba466d396cf8ec",
+    "tools/skip-census.py": "d89ce391d748499214df2279a48d719b9e67cad6a2838c77ebcef46640883a7d",
+    "tools/support_record_inputs.py": "d3548a8fa3f765046e1864efd78c028d596151971a45908dad38230f021276d5",
+    "tools/test_check_support_states.py": "366556ebf11d27173032f1fe9cd71ef59d18b3c1f2314f920f214a63e5482050",
+    "tools/test_validation_plan.py": "ecb1db5e2963657d97b06359530311f2fc9b9ce1a6def0dafeb6250440b3ca2f",
+    "tools/test_validation_support_receipt_copies.py": "29f028a17aa471a696845b6c4f5b0f42ff0386958a773e1696bc927b7c9fdbf0",
+    "tools/test_validation_support_record_inputs.py": "6b5eeeeff2bf9126af81de292608daa132a07fcddcd7a9d91a51df7238255516",
+    "tools/test_validation_support_source_inputs.py": "aa1229d0cbbcf0766916aefd8cdb20ee4a77b917beb14151be14cd468bce539c",
+    "tools/validation_plan.py": "65c423f50220d31df33d229f624624a482e5610130e4dd7e3c5891ba65b7b402"
+  },
+  "artifact_sha256": {
+    "current-consumers.json": "06ce21cb23a60764fddae71b83bcc101b2c0934873303ec6d822c444d47b2944",
+    "admission.json": "384150f5fe81023393650bd5775553df92278a4107dbadc21cde5b5678acf614",
+    "preservation.json": "e2593650e66242ca9075ea078f162665ce5a6d7d1ac39c349dcdca299d712d13",
+    "framework.log": "717b31f2d76a971f8d449c1b99f64bc1c00f1607276d94634763d5f1566102ab",
+    "census.log": "369bbec8c9494b249bd6461ae20cc71baa461060da758feb964d4f37b0a17682",
+    "consumer.log": "85bb54c56717be59303813cf3cf3f6bcdcb0e6b8bdd7a35cfd2eb82173faf248",
+    "admission.log": "63da5b09079ceac323041486334bcd9453d58a97c200f46b36d55fa0b2361999"
+  },
+  "actual": {
+    "framework_tests": 179,
+    "census_tests": 21,
+    "transport_methods": 8,
+    "copy_roots": 7,
+    "consumer_outcomes": 23,
+    "FIFO_preflight_refusals": 7,
+    "rejected_admission_mutations": 8,
+    "registry_packages": 14,
+    "classification_arms": 18
+  },
+  "unchanged_source_A_head_controls": {
+    "cache_tests": 55,
+    "fastgate_tests": 39
+  },
+  "assertions_disabled": "both producer and verifier refused before source/fixture I/O; raw logs retained",
+  "qualification": false
+}
