@@ -2455,3 +2455,18 @@ separate gates. No CPU result promotes model support or a runtime default. The
 io_uring proposal is deferred pending a measured positioned-read baseline; it is
 not an implemented comparator. The spill program's changes through #563 and #568 add
 **no `.cu` or FFI changes**, so they require no kernel-inventory amendment.
+
+## Dense CPU-control executable reuse
+
+`tools/test-dsv4-dense-control-policy.sh` compiles or restores six native harnesses,
+then runs every unset/ON/OFF `--check-controls` arm (18 executions). A cache hit
+never supplies a control result. `tools/dense_control_cache.py` binds actual
+host/device preprocessing/dependency output, the CUDA/GNU toolchain and header/link
+closure, unchanged recipe/environment and complete executable identities. Unknown
+or damaged input rebuilds with the original compiler failure semantics. The
+cache-only ELF64 x86_64 admission does not restrict uncached builds on other hosts.
+
+Run `python3 tools/test_dense_control_cache.py` for the CPU admission regressions.
+Actual native build/restore, all 18 outputs after each path and fresh-build ELF
+metadata analysis are sealed in `research/dense-control-cache-20261003/PROOF.json`.
+This artifact reuse adds no model, numerical, serving or runtime qualification.

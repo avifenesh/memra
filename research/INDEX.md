@@ -706,3 +706,4 @@ shared-cache-contract-20261003 | The repaired registry selects all four affected
 non-utf8-drafter-environment-20261003 | "Unrelated non-UTF8 exports no longer panic drafter collection; relevant bytes refuse without changing valid identity strings." | [RESULTS.md](non-utf8-drafter-environment-20261003/RESULTS.md)
 
 raw-os-environment-name-audit-20261003 | "Owned malformed OS names refuse; unowned names warn; UTF8 and value-ignorance controls preserve baseline bytes." | raw-os-environment-name-audit-20261003/RESULTS.md
+dense-control-cache-20261003 | "Six actual native payloads restored byte-identically; all 18 CPU controls run after build and restore; 55 refusal/regression checks pass." | [RESULTS.md](dense-control-cache-20261003/RESULTS.md)

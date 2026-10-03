@@ -1,0 +1,20 @@
+
+--frandom-seed <seed>                               (-frandom-seed)             
+        The user specified random seed will be used to replace random numbers used
+        in generating symbol names and variable names. The option can be used to
+        generate deterministically identical ptx and object files. 
+        If the input value is a valid number (decimal, octal, or hex), it will be
+        used directly as the random seed. 
+        Otherwise, the CRC value of the passed string will be used instead.
+        NVCC will also pass the option, as well as the user specified value to host
+        compilers, if the host compiler is either GCC or Clang, since they support
+        -frandom-seed option as well. Users are responsible for assigning different
+        seed to different files.
+
+--fdevice-sanitize <toolname>                       (-fdevice-sanitize)         
+        Enable compiler instrumentation for the compute-sanitizer tool specified
+        by the option. Currently, only the value `memcheck` is supported. 
+        Binary needs to be executed using `compute-sanitizer` at runtime, otherwise
+        behavior is undefined.
+
+--jobserver                                         (-jobserver)                

@@ -1,0 +1,15 @@
+[
+  {
+    "mutation": "boolean-as-integer",
+    "outcome": "ADMITTED (reproduced gap)"
+  },
+  {
+    "mutation": "integer-as-float",
+    "outcome": "ADMITTED (reproduced gap)"
+  },
+  {
+    "mutation": "empty-CC",
+    "exception": "FileNotFoundError",
+    "reason": "[Errno 2] No such file or directory: '/cuda/bin/nvcc'"
+  }
+]

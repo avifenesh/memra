@@ -1,0 +1,48 @@
+{"status": "restored", "key": "bc881a2e5a34ad9afedb888588d966be2b839281f8419eca166b8ec339946077", "payloads": {"dsv4-dense-exact-tail-gate": {"sha256": "d316c5fcc74c48ce84d235e4015f480c516ec9a00f28e686e6a661ccec28d63a", "bytes": 8289080, "mode": 509}, "dsv4-dense-tc-gate": {"sha256": "1dc8c1e091119bd8faa645d91d095d7e6bb0c5a658403e124260e01584cb7488", "bytes": 8256856, "mode": 509}, "dsv4-dense-tc-gate-r4": {"sha256": "84c8af5bd2f01fa35141d40b573ace4fb1edf890e89bb920a778f00d7eaf3425", "bytes": 8279248, "mode": 509}, "dsv4-dense-tc-gate-r7-driver": {"sha256": "974cc4e14f5d93789f8e05963e551c1fc777e8a69bc3f5d018d6af6047d4bd87", "bytes": 8289032, "mode": 509}, "dsv4-dense-tc-gate-r8-driver": {"sha256": "dd0290446de241b9d9627912248cb2f4df0c1bfc8c216478f1bf2bccd23e665c", "bytes": 8289328, "mode": 509}, "dsv4-dense-tc-gate-r9-driver": {"sha256": "8a4fbed152cfcc227bdde44bff08cba1655c0e948d481390d26b3c51c0725286", "bytes": 8293784, "mode": 509}}}
+PASS exact_tail_control dense_fast=0 hc_split=0 cpu_policy_only=true
+PASS exact_tail_control dense_fast=0 hc_split=0 cpu_policy_only=true
+PASS exact_tail_control dense_fast=0 hc_split=0 cpu_policy_only=true
+d316c5fcc74c48ce84d235e4015f480c516ec9a00f28e686e6a661ccec28d63a  /home/avifenesh/.local/state/memra-rig-darklanes-20261002/scratch/A942-target/dsv4-control-policy/dsv4-dense-exact-tail-gate
+PASS dense_tc_control dense_fast=0 cpu_policy_only=true
+PASS dense_tc_control dense_fast=0 cpu_policy_only=true
+PASS dense_tc_control dense_fast=0 cpu_policy_only=true
+1dc8c1e091119bd8faa645d91d095d7e6bb0c5a658403e124260e01584cb7488  /home/avifenesh/.local/state/memra-rig-darklanes-20261002/scratch/A942-target/dsv4-control-policy/dsv4-dense-tc-gate
+PASS dense_tc_control dense_fast=0 cpu_policy_only=true
+PASS dense_tc_control dense_fast=0 cpu_policy_only=true
+PASS dense_tc_control dense_fast=0 cpu_policy_only=true
+84c8af5bd2f01fa35141d40b573ace4fb1edf890e89bb920a778f00d7eaf3425  /home/avifenesh/.local/state/memra-rig-darklanes-20261002/scratch/A942-target/dsv4-control-policy/dsv4-dense-tc-gate-r4
+PASS dense_tc_control dense_fast=0 cpu_policy_only=true
+PASS dense_tc_control dense_fast=0 cpu_policy_only=true
+PASS dense_tc_control dense_fast=0 cpu_policy_only=true
+974cc4e14f5d93789f8e05963e551c1fc777e8a69bc3f5d018d6af6047d4bd87  /home/avifenesh/.local/state/memra-rig-darklanes-20261002/scratch/A942-target/dsv4-control-policy/dsv4-dense-tc-gate-r7-driver
+PASS dense_tc_control dense_fast=0 cpu_policy_only=true
+PASS dense_tc_control dense_fast=0 cpu_policy_only=true
+PASS dense_tc_control dense_fast=0 cpu_policy_only=true
+dd0290446de241b9d9627912248cb2f4df0c1bfc8c216478f1bf2bccd23e665c  /home/avifenesh/.local/state/memra-rig-darklanes-20261002/scratch/A942-target/dsv4-control-policy/dsv4-dense-tc-gate-r8-driver
+PASS dense_tc_control dense_fast=0 cpu_policy_only=true
+PASS dense_tc_control dense_fast=0 cpu_policy_only=true
+PASS dense_tc_control dense_fast=0 cpu_policy_only=true
+8a4fbed152cfcc227bdde44bff08cba1655c0e948d481390d26b3c51c0725286  /home/avifenesh/.local/state/memra-rig-darklanes-20261002/scratch/A942-target/dsv4-control-policy/dsv4-dense-tc-gate-r9-driver
+	Command being timed: "bash tools/test-dsv4-dense-control-policy.sh"
+	User time (seconds): 20.10
+	System time (seconds): 11.83
+	Percent of CPU this job got: 90%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:35.17
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 206656
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 61
+	Minor (reclaiming a frame) page faults: 1305624
+	Voluntary context switches: 85561
+	Involuntary context switches: 562
+	Swaps: 0
+	File system inputs: 60354744
+	File system outputs: 97088
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
