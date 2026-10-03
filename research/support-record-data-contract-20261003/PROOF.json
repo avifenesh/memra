@@ -57,7 +57,7 @@
   "helper_sha256": "d64f1878b1f86b90af1fc9db0db77a2da0b26ef9c712ef234a79308691d79c32",
   "composition": {
     "tested_source": "ca3ae79b78a3de9ede52da3ceebc81c78bb58c28",
-    "composed_source": "ca3ae79b78a3de9ede52da3ceebc81c78bb58c28",
+    "composed_source": "6dba6e51e512c71f9e08322db0733b7bc41b9b57",
     "base": "251c534ea5e7fb07c709ce65d894053e92a27044",
     "tested_files_equal": {
       "tools/validation_plan.py": true,
@@ -68,6 +68,7 @@
       "tools/test_check_support_states.py": true,
       "docs/support-records.toml": true
     },
+    "fastgate_fixture_source_sha256": "5f57eff501e6e29e7f718069e415b19c8ba4257489099cdc8a07f68287f75d68",
     "qualification": false
   },
   "plans": {
@@ -1485,16 +1486,17 @@
     "description": "14 copied-data corruption results reused after exact original reader/data source equality; current clean and optional presence/deletion cases rerun"
   },
   "checks": {
-    "framework-final.log": "............................................................................................................................................\n----------------------------------------------------------------------\nRan 140 tests in 16.105s\n\nOK\nunittest-floor: OK: ran 140 tests (floor 140) for tools (test_validation_*.py)\n",
-    "cache-final.log": ".......................................................\n----------------------------------------------------------------------\nRan 55 tests in 0.327s\n\nOK\nunittest-floor: OK: ran 55 tests (floor 55) for tools (test_dense_control_cache.py)\n",
+    "framework-final.log": "............................................................................................................................................\n----------------------------------------------------------------------\nRan 140 tests in 14.055s\n\nOK\nunittest-floor: OK: ran 140 tests (floor 140) for tools (test_validation_*.py)\n",
+    "cache-final.log": ".......................................................\n----------------------------------------------------------------------\nRan 55 tests in 0.318s\n\nOK\nunittest-floor: OK: ran 55 tests (floor 55) for tools (test_dense_control_cache.py)\n",
     "registry-final.log": "Validation registry covers all 14 workspace packages\n",
-    "support-final.log": ".....................\n----------------------------------------------------------------------\nRan 21 tests in 2.012s\n\nOK\nunittest-floor: OK: ran 21 tests (floor 21) for tools (test_check_support_states.py)\n"
+    "support-final.log": ".....................\n----------------------------------------------------------------------\nRan 21 tests in 1.917s\n\nOK\nunittest-floor: OK: ran 21 tests (floor 21) for tools (test_check_support_states.py)\n",
+    "fastgate39-final.log": ".......................................\n----------------------------------------------------------------------\nRan 39 tests in 3.837s\n\nOK\nunittest-floor: OK: ran 39 tests (floor 39) for tools/fast-gate (test_plan.py)\n"
   },
   "coverage": {
     "admission": {
       "status": "passed",
-      "edges": 100,
-      "contract_id": "37bdf3e6408e3f126290278da7cc8624312576d6f813b641622e880084079591",
+      "edges": 104,
+      "contract_id": "0e59fb7ee59b01fb754e654c987c2ce3f1cb347d109f0f7cefa485c2fa143083",
       "qualification": false,
       "scope": "declared behavior assertions only; native receipt admission remains separate"
     },
@@ -1504,9 +1506,9 @@
     },
     "helper_sha256": {
       "execute.py": "d64f1878b1f86b90af1fc9db0db77a2da0b26ef9c712ef234a79308691d79c32",
-      "admit_coverage.py": "24f61d120a453f49e5675d2e7a03f04dd6c805ae96cfd59422e3df89a81cf933",
+      "admit_coverage.py": "0218ebc216bafb75d00ea254b62a14a7d1ac36530ff682db5afa54a72e5aa474",
       "executed-proof.json": "472cccbd3af7584d46b95343637ad7fa51e0c5407483109b7d2690c36212db05",
-      "composed-source-bridge.json": "3a949f6d57bbc18a401ffc05366f0a87153803e654239689cee87125a5256e22",
+      "composed-source-bridge.json": "5108c5ced8d0650e8c86d4a8fcea763a3e8c9a1953599130ef93a362e1cba0bd",
       "review-fixes/execute.py": "17bd636ce596fde834ae7b8a3bbbfc68ea12bf846c615a252b80c8598f085a56",
       "review-fixes/executed-proof.json": "d311d990aa09ce2b4cd6604a817f900f768e6e40739b94bef9eb25cf629d69c5"
     }
@@ -2302,5 +2304,17 @@
     "qualification": false,
     "helper_sha256": "17bd636ce596fde834ae7b8a3bbbfc68ea12bf846c615a252b80c8598f085a56",
     "historical_originals_unchanged": true
+  },
+  "fastgate_fixture_repair": {
+    "base": "c89901dfacca3fa4ae3bd787efbc346934f39a41",
+    "original_source_sha256": "a2ff27c8caea97c86971e3f989d9e9565ce433341335ed5b977706cc265fb741",
+    "candidate_source_sha256": "5f57eff501e6e29e7f718069e415b19c8ba4257489099cdc8a07f68287f75d68",
+    "actual_original_local": "fastgate39-original-red.log",
+    "hosted_original": "receipts/manager/support-955-gates-c899.log job111177580261",
+    "failure": "copied validation_plan.py lacks real support_record_inputs.py dependency, so expansion/refusal is correct",
+    "repair": "copy real dependency into clean fixture baseline; retain absent-dependency refusal and planted-resolver failure controls; no production or native-scope changes",
+    "floor": 39,
+    "qualification": false,
+    "current_raw_output": ".......................................\n----------------------------------------------------------------------\nRan 39 tests in 3.837s\n\nOK\nunittest-floor: OK: ran 39 tests (floor 39) for tools/fast-gate (test_plan.py)\n"
   }
 }
