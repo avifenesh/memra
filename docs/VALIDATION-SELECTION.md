@@ -140,6 +140,9 @@ missing directories and enumeration errors before compiler-input I/O. This trans
 guard leaves readable unrelated receipt content outside the census content shortcut.
 A receipt at repository root expands checks because the test copies the entire repository.
 Its CPU shortcut requires every changed input to be a declared CPU contract or plain docs.
+The generic unittest floor uses actual discovered, executed and successful outcomes.
+Skipped, expected-failure, incomplete, malformed or assertions-disabled execution cannot
+admit a CPU contract. The stated caller floors and native qualification requirements remain.
 Research/oracle inputs retain fast-gate's native expansion even when they do not rebuild a
 Cargo package; an absent compiler dependency does not prove an absent native probe dependency.
 The serving collector also selects its sampled-MTP consumer when that collector is present.

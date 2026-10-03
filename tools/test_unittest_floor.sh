@@ -6,7 +6,19 @@ cd "$(dirname "$0")/.."
 T=$(mktemp -d -t unittest-floor-teeth.XXXXXX)
 trap 'rm -rf "$T"' EXIT
 FAILS=0
-check() { local name=$1 expect=$2 got=$3; if [ "$got" = "$expect" ]; then echo "ok   $name"; else echo "FAIL $name (expected exit $expect, got $got)"; FAILS=$((FAILS+1)); fi; }
+EXPECTED=("empty discovery reds (Ran 0 tests)" "suite at its floor greens"
+          "floor above the count reds" "a failing test reds through the floor"
+          "non-integer floor is a usage error")
+declare -A SEEN=()
+check() {
+    local name=$1 expect=$2 got=$3 known=0 candidate
+    for candidate in "${EXPECTED[@]}"; do [ "$name" != "$candidate" ] || known=1; done
+    if [ "$known" != 1 ] || [ -n "${SEEN[$name]+x}" ]; then
+        echo "FAIL unknown or duplicate control: $name"; FAILS=$((FAILS+1)); return
+    fi
+    SEEN[$name]=1
+    if [ "$got" = "$expect" ]; then echo "ok   $name"; else echo "FAIL $name (expected exit $expect, got $got)"; FAILS=$((FAILS+1)); fi
+}
 mkdir -p "$T/empty" "$T/suite"
 cat > "$T/suite/test_a.py" <<'PY'
 import unittest
@@ -24,5 +36,9 @@ rc=0; tools/unittest-floor.sh "$T/suite" 'test_*.py' 2 >/dev/null 2>&1 || rc=$?;
 rc=0; tools/unittest-floor.sh "$T/suite" 'test_*.py' 3 >/dev/null 2>&1 || rc=$?; check "floor above the count reds" 1 "$rc"
 rc=0; tools/unittest-floor.sh "$T/suite" '*_b.py' 1 >/dev/null 2>&1 || rc=$?; check "a failing test reds through the floor" 1 "$rc"
 rc=0; tools/unittest-floor.sh "$T/suite" 'test_*.py' x >/dev/null 2>&1 || rc=$?; check "non-integer floor is a usage error" 2 "$rc"
-echo "test_unittest_floor: $((5-FAILS)) ok, $FAILS FAIL"
+for name in "${EXPECTED[@]}"; do
+    if [ -z "${SEEN[$name]+x}" ]; then echo "FAIL missing control: $name"; FAILS=$((FAILS+1)); fi
+done
+echo "test_unittest_floor: ${#SEEN[@]} original controls executed, $FAILS FAIL"
 [ "$FAILS" -eq 0 ]
+tools/unittest-floor.sh tools test_unittest_floor.py 12

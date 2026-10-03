@@ -294,7 +294,8 @@ class CheckoutAndWrapperTests(unittest.TestCase):
     def test_declared_cpu_contract_runs_without_compiler_or_gpu(self):
         tools = self.repo / 'tools'
         for name in ('validation_plan.py', 'validation_inputs.json', 'skip-census.py',
-                     'resolve-physical-gpu.py', 'test_resolve_physical_gpu.py', 'unittest-floor.sh'):
+                     'resolve-physical-gpu.py', 'test_resolve_physical_gpu.py', 'unittest-floor.sh',
+                     'unittest_floor.py'):
             shutil.copy2(HERE.parent / name, tools / name)
         package = self.repo / 'crates/memra-server'
         package.mkdir()
