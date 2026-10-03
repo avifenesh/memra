@@ -65,3 +65,10 @@ all admission/optimized-producer refusal controls. Both manifest orders are
 asserted by the executed method. `COMPOSED.json` and `receipts/composed-B-v6/` bind
 the repaired tuple. The earlier local-only composition remains separately in
 `COMPOSED-before-order-fix.json`. Current hosted CI and review still gate merge.
+
+The snapshot-bound producer is a historical research proof. Reproduce it at the
+`tested_source` named by the receipt. It compares pinned historical command arrays
+and applies source-text mutations, so it is not an always-on CI gate for future
+intentional planner changes. CI keeps all 15 behavioral methods through the
+194-test framework floor. Revuto identified the added permanent proof step as too
+strict; that unmerged step was removed without changing existing gate commands.
