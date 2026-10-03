@@ -1,0 +1,34 @@
+{
+  "schema": "health-fault-acceptance-v1",
+  "tested_source": "e372dfd2c819fca026a198ad7dfedc2f53035e16",
+  "tested_ELF_sha256": "c05d6352c981369c4105713ce96aeff611809e41c7880a34a5dfff6be6a181bc",
+  "native_rows": 62,
+  "native_failed_predicates": 0,
+  "queued_work_controls": 6,
+  "queued_work_failed_predicates": 0,
+  "CPU_package_controls": 13,
+  "coherent_guard_controls": {
+    "current": true,
+    "remove_oom_type_guard": false,
+    "remove_phase_policy": false
+  },
+  "scope": "Two pinned cached text artifacts with vendor-declared metadata; private artifact, metadata, billing and raw hardware receipts retained for owner review. No support state or fleet promotion.",
+  "behavior": [
+    "Calibration-disabled boots complete private native warmup before the listener opens.",
+    "Both scheduler prime paths cover control, bounded park, retry exhaustion and unarmed failure.",
+    "Serial errors after output and with retries disabled do not replay; device state retires behind a fence.",
+    "Batch control, recovery ON, retry failure and default-OFF arms retain their policy.",
+    "Panic recovery, disconnect, canary policy, drain and stalled worker detection/recovery pass their HTTP and terminal-accounting predicates."
+  ],
+  "queued_work_limits": [
+    "An owned helper returns a forged driver OOM only after actual pending GPU work in the ELF-bound prefill path. This is not allocator exhaustion.",
+    "Stock-before source has no retirement fence before target request-cache drops; fixed source synchronizes the same stream first.",
+    "Helper identifies PID/stream and ELF callsite; no explicit CUcontext handle receipt. Peer request in this control is sequential recovery."
+  ],
+  "profile_scope": "Actual default-vendor single and three concurrent requests complete with positive CUDA engagement. No graph capture, instantiate or launch API rows in these observed routes. This is not graph qualification.",
+  "private_proof_digests": {
+    "native_admission": "6e8e6a9c9959d7880544041f2f04fa9dc283e2e8fbd9d46414b7944b229fa77e",
+    "cache_lifetime_join": "67e2319b648e9b5112320836cd5b04b0bfb846c007788ed19a46c3dc9e5b71f1",
+    "exact_guard_controls": "138c46850e271597333d7914375259a509176f71503fd313dd0ee4766fcd4f57"
+  }
+}
