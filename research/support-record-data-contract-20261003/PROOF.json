@@ -1,0 +1,1502 @@
+{
+  "base": "62a9da5dc0b1407fdce483174b8c56f197b9b987",
+  "source": "55bd67334c9ddd98f46de5567d415da8f427d6f4",
+  "source_sha256": {
+    "tools/validation_plan.py": "da72db8d4f8f510ffa12c01900f280dde138d07d4e7257a65b25850a0b554106",
+    "tools/support_record_inputs.py": "75e47ba71a6e22bb9bf042666959b139c4328aa43e973029d4ed7a84f0c63aa7",
+    "tools/test_validation_support_record_inputs.py": "092bdf484abac7545ddd53a85ccd89af09eebbf6ae2ef645d3e6871154456648",
+    "tools/test_validation_plan.py": "5531e129c698fba4f38be567634a99ca9fc73492fe692fbf2b2d7de625a76a9d",
+    "tools/check-support-states.py": "27b4a68fb545cfd434caab8764f42becd021a52d7d6a36fb9fba466d396cf8ec",
+    "tools/test_check_support_states.py": "366556ebf11d27173032f1fe9cd71ef59d18b3c1f2314f920f214a63e5482050",
+    "docs/support-records.toml": "18d75c943748b89a8bd9d9bc07054b19dafb37080c211e3d15ee18640ad13e19"
+  },
+  "roles": {
+    "required": [
+      "research/glm53-flash-bringup-20260827/inspect-receipts/gates.txt",
+      "research/modelplan-onboarding-20260822/qwen3/gates.txt",
+      "research/modelplan-onboarding-20260822/qwen35/gates.txt",
+      "research/modelplan-onboarding-hy3-20260830/bf16-inspect/gates.txt",
+      "research/modelplan-onboarding-hy3-20260830/fp8-inspect/gates.txt",
+      "research/modelplan-onboarding-hy3-20260830/tiny/gates.txt",
+      "research/spill-c-20260919/pro-single-day11/inspect/gates.txt"
+    ],
+    "optional": [
+      "research/glm53-flash-bringup-20260827/inspect-receipts/artifact.lock",
+      "research/glm53-flash-bringup-20260827/inspect-receipts/tiny-gate.tsv",
+      "research/modelplan-onboarding-20260822/qwen3/artifact.lock",
+      "research/modelplan-onboarding-20260822/qwen3/tiny-gate.tsv",
+      "research/modelplan-onboarding-20260822/qwen35/artifact.lock",
+      "research/modelplan-onboarding-20260822/qwen35/tiny-gate.tsv",
+      "research/modelplan-onboarding-hy3-20260830/bf16-inspect/artifact.lock",
+      "research/modelplan-onboarding-hy3-20260830/bf16-inspect/tiny-gate.tsv",
+      "research/modelplan-onboarding-hy3-20260830/fp8-inspect/artifact.lock",
+      "research/modelplan-onboarding-hy3-20260830/fp8-inspect/tiny-gate.tsv",
+      "research/modelplan-onboarding-hy3-20260830/tiny/artifact.lock",
+      "research/modelplan-onboarding-hy3-20260830/tiny/tiny-gate.tsv",
+      "research/spill-c-20260919/pro-single-day11/inspect/artifact.lock",
+      "research/spill-c-20260919/pro-single-day11/inspect/tiny-gate.tsv"
+    ]
+  },
+  "missing_required_refusals": {
+    "research/glm53-flash-bringup-20260827/inspect-receipts/gates.txt": "selected contract input is missing: support-records: research/glm53-flash-bringup-20260827/inspect-receipts/gates.txt",
+    "research/modelplan-onboarding-20260822/qwen3/gates.txt": "selected contract input is missing: support-records: research/modelplan-onboarding-20260822/qwen3/gates.txt",
+    "research/modelplan-onboarding-20260822/qwen35/gates.txt": "selected contract input is missing: support-records: research/modelplan-onboarding-20260822/qwen35/gates.txt",
+    "research/modelplan-onboarding-hy3-20260830/bf16-inspect/gates.txt": "selected contract input is missing: support-records: research/modelplan-onboarding-hy3-20260830/bf16-inspect/gates.txt",
+    "research/modelplan-onboarding-hy3-20260830/fp8-inspect/gates.txt": "selected contract input is missing: support-records: research/modelplan-onboarding-hy3-20260830/fp8-inspect/gates.txt",
+    "research/modelplan-onboarding-hy3-20260830/tiny/gates.txt": "selected contract input is missing: support-records: research/modelplan-onboarding-hy3-20260830/tiny/gates.txt",
+    "research/spill-c-20260919/pro-single-day11/inspect/gates.txt": "selected contract input is missing: support-records: research/spill-c-20260919/pro-single-day11/inspect/gates.txt"
+  },
+  "optional_absence_controls": {
+    "research/modelplan-onboarding-20260822/qwen3/artifact.lock": "selection retained; absent alternative not required; actual census refuses missing family",
+    "research/modelplan-onboarding-hy3-20260830/tiny/tiny-gate.tsv": "selection retained; absent alternative not required; actual census refuses missing family"
+  },
+  "historical_originals_unchanged": true,
+  "all_existing_cpu_native_commands_preserved": true,
+  "qualification": false,
+  "scope": "support-record data closure only; source/docs reader nominations separate",
+  "helper_sha256": "b1590878394532c333b19c457cf6b2bc2617602cc438ff664a39caaf40b10c0c",
+  "composition": {
+    "tested_source": "55bd67334c9ddd98f46de5567d415da8f427d6f4",
+    "composed_source": "ab24b4f85c5aacf977d7f8b7a3e882fe5d413279",
+    "base": "251c534ea5e7fb07c709ce65d894053e92a27044",
+    "tested_files_equal": {
+      "tools/validation_plan.py": true,
+      "tools/support_record_inputs.py": true,
+      "tools/test_validation_support_record_inputs.py": true,
+      "tools/test_validation_plan.py": true,
+      "tools/check-support-states.py": true,
+      "tools/test_check_support_states.py": true,
+      "docs/support-records.toml": true
+    },
+    "qualification": false
+  },
+  "plans": {
+    "research/glm53-flash-bringup-20260827/inspect-receipts/gates.txt": {
+      "before": {
+        "mode": "scoped",
+        "cpu_contracts": [],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      },
+      "after": {
+        "mode": "scoped",
+        "cpu_contracts": [
+          {
+            "id": "support-records",
+            "required": true,
+            "inputs": [
+              "tools/check-support-states.py",
+              "tools/test_check_support_states.py",
+              "docs/support-records.toml",
+              "tools/support_record_inputs.py",
+              "tools/test_validation_support_record_inputs.py"
+            ],
+            "cpu": [
+              "tools/unittest-floor.sh",
+              "tools",
+              "test_check_support_states.py",
+              "21"
+            ],
+            "native": []
+          }
+        ],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      }
+    },
+    "research/modelplan-onboarding-20260822/qwen3/gates.txt": {
+      "before": {
+        "mode": "scoped",
+        "cpu_contracts": [],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      },
+      "after": {
+        "mode": "scoped",
+        "cpu_contracts": [
+          {
+            "id": "support-records",
+            "required": true,
+            "inputs": [
+              "tools/check-support-states.py",
+              "tools/test_check_support_states.py",
+              "docs/support-records.toml",
+              "tools/support_record_inputs.py",
+              "tools/test_validation_support_record_inputs.py"
+            ],
+            "cpu": [
+              "tools/unittest-floor.sh",
+              "tools",
+              "test_check_support_states.py",
+              "21"
+            ],
+            "native": []
+          }
+        ],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      }
+    },
+    "research/modelplan-onboarding-20260822/qwen35/gates.txt": {
+      "before": {
+        "mode": "scoped",
+        "cpu_contracts": [],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      },
+      "after": {
+        "mode": "scoped",
+        "cpu_contracts": [
+          {
+            "id": "support-records",
+            "required": true,
+            "inputs": [
+              "tools/check-support-states.py",
+              "tools/test_check_support_states.py",
+              "docs/support-records.toml",
+              "tools/support_record_inputs.py",
+              "tools/test_validation_support_record_inputs.py"
+            ],
+            "cpu": [
+              "tools/unittest-floor.sh",
+              "tools",
+              "test_check_support_states.py",
+              "21"
+            ],
+            "native": []
+          }
+        ],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      }
+    },
+    "research/modelplan-onboarding-hy3-20260830/bf16-inspect/gates.txt": {
+      "before": {
+        "mode": "scoped",
+        "cpu_contracts": [],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      },
+      "after": {
+        "mode": "scoped",
+        "cpu_contracts": [
+          {
+            "id": "support-records",
+            "required": true,
+            "inputs": [
+              "tools/check-support-states.py",
+              "tools/test_check_support_states.py",
+              "docs/support-records.toml",
+              "tools/support_record_inputs.py",
+              "tools/test_validation_support_record_inputs.py"
+            ],
+            "cpu": [
+              "tools/unittest-floor.sh",
+              "tools",
+              "test_check_support_states.py",
+              "21"
+            ],
+            "native": []
+          }
+        ],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      }
+    },
+    "research/modelplan-onboarding-hy3-20260830/fp8-inspect/gates.txt": {
+      "before": {
+        "mode": "scoped",
+        "cpu_contracts": [],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      },
+      "after": {
+        "mode": "scoped",
+        "cpu_contracts": [
+          {
+            "id": "support-records",
+            "required": true,
+            "inputs": [
+              "tools/check-support-states.py",
+              "tools/test_check_support_states.py",
+              "docs/support-records.toml",
+              "tools/support_record_inputs.py",
+              "tools/test_validation_support_record_inputs.py"
+            ],
+            "cpu": [
+              "tools/unittest-floor.sh",
+              "tools",
+              "test_check_support_states.py",
+              "21"
+            ],
+            "native": []
+          }
+        ],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      }
+    },
+    "research/modelplan-onboarding-hy3-20260830/tiny/gates.txt": {
+      "before": {
+        "mode": "scoped",
+        "cpu_contracts": [],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      },
+      "after": {
+        "mode": "scoped",
+        "cpu_contracts": [
+          {
+            "id": "support-records",
+            "required": true,
+            "inputs": [
+              "tools/check-support-states.py",
+              "tools/test_check_support_states.py",
+              "docs/support-records.toml",
+              "tools/support_record_inputs.py",
+              "tools/test_validation_support_record_inputs.py"
+            ],
+            "cpu": [
+              "tools/unittest-floor.sh",
+              "tools",
+              "test_check_support_states.py",
+              "21"
+            ],
+            "native": []
+          }
+        ],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      }
+    },
+    "research/spill-c-20260919/pro-single-day11/inspect/gates.txt": {
+      "before": {
+        "mode": "scoped",
+        "cpu_contracts": [],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      },
+      "after": {
+        "mode": "scoped",
+        "cpu_contracts": [
+          {
+            "id": "support-records",
+            "required": true,
+            "inputs": [
+              "tools/check-support-states.py",
+              "tools/test_check_support_states.py",
+              "docs/support-records.toml",
+              "tools/support_record_inputs.py",
+              "tools/test_validation_support_record_inputs.py"
+            ],
+            "cpu": [
+              "tools/unittest-floor.sh",
+              "tools",
+              "test_check_support_states.py",
+              "21"
+            ],
+            "native": []
+          }
+        ],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      }
+    },
+    "research/glm53-flash-bringup-20260827/inspect-receipts/artifact.lock": {
+      "before": {
+        "mode": "scoped",
+        "cpu_contracts": [],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      },
+      "after": {
+        "mode": "scoped",
+        "cpu_contracts": [
+          {
+            "id": "support-records",
+            "required": true,
+            "inputs": [
+              "tools/check-support-states.py",
+              "tools/test_check_support_states.py",
+              "docs/support-records.toml",
+              "tools/support_record_inputs.py",
+              "tools/test_validation_support_record_inputs.py"
+            ],
+            "cpu": [
+              "tools/unittest-floor.sh",
+              "tools",
+              "test_check_support_states.py",
+              "21"
+            ],
+            "native": []
+          }
+        ],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      }
+    },
+    "research/glm53-flash-bringup-20260827/inspect-receipts/tiny-gate.tsv": {
+      "before": {
+        "mode": "scoped",
+        "cpu_contracts": [],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      },
+      "after": {
+        "mode": "scoped",
+        "cpu_contracts": [
+          {
+            "id": "support-records",
+            "required": true,
+            "inputs": [
+              "tools/check-support-states.py",
+              "tools/test_check_support_states.py",
+              "docs/support-records.toml",
+              "tools/support_record_inputs.py",
+              "tools/test_validation_support_record_inputs.py"
+            ],
+            "cpu": [
+              "tools/unittest-floor.sh",
+              "tools",
+              "test_check_support_states.py",
+              "21"
+            ],
+            "native": []
+          }
+        ],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      }
+    },
+    "research/modelplan-onboarding-20260822/qwen3/artifact.lock": {
+      "before": {
+        "mode": "scoped",
+        "cpu_contracts": [],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      },
+      "after": {
+        "mode": "scoped",
+        "cpu_contracts": [
+          {
+            "id": "support-records",
+            "required": true,
+            "inputs": [
+              "tools/check-support-states.py",
+              "tools/test_check_support_states.py",
+              "docs/support-records.toml",
+              "tools/support_record_inputs.py",
+              "tools/test_validation_support_record_inputs.py"
+            ],
+            "cpu": [
+              "tools/unittest-floor.sh",
+              "tools",
+              "test_check_support_states.py",
+              "21"
+            ],
+            "native": []
+          }
+        ],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      }
+    },
+    "research/modelplan-onboarding-20260822/qwen3/tiny-gate.tsv": {
+      "before": {
+        "mode": "scoped",
+        "cpu_contracts": [],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      },
+      "after": {
+        "mode": "scoped",
+        "cpu_contracts": [
+          {
+            "id": "support-records",
+            "required": true,
+            "inputs": [
+              "tools/check-support-states.py",
+              "tools/test_check_support_states.py",
+              "docs/support-records.toml",
+              "tools/support_record_inputs.py",
+              "tools/test_validation_support_record_inputs.py"
+            ],
+            "cpu": [
+              "tools/unittest-floor.sh",
+              "tools",
+              "test_check_support_states.py",
+              "21"
+            ],
+            "native": []
+          }
+        ],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      }
+    },
+    "research/modelplan-onboarding-20260822/qwen35/artifact.lock": {
+      "before": {
+        "mode": "scoped",
+        "cpu_contracts": [],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      },
+      "after": {
+        "mode": "scoped",
+        "cpu_contracts": [
+          {
+            "id": "support-records",
+            "required": true,
+            "inputs": [
+              "tools/check-support-states.py",
+              "tools/test_check_support_states.py",
+              "docs/support-records.toml",
+              "tools/support_record_inputs.py",
+              "tools/test_validation_support_record_inputs.py"
+            ],
+            "cpu": [
+              "tools/unittest-floor.sh",
+              "tools",
+              "test_check_support_states.py",
+              "21"
+            ],
+            "native": []
+          }
+        ],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      }
+    },
+    "research/modelplan-onboarding-20260822/qwen35/tiny-gate.tsv": {
+      "before": {
+        "mode": "scoped",
+        "cpu_contracts": [],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      },
+      "after": {
+        "mode": "scoped",
+        "cpu_contracts": [
+          {
+            "id": "support-records",
+            "required": true,
+            "inputs": [
+              "tools/check-support-states.py",
+              "tools/test_check_support_states.py",
+              "docs/support-records.toml",
+              "tools/support_record_inputs.py",
+              "tools/test_validation_support_record_inputs.py"
+            ],
+            "cpu": [
+              "tools/unittest-floor.sh",
+              "tools",
+              "test_check_support_states.py",
+              "21"
+            ],
+            "native": []
+          }
+        ],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      }
+    },
+    "research/modelplan-onboarding-hy3-20260830/bf16-inspect/artifact.lock": {
+      "before": {
+        "mode": "scoped",
+        "cpu_contracts": [],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      },
+      "after": {
+        "mode": "scoped",
+        "cpu_contracts": [
+          {
+            "id": "support-records",
+            "required": true,
+            "inputs": [
+              "tools/check-support-states.py",
+              "tools/test_check_support_states.py",
+              "docs/support-records.toml",
+              "tools/support_record_inputs.py",
+              "tools/test_validation_support_record_inputs.py"
+            ],
+            "cpu": [
+              "tools/unittest-floor.sh",
+              "tools",
+              "test_check_support_states.py",
+              "21"
+            ],
+            "native": []
+          }
+        ],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      }
+    },
+    "research/modelplan-onboarding-hy3-20260830/bf16-inspect/tiny-gate.tsv": {
+      "before": {
+        "mode": "scoped",
+        "cpu_contracts": [],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      },
+      "after": {
+        "mode": "scoped",
+        "cpu_contracts": [
+          {
+            "id": "support-records",
+            "required": true,
+            "inputs": [
+              "tools/check-support-states.py",
+              "tools/test_check_support_states.py",
+              "docs/support-records.toml",
+              "tools/support_record_inputs.py",
+              "tools/test_validation_support_record_inputs.py"
+            ],
+            "cpu": [
+              "tools/unittest-floor.sh",
+              "tools",
+              "test_check_support_states.py",
+              "21"
+            ],
+            "native": []
+          }
+        ],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      }
+    },
+    "research/modelplan-onboarding-hy3-20260830/fp8-inspect/artifact.lock": {
+      "before": {
+        "mode": "scoped",
+        "cpu_contracts": [],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      },
+      "after": {
+        "mode": "scoped",
+        "cpu_contracts": [
+          {
+            "id": "support-records",
+            "required": true,
+            "inputs": [
+              "tools/check-support-states.py",
+              "tools/test_check_support_states.py",
+              "docs/support-records.toml",
+              "tools/support_record_inputs.py",
+              "tools/test_validation_support_record_inputs.py"
+            ],
+            "cpu": [
+              "tools/unittest-floor.sh",
+              "tools",
+              "test_check_support_states.py",
+              "21"
+            ],
+            "native": []
+          }
+        ],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      }
+    },
+    "research/modelplan-onboarding-hy3-20260830/fp8-inspect/tiny-gate.tsv": {
+      "before": {
+        "mode": "scoped",
+        "cpu_contracts": [],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      },
+      "after": {
+        "mode": "scoped",
+        "cpu_contracts": [
+          {
+            "id": "support-records",
+            "required": true,
+            "inputs": [
+              "tools/check-support-states.py",
+              "tools/test_check_support_states.py",
+              "docs/support-records.toml",
+              "tools/support_record_inputs.py",
+              "tools/test_validation_support_record_inputs.py"
+            ],
+            "cpu": [
+              "tools/unittest-floor.sh",
+              "tools",
+              "test_check_support_states.py",
+              "21"
+            ],
+            "native": []
+          }
+        ],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      }
+    },
+    "research/modelplan-onboarding-hy3-20260830/tiny/artifact.lock": {
+      "before": {
+        "mode": "scoped",
+        "cpu_contracts": [],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      },
+      "after": {
+        "mode": "scoped",
+        "cpu_contracts": [
+          {
+            "id": "support-records",
+            "required": true,
+            "inputs": [
+              "tools/check-support-states.py",
+              "tools/test_check_support_states.py",
+              "docs/support-records.toml",
+              "tools/support_record_inputs.py",
+              "tools/test_validation_support_record_inputs.py"
+            ],
+            "cpu": [
+              "tools/unittest-floor.sh",
+              "tools",
+              "test_check_support_states.py",
+              "21"
+            ],
+            "native": []
+          }
+        ],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      }
+    },
+    "research/modelplan-onboarding-hy3-20260830/tiny/tiny-gate.tsv": {
+      "before": {
+        "mode": "scoped",
+        "cpu_contracts": [],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      },
+      "after": {
+        "mode": "scoped",
+        "cpu_contracts": [
+          {
+            "id": "support-records",
+            "required": true,
+            "inputs": [
+              "tools/check-support-states.py",
+              "tools/test_check_support_states.py",
+              "docs/support-records.toml",
+              "tools/support_record_inputs.py",
+              "tools/test_validation_support_record_inputs.py"
+            ],
+            "cpu": [
+              "tools/unittest-floor.sh",
+              "tools",
+              "test_check_support_states.py",
+              "21"
+            ],
+            "native": []
+          }
+        ],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      }
+    },
+    "research/spill-c-20260919/pro-single-day11/inspect/artifact.lock": {
+      "before": {
+        "mode": "scoped",
+        "cpu_contracts": [],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      },
+      "after": {
+        "mode": "scoped",
+        "cpu_contracts": [
+          {
+            "id": "support-records",
+            "required": true,
+            "inputs": [
+              "tools/check-support-states.py",
+              "tools/test_check_support_states.py",
+              "docs/support-records.toml",
+              "tools/support_record_inputs.py",
+              "tools/test_validation_support_record_inputs.py"
+            ],
+            "cpu": [
+              "tools/unittest-floor.sh",
+              "tools",
+              "test_check_support_states.py",
+              "21"
+            ],
+            "native": []
+          }
+        ],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      }
+    },
+    "research/spill-c-20260919/pro-single-day11/inspect/tiny-gate.tsv": {
+      "before": {
+        "mode": "scoped",
+        "cpu_contracts": [],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      },
+      "after": {
+        "mode": "scoped",
+        "cpu_contracts": [
+          {
+            "id": "support-records",
+            "required": true,
+            "inputs": [
+              "tools/check-support-states.py",
+              "tools/test_check_support_states.py",
+              "docs/support-records.toml",
+              "tools/support_record_inputs.py",
+              "tools/test_validation_support_record_inputs.py"
+            ],
+            "cpu": [
+              "tools/unittest-floor.sh",
+              "tools",
+              "test_check_support_states.py",
+              "21"
+            ],
+            "native": []
+          }
+        ],
+        "jobs": {
+          "build": false,
+          "clippy": false,
+          "server": false,
+          "engine": false,
+          "portable": false,
+          "core": false,
+          "lanes": false,
+          "arch": false,
+          "publish": false
+        },
+        "native": {
+          "scope": "none",
+          "requirements": [],
+          "qualification": false
+        }
+      }
+    }
+  },
+  "current_actual_existing_consumer": {
+    "current-clean-consumer": {
+      "exit": 0,
+      "stdout": "",
+      "stderr": ".\n----------------------------------------------------------------------\nRan 1 test in 0.083s\n\nOK\n"
+    },
+    "created-shadowing-artifact-lock": {
+      "exit": 1,
+      "stdout": "",
+      "stderr": "F\n======================================================================\nFAIL: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B955-data-1trj9tu7/tools/test_check_support_states.py\", line 65, in test_clean_copy_passes\n    self.assertEqual(result.returncode, 0, result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : check-support-states: docs/support-records.toml: record hy3-bf16-reference: TinyParity evidence research/modelplan-onboarding-hy3-20260830/tiny/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'hy3'\ncheck-support-states: FAIL (1 violations)\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.080s\n\nFAILED (failures=1)\n"
+    },
+    "deleted-selected/research/modelplan-onboarding-20260822/qwen3/artifact.lock": {
+      "exit": 1,
+      "stdout": "",
+      "stderr": "F\n======================================================================\nFAIL: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B955-data-1trj9tu7/tools/test_check_support_states.py\", line 65, in test_clean_copy_passes\n    self.assertEqual(result.returncode, 0, result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : check-support-states: docs/support-records.toml: record qwen3-tiny-random: Config evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: TokenizerTemplate evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: TensorCensus evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: TinyParity evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: CheckpointParity evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: Serve evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: FAIL (6 violations)\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.080s\n\nFAILED (failures=1)\n"
+    },
+    "deleted-selected/research/modelplan-onboarding-hy3-20260830/tiny/tiny-gate.tsv": {
+      "exit": 1,
+      "stdout": "",
+      "stderr": "F\n======================================================================\nFAIL: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B955-data-1trj9tu7/tools/test_check_support_states.py\", line 65, in test_clean_copy_passes\n    self.assertEqual(result.returncode, 0, result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : check-support-states: docs/support-records.toml: record hy3-bf16-reference: TinyParity evidence research/modelplan-onboarding-hy3-20260830/tiny/gates.txt is for family None, not 'hy3'\ncheck-support-states: FAIL (1 violations)\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.080s\n\nFAILED (failures=1)\n"
+    }
+  },
+  "reused_unchanged_actual_mutations": {
+    "source_sha256": {
+      "research/glm53-flash-bringup-20260827/inspect-receipts/artifact.lock": "d9c230c842415046e9e5741f464d3d5cb8ef0308288bc87613b5f16266d6e653",
+      "research/glm53-flash-bringup-20260827/inspect-receipts/gates.txt": "a1b07754ee8f220c283a0d154f7bdeb144839713963ec7d41177c57266805387",
+      "research/modelplan-onboarding-20260822/qwen3/artifact.lock": "93ec8fca3e5555a7f42f3cc7c24bdd918d082f45249ff0c771a94db9669d09fb",
+      "research/modelplan-onboarding-20260822/qwen3/gates.txt": "694776f751ded95662fa0ca262b7e0f2b72c63b383f519267d7d15b338c617dc",
+      "research/modelplan-onboarding-20260822/qwen35/artifact.lock": "e7bcefdbbb56b6ab16cfbe6a4220b5b8d572a7d5b532821fb0f86919d8cadafa",
+      "research/modelplan-onboarding-20260822/qwen35/gates.txt": "b087730c6282c25ec1e1e4708bcaa90a67587164ded0559640604ccfde503327",
+      "research/modelplan-onboarding-hy3-20260830/bf16-inspect/artifact.lock": "8a27d06590836f976a956d56f096fad5476a5e533bf86acdbfb61277a4bc486e",
+      "research/modelplan-onboarding-hy3-20260830/bf16-inspect/gates.txt": "a1b07754ee8f220c283a0d154f7bdeb144839713963ec7d41177c57266805387",
+      "research/modelplan-onboarding-hy3-20260830/fp8-inspect/artifact.lock": "4193548a4ea7919eeafadaa2dcf95635e30739b6e96e86e12174cf06d74c41f4",
+      "research/modelplan-onboarding-hy3-20260830/fp8-inspect/gates.txt": "a1b07754ee8f220c283a0d154f7bdeb144839713963ec7d41177c57266805387",
+      "research/modelplan-onboarding-hy3-20260830/tiny/gates.txt": "402505a489c36241c98cac11ee778f75e6b35fd08d10f32b2256b281a6681266",
+      "research/modelplan-onboarding-hy3-20260830/tiny/tiny-gate.tsv": "c63a84b4fb0c80b5c91d1f43c135c89d75357861421eb74316eccbcd6cf4582d",
+      "research/spill-c-20260919/pro-single-day11/inspect/artifact.lock": "bd1eb8d248e5741c5f11f9753a63c4a2c1df290834902d12f6f5a69b6d16991d",
+      "research/spill-c-20260919/pro-single-day11/inspect/gates.txt": "a1b07754ee8f220c283a0d154f7bdeb144839713963ec7d41177c57266805387",
+      "tools/check-support-states.py": "27b4a68fb545cfd434caab8764f42becd021a52d7d6a36fb9fba466d396cf8ec",
+      "tools/test_check_support_states.py": "366556ebf11d27173032f1fe9cd71ef59d18b3c1f2314f920f214a63e5482050",
+      "docs/support-records.toml": "18d75c943748b89a8bd9d9bc07054b19dafb37080c211e3d15ee18640ad13e19"
+    },
+    "actual_existing_clean_copy_consumer": {
+      "baseline": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ".\n----------------------------------------------------------------------\nRan 1 test in 0.087s\n\nOK\n"
+      },
+      "research/glm53-flash-bringup-20260827/inspect-receipts/artifact.lock": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "F\n======================================================================\nFAIL: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B-support-records-full-intake-xh6cetm8/tools/test_check_support_states.py\", line 65, in test_clean_copy_passes\n    self.assertEqual(result.returncode, 0, result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : check-support-states: docs/support-records.toml: record glm5_next-reference: Config evidence research/glm53-flash-bringup-20260827/inspect-receipts/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'glm5_next'\ncheck-support-states: docs/support-records.toml: record glm5_next-reference: TokenizerTemplate evidence research/glm53-flash-bringup-20260827/inspect-receipts/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'glm5_next'\ncheck-support-states: docs/support-records.toml: record glm5_next-reference: TensorCensus evidence research/glm53-flash-bringup-20260827/inspect-receipts/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'glm5_next'\ncheck-support-states: FAIL (3 violations)\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.085s\n\nFAILED (failures=1)\n"
+      },
+      "research/glm53-flash-bringup-20260827/inspect-receipts/gates.txt": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "F\n======================================================================\nFAIL: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B-support-records-full-intake-xh6cetm8/tools/test_check_support_states.py\", line 65, in test_clean_copy_passes\n    self.assertEqual(result.returncode, 0, result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : check-support-states: docs/support-records.toml: record glm5_next-reference: Config evidence research/glm53-flash-bringup-20260827/inspect-receipts/gates.txt says 'failed'\ncheck-support-states: FAIL (1 violations)\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.082s\n\nFAILED (failures=1)\n"
+      },
+      "research/modelplan-onboarding-20260822/qwen3/artifact.lock": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "F\n======================================================================\nFAIL: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B-support-records-full-intake-xh6cetm8/tools/test_check_support_states.py\", line 65, in test_clean_copy_passes\n    self.assertEqual(result.returncode, 0, result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : check-support-states: docs/support-records.toml: record qwen3-tiny-random: Config evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: TokenizerTemplate evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: TensorCensus evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: TinyParity evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: CheckpointParity evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: Serve evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'qwen3'\ncheck-support-states: FAIL (6 violations)\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.085s\n\nFAILED (failures=1)\n"
+      },
+      "research/modelplan-onboarding-20260822/qwen3/gates.txt": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "F\n======================================================================\nFAIL: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B-support-records-full-intake-xh6cetm8/tools/test_check_support_states.py\", line 65, in test_clean_copy_passes\n    self.assertEqual(result.returncode, 0, result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : check-support-states: docs/support-records.toml: record qwen3-tiny-random: CheckpointParity evidence research/modelplan-onboarding-20260822/qwen3/gates.txt says 'failed'\ncheck-support-states: FAIL (1 violations)\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.088s\n\nFAILED (failures=1)\n"
+      },
+      "research/modelplan-onboarding-20260822/qwen35/artifact.lock": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "F\n======================================================================\nFAIL: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B-support-records-full-intake-xh6cetm8/tools/test_check_support_states.py\", line 65, in test_clean_copy_passes\n    self.assertEqual(result.returncode, 0, result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : check-support-states: docs/support-records.toml: record qwen35-9b-nvfp4-gguf: Config evidence research/modelplan-onboarding-20260822/qwen35/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'qwen35'\ncheck-support-states: docs/support-records.toml: record qwen35-9b-nvfp4-gguf: TokenizerTemplate evidence research/modelplan-onboarding-20260822/qwen35/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'qwen35'\ncheck-support-states: docs/support-records.toml: record qwen35-9b-nvfp4-gguf: TensorCensus evidence research/modelplan-onboarding-20260822/qwen35/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'qwen35'\ncheck-support-states: docs/support-records.toml: record qwen35-9b-nvfp4-gguf: TinyParity evidence research/modelplan-onboarding-20260822/qwen35/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'qwen35'\ncheck-support-states: docs/support-records.toml: record qwen35-9b-nvfp4-gguf: RewriteParity evidence research/modelplan-onboarding-20260822/qwen35/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'qwen35'\ncheck-support-states: docs/support-records.toml: record qwen35-9b-nvfp4-b200-w4a8: TokenizerTemplate evidence research/modelplan-onboarding-20260822/qwen35/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'qwen35'\ncheck-support-states: docs/support-records.toml: record qwen35-9b-nvfp4-b200-w4a8: TensorCensus evidence research/modelplan-onboarding-20260822/qwen35/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'qwen35'\ncheck-support-states: FAIL (7 violations)\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.088s\n\nFAILED (failures=1)\n"
+      },
+      "research/modelplan-onboarding-20260822/qwen35/gates.txt": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "F\n======================================================================\nFAIL: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B-support-records-full-intake-xh6cetm8/tools/test_check_support_states.py\", line 65, in test_clean_copy_passes\n    self.assertEqual(result.returncode, 0, result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : check-support-states: docs/support-records.toml: record qwen35-9b-nvfp4-gguf: Config evidence research/modelplan-onboarding-20260822/qwen35/gates.txt says 'failed'\ncheck-support-states: FAIL (1 violations)\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.086s\n\nFAILED (failures=1)\n"
+      },
+      "research/modelplan-onboarding-hy3-20260830/bf16-inspect/artifact.lock": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "F\n======================================================================\nFAIL: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B-support-records-full-intake-xh6cetm8/tools/test_check_support_states.py\", line 65, in test_clean_copy_passes\n    self.assertEqual(result.returncode, 0, result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : check-support-states: docs/support-records.toml: record hy3-bf16-reference: Config evidence research/modelplan-onboarding-hy3-20260830/bf16-inspect/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'hy3'\ncheck-support-states: docs/support-records.toml: record hy3-bf16-reference: TokenizerTemplate evidence research/modelplan-onboarding-hy3-20260830/bf16-inspect/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'hy3'\ncheck-support-states: docs/support-records.toml: record hy3-bf16-reference: TensorCensus evidence research/modelplan-onboarding-hy3-20260830/bf16-inspect/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'hy3'\ncheck-support-states: FAIL (3 violations)\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.084s\n\nFAILED (failures=1)\n"
+      },
+      "research/modelplan-onboarding-hy3-20260830/bf16-inspect/gates.txt": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "F\n======================================================================\nFAIL: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B-support-records-full-intake-xh6cetm8/tools/test_check_support_states.py\", line 65, in test_clean_copy_passes\n    self.assertEqual(result.returncode, 0, result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : check-support-states: docs/support-records.toml: record hy3-bf16-reference: Config evidence research/modelplan-onboarding-hy3-20260830/bf16-inspect/gates.txt says 'failed'\ncheck-support-states: FAIL (1 violations)\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.090s\n\nFAILED (failures=1)\n"
+      },
+      "research/modelplan-onboarding-hy3-20260830/fp8-inspect/artifact.lock": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "F\n======================================================================\nFAIL: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B-support-records-full-intake-xh6cetm8/tools/test_check_support_states.py\", line 65, in test_clean_copy_passes\n    self.assertEqual(result.returncode, 0, result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : check-support-states: docs/support-records.toml: record hy3-bf16-reference: Config evidence research/modelplan-onboarding-hy3-20260830/fp8-inspect/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'hy3'\ncheck-support-states: docs/support-records.toml: record hy3-bf16-reference: TokenizerTemplate evidence research/modelplan-onboarding-hy3-20260830/fp8-inspect/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'hy3'\ncheck-support-states: docs/support-records.toml: record hy3-bf16-reference: TensorCensus evidence research/modelplan-onboarding-hy3-20260830/fp8-inspect/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'hy3'\ncheck-support-states: FAIL (3 violations)\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.089s\n\nFAILED (failures=1)\n"
+      },
+      "research/modelplan-onboarding-hy3-20260830/fp8-inspect/gates.txt": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "F\n======================================================================\nFAIL: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B-support-records-full-intake-xh6cetm8/tools/test_check_support_states.py\", line 65, in test_clean_copy_passes\n    self.assertEqual(result.returncode, 0, result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : check-support-states: docs/support-records.toml: record hy3-bf16-reference: Config evidence research/modelplan-onboarding-hy3-20260830/fp8-inspect/gates.txt says 'failed'\ncheck-support-states: FAIL (1 violations)\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.089s\n\nFAILED (failures=1)\n"
+      },
+      "research/modelplan-onboarding-hy3-20260830/tiny/gates.txt": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "F\n======================================================================\nFAIL: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B-support-records-full-intake-xh6cetm8/tools/test_check_support_states.py\", line 65, in test_clean_copy_passes\n    self.assertEqual(result.returncode, 0, result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : check-support-states: docs/support-records.toml: record hy3-bf16-reference: TinyParity evidence research/modelplan-onboarding-hy3-20260830/tiny/gates.txt says 'failed'\ncheck-support-states: FAIL (1 violations)\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.087s\n\nFAILED (failures=1)\n"
+      },
+      "research/modelplan-onboarding-hy3-20260830/tiny/tiny-gate.tsv": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "F\n======================================================================\nFAIL: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B-support-records-full-intake-xh6cetm8/tools/test_check_support_states.py\", line 65, in test_clean_copy_passes\n    self.assertEqual(result.returncode, 0, result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : check-support-states: docs/support-records.toml: record hy3-bf16-reference: TinyParity evidence research/modelplan-onboarding-hy3-20260830/tiny/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'hy3'\ncheck-support-states: FAIL (1 violations)\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.084s\n\nFAILED (failures=1)\n"
+      },
+      "research/spill-c-20260919/pro-single-day11/inspect/artifact.lock": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "F\n======================================================================\nFAIL: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B-support-records-full-intake-xh6cetm8/tools/test_check_support_states.py\", line 65, in test_clean_copy_passes\n    self.assertEqual(result.returncode, 0, result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : check-support-states: docs/support-records.toml: record qwen35_moe-reference: Config evidence research/spill-c-20260919/pro-single-day11/inspect/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'qwen35_moe'\ncheck-support-states: docs/support-records.toml: record qwen35_moe-reference: TokenizerTemplate evidence research/spill-c-20260919/pro-single-day11/inspect/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'qwen35_moe'\ncheck-support-states: docs/support-records.toml: record qwen35_moe-reference: TensorCensus evidence research/spill-c-20260919/pro-single-day11/inspect/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'qwen35_moe'\ncheck-support-states: FAIL (3 violations)\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.084s\n\nFAILED (failures=1)\n"
+      },
+      "research/spill-c-20260919/pro-single-day11/inspect/gates.txt": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "F\n======================================================================\nFAIL: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B-support-records-full-intake-xh6cetm8/tools/test_check_support_states.py\", line 65, in test_clean_copy_passes\n    self.assertEqual(result.returncode, 0, result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : check-support-states: docs/support-records.toml: record qwen35_moe-reference: Config evidence research/spill-c-20260919/pro-single-day11/inspect/gates.txt says 'failed'\ncheck-support-states: FAIL (1 violations)\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.087s\n\nFAILED (failures=1)\n"
+      }
+    },
+    "description": "14 copied-data corruption results reused after exact original reader/data source equality; current clean and optional presence/deletion cases rerun"
+  },
+  "checks": {
+    "framework-final.log": "............................................................................................................................................\n----------------------------------------------------------------------\nRan 140 tests in 14.470s\n\nOK\nunittest-floor: OK: ran 140 tests (floor 140) for tools (test_validation_*.py)\n",
+    "cache-final.log": ".......................................................\n----------------------------------------------------------------------\nRan 55 tests in 0.324s\n\nOK\nunittest-floor: OK: ran 55 tests (floor 55) for tools (test_dense_control_cache.py)\n",
+    "registry-final.log": "Validation registry covers all 14 workspace packages\n",
+    "support-final.log": ".....................\n----------------------------------------------------------------------\nRan 21 tests in 1.984s\n\nOK\nunittest-floor: OK: ran 21 tests (floor 21) for tools (test_check_support_states.py)\n"
+  },
+  "coverage": {
+    "admission": {
+      "status": "passed",
+      "edges": 76,
+      "contract_id": "00991a4415742ca159d6b98b3a0f1d36233d381e50eefbe06280d77e6a2f2d40",
+      "qualification": false,
+      "scope": "declared behavior assertions only; native receipt admission remains separate"
+    },
+    "controls": {
+      "missing-required-edge": "selected test/control lacks an explicit passing assertion: data-closure/missing-required/research/glm53-flash-bringup-20260827/inspect-receipts/gates.txt",
+      "skipped-mandatory-regressions": "empty or skipped test result: regressions"
+    },
+    "helper_sha256": {
+      "execute.py": "b1590878394532c333b19c457cf6b2bc2617602cc438ff664a39caaf40b10c0c",
+      "admit_coverage.py": "619da13e7e8948733c31f36c231f32c781fff30c8414ba55a730eb4e5a13753a",
+      "executed-proof.json": "3aabb4e61be7e0b7f89911cc8d22c1323e0c5cad881dfe59cfd39c180ca7b994",
+      "composed-source-bridge.json": "7f04e4f5bc3b0fce4c846ec369ac6652c8bb249c53be9317eb2a1fa6445972b1"
+    }
+  }
+}
