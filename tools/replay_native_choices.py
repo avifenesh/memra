@@ -136,6 +136,9 @@ def verify(root,baseline=None,expected=None):
         require(not records['budget'].get('prime_events') and not records['budget'].get('worker_rows'),'prepaid_exhaustion','refusal precedes native work')
     elif manifest['phase']=='kv':
         r=records['kv']
+        pressure=json.loads((root/'pressure.json').read_text())
+        require(pressure['allocation_code']==pressure['free_code']==pressure['own_context_reset_code']==0 and pressure['allocated']>0 and pressure['keep_free']>=1024**3,'kv_exhaustion','real lane-owned allocation is released with its own context')
+        require(records['kv-warm']['status']==records['kv-recovery']['status']==200,'kv_exhaustion','same N8 states recover after owned pressure is removed')
         require(r['status']==400 and r.get('body',{}).get('error',{}).get('code')=='context_length_exceeded','kv_exhaustion','idle native state admission uses the existing non-retryable capacity contract')
         require(not r.get('prime_events') and not r.get('fork_lines') and not r.get('worker_rows'),'kv_exhaustion','native allocation refused before priming')
     elif manifest['phase']=='slots':

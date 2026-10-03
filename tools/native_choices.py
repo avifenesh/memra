@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Broker-only native n-choice collection. Retain successes and failures unchanged."""
 import argparse
+import ctypes
 import hashlib
 import http.client
 import json
@@ -23,6 +24,38 @@ def sha(path):
     with path.open('rb') as f:
         for b in iter(lambda:f.read(1048576),b''):h.update(b)
     return h.hexdigest()
+
+class Pressure:
+    """Brief lane-owned allocation; never changes the server or a foreign context."""
+    def __init__(self,out):
+        self.out=out;self.ptr=ctypes.c_void_p();self.api=ctypes.CDLL('/usr/local/cuda-13.1/lib64/libcudart.so')
+        self.api.cudaSetDevice.argtypes=[ctypes.c_int]
+        self.api.cudaMemGetInfo.argtypes=[ctypes.POINTER(ctypes.c_size_t),ctypes.POINTER(ctypes.c_size_t)]
+        self.api.cudaMalloc.argtypes=[ctypes.POINTER(ctypes.c_void_p),ctypes.c_size_t]
+        self.api.cudaFree.argtypes=[ctypes.c_void_p]
+        self.state={}
+    def __enter__(self):
+        try:
+            assert self.api.cudaSetDevice(0)==0
+            free=ctypes.c_size_t();total=ctypes.c_size_t()
+            assert self.api.cudaMemGetInfo(ctypes.byref(free),ctypes.byref(total))==0
+            keep=1024*1024*1024
+            assert free.value>keep*2,'insufficient free memory for this controlled pressure cell'
+            amount=free.value-keep
+            self.state={'before_free':free.value,'total':total.value,'allocated':amount,'keep_free':keep,'pid':os.getpid()}
+            rc=self.api.cudaMalloc(ctypes.byref(self.ptr),amount);self.state['allocation_code']=rc
+            assert rc==0,'owned CUDA allocation failed'
+            assert self.api.cudaMemGetInfo(ctypes.byref(free),ctypes.byref(total))==0
+            self.state['after_free']=free.value;save(self.out/'pressure.json',self.state)
+            return self
+        except BaseException:
+            self.__exit__(None,None,None);raise
+    def __exit__(self,*_):
+        if self.ptr.value:
+            self.state['free_code']=self.api.cudaFree(self.ptr);self.ptr=ctypes.c_void_p()
+        self.state['own_context_reset_code']=self.api.cudaDeviceReset()
+        save(self.out/'pressure.json',self.state)
+        assert self.state.get('free_code',0)==0 and self.state['own_context_reset_code']==0,'owned pressure context failed cleanup'
 
 class Native:
     def __init__(self,args):
@@ -173,6 +206,12 @@ def main():
                 assert native.cv.wait_for(lambda:any(e['tag']=='CHOICE_DROP' and e['value']['id']==identity for e in native.events) or native.process.poll() is not None,10),'occupier drop missing'
             save(folder/'client.json',{'id':identity,'status':response.status,'disconnected':True,'callbacks':[e for e in native.events if e['value'].get('id')==identity]})
             results.append(native.request('slots-recovery','/v1/chat/completions',{'model':'fixture','messages':[{'role':'user','content':'Reply with one short sentence.'}],'n':4,'max_tokens':8,'seed':73}))
+        elif args.phase=='kv':
+            body={'model':'fixture','prompt':'Write a long numbered list.','max_tokens':8,'seed':73}
+            results.append(native.request('kv-warm','/v1/completions',body))
+            with Pressure(args.out):
+                results.append(native.request('kv','/v1/completions',{**body,'n':8,'max_tokens':3072}))
+            results.append(native.request('kv-recovery','/v1/completions',{**body,'n':8}))
         else:
             body={'model':'fixture','prompt':'Write a long numbered list.','n':4,'max_tokens':64,'seed':73}
             if args.phase=='budget':

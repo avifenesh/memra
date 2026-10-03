@@ -1,6 +1,10 @@
 import unittest
+import ctypes
+import tempfile
+from pathlib import Path
 from copy import deepcopy
 from choice_verifier import check_completed, check_refusal, check_repeat, check_tools, Invalid
+from native_choices import Pressure
 
 def fixture():
     identity='fixture'; output=3
@@ -9,6 +13,32 @@ def fixture():
     return {'id':identity,'n':2,'seed':101,'body':{'choices':[{'index':0,'text':'a','finish_reason':'length'},{'index':1,'text':'bc','finish_reason':'length'}],'usage':{'prompt_tokens':10,'completion_tokens':3,'total_tokens':13,'prompt_tokens_details':{'cached_tokens':2}}},'callbacks':callbacks,'worker_rows':[{'group':identity,'index':0,'seed':101,'prompt':10,'cached':2,'output':1},{'group':identity,'index':1,'seed':102,'prompt':10,'cached':2,'output':2}],'forks':[{'choices':2,'copies':1,'leader':0}],'leader_prime_segments':1,'follower_prime_segments':0,'reserve':{'prompt':10,'output':32},'resolved_output_bound':16,'packets':[{'choices':[{'index':0,'finish_reason':'length'}]},{'choices':[{'index':1,'finish_reason':'length'}]},'[DONE]']}
 
 class Controls(unittest.TestCase):
+    def pressure(self,out,fail=False):
+        class Driver:
+            held=0
+            calls=[]
+            def cudaSetDevice(self,_):return 0
+            def cudaMemGetInfo(self,free,total):
+                free._obj.value=4*1024**3-self.held;total._obj.value=24*1024**3;return 0
+            def cudaMalloc(self,ptr,amount):
+                self.calls.append('allocate')
+                if fail:return 2
+                self.held=amount;ptr._obj.value=4096;return 0
+            def cudaFree(self,_):self.calls.append('free');self.held=0;return 0
+            def cudaDeviceReset(self):self.calls.append('reset-own-context');return 0
+        p=Pressure.__new__(Pressure);p.out=Path(out);p.ptr=ctypes.c_void_p();p.api=Driver();p.api.calls=[];p.state={};return p
+    def test_owned_pressure_lifecycle_keeps_headroom_and_releases_only_its_allocation(self):
+        with tempfile.TemporaryDirectory() as out:
+            p=self.pressure(out)
+            with p:self.assertEqual(p.state['after_free'],1024**3)
+            self.assertEqual(p.api.calls,['allocate','free','reset-own-context'])
+            self.assertEqual(p.api.held,0)
+    def test_failed_owned_pressure_allocation_still_releases_its_context(self):
+        with tempfile.TemporaryDirectory() as out:
+            p=self.pressure(out,True)
+            with self.assertRaisesRegex(AssertionError,'owned CUDA allocation failed'):
+                with p:pass
+            self.assertEqual(p.api.calls,['allocate','reset-own-context'])
     def reject(self,cell,edge):
         with self.assertRaises(Invalid) as e:check_completed(cell)
         self.assertEqual(e.exception.edge,edge)

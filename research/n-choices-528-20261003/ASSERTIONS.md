@@ -12,7 +12,7 @@ Planning only. Native values must be observed; this map cannot convert a skipped
 | usage/accounting | independent callback token sequence1..M, exact one parent open/terminal/drop; HTTP usage equals callback counts and sum of independent worker row outputs, prompt once and cached count unchanged | coherently changed totals against fixed worker/callback witnesses |
 | reservation | native callback sees prompt once and output bound multiplied by N; one fixture policy decline when that sum exceeds the bound | multiplied prompt or unscaled output reserve |
 | N slots | real contender offered while four indexed rows are active; no immediate extra admission; group reset then four-choice recovery succeeds | missing offered overlap or successful early contender |
-| KV exhaustion | explicit reserve-pressure boot yields typed400 context_length_exceeded on the idle forced-pressure boot, before prime/copy and then clean shutdown; no CUDA OOM may stand in for admission | a prime/copy record on refused request |
+| KV exhaustion | real owned CUDA allocation briefly leaves 1GiB free; idle N8 request yields typed400 context_length_exceeded before prime/copy; freeing only that allocation and its context permits N8 recovery; no CUDA OOM may stand in for admission | a prime/copy record on refused request |
 | cancel/recover | raw real TCP reset; one unfinalized parent drop with independently counted partial output below total bound; all child receivers/slots retire and next request succeeds | completed callback, zero/missing drop, leaked slot or failed recovery |
 | defaults | bare model/messages request and n-only extension; pinned full vendor profiles loaded, template/default thinking engaged, no decode/mode knobs | explicit caller decode/mode override |
 
