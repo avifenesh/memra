@@ -585,15 +585,17 @@ class LocalTree(Tree):
                 mode = (self.repo / name).lstat().st_mode
             except FileNotFoundError:
                 continue
+            if stat.S_ISREG(mode) and not os.access(self.repo / name, os.R_OK):
+                result[name] = 'unreadable'
+                continue
             result[name] = ('120000' if stat.S_ISLNK(mode) else '040000' if stat.S_ISDIR(mode)
                             else '100755' if stat.S_ISREG(mode) and mode & 0o111
                             else '100644' if stat.S_ISREG(mode) else 'unsupported')
-        if recursive:
-            for row in git(self.repo, 'ls-files', '--stage', '-z', '--', *prefixes).split(b'\0'):
-                if row:
-                    metadata, name = row.split(b'\t', 1)
-                    if metadata.startswith(b'160000 '):
-                        result[name.decode()] = '160000'
+        for row in git(self.repo, 'ls-files', '--stage', '-z', '--', *prefixes).split(b'\0'):
+            if row:
+                metadata, name = row.split(b'\t', 1)
+                if metadata.startswith(b'160000 ') and (recursive or name.decode() in prefixes):
+                    result[name.decode()] = '160000'
         return result
 
     def ignored_paths(self, *prefixes):

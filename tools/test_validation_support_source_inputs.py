@@ -129,6 +129,18 @@ class SupportSourceInputs(unittest.TestCase):
             data.source_docs(tree)
         (self.repo / 'docs/ignored.md').unlink()
         ignored.unlink()
+        unreadable = self.repo / 'docs/archive/owned-unreadable.md'
+        unreadable.write_text('excluded regular copy content\n')
+        unreadable.chmod(0)
+        try:
+            if not os.access(unreadable, os.R_OK):
+                self.assertEqual(tree.input_modes('docs')['docs/archive/owned-unreadable.md'], 'unreadable')
+                with self.assertRaisesRegex(data.InputContractError, 'ambiguous support fixture copy input type'):
+                    data.source_docs(tree)
+        finally:
+            unreadable.chmod(0o600)
+        self.assertTrue(data.source_docs(tree)['active'])
+        unreadable.unlink()
         with mock.patch.object(vp.os, 'scandir', side_effect=PermissionError('owned copy enumeration observer')):
             with self.assertRaisesRegex(PermissionError, 'owned copy enumeration observer'):
                 data.source_docs(tree)
@@ -146,7 +158,7 @@ class SupportSourceInputs(unittest.TestCase):
         self.fixture.fixture.g('commit', '-qm', 'fixture gitlink')
         self.assertEqual(self.plan(path)['mode'], 'full')
         mode = vp.LocalTree(self.repo).input_modes(path, recursive=False)
-        self.assertEqual(mode, {})
+        self.assertEqual(mode, {path: '160000'})
         self.fixture.fixture.g('rm', '--cached', path)
         self.fixture.fixture.commit()
         self.fixture.fixture.put('STATUS.md/nested.txt', 'wrong fixed-file type\n')
@@ -171,6 +183,16 @@ class SupportSourceInputs(unittest.TestCase):
                 data.source_docs(tree)
         record.unlink()
         record.write_bytes(canonical)
+        # A populated submodule ancestor has ordinary physical directories, but
+        # its staged Git type must still prevent a narrower copy-input contract.
+        self.fixture.fixture.g('rm', '--cached', '-r', 'crates')
+        self.fixture.fixture.g('update-index', '--add', '--cacheinfo', '160000,' + self.base + ',crates')
+        self.fixture.fixture.g('commit', '-qm', 'fixture populated ancestor gitlink')
+        tree = vp.LocalTree(self.repo)
+        self.assertTrue((self.repo / 'crates').is_dir())
+        self.assertEqual(tree.input_modes('crates', recursive=False), {'crates': '160000'})
+        with self.assertRaisesRegex(data.InputContractError, 'ambiguous support fixture copy input type: crates'):
+            data.source_docs(tree)
 
     def test_unknown_reader_and_noncanonical_source_paths_expand(self):
         for path in ('docs/a/../new.md', data.PACK_ROOT + '/../mod.rs', 'docs/with\nnewline.md'):

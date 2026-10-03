@@ -112,6 +112,8 @@ The CPU test copies whole docs and model_packs trees, so symlink, gitlink and un
 ambiguity under those roots or their ancestors expands planning even for excluded content.
 Planning checks these types before reader or compiler-input content I/O. The local no-follow
 inventory includes ignored copy inputs; ignored actual reader content prevents scoped planning.
+Unreadable local regular files also expand because the fixture cannot copy them.
+Exact local ancestor queries retain staged gitlink types when physical directories exist.
 Readable excluded archive/non-mod content does not gain a blanket census requirement. The
 independent always-run support checks and tested execution fallback remain unchanged. Broader
 cited-receipt-parent transport is a separate input-closure question.
