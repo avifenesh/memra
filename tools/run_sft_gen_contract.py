@@ -85,7 +85,11 @@ def run(suite, *, stream=sys.stderr):
         def addSuccess(self, test):
             succeeded.append(control_id(test))
             super().addSuccess(test)
-    result = unittest.TextTestRunner(stream=stream, verbosity=1, resultclass=Result).run(suite)
+    try:
+        result = unittest.TextTestRunner(stream=stream, verbosity=1, resultclass=Result).run(suite)
+    except (TypeError, ValueError, AttributeError) as error:
+        print('SFT CPU contract: FAIL: malformed framework result: ' + str(error), file=stream)
+        return 1
     if (type(result.testsRun) is not int or len(executed) != len(set(executed))
             or set(executed) != set(discovered) or result.testsRun != len(discovered)):
         print('SFT CPU contract: FAIL: executed identities do not match discovery', file=stream)
