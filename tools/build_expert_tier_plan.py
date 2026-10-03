@@ -8,7 +8,6 @@ import hashlib
 import json
 import math
 import tempfile
-from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
