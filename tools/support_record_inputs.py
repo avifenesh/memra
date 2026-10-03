@@ -80,9 +80,11 @@ def resolve(tree):
                 required.add(name)
                 parent = PurePosixPath(name).parent
                 optional.update(str(parent / n) for n in ('artifact.lock', 'tiny-gate.tsv'))
-    links = tree.symlinks()
+    checked = set()
     for name in expected | required | optional:
         path = PurePosixPath(name)
-        if any(str(parent) in links for parent in (path, *path.parents)):
-            raise InputContractError('support data reader path contains a symlink: ' + name)
+        checked.update(str(parent) for parent in (path, *path.parents) if str(parent) != '.')
+    links = tree.symlinks_exact(checked)
+    if links:
+        raise InputContractError('support data reader path contains a symlink: ' + sorted(links)[0])
     return {'required': sorted(required), 'optional': sorted(optional)}

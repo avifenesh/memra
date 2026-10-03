@@ -188,6 +188,16 @@ class Tree:
                     name = path.decode(); result[name] = self.read(name)
         return result
 
+    def symlinks_exact(self, paths):
+        result = {}
+        for row in git(self.repo, '--literal-pathspecs', 'ls-tree', '-z',
+                       self.ref, '--', *sorted(paths)).split(b'\0'):
+            if row:
+                metadata, path = row.split(b'\t', 1)
+                if metadata.startswith(b'120000 '):
+                    name = path.decode(); result[name] = self.read(name)
+        return result
+
 
 class LocalTree(Tree):
     def __init__(self, repo):
@@ -205,6 +215,9 @@ class LocalTree(Tree):
 
     def symlinks(self, *prefixes):
         return {p: os.readlink(self.repo / p) for p in self.paths(*prefixes) if (self.repo / p).is_symlink()}
+
+    def symlinks_exact(self, paths):
+        return {p: os.readlink(self.repo / p) for p in paths if (self.repo / p).is_symlink()}
 
 
 def workspace(tree):
