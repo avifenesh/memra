@@ -1,10 +1,10 @@
 {
   "base": "62a9da5dc0b1407fdce483174b8c56f197b9b987",
-  "source": "55bd67334c9ddd98f46de5567d415da8f427d6f4",
+  "source": "390ca1db839dfcda371ef4ffad5f307c4a3cff35",
   "source_sha256": {
-    "tools/validation_plan.py": "da72db8d4f8f510ffa12c01900f280dde138d07d4e7257a65b25850a0b554106",
-    "tools/support_record_inputs.py": "75e47ba71a6e22bb9bf042666959b139c4328aa43e973029d4ed7a84f0c63aa7",
-    "tools/test_validation_support_record_inputs.py": "092bdf484abac7545ddd53a85ccd89af09eebbf6ae2ef645d3e6871154456648",
+    "tools/validation_plan.py": "de869e9d07d975882f8bade37f1839748ce16cf3ebe491cb7c5b7b31b3fb569e",
+    "tools/support_record_inputs.py": "951497cad481c51798b73f0aae90617b1d01c8e9e1ac40e2f4e9e00b1ff40e48",
+    "tools/test_validation_support_record_inputs.py": "86464291877c647f1a9b24df631150db3d5a03c869a85cff2f8606309bab654b",
     "tools/test_validation_plan.py": "5531e129c698fba4f38be567634a99ca9fc73492fe692fbf2b2d7de625a76a9d",
     "tools/check-support-states.py": "27b4a68fb545cfd434caab8764f42becd021a52d7d6a36fb9fba466d396cf8ec",
     "tools/test_check_support_states.py": "366556ebf11d27173032f1fe9cd71ef59d18b3c1f2314f920f214a63e5482050",
@@ -54,10 +54,10 @@
   "all_existing_cpu_native_commands_preserved": true,
   "qualification": false,
   "scope": "support-record data closure only; source/docs reader nominations separate",
-  "helper_sha256": "b1590878394532c333b19c457cf6b2bc2617602cc438ff664a39caaf40b10c0c",
+  "helper_sha256": "18c76ea5bbc59000ddbce72d12c99325067cc925d3c9dc497585c00e28900306",
   "composition": {
-    "tested_source": "55bd67334c9ddd98f46de5567d415da8f427d6f4",
-    "composed_source": "ab24b4f85c5aacf977d7f8b7a3e882fe5d413279",
+    "tested_source": "390ca1db839dfcda371ef4ffad5f307c4a3cff35",
+    "composed_source": "390ca1db839dfcda371ef4ffad5f307c4a3cff35",
     "base": "251c534ea5e7fb07c709ce65d894053e92a27044",
     "tested_files_equal": {
       "tools/validation_plan.py": true,
@@ -1357,22 +1357,32 @@
     "current-clean-consumer": {
       "exit": 0,
       "stdout": "",
-      "stderr": ".\n----------------------------------------------------------------------\nRan 1 test in 0.083s\n\nOK\n"
+      "stderr": ".\n----------------------------------------------------------------------\nRan 1 test in 0.085s\n\nOK\n"
+    },
+    "crlf-reader-cli": {
+      "exit": 1,
+      "stdout": "",
+      "stderr": "Traceback (most recent call last):\n  File \"COPIED_ROOT/B955-data-rj9o_r5j/tools/validation_plan.py\", line 149, in support_record_data_inputs\n    return _SUPPORT_DATA.resolve(tree)\n           ~~~~~~~~~~~~~~~~~~~~~^^^^^^\n  File \"COPIED_ROOT/B955-data-rj9o_r5j/tools/support_record_inputs.py\", line 73, in resolve\n    raise InputContractError('unmodelled support data reader: ' + name)\nsupport_record_data_inputs.InputContractError: unmodelled support data reader: tools/check-support-states.py\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B955-data-rj9o_r5j/tools/validation_plan.py\", line 964, in <module>\n    raise SystemExit(main())\n                     ~~~~^^\n  File \"COPIED_ROOT/B955-data-rj9o_r5j/tools/validation_plan.py\", line 918, in main\n    names = cpu_contract_names(ROOT, args.selected)\n  File \"COPIED_ROOT/B955-data-rj9o_r5j/tools/validation_plan.py\", line 813, in cpu_contract_names\n    data = support_record_data_inputs(root, directory=True)\n  File \"COPIED_ROOT/B955-data-rj9o_r5j/tools/validation_plan.py\", line 151, in support_record_data_inputs\n    raise Refused(str(error)) from error\nRefused: unmodelled support data reader: tools/check-support-states.py\n"
+    },
+    "canonical-reader-cli": {
+      "exit": 0,
+      "stdout": "CPU contract: support-records\n.....................\n----------------------------------------------------------------------\nRan 21 tests in 1.936s\n\nOK\nunittest-floor: OK: ran 21 tests (floor 21) for tools (test_check_support_states.py)\n",
+      "stderr": ""
     },
     "created-shadowing-artifact-lock": {
       "exit": 1,
       "stdout": "",
-      "stderr": "F\n======================================================================\nFAIL: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B955-data-1trj9tu7/tools/test_check_support_states.py\", line 65, in test_clean_copy_passes\n    self.assertEqual(result.returncode, 0, result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : check-support-states: docs/support-records.toml: record hy3-bf16-reference: TinyParity evidence research/modelplan-onboarding-hy3-20260830/tiny/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'hy3'\ncheck-support-states: FAIL (1 violations)\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.080s\n\nFAILED (failures=1)\n"
+      "stderr": "F\n======================================================================\nFAIL: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B955-data-rj9o_r5j/tools/test_check_support_states.py\", line 65, in test_clean_copy_passes\n    self.assertEqual(result.returncode, 0, result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : check-support-states: docs/support-records.toml: record hy3-bf16-reference: TinyParity evidence research/modelplan-onboarding-hy3-20260830/tiny/gates.txt is for family 'CPU_SYNTHETIC_WRONG_FAMILY', not 'hy3'\ncheck-support-states: FAIL (1 violations)\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.089s\n\nFAILED (failures=1)\n"
     },
     "deleted-selected/research/modelplan-onboarding-20260822/qwen3/artifact.lock": {
       "exit": 1,
       "stdout": "",
-      "stderr": "F\n======================================================================\nFAIL: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B955-data-1trj9tu7/tools/test_check_support_states.py\", line 65, in test_clean_copy_passes\n    self.assertEqual(result.returncode, 0, result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : check-support-states: docs/support-records.toml: record qwen3-tiny-random: Config evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: TokenizerTemplate evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: TensorCensus evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: TinyParity evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: CheckpointParity evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: Serve evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: FAIL (6 violations)\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.080s\n\nFAILED (failures=1)\n"
+      "stderr": "F\n======================================================================\nFAIL: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B955-data-rj9o_r5j/tools/test_check_support_states.py\", line 65, in test_clean_copy_passes\n    self.assertEqual(result.returncode, 0, result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : check-support-states: docs/support-records.toml: record qwen3-tiny-random: Config evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: TokenizerTemplate evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: TensorCensus evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: TinyParity evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: CheckpointParity evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: docs/support-records.toml: record qwen3-tiny-random: Serve evidence research/modelplan-onboarding-20260822/qwen3/gates.txt is for family None, not 'qwen3'\ncheck-support-states: FAIL (6 violations)\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.086s\n\nFAILED (failures=1)\n"
     },
     "deleted-selected/research/modelplan-onboarding-hy3-20260830/tiny/tiny-gate.tsv": {
       "exit": 1,
       "stdout": "",
-      "stderr": "F\n======================================================================\nFAIL: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B955-data-1trj9tu7/tools/test_check_support_states.py\", line 65, in test_clean_copy_passes\n    self.assertEqual(result.returncode, 0, result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : check-support-states: docs/support-records.toml: record hy3-bf16-reference: TinyParity evidence research/modelplan-onboarding-hy3-20260830/tiny/gates.txt is for family None, not 'hy3'\ncheck-support-states: FAIL (1 violations)\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.080s\n\nFAILED (failures=1)\n"
+      "stderr": "F\n======================================================================\nFAIL: test_clean_copy_passes (test_check_support_states.SupportStateCensus.test_clean_copy_passes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"COPIED_ROOT/B955-data-rj9o_r5j/tools/test_check_support_states.py\", line 65, in test_clean_copy_passes\n    self.assertEqual(result.returncode, 0, result.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : check-support-states: docs/support-records.toml: record hy3-bf16-reference: TinyParity evidence research/modelplan-onboarding-hy3-20260830/tiny/gates.txt is for family None, not 'hy3'\ncheck-support-states: FAIL (1 violations)\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.088s\n\nFAILED (failures=1)\n"
     }
   },
   "reused_unchanged_actual_mutations": {
@@ -1475,16 +1485,16 @@
     "description": "14 copied-data corruption results reused after exact original reader/data source equality; current clean and optional presence/deletion cases rerun"
   },
   "checks": {
-    "framework-final.log": "............................................................................................................................................\n----------------------------------------------------------------------\nRan 140 tests in 14.470s\n\nOK\nunittest-floor: OK: ran 140 tests (floor 140) for tools (test_validation_*.py)\n",
-    "cache-final.log": ".......................................................\n----------------------------------------------------------------------\nRan 55 tests in 0.324s\n\nOK\nunittest-floor: OK: ran 55 tests (floor 55) for tools (test_dense_control_cache.py)\n",
+    "framework-final.log": "............................................................................................................................................\n----------------------------------------------------------------------\nRan 140 tests in 16.323s\n\nOK\nunittest-floor: OK: ran 140 tests (floor 140) for tools (test_validation_*.py)\n",
+    "cache-final.log": ".......................................................\n----------------------------------------------------------------------\nRan 55 tests in 0.348s\n\nOK\nunittest-floor: OK: ran 55 tests (floor 55) for tools (test_dense_control_cache.py)\n",
     "registry-final.log": "Validation registry covers all 14 workspace packages\n",
-    "support-final.log": ".....................\n----------------------------------------------------------------------\nRan 21 tests in 1.984s\n\nOK\nunittest-floor: OK: ran 21 tests (floor 21) for tools (test_check_support_states.py)\n"
+    "support-final.log": ".....................\n----------------------------------------------------------------------\nRan 21 tests in 2.074s\n\nOK\nunittest-floor: OK: ran 21 tests (floor 21) for tools (test_check_support_states.py)\n"
   },
   "coverage": {
     "admission": {
       "status": "passed",
-      "edges": 76,
-      "contract_id": "00991a4415742ca159d6b98b3a0f1d36233d381e50eefbe06280d77e6a2f2d40",
+      "edges": 78,
+      "contract_id": "3edd34cf6f790b4022d24887e410683a910575983d88c09ebd172aef0ee95f2e",
       "qualification": false,
       "scope": "declared behavior assertions only; native receipt admission remains separate"
     },
@@ -1493,10 +1503,19 @@
       "skipped-mandatory-regressions": "empty or skipped test result: regressions"
     },
     "helper_sha256": {
-      "execute.py": "b1590878394532c333b19c457cf6b2bc2617602cc438ff664a39caaf40b10c0c",
-      "admit_coverage.py": "619da13e7e8948733c31f36c231f32c781fff30c8414ba55a730eb4e5a13753a",
-      "executed-proof.json": "3aabb4e61be7e0b7f89911cc8d22c1323e0c5cad881dfe59cfd39c180ca7b994",
-      "composed-source-bridge.json": "7f04e4f5bc3b0fce4c846ec369ac6652c8bb249c53be9317eb2a1fa6445972b1"
+      "execute.py": "18c76ea5bbc59000ddbce72d12c99325067cc925d3c9dc497585c00e28900306",
+      "admit_coverage.py": "fc1255c8e695f0a1178ea7d80c27c93adecf1db16dca8c524d6b748afa9427d0",
+      "executed-proof.json": "d7720d7294fc878d06451977ac46c75ef324395c9ffa57bf13c5da264bc8701a",
+      "composed-source-bridge.json": "c423e64e21934be991734372960726b6ea8a3c6d0885ab7d7f5db77f159f1e86"
     }
+  },
+  "reader_byte_identity_red_control": {
+    "head": "a62ba0d8ae0ac6111b2f9b3a50fd962584fbfe9f",
+    "reader": "tools/check-support-states.py",
+    "expected": "27b4a68fb545cfd434caab8764f42becd021a52d7d6a36fb9fba466d396cf8ec",
+    "actual_crlf_sha256": "dba45294e03896c007656e59e758892f1020012e1b0ecfa4c314ebf2edd26d16",
+    "unknown_changed_reader_was_accepted": true,
+    "required": 7,
+    "scope": "copied bytes only; no original modifications"
   }
 }
