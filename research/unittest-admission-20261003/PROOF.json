@@ -1,42 +1,41 @@
 {
   "base": "567bad56ab8dc1333d1d4e15ceb36e500fdc05d5",
-  "source": "c0653fe21acec2ac16848b32f20b37f96cb8b631",
+  "source": "dadb30b93d0b7bc7721891dd054a772d9903042a",
   "source_sha256": {
     "docs/VALIDATION-SELECTION.md": "84d25fb1585861ce69a7daebc49c5bbdbfc492ec5cee879b9fb4389e5593c88c",
-    "research/unittest-admission-20261003/LANE.md": "549b1794c29cd4bab2994e2117afd9ba04b81a69f346a2083a713803e560ba64",
-    "research/unittest-admission-20261003/actual_controls.py": "75aecbec95fc222b72ce8241be55e0242d6aee8d231dff8209d4ea02125c251f",
+    "research/unittest-admission-20261003/LANE.md": "9ffede0a64c7e7bb31805506f1b9f4aeb90be15dabfa3575bada6c7a85991bcb",
+    "research/unittest-admission-20261003/actual_controls.py": "03ec5efabf6ae4e31668cf0fabd0c4b3b956b233a58515ed8705c2eba9fc2b89",
     "tools/fast-gate/test_plan.py": "ac961010ecdd2dad2c3f0784fd2882a8d22d181bddd4d1bb61b2aaacdf6427db",
-    "tools/test_unittest_floor.py": "8ff4ec56d5f34bd71748afa10942882338d193bfdfbc852f57fa583e482815ae",
-    "tools/test_unittest_floor.sh": "cdc67ad83ad2d20a751a7ae0231fe78100c94abc723eec65d47e9c9124e8b585",
+    "tools/test_unittest_floor.py": "5a3563cc24d394a339abdff44a120a00c11865c2e87178d0891b64cc5a0c9aba",
+    "tools/test_unittest_floor.sh": "e16fa94e93bfe996346961314bfa7fdb21f11fe44566f23704b78bc34d637b5a",
     "tools/unittest-floor.sh": "19b9d1ee25d8bc31de732a0284ac30be161cda7119fe15acfac1863eafff605d",
-    "tools/unittest_floor.py": "6890d148c55415eaa0bb1fd8076b2dfebf6b59cdbf6018cfd65a0e67ee7b6f06"
+    "tools/unittest_floor.py": "85ea4571d99f7413705281994a55528836e948e0db59cc591a1c127525227bc0"
   },
   "artifact_sha256": {
-    "actual-controls.json": "a07bd96388b2944d722a2124505f5fa36c33244815ce2a0fe0b094aa6af22221",
-    "teeth.log": "cf2fe0c79e72b57677badddd8bdfa55db00e068d8b46a1d0ff04c6f375e7b872",
-    "framework.log": "696e92205e81322bea6e7f28b15e28b84390627fc0c85c48d3685e575b49b528",
-    "fastgate.log": "4ef41ced791583d72e1d026c63c5d1089ccbae914711e23cc4d019a7d513b684",
-    "component.log": "2f28f7ff81dc61e4b4f1fdd6e4d6264a7e34650f8d9fb186bed213c9c8ad8d81",
-    "cache.log": "76e257313fdce279d7da602bcf0bd4c35af2517e268a31d9a39e2eee60e7452d",
-    "contracts.log": "22e7459bb19551e5dd9266b247332713d2b42edb3402e697c9037e7833a1dedd",
-    "controls.log": "6da14bccf53ebb31cb9c68e3969ad5a446ec9fadca3ac76c4024c2a8ea088635"
+    "actual-controls.json": "f8270bb56415325ff7952af9c3d49c636f95b5df5e42c7985d70d9a6fb30a607",
+    "teeth.log": "1554bf019a180e44b188bf700cd34c4ae66a32664dca23dd643583d28226cc53",
+    "framework.log": "a5988dc279813a74acad68ca314a6513f6751ab4550dbd7fd8f77531508fd873",
+    "fastgate.log": "39c951a5e77815a85162c8729e1838073804731dae61fd028a0252233ebfe0f8",
+    "component.log": "989e2021ffd56fc991d0debfcf8e7bc2e7613311b19c4d91eae7438e602fd37a",
+    "cache.log": "3cea0439bf44b55f283f15701ae7380be9c05b52e3254eefb13cd99e9a19e387",
+    "contracts.log": "4cca2b0e07e0e80b49d5a745fbf6aec8ae550b6e5abd6d188e2b7e0992b6b496",
+    "controls.log": "5b937f2c4a91cee02dd143f9985259e35dc22136ea05ee48467c4fdfb8a691ec"
   },
   "actual": {
     "original_controls": 5,
-    "new_tests": 15,
+    "new_tests": 16,
     "framework": 194,
     "fastgate": 39,
     "component": 4,
     "dense_cache": 55,
     "dynamic_floor_contracts": 10,
-    "before_after_cases": 10,
-    "coherent_guard_mutations": 4
+    "before_after_cases": 12,
+    "coherent_guard_mutations": 5
   },
   "preserved": [
-    "caller selection",
-    "CLI selectors and floors",
+    "CLI selectors/help text/count floors",
     "C194 workflow and typed readers",
-    "A expert-tier runner and workflow steps",
+    "A expert-tier runner",
     "native/model/default/qualification requirements"
   ],
   "qualification": false
