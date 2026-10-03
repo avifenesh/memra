@@ -30,6 +30,13 @@ JOBS = ('build', 'clippy', 'server', 'engine', 'portable', 'core', 'lanes', 'arc
 # These are executable CPU/harness contracts, not a blanket tools/** exemption.
 # Their tests remain in the always-run gates job. Native reruns are named separately.
 TOOL_CONTRACTS = {
+    'n-choice': {
+        'required': True,
+        'inputs': ['tools/native_choices.py', 'tools/choice_verifier.py',
+                   'tools/replay_native_choices.py', 'tools/test_choice_verifier.py'],
+        'cpu': ['tools/unittest-floor.sh', 'tools', 'test_choice_verifier.py', '11'],
+        'native': ['Exact-source n1 before/after, shared-prefix fork, independent seeded choices, indexed termination, parent usage/reservation, slot/KV exhaustion and group cancellation/recovery on a pinned cached artifact; CPU controls do not qualify native execution'],
+    },
     'q35-cache': {
         'required': True,
         'inputs': ['tools/q35-cold-mixed-gate.py', 'tools/test_q35_cold_mixed_gate.py',
