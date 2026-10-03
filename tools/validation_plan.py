@@ -398,7 +398,7 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
             if literal.startswith('\0GENERATED'):
                 continue  # the build-script contract below owns these inputs
             literals.append((literal, match.group(1) == 'include'))
-        for match in re.finditer(r'#\s*\[\s*path\s*=', code):
+        for match in re.finditer(r'#\s*\[\s*(?:r#)?path\s*=', code):
             spans = [(start, end) for start, end in string_spans
                      if start >= match.end() and not code[match.end():start].strip()]
             if not spans:

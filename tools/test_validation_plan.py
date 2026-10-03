@@ -656,8 +656,10 @@ class ValidationPlanTests(unittest.TestCase):
                 self.commit()
                 self.assertEqual(self.plan(['research/outer.rs'])['mode'], 'full')
 
-    def test_conditional_module_path_expands_transitive_inputs_without_cfg_guessing(self):
+    def test_module_path_attributes_expand_transitive_inputs_without_cfg_guessing(self):
         for attribute in (
+            '#[r#path="../../../research/outer.rs"]',
+            '#[r#cfg_attr(all(), path="../../../research/outer.rs")]',
             '#[cfg_attr(all(), path="../../../research/outer.rs")]',
             '#[cfg_attr(any(), path="../../../research/outer.rs")]',
             '#[cfg_attr(feature="variant", path="../../../research/outer.rs")]',

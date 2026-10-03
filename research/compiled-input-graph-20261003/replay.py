@@ -40,6 +40,7 @@ def main():
     records = []
     cases = (
         ('conditional-module', 'research/inner.md', True),
+        ('raw-direct-module', 'research/inner.md', True),
         ('direct-module', 'research/inner.md', False),
         ('split-concat-include', 'research/actual/expected.md', True),
         ('literal-include', 'research/actual/expected.md', False),
@@ -78,7 +79,7 @@ def main():
         'collector_sha256': sha(Path(__file__)), 'rustc': command(['rustc', '-vV']).stdout,
         'cases': records}
     (args.out / 'PROOF.json').write_text(json.dumps(proof, indent=2) + '\n')
-    print('compiled-input replay: two executed omissions repaired; two independent positive controls retained; native qualification=false')
+    print('compiled-input replay: three executed omissions repaired; two independent positive controls retained; native qualification=false')
 
 
 if __name__ == '__main__':
