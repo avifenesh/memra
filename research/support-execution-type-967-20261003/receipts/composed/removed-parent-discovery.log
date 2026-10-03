@@ -1,0 +1,58 @@
+test_ancestor_symlink_including_broken_parent_refuses_before_reads (test_validation_support_execution_inputs.SupportExecutionInputs.test_ancestor_symlink_including_broken_parent_refuses_before_reads) ... 
+  test_ancestor_symlink_including_broken_parent_refuses_before_reads (test_validation_support_execution_inputs.SupportExecutionInputs.test_ancestor_symlink_including_broken_parent_refuses_before_reads) (both_parents='broken-link') ... FAIL
+  test_ancestor_symlink_including_broken_parent_refuses_before_reads (test_validation_support_execution_inputs.SupportExecutionInputs.test_ancestor_symlink_including_broken_parent_refuses_before_reads) (both_parents='fifo') ... FAIL
+  test_ancestor_symlink_including_broken_parent_refuses_before_reads (test_validation_support_execution_inputs.SupportExecutionInputs.test_ancestor_symlink_including_broken_parent_refuses_before_reads) (both_parents='file') ... FAIL
+  test_ancestor_symlink_including_broken_parent_refuses_before_reads (test_validation_support_execution_inputs.SupportExecutionInputs.test_ancestor_symlink_including_broken_parent_refuses_before_reads) (both_parents='socket') ... FAIL
+
+======================================================================
+FAIL: test_ancestor_symlink_including_broken_parent_refuses_before_reads (test_validation_support_execution_inputs.SupportExecutionInputs.test_ancestor_symlink_including_broken_parent_refuses_before_reads) (both_parents='broken-link')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 114, in test_ancestor_symlink_including_broken_parent_refuses_before_reads
+    self.assert_no_content_read()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 38, in assert_no_content_read
+    with self.assertRaisesRegex(data.InputContractError, 'regular|symlink|incomplete'):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: InputContractError not raised
+
+======================================================================
+FAIL: test_ancestor_symlink_including_broken_parent_refuses_before_reads (test_validation_support_execution_inputs.SupportExecutionInputs.test_ancestor_symlink_including_broken_parent_refuses_before_reads) (both_parents='fifo')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 114, in test_ancestor_symlink_including_broken_parent_refuses_before_reads
+    self.assert_no_content_read()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 38, in assert_no_content_read
+    with self.assertRaisesRegex(data.InputContractError, 'regular|symlink|incomplete'):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: InputContractError not raised
+
+======================================================================
+FAIL: test_ancestor_symlink_including_broken_parent_refuses_before_reads (test_validation_support_execution_inputs.SupportExecutionInputs.test_ancestor_symlink_including_broken_parent_refuses_before_reads) (both_parents='file')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 114, in test_ancestor_symlink_including_broken_parent_refuses_before_reads
+    self.assert_no_content_read()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 38, in assert_no_content_read
+    with self.assertRaisesRegex(data.InputContractError, 'regular|symlink|incomplete'):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: InputContractError not raised
+
+======================================================================
+FAIL: test_ancestor_symlink_including_broken_parent_refuses_before_reads (test_validation_support_execution_inputs.SupportExecutionInputs.test_ancestor_symlink_including_broken_parent_refuses_before_reads) (both_parents='socket')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 114, in test_ancestor_symlink_including_broken_parent_refuses_before_reads
+    self.assert_no_content_read()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 38, in assert_no_content_read
+    with self.assertRaisesRegex(data.InputContractError, 'regular|symlink|incomplete'):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: InputContractError not raised
+
+----------------------------------------------------------------------
+Ran 1 test in 0.003s
+
+FAILED (failures=4)

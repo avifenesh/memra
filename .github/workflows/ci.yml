@@ -101,7 +101,7 @@ jobs:
         run: |
           python3 tools/validation_plan.py check-registry
           tools/test_ci_change_class.sh
-          tools/unittest-floor.sh tools 'test_validation_*.py' 148
+          tools/unittest-floor.sh tools 'test_validation_*.py' 159
           tools/unittest-floor.sh tools test_model_memory_fixture.py 3
 
       - name: Declared changed-input CPU contracts (missing selection runs all available)

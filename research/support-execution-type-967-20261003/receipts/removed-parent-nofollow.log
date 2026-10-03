@@ -1,0 +1,54 @@
+test_ancestor_symlink_including_broken_parent_refuses_before_reads (test_validation_support_execution_inputs.SupportExecutionInputs.test_ancestor_symlink_including_broken_parent_refuses_before_reads) ... 
+  test_ancestor_symlink_including_broken_parent_refuses_before_reads (test_validation_support_execution_inputs.SupportExecutionInputs.test_ancestor_symlink_including_broken_parent_refuses_before_reads) (name='tools', target='tools-real') ... FAIL
+  test_ancestor_symlink_including_broken_parent_refuses_before_reads (test_validation_support_execution_inputs.SupportExecutionInputs.test_ancestor_symlink_including_broken_parent_refuses_before_reads) (name='docs', target='docs-real') ... FAIL
+
+======================================================================
+FAIL: test_ancestor_symlink_including_broken_parent_refuses_before_reads (test_validation_support_execution_inputs.SupportExecutionInputs.test_ancestor_symlink_including_broken_parent_refuses_before_reads) (name='tools', target='tools-real')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 91, in test_ancestor_symlink_including_broken_parent_refuses_before_reads
+    self.assert_no_content_read()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 39, in assert_no_content_read
+    data.resolve(self.tree)
+    ~~~~~~~~~~~~^^^^^^^^^^^
+  File "/tmp/memra-support-type-controls-iaazy2ml/removed-parent-nofollow.py", line 121, in resolve
+    if hashlib.sha256(tree.read_bytes(name)).hexdigest() != digest]
+                      ~~~~~~~~~~~~~~~^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1241, in _execute_mock_call
+    raise effect
+AssertionError: byte read
+
+======================================================================
+FAIL: test_ancestor_symlink_including_broken_parent_refuses_before_reads (test_validation_support_execution_inputs.SupportExecutionInputs.test_ancestor_symlink_including_broken_parent_refuses_before_reads) (name='docs', target='docs-real')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 91, in test_ancestor_symlink_including_broken_parent_refuses_before_reads
+    self.assert_no_content_read()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 39, in assert_no_content_read
+    data.resolve(self.tree)
+    ~~~~~~~~~~~~^^^^^^^^^^^
+  File "/tmp/memra-support-type-controls-iaazy2ml/removed-parent-nofollow.py", line 121, in resolve
+    if hashlib.sha256(tree.read_bytes(name)).hexdigest() != digest]
+                      ~~~~~~~~~~~~~~~^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1241, in _execute_mock_call
+    raise effect
+AssertionError: byte read
+
+----------------------------------------------------------------------
+Ran 1 test in 0.003s
+
+FAILED (failures=2)

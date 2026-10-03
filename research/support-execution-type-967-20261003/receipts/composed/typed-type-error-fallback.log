@@ -1,0 +1,15 @@
+test_unknown_reader_does_not_turn_fifo_into_typed_fallback (test_validation_support_execution_inputs.SupportExecutionInputs.test_unknown_reader_does_not_turn_fifo_into_typed_fallback) ... FAIL
+
+======================================================================
+FAIL: test_unknown_reader_does_not_turn_fifo_into_typed_fallback (test_validation_support_execution_inputs.SupportExecutionInputs.test_unknown_reader_does_not_turn_fifo_into_typed_fallback)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-memra-support-execution-type-967/tools/test_validation_support_execution_inputs.py", line 142, in test_unknown_reader_does_not_turn_fifo_into_typed_fallback
+    with self.assertRaisesRegex(vp.Refused, 'regular'):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Refused not raised
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)
