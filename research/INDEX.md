@@ -702,4 +702,4 @@ typed-coverage-context-20261003 | Three CLI red controls and one execution-conte
 compiled-input-graph-20261003 | "Three actual CPU compiler omissions are repaired; both independent positive controls remain selected." | compiled-input-graph-20261003/RESULTS.md
 mandatory-empty-coverage-20261003 | Explicit mandatory guards retain selection and admission with zero requested edges; real guard success/failure and optional no-change controls passed. | mandatory-empty-coverage-20261003/RESULTS.md
 
-shared-cache-contract-20261003 | The repaired registry selects all three present consumers and preserves their CPU commands and native obligations. | shared-cache-contract-20261003/RESULTS.md
+shared-cache-contract-20261003 | The repaired registry selects all four affected contracts and preserves their CPU commands and native obligations. | shared-cache-contract-20261003/RESULTS.md

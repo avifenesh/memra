@@ -65,8 +65,8 @@ An explicit `contracts=none` skips unaffected Python contracts; a missing contra
 all available contracts. Thus a documentation-only change does not install sampled-test dependencies.
 
 Shared Python inputs select every declared present consumer. For example,
-`cache_qualification.py` reaches the background and serving collectors directly and
-sampled-MTP through the serving collector. Each keeps its existing CPU command and
+`cache_qualification.py` reaches Q35 consistency tests, the background and serving
+collectors directly, and sampled-MTP through the serving collector. Each keeps its existing CPU command and
 native obligations. An absent collector is not invented; a selected incomplete or
 deleted input refuses execution instead of silently skipping the contract.
 `validation-plan.json` is retained with the run, including the omission explanations.

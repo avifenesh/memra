@@ -8,7 +8,7 @@
     "validation_plan.py": "9f5fb02b63c68d531cebaf751fd76dac698828ad5ba43128e343030953feebbc",
     "validation_inputs.json": "71e17d5f91f44bae768047ad4c9f2c40486a291e35e123e6a7e54f16fd34d377"
   },
-  "candidate_registry_sha256": "6d925684b7ca94dfe5f69e1529c6dfaccded346f258fbaff9d41e88a3bc7aaa6",
+  "candidate_registry_sha256": "8f7bc999097e08b22e4aaf7b063dc1e8aeaf719f7d4152927188b2934c893662",
   "actual_serving_and_transitive_sampled_before": [
     224,
     224
@@ -17,17 +17,30 @@
     241,
     241
   ],
+  "actual_q35_consistency_control_before": {
+    "run": 1,
+    "failures": 0,
+    "errors": 0
+  },
+  "actual_q35_consistency_control_after": {
+    "run": 1,
+    "failures": 8,
+    "errors": 0
+  },
+  "actual_q35_test_sha256": "2d813f58adb5edb78c1759c3d481cb3e81417bf4298f08ba15d87a5185f4aa0b",
   "baseline_contracts": [
     "background-chat-text"
   ],
   "candidate_contracts": [
     "background-chat-text",
+    "q35-cache",
     "sampled-mtp",
     "serving-qualification"
   ],
   "candidate_native_requirements": [
     "Pinned positive-PMIN eager/graph/residual/bonus/zero-draft probes, distribution controls and vendor-default serving checks",
     "Pinned-artifact fresh OFF/ON identity and bare-default probes; paired real chat/text delivery beyond 90 seconds, tenant isolation, native-progress cancellation and exactly-one final callback",
+    "Qwen3.6 MoE mixed c=4 cache/usage/golden gate on the pinned artifact",
     "Source-bound composite streaming/cache/offered-concurrency/cancellation/context collector, with the separate cache-disabled red boot"
   ],
   "unchanged_cpu_commands_and_native_obligations": true,

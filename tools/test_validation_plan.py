@@ -129,8 +129,10 @@ class ValidationPlanTests(unittest.TestCase):
         for path in contract['inputs']:
             with self.subTest(path=path):
                 plan = self.plan([path])
-                self.assertEqual([c['id'] for c in plan['cpu_contracts']], ['background-chat-text'])
-                self.assertEqual(plan['cpu_contracts'][0]['cpu'][-1], '9')
+                expected = {'background-chat-text'}
+                if path == 'tools/cache_qualification.py': expected.add('q35-cache')
+                self.assertEqual({c['id'] for c in plan['cpu_contracts']}, expected)
+                self.assertEqual(next(c for c in plan['cpu_contracts'] if c['id'] == 'background-chat-text')['cpu'][-1], '9')
                 self.assertTrue(plan['native']['requirements'])
                 self.assertFalse(plan['native']['qualification'])
 
@@ -187,7 +189,7 @@ class ValidationPlanTests(unittest.TestCase):
         self.assertFalse(any(p['jobs'].values()))
 
     def test_shared_cache_helper_selects_present_consumers_and_keeps_native_obligations(self):
-        names = ('background-chat-text', 'serving-qualification', 'sampled-mtp')
+        names = ('q35-cache', 'background-chat-text', 'serving-qualification', 'sampled-mtp')
         present = set()
         for name in names:
             for path in vp.TOOL_CONTRACTS[name]['inputs']:
@@ -217,7 +219,7 @@ class ValidationPlanTests(unittest.TestCase):
             self.assertEqual(set(vp.cpu_contract_names(self.repo, '')), expected)
 
     def test_shared_cache_helper_deletion_keeps_obligations_and_refuses_execution(self):
-        names = ('background-chat-text', 'serving-qualification', 'sampled-mtp')
+        names = ('q35-cache', 'background-chat-text', 'serving-qualification', 'sampled-mtp')
         for name in names:
             for path in vp.TOOL_CONTRACTS[name]['inputs']:
                 self.put(path, '# fixture\n')

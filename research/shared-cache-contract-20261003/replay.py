@@ -10,7 +10,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 BASE = '75bac45b8acc0cb96190689a2e11a882310ebdbd'
-NAMES = ('background-chat-text', 'serving-qualification', 'sampled-mtp')
+NAMES = ('q35-cache', 'background-chat-text', 'serving-qualification', 'sampled-mtp')
 sys.path.insert(0, str(ROOT / 'tools'))
 import validation_plan as current
 
@@ -25,6 +25,14 @@ sampled=load('collect-sampled-mtp')
 print(json.dumps([serving.server_capture_len(241),sampled.base.server_capture_len(241)]))
 '''
 
+Q35_READER = '''import json,runpy,sys,unittest
+sys.path.insert(0,sys.argv[1]);import cache_qualification
+ns=runpy.run_path(sys.argv[2])
+case=ns['GridLaw']('test_capture_len_matches_the_server_law')
+result=unittest.TestResult();case.run(result)
+print(json.dumps({'run':result.testsRun,'failures':len(result.failures),'errors':len(result.errors)}))
+'''
+
 
 def replay():
     with tempfile.TemporaryDirectory(prefix='memra-shared-cache-proof-') as directory:
@@ -37,13 +45,18 @@ def replay():
             (scratch / name).write_bytes(data)
             hashes[name] = hashlib.sha256(data).hexdigest()
         before = json.loads(subprocess.check_output([sys.executable, '-B', '-c', READER, directory]))
+        q35_test = str(ROOT / 'tools/test_q35_cold_mixed_gate.py')
+        q35_before = json.loads(subprocess.check_output([sys.executable, '-B', '-c', Q35_READER, directory, q35_test]))
         helper = scratch / 'cache_qualification.py'
         source = helper.read_text()
         expression = 'return boundary if boundary >= PREFIX_CACHE_MIN_TOKENS else None'
         assert source.count(expression) == 1
         helper.write_text(source.replace(expression, 'return prompt_tokens'))
         after = json.loads(subprocess.check_output([sys.executable, '-B', '-c', READER, directory]))
+        q35_after = json.loads(subprocess.check_output([sys.executable, '-B', '-c', Q35_READER, directory, q35_test]))
         assert before == [224, 224] and after == [241, 241]
+        assert q35_before == {'run': 1, 'failures': 0, 'errors': 0}
+        assert q35_after['run'] == 1 and q35_after['failures'] > 0 and q35_after['errors'] == 0
         spec = importlib.util.spec_from_file_location('baseline_plan', scratch / 'validation_plan.py')
         baseline = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(baseline)
@@ -61,6 +74,9 @@ def replay():
                 'candidate_registry_sha256': hashlib.sha256((ROOT / 'tools/validation_plan.py').read_bytes()).hexdigest(),
                 'actual_serving_and_transitive_sampled_before': before,
                 'actual_serving_and_transitive_sampled_after': after,
+                'actual_q35_consistency_control_before': q35_before,
+                'actual_q35_consistency_control_after': q35_after,
+                'actual_q35_test_sha256': hashlib.sha256(Path(q35_test).read_bytes()).hexdigest(),
                 'baseline_contracts': [c['id'] for c in old['cpu_contracts']],
                 'candidate_contracts': [c['id'] for c in new['cpu_contracts']],
                 'candidate_native_requirements': new['native']['requirements'],
