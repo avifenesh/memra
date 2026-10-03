@@ -12,10 +12,11 @@ model weights or a GPU. B's complete runtime_target helper is preserved byte-for
 and now checks the complete compiled include before parent cancellation. Conditional
 paths expand without guessing cfg truth. Lexical example/comment controls stay scoped.
 
-All105 CPU planner/coverage controls passed. The workspace registry accounts for14
-packages. The four new grouped planner tests cover conditional/nested/unknown/inactive
+All113 composed CPU planner/coverage controls passed after integrating #933. The workspace registry accounts for14
+packages; both immutable tool-choice receipts replayed with16 controls. The four new
+grouped planner tests cover conditional/nested/unknown/inactive
 paths, non-reader examples, unterminated attributes and complete split include aliases.
-The final CI floor is105 at this base. CI and review still gate merge.
+The final CI floor is113, preserving both groups. CI and review still gate merge.
 
 This is CPU dependency/validation tooling. Native selectors remain in shadow. No native
 math, emitted runtime program, compiler/build defaults, artifacts/defaults, tolerance,
