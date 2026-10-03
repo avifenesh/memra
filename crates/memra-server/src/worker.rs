@@ -49554,6 +49554,20 @@ mod tests {
         ));
         assert!(routed.contains("self.decode_step_h_ppn(e, token, cache, &fence)"));
         assert!(!routed.contains("refuse_hyper"));
+        let prime = include_str!("../../memra-engine/src/hybrid_forward.rs");
+        let wrapper = &prime[prime.find("    pub fn prime_cache(").unwrap()..];
+        assert!(
+            wrapper.contains("self.prime_cache_overlaid(e, tokens, cache, queued_after, None)")
+        );
+        let routed_prime = &prime[prime.find("    pub fn prime_cache_overlaid(").unwrap()..];
+        assert!(
+            routed_prime
+                .contains("return self.prime_cache_hyper(e, tokens, cache, queued_after, overlay)")
+        );
+        assert!(routed_prime.contains("prime_cache_ppn_pipelined"));
+        assert!(prime.contains(
+            "self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::Pipeline)"
+        ));
         let placement = include_str!("../../memra-engine/src/pp.rs");
         let planned = &placement[placement.find("pub fn new_cache_planned(").unwrap()..];
         assert!(planned.contains("new_cache_inner(e, cfg, Some(plan), max_ctx)"));
