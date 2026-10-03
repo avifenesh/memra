@@ -37,6 +37,18 @@ TOOL_CONTRACTS = {
         'cpu': ['tools/unittest-floor.sh', 'tools', 'test_choice_verifier.py', '12'],
         'native': ['Exact-source n1 before/after, shared-prefix fork, independent seeded choices, indexed termination, parent usage/reservation, slot/KV exhaustion and group cancellation/recovery on a pinned cached artifact; CPU controls do not qualify native execution'],
     },
+    'tool-choice': {
+        'presence': ['tools/tool-choice-gate.py', 'tools/test_tool_choice_gate.py'],
+        'inputs': ['tools/tool-choice-gate.py', 'tools/test_tool_choice_gate.py',
+                   'tools/validation_coverage.py',
+                   'research/tool-choice-20261003/receipts/native-v3/report.json',
+                   'research/tool-choice-20261003/receipts/native-v3/expected-context.json',
+                   'research/tool-choice-20261003/receipts/native-v3/coverage-plan.json',
+                   'research/tool-choice-20261003/receipts/native-v3/coverage-results.json',
+                   'research/tool-choice-20261003/receipts/native-v3/file-sha256.json'],
+        'cpu': ['tools/unittest-floor.sh', 'tools', 'test_tool_choice_gate.py', '16'],
+        'native': ['Pinned Qwen/Gemma tool-choice streams: required/named schema and grammar engagement, single-call policy, explicit refusals, and unchanged-auto/tool-none identity with coherent receipt red controls'],
+    },
     'q35-cache': {
         'required': True,
         'inputs': ['tools/q35-cold-mixed-gate.py', 'tools/test_q35_cold_mixed_gate.py',

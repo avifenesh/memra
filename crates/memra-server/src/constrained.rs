@@ -36,6 +36,18 @@ pub enum GrammarSpec {
     JsonObject,
     /// `{"type":"json_schema","json_schema":{"schema":{...}}}` — the client's schema.
     JsonSchema(serde_json::Value),
+    /// One template-framed call with schema-checked arguments (issue #530).
+    ToolCalls(crate::tool_constraint::ToolLanguage),
+}
+
+impl GrammarSpec {
+    pub fn parameter(&self) -> &'static str {
+        match self {
+            Self::ToolCalls(language) if language.required => "tool_choice",
+            Self::ToolCalls(_) => "parallel_tool_calls",
+            Self::JsonObject | Self::JsonSchema(_) => "response_format",
+        }
+    }
 }
 
 /// Pre-admit JSON-schema envelope. The HTTP body limit is intentionally much larger because it
@@ -195,7 +207,7 @@ impl ConstraintCompiler {
                 };
                 let constraint = factory.matcher(spec);
                 if let Some(err) = constraint.error() {
-                    return Err(format!("response_format: {err}"));
+                    return Err(format!("{}: {err}", spec.parameter()));
                 }
                 Ok(constraint)
             }
@@ -385,7 +397,7 @@ impl ConstraintCompiler {
     }
 }
 
-fn validate_json_schema(schema: &serde_json::Value) -> Result<(), String> {
+pub(crate) fn validate_json_schema(schema: &serde_json::Value) -> Result<(), String> {
     let mut stack = vec![(schema, 1usize)];
     let mut nodes = 0usize;
     while let Some((value, depth)) = stack.pop() {
@@ -504,6 +516,7 @@ impl TokenizerEnv for MemraTokEnv {
 /// model, then every request compiles only its own schema.
 pub struct ConstraintFactory {
     factory: ParserFactory,
+    tool_terminals: std::collections::HashMap<&'static str, String>,
 }
 
 impl ConstraintFactory {
@@ -528,17 +541,47 @@ impl ConstraintFactory {
         let mut factory =
             ParserFactory::new_simple(&env).map_err(|e| format!("constraint factory: {e}"))?;
         factory.quiet();
-        Ok(Self { factory })
+        let mut tool_terminals = std::collections::HashMap::new();
+        for marker in [
+            "<tool_call>",
+            "</tool_call>",
+            "<|tool_call>",
+            "<tool_call|>",
+        ] {
+            let ids = tok.encode_special(marker, false, true);
+            if !ids.is_empty() && tok.decode_bytes_special(&ids, true) == marker.as_bytes() {
+                tool_terminals.insert(
+                    marker,
+                    ids.iter()
+                        .map(|id| format!("<[{id}]>"))
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                );
+            }
+        }
+        Ok(Self {
+            factory,
+            tool_terminals,
+        })
     }
 
     /// Compile one request's grammar. Compile errors (bad schema) surface via
     /// `SessionConstraint::error()` at admit — a clean client error, not a worker panic.
     pub fn matcher(&self, spec: &GrammarSpec) -> SessionConstraint {
-        let schema = match spec {
-            GrammarSpec::JsonObject => serde_json::json!({"type": "object"}),
-            GrammarSpec::JsonSchema(s) => s.clone(),
+        let grammar = match spec {
+            GrammarSpec::JsonObject => {
+                TopLevelGrammar::from_json_schema(serde_json::json!({"type": "object"}))
+            }
+            GrammarSpec::JsonSchema(s) => TopLevelGrammar::from_json_schema(s.clone()),
+            GrammarSpec::ToolCalls(language) => {
+                TopLevelGrammar::from_lark(language.lark(|marker| {
+                    self.tool_terminals
+                        .get(marker)
+                        .cloned()
+                        .unwrap_or_else(|| "UNAVAILABLE_TOOL_PROTOCOL".into())
+                }))
+            }
         };
-        let grammar = TopLevelGrammar::from_json_schema(schema);
         SessionConstraint::new(Matcher::new(self.factory.create_parser(grammar)))
     }
 }
@@ -935,6 +978,93 @@ impl memra_engine::spec::SpecConstraint for SpecGrammar<'_> {
 mod tests {
     use super::*;
     use llguidance::toktrie::ApproximateTokEnv;
+
+    #[test]
+    fn tool_language_mask_schema_name_single_call_and_optional_text_controls() {
+        use crate::tool_constraint::{ToolDialect, ToolLanguage};
+        let tools = vec![
+            serde_json::json!({"type":"function","function":{"name":"weather",
+            "parameters":{"type":"object","properties":{"city":{"type":"string","enum":["Paris"]}},
+            "required":["city"],"additionalProperties":false}}}),
+            serde_json::json!({"type":"function","function":{"name":"clock",
+            "parameters":{"type":"object","properties":{"hour":{"type":"integer"}},
+            "required":["hour"],"additionalProperties":false}}}),
+        ];
+        let accepts = |text: &str, required, named, dialect| {
+            let env = ApproximateTokEnv::single_byte_env();
+            let factory = ParserFactory::new_simple(&env).unwrap();
+            let language = ToolLanguage::new(&tools, named, required, dialect).unwrap();
+            let grammar =
+                TopLevelGrammar::from_lark(language.lark(|s| serde_json::to_string(s).unwrap()));
+            let mut matcher = Matcher::new(factory.create_parser(grammar));
+            assert!(matcher.get_error().is_none(), "{:?}", matcher.get_error());
+            for token in env.tok_trie().greedy_tokenize(text.as_bytes()) {
+                if !matcher.compute_mask_or_eos().unwrap().is_allowed(token) {
+                    return false;
+                }
+                matcher.consume_token(token).unwrap();
+            }
+            matcher
+                .compute_mask_or_eos()
+                .unwrap()
+                .is_allowed(env.tok_trie().eos_token())
+        };
+        let qwen = r#"<tool_call><function=weather>{"city":"Paris"}</function></tool_call>"#;
+        let gemma = r#"<|tool_call>call:weather{"city":"Paris"}<tool_call|>"#;
+        assert!(accepts(qwen, true, Some("weather"), ToolDialect::Qwen));
+        assert!(accepts(gemma, true, Some("weather"), ToolDialect::Gemma));
+        assert!(accepts("Ordinary content.", false, None, ToolDialect::Qwen));
+        assert!(!accepts("Ordinary content.", true, None, ToolDialect::Qwen));
+        assert!(accepts(
+            &format!("Prefix. {qwen}"),
+            false,
+            None,
+            ToolDialect::Qwen
+        ));
+        assert!(accepts(
+            "1 < 2 and <ordinary> text",
+            false,
+            None,
+            ToolDialect::Qwen
+        ));
+        assert!(accepts(
+            &format!("<prefix {gemma}"),
+            false,
+            None,
+            ToolDialect::Gemma
+        ));
+        for bad in [
+            qwen.replace("Paris", "Berlin"),
+            qwen.replace("weather", "clock"),
+            qwen.replace(r#"{"city":"Paris"}"#, r#"{}"#),
+            qwen.replace(r#"{"city":"Paris"}"#, r#"{"city":"Paris","extra":1}"#),
+            format!("{qwen}{qwen}"),
+            format!("{qwen} trailing"),
+        ] {
+            assert!(
+                !accepts(&bad, true, Some("weather"), ToolDialect::Qwen),
+                "accepted {bad}"
+            );
+            assert!(
+                !accepts(&bad, false, Some("weather"), ToolDialect::Qwen),
+                "optional path accepted {bad}"
+            );
+        }
+        assert!(!accepts(
+            "<<tool_call>not a function",
+            false,
+            None,
+            ToolDialect::Qwen
+        ));
+        assert!(!accepts(
+            &format!("{gemma}{gemma}"),
+            false,
+            None,
+            ToolDialect::Gemma
+        ));
+        let clock = r#"<tool_call><function=clock>{"hour":3}</function></tool_call>"#;
+        assert!(accepts(clock, true, None, ToolDialect::Qwen));
+    }
 
     #[test]
     fn parse_response_format_forms() {

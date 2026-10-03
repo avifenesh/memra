@@ -607,16 +607,19 @@ gemma-4 launch shipped without one and answered 400 to every Codex/Claude Code
 request ("chat template has no tools branch") — that class of gap now blocks a
 model from being announced as served.
 
-`/v1/chat/completions` accepts `tools`, `tool_choice` (`"auto"`|`"none"`; `"required"` and
-named-function forms 400, since the grammar engine isn't wired to tool selection yet; a
-named-function `tool_choice` whose name is not in the request's own `tools` gets its own
-message ahead of that generic refusal, since that mismatch is a request bug regardless of
-whether forcing ever ships), `parallel_tool_calls` (`true`/omitted is a no-op, since this
-server never limited call count; explicit `false` 400s, because stopping generation after
-the first call needs a decode-loop hook that is not built yet, issue #530),
-assistant-history `tool_calls`, `role:"tool"` result turns, and
-`reasoning_effort`/`reasoning`. The path is **template +
-parsing only — zero engine changes**:
+`/v1/chat/completions` and the Responses adapter accept `tools`, `tool_choice`
+(`"auto"`, `"none"`, `"required"` or a declared named function), and `parallel_tool_calls`.
+Ordinary auto/none requests preserve their existing rendering and parser. Required/named
+requests use template-specific call frames with schema-checked JSON argument objects;
+unknown names, malformed/oversized schemas, incompatible response_format or explicit stops
+refuse before generation. Parallel=false permits ordinary content or one complete constrained
+call. Qwen's constrained language allows multiple calls when parallel is permitted. Gemma's
+single-call handoff refuses explicit parallel=true. DSML/HY3/GLM constrained-tool dialects
+are explicitly unsupported. `/v1/models` reports `forced_tool_calls` and
+`parallel_tool_calls` capability booleans for the template route. These are API mechanics,
+not model support-state promotions. Existing structured-output thinking-phase rules apply.
+Native acceptance is source/artifact bound in `research/tool-choice-20261003/`.
+
 
 - Tool schemas render into each model's own tools branch. Qwen3.5/3.6 uses its ChatML
   `<tool_call>`/`<function=…>` protocol; HY3 uses the pinned shipping template's suffixed

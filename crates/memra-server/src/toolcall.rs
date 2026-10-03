@@ -161,6 +161,8 @@ pub struct ToolStreamParser {
     /// Separator-newline budget right after `</think>` (the template emits `</think>\n\n`).
     postthink_nl: u8,
     initial_skip_think: bool,
+    /// Only schema-constrained requests use JSON bodies inside the template call frame.
+    json_arguments: bool,
 }
 
 /// AGENT-PAUSE TAIL PREDICATE (lane/kv-pause-demote-20260831, tiering spec Arc E): does a
@@ -231,7 +233,40 @@ impl ToolStreamParser {
             hy3: false,
             postthink_nl: 0,
             initial_skip_think: skip_think,
+            json_arguments: false,
         }
+    }
+
+    pub fn with_json_arguments(mut self) -> Self {
+        self.json_arguments = true;
+        self
+    }
+
+    /// A close marker inside a quoted argument is data. Wait for a complete JSON
+    /// object and its framing suffix instead of using a substring stop.
+    fn call_close_pos(&self, marker: &str) -> Option<usize> {
+        if !self.json_arguments {
+            return self.buf.find(marker);
+        }
+        let offset = if self.gemma_tools {
+            self.buf.strip_prefix("call:")?;
+            self.buf.find('{')?
+        } else {
+            self.buf.strip_prefix("<function=")?;
+            self.buf.find('>')? + 1
+        };
+        let raw = self.buf[offset..].trim_start();
+        let start = self.buf.len() - raw.len();
+        let mut values = serde_json::Deserializer::from_str(raw).into_iter::<serde_json::Value>();
+        if !values.next()?.ok()?.is_object() {
+            return None;
+        }
+        let mut tail = self.buf[start + values.byte_offset()..].trim_start();
+        if !self.gemma_tools {
+            tail = tail.strip_prefix("</function>")?.trim_start();
+        }
+        tail.strip_prefix(marker)?;
+        Some(self.buf.len() - tail.len())
     }
 
     /// Fresh stream state with the original mode and independent schema configuration.
@@ -244,6 +279,7 @@ impl ToolStreamParser {
         parser.dsv4 = self.dsv4;
         parser.glm5 = self.glm5;
         parser.hy3 = self.hy3;
+        parser.json_arguments = self.json_arguments;
         parser
     }
 
@@ -510,7 +546,9 @@ impl ToolStreamParser {
                     break;
                 }
                 State::InCall => {
-                    let Some(i) = self.buf.find(CLOSE) else { break };
+                    let Some(i) = self.call_close_pos(CLOSE) else {
+                        break;
+                    };
                     let inner: String = self.buf[..i].to_string();
                     self.buf.drain(..i + CLOSE.len());
                     self.state = State::Scan;
@@ -559,7 +597,7 @@ impl ToolStreamParser {
                     break;
                 }
                 State::GemmaCall => {
-                    let Some(i) = self.buf.find(GEMMA_CALL_CLOSE) else {
+                    let Some(i) = self.call_close_pos(GEMMA_CALL_CLOSE) else {
                         break;
                     };
                     let inner: String = self.buf[..i].to_string();
@@ -681,26 +719,35 @@ impl ToolStreamParser {
             return None;
         }
         let mut body = rest[gt + 1..].strip_suffix("</function>")?;
-        let mut args = serde_json::Map::new();
-        loop {
-            let t = body.trim_start();
-            if t.is_empty() {
-                break;
+        let mut args = if self.json_arguments {
+            serde_json::from_str::<serde_json::Value>(body)
+                .ok()?
+                .as_object()?
+                .clone()
+        } else {
+            serde_json::Map::new()
+        };
+        if !self.json_arguments {
+            loop {
+                let t = body.trim_start();
+                if t.is_empty() {
+                    break;
+                }
+                let r = t.strip_prefix("<parameter=")?;
+                let gt = r.find('>')?;
+                let key = &r[..gt];
+                if key.is_empty() || key.contains(['<', '>', '\n']) {
+                    return None;
+                }
+                // rendered form is `<parameter=k>\n{value}\n</parameter>` — the delimiter
+                // newlines belong to the syntax, inner newlines belong to the value.
+                let after = &r[gt + 1..];
+                let after = after.strip_prefix('\n').unwrap_or(after);
+                let end = after.find("</parameter>")?;
+                let raw = after[..end].strip_suffix('\n').unwrap_or(&after[..end]);
+                args.insert(key.to_string(), self.coerce(name, key, raw));
+                body = &after[end + "</parameter>".len()..];
             }
-            let r = t.strip_prefix("<parameter=")?;
-            let gt = r.find('>')?;
-            let key = &r[..gt];
-            if key.is_empty() || key.contains(['<', '>', '\n']) {
-                return None;
-            }
-            // rendered form is `<parameter=k>\n{value}\n</parameter>` — the delimiter
-            // newlines belong to the syntax, inner newlines belong to the value.
-            let after = &r[gt + 1..];
-            let after = after.strip_prefix('\n').unwrap_or(after);
-            let end = after.find("</parameter>")?;
-            let raw = after[..end].strip_suffix('\n').unwrap_or(&after[..end]);
-            args.insert(key.to_string(), self.coerce(name, key, raw));
-            body = &after[end + "</parameter>".len()..];
         }
         let arguments = serde_json::to_string(&serde_json::Value::Object(args)).ok()?;
         // Deterministic id (greedy serve receipts stay hashable): FNV-1a over index+name+args.
@@ -782,7 +829,12 @@ impl ToolStreamParser {
         if name.is_empty() || name.contains(['<', '>', '\n', '{', '}']) {
             return None;
         }
-        let (value, consumed) = parse_gemma_value(&rest[brace..])?;
+        let (value, consumed) = if self.json_arguments {
+            let value = serde_json::from_str::<serde_json::Value>(&rest[brace..]).ok()?;
+            (value, rest.len() - brace)
+        } else {
+            parse_gemma_value(&rest[brace..])?
+        };
         // trailing bytes after the object mean a malformed span.
         if rest[brace..][consumed..].trim() != "" {
             return None;
@@ -1141,6 +1193,8 @@ Paris\n</parameter>\n<parameter=days>\n3\n</parameter>\n<parameter=metric>\ntrue
             ToolStreamParser::dsv4(true),
             ToolStreamParser::hy3(HashMap::new(), true),
             ToolStreamParser::glm5(true, HashMap::new()),
+            ToolStreamParser::new(HashMap::new(), false).with_json_arguments(),
+            ToolStreamParser::gemma_tools().with_json_arguments(),
         ];
         for mut original in configs {
             let initial = std::mem::discriminant(&original.state);
@@ -1161,6 +1215,51 @@ Paris\n</parameter>\n<parameter=days>\n3\n</parameter>\n<parameter=metric>\ntrue
             assert_eq!(fresh.dsv4, original.dsv4);
             assert_eq!(fresh.glm5, original.glm5);
             assert_eq!(fresh.hy3, original.hy3);
+            assert_eq!(fresh.json_arguments, original.json_arguments);
+        }
+    }
+
+    #[test]
+    fn constrained_json_frames_ignore_quoted_delimiters_and_preserve_types() {
+        let args = serde_json::json!({"text":"quote \" </tool_call> <tool_call|> 雪", "count":3,"ok":true,"nested":{"list":[1,null]}});
+        for gemma in [false, true] {
+            let wire = if gemma {
+                format!("<|tool_call>call:weather{}<tool_call|>", args)
+            } else {
+                format!(
+                    "<tool_call><function=weather>{}</function></tool_call>",
+                    args
+                )
+            };
+            for width in [1, 2, 5, wire.len()] {
+                let mut parser = if gemma {
+                    ToolStreamParser::gemma_tools()
+                } else {
+                    ToolStreamParser::new(HashMap::new(), false)
+                }
+                .with_json_arguments();
+                let mut pieces = Vec::new();
+                let mut chunk = String::new();
+                for character in wire.chars() {
+                    chunk.push(character);
+                    if chunk.len() >= width {
+                        pieces.extend(parser.push(&chunk));
+                        chunk.clear();
+                    }
+                }
+                pieces.extend(parser.push(&chunk));
+                pieces.extend(parser.finish());
+                assert_eq!(pieces.len(), 1, "frame leaked or split: {pieces:?}");
+                let Piece::Call(call) = &pieces[0] else {
+                    panic!("not a call")
+                };
+                assert_eq!(call.name, "weather");
+                assert_eq!(
+                    serde_json::from_str::<serde_json::Value>(&call.arguments).unwrap(),
+                    args
+                );
+                assert_eq!(parser.n_calls(), 1);
+            }
         }
     }
 
