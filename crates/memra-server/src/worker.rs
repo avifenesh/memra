@@ -41518,20 +41518,11 @@ fn calibration_transient_floor(
         .saturating_sub(charged_draft)
 }
 
-/// BOOT ADMISSION CALIBRATION (lane/step37-vram-admission-20260830, defect 1): measure the
-/// deployment's REAL first-burst transient BEFORE the first customer request, and charge it
-/// as the admission transient floor. The static `SPEC_SHRINK_RESERVE` (1,611 MB) was
-/// calibrated on a small-model control fit and under-charged a medium-class deployment
-/// 4.6x (measured 7,458 MiB), so admission admitted past the card with zero defers and the
-/// card hard-failed from a clean boot.
-///
-/// The probe runs ONE spec-shaped generation through the real serving path (chunked prime +
-/// draft capture + sampled verify) on a synthetic one-chunk prompt — a memory-shape probe,
-/// never a perf cell — then reads the driver-kept pool high-water on every device. It also
-/// leaves the process warm in exactly the way a first request would (dspark/vg pools, prime
-/// slabs, cuBLAS workspaces are materialized at boot instead of surprising request 1), and
-/// it supplies the first per-session draft-state observation the admission cost charges.
-/// Failure is LOUD and non-fatal: the static floor serves, headroom is trimmed back.
+/// Required readiness warmup, independent of admission calibration doors.
+/// Every loaded model runs the existing native generate API on a private cache.
+/// Two outputs execute real decode calls after the prompt prime; a stream fence
+/// completes them before readiness. No customer sampler or reusable state is used.
+/// Graph engagement is a separate served-route property, not implied by this API.
 fn run_required_boot_warmup(
     engine: &Engine,
     loaded: &HashMap<String, LoadedModel>,
@@ -41571,7 +41562,7 @@ fn run_required_boot_warmup(
         }
         eprintln!(
             "[boot-warmup] complete: model={name:?} prompt_tokens={} generated_tokens={} \
-             private_cache=true graph_capability_requires_served_route_receipt=true",
+             private_cache=true warmup_api=generate",
             prompt.len(),
             output.len()
         );
@@ -41579,6 +41570,20 @@ fn run_required_boot_warmup(
     Ok(())
 }
 
+/// BOOT ADMISSION CALIBRATION (lane/step37-vram-admission-20260830, defect 1): measure the
+/// deployment's REAL first-burst transient BEFORE the first customer request, and charge it
+/// as the admission transient floor. The static `SPEC_SHRINK_RESERVE` (1,611 MB) was
+/// calibrated on a small-model control fit and under-charged a medium-class deployment
+/// 4.6x (measured 7,458 MiB), so admission admitted past the card with zero defers and the
+/// card hard-failed from a clean boot.
+///
+/// The probe runs ONE spec-shaped generation through the real serving path (chunked prime +
+/// draft capture + sampled verify) on a synthetic one-chunk prompt — a memory-shape probe,
+/// never a perf cell — then reads the driver-kept pool high-water on every device. It also
+/// leaves the process warm in exactly the way a first request would (dspark/vg pools, prime
+/// slabs, cuBLAS workspaces are materialized at boot instead of surprising request 1), and
+/// it supplies the first per-session draft-state observation the admission cost charges.
+/// Failure is LOUD and non-fatal: the static floor serves, headroom is trimmed back.
 fn run_boot_calibration(
     engine: &Engine,
     loaded: &HashMap<String, LoadedModel>,
