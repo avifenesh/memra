@@ -111,7 +111,8 @@ class SupportRecordDataInputs(unittest.TestCase):
             for path in contract['inputs']:
                 if not (self.repo / path).exists():
                     self.fixture.put(path, '# static execution fixture\n')
-        available = list(vp.TOOL_CONTRACTS)
+        available = [name for name, contract in vp.TOOL_CONTRACTS.items()
+                     if not contract.get('workflow_only')]
         reader = self.repo / 'tools/check-support-states.py'
         canonical = reader.read_bytes()
         reader.write_bytes(canonical.replace(b'\n', b'\r\n'))

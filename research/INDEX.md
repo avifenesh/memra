@@ -7,6 +7,8 @@ Check here BEFORE re-running an experiment; add your lane's row at close. Full r
 live in each dir (jsonl/logs are out of default rg via the repo .ignore — `rg -u` to
 include). `rg '<topic>' research/INDEX.md` = the fast path to any lane's verdict.
 
+cpu-workflow-selection-990-20261003 | Workflow-only plan labels are delegated to their existing mandatory steps. | cpu-workflow-selection-990-20261003/README.md
+
 sft-cpu-caller-20261003 | CI executes all nine original generator CPU methods with independent identity, success-outcome and caller admission; generator bytes and native obligations remain unchanged. | sft-cpu-caller-20261003/LANE.md
 
 expert-tier-selftest-ci-20261003 | Expert-tier self-tests refuse optimized Python and CI executes real assertion and recipe controls; ordinary plan generation and native obligations remain unchanged. | expert-tier-selftest-ci-20261003/LANE.md

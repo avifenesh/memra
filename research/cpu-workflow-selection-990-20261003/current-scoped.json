@@ -1,0 +1,274 @@
+{
+  "schema": "memra-validation-plan-v1",
+  "mode": "scoped",
+  "reason": "dependency closure plus declared input contracts",
+  "changed": [
+    ".github/workflows/ci.yml"
+  ],
+  "direct_packages": [],
+  "packages": [],
+  "dependency_reasons": {},
+  "jobs": {
+    "build": false,
+    "clippy": false,
+    "server": false,
+    "engine": false,
+    "portable": false,
+    "core": false,
+    "lanes": false,
+    "arch": false,
+    "publish": false
+  },
+  "edge_decisions": [
+    {
+      "from": "changed-inputs",
+      "to": "memra-cli",
+      "affected": false,
+      "reason": "No changed declared input directly belongs to this package"
+    },
+    {
+      "from": "memra-gguf",
+      "to": "memra-cli",
+      "affected": false,
+      "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+    },
+    {
+      "from": "memra-reference",
+      "to": "memra-cli",
+      "affected": false,
+      "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+    },
+    {
+      "from": "memra-tokenizer",
+      "to": "memra-cli",
+      "affected": false,
+      "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+    },
+    {
+      "from": "changed-inputs",
+      "to": "memra-engine",
+      "affected": false,
+      "reason": "No changed declared input directly belongs to this package"
+    },
+    {
+      "from": "memra-gguf",
+      "to": "memra-engine",
+      "affected": false,
+      "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+    },
+    {
+      "from": "memra-kv",
+      "to": "memra-engine",
+      "affected": false,
+      "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+    },
+    {
+      "from": "memra-reference",
+      "to": "memra-engine",
+      "affected": false,
+      "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+    },
+    {
+      "from": "memra-runtime",
+      "to": "memra-engine",
+      "affected": false,
+      "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+    },
+    {
+      "from": "memra-sampling",
+      "to": "memra-engine",
+      "affected": false,
+      "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+    },
+    {
+      "from": "memra-tier",
+      "to": "memra-engine",
+      "affected": false,
+      "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+    },
+    {
+      "from": "memra-tokenizer",
+      "to": "memra-engine",
+      "affected": false,
+      "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+    },
+    {
+      "from": "memra-validate",
+      "to": "memra-engine",
+      "affected": false,
+      "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+    },
+    {
+      "from": "changed-inputs",
+      "to": "memra-gguf",
+      "affected": false,
+      "reason": "No changed declared input directly belongs to this package"
+    },
+    {
+      "from": "changed-inputs",
+      "to": "memra-kv",
+      "affected": false,
+      "reason": "No changed declared input directly belongs to this package"
+    },
+    {
+      "from": "memra-gguf",
+      "to": "memra-kv",
+      "affected": false,
+      "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+    },
+    {
+      "from": "memra-tier",
+      "to": "memra-kv",
+      "affected": false,
+      "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+    },
+    {
+      "from": "changed-inputs",
+      "to": "memra-lanes",
+      "affected": false,
+      "reason": "No changed declared input directly belongs to this package"
+    },
+    {
+      "from": "changed-inputs",
+      "to": "memra-net-guard",
+      "affected": false,
+      "reason": "No changed declared input directly belongs to this package"
+    },
+    {
+      "from": "changed-inputs",
+      "to": "memra-probe",
+      "affected": false,
+      "reason": "No changed declared input directly belongs to this package"
+    },
+    {
+      "from": "changed-inputs",
+      "to": "memra-reference",
+      "affected": false,
+      "reason": "No changed declared input directly belongs to this package"
+    },
+    {
+      "from": "memra-gguf",
+      "to": "memra-reference",
+      "affected": false,
+      "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+    },
+    {
+      "from": "memra-tokenizer",
+      "to": "memra-reference",
+      "affected": false,
+      "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+    },
+    {
+      "from": "changed-inputs",
+      "to": "memra-runtime",
+      "affected": false,
+      "reason": "No changed declared input directly belongs to this package"
+    },
+    {
+      "from": "memra-gguf",
+      "to": "memra-runtime",
+      "affected": false,
+      "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+    },
+    {
+      "from": "changed-inputs",
+      "to": "memra-sampling",
+      "affected": false,
+      "reason": "No changed declared input directly belongs to this package"
+    },
+    {
+      "from": "changed-inputs",
+      "to": "memra-server",
+      "affected": false,
+      "reason": "No changed declared input directly belongs to this package"
+    },
+    {
+      "from": "memra-engine",
+      "to": "memra-server",
+      "affected": false,
+      "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+    },
+    {
+      "from": "memra-gguf",
+      "to": "memra-server",
+      "affected": false,
+      "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+    },
+    {
+      "from": "memra-lanes",
+      "to": "memra-server",
+      "affected": false,
+      "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+    },
+    {
+      "from": "memra-net-guard",
+      "to": "memra-server",
+      "affected": false,
+      "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+    },
+    {
+      "from": "memra-tokenizer",
+      "to": "memra-server",
+      "affected": false,
+      "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+    },
+    {
+      "from": "changed-inputs",
+      "to": "memra-tier",
+      "affected": false,
+      "reason": "No changed declared input directly belongs to this package"
+    },
+    {
+      "from": "changed-inputs",
+      "to": "memra-tokenizer",
+      "affected": false,
+      "reason": "No changed declared input directly belongs to this package"
+    },
+    {
+      "from": "memra-gguf",
+      "to": "memra-tokenizer",
+      "affected": false,
+      "reason": "Dependency has unchanged declared inputs and no affected predecessor"
+    },
+    {
+      "from": "changed-inputs",
+      "to": "memra-validate",
+      "affected": false,
+      "reason": "No changed declared input directly belongs to this package"
+    }
+  ],
+  "requires_cuda": false,
+  "cpu_contracts": [
+    {
+      "id": "sft-generator-caller",
+      "workflow_only": true,
+      "inputs": [
+        "tools/run_sft_gen_contract.py",
+        "tools/test_sft_gen_contract.py"
+      ],
+      "cpu": [
+        "python3",
+        "tools/run_sft_gen_contract.py"
+      ],
+      "native": []
+    }
+  ],
+  "native": {
+    "scope": "none",
+    "requirements": [],
+    "qualification": false
+  },
+  "omitted": {
+    "build": "No changed package or reverse dependency reaches this execution component",
+    "clippy": "No changed package or reverse dependency reaches this execution component",
+    "server": "No changed package or reverse dependency reaches this execution component",
+    "engine": "No changed package or reverse dependency reaches this execution component",
+    "portable": "No changed package or reverse dependency reaches this execution component",
+    "core": "No changed package or reverse dependency reaches this execution component",
+    "lanes": "No changed package or reverse dependency reaches this execution component",
+    "arch": "No changed package or reverse dependency reaches this execution component",
+    "publish": "No changed package or reverse dependency reaches this execution component"
+  },
+  "base": "f355c662a153e4c3ecc1e2af3cf5c68a3a2fcd91",
+  "head": "42348a6864a9d1e0bf20ff33d585059483af63c7"
+}
