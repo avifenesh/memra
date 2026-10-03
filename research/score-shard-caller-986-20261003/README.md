@@ -6,6 +6,8 @@ The caller admits exactly 14 identified controls, with discovered, executed and 
 
 [Admitted CPU receipt](receipts/cpu-v5/ADMITTED.json) binds the base `50f79338`, working diff and six source hashes. It records 16 actual original/current before/wrong/restore runs and ten compiling coherent mutants, each producing assertion failure with zero fixture errors. Raw logs use lossless gzip; `RAW-LOGS.json` records raw and compressed hashes. The separate 206 framework, A14 and SFT18 controls passed; all nine original SFT controls executed. Registry coverage spans 14 packages and all nine workflow files passed the duplicate-key check.
 
+[Actual B composition](receipts/actual-B-composition/COMPOSITION.json) records a separate clean run on `985e1a76`, based on the actual #982 merge `9595cea5`. C14, B17, five original wrapper controls, A14, SFT18 with all nine original methods, and the full 206 framework controls passed. Five C code hashes and five B helper hashes remain identical. The entire B workflow is retained with the one required C step added. The original working proof and `23ce9a86` carrier above remain historical; their tuple and approval are not relabeled as this composition. Unchanged cache and native gates were not repeated locally.
+
 The original merger snapshot has SHA-256 `dcdefb0b1a0337c1083dfb9512725c5d232e130e9d895301f5e724d9112a6d95`. Every function outside `self_test` has the same parsed code. The ordinary CLI fixture checks exact output bytes, metadata, rows, ordering and shard hashes under normal and optimized execution. Native-plan classification remains full and unqualified. This is CPU caller evidence, with no model scoring, native execution or model/runtime qualification claim.
 
 Reproduce with:
