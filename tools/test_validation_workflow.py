@@ -231,6 +231,8 @@ class CpuWorkflowTests(unittest.TestCase):
                 tree.files[policy.POLICY_PATH] = json.dumps(data).encode()
                 tree.files['tools/different_program.py'] = b'# coherent wrong-program fixture\n'
                 tree.modes['tools/different_program.py'] = '100644'
+            head.files[policy.WORKFLOW_PATH] = self.workflow.replace(
+                self.rows[0]['block'], row['block'], 1).encode()
             with self.subTest(command=changed), self.assertRaises(ValueError):
                 policy.eligible_additions(base, head)
 
