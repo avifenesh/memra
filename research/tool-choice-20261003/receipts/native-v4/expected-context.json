@@ -1,0 +1,24 @@
+{
+  "source": "a19a907d7402b2a5378c1cb1aeab22037fce2775",
+  "candidate_sha256": "5a1e23aad8e6ada860d704f97764a406a77cd2c1da7e6553007f664dc4b5ce65",
+  "baseline_sha256": "6ca4ea6a08606c459605ac65f9b40f458d928a63c9fc9af3afae5a347c6a4514",
+  "helper_sha256": "a295b3e219f4b69242ce54f21dee282d393c451c544725391a88c3113996b065",
+  "gpu_uuid": "GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d",
+  "context": 4096,
+  "artifacts": {
+    "qwen": {
+      "sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
+      "bytes": 9527501696
+    },
+    "gemma": {
+      "sha256": "93567e57a8fe10b23569b9d9ec38cd005deedf71e29477c421a4b83f418a538b",
+      "bytes": 6975879296
+    }
+  },
+  "model": "Qwen3.5-9B Q8_0 + Gemma4-12B Q4_0",
+  "artifact": "qwen:0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c;gemma:93567e57a8fe10b23569b9d9ec38cd005deedf71e29477c421a4b83f418a538b",
+  "hardware": "GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, NVIDIA GeForce RTX 5090 Laptop GPU, 595.91.07, 24463 MiB",
+  "numeric_program": "existing GGUF forward and llguidance mask/sampling primitives",
+  "binary": "5a1e23aad8e6ada860d704f97764a406a77cd2c1da7e6553007f664dc4b5ce65",
+  "request_shape": "context4096 max512 greedy seed530; schema-framed tool calls"
+}
