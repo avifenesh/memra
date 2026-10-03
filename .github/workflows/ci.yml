@@ -114,6 +114,9 @@ jobs:
           python3 tools/build_expert_tier_plan.py --self-test
           python3 tools/run_expert_tier_contract.py
 
+      - name: SFT generator CPU control admission
+        run: python3 tools/run_sft_gen_contract.py
+
       - name: Exact-source coalescer membership and wait contracts (CPU-only)
         if: ${{ needs.changes.result != 'success' || needs.changes.outputs.server != 'false' }}
         run: python3 tools/check-coalescer-contract.py --out "$RUNNER_TEMP/coalescer-contract"

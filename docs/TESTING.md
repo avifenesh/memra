@@ -75,6 +75,23 @@ This is CPU self-test admission. It grants no model, runtime, serving or emitted
 native-plan qualification. Builder changes still select the conservative full
 validation plan; native obligations and required gate coverage remain unchanged.
 
+## SFT generator CPU control admission
+
+The unconditional CI gates job runs `python3 tools/run_sft_gen_contract.py`.
+It executes all nine original generator methods and nine independent admission
+controls, with complete unique discovery and execution identities and no skips
+or expected failures. Optimized startup refuses before fixture creation or import.
+Missing, replaced, unrelated and duplicate controls, omitted or duplicate
+execution, non-successful results and masked callers refuse admission.
+
+The original generator and nine-method test file remain unchanged. Fixtures live
+in an owned temporary boundary, with owned Git config and hooks; cleanup runs on
+every exit. Generator/provider entrypoints are blocked inside this CPU fixture.
+These are controlled reviewed tests, not a sandbox for arbitrary Python. They do
+not run SFT generation, provider/model calls, private corpus or scale pipelines.
+Generator edits retain full validation selection and native requirements. No
+model, runtime, serving or native qualification is granted.
+
 ## DSV4 norm-fusion gates, REMOVED 2026-09-11
 
 The two sections that stood here documented `dsv4_compose_densefast_normfuse_gate`
