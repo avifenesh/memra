@@ -262,6 +262,57 @@ def finite_metadata_probe(compiler,args,cap,key,row,manifest):
  return code
 
 
+# Proposed receiver-only guard. No helper/API change or error latch.
+def original_custom_build_unit(args,row,manifest):
+    import tomllib
+    sources=[x for x in args if x.endswith('.rs') and not x.startswith('-')]
+    config=tomllib.loads(m.regular(manifest,'Cargo.toml',contents=True).decode())
+    declared=config.get('package',{}).get('build')
+    return (declared=='build.rs' and val(args,'--crate-name')=='build_script_build'
+            and val(args,'--crate-type')=='bin' and len(sources)==1
+            and Path(sources[0]).absolute()==manifest/'build.rs'
+            and 'build.rs' in row['files'] and m.regular(manifest,'build.rs')==row['files']['build.rs'])
+
+def require_probe_custody_set(cap,key,row,manifest,args):
+    # Only the real declared Cargo custom-build source/kind can precede producer.
+    # An ordinary source renamed --crate-name build_script_build does not skip.
+    if original_custom_build_unit(args,row,manifest):return
+    applicable=[(role,spec) for role,spec in FINITE_METADATA_PROBES.items()
+                if row['name']+'-'+row['version']==spec['package']]
+    if not applicable:return
+    m.require('OUT_DIR' in os.environ,'runtime unit probe producer OUT_DIR missing')
+    producer=Path(os.environ['OUT_DIR']).absolute()
+    m.require(producer.is_relative_to(Path(cap['output'])),'runtime probe producer output is unowned')
+    expected_probe=producer/'probe'
+    for role,spec in applicable:
+        authority=m.owned_json(Path(cap['expectations'])/('metadata-probe-'+role+'.json'))
+        fields={'schema','role','package','source_seal','compiler','argv','out_relative','source','source_file','authority_record_sha256','package_archive_sha256'}
+        m.require(type(authority) is dict and set(authority)==fields,
+                  'ordinary unit requires finite probe producer custody')
+        out_relative=m.relative_name(authority['out_relative'])
+        out=Path(cap['output'])/out_relative
+        m.require(out==expected_probe,'runtime probe custody does not match actual producer OUT_DIR/probe')
+        descriptor,_=m.directory(out);os.close(descriptor)
+        argv=list(authority['argv']);m.require('--out-dir' in argv,'unknown finite probe output binding')
+        actual_out=argv[argv.index('--out-dir')+1]
+        argv[argv.index('--out-dir')+1]='<owned-output-role>'
+        checksum=m.owned_json(manifest/'.cargo-checksum.json')
+        m.require(authority['schema']=='memra-owned-metadata-probe-v1'
+                  and authority['role']==role and authority['package']==key
+                  and authority['source_seal']==m.digest(row)
+                  and authority['compiler']==cap['compiler']
+                  and cap['compiler']['file']['sha256']=='d3a664c970a9fd8361b64194861bebc1ae37b9054e5ee3400dc1c9e691797eea'
+                  and cap['compiler']['file']['mode']=='100755'
+                  and actual_out==str(out) and argv==spec['argv_template']
+                  and authority['source']==spec['source']
+                  and authority['source_file']==spec['source_file']
+                  and m.regular(manifest,spec['source'])==spec['source_file']
+                  and authority['authority_record_sha256']==spec['authority_record_sha256']
+                  and authority['package_archive_sha256']==spec['package_archive_sha256']
+                  and type(checksum) is dict and checksum.get('package')==spec['package_archive_sha256'],
+                  'ordinary unit finite probe custody differs')
+
+
 def receiver(argv):
  m.require('RUSTC_BOOTSTRAP' not in os.environ,'unsupported compiler bootstrap mode')
  if argv==['--fresh']:
@@ -303,6 +354,7 @@ def receiver(argv):
  m.require(val(args,'--target',cap['recipe']['target'])==cap['recipe']['target'],'compiler target differs')
  if key==cap['snapshot']['payload']['entry']:m.require(crate in cap['recipe']['targets'] or crate=='build_script_build','unknown root Cargo target')
  m.require('link' in val(args,'--emit','').split(','),'metadata-only compiler mode unsupported in prepared recipe')
+ require_probe_custody_set(cap,key,row,manifest,args)
  input_files=[Path(x).absolute() for x in args if x.endswith('.rs') and not x.startswith('-')]
  m.require(len(input_files)==1 and input_files[0].is_relative_to(manifest),'primary compiler source is unbound')
  checked(manifest,input_files[0])
@@ -338,6 +390,7 @@ def receiver(argv):
   m.require(own_inputs(cap,key,crate)==(own_generated,declared_generated,declared_env),'own compiler inputs changed')
   m.require(all(name in declared_generated and declared_generated[name]==entry for name,entry in dep_inputs(depfile,manifest,output,row['files']).items()),'actual generated input binding differs')
   checked_env_reads(depfile,declared_env,declared_generated)
+ require_probe_custody_set(cap,key,row,manifest,args)
  artifact_bundle={('rlib' if x.suffix=='.rlib' else 'rmeta' if x.suffix=='.rmeta' else 'so' if x.suffix=='.so' else 'binary'):checked(output,x) for x in paths}
  compiler_unit=m.digest({'inputs':input_payload,'argv':forward})
  for artifact in paths:
