@@ -70,7 +70,12 @@ fn main() {
     let pkg_version = std::env::var("CARGO_PKG_VERSION").unwrap_or_default();
 
     let package = std::path::Path::new(&manifest_dir).join(".memra-package-source.json");
-    if std::fs::symlink_metadata(&package).is_ok() {
+    let present = match std::fs::symlink_metadata(&package) {
+        Ok(_) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(error) => panic!("cannot inspect package provenance: {error}"),
+    };
+    if present {
         // The finite prepared package recipe must be checked on every normal
         // Cargo invocation, including same-mtime mutations and cached outputs.
         println!("cargo:rerun-if-changed={}", package.display());
