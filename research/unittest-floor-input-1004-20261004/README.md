@@ -32,3 +32,12 @@ each records the SHA-256 of its original raw log.
 
 CPU tooling evidence only. No model, runtime, serving, or native qualification.
 Publicity: skipped: maintenance release.
+
+Current-head CI then found two failed subtests in one existing collector method:
+it assumed every declared input selected only the collector. The shared wrapper
+inputs deliberately retain full validation. `review-repair.json` retains that
+failed hosted cohort and the corrected named method passing through the real
+wrapper at clean `becd3160b524653c933de6435ae0e33f156ee353` (0.274 seconds).
+Every original collector-specific assertion is preserved. The two new shared
+cases assert full mode, every job, CUDA requirement, full native scope and no
+qualification. The planner and Git witness remain byte-identical to `cb62`.
