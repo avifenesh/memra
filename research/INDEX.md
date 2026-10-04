@@ -739,4 +739,4 @@ support-source-doc-copy-inputs-20261003 | 97 exact source/docs omissions repaire
 
 | mtp-wrapper-triggers-997-20261004 | Four path entries select both shared wrapper files in both MTP workflows. Existing 39 CPU controls and seven retained-data workflow blocks verified. No qualification promotion. | [LANE.md](mtp-wrapper-triggers-997-20261004/LANE.md) |
 
-| thin-public-ci-1002-20261004 | Immutable-base isolated routing and literal full CPU selection. Current real14-package Git/event trust/guard witness PASS494.577s; policy25/classifier18 passed. Current hosted/security acceptance pending; no native qualification. | [LANE.md](thin-public-ci-1002-20261004/LANE.md) |
+| thin-public-ci-1002-20261004 | Fresh depth-one Git/event replay PASS408.819s with historical object absent, pinned old callers and trust/guard controls. Production unchanged; current hosted/review pending, no native qualification. | [LANE.md](thin-public-ci-1002-20261004/LANE.md) |
