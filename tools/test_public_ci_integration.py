@@ -8,11 +8,47 @@ import tempfile
 import unittest
 import re
 import importlib.util
+import hashlib
 
 import public_ci as ci
 import validation_plan as vp
 
 ROOT = Path(__file__).resolve().parents[1]
+LEGACY_SOURCE = '2ab8eec8ddd5b27ecaaf22f55ddf728151be560c'
+LEGACY_MANIFEST_SHA256 = '0bbc14dd37b72d1058b399963d174d3aed10932b8b704e26f7d3aab3169a5e1d'
+
+
+def legacy_fixtures(root):
+    """Frozen old caller identity, never a lookup of mutable or missing Git history."""
+    folder = 'tools/fixtures/public_ci_legacy_2ab8'
+    manifest, mode = ci._regular(vp.LocalTree(root), folder + '/manifest.json')
+    if mode != '100644' or hashlib.sha256(manifest).hexdigest() != LEGACY_MANIFEST_SHA256:
+        raise AssertionError('legacy manifest identity differs')
+    data = json.loads(manifest)
+    if data['schema'] != 'memra-legacy-public-ci-fixtures-v1' or data['source'] != LEGACY_SOURCE:
+        raise AssertionError('legacy source identity differs')
+    result = {}
+    for source, row in data['inputs'].items():
+        raw, mode = ci._regular(vp.LocalTree(root), folder + '/' + row['fixture'])
+        if mode != row['git_mode'] or hashlib.sha256(raw).hexdigest() != row['sha256']:
+            raise AssertionError('legacy input bytes/mode differ: ' + source)
+        result[source] = raw
+    return result
+
+
+def named_run_body(text, name):
+    """Exact literal script from the named frozen workflow step."""
+    found = list(re.finditer(r'^(?:      - |        )name: ' + re.escape(name) + r'\n', text, re.M))
+    if len(found) != 1:
+        raise AssertionError('legacy named caller is missing or ambiguous')
+    block = text[found[0].end():]
+    if '        run: |\n' not in block:
+        raise AssertionError('legacy named caller has no literal script')
+    body = block.split('        run: |\n', 1)[1]
+    end = re.search(r'^      - ', body, re.M)
+    body = body[:end.start()] if end else body
+    return ''.join(line[10:] if line.startswith('          ') else line
+                   for line in body.splitlines(keepends=True)).rstrip() + '\n'
 
 
 def publication_dependency(text, consumer):
@@ -57,8 +93,11 @@ class PublicCiIntegration(unittest.TestCase):
                     self.assertNotEqual(result.returncode, 0, result.stdout)
                 return result.stdout
 
+            # A real shallow source clone has no historical topic objects or
+            # alternates. Hosted depth-one checkout must replay the same proof.
             command(['/usr/bin/git', '-c', 'init.templateDir=' + str(templates),
-                     'clone', '--shared', '--no-checkout', str(ROOT), str(repo)], cwd=scratch)
+                     'clone', '--no-local', '--depth', '1', '--no-checkout',
+                     ROOT.as_uri(), str(repo)], cwd=scratch)
             for key, value in [('core.hooksPath', str(hooks)), ('user.name', 'Fixture'),
                                ('user.email', 'fixture@example.invalid'), ('commit.gpgsign', 'false')]:
                 command(['/usr/bin/git', 'config', key, value])
@@ -73,6 +112,23 @@ class PublicCiIntegration(unittest.TestCase):
                 return command(['/usr/bin/git', 'rev-parse', 'HEAD']).strip()
 
             source = command(['/usr/bin/git', 'rev-parse', 'HEAD']).strip()
+            absent = subprocess.run(['/usr/bin/git', 'cat-file', '-e', LEGACY_SOURCE + '^{commit}'],
+                                    cwd=repo, env=env, capture_output=True)
+            self.assertNotEqual(absent.returncode, 0, 'historical topic object unexpectedly available')
+            self.assertFalse((repo / '.git/objects/info/alternates').exists())
+            legacy = legacy_fixtures(repo)
+            # Coherent manifest/data replacement cannot silently turn the old
+            # caller into a current-head or guessed counterfactual fixture.
+            manifest_path = repo / 'tools/fixtures/public_ci_legacy_2ab8/manifest.json'
+            manifest_original = manifest_path.read_bytes()
+            altered = json.loads(manifest_original)
+            altered['source'] = source
+            manifest_path.write_text(json.dumps(altered))
+            try:
+                with self.assertRaisesRegex(AssertionError, 'legacy manifest identity differs'):
+                    legacy_fixtures(repo)
+            finally:
+                manifest_path.write_bytes(manifest_original)
             self.assertEqual(len(vp.workspace(vp.Tree(repo, source))[0]), 14)
             # Materialize the exact existing support evidence for the live guard.
             # This is source transport, never model/runtime qualification.
@@ -138,6 +194,10 @@ class PublicCiIntegration(unittest.TestCase):
             command(['/usr/bin/git', 'checkout', '-q', '--detach', source], cwd=trusted)
             router_path = repo / 'tools/public_ci.py'
             router_original = router_path.read_text()
+            producer = repo / 'tools/ci-change-class.sh'
+            producer_original = producer.read_text()
+            commit_file('tools/ci-change-class.sh', legacy['tools/ci-change-class.sh'].decode())
+            self.assertEqual(producer.read_bytes(), legacy['tools/ci-change-class.sh'])
             hostile = '''import pathlib, sys
 a = sys.argv
 out = pathlib.Path(a[a.index('--out') + 1])
@@ -151,21 +211,22 @@ else:
             malicious_head = commit_file('tools/public_ci.py', hostile)
             event_file = scratch / 'hostile-event.json'
             event_file.write_text(json.dumps(event(source, malicious_head, author=external)))
-            old_route = scratch / 'old-route.json'
-            command([sys.executable, 'tools/public_ci.py', 'route', '--event-name', 'pull_request',
-                     '--event', str(event_file), '--out', str(old_route)])
+            old_route = repo / 'route.json'
+            old_outputs = scratch / 'old-outputs'
+            old_env = {'EVENT_NAME': 'pull_request', 'GITHUB_EVENT_PATH': str(event_file),
+                       'GITHUB_SHA': malicious_head, 'GITHUB_OUTPUT': str(old_outputs)}
+            old_public = legacy['.github/workflows/ci-public.yml'].decode()
+            old_route_body = named_run_body(old_public, 'Route trusted event fields and bind source coverage')
+            command(['bash', '-e', '-c', old_route_body], extra_env=old_env)
             with self.assertRaises(AssertionError):
                 self.assertEqual(json.loads(old_route.read_text())['mode'], 'full')
-            old_workflow = command(['/usr/bin/git', 'show',
-                '2ab8eec8ddd5b27ecaaf22f55ddf728151be560c:.github/workflows/ci.yml'])
+            old_workflow = legacy['.github/workflows/ci.yml'].decode()
             self.assertIn('tools/ci-change-class.sh full "$GITHUB_SHA"', old_workflow)
-            old_outputs = scratch / 'old-outputs'
-            command(['bash', 'tools/ci-change-class.sh', 'full', malicious_head,
-                     str(scratch / 'old-plan.json'), str(old_outputs)])
+            old_full_body = named_run_body(old_workflow, 'Plan the complete CPU inventory')
+            command(['bash', '-e', '-c', old_full_body], extra_env=old_env)
             with self.assertRaises(AssertionError):
                 self.assertNotIn('build=false', old_outputs.read_text())
             # Also tamper the producer, rather than relying on the router only.
-            producer = repo / 'tools/ci-change-class.sh'; producer_original = producer.read_text()
             producer_head = commit_file('tools/ci-change-class.sh', '#!/bin/sh\necho hostile-producer-ran > "' + str(scratch / 'producer-marker') + '"\n')
             marker = scratch / 'python-marker'
             customization = 'from pathlib import Path\nPath(' + repr(str(marker)) + ').write_text("candidate Python import ran")\n'
@@ -231,6 +292,7 @@ else:
             self.assertFalse(marker.exists())
             self.assertFalse((scratch / 'producer-marker').exists())
             (repo / 'validation-plan.json').unlink()
+            old_route.unlink()
             complete_body = full_text.split('\n  complete:\n', 1)[1].split('        run: |\n', 1)[1]
             complete_body = ''.join(line[10:] if line.startswith('          ') else line for line in complete_body.splitlines(keepends=True))
             full_names = ('changes', 'gates', 'boundary', 'build', 'clippy', 'server-tests', 'portable-suites', 'engine-tests', 'arch-coverage', 'publish-dryrun')

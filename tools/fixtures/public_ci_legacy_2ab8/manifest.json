@@ -1,0 +1,25 @@
+{
+  "schema": "memra-legacy-public-ci-fixtures-v1",
+  "source": "2ab8eec8ddd5b27ecaaf22f55ddf728151be560c",
+  "purpose": "Exact published vulnerable routing/full-selection callers for counterfactual replay without historical Git objects. Never used for production routing.",
+  "inputs": {
+    ".github/workflows/ci-public.yml": {
+      "fixture": "ci-public.yml.txt",
+      "sha256": "c78aca4c76ca1d6423292c1457724512144fdacf980d6dfbe85e0685c9086a41",
+      "git_mode": "100644",
+      "git_blob": "963ae715fcc379cf66a8b2f19ed6ab6cb04e9ea2"
+    },
+    ".github/workflows/ci.yml": {
+      "fixture": "ci.yml.txt",
+      "sha256": "c17a6e46444d573c8da8eaaaf826bae3d7dc7570cd2325bff5913f4322bad2aa",
+      "git_mode": "100644",
+      "git_blob": "0d741f8a3519501ab6b952480377bd334310a876"
+    },
+    "tools/ci-change-class.sh": {
+      "fixture": "ci-change-class.sh",
+      "sha256": "d45211271ce30c6ec7c02fd4d695bfb43ff26232aec148ef7d9fcfc44e18ff45",
+      "git_mode": "100755",
+      "git_blob": "9862bf2fa7a684e9c9d2f30f2651f6147713b7ae"
+    }
+  }
+}
