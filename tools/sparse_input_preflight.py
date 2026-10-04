@@ -72,6 +72,7 @@ class GitTree:
         self.entries = {}
         self.copy_roots = set()
         self.direct_inputs = set()
+        self.blob_cache = {}
         for row in self.git('ls-tree', '-r', '-t', '-z', self.commit).split(b'\0'):
             if row:
                 meta, path = row.split(b'\t', 1)
@@ -93,9 +94,13 @@ class GitTree:
         entry = self.entries.get(canonical(name))
         if entry is None or entry[1] != 'blob':
             raise Refusal('required regular/blob input absent from pinned Git tree: ' + name)
+        if entry[2] in self.blob_cache:
+            return self.blob_cache[entry[2]]
         if int(self.git('cat-file', '-s', entry[2])) > 4 * 1024 * 1024:
             raise Refusal('modeled source/metadata/link exceeds read bound: ' + name)
-        return self.git('cat-file', 'blob', entry[2])
+        value = self.git('cat-file', 'blob', entry[2])
+        self.blob_cache[entry[2]] = value
+        return value
 
     def regular(self, name):
         entry = self.entries.get(canonical(name))
@@ -189,10 +194,10 @@ def link_closure(tree, required):
     """Resolve components using Git blobs, including links in target parents."""
     closure = set(required)
 
-    def resolve(parts, active):
+    def resolve(parts, active, budget):
         prefix = []
         for offset, part in enumerate(parts):
-            if part == '.':
+            if part in ('.', ''):
                 continue
             if part == '..':
                 if not prefix:
@@ -206,20 +211,28 @@ def link_closure(tree, required):
                 raise Refusal('link target absent from pinned Git tree: ' + name)
             closure.add(name)
             if entry[0] == '120000':
-                if name in active or len(active) >= 40:
+                if name in active or budget[0] == 0:
                     raise Refusal('link cycle/depth in pinned Git tree: ' + name)
+                budget[0] -= 1
                 target = tree.blob(name).decode()
                 if (not target or target.startswith('/') or
                         any(c in target for c in '\0\n\r\t\\')):
                     raise Refusal('absolute/invalid link target in pinned Git tree: ' + name)
-                return resolve(prefix[:-1] + target.split('/') + parts[offset + 1:], active + (name,))
+                # A link is active only while expanding its own target. The
+                # remaining path may validly traverse it again after '..'.
+                prefix = resolve(prefix[:-1] + target.split('/'), active + (name,), budget).split('/')
+                if prefix == ['']:
+                    prefix = []
+                if offset < len(parts) - 1 and prefix and tree.entries['/'.join(prefix)][0] != '040000':
+                    raise Refusal('link target parent is not a directory: ' + name)
+                continue
             if offset < len(parts) - 1 and entry[0] != '040000':
                 raise Refusal('link target parent is not a directory: ' + name)
         return '/'.join(prefix)
 
     for name in sorted(required):
         if tree.entries[name][0] == '120000':
-            target = resolve(name.split('/'), ())
+            target = resolve(name.split('/'), (), [40])
             if not target:
                 raise Refusal('link targets repository root: ' + name)
             if tree.entries[target][0] == '040000':

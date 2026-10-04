@@ -60,7 +60,9 @@ the 200-entry bound, and feeds the actual suggested directories into Git.
 
 The same repository exercises regular-byte and mode drift, FIFO/type refusal,
 unreadability, physical parent links, pinned link targets and parent links,
-cycles, escapes, absolute and untracked targets, required versus optional sidecars,
+cycles, finite repeated directory links, repeated/trailing separators, the real
+Linux 40/41-link traversal boundary, escapes, absolute and untracked targets,
+required versus optional sidecars,
 unmodeled copied inputs, unknown readers, and Git failures. Coherent linter mutants
 must fail the relevant witness assertion. Direct CLI checks cover clean success,
 missing-board failure, and unknown-contract refusal. Fixture errors do not count

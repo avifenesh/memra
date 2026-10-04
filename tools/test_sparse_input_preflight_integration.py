@@ -86,6 +86,12 @@ def populate(root):
     (root / 'links/gates').symlink_to('../' + LEGACY + '/gates.txt')
     (root / 'links/directory').symlink_to('../' + LEGACY)
     (root / 'links/via-parent').symlink_to('directory/gates.txt')
+    (root / 'links/actual').mkdir()
+    (root / 'links/actual/data.txt').write_text('owned directory link target\n')
+    (root / 'links/alias').symlink_to('actual')
+    (root / 'links/reused-parent').symlink_to('alias/../alias/data.txt')
+    (root / 'links/trailing-separators').symlink_to('actual//')
+    (root / 'links/hop-limit-good').symlink_to('alias/../' * 39 + 'actual/data.txt')
     return cited
 
 
@@ -169,7 +175,19 @@ def main():
         git(root, 'add', '.')
         git(root, 'commit', '-q', '-m', 'Exact original input closure')
         pinned = git(root, 'rev-parse', 'HEAD')
+        consumer(root, 'tools/test_public_boundary.py',
+                 'UnstatablePathTests.test_no_tracked_symlink_escapes_the_repo')
         assert preflight.preflight(root, pinned, list(preflight.CONTRACTS))['ok']
+        with mutant(scratch, 'false_cycle_on_reuse',
+                    "prefix = resolve(prefix[:-1] + target.split('/'), active + (name,), budget).split('/')",
+                    "return resolve(prefix[:-1] + target.split('/') + parts[offset + 1:], active + (name,), budget)") as module:
+            killed(lambda m: assert_green(root, m), module)
+        with mutant(scratch, 'reject_valid_separators', "if part in ('.', ''):",
+                    "if part == '.':") as module:
+            killed(lambda m: assert_green(root, m), module)
+        with mutant(scratch, 'reject_40th_hop', "target = resolve(name.split('/'), (), [40])",
+                    "target = resolve(name.split('/'), (), [39])") as module:
+            killed(lambda m: assert_green(root, m), module)
         cli = command(root, sys.executable, str(SCRIPT), '--root', str(root), '--ref', pinned)
         assert json.loads(cli.stdout)['ok'], cli
         consumer(root, 'tools/update-perf-board.py', '--check')
@@ -220,7 +238,6 @@ def main():
         # Isolate the original receipt/link failure after restoring source/docs.
         git(root, 'sparse-checkout', 'set', 'tools', 'docs', 'crates', 'links', 'research/tune-data')
         report = assert_problem(root, receipt, 'missing-materialization')
-        assert_problem(root, receipt, 'missing-materialization')
         failed = consumer(root, 'tools/check-support-states.py', '--root', str(root), success=False)
         assert failed.returncode != 0 and receipt in failed.stderr and 'evidence' in failed.stderr, failed
         consumer_witnesses.append({'phase': 'receipts-missing', 'rc': failed.returncode,
@@ -334,6 +351,19 @@ def main():
                 killed(lambda m: assert_refusal(root, needle, m), module)
             git(root, 'reset', '-q', '--hard', pinned)
         events.append('pinned-link-parent-cycle-outside-absolute-unknown-mutants-refused')
+        excessive = root / 'links/hop-limit-bad'
+        excessive.symlink_to('alias/../' * 40 + 'actual/data.txt')
+        git(root, 'add', 'links/hop-limit-bad')
+        git(root, 'commit', '-q', '-m', 'Pinned path with 41 link expansions')
+        failed = consumer(root, 'tools/test_public_boundary.py',
+                          'UnstatablePathTests.test_no_tracked_symlink_escapes_the_repo', success=False)
+        assert failed.returncode != 0 and 'hop-limit-bad' in failed.stderr, failed
+        assert_refusal(root, 'link cycle/depth')
+        with mutant(scratch, 'ignore_total_hop_limit', "if name in active or budget[0] == 0:",
+                    'if name in active:') as module:
+            killed(lambda m: assert_refusal(root, 'link cycle/depth', m), module)
+        git(root, 'reset', '-q', '--hard', pinned)
+        events.append('finite-link-reuse-and-real-40-41-hop-boundary-pass')
 
         required = root / receipt
         data = required.read_bytes()
