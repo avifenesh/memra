@@ -196,7 +196,10 @@ class PublicCiIntegration(unittest.TestCase):
             router_original = router_path.read_text()
             producer = repo / 'tools/ci-change-class.sh'
             producer_original = producer.read_text()
-            commit_file('tools/ci-change-class.sh', legacy['tools/ci-change-class.sh'].decode())
+            # Materialize the pinned old adapter even when it equals the current
+            # adapter. Provenance does not require an artificial empty commit.
+            producer.write_bytes(legacy['tools/ci-change-class.sh'])
+            producer.chmod(0o755)
             self.assertEqual(producer.read_bytes(), legacy['tools/ci-change-class.sh'])
             hostile = '''import pathlib, sys
 a = sys.argv
