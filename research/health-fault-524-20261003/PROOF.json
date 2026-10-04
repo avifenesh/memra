@@ -1,12 +1,12 @@
 {
   "schema": "health-fault-acceptance-v1",
-  "tested_source": "e372dfd2c819fca026a198ad7dfedc2f53035e16",
-  "tested_ELF_sha256": "c05d6352c981369c4105713ce96aeff611809e41c7880a34a5dfff6be6a181bc",
+  "tested_source": "d39481ff9233d46b2ce47eefebeffd25d13c9f67",
+  "tested_ELF_sha256": "cbbdea12d4fb7e21eba6bad14d91a688dbfd3bed06ad864400686b875f476a20",
   "native_rows": 62,
   "native_failed_predicates": 0,
   "queued_work_controls": 6,
   "queued_work_failed_predicates": 0,
-  "CPU_package_controls": 13,
+  "CPU_package_controls": 7,
   "coherent_guard_controls": {
     "current": true,
     "remove_oom_type_guard": false,
@@ -27,14 +27,23 @@
   ],
   "profile_scope": "Actual default-vendor single and three concurrent requests complete with positive CUDA engagement. No graph capture, instantiate or launch API rows in these observed routes. This is not graph qualification.",
   "private_proof_digests": {
-    "native_admission": "6e8e6a9c9959d7880544041f2f04fa9dc283e2e8fbd9d46414b7944b229fa77e",
-    "cache_lifetime_join": "67e2319b648e9b5112320836cd5b04b0bfb846c007788ed19a46c3dc9e5b71f1",
-    "exact_guard_controls": "138c46850e271597333d7914375259a509176f71503fd313dd0ee4766fcd4f57"
+    "native_admission": "14e9656efcfa29250c74f102660bf8fbafc47e05fcfcbf60cd8026ca1a872a0d",
+    "cache_lifetime_join": "2866bd4129438e6daefe304139be18bf5c7e49e2f19d513722c4eab3db002a14",
+    "exact_guard_controls": "138c46850e271597333d7914375259a509176f71503fd313dd0ee4766fcd4f57",
+    "current_CPU_inspection": "becb9d5a46d4cb72bebcc6895e76cce9c882470c33e1e8bb27e8f932c2837b5c",
+    "current_census_controls": "8a6a1448672fe33a8353622e047cd77b762252469803ad0893af6f9fe4b968ab"
   },
-  "status": "Historical e372 hardware acceptance. Placement-aware context-fenced warmup has CPU proof; the cache-site classifier rework passes its relevant CPU contracts. Current native replay remains pending. No hardware qualification transfer.",
-  "current_source": "f04c141fed9970243e61aff75271baa471466754",
-  "current_native_acceptance": false,
+  "status": "Current source-bound local-rig health/fault acceptance: 62 native vendor-default rows and six queued-work controls passed all independent predicates. No automatic model, graph or HC/PP target qualification.",
+  "current_source": "d39481ff9233d46b2ce47eefebeffd25d13c9f67",
+  "current_native_acceptance": true,
   "current_CPU_package_controls": 7,
-  "current_CPU_scope": "Current cache-classification rework: five VMM controls and two required-warmup controls, zero failures or ignores. Earlier placement-aware source has fourteen focused CPU controls. Native evidence remains historical.",
-  "current_worker_sha256": "8f1c2f595a39365f6ee39c075cf1dec38e417a75719045a03f20a1e51d8d3e89"
+  "current_CPU_scope": "Five VMM and two required-warmup CPU checks, zero failures or ignores; exact source census refuses an unclassified production construction and an early cache drop.",
+  "current_worker_sha256": "8f1c2f595a39365f6ee39c075cf1dec38e417a75719045a03f20a1e51d8d3e89",
+  "historical_native_tuple": {
+    "source": "e372dfd2c819fca026a198ad7dfedc2f53035e16",
+    "ELF": "c05d6352c981369c4105713ce96aeff611809e41c7880a34a5dfff6be6a181bc",
+    "native_rows": 62,
+    "queued_work_controls": 6,
+    "status": "Historical; current evidence is separately source-bound."
+  }
 }
