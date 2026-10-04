@@ -1,6 +1,5 @@
 """Replay indexed-choice native evidence. Synthetic controls never qualify a model."""
 from collections import Counter
-import hashlib
 import json
 from pathlib import Path
 
