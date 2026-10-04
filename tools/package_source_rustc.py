@@ -50,7 +50,7 @@ def artifact_record(path,cap):
  fields={'schema','source_seal','package','manifest_root','features','argv','artifact','generated','input_seal','input_tuple','custody_key','compiler_unit','artifact_bundle','artifact_role','seal'}
  m.require(type(record) is dict and set(record)==fields and record['schema']=='memra-package-compiler-unit-v1','unknown artifact receipt shape')
  body={k:v for k,v in record.items() if k!='seal'};m.require(m.digest(body)==record['seal'],'artifact receipt seal differs')
- tuple_fields={'domain','source_seal','admission','package','features','cfgs','dependencies','own_generated','nonidentity_env'}
+ tuple_fields={'domain','source_seal','admission','package','features','cfgs','dependencies','own_generated','nonidentity_env','codegen'}
  m.require(type(record['input_tuple']) is dict and set(record['input_tuple'])==tuple_fields and record['input_seal']==m.digest(record['input_tuple']),'compiled input tuple seal differs')
  m.require(record['compiler_unit']==m.digest({'inputs':record['input_tuple'],'argv':record['argv']}),'compiler unit context seal differs')
  key=m.digest({'inputs':record['input_tuple'],'argv':record['argv'],'artifact':str(path),'produced':record['artifact_bundle']})
@@ -165,6 +165,7 @@ def receiver(argv):
  m.require(set(features)<=set(row['features']),'actual compiler features outside admitted source graph')
  crate=val(args,'--crate-name');kind=val(args,'--crate-type');out=Path(val(args,'--out-dir','')).absolute();output=Path(cap['output'])
  m.require(out.is_relative_to(output),'compiler output outside owned role')
+ selected_codegen={}
  for index,arg in enumerate(args):
   if arg=='-C':m.require(index+1<len(args),'missing codegen option');option=args[index+1]
   elif arg.startswith('-C'):option=arg[2:]
@@ -173,6 +174,8 @@ def receiver(argv):
   m.require(separator and name,'invalid codegen option')
   if name in ('metadata','extra-filename','incremental'):continue
   m.require(name in cap['recipe']['codegen'] and value in cap['recipe']['codegen'][name],'unknown compiler profile/default')
+  m.require(name not in selected_codegen,'duplicate nonidentity compiler codegen choice')
+  selected_codegen[name]=value
  extra=codes(args,'extra-filename');m.require(kind in ('lib','bin','proc-macro'),'unsupported compiler crate type')
  m.require(val(args,'--target',cap['recipe']['target'])==cap['recipe']['target'],'compiler target differs')
  if key==cap['snapshot']['payload']['entry']:m.require(crate in cap['recipe']['targets'] or crate=='build_script_build','unknown root Cargo target')
@@ -184,7 +187,7 @@ def receiver(argv):
  source=cap['source_seal']
  own_generated,declared_generated,declared_env=own_inputs(cap,key,crate)
  admission = m.digest({'recipe':cap['recipe'],'supplementary':{k:v for k,v in cap['supplementary'].items() if v['owner']==key}})
- input_payload={'domain':'memra-package-input-tuple-v1','source_seal':m.digest(row),'admission':admission,'package':key,'features':features,'cfgs':sorted(cfgs),'dependencies':deps,'own_generated':own_generated,'nonidentity_env':declared_env}
+ input_payload={'domain':'memra-package-input-tuple-v2','source_seal':m.digest(row),'admission':admission,'package':key,'features':features,'cfgs':sorted(cfgs),'dependencies':deps,'own_generated':own_generated,'nonidentity_env':declared_env,'codegen':selected_codegen}
  input_seal=m.digest(input_payload)
  id_value=m.identity('memra-package-compiled-input-v1',input_payload)
  m.require(all(x['input_seal']==input_seal for x in own),'own library foreign input identity differs')

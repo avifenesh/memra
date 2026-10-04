@@ -24,7 +24,10 @@ class PackageSourceIntegration(unittest.TestCase):
     def test_coherent_midcompiler_source_replacement(self):
         self.cargo_contract(midcompiler=True)
 
-    def cargo_contract(self, midcompiler=False):
+    def test_root_codegen_context(self):
+        self.cargo_contract(codegen=True)
+
+    def cargo_contract(self, midcompiler=False, codegen=False):
         env = dict(os.environ)
         for key in ('RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER', 'CARGO_BUILD_RUSTC_WRAPPER', 'CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER'):
             env.pop(key, None)
@@ -141,6 +144,11 @@ class PackageSourceIntegration(unittest.TestCase):
             run(command, app)
             self.assertEqual(run([str(binary)], app).stdout.strip().split(), baseline)
             rustc = ['cargo', 'rustc', '--offline', '--locked', '--lib', '--target-dir', str(output), '--']
+            if codegen:
+                run(rustc + ['-C', 'debuginfo=0'], app, fail='duplicate nonidentity compiler codegen choice')
+                self.assertEqual(run([str(binary)], app).stdout.strip().split(), baseline)
+                print(json.dumps({'normal_LIB_BIN_same_identity': True, 'root_only_admitted_codegen_change': 'explicitly refused duplicate choice before compilation'}))
+                return
             run(rustc + ['--cfg=unadmitted'], app, fail='unknown actual compiler cfg')
             run(rustc + ['--cfg', 'unadmitted'], app, fail='unknown actual compiler cfg')
             run(rustc + ['--cfg=unadmitted', '--cfg', 'unadmitted'], app, fail='duplicate compiler cfg')
