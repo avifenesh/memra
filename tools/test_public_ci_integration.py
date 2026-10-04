@@ -6,11 +6,33 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import re
+import importlib.util
 
 import public_ci as ci
 import validation_plan as vp
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def publication_dependency(text, consumer):
+    """Parse literal jobs scope, after the repository's duplicate-key refusal."""
+    spec = importlib.util.spec_from_file_location('workflow_keys', ROOT / 'tools/check-workflow-keys.py')
+    walker = importlib.util.module_from_spec(spec); spec.loader.exec_module(walker)
+    try:
+        jobs = walker.walk(text)
+    except (walker.Refused, walker.Unsupported) as error:
+        raise AssertionError('workflow mapping refused') from error
+    if consumer not in jobs or 'cpu-suite' not in jobs or text.count('\njobs:\n') != 1:
+        raise AssertionError('missing publication jobs')
+    jobs_text = text.split('\njobs:\n', 1)[1]
+    fields = list(re.finditer(r'^  ([A-Za-z0-9_-]+):\n', jobs_text, re.M))
+    bodies = {m[1]: jobs_text[m.end():fields[i + 1].start() if i + 1 < len(fields) else len(jobs_text)]
+              for i, m in enumerate(fields)}
+    if re.findall(r'^    needs: (.*)$', bodies[consumer], re.M) != ['cpu-suite']:
+        raise AssertionError('publication job does not depend on full CPU validation')
+    if re.findall(r'^    uses: (.*)$', bodies['cpu-suite'], re.M) != ['./.github/workflows/ci.yml']:
+        raise AssertionError('publication preflight is not the existing full workflow')
 
 
 class PublicCiIntegration(unittest.TestCase):
@@ -184,11 +206,15 @@ class PublicCiIntegration(unittest.TestCase):
             # Publication dependencies precede all effects; native/tag guards are still present.
             for name, consumer in [('release.yml', 'guard'), ('publish.yml', 'publish')]:
                 value = (ROOT / '.github/workflows' / name).read_text()
-                self.assertIn('  cpu-suite:\n    uses: ./.github/workflows/ci.yml', value)
-                self.assertIn('  ' + consumer + ':\n    needs: cpu-suite\n', value)
+                publication_dependency(value, consumer)
                 self.assertIn('tools/release_qualification.py verify', value)
                 self.assertIn('tools/release-guard.sh', value)
                 self.assertNotIn('secrets: inherit', value)
+                misplaced = value.replace('  ' + consumer + ':\n    needs: cpu-suite\n',
+                                          '  ' + consumer + ':\n', 1)
+                misplaced = misplaced.replace('on:\n', 'on:\n    needs: cpu-suite\n', 1)
+                with self.assertRaises(AssertionError):
+                    publication_dependency(misplaced, consumer)
             # Compiling caller-author guard mutant drives the real CLI. The same
             # expected external-mode assertion must fail, then source is restored.
             router = repo / 'tools/public_ci.py'; router_source = router.read_text()

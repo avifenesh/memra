@@ -160,11 +160,15 @@ def run_steps(text):
                 continue
             if label is None:
                 raise Refused('unidentified full workflow command')
-            command = line
-            for following in lines[i + 1:]:
-                if following.strip() and not following.startswith('          '):
-                    break
-                command += following
+            body = [line]
+            if line.strip() == 'run: |':
+                for following in lines[i + 1:]:
+                    if following.strip() and not following.startswith('          '):
+                        break
+                    body.append(following)
+                while body and not body[-1].strip():
+                    body.pop()
+            command = ''.join(body)
             result.append({'job': job, 'step': label,
                            'sha256': hashlib.sha256(command.encode()).hexdigest()})
     if len({(row['job'], row['step']) for row in result}) != len(result):
