@@ -115,6 +115,26 @@ class GitTree:
         return {n for n in self.entries if n == name or n.startswith(name + '/')}
 
 
+def validate_link_index(tree, links):
+    """The pinned boundary assertion enumerates the index, not just HEAD."""
+    indexed = {}
+    for row in tree.git('ls-files', '--stage', '-z').split(b'\0'):
+        if row:
+            meta, path = row.split(b'\t', 1)
+            mode, oid, stage = meta.decode().split()
+            name = path.decode()
+            if mode == '120000' or name in links:
+                canonical(name)
+                if stage != '0' or name in indexed:
+                    raise Refusal('unmerged/ambiguous index link input: ' + name)
+                indexed[name] = (mode, oid)
+    expected = {n: (tree.entries[n][0], tree.entries[n][2]) for n in links}
+    if indexed != expected:
+        differing = sorted(n for n in indexed.keys() | expected.keys()
+                           if indexed.get(n) != expected.get(n))
+        raise Refusal('index link inventory differs from pinned Git tree: ' + differing[0])
+
+
 def modeled_inputs(tree, checks):
     if not checks:
         raise Refusal('empty reader contract selection')
@@ -185,6 +205,7 @@ def modeled_inputs(tree, checks):
                                                        CLI_SOURCE, PACK_ROOT + '/mod.rs'))
         else:
             links = {n for n, entry in tree.entries.items() if entry[0] == '120000'}
+            validate_link_index(tree, links)
             required.update(links)
             tree.direct_inputs.update(links)
     return required
@@ -273,7 +294,7 @@ def inspect_path(root_fd, tree, name):
             actual = os.fstat(leaf)
             if not stat.S_ISREG(actual.st_mode):
                 return 'type-mismatch'
-            if (actual.st_mode & 0o111) != (0o111 if mode == '100755' else 0):
+            if bool(actual.st_mode & stat.S_IXUSR) != (mode == '100755'):
                 return 'executable-mode-mismatch'
             digest = hashlib.new(tree.algorithm)
             digest.update(b'blob ' + str(actual.st_size).encode() + b'\0')

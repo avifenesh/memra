@@ -20,8 +20,12 @@ required evidence, tracked optional sidecars, and complete tracked copy roots.
 Unmodeled additions inside a copied root also refuse. The boundary-link contract
 includes its reader sources, every tracked link, and the target closure derived
 from Git blobs, including target parents and directory contents.
+Its existing assertion enumerates the index, so the index link inventory must
+match the pinned tree. Added, removed, changed or unmerged index links refuse
+instead of silently narrowing coverage. Expected targets still come only from
+the pinned Git tree.
 
-The command compares regular blob bytes and executable bits, exact link text,
+The command compares regular blob bytes and Git's owner executable bit, exact link text,
 and directory materialization. It anchors the root and every descendant component
 with no-follow directory descriptors. Expected links resolve within the pinned
 Git tree before filesystem inspection. Absolute targets, escapes, cycles, missing
@@ -59,7 +63,8 @@ the consumers pass without regenerated facts or changed commits. The harness sta
 with a tools-only cone checkout, requires board and receipt diagnostics to survive
 the 200-entry bound, and feeds the actual suggested directories into Git.
 
-The same repository exercises regular-byte and mode drift, FIFO/type refusal,
+The same repository exercises regular-byte and mode drift, valid owner-executable
+0700/0744 modes, owner-execute removal refusal, FIFO/type refusal,
 unreadability, physical parent links, pinned link targets and parent links,
 cycles, finite repeated directory links, repeated/trailing separators, the real
 Linux 40/41-link traversal boundary, escapes, absolute and untracked targets,

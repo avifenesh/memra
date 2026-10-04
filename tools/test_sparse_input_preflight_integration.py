@@ -265,6 +265,21 @@ def main():
         assert git(root, 'diff', '--exit-code') == ''
         assert git(root, 'rev-parse', 'HEAD') == pinned
         events.append('exact-Git-materialization-to-original-consumers-pass')
+        # The original assertion enumerates ls-files, so index-only links are
+        # unknown inputs until they are included in the pinned commit.
+        indexed_link = root / 'links/index-only'
+        indexed_link.symlink_to('../owned-absent-index-target')
+        git(root, 'add', 'links/index-only')
+        failed = consumer(root, 'tools/test_public_boundary.py',
+                          'UnstatablePathTests.test_no_tracked_symlink_escapes_the_repo', success=False)
+        assert failed.returncode != 0 and 'index-only' in failed.stderr, failed
+        assert_refusal(root, 'index link inventory differs')
+        with mutant(scratch, 'ignore_index_link_inventory', '            validate_link_index(tree, links)',
+                    '            pass') as module:
+            killed(lambda m: assert_refusal(root, 'index link inventory differs', m), module)
+        git(root, 'reset', '-q', '--hard', pinned)
+        assert not indexed_link.is_symlink()
+        events.append('actual-index-only-link-consumer-failure-preflight-refusal')
 
         # Every mutant runs against the same valid real repository and the same
         # assertion witness as the real linter, never against a broken setup.
@@ -277,11 +292,19 @@ def main():
         board.write_bytes(original)
         board.chmod(0o755)
         assert_problem(root, BOARD, 'executable-mode-mismatch')
-        with mutant(scratch, 'ignore_mode', "if (actual.st_mode & 0o111) != (0o111 if mode == '100755' else 0):",
+        with mutant(scratch, 'ignore_mode', "if bool(actual.st_mode & stat.S_IXUSR) != (mode == '100755'):",
                     'if False:') as module:
             killed(lambda m: assert_problem(root, BOARD, 'executable-mode-mismatch', m), module)
         board.chmod(0o644)
         hook = root / 'tools/hooks/pre-push'
+        for permissions in (0o700, 0o744):
+            hook.chmod(permissions)
+            assert git(root, 'diff', '--exit-code') == ''
+            assert_green(root)
+            with mutant(scratch, 'require_all_execute_bits',
+                        "if bool(actual.st_mode & stat.S_IXUSR) != (mode == '100755'):",
+                        "if (actual.st_mode & 0o111) != (0o111 if mode == '100755' else 0):") as module:
+                killed(lambda m: assert_green(root, m), module)
         hook.chmod(0o644)
         assert_problem(root, 'tools/hooks/pre-push', 'executable-mode-mismatch')
         hook.chmod(0o755)
@@ -301,7 +324,7 @@ def main():
                     "if problem and problem != 'unreadable':\n                problems.append") as module:
             killed(lambda m: assert_problem(root, BOARD, 'unreadable', m), module)
         board.chmod(0o644)
-        events.append('regular-byte-mode-executable-type-unreadable-mutants-refused')
+        events.append('regular-byte-Git-owner-execute-mode-type-unreadable-mutants-refused')
 
         link = root / 'links/gates'
         link.unlink()
