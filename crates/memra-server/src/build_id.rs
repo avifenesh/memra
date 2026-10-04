@@ -83,8 +83,8 @@ pub(crate) struct BuildIdScan {
 }
 
 /// The workspace root, derived from a crate manifest dir: `<root>/crates/memra-server`.
-/// `None` when the layout is not there (a vendored or packaged crate), which is a degraded
-/// build, not a panic.
+/// `None` means no owned workspace. The separate prepared-package receiver may provide
+/// package-source-v1; unsupported package builds remain explicitly degraded.
 pub(crate) fn workspace_root(manifest_dir: &str) -> Option<std::path::PathBuf> {
     let manifest = std::path::Path::new(manifest_dir);
     if manifest.file_name()? != "memra-server" || manifest.parent()?.file_name()? != "crates" {

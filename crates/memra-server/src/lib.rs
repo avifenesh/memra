@@ -4062,10 +4062,10 @@ pub const SYSTEM_FINGERPRINT: &str = concat!(
     env!("MEMRA_BUILD_ID")
 );
 
-/// How `SYSTEM_FINGERPRINT`'s id was derived: `source-tree` (real) or `degraded`.
+/// Identity domain: owned `source-tree`, prepared `package-source-v1`, or `degraded`.
 pub const BUILD_ID_SRC: &str = env!("MEMRA_BUILD_ID_SRC");
 
-/// Why the id is degraded. Empty when it is not.
+/// Degradation reason or prepared-package provenance/limits. Empty for source-tree.
 pub const BUILD_ID_NOTE: &str = env!("MEMRA_BUILD_ID_NOTE");
 
 /// The build's git sha when the build could read a repo, else `unknown`. An EXTRA
@@ -6122,7 +6122,11 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
         println!("build_id_src {BUILD_ID_SRC}");
         println!("git_sha {BUILD_GIT_SHA}");
         if !BUILD_ID_NOTE.is_empty() {
-            println!("degraded {BUILD_ID_NOTE}");
+            if BUILD_ID_SRC == build_id::BUILD_ID_SRC_PACKAGE {
+                println!("package_source {BUILD_ID_NOTE}");
+            } else {
+                println!("degraded {BUILD_ID_NOTE}");
+            }
         }
         return Ok(());
     }
