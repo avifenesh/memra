@@ -1,0 +1,5 @@
+{
+  "original_path": "before/mtp-depth-receipts-0.sh",
+  "raw_sha256": "9d76b95a7c9c90c31f28ebb9426bf3bfa755fb9b1d42d217ad78f151ccd9e197",
+  "raw_script": "set -euo pipefail\ntools/unittest-floor.sh research/mtp-calibrated-depth-20260920 'test_*.py' 6\ntools/unittest-floor.sh research/mtp-continuing-session-20260921 'test_*.py' 17\n\n"
+}

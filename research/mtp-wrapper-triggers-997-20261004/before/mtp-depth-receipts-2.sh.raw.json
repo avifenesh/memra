@@ -1,0 +1,5 @@
+{
+  "original_path": "before/mtp-depth-receipts-2.sh",
+  "raw_sha256": "6bf8c658a722f928f8b0920c2a7e34e619837640e9b87f6f29a5912e2572afe9",
+  "raw_script": "set -euo pipefail\npython3 research/mtp-calibrated-depth-20260920/unpack_receipts.py --destination \"$RUNNER_TEMP/mtp-cold\"\npython3 research/mtp-continuing-session-20260921/unpack_receipts.py --destination \"$RUNNER_TEMP/mtp-warm\"\n\n"
+}

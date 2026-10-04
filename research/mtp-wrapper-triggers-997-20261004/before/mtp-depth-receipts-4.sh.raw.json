@@ -1,0 +1,5 @@
+{
+  "original_path": "before/mtp-depth-receipts-4.sh",
+  "raw_sha256": "8c290bf1f15e72f2dd0928b6ba6cba8efb81e9d4f06869d63a9434cf76746e89",
+  "raw_script": "set -euo pipefail\npython3 research/mtp-continuing-session-20260921/check_selection_rejections.py \\\n  --receipts \"$RUNNER_TEMP/mtp-warm/experiment\" --tmp \"$RUNNER_TEMP\" \\\n  --output \"$RUNNER_TEMP/mtp-rejection-tests.json\"\n"
+}
