@@ -146,7 +146,124 @@ def compiler_fds():
  for descriptor in descriptors:m.require(stat.S_ISFIFO(os.fstat(descriptor).st_mode),'jobserver descriptor is not a pipe')
  return descriptors
 
+# Receiver-only proposal; helper API and recipe schema unchanged.
+FINITE_METADATA_PROBES = {'0': {'argv_template': ['--cfg=procmacro2_build_probe',
+                         '--edition=2021',
+                         '--crate-name=proc_macro2',
+                         '--crate-type=lib',
+                         '--cap-lints=allow',
+                         '--emit=dep-info,metadata',
+                         '--out-dir',
+                         '<owned-output-role>',
+                         'src/probe/proc_macro_span.rs',
+                         '--target',
+                         'x86_64-unknown-linux-gnu'],
+       'authority_record_sha256': '74925e56bed6c7f57b198176925830051babf745f5c92a849ccbe31ffa34f63b',
+       'package': 'proc-macro2-1.0.106',
+       'package_archive_sha256': '8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934',
+       'source': 'src/probe/proc_macro_span.rs',
+       'source_file': {'bytes': 1217,
+                       'mode': '100644',
+                       'sha256': '53853f0c70170c9695294b8867821664d9b8f1c901957b003003a3c26987abbe'}},
+ '1': {'argv_template': ['--cfg=procmacro2_build_probe',
+                         '--edition=2021',
+                         '--crate-name=proc_macro2',
+                         '--crate-type=lib',
+                         '--cap-lints=allow',
+                         '--emit=dep-info,metadata',
+                         '--out-dir',
+                         '<owned-output-role>',
+                         'src/probe/proc_macro_span_location.rs',
+                         '--target',
+                         'x86_64-unknown-linux-gnu'],
+       'authority_record_sha256': '3b8167bb550658cd666c9c44a8a9984f3ce138401bd9c01f999f2a7bf38ed0fc',
+       'package': 'proc-macro2-1.0.106',
+       'package_archive_sha256': '8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934',
+       'source': 'src/probe/proc_macro_span_location.rs',
+       'source_file': {'bytes': 408,
+                       'mode': '100644',
+                       'sha256': 'e022386204b6e042b3c55a6c809923849a2f915199bcbf3be72d0b7c8ffa7f83'}},
+ '2': {'argv_template': ['--cfg=procmacro2_build_probe',
+                         '--edition=2021',
+                         '--crate-name=proc_macro2',
+                         '--crate-type=lib',
+                         '--cap-lints=allow',
+                         '--emit=dep-info,metadata',
+                         '--out-dir',
+                         '<owned-output-role>',
+                         'src/probe/proc_macro_span_file.rs',
+                         '--target',
+                         'x86_64-unknown-linux-gnu'],
+       'authority_record_sha256': '12f878e2e270286fab88d5d527479d8f7f5103ba528305aac25ab02e4b52054a',
+       'package': 'proc-macro2-1.0.106',
+       'package_archive_sha256': '8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934',
+       'source': 'src/probe/proc_macro_span_file.rs',
+       'source_file': {'bytes': 370,
+                       'mode': '100644',
+                       'sha256': 'e7fb4cf8852d9d589bfa3321d8d5cdc8cccb45606ec816a6b8a08f73e416b9ce'}},
+ '3': {'argv_template': ['--cfg=anyhow_build_probe',
+                         '--edition=2018',
+                         '--crate-name=anyhow',
+                         '--crate-type=lib',
+                         '--cap-lints=allow',
+                         '--emit=dep-info,metadata',
+                         '--out-dir',
+                         '<owned-output-role>',
+                         'src/nightly.rs',
+                         '--target',
+                         'x86_64-unknown-linux-gnu'],
+       'authority_record_sha256': '2e2d6f9894a245ffbe9d126785796f7b423597e2ce11a39a796d10ef1f152e23',
+       'package': 'anyhow-1.0.104',
+       'package_archive_sha256': '330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470',
+       'source': 'src/nightly.rs',
+       'source_file': {'bytes': 1563,
+                       'mode': '100644',
+                       'sha256': '1c0aeadfcdbe22f8f807b185dec1a7448c378bddb37689714944b60473b58049'}}}
+
+def finite_metadata_probe(compiler,args,cap,key,row,manifest):
+ # Not a generic cfg or emit allowance: exact four original producer roles.
+ primary=[x for x in args if x.endswith('.rs') and not x.startswith('-')]
+ if len(primary)!=1:return None
+ out_value=val(args,'--out-dir')
+ if out_value is None:return None
+ out=Path(out_value).absolute();output=Path(cap['output'])
+ candidate=list(args)
+ if '--out-dir' not in candidate:return None
+ candidate[candidate.index('--out-dir')+1]='<owned-output-role>'
+ named=[(role,spec) for role,spec in FINITE_METADATA_PROBES.items()
+        if row['name']+'-'+row['version']==spec['package'] and candidate==spec['argv_template']]
+ if not named:return None
+ m.require(len(named)==1,'ambiguous finite compiler probe role')
+ role,spec=named[0]
+ m.require(cap['compiler']['file']['sha256']=='d3a664c970a9fd8361b64194861bebc1ae37b9054e5ee3400dc1c9e691797eea'
+           and cap['compiler']['file']['mode']=='100755','probe original compiler custody differs')
+ checksum=m.owned_json(manifest/'.cargo-checksum.json')
+ m.require(type(checksum) is dict and checksum.get('package')==spec['package_archive_sha256'],'probe archive custody differs')
+ m.require('RUSTC_BOOTSTRAP' not in os.environ,'unsupported compiler bootstrap mode')
+ m.require(Path.cwd().absolute()==manifest and out.is_relative_to(output),'probe cwd/output role is unowned')
+ descriptor,_=m.directory(out);os.close(descriptor)
+ source=spec['source'];m.require(primary[0]==source and m.regular(manifest,source)==spec['source_file'],'probe source bytes/mode differ')
+ authority=m.owned_json(Path(cap['expectations'])/('metadata-probe-'+role+'.json'))
+ fields={'schema','role','package','source_seal','compiler','argv','out_relative','source','source_file','authority_record_sha256','package_archive_sha256'}
+ m.require(type(authority) is dict and set(authority)==fields
+           and authority['schema']=='memra-owned-metadata-probe-v1' and authority['role']==role
+           and authority['package']==key and authority['source_seal']==m.digest(row)
+           and authority['compiler']==cap['compiler'] and authority['argv']==args
+           and authority['out_relative']==out.relative_to(output).as_posix()
+           and authority['source']==source and authority['source_file']==spec['source_file']
+           and authority['authority_record_sha256']==spec['authority_record_sha256']
+           and authority['package_archive_sha256']==spec['package_archive_sha256'],
+           'finite probe producer custody differs')
+ m.require(fresh()==cap,'package capsule/source changed before probe')
+ # Same argv/env/stdin/actual exit and validated jobserver; no marker metadata
+ # or artifact/identity/expectation output is produced by this branch.
+ code=subprocess.run([compiler,*args],check=False,pass_fds=compiler_fds()).returncode
+ m.require(fresh()==cap,'package capsule/source changed during probe')
+ return code
+
+
 def receiver(argv):
+ m.require('RUSTC_BOOTSTRAP' not in os.environ,'unsupported compiler bootstrap mode')
  if argv==['--fresh']:
   cap=fresh();expected=ROOT/cap['recipe']['wrapper'];actual=os.environ.get('RUSTC_WRAPPER','')
   m.require(actual and Path(actual).absolute()==expected,'effective wrapper missing or unmatched')
@@ -163,6 +280,8 @@ def receiver(argv):
  m.require(len(keys)==1,'actual compiler manifest/source root is unbound')
  key=keys[0];row=cap['snapshot']['payload']['packages'][key]
  m.require(os.environ.get('CARGO_PKG_NAME')==row['name'] and os.environ.get('CARGO_PKG_VERSION')==row['version'],'actual compiler package identity differs')
+ probe=finite_metadata_probe(compiler,args,cap,key,row,manifest)
+ if probe is not None:return probe
  cfgs=cfg_options(args)
  m.require(all(x.startswith('feature=') or x in cap['recipe']['cfgs'][key] for x in cfgs),'unknown actual compiler cfg outside prepared recipe')
  features=sorted(x.split('=',1)[1].strip('"') for x in cfgs if x.startswith('feature='))
