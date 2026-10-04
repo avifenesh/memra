@@ -85,7 +85,7 @@ class PublicCiIntegration(unittest.TestCase):
             # The conflict checker reads tracked eligible source/doc/data paths,
             # excluding raw/receipt/log trees. Materialize exactly that census.
             conflict_paths = [path for path in support_tree.paths() if ci.conflict_input(path)]
-            conflict_modes = support_tree.input_modes(*conflict_paths, recursive=False)
+            conflict_modes = ci.data_input_modes(support_tree, conflict_paths)
             for path in conflict_paths:
                 target = repo / path
                 if not target.exists():

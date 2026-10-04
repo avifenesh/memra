@@ -404,8 +404,8 @@ def pin_data_inputs(root, head, paths):
     if not paths:
         raise Refused('empty merge guard data census')
     tree, local = validation_plan.Tree(root, commit(head)), validation_plan.LocalTree(root)
-    before = tree.input_modes(*paths, recursive=False)
-    after = local.input_modes(*paths, recursive=False)
+    before = data_input_modes(tree, paths)
+    after = data_input_modes(local, paths)
     for path in paths:
         if before.get(path) not in ('100644', '100755') or before.get(path) != after.get(path):
             raise Refused('merge guard data mode differs from pinned source: ' + path)
@@ -428,6 +428,14 @@ def pin_data_inputs(root, head, paths):
                 raise Refused('merge guard data differs from pinned source: ' + path)
         if offset != len(raw):
             raise Refused('unexpected pinned merge guard batch output')
+
+
+def data_input_modes(tree, paths):
+    """Bound argv even for the tracked conflict census in receipt-heavy trees."""
+    modes = {}
+    for start in range(0, len(paths), 64):
+        modes.update(tree.input_modes(*paths[start:start + 64], recursive=False))
+    return modes
 
 
 def execute_contracts(root, plan):
