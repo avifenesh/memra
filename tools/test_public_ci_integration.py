@@ -92,6 +92,11 @@ class PublicCiIntegration(unittest.TestCase):
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(data)
                 target.chmod(0o755 if conflict_modes[path] == '100755' else 0o644)
+            # Support evidence may have materialized an eligible executable
+            # before this transport pass. Restore its exact Git executable mode.
+            for path in conflict_paths:
+                self.assertIn(conflict_modes[path], ('100644', '100755'))
+                (repo / path).chmod(0o755 if conflict_modes[path] == '100755' else 0o644)
             descriptor = {'full_name': ci.REPOSITORY,
                           'owner': {'login': ci.OWNER, 'id': ci.OWNER_ID}}
             external = {'login': 'contributor', 'id': 42}
