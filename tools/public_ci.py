@@ -10,6 +10,7 @@ import stat
 import subprocess
 import shlex
 import sys
+import atexit
 
 import validation_plan
 import sparse_input_preflight as sparse_inputs
@@ -39,6 +40,103 @@ MERGE_GUARDS = {
 SCOPED_GUARDS = {'pdl-chain', 'flags-coverage', 'gate-off-arms', 'support-state', 'coalescer'}
 CONFLICT_SUFFIXES = {'.md', '.rs', '.cu', '.cuh', '.h', '.hpp', '.cpp', '.c', '.py', '.sh',
                      '.toml', '.yml', '.yaml', '.jinja', '.json', '.jsonl', '.txt'}
+_GIT_METADATA = {}
+_BLOB_READERS = {}
+
+
+class DataTree(validation_plan.Tree):
+    """Only immutable Git metadata is reused; local observations stay fresh."""
+    def __init__(self, root, head):
+        super().__init__(root, commit(head))
+        key = (str(self.repo), self.ref)
+        if key not in _GIT_METADATA:
+            entries = {}
+            for row in validation_plan.git(root, '--no-replace-objects', 'ls-tree', '-r', '-t', '-z', head).split(b'\0'):
+                if row:
+                    metadata, path = row.split(b'\t', 1)
+                    mode, kind, oid = metadata.decode().split()
+                    entries[_path(path.decode())] = (mode, kind, oid)
+            _GIT_METADATA[key] = entries
+        self.entries = _GIT_METADATA[key]
+
+    def paths(self, *prefixes):
+        return [path for path, entry in self.entries.items() if entry[0] != '040000'
+                and (not prefixes or any(path == prefix or path.startswith(prefix + '/') for prefix in prefixes))]
+
+    def input_modes(self, *prefixes, recursive=True):
+        if not recursive:
+            return {path: self.entries[path][0] for path in prefixes if path in self.entries}
+        return {path: self.entries[path][0] for path in self.paths(*prefixes)}
+
+    def blob(self, path):
+        return next(pinned_data(self.repo, self.ref, [path]))[1]
+
+    def subtree(self, path):
+        if self.entries.get(path, (None,))[0] != '040000':
+            raise Refused('contained alias target is not a directory')
+        return {name for name in self.entries if name == path or name.startswith(path + '/')}
+
+
+def blob_reader(root):
+    key = str(root)
+    if key not in _BLOB_READERS:
+        _BLOB_READERS[key] = subprocess.Popen(
+            ['git', '--no-replace-objects', '-C', key, 'cat-file', '--batch'],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            env=dict(os.environ, GIT_NO_LAZY_FETCH='1', GIT_TERMINAL_PROMPT='0'))
+    return _BLOB_READERS[key]
+
+
+@atexit.register
+def close_blob_readers():
+    for root in list(_BLOB_READERS):
+        reset_blob_reader(root)
+
+
+def reset_blob_reader(root):
+    process = _BLOB_READERS.pop(str(root), None)
+    if process is None:
+        return
+    for stream in (process.stdin, process.stdout):
+        try:
+            stream.close()
+        except (OSError, BrokenPipeError):
+            pass
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill(); process.wait()
+
+
+def blob_header(root, head, path):
+    process = blob_reader(root)
+    try:
+        process.stdin.write((commit(head) + ':' + _path(path) + '\n').encode()); process.stdin.flush()
+        fields = process.stdout.readline(512).split()
+    except (OSError, BrokenPipeError):
+        reset_blob_reader(root)
+        raise Refused('pinned merge guard reader failed') from None
+    if len(fields) != 3 or fields[1] != b'blob' or not fields[2].isdigit():
+        reset_blob_reader(root)
+        raise Refused('pinned merge guard blob unavailable: ' + path)
+    return process, int(fields[2])
+
+
+def local_data_fd(root, path):
+    """Fresh no-follow ancestors and nonblocking regular leaf, matching local readers."""
+    parts = _path(path).split('/')
+    parent = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        for part in parts[:-1]:
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+            os.close(parent); parent = child
+        descriptor = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            os.close(descriptor)
+            raise Refused('merge guard input is not regular: ' + path)
+        return descriptor
+    finally:
+        os.close(parent)
 
 
 def conflict_input(path):
@@ -149,7 +247,7 @@ def route(event_name, event, *, force_full=False):
 
 def full_cpu_plan(root, head, reason):
     """Force the existing inventory, including present normal/native contracts."""
-    tree = validation_plan.Tree(root, commit(head))
+    tree = DataTree(root, commit(head))
     plan = validation_plan.full(reason)
     validation_plan.preserve_contract_obligations(plan, tree, tree)
     plan.update(head=head, cpu_inventory='complete', qualification=False)
@@ -294,7 +392,7 @@ def guard_ids(plan):
 def guard_data_inputs(root, head, name):
     """Bind the checker to its actual Git/physical input census, not a label."""
     root = Path(root)
-    tree = validation_plan.Tree(root, commit(head))
+    tree = DataTree(root, commit(head))
     paths = set()
     def census(expected, actual, label):
         if expected != actual:
@@ -401,18 +499,26 @@ def guard_data_inputs(root, head, name):
 
 
 def pin_data_inputs(root, head, paths):
+    try:
+        return compare_data_inputs(root, head, paths)
+    except (Refused, OSError, sparse_inputs.Refusal):
+        reset_blob_reader(root)
+        raise
+
+
+def compare_data_inputs(root, head, paths):
     """Batch Git reads; compare exact blob bytes to descriptor-safe local reads."""
     paths = [_path(path) for path in paths]
     if not paths:
         raise Refused('empty merge guard data census')
-    tree, local = validation_plan.Tree(root, commit(head)), validation_plan.LocalTree(root)
+    tree = DataTree(root, commit(head))
     before = data_input_modes(tree, paths)
-    after = data_input_modes(local, paths)
     links = {path for path in paths if before.get(path) == '120000'}
     if links:
         descriptor = sparse_inputs.open_root(root)
         try:
-            link_tree = sparse_inputs.GitTree(descriptor, head)
+            link_tree = DataTree(root, head)
+            link_tree.direct_inputs = set()
             closure = sparse_inputs.link_closure(link_tree, links)
             targets = []
             for path in sorted(closure):
@@ -431,34 +537,48 @@ def pin_data_inputs(root, head, paths):
         finally:
             os.close(descriptor)
     for path in paths:
-        if before.get(path) not in ('100644', '100755', '120000') or before.get(path) != after.get(path):
+        if before.get(path) not in ('100644', '100755', '120000'):
             raise Refused('merge guard data mode differs from pinned source: ' + path)
-    for path, pinned in pinned_data(root, head, [path for path in paths if path not in links]):
-        if pinned != validation_plan.read_local_input(root, path, binary=True):
-            raise Refused('merge guard data differs from pinned source: ' + path)
+        if path in links:
+            continue
+        descriptor = local_data_fd(root, path)
+        try:
+            snapshot = os.fstat(descriptor)
+            mode = '100755' if snapshot.st_mode & 0o111 else '100644'
+            if mode != before[path]:
+                raise Refused('merge guard data mode differs from pinned source: ' + path)
+            process, remaining = blob_header(root, head, path)
+            while remaining:
+                amount = min(1024 * 1024, remaining)
+                pinned = process.stdout.read(amount)
+                actual = os.read(descriptor, amount)
+                if len(pinned) != amount or actual != pinned:
+                    raise Refused('merge guard data differs from pinned source: ' + path)
+                remaining -= amount
+            if process.stdout.read(1) != b'\n' or os.read(descriptor, 1):
+                raise Refused('merge guard data length differs from pinned source: ' + path)
+            after = os.fstat(descriptor)
+            if (snapshot.st_ino, snapshot.st_size, snapshot.st_mtime_ns, snapshot.st_ctime_ns) != (
+                    after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+                raise Refused('merge guard data changed during read: ' + path)
+        finally:
+            os.close(descriptor)
 
 
 def pinned_data(root, head, paths):
-    """Yield exact raw Git blobs in bounded chunks, also for fixture transport."""
+    """Yield one exact Git blob at a time through the process's shared stream."""
     head = commit(head)
     paths = [_path(path) for path in paths]
-    for start in range(0, len(paths), 64):
-        chunk = paths[start:start + 64]
-        raw = subprocess.check_output(['git', '-C', str(root), 'cat-file', '--batch'],
-                                      input=''.join(head + ':' + path + '\n' for path in chunk).encode(),
-                                      stderr=subprocess.PIPE)
-        offset = 0
-        for path in chunk:
-            end = raw.find(b'\n', offset)
-            fields = raw[offset:end].split() if end >= 0 else []
-            if len(fields) != 3 or fields[1] != b'blob' or not fields[2].isdigit():
-                raise Refused('pinned merge guard blob unavailable: ' + path)
-            size = int(fields[2]); begin = end + 1; offset = begin + size + 1
-            if offset > len(raw) or raw[offset - 1:offset] != b'\n':
+    try:
+        for path in paths:
+            process, size = blob_header(root, head, path)
+            raw = process.stdout.read(size)
+            if len(raw) != size or process.stdout.read(1) != b'\n':
                 raise Refused('incomplete pinned merge guard blob: ' + path)
-            yield path, raw[begin:begin + size]
-        if offset != len(raw):
-            raise Refused('unexpected pinned merge guard batch output')
+            yield path, raw
+    except (Refused, OSError):
+        reset_blob_reader(root)
+        raise
 
 
 def data_input_modes(tree, paths):
