@@ -331,6 +331,12 @@ def main():
             pass
         else:
             raise AssertionError('root symlink was followed')
+        # abspath must not erase an unsafe ancestor before no-follow inspection.
+        noncanonical = alias / '..' / root.name
+        assert_refusal(noncanonical, 'root parent traversal')
+        with mutant(scratch, 'normalize_away_root_ancestor', "if '..' in Path(root).parts:",
+                    'if False:') as module:
+            killed(lambda m: assert_refusal(noncanonical, 'root parent traversal', m), module)
         alias.unlink()
 
         # Pinned Git link failures cannot be made safe by disk materialization.

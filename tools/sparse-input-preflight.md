@@ -7,7 +7,8 @@ python3 tools/sparse_input_preflight.py --ref HEAD
 python3 tools/sparse_input_preflight.py --ref HEAD --check perf-board
 ```
 
-`--root` selects another checkout. Repeat `--check` to combine `perf-board`,
+`--root` selects another checkout; parent-traversal components (`..`) refuse so
+normalization cannot erase an unsafe ancestor. Repeat `--check` to combine `perf-board`,
 `support-records`, and `public-boundary-links`. The default selects all three.
 Output is JSON. Exit 0 means that the modeled inputs match the pinned commit;
 exit 1 reports omissions, unsafe materialization, or an unknown input contract.

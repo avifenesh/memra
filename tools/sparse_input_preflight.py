@@ -304,6 +304,8 @@ def inspect_path(root_fd, tree, name):
 
 def open_root(root):
     """Anchor the root too, refusing symlinks in every absolute component."""
+    if '..' in Path(root).parts:
+        raise Refusal('root parent traversal is not canonical')
     fd = os.open('/', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         for part in Path(os.path.abspath(root)).parts[1:]:
