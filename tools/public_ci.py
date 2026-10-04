@@ -12,7 +12,7 @@ import shlex
 import sys
 
 import validation_plan
-from cpu_workflow_inputs import _regular, _policy, POLICY_PATH, COMMANDS
+from cpu_workflow_inputs import _regular, _policy, _path, POLICY_PATH, COMMANDS
 
 REPOSITORY = 'avifenesh/memra'
 OWNER = 'avifenesh'
@@ -36,6 +36,12 @@ MERGE_GUARDS = {
     'coalescer': ['python3', 'tools/check-coalescer-contract.py'],
 }
 SCOPED_GUARDS = {'pdl-chain', 'flags-coverage', 'gate-off-arms', 'support-state', 'coalescer'}
+CONFLICT_SUFFIXES = {'.md', '.rs', '.cu', '.cuh', '.h', '.hpp', '.cpp', '.c', '.py', '.sh',
+                     '.toml', '.yml', '.yaml', '.jinja', '.json', '.jsonl', '.txt'}
+
+
+def conflict_input(path):
+    return Path(path).suffix in CONFLICT_SUFFIXES and not re.search(r'(^|/)(raw|receipts?)/|\.log$', path)
 
 
 class Refused(ValueError):
@@ -288,7 +294,57 @@ def guard_data_inputs(root, head, name):
     root = Path(root)
     tree = validation_plan.Tree(root, commit(head))
     paths = set()
-    if name == 'pdl-chain':
+    def census(expected, actual, label):
+        if expected != actual:
+            raise Refused(label + ' membership differs from pinned source')
+        return expected
+
+    def rust_sources(predicate):
+        expected = {path for path in tree.paths('crates') if predicate(path)}
+        actual = {path.relative_to(root).as_posix() for path in (root / 'crates').rglob('*.rs')
+                  if predicate(path.relative_to(root).as_posix())}
+        return census(expected, actual, 'Rust source')
+
+    if name in ('action-pins', 'workflow-keys'):
+        prefix = '.github/workflows'
+        relevant = (lambda path: Path(path).suffix in ('.yml', '.yaml')
+                    and Path(path).parent.as_posix() == prefix) if name == 'workflow-keys' else (lambda path: True)
+        paths = census({path for path in tree.paths(prefix) if relevant(path)},
+                       {path.relative_to(root).as_posix() for path in (root / prefix).rglob('*')
+                        if (not path.is_dir() or path.is_symlink()) and relevant(path.relative_to(root).as_posix())},
+                       'Workflow input')
+    elif name == 'conflict-markers':
+        paths = {path for path in tree.paths() if conflict_input(path)}
+        indexed = {path.decode() for path in validation_plan.git(root, 'ls-files', '-z').split(b'\0') if path}
+        census(paths, {path for path in indexed if conflict_input(path)}, 'Conflict census index')
+    elif name == 'docs-registry':
+        paths.update(('docs/KERNELS.md', 'docs/MODELS.md', 'docs/ROUTER.md', 'docs/FLAGS.md'))
+        paths.update(rust_sources(lambda path: path.startswith('crates/') and '/src/' in path and path.endswith('.rs')))
+        indexed = {path.decode() for path in validation_plan.git(root, 'ls-files', '-z').split(b'\0') if path}
+        census(set(tree.paths()), indexed, 'Docs registry index')
+    elif name == 'publish-members':
+        _, owners = validation_plan.workspace(tree)
+        paths.update(prefix + '/Cargo.toml' for prefix in owners)
+        paths.update(('Cargo.toml', '.github/workflows/publish.yml'))
+    elif name == 'stub-abi':
+        prefix = 'crates/memra-engine/cu'
+        stubs = census({path for path in tree.paths(prefix) if Path(path).parent.as_posix() == prefix
+                        and path.endswith('_stub.cu')},
+                       {path.relative_to(root).as_posix() for path in (root / prefix).glob('*_stub.cu')},
+                       'Stub ABI')
+        paths.update(stubs)
+        paths.update(path.removesuffix('_stub.cu') + '.cu' for path in stubs)
+        paths.add('crates/memra-engine/build.rs')
+        paths.update(rust_sources(lambda path: path.startswith('crates/memra-engine/src/') and path.endswith('.rs')))
+    elif name == 'arch-matrix':
+        paths.update(('.github/workflows/ci.yml', '.github/workflows/release.yml', 'crates/memra-engine/build.rs'))
+        optional = 'tools/fatbin-census-advisory.txt'
+        present = optional in tree.paths('tools')
+        if present != ((root / optional).exists() or (root / optional).is_symlink()):
+            raise Refused('Arch advisory presence differs from pinned source')
+        if present:
+            paths.add(optional)
+    elif name == 'pdl-chain':
         prefix = 'crates/memra-engine/cu'
         paths = {path for path in tree.paths(prefix)
                  if Path(path).parent.as_posix() == prefix and Path(path).suffix in ('.cu', '.cuh')}
@@ -336,10 +392,42 @@ def guard_data_inputs(root, head, name):
         paths.update(packs)
     elif name == 'coalescer':
         paths.add('crates/memra-server/src/dsv4_serve.rs')
-    for path in sorted(paths):
-        if _regular(tree, path) != _regular(validation_plan.LocalTree(root), path):
-            raise Refused('merge guard data differs from pinned source: ' + path)
+    else:
+        raise Refused('merge guard data ownership is not declared: ' + name)
+    pin_data_inputs(root, head, sorted(paths))
     return sorted(paths)
+
+
+def pin_data_inputs(root, head, paths):
+    """Batch Git reads; compare exact blob bytes to descriptor-safe local reads."""
+    paths = [_path(path) for path in paths]
+    if not paths:
+        raise Refused('empty merge guard data census')
+    tree, local = validation_plan.Tree(root, commit(head)), validation_plan.LocalTree(root)
+    before = tree.input_modes(*paths, recursive=False)
+    after = local.input_modes(*paths, recursive=False)
+    for path in paths:
+        if before.get(path) not in ('100644', '100755') or before.get(path) != after.get(path):
+            raise Refused('merge guard data mode differs from pinned source: ' + path)
+    # Chunking keeps receipt/source buffers bounded without a process per file.
+    for start in range(0, len(paths), 64):
+        chunk = paths[start:start + 64]
+        raw = subprocess.check_output(['git', '-C', str(root), 'cat-file', '--batch'],
+                                      input=''.join(head + ':' + path + '\n' for path in chunk).encode(),
+                                      stderr=subprocess.PIPE)
+        offset = 0
+        for path in chunk:
+            end = raw.find(b'\n', offset)
+            fields = raw[offset:end].split() if end >= 0 else []
+            if len(fields) != 3 or fields[1] != b'blob' or not fields[2].isdigit():
+                raise Refused('pinned merge guard blob unavailable: ' + path)
+            size = int(fields[2]); begin = end + 1; offset = begin + size + 1
+            if offset > len(raw) or raw[offset - 1:offset] != b'\n':
+                raise Refused('incomplete pinned merge guard blob: ' + path)
+            if raw[begin:begin + size] != validation_plan.read_local_input(root, path, binary=True):
+                raise Refused('merge guard data differs from pinned source: ' + path)
+        if offset != len(raw):
+            raise Refused('unexpected pinned merge guard batch output')
 
 
 def execute_contracts(root, plan):

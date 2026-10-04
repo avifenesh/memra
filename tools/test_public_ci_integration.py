@@ -82,6 +82,16 @@ class PublicCiIntegration(unittest.TestCase):
             for path in set(support['required']) | (set(support['optional']) & present):
                 target = repo / path; target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(support_tree.read_bytes(path))
+            # The conflict checker reads tracked eligible source/doc/data paths,
+            # excluding raw/receipt/log trees. Materialize exactly that census.
+            conflict_paths = [path for path in support_tree.paths() if ci.conflict_input(path)]
+            conflict_modes = support_tree.input_modes(*conflict_paths, recursive=False)
+            for path in conflict_paths:
+                target = repo / path
+                if not target.exists():
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(support_tree.read_bytes(path))
+                    target.chmod(0o755 if conflict_modes[path] == '100755' else 0o644)
             descriptor = {'full_name': ci.REPOSITORY,
                           'owner': {'login': ci.OWNER, 'id': ci.OWNER_ID}}
             external = {'login': 'contributor', 'id': 42}
@@ -151,6 +161,16 @@ class PublicCiIntegration(unittest.TestCase):
             self.assertEqual(output.count('SFT CPU contract: PASS: original=9 executed=18'), 1, output)
             execution = json.loads(execution_file.read_text())
             self.assertEqual(execution['executed'], ['sft-generator-caller'])
+            # A harmless physical doc change cannot stamp HEAD merely because
+            # its static census still passes. Exact data binding must refuse.
+            registry_doc = repo / 'docs/ROUTER.md'; registry_original = registry_doc.read_bytes()
+            registry_doc.write_bytes(registry_original + b'\n')
+            try:
+                refused = command([sys.executable, str(repo / 'tools/public_ci.py'), 'contracts',
+                                   '--plan', str(plan_file), '--repo', str(repo), '--out', str(execution_file)], ok=False)
+                self.assertIn('merge guard data differs from pinned source: docs/ROUTER.md', refused)
+            finally:
+                registry_doc.write_bytes(registry_original)
             # A schema-valid shortened mutable policy cannot omit producer checks
             # from the pinned execution tuple, even with the command unchanged.
             policy_path = repo / 'tools/cpu_workflow_contracts.json'
