@@ -453,6 +453,7 @@ def ambient_config(root):
 
 def package_capsule(root):
     root = Path(root).absolute()
+    require(not os.path.lexists(root / '.memra-source-freshness-required'), 'freshness sentinel must remain absent')
     cap = owned_json(root / RESERVED)
     require(type(cap) is dict and set(cap) == PACKAGE_FIELDS and cap['schema'] == PACKAGE_SCHEMA,
             'unknown package source capsule')
@@ -478,7 +479,7 @@ def package_capsule(root):
                              'memra-package-source': {'directory': 'vendor'}}, 'unknown Cargo source replacement')
     for name in ('output', 'expectations'):
         require(type(cap[name]) is str and Path(cap[name]).is_absolute()
-                and not Path(cap[name]).is_relative_to(root), 'derived role overlaps source')
+                and not Path(cap[name]).is_relative_to(root) and not root.is_relative_to(Path(cap[name])), 'derived role overlaps source')
         fd, _ = directory(cap[name]); os.close(fd)
     require(not Path(cap['expectations']).is_relative_to(Path(cap['output']))
             and not Path(cap['output']).is_relative_to(Path(cap['expectations'])), 'custody roles overlap')

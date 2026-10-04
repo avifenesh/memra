@@ -30,7 +30,11 @@ def codes(args,key):
  m.require(len(found)<=1,'duplicate compiler code option')
  return found[0] if found else ''
 
-def record_path(artifact):return Path(str(artifact)+'.'+m.regular(Path(artifact).parent,Path(artifact).name)['sha256']+'.memra-source.json')
+def record_path(artifact):
+ path=Path(artifact)
+ members=[path.with_suffix('.rlib'),path.with_suffix('.rmeta')] if path.suffix in ('.rlib','.rmeta') else [path]
+ bundle={member.suffix or 'binary':m.regular(member.parent,member.name) for member in members}
+ return Path(str(path)+'.'+m.digest(bundle)+'.memra-source.json')
 def artifact_record(path,cap):
  path=Path(path).absolute();out=Path(cap['output']);m.require(path.is_relative_to(out),'unmatched extern outside owned output')
  record=m.owned_json(record_path(path))
@@ -46,6 +50,8 @@ def artifact_record(path,cap):
  m.require(expected_path.exists(),'external producer observation expectation missing: '+key)
  m.require(m.owned_json(expected_path)=={'receipt_seal':record['seal']},'external producer custody differs')
  m.require(record['package'] in cap['roots'] and record['source_seal']==m.digest(cap['snapshot']['payload']['packages'][record['package']]),'stale artifact source seal')
+ current_admission=m.digest({'recipe':cap['recipe'],'supplementary':{k:v for k,v in cap['supplementary'].items() if v['owner']==record['package']}})
+ m.require(record['input_tuple']['admission']==current_admission,'stale compiler recipe admission')
  m.require(record['manifest_root']==cap['roots'][record['package']],'artifact manifest differs')
  m.require(checked(out,path)==record['artifact'],'extern artifact bytes/mode differ')
  m.require(record['artifact_role'] in record['artifact_bundle'] and record['artifact_bundle'][record['artifact_role']]==record['artifact'],'consumed compiler unit member differs')
