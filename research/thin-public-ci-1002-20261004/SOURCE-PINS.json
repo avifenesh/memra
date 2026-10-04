@@ -1,9 +1,13 @@
 {
-  "execution_source": "df9f7e4db087c5e0c6759714ad8430870204f65e",
+  "execution_source": "73bd47a54d84df96dfadc1f2781f172bb0068d70",
   "base": "afe45babc66b8812de7ed6d479b6ffae87c9fa48",
   "pins": {
+    "tools/trusted_public_ci.py": {
+      "sha256": "460106838734af9dc0c5d974dd878ea1c372111cddcd74138eb2591161ae5cc7",
+      "git_mode": "100644"
+    },
     "tools/public_ci.py": {
-      "sha256": "4ab1d7b7ad1bc6a9859769904b44e156e8950d1ec63c7e3b8a546de6cb1e9063",
+      "sha256": "6b9755922dd55616d8ca8f2136595243e779f7b85defc2e67e2e3676daec6e77",
       "git_mode": "100644"
     },
     "tools/validation_plan.py": {
@@ -14,24 +18,16 @@
       "sha256": "a79da846426f382bd93c1a4716e6e59c9af051bf27816cc5e2ccff4071b9affd",
       "git_mode": "100644"
     },
-    "tools/ci_merge_validation.json": {
-      "sha256": "11a3277c7e00cd503dfeeca8a11541bf3561c9f267ebc88640f0ee84f96d80ec",
+    "tools/support_record_inputs.py": {
+      "sha256": "d3548a8fa3f765046e1864efd78c028d596151971a45908dad38230f021276d5",
       "git_mode": "100644"
     },
-    ".github/workflows/ci-public.yml": {
-      "sha256": "c78aca4c76ca1d6423292c1457724512144fdacf980d6dfbe85e0685c9086a41",
-      "git_mode": "100644"
+    "tools/skip-census.py": {
+      "sha256": "d89ce391d748499214df2279a48d719b9e67cad6a2838c77ebcef46640883a7d",
+      "git_mode": "100755"
     },
-    ".github/workflows/ci.yml": {
-      "sha256": "c17a6e46444d573c8da8eaaaf826bae3d7dc7570cd2325bff5913f4322bad2aa",
-      "git_mode": "100644"
-    },
-    ".github/workflows/publish.yml": {
-      "sha256": "b9694854007b5bcd12b9ed5484b5b5faf041309016c82a6e21a596f7c1aafffe",
-      "git_mode": "100644"
-    },
-    ".github/workflows/release.yml": {
-      "sha256": "bad9adc3b0b4f3fd021711f8788594e838f3e94d8f4d8ff29f0cf1adb9c2b755",
+    "tools/validation_inputs.json": {
+      "sha256": "71e17d5f91f44bae768047ad4c9f2c40486a291e35e123e6a7e54f16fd34d377",
       "git_mode": "100644"
     },
     "tools/cpu_workflow_inputs.py": {
@@ -42,24 +38,40 @@
       "sha256": "12543703a339d6457162499bb2f80795fe2222349eed88103b7543b0dab90bd0",
       "git_mode": "100644"
     },
-    "tools/test_public_ci_integration.py": {
-      "sha256": "ad65f1298d7ea18af5a98061c641943d2817bb33365fb058a3fa68cc2b8ebf81",
-      "git_mode": "100644"
-    },
-    "tools/test_validation_workflow.py": {
-      "sha256": "1daf09083aa0891b9d938fc68df3e2d794b23b4dccb5ddc273ded410a62bff3d",
+    "tools/ci_merge_validation.json": {
+      "sha256": "f42ed02373fd516e873ce5dba9fa13b7b13a3e2283a632a50bc7311249eaa528",
       "git_mode": "100644"
     },
     "tools/ci-change-class.sh": {
       "sha256": "d45211271ce30c6ec7c02fd4d695bfb43ff26232aec148ef7d9fcfc44e18ff45",
       "git_mode": "100755"
     },
-    "docs/TESTING.md": {
-      "sha256": "6c79558166197a68f091d2d1c53c779dd0e4fe355a7ca69b5e32f52578b9c6ac",
+    "tools/test_ci_change_class.sh": {
+      "sha256": "67d8a6182f5ff39a29a22d5836c8611795cc9e37c10751efba11a1f166822883",
+      "git_mode": "100755"
+    },
+    "tools/test_public_ci_integration.py": {
+      "sha256": "0807382ceb9bba0bdda3b5ee6926ac708524ae2d73be02926f3e32c360b63ace",
       "git_mode": "100644"
     },
-    "AGENTS.md": {
-      "sha256": "a967e0e06d152bed99a415e8f94b6336731a65120c16c9c235cd93a3288101ac",
+    "tools/test_validation_workflow.py": {
+      "sha256": "1daf09083aa0891b9d938fc68df3e2d794b23b4dccb5ddc273ded410a62bff3d",
+      "git_mode": "100644"
+    },
+    ".github/workflows/ci-public.yml": {
+      "sha256": "0dd70f2fb2b5fe7135e911b01d1cd16a0d9987ddd7aabbba7d43f3804e531f3a",
+      "git_mode": "100644"
+    },
+    ".github/workflows/ci.yml": {
+      "sha256": "dc2fa3011de476d01f138969094c1b434356abcabcb6a3c5cde86b9bbff3dbd0",
+      "git_mode": "100644"
+    },
+    ".github/workflows/publish.yml": {
+      "sha256": "b9694854007b5bcd12b9ed5484b5b5faf041309016c82a6e21a596f7c1aafffe",
+      "git_mode": "100644"
+    },
+    ".github/workflows/release.yml": {
+      "sha256": "bad9adc3b0b4f3fd021711f8788594e838f3e94d8f4d8ff29f0cf1adb9c2b755",
       "git_mode": "100644"
     }
   }

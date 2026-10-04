@@ -1,0 +1,42 @@
+{
+  "source": "cdacfce169d28f4a525bc3d9a33ad71c24155fdf",
+  "guard_data_timings": [
+    {
+      "guard": "action-pins",
+      "inputs": 10,
+      "seconds": 1.6780052779940888
+    },
+    {
+      "guard": "workflow-keys",
+      "inputs": 10,
+      "seconds": 0.0442509240237996
+    },
+    {
+      "guard": "conflict-markers",
+      "inputs": 64905,
+      "seconds": 52.36545031401329
+    },
+    {
+      "guard": "docs-registry",
+      "inputs": 590,
+      "seconds": 0.8994533470831811
+    },
+    {
+      "guard": "publish-members",
+      "inputs": 16,
+      "seconds": 0.043368729995563626
+    },
+    {
+      "guard": "stub-abi",
+      "inputs": 347,
+      "seconds": 0.1620697220787406
+    },
+    {
+      "guard": "arch-matrix",
+      "inputs": 4,
+      "seconds": 0.051646306994371116
+    }
+  ],
+  "stream_correctness": "exact >2MiB bytes; mismatch/restored same process; owned reader reset/reaped; FIFO/symlink refusals; owner700/744 exec,0641 nonexec,group-only pinned-exec refusal; actual compiled all111 mutant misclassifies",
+  "qualified": false
+}

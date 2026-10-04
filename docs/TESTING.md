@@ -2565,6 +2565,8 @@ This artifact reuse adds no model, numerical, serving or runtime qualification.
 
 ## Public CPU CI modes
 
+Routing and planning execute from the immutable event-base checkout through `tools/trusted_public_ci.py`, with isolated Python and an explicit sibling candidate repo. Missing trusted entry selects FULL without importing candidate routing code. The full workflow's job selection and result checks are declarative; candidate planner output cannot narrow them. Changes to routing/helper/policy source expand FULL until the reviewed base is updated. Workflow YAML and code under test still require source review.
+
 Owner-authored PRs and pushes to main use `public-ci`. PR ownership is the trusted
 PR user login and immutable account ID, with repository/head lineage checked.
 The actor, labels and commit authors do not select thin mode. Unknown events,
