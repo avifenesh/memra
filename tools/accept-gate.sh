@@ -236,7 +236,7 @@ PY
 # ---------- compare measured vs pinned ----------
 compare_cell() { # compare_cell <cell> <measured.json> <cfg-fingerprint>
     python3 - "$1" "$2" "$3" "$REFS" <<'PY'
-import hashlib, json, sys
+import json, sys
 cell, mfile, cfgfp, refs = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 m = json.load(open(mfile))
 try:
