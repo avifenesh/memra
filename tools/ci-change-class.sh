@@ -3,6 +3,11 @@
 # Missing Python, a broken planner, or malformed output must never suppress checks.
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
+if [ "${1:-}" = full ]; then
+  python3 "$HERE/public_ci.py" full-plan --head "${2:-}" --out "${3:-validation-plan.json}" \
+    --github-output "${4:-/dev/stdout}"
+  exit "$?"
+fi
 if [ "${1:-}" = census ]; then
   shift
   python3 "$HERE/validation_plan.py" census "$@" || printf '?\n'

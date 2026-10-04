@@ -21,12 +21,18 @@ permissions:
   id-token: write
 
 jobs:
+  cpu-suite:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
   # Refuse BEFORE the 6-cell build matrix spends a minute: the 2026-08-22/23 tag races
   # shipped three GitHub releases whose binaries self-report a different version than
   # their tag (v0.102.0 = 0.101.0 bits; v0.104.0/v0.104.1 = 0.103.0 bits) because only
   # publish.yml guarded the tag. Same script both places; teeth in ci.yml
   # (tools/test_release_guard.sh). Claim protocol: docs/RELEASING.md.
   guard:
+    needs: cpu-suite
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

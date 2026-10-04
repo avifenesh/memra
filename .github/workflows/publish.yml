@@ -19,6 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
+    needs: cpu-suite
         description: "true = REAL publish of the workspace version on this ref (recovery door for a partial tag publish — v0.69.0 shipped 5/9 crates before the new-crate burst limit 429'd). Default false = dry-run."
         type: boolean
         default: false
@@ -27,6 +28,11 @@ permissions:
   contents: read
 
 jobs:
+  cpu-suite:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
   publish:
     runs-on: ubuntu-24.04
     environment: crates-io

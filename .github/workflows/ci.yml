@@ -9,13 +9,20 @@ name: ci
 # Exact commands and the impact/omission explanation are retained as validation-plan.json.
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_call:
+    outputs:
+      validated_head:
+        description: Exact commit whose complete CPU inventory passed
+        value: ${{ jobs.complete.outputs.validated_head }}
+  schedule:
+    - cron: '19 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-full-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -44,20 +51,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-          sparse-checkout: |
-            tools
-            crates
-          sparse-checkout-cone-mode: true
       - id: classify
-        name: Plan affected checks (unknown dependencies expand to all jobs)
+        name: Plan the complete CPU inventory
         run: |
-          tools/ci-change-class.sh "${{ github.event_name }}" \
-            "${{ github.event.pull_request.base.sha }}" \
-            "${{ github.event.before }}" \
-            "${{ github.sha }}" | tee -a "$GITHUB_OUTPUT"
-          python3 tools/validation_plan.py ci "${{ github.event_name }}" \
-            "${{ github.event.pull_request.base.sha }}" "${{ github.event.before }}" \
-            "${{ github.sha }}" --json > validation-plan.json
+          tools/ci-change-class.sh full "$GITHUB_SHA" validation-plan.json "$GITHUB_OUTPUT"
           cat validation-plan.json
       - name: Retain the affected-edge and omitted-check explanation
         if: ${{ always() }}
@@ -103,6 +100,9 @@ jobs:
           tools/test_ci_change_class.sh
           tools/unittest-floor.sh tools 'test_validation_*.py' 241
           tools/unittest-floor.sh tools test_model_memory_fixture.py 3
+
+      - name: Public CPU CI event, source and result integration
+        run: python3 tools/test_public_ci_integration.py
 
       - name: Declared changed-input CPU contracts (missing selection runs all available)
         run: python3 tools/validation_plan.py contracts
@@ -794,3 +794,20 @@ jobs:
         env:
           MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
           MEMRA_CUDA_ARCH: "120a"
+
+  complete:
+    name: Complete CPU inventory result
+    needs: [changes, gates, boundary, build, clippy, server-tests, portable-suites, engine-tests, arch-coverage, publish-dryrun]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    outputs:
+      validated_head: ${{ steps.result.outputs.validated_head }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - id: result
+        env:
+          JOB_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 -c 'import os,pathlib; pathlib.Path("job-results.json").write_text(os.environ["JOB_RESULTS"])'
+          python3 tools/public_ci.py full-result --head "$GITHUB_SHA" \
+            --needs job-results.json --github-output "$GITHUB_OUTPUT"
