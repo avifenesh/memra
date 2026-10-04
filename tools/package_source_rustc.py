@@ -110,16 +110,20 @@ def dep_inputs(depfile,package_root,output,source_files):
 def own_inputs(cap,key,crate):
  generated={};physical={}
  if crate!='build_script_build':
-  root=Path(os.environ.get('OUT_DIR','')).absolute();expected=sorted(cap['recipe']['generated'][key])
-  m.require(root.is_relative_to(Path(cap['output'])),'unknown own OUT_DIR binding')
-  found=[]
-  for parent,dirs,files in os.walk(root,followlinks=False):
-   for name in dirs:
-    fd,_=m.directory(Path(parent)/name);os.close(fd)
-   found.extend((Path(parent)/name).relative_to(root).as_posix() for name in files)
-  m.require(sorted(found)==expected,'unknown generated OUT_DIR membership')
-  for name in expected:
-   generated[name]=m.regular(root,name);physical[str(root/name)]=generated[name]
+  expected=sorted(cap['recipe']['generated'][key])
+  if 'OUT_DIR' not in os.environ:
+   m.require(not expected,'generated input declaration requires actual OUT_DIR')
+  else:
+   root=Path(os.environ['OUT_DIR']).absolute()
+   m.require(root.is_relative_to(Path(cap['output'])),'unknown own OUT_DIR binding')
+   found=[]
+   for parent,dirs,files in os.walk(root,followlinks=False):
+    for name in dirs:
+     fd,_=m.directory(Path(parent)/name);os.close(fd)
+    found.extend((Path(parent)/name).relative_to(root).as_posix() for name in files)
+   m.require(sorted(found)==expected,'unknown generated OUT_DIR membership')
+   for name in expected:
+    generated[name]=m.regular(root,name);physical[str(root/name)]=generated[name]
  names=cap['recipe']['env'][key] if crate!='build_script_build' else []
  env={name:{'present':name in os.environ,'sha256':hashlib.sha256(os.environ[name].encode()).hexdigest() if name in os.environ else None} for name in names}
  return generated,physical,env

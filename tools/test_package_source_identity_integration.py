@@ -27,7 +27,10 @@ class PackageSourceIntegration(unittest.TestCase):
     def test_root_codegen_context(self):
         self.cargo_contract(codegen=True)
 
-    def cargo_contract(self, midcompiler=False, codegen=False):
+    def test_normal_dependency_without_generated_directory(self):
+        self.cargo_contract(pure=True)
+
+    def cargo_contract(self, midcompiler=False, codegen=False, pure=False):
         env = dict(os.environ)
         for key in ('RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER', 'CARGO_BUILD_RUSTC_WRAPPER', 'CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER'):
             env.pop(key, None)
@@ -48,6 +51,9 @@ class PackageSourceIntegration(unittest.TestCase):
             (dep / 'Cargo.toml').write_text('[package]\nname="source-witness-dep"\nversion="0.0.1"\nedition="2024"\n')
             (dep / 'src/lib.rs').write_text('include!(concat!(env!("OUT_DIR"),"/generated.rs")); pub fn token()-> &\'static str{"baseline"}\n')
             (dep / 'build.rs').write_text('fn main(){std::fs::write(std::path::Path::new(&std::env::var("OUT_DIR").unwrap()).join("generated.rs"),r#"pub fn generated()-> &\'static str {"generated"}"#).unwrap();}\n')
+            if pure:
+                (dep / 'build.rs').unlink()
+                (dep / 'src/lib.rs').write_text("pub fn token()-> &'static str{\"baseline\"}\n")
             run(['cargo', 'package', '--offline', '--no-verify', '--target-dir', str(base / 'archive')], dep)
             archive = base / 'archive/package/source-witness-dep-0.0.1.crate'
             vendor = app / 'vendor/source-witness-dep-0.0.1'
@@ -86,7 +92,7 @@ class PackageSourceIntegration(unittest.TestCase):
                 snapshot = m.cargo_graph(app / 'Cargo.toml', 'x86_64-unknown-linux-gnu', [])
                 keys = snapshot['payload']['packages']
                 plan = {'env': {key: ['OUT_DIR'] for key in keys},
-                        'generated': {key: [] if key == snapshot['payload']['entry'] else ['generated.rs'] for key in keys},
+                        'generated': {key: [] if pure or key == snapshot['payload']['entry'] else ['generated.rs'] for key in keys},
                         'cfgs': {key: [] for key in keys},
                         'codegen': {'embed-bitcode': ['no'], 'debuginfo': ['0', '2']},
                         'targets': ['memra_server'], 'supplementary': {}}
@@ -143,6 +149,15 @@ class PackageSourceIntegration(unittest.TestCase):
             self.assertEqual(baseline[2:], ['package-source-v1', 'baseline'])
             run(command, app)
             self.assertEqual(run([str(binary)], app).stdout.strip().split(), baseline)
+            if pure:
+                records=[json.loads(path.read_bytes()) for path in output.rglob('*.memra-source.json')]
+                dependent=[row for row in records if row['package'] != snapshot['payload']['entry']]
+                self.assertTrue(dependent)
+                for row in dependent:
+                    self.assertEqual(row['input_tuple']['own_generated'], {})
+                    self.assertEqual(row['input_tuple']['nonidentity_env']['OUT_DIR'], {'present': False, 'sha256': None})
+                print(json.dumps({'normalized_dependency_build_rs': False, 'OUT_DIR_present': False, 'ordinary_cached_LIB_BIN_same_identity': True}))
+                return
             rustc = ['cargo', 'rustc', '--offline', '--locked', '--lib', '--target-dir', str(output), '--']
             if codegen:
                 run(rustc + ['-C', 'debuginfo=0'], app, fail='duplicate nonidentity compiler codegen choice')
