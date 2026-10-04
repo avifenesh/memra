@@ -100,9 +100,12 @@ class PackageSourceIntegration(unittest.TestCase):
                 proxy = base / 'owned-compiler.py'
                 mutation = base / 'mutation.json'
                 proxy.write_text("#!/usr/bin/python3 -I\n" +
-                    "import hashlib,json,os,subprocess,sys\nfrom pathlib import Path\n" +
+                    "import hashlib,json,os,re,stat,subprocess,sys\nfrom pathlib import Path\n" +
                     "compiler=" + repr(cap['compiler']['path']) + "\n" +
-                    "code=subprocess.run([compiler,*sys.argv[1:]],check=False).returncode\n" +
+                    "pairs=re.findall(r'--jobserver-(?:auth|fds)=(\\d+),(\\d+)',os.environ.get('CARGO_MAKEFLAGS',''))\n" +
+                    "assert len(set(pairs))<=1; descriptors=tuple(int(x) for x in pairs[0]) if pairs else ()\n" +
+                    "assert not descriptors or (len(set(descriptors))==2 and all(2<x<65536 and stat.S_ISFIFO(os.fstat(x).st_mode) for x in descriptors))\n" +
+                    "code=subprocess.run([compiler,*sys.argv[1:]],check=False,pass_fds=descriptors).returncode\n" +
                     "if code==0 and '--crate-name' in sys.argv and sys.argv[sys.argv.index('--crate-name')+1]=='memra_server':\n" +
                     " root=Path(" + repr(str(app)) + "); source=root/'src/lib.rs'; info=source.stat()\n" +
                     " source.write_bytes(source.read_bytes().replace(b'wrong-cfg-body',b'drift-cfg-body')); os.utime(source,ns=(info.st_atime_ns,info.st_mtime_ns))\n" +
@@ -120,7 +123,9 @@ class PackageSourceIntegration(unittest.TestCase):
                 cap['seal'] = m.digest({k: v for k, v in cap.items() if k != 'seal'})
                 (app / m.RESERVED).write_bytes(m.canonical(cap) + b'\n')
                 context = dict(env); context['RUSTC'] = str(proxy)
-                run(command, app, context=context, fail='package capsule/source changed during compiler execution')
+                result = run(command, app, context=context, fail='package capsule/source changed during compiler execution')
+                self.assertNotIn('jobserver', result.stderr)
+                print(json.dumps({'compiler_boundary_stderr': result.stderr, 'jobserver_warning': False}))
                 changed = json.loads(mutation.read_bytes())
                 self.assertTrue(changed['mtime_preserved'])
                 self.assertNotEqual(changed['new_seal'], cap['seal'])
