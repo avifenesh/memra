@@ -1,0 +1,5 @@
+{
+  "original_path": "before/mtp-context-receipts-1.sh",
+  "raw_sha256": "8cffbcb146040e6d5727d3f908b8294f8cceac4fbb4da6b3dd29738797614d97",
+  "raw_script": "set -euo pipefail\npython3 - <<'PY'\nfrom pathlib import Path\nimport subprocess\nimport sys\n\nlane = Path(\"research/mtp-context-depth-20260921\")\ntools = lane / \"publication\"\nfor folder, program in [\n    (\"prior-receipts\", \"reproduce_development.py\"),\n    (\"receipts\", \"reproduce.py\"),\n    (\"latest-receipts\", \"reproduce_latest.py\"),\n]:\n    receipts = lane / folder\n    pin = (receipts / \"manifest.sha256\").read_text().split()[0]\n    subprocess.run([\n        sys.executable, str(tools / program), \"--receipts\", str(receipts),\n        \"--manifest-sha256\", pin,\n    ], check=True)\n    subprocess.run([\n        sys.executable, str(tools / \"verify_boundary.py\"),\n        \"--receipts\", str(receipts),\n        \"--review\", str(receipts / \"boundary-review.json\"),\n        \"--prefix\", receipts.as_posix(), \"--check\",\n    ], check=True)\nPY\n"
+}

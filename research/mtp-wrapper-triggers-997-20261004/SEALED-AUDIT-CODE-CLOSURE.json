@@ -1,0 +1,153 @@
+[
+  {
+    "archive": "research/mtp-context-depth-20260921/receipts/common-records.tar.gz",
+    "member": "final-audit-tools/finalize.py",
+    "sha256": "84a272c23ec285f6200ba79b1cde0eb3a86ba9d1034b9048682e7b655c40f983",
+    "imports": [
+      "import argparse",
+      "import collections",
+      "import csv",
+      "import hashlib",
+      "import json",
+      "import math",
+      "import re",
+      "import sys",
+      "from pathlib import Path",
+      "from scored_sets import matched_report"
+    ],
+    "relevant_calls": [
+      {
+        "line": 139,
+        "call": "run_study.audit_control_ids(parent, group['seed'], ['calibrated', 'context', 'learned'])"
+      },
+      {
+        "line": 35,
+        "call": "(run/'turns.tsv').open()"
+      },
+      {
+        "line": 123,
+        "call": "run_study.audit_control_ids(study/warm['receipt_dir'], warm['seed'], expected[1:])"
+      },
+      {
+        "line": 79,
+        "call": "audit_context.audit_run(run, arm, cap)"
+      },
+      {
+        "line": 138,
+        "call": "(parent/'runs.json').read_text()"
+      },
+      {
+        "line": 150,
+        "call": "audit_context.audit_run(run, record['arm'], cap, priors)"
+      },
+      {
+        "line": 277,
+        "call": "run_study.audit_control_ids(parent, group['seed'], ['measured'])"
+      },
+      {
+        "line": 41,
+        "call": "(run/f'turn-{t}.output.ids').read_text().split()"
+      },
+      {
+        "line": 43,
+        "call": "(run/f'turn-{t}.prompt.ids').read_text().split()"
+      },
+      {
+        "line": 65,
+        "call": "(parent/'runs.json').read_text()"
+      },
+      {
+        "line": 317,
+        "call": "audit_context.audit_run(run, arm, cap, priors)"
+      },
+      {
+        "line": 117,
+        "call": "(parent/'runs.json').read_text()"
+      },
+      {
+        "line": 121,
+        "call": "audit_context.audit_run(run, record['arm'], cap)"
+      },
+      {
+        "line": 225,
+        "call": "(parent/'runs.json').read_text()"
+      },
+      {
+        "line": 232,
+        "call": "audit_context.audit_run(run, record['arm'], cap, priors)"
+      },
+      {
+        "line": 276,
+        "call": "(parent/'runs.json').read_text()"
+      },
+      {
+        "line": 293,
+        "call": "(run/'turns.tsv').open()"
+      },
+      {
+        "line": 41,
+        "call": "(run/f'turn-{t}.output.ids').read_text()"
+      },
+      {
+        "line": 43,
+        "call": "(run/f'turn-{t}.prompt.ids').read_text()"
+      },
+      {
+        "line": 334,
+        "call": "(run/'context-events.tsv').open()"
+      },
+      {
+        "line": 300,
+        "call": "(run/f'turn-{t}.output.ids').read_text().split()"
+      },
+      {
+        "line": 302,
+        "call": "(run/f'turn-{t}.prompt.ids').read_text().split()"
+      },
+      {
+        "line": 300,
+        "call": "(run/f'turn-{t}.output.ids').read_text()"
+      },
+      {
+        "line": 302,
+        "call": "(run/f'turn-{t}.prompt.ids').read_text()"
+      }
+    ]
+  },
+  {
+    "archive": "research/mtp-context-depth-20260921/latest-receipts/common-records.tar.gz",
+    "member": "audit_compare.py",
+    "sha256": "27f8e204216d0d8672aae2755ecb8ef360d8b0adce68a73dc3b304dfb9433d1b",
+    "imports": [
+      "import argparse",
+      "import csv",
+      "import hashlib",
+      "import json",
+      "import math",
+      "import sys",
+      "from pathlib import Path"
+    ],
+    "relevant_calls": [
+      {
+        "line": 44,
+        "call": "(data/'main-runners/DONE.json').read_text()"
+      },
+      {
+        "line": 59,
+        "call": "(parent/'runs.json').read_text()"
+      },
+      {
+        "line": 66,
+        "call": "audit_run(folder,record['arm'],cap,priors)"
+      },
+      {
+        "line": 131,
+        "call": "audit_run(folder,arm,cap,priors)"
+      },
+      {
+        "line": 108,
+        "call": "(parent/'runs.json').read_text()"
+      }
+    ]
+  }
+]
