@@ -47,8 +47,8 @@ def record_path(artifact):
 def artifact_record(path,cap):
  path=Path(path).absolute();out=Path(cap['output']);m.require(path.is_relative_to(out),'unmatched extern outside owned output')
  record=m.owned_json(record_path(path))
- fields={'schema','source_seal','package','manifest_root','features','argv','artifact','generated','input_seal','input_tuple','custody_key','compiler_unit','artifact_bundle','artifact_role','seal'}
- m.require(type(record) is dict and set(record)==fields and record['schema']=='memra-package-compiler-unit-v1','unknown artifact receipt shape')
+ fields={'schema','source_seal','package','manifest_root','features','argv','artifact','generated','input_seal','input_tuple','custody_key','compiler_unit','artifact_bundle','artifact_role','declared_outputs','declared_output_root','seal'}
+ m.require(type(record) is dict and set(record)==fields and record['schema']=='memra-package-compiler-unit-v2','unknown artifact receipt shape')
  body={k:v for k,v in record.items() if k!='seal'};m.require(m.digest(body)==record['seal'],'artifact receipt seal differs')
  tuple_fields={'domain','source_seal','admission','package','features','cfgs','dependencies','own_generated','nonidentity_env','codegen'}
  m.require(type(record['input_tuple']) is dict and set(record['input_tuple'])==tuple_fields and record['input_seal']==m.digest(record['input_tuple']),'compiled input tuple seal differs')
@@ -68,10 +68,24 @@ def artifact_record(path,cap):
   m.require(role in ('rlib','rmeta','so','binary'),'unknown produced compiler member role')
   member=path if role=='binary' else path.with_suffix('.'+role)
   m.require(checked(out,member)==entry,'compiler unit bundle member bytes/mode differ')
+ checked_declared_outputs(record['declared_output_root'],record['declared_outputs'],record['input_tuple']['own_generated'],out)
  for name,row in record['generated'].items():
   p=Path(name);m.require(p.is_absolute() and p.is_relative_to(out),'generated input outside owned output')
   m.require(checked(out,p)==row,'generated input bytes/mode differ')
  return record
+
+
+def checked_declared_outputs(root,physical,logical,output):
+ m.require(type(physical) is dict and type(logical) is dict,'declared output custody shape differs')
+ if not logical:
+  m.require(root is None and physical=={},'empty declared output binding differs');return
+ m.require(type(root) is str and Path(root).is_absolute() and Path(root).is_relative_to(output),'declared output root outside owned output')
+ directory=Path(root)
+ expected={str(directory/m.relative_name(name)):entry for name,entry in logical.items()}
+ m.require(physical==expected,'declared output physical/logical binding differs')
+ for name,row in physical.items():
+  m.file_entry_shape(row);m.require(checked(output,Path(name))==row,'declared output bytes/mode differ')
+ m.require(m.inventory(directory,package=False)==logical,'declared output membership differs')
 
 def dependencies(args,cap,owner=None):
  pairs=[];own=[]
@@ -292,7 +306,7 @@ def require_probe_custody_set(cap,key,row,manifest,args):
         out_relative=m.relative_name(authority['out_relative'])
         out=Path(cap['output'])/out_relative
         m.require(out==expected_probe,'runtime probe custody does not match actual producer OUT_DIR/probe')
-        descriptor,_=m.directory(out);os.close(descriptor)
+        descriptor,_=m.directory(producer);os.close(descriptor)
         argv=list(authority['argv']);m.require('--out-dir' in argv,'unknown finite probe output binding')
         actual_out=argv[argv.index('--out-dir')+1]
         argv[argv.index('--out-dir')+1]='<owned-output-role>'
@@ -390,11 +404,14 @@ def receiver(argv):
   m.require(own_inputs(cap,key,crate)==(own_generated,declared_generated,declared_env),'own compiler inputs changed')
   m.require(all(name in declared_generated and declared_generated[name]==entry for name,entry in dep_inputs(depfile,manifest,output,row['files']).items()),'actual generated input binding differs')
   checked_env_reads(depfile,declared_env,declared_generated)
+ m.require(own_inputs(cap,key,crate)==(own_generated,declared_generated,declared_env),'own compiler inputs changed before publication')
+ declared_output_root=str(Path(os.environ['OUT_DIR']).absolute()) if own_generated else None
+ checked_declared_outputs(declared_output_root,declared_generated,own_generated,output)
  require_probe_custody_set(cap,key,row,manifest,args)
  artifact_bundle={('rlib' if x.suffix=='.rlib' else 'rmeta' if x.suffix=='.rmeta' else 'so' if x.suffix=='.so' else 'binary'):checked(output,x) for x in paths}
  compiler_unit=m.digest({'inputs':input_payload,'argv':forward})
  for artifact in paths:
-  body={'schema':'memra-package-compiler-unit-v1','source_seal':m.digest(row),'package':key,'manifest_root':cap['roots'][key],'features':features,'argv':forward,'artifact':checked(output,artifact),'generated':generated,'input_seal':input_seal,'input_tuple':input_payload,'compiler_unit':compiler_unit,'artifact_bundle':artifact_bundle,'artifact_role':'rlib' if artifact.suffix=='.rlib' else 'rmeta' if artifact.suffix=='.rmeta' else 'so' if artifact.suffix=='.so' else 'binary'}
+  body={'schema':'memra-package-compiler-unit-v2','source_seal':m.digest(row),'package':key,'manifest_root':cap['roots'][key],'features':features,'argv':forward,'artifact':checked(output,artifact),'generated':generated,'declared_outputs':declared_generated,'declared_output_root':declared_output_root,'input_seal':input_seal,'input_tuple':input_payload,'compiler_unit':compiler_unit,'artifact_bundle':artifact_bundle,'artifact_role':'rlib' if artifact.suffix=='.rlib' else 'rmeta' if artifact.suffix=='.rmeta' else 'so' if artifact.suffix=='.so' else 'binary'}
   custody_key=m.digest({'inputs':input_payload,'argv':forward,'artifact':str(artifact),'produced':artifact_bundle})
   body['custody_key']=custody_key
   record={**body,'seal':m.digest(body)}
@@ -412,6 +429,7 @@ def receiver(argv):
    if record['package']==key:continue
    path=Path(item.split('=',1)[1])
    for role,file in record['artifact_bundle'].items():bindings.append({'path':str(path.with_suffix('.'+role)),'file':file})
+   bindings.extend({'path':name,'file':file} for name,file in record['declared_outputs'].items())
   bindings.extend({'path':name,'file':file} for name,file in declared_generated.items())
   value={'source_seal':source,'tuple':input_payload,'bindings':sorted(bindings,key=lambda x:x['path'])}
   m.immutable_json(output/('identity-'+id_value+'.json'),value)
