@@ -110,13 +110,20 @@ def reset_blob_reader(root):
 
 def blob_header(root, head, path):
     process = blob_reader(root)
+    entry = DataTree(root, commit(head)).entries.get(_path(path))
+    if entry is None or entry[1] != 'blob':
+        raise Refused('pinned merge guard blob unavailable: ' + path)
+    oid = entry[2]
     try:
-        process.stdin.write((commit(head) + ':' + _path(path) + '\n').encode()); process.stdin.flush()
+        # The immutable tree already resolved this path. Fetching its object ID
+        # avoids rewalking a receipt-heavy tree for every file. Verification
+        # still compares all raw bytes to fresh local descriptor reads.
+        process.stdin.write((oid + '\n').encode()); process.stdin.flush()
         fields = process.stdout.readline(512).split()
     except (OSError, BrokenPipeError):
         reset_blob_reader(root)
         raise Refused('pinned merge guard reader failed') from None
-    if len(fields) != 3 or fields[1] != b'blob' or not fields[2].isdigit():
+    if len(fields) != 3 or fields[0] != oid.encode() or fields[1] != b'blob' or not fields[2].isdigit():
         reset_blob_reader(root)
         raise Refused('pinned merge guard blob unavailable: ' + path)
     return process, int(fields[2])
