@@ -32,7 +32,7 @@ READER_PINS = {
     'tools/test_public_boundary.py':
         '8c56eb6bff531e71d80983294e2988bb9507173b37994ee138bca6d267004b0f',
     'tools/check-public-boundary.py':
-        '33a35dc59df398a0dab24aba2fc8f73c1d29f35c49c688ffab25f108953ce4f1',
+        '8075c0076971968c593694fbed7cbaced4855c2032582791470d9fa67cda052c',
 }
 
 CONTRACTS = {
