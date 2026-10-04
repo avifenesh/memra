@@ -123,11 +123,12 @@ def main():
     preserved(current.TOOL_CONTRACTS, before, names)
     drift_refusals = []
     for name in names:
-        for field in ('cpu', 'presence', 'required', 'requirements', 'native'):
+        for field in ('cpu', 'presence', 'required', 'python_requirements', 'native'):
             mutant = copy.deepcopy(current.TOOL_CONTRACTS)
             value = mutant[name].get(field)
             mutant[name][field] = (not value if isinstance(value, bool) else
-                                   value + ['unapproved-drift'] if isinstance(value, list) else True)
+                                   value + ['unapproved-drift'] if isinstance(value, list) else
+                                   value + '.drift' if isinstance(value, str) else True)
             try:
                 preserved(mutant, before, names)
             except AssertionError:
