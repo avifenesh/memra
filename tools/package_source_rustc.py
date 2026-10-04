@@ -103,19 +103,30 @@ def checked_declared_outputs(root,physical,logical,output):
   m.file_entry_shape(row);m.require(checked(output,Path(name))==row,'declared output bytes/mode differ')
  m.require(m.inventory(directory,package=False)==logical,'declared output membership differs')
 
+def compiler_builtin(cap,args,alias):
+ m.require(alias=='proc_macro' and crate_types(args)==['proc-macro']
+           and cap['recipe']['target']=='x86_64-unknown-linux-gnu'
+           and val(args,'--target',cap['recipe']['target'])==cap['recipe']['target']
+           and cap['compiler']['file']['sha256']=='d3a664c970a9fd8361b64194861bebc1ae37b9054e5ee3400dc1c9e691797eea'
+           and cap['compiler']['file']['mode']=='100755','unadmitted bare compiler extern')
+ return {'alias':'proc_macro','compiler_builtin':{'name':'proc_macro','compiler':cap['compiler']['file'],'target':cap['recipe']['target'],'scope':'selected compiler metadata, not package artifact or sysroot/binary recipe'}}
+
 def dependencies(args,cap,owner=None):
- pairs=[];own=[]
+ pairs=[];own=[];seen=set()
  for index,arg in enumerate(args):
   if arg=='--extern':m.require(index+1<len(args),'missing extern value');item=args[index+1]
   elif arg.startswith('--extern='):item=arg[len('--extern='):]
   else:continue
-  m.require('=' in item,'unmatched extern without explicit artifact')
-  alias,path=item.split('=',1);m.require(alias and path,'invalid extern binding')
+  alias=item.split('=',1)[0];m.require(alias and alias not in seen,'missing or duplicate extern alias');seen.add(alias)
+  if '=' not in item:
+   pairs.append(compiler_builtin(cap,args,alias))
+   continue
+  alias,path=item.split('=',1);m.require(path and alias!='proc_macro','invalid or shadowed extern binding')
   record=artifact_record(path,cap)
   if record['package']==owner:
    own.append(record);continue
   pairs.append({'alias':alias,'package':record['package'],'artifact_bundle':record['artifact_bundle'],'compiler_unit':record['compiler_unit'],'input_seal':record['input_seal']})
- return sorted(pairs,key=lambda x:(x['alias'],x['package'])),own
+ return sorted(pairs,key=lambda x:(x['alias'],x.get('package',''))),own
 
 def dep_inputs(depfile,package_root,output,source_files):
  # Pilot supports normal Cargo dep-info in owned paths without whitespace.
@@ -528,7 +539,7 @@ def receiver(argv):
   bindings=[]
   for index,arg in enumerate(args):
    item=args[index+1] if arg=='--extern' else arg[len('--extern='):] if arg.startswith('--extern=') else None
-   if item is None:continue
+   if item is None or '=' not in item:continue
    record=artifact_record(item.split('=',1)[1],cap)
    if record['package']==key:continue
    path=Path(item.split('=',1)[1])
