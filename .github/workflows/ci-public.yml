@@ -18,8 +18,10 @@ concurrency:
 jobs:
   route:
     runs-on: ubuntu-24.04
+    env:
+      TRUSTED_HEAD: ${{ github.event.pull_request.base.sha || github.event.before || github.sha }}
     outputs:
-      ci_mode: ${{ steps.plan.outputs.ci_mode }}
+      ci_mode: ${{ (github.repository == 'avifenesh/memra' && github.event.repository.owner.login == 'avifenesh' && github.event.repository.owner.id == 55848801 && ((github.event_name == 'pull_request' && github.event.pull_request.user.login == 'avifenesh' && github.event.pull_request.user.id == 55848801 && github.event.pull_request.base.ref == 'main' && github.event.pull_request.base.repo.full_name == 'avifenesh/memra' && github.event.pull_request.head.repo.owner.login == 'avifenesh' && github.event.pull_request.head.repo.owner.id == 55848801 && startsWith(github.event.pull_request.head.repo.full_name, 'avifenesh/')) || (github.event_name == 'push' && github.ref == 'refs/heads/main'))) && steps.plan.outputs.ci_mode == 'thin' && 'thin' || 'full' }}
       packages: ${{ steps.plan.outputs.packages }}
       requires_cuda: ${{ steps.plan.outputs.requires_cuda }}
       build: ${{ steps.plan.outputs.build }}
@@ -31,15 +33,38 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
-      - name: Route trusted event fields and bind source coverage
+          path: candidate
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        id: trusted-checkout
+        continue-on-error: true
+        with:
+          ref: ${{ env.TRUSTED_HEAD }}
+          path: trusted
+      - name: Route with the immutable base entry or literal full bootstrap
         id: plan
         env:
           EVENT_NAME: ${{ github.event_name }}
+          TRUSTED_CHECKOUT: ${{ steps.trusted-checkout.outcome }}
+          OWNER_MODE: ${{ github.repository == 'avifenesh/memra' && github.event.repository.owner.login == 'avifenesh' && github.event.repository.owner.id == 55848801 && ((github.event_name == 'pull_request' && github.event.pull_request.user.login == 'avifenesh' && github.event.pull_request.user.id == 55848801 && github.event.pull_request.base.ref == 'main' && github.event.pull_request.base.repo.full_name == 'avifenesh/memra' && github.event.pull_request.head.repo.owner.login == 'avifenesh' && github.event.pull_request.head.repo.owner.id == 55848801 && startsWith(github.event.pull_request.head.repo.full_name, 'avifenesh/')) || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
         run: |
-          python3 tools/public_ci.py route --event-name "$EVENT_NAME" \
-            --event "$GITHUB_EVENT_PATH" --out route.json
-          python3 tools/public_ci.py plan --route route.json --head "$GITHUB_SHA" \
-            --out validation-plan.json --github-output "$GITHUB_OUTPUT"
+          if [ "$OWNER_MODE" = true ] && [ "$TRUSTED_CHECKOUT" = success ] && [ -f trusted/tools/trusted_public_ci.py ] && [ ! -L trusted/tools/trusted_public_ci.py ]; then
+            python3 -I trusted/tools/trusted_public_ci.py route-plan --trusted-head "$TRUSTED_HEAD" \
+              --event-name "$EVENT_NAME" --event "$GITHUB_EVENT_PATH" --repo "$GITHUB_WORKSPACE/candidate" \
+              --head "$GITHUB_SHA" --out-dir "$GITHUB_WORKSPACE" --github-output "$GITHUB_OUTPUT"
+          else
+            python3 -I - <<'PY'
+            import json, os, pathlib
+            reason = 'external/unknown context selects full' if os.environ['OWNER_MODE'] != 'true' else 'trusted base entry unavailable; full bootstrap'
+            route = {'schema': 'memra-public-ci-route-v1', 'mode': 'full', 'event': os.environ['EVENT_NAME'], 'reason': reason, 'qualification': False}
+            plan = {'schema': 'memra-validation-plan-v1', 'mode': 'full', 'ci_mode': 'full', 'head': os.environ['GITHUB_SHA'], 'trusted_base': os.environ['TRUSTED_HEAD'], 'reason': reason, 'cpu_inventory': 'complete', 'selection_source': 'workflow literals', 'qualification': False}
+            pathlib.Path('route.json').write_text(json.dumps(route, indent=2) + '\n')
+            pathlib.Path('validation-plan.json').write_text(json.dumps(plan, indent=2) + '\n')
+            with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+                output.write('ci_mode=full\npackages=\nrequires_cuda=true\n')
+                output.write(''.join(name + '=true\n' for name in ('build', 'clippy', 'arch', 'engine', 'server')))
+            print(reason)
+            PY
+          fi
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: public-ci-plan
@@ -59,10 +84,17 @@ jobs:
     needs: route
     if: ${{ !cancelled() && needs.route.outputs.ci_mode == 'thin' }}
     runs-on: ubuntu-24.04
+    env:
+      TRUSTED_HEAD: ${{ github.event.pull_request.base.sha || github.event.before || github.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
+          path: candidate
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.TRUSTED_HEAD }}
+          path: trusted
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: public-ci-plan
@@ -80,7 +112,7 @@ jobs:
           toolchain: "1.97.1"
 
       - name: Execute mapped merge guards and affected callers once
-        run: python3 tools/public_ci.py contracts --plan validation-plan.json --out contract-execution.json
+        run: python3 -I trusted/tools/trusted_public_ci.py contracts --trusted-head "$TRUSTED_HEAD" --repo "$GITHUB_WORKSPACE/candidate" --plan validation-plan.json --out contract-execution.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: public-ci-execution
@@ -91,15 +123,22 @@ jobs:
     needs: route
     if: ${{ !cancelled() && needs.route.outputs.ci_mode == 'thin' }}
     runs-on: ubuntu-24.04
+    env:
+      TRUSTED_HEAD: ${{ github.event.pull_request.base.sha || github.event.before || github.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
+          path: candidate
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.TRUSTED_HEAD }}
+          path: trusted
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: public-ci-plan
       - name: Check every introduced blob in the pinned commit range
-        run: python3 tools/public_ci.py boundary --plan validation-plan.json --out boundary-range.json
+        run: python3 -I trusted/tools/trusted_public_ci.py boundary --trusted-head "$TRUSTED_HEAD" --repo "$GITHUB_WORKSPACE/candidate" --plan validation-plan.json --out boundary-range.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: public-ci-boundary
@@ -293,8 +332,18 @@ jobs:
     needs: [route, full, merge-validation, boundary, build, clippy, arch]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
+    env:
+      TRUSTED_HEAD: ${{ github.event.pull_request.base.sha || github.event.before || github.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          path: candidate
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        if: needs.route.outputs.ci_mode == 'thin'
+        with:
+          ref: ${{ env.TRUSTED_HEAD }}
+          path: trusted
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: public-ci-plan
@@ -307,12 +356,25 @@ jobs:
           JOB_RESULTS: ${{ toJSON(needs) }}
           CI_MODE: ${{ needs.route.outputs.ci_mode }}
         run: |
-          python3 -c 'import os,pathlib; pathlib.Path("job-results.json").write_text(os.environ["JOB_RESULTS"])'
+          python3 -I -c 'import os,pathlib; pathlib.Path("job-results.json").write_text(os.environ["JOB_RESULTS"])'
           if [ "$CI_MODE" = thin ]; then
-            python3 tools/public_ci.py result --plan validation-plan.json --needs job-results.json \
+            python3 -I trusted/tools/trusted_public_ci.py result --trusted-head "$TRUSTED_HEAD" \
+              --repo "$GITHUB_WORKSPACE/candidate" --plan validation-plan.json --needs job-results.json \
               --execution contract-execution.json --out merge-result.json
           else
-            python3 tools/public_ci.py result --plan validation-plan.json --needs job-results.json --out merge-result.json
+            python3 -I - <<'PY'
+            import json, os, pathlib
+            plan = json.loads(pathlib.Path('validation-plan.json').read_text())
+            needs = json.loads(os.environ['JOB_RESULTS'])
+            head = os.environ['GITHUB_SHA']
+            if plan.get('schema') != 'memra-validation-plan-v1' or plan.get('mode') != 'full' or plan.get('head') != head or plan.get('qualification') is not False:
+                raise SystemExit('Missing or stale full plan')
+            if needs.get('route', {}).get('result') != 'success' or needs.get('full', {}).get('result') != 'success' or needs.get('full', {}).get('outputs', {}).get('validated_head') != head:
+                raise SystemExit('Full CPU result is missing, failed or stale')
+            result = {'schema': 'memra-ci-merge-result-v1', 'head': head, 'mode': 'full', 'required_jobs': ['route', 'full'], 'success': True, 'qualification': False}
+            pathlib.Path('merge-result.json').write_text(json.dumps(result, indent=2) + '\n')
+            print('Conclusive full CPU result: ' + head)
+            PY
           fi
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:

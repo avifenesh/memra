@@ -348,8 +348,9 @@ def source_plan(root, receipt, head):
             validation_plan.git(root, 'merge-base', '--is-ancestor', commit(receipt.get('head')), head)
         elif receipt.get('head') != head:
             raise Refused('event head does not match candidate source')
-        for name in ('tools/public_ci.py', 'tools/ci_merge_validation.json',
+        for name in ('tools/trusted_public_ci.py', 'tools/public_ci.py', 'tools/ci_merge_validation.json',
                      'tools/sparse_input_preflight.py',
+                     'tools/support_record_inputs.py', 'tools/skip-census.py', 'tools/validation_inputs.json',
                      'tools/validation_plan.py', 'tools/cpu_workflow_inputs.py', POLICY_PATH,
                      '.github/workflows/ci-public.yml'):
             if _regular(before, name) != _regular(after, name):
@@ -608,8 +609,9 @@ def execute_contracts(root, plan):
     head = commit(plan.get('head'))
     if validation_plan.git(root, 'rev-parse', 'HEAD').decode().strip() != head:
         raise Refused('plan source does not match checkout')
-    for path in ('tools/public_ci.py', 'tools/validation_plan.py',
+    for path in ('tools/trusted_public_ci.py', 'tools/public_ci.py', 'tools/validation_plan.py',
                  'tools/sparse_input_preflight.py',
+                 'tools/support_record_inputs.py', 'tools/skip-census.py', 'tools/validation_inputs.json',
                  'tools/cpu_workflow_inputs.py', POLICY_PATH, INVENTORY, '.github/workflows/ci-public.yml'):
         if _regular(validation_plan.Tree(root, head), path) != _regular(
                 validation_plan.LocalTree(root), path):

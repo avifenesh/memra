@@ -48,8 +48,8 @@ class PublicCiIntegration(unittest.TestCase):
                        OMP_NUM_THREADS='1')
             repo = scratch / 'repo'
 
-            def command(args, *, ok=True, cwd=repo):
-                result = subprocess.run(args, cwd=cwd, env=env, text=True,
+            def command(args, *, ok=True, cwd=repo, extra_env=None):
+                result = subprocess.run(args, cwd=cwd, env=dict(env, **(extra_env or {})), text=True,
                                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
                 if ok:
                     self.assertEqual(result.returncode, 0, result.stdout)
@@ -127,6 +127,143 @@ class PublicCiIntegration(unittest.TestCase):
                 command([sys.executable, str(repo / 'tools/public_ci.py'), 'plan',
                          '--route', str(route_file), '--head', head, '--repo', str(repo), '--out', str(out)])
                 return json.loads(out.read_text())
+
+            # The published vulnerable caller actually executes a hostile PR
+            # router/full-plan. The corrected caller uses isolated base code and
+            # workflow-literal full selection, even from the candidate cwd.
+            trusted = scratch / 'trusted'
+            command(['/usr/bin/git', '-c', 'init.templateDir=' + str(templates),
+                     'clone', '--shared', '--no-checkout', str(repo), str(trusted)], cwd=scratch)
+            command(['/usr/bin/git', 'sparse-checkout', 'set', 'tools'], cwd=trusted)
+            command(['/usr/bin/git', 'checkout', '-q', '--detach', source], cwd=trusted)
+            router_path = repo / 'tools/public_ci.py'
+            router_original = router_path.read_text()
+            hostile = '''import pathlib, sys
+a = sys.argv
+out = pathlib.Path(a[a.index('--out') + 1])
+if a[1] == 'route':
+    out.write_text('{"mode":"thin","qualification":false}')
+else:
+    out.write_text('{"mode":"full","jobs":{"build":false,"clippy":false,"arch":false}}')
+    output = pathlib.Path(a[a.index('--github-output') + 1])
+    output.write_text('ci_mode=thin\\nbuild=false\\nclippy=false\\narch=false\\nserver=false\\nengine=false\\nportable=false\\ncore=false\\nlanes=false\\npublish=false\\nrequires_cuda=false\\ncontracts=none\\n')
+'''
+            malicious_head = commit_file('tools/public_ci.py', hostile)
+            event_file = scratch / 'hostile-event.json'
+            event_file.write_text(json.dumps(event(source, malicious_head, author=external)))
+            old_route = scratch / 'old-route.json'
+            command([sys.executable, 'tools/public_ci.py', 'route', '--event-name', 'pull_request',
+                     '--event', str(event_file), '--out', str(old_route)])
+            with self.assertRaises(AssertionError):
+                self.assertEqual(json.loads(old_route.read_text())['mode'], 'full')
+            old_workflow = command(['/usr/bin/git', 'show',
+                '2ab8eec8ddd5b27ecaaf22f55ddf728151be560c:.github/workflows/ci.yml'])
+            self.assertIn('tools/ci-change-class.sh full "$GITHUB_SHA"', old_workflow)
+            old_outputs = scratch / 'old-outputs'
+            command(['bash', 'tools/ci-change-class.sh', 'full', malicious_head,
+                     str(scratch / 'old-plan.json'), str(old_outputs)])
+            with self.assertRaises(AssertionError):
+                self.assertNotIn('build=false', old_outputs.read_text())
+            # Also tamper the producer, rather than relying on the router only.
+            producer = repo / 'tools/ci-change-class.sh'; producer_original = producer.read_text()
+            producer_head = commit_file('tools/ci-change-class.sh', '#!/bin/sh\necho hostile-producer-ran > "' + str(scratch / 'producer-marker') + '"\n')
+            marker = scratch / 'python-marker'
+            customization = 'from pathlib import Path\nPath(' + repr(str(marker)) + ').write_text("candidate Python import ran")\n'
+            commit_file('sitecustomize.py', customization)
+            hostile_head = commit_file('tools/json.py', customization + 'raise RuntimeError("candidate json module imported")\n')
+            attack_env = {'PYTHONPATH': str(repo) + os.pathsep + str(repo / 'tools')}
+            command([sys.executable, 'tools/public_ci.py', 'route', '--out', str(old_route)],
+                    extra_env=attack_env)
+            self.assertTrue(marker.exists())
+            marker.unlink()
+            refused = command([sys.executable, '-c', 'import json'], extra_env=attack_env, ok=False)
+            self.assertIn('candidate json module imported', refused)
+            self.assertTrue(marker.exists())
+            marker.unlink()
+            event_file.write_text(json.dumps(event(source, hostile_head, author=external)))
+            out_dir = scratch / 'trusted-output'; out_dir.mkdir()
+            trusted_args = [sys.executable, '-I', str(trusted / 'tools/trusted_public_ci.py'),
+                            'route-plan', '--trusted-head', source, '--repo', str(repo),
+                            '--event-name', 'pull_request', '--event', str(event_file),
+                            '--head', hostile_head, '--out-dir', str(out_dir)]
+            command(trusted_args, extra_env=attack_env)
+            isolated_plan = json.loads((out_dir / 'validation-plan.json').read_text())
+            self.assertEqual(isolated_plan['mode'], 'full')
+            self.assertTrue(all(isolated_plan['jobs'].values()))
+            self.assertEqual(isolated_plan['head'], hostile_head)
+            self.assertFalse(marker.exists())
+            self.assertFalse((scratch / 'producer-marker').exists())
+            public_text = (ROOT / '.github/workflows/ci-public.yml').read_text()
+            route_job = public_text.split('\n  route:\n', 1)[1].split('\n  full:\n', 1)[0]
+            self.assertIn("github.event.pull_request.user.id == 55848801", route_job)
+            self.assertIn("github.event.pull_request.head.repo.owner.id == 55848801", route_job)
+            self.assertIn("steps.plan.outputs.ci_mode == 'thin' && 'thin' || 'full'", route_job)
+            self.assertNotIn('python3 tools/public_ci.py', route_job)
+            route_body = route_job.split('        run: |\n', 1)[1].split('      - uses: actions/upload-artifact', 1)[0]
+            route_body = ''.join(line[10:] if line.startswith('          ') else line for line in route_body.splitlines(keepends=True))
+            trusted_entry = trusted / 'tools/trusted_public_ci.py'
+            entry_bytes = trusted_entry.read_bytes(); trusted_entry.unlink()
+            bootstrap_outputs = scratch / 'bootstrap-outputs'
+            try:
+                command(['bash', '-e', '-c', route_body], cwd=scratch,
+                        extra_env=dict(attack_env, OWNER_MODE='true', TRUSTED_CHECKOUT='success',
+                                       TRUSTED_HEAD=source, EVENT_NAME='pull_request',
+                                       GITHUB_SHA=hostile_head, GITHUB_WORKSPACE=str(scratch),
+                                       GITHUB_EVENT_PATH=str(event_file), GITHUB_OUTPUT=str(bootstrap_outputs)))
+                self.assertIn('ci_mode=full', bootstrap_outputs.read_text())
+                self.assertEqual(json.loads((scratch / 'validation-plan.json').read_text())['mode'], 'full')
+                self.assertFalse(marker.exists())
+            finally:
+                trusted_entry.write_bytes(entry_bytes)
+            # Run the actual new full selection body with BOTH hostile helpers
+            # and candidate import traps present. Its outputs are workflow literals.
+            full_text = (ROOT / '.github/workflows/ci.yml').read_text()
+            changes = full_text.split('\n  changes:\n', 1)[1].split('\n  gates:\n', 1)[0]
+            literal_outputs = changes.split('    outputs:\n', 1)[1].split('    steps:\n', 1)[0]
+            for name in ('build', 'clippy', 'server', 'engine', 'portable', 'core', 'lanes', 'arch', 'publish', 'requires_cuda'):
+                self.assertIn('      ' + name + ': "true"\n', literal_outputs)
+            body = changes.split('        run: |\n', 1)[1].split('      - name: Retain', 1)[0]
+            body = ''.join(line[10:] if line.startswith('          ') else line for line in body.splitlines(keepends=True))
+            command(['bash', '-e', '-c', body], extra_env=dict(attack_env, GITHUB_SHA=hostile_head))
+            literal_plan = json.loads((repo / 'validation-plan.json').read_text())
+            self.assertTrue(all(literal_plan['jobs'].values()))
+            self.assertEqual(literal_plan['head'], hostile_head)
+            self.assertFalse(marker.exists())
+            self.assertFalse((scratch / 'producer-marker').exists())
+            (repo / 'validation-plan.json').unlink()
+            complete_body = full_text.split('\n  complete:\n', 1)[1].split('        run: |\n', 1)[1]
+            complete_body = ''.join(line[10:] if line.startswith('          ') else line for line in complete_body.splitlines(keepends=True))
+            full_names = ('changes', 'gates', 'boundary', 'build', 'clippy', 'server-tests', 'portable-suites', 'engine-tests', 'arch-coverage', 'publish-dryrun')
+            full_results = {name: {'result': 'success'} for name in full_names}
+            complete_output = scratch / 'complete-output'
+            complete_env = dict(attack_env, GITHUB_SHA=hostile_head, GITHUB_OUTPUT=str(complete_output),
+                                JOB_RESULTS=json.dumps(full_results))
+            command(['bash', '-e', '-c', complete_body], extra_env=complete_env)
+            self.assertIn('validated_head=' + hostile_head, complete_output.read_text())
+            full_results['build']['result'] = 'skipped'
+            complete_env['JOB_RESULTS'] = json.dumps(full_results)
+            self.assertIn('Complete CPU inventory did not succeed',
+                          command(['bash', '-e', '-c', complete_body], extra_env=complete_env, ok=False))
+            self.assertFalse(marker.exists())
+            # A physically changed immutable loader dependency cannot import.
+            trusted_router = trusted / 'tools/public_ci.py'; trusted_original = trusted_router.read_text()
+            trusted_router.write_text(trusted_original + '\n# changed trusted bytes\n')
+            refused = command(trusted_args, extra_env=attack_env, ok=False)
+            self.assertIn('trusted input bytes differ: public_ci.py', refused)
+            trusted_router.write_text(trusted_original)
+            wrong_root = list(trusted_args); wrong_root[wrong_root.index('--repo') + 1] = str(trusted)
+            self.assertIn('separate siblings', command(wrong_root, ok=False))
+            # Restore the actual candidate tree before the remaining legacy
+            # graph/caller controls. No override of HOME or runtime identity.
+            commit_file('tools/public_ci.py', router_original)
+            commit_file('tools/ci-change-class.sh', producer_original)
+            command(['/usr/bin/git', 'rm', '--sparse', 'sitecustomize.py', 'tools/json.py'])
+            command(['/usr/bin/git', 'commit', '-qm', 'restore hostile fixture'])
+            restored_head = command(['/usr/bin/git', 'rev-parse', 'HEAD']).strip()
+            event_file.write_text(json.dumps(event(source, restored_head)))
+            command(trusted_args[:-4] + ['--head', restored_head, '--out-dir', str(out_dir)], extra_env=attack_env)
+            self.assertEqual(json.loads((out_dir / 'validation-plan.json').read_text())['ci_mode'], 'thin')
+            self.assertFalse(marker.exists())
 
             # Actual graph, immutable source, ordinary owner docs change.
             head = commit_file('research/public-ci-integration.md', 'fixture docs\n')
