@@ -2561,3 +2561,64 @@ Run `python3 tools/test_dense_control_cache.py` for the CPU admission regression
 Actual native build/restore, all 18 outputs after each path and fresh-build ELF
 metadata analysis are sealed in `research/dense-control-cache-20261003/PROOF.json`.
 This artifact reuse adds no model, numerical, serving or runtime qualification.
+
+
+## Public CPU CI modes
+
+Routing and planning execute from the immutable event-base checkout through `tools/trusted_public_ci.py`, with isolated Python and an explicit sibling candidate repo. Missing trusted entry selects FULL without importing candidate routing code. The full workflow's job selection and result checks are declarative; candidate planner output cannot narrow them. Changes to routing/helper/policy source expand FULL until the reviewed base is updated. Workflow YAML and code under test still require source review.
+
+Owner-authored PRs and pushes to main use `public-ci`. PR ownership is the trusted
+PR user login and immutable account ID, with repository/head lineage checked.
+The actor, labels and commit authors do not select thin mode. Unknown events,
+missing inputs, changed routing policy and unknown dependency ownership expand
+to the complete CPU workflow or fail the result check.
+
+Thin mode runs affected build and clippy commands, the applicable existing native
+compile/ABI/SASS/admission cells, including all 18 dense native control arms
+when the engine is affected, static merge censuses, changed-input CPU
+contracts and a scan of every introduced blob in the pinned commit range.
+Functional tests for an owner change run locally before push. The contract runner
+records selected, executed and successful identities against the same commit.
+Workflow-only labels execute their exact commands once in thin mode; the full
+workflow continues to execute its original four mandatory dedicated callers.
+`tools/ci_merge_validation.json` binds the full command inventory, the complete
+full/public workflow bytes (including conditions, error handling, matrices and
+environment), and static merge guard inputs. A changed command or missing mapping cannot silently skip
+coverage. Update its workflow and full step hashes deliberately with a reviewed workflow edit.
+
+External PRs, the daily default-branch schedule and release/publish dependencies
+run the existing complete CPU inventory in `ci.yml`, including the 241 validation
+controls, embedded CPU contracts, core/server/portable/engine suites, arch
+coverage, publish dry-run and whole-tree public-boundary/allowlist checks. The
+full result requires every component to succeed. Release and crates publication
+wait for this result before effects; native qualification, tag/version/claim
+checks and qualified binary verification retain their existing rules.
+
+`ci/merge-result` reports only a conclusive source-bound result. It is not a
+GitHub-required check until a repository protection rule requires it. A skipped,
+failed or cancelled selected job, stale execution receipt or wrong commit fails
+the result. Thin boundary scanning does not prove whole-tree allowlist drift;
+that remains in full mode and policy/input changes select full validation.
+
+The event/source/command contract has one real Git/event integration witness:
+`python3 tools/test_public_ci_integration.py`. It uses the actual package graph,
+owner/external/fork/main/daily/release events, native/include/source changes,
+real caller execution and coherent routing/execution refusal controls. This is
+CPU CI orchestration evidence, not model, runtime or serving qualification.
+Manual/funded GPU and receipt workflows are outside this change. No new runtime
+flag or speed claim accompanies these modes.
+
+
+Thin merge validation also retains the live admission guards reached by its source
+plan. Engine reach runs the PDL first-statement census over every pinned immediate
+`.cu`/`.cuh` input. Runtime Rust or FLAGS.md changes run flag coverage and row shape,
+rather than using `--list` as coverage. Gate/test Rust changes run the OFF-arm
+unset lint. Support-record reach runs the live support-state census in addition
+to its selected refusal controls. Server reach keeps the exact-source coalescer
+contract. Reader code stays frozen; current input membership, bytes and executable
+modes are checked before execution. Missing/unproven closure expands or refuses.
+The receipt distinguishes selected, executed and successful merge guards; an
+omitted required guard cannot become a successful result. The real Git/event
+witness includes production PDL omission, undocumented runtime read, unpinned
+OFF-arm unset and unsupported doc claim refusals. These are CPU source/admission
+checks, with no native compilation or numerical qualification claimed.

@@ -574,8 +574,14 @@ parallel; version numbers are a shared resource. Before tagging vX.Y.Z:
 
 ## Match validation to the changed behavior
 
-GitHub runners have no GPU. `.github/workflows/ci.yml` selects affected build targets and CPU
-suite groups through `tools/validation_plan.py`; unknown impact runs the complete CPU gate.
+GitHub runners have no GPU. `.github/workflows/ci-public.yml` routes owner-authored
+PRs and main pushes to thin lint/build and source-bound merge validation. Run the
+owner change's affected functional tests locally before pushing. External PRs,
+the daily default-branch run and release/publish dependencies use the complete
+CPU inventory in `.github/workflows/ci.yml`. `tools/validation_plan.py` retains
+its package/include/native impact graph; unknown ownership expands or refuses.
+The conclusive `ci/merge-result` is not enforced by GitHub until a protection rule
+requires it. Native qualification and GPU selection remain separate and unchanged.
 nvcc compilation needs no GPU. The GPU battery is chosen from the
 change's content and what it reaches; it is not run whole on every merge. Owner, 2026-09-27:
 "we dont need to run full battery on every change, its depend on change content and what it

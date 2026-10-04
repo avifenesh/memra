@@ -1,0 +1,536 @@
+{
+  "schema": "memra-ci-merge-inventory-v1",
+  "full_steps": [
+    {
+      "job": "changes",
+      "step": "classify",
+      "sha256": "c31fcfedfd1228e9736baf799592cabab60dd38b702e87932dd67ec84068bcdd"
+    },
+    {
+      "job": "gates",
+      "step": "Isolate the gates toolchain from runner component files",
+      "sha256": "48c45a4992d433ffb85461d66cc1e6a357b2cb76cc06c0f2e7e71a73d09f449f"
+    },
+    {
+      "job": "gates",
+      "step": "Verify the pinned compiler and components",
+      "sha256": "2beb3c8314d4d7ac9d1a3f2cc863fe3b3680b64aa89f1d216b37427500e6de1a"
+    },
+    {
+      "job": "gates",
+      "step": "Immutable GitHub Action pin census",
+      "sha256": "b605ff6c2f5323fd37ceba06473ddfe7f7285ef0b10987a6b48421e5742e3003"
+    },
+    {
+      "job": "gates",
+      "step": "Change selection and edge coverage refusal controls",
+      "sha256": "b99b377efb69f5a9a6186c2e0f156bf92c601a554c18a40f11fbeafb3fd1e221"
+    },
+    {
+      "job": "gates",
+      "step": "Ensure ripgrep for source admission censuses",
+      "sha256": "f26f46e4492490696821151544e4255eddca4cbd8f31ecc4f3342ac58301ea15"
+    },
+    {
+      "job": "gates",
+      "step": "Public CPU CI event, source and result integration",
+      "sha256": "381749e3335e5cbe268fe3a72ebdb8bdca073fed5d7d39592c817113276f1f42"
+    },
+    {
+      "job": "gates",
+      "step": "Declared changed-input CPU contracts (missing selection runs all available)",
+      "sha256": "1f7d166807acff2df5fcf0a1c75e8e69c760e777dedd96e03ff21bb3ecdd7302"
+    },
+    {
+      "job": "gates",
+      "step": "Expert-tier plan self-test assertion admission (CPU-only)",
+      "sha256": "f0ff4cbbef5cdf4a66c94071fcf30130cd41f4355c4d9af8472f12df63f46e77"
+    },
+    {
+      "job": "gates",
+      "step": "SFT generator CPU control admission",
+      "sha256": "a86583db6c20a19db6f77286c80dc7622fc2f0d991d589c97aced6005e3973a3"
+    },
+    {
+      "job": "gates",
+      "step": "Score-shard self-test assertion admission (CPU-only)",
+      "sha256": "4dcfb0900fb66e8cfe5b6901051ff6285f73307b7e03097a1c552bd22fc8febe"
+    },
+    {
+      "job": "gates",
+      "step": "Agreement-summary self-test assertion admission (CPU-only)",
+      "sha256": "a51396ff7199a1523af00ce96f352014d35c54a37cb37f0d7135944c9d04e1d2"
+    },
+    {
+      "job": "gates",
+      "step": "Exact-source coalescer membership and wait contracts (CPU-only)",
+      "sha256": "aa05bc2adc7833852f3e4f1c20957f55282020a34d240712b82699b8dc9e448f"
+    },
+    {
+      "job": "gates",
+      "step": "Workflow files carry no duplicate mapping key (stdlib walker; safe_load would pass)",
+      "sha256": "e9efdb989f3520e5b94b77e91d983a17f0adfcaea2af200d7a80de3e0f99f79a"
+    },
+    {
+      "job": "gates",
+      "step": "Tracked source, docs and data carry no merge-conflict marker line",
+      "sha256": "3794de825dfe27afc95f4c0aae10052823af49a6dae1adb97648cee3b1bc4ed0"
+    },
+    {
+      "job": "gates",
+      "step": "Content-bound release qualification controls (CPU-only)",
+      "sha256": "3528d53c029b53e918717fe0afe14acf96d35bcab4ecf514ba3529ad32ce6e64"
+    },
+    {
+      "job": "gates",
+      "step": "Prepare compiler input isolation",
+      "sha256": "25acb42b39051311bb5e60e87e8e3f02299e753286dbc525ba2ae4a9b5d77426"
+    },
+    {
+      "job": "gates",
+      "step": "Compiler input view and filesystem boundary (CPU-only)",
+      "sha256": "46a242b88e7786bebb079d248b8f52fbb20c03d6e8779e1164442377a7bd02f0"
+    },
+    {
+      "job": "gates",
+      "step": "Local development selection and immutable reuse controls (CPU-only)",
+      "sha256": "f89f2c838715b2b06ce1ebf84d3e3167e8c7891ceca39bcde3367f4ca13ce4eb"
+    },
+    {
+      "job": "gates",
+      "step": "Cache qualification harness regressions (unittest floor 15; 16 measured 2026-09-21)",
+      "sha256": "c473e7c7ddde32db188a6b893e9ad13fa2242784e13e1321b2e28ee12cc5ef1c"
+    },
+    {
+      "job": "gates",
+      "step": "Q35 cold-mixed gate grid law and banked replay (unittest floor 13; 13 measured 2026-09-27, memra#777)",
+      "sha256": "b4f4fc5c00b7daf243d0a8f444bea86e2b6e986defaf44bb0389e843ad872241"
+    },
+    {
+      "job": "gates",
+      "step": "CPU-only artifact path safety tests",
+      "sha256": "252097dedf467393c73bb6b197879c0a9439ac8bddf3be96efea290feb88ddd3"
+    },
+    {
+      "job": "gates",
+      "step": "Chain-launched kernels open with the PDL entry",
+      "sha256": "2187b83ce2ef5086640cb28a60026a4c257e1a01641e10f0cda3b53d13203825"
+    },
+    {
+      "job": "gates",
+      "step": "Per-card native qualification runner controls",
+      "sha256": "0e5275866048ef9fa1de276b2526a9b8afae7327940c78fb2850c19f4f385724"
+    },
+    {
+      "job": "gates",
+      "step": "Flags census self-test",
+      "sha256": "9b29a9de45600d9cc1f122a10746ecac2d9c8b06b1426e12b461d75713bd789e"
+    },
+    {
+      "job": "gates",
+      "step": "Gate remove_var lint & self-test",
+      "sha256": "2a4f06cedbed4ec98b87426cf6a2d8a74e020826c7fb1060a5db12fa6b2c740c"
+    },
+    {
+      "job": "gates",
+      "step": "Docs-registry census",
+      "sha256": "d1e63b5c39eb6c7b02fdf965e953a4c3a513b3025c47ab10e4549a65d8bdbc66"
+    },
+    {
+      "job": "gates",
+      "step": "Support-state census",
+      "sha256": "d145b70e2cb797201244ffdb2c7ae11e87d64be4758fe01cb7bb05b0029371f2"
+    },
+    {
+      "job": "gates",
+      "step": "Flags-guard pre-push teeth fixture",
+      "sha256": "75c9c15a79e3b145f4773fb3bef60bec61cc4c34ca6f4a10492c98e8b327d1be"
+    },
+    {
+      "job": "gates",
+      "step": "Gate-integrity teeth fixture (round 2)",
+      "sha256": "2d7e17f12cc7d5a821980312e3190796063bd4bf938a246de3c9d011480d1742"
+    },
+    {
+      "job": "gates",
+      "step": "Argmax-margin input and verdict controls",
+      "sha256": "961aa87d8b804382bace87bed88eb7adc817fb7bb7e5f19c7e42028e324fa055"
+    },
+    {
+      "job": "gates",
+      "step": "Push-range fixture (round 1)",
+      "sha256": "10bcf1710a99b5489f36ef5c4ea8a1f8489bf20dee7ebc70b423733419cd8581"
+    },
+    {
+      "job": "gates",
+      "step": "Gate-template teeth fixture (round 3)",
+      "sha256": "6dff25fa342ee2196ea388c3984288d8542c05d90cc97ed689b4de2c9ff27923"
+    },
+    {
+      "job": "gates",
+      "step": "Release-guard teeth fixture",
+      "sha256": "d114e20c5800f38c2234562f0a7271139b6dfb6d2eb8b63df25c9960ae50d57b"
+    },
+    {
+      "job": "gates",
+      "step": "Release-battery coverage fixtures (CPU only)",
+      "sha256": "e1455ba5e25a7bd5ddd86278e6a0b01b243542f1991e10a63880fbbc56e862f0"
+    },
+    {
+      "job": "gates",
+      "step": "Physical GPU resolution fixtures (CPU only)",
+      "sha256": "a1fc0afa3a2703c71972273402b9c8b4cee68a7573ad58867dd919cab0d61145"
+    },
+    {
+      "job": "gates",
+      "step": "Changelog teeth fixture",
+      "sha256": "5f3d6592c60bc6a532236c9bf202ccc3b4f199794f72e0da5606e1861ae91c60"
+    },
+    {
+      "job": "gates",
+      "step": "Releasability \u2014 workspace publish census (members vs publish.yml list)",
+      "sha256": "72c39c64d77abfe57092cb141204dc760d7ae5b8aa2e2ff4073b78c5b51018aa"
+    },
+    {
+      "job": "gates",
+      "step": "Releasability \u2014 stub ABI census (portable-arch stub .cu vs their real twins)",
+      "sha256": "b885156a37fa26b4e87577b768c3b022ede6461693552e7b00c9d28a026f6a12"
+    },
+    {
+      "job": "gates",
+      "step": "Releasability \u2014 arch matrix census (ci compiles every arch release builds)",
+      "sha256": "de02679f96f28d38850eb5ed543ef908ddab354143ab518581d2acabd7069cea"
+    },
+    {
+      "job": "gates",
+      "step": "Releasability census teeth (all three proven able to fail)",
+      "sha256": "1cc59ae4b1d2c1fa1183b09a9acf7bccba124bc825f85120efe92f40cedb2077"
+    },
+    {
+      "job": "gates",
+      "step": "Fatbin-lookup census teeth",
+      "sha256": "bd0a205b04a19182a06a02468f0263694f88ad0c90b5f457f92def6aef091849"
+    },
+    {
+      "job": "gates",
+      "step": "Skip census negative controls (memra #484)",
+      "sha256": "6c3a9f3c39aca081a0b4c7d526aadb29a71a9098312e5bd8d918cf9f5413edf0"
+    },
+    {
+      "job": "gates",
+      "step": "Unit suites (CUDA-free crates) + skip census",
+      "sha256": "54a7a8724f6deb70702b9cf4ee5a92de529d07a0901df64af9482230a0c9ef0a"
+    },
+    {
+      "job": "gates",
+      "step": "Canonical config and shared JSON feature-unification contracts",
+      "sha256": "73dda1f687dd8f59d70a176a4ad4eb02b4ac656fbef7dfe1b1cd02dedadd930c"
+    },
+    {
+      "job": "gates",
+      "step": "Network guard address classification contracts (CPU-only, no skips or ignores)",
+      "sha256": "76c348333dbfeb48b2edec564c2db2c599f6a465c62242073a50e2f60390b34f"
+    },
+    {
+      "job": "gates",
+      "step": "Indexed MLA and KDA memory fixture contracts (CPU-only)",
+      "sha256": "23d95fb432750ff6215b47bbd4005260e1aae3377da156ec896184b3f4c86f1f"
+    },
+    {
+      "job": "gates",
+      "step": "Unit suite (memra-lanes \u2014 lane admission + streaming-audio scheduler)",
+      "sha256": "280e453a195c5c42791b81846c14432a044fc98e0551313d83d9d05044e259d7"
+    },
+    {
+      "job": "boundary",
+      "step": "Public-boundary policy check",
+      "sha256": "6c255d6c0017c44a4a3fa6173a02ffdb7109265a9ddd2494c158aa5f4f33ad4e"
+    },
+    {
+      "job": "boundary",
+      "step": "Allowlist drift (every grandfathered entry still describes a live finding)",
+      "sha256": "0b7c333572260bcb4875da281e48ed59d66b4796cdc84c11e2a523c7d5fdeb1a"
+    },
+    {
+      "job": "build",
+      "step": "Install CUDA 13.1 (nvcc + headers only \u2014 compile needs no GPU)",
+      "sha256": "3060f51981a1b3a218170425cbd5facb8540361ca66b15772d92d661117edaa7"
+    },
+    {
+      "job": "build",
+      "step": "Build affected packages and consumers (release bins)",
+      "sha256": "c7957beaf66e6580a500ef3cb8182167d6ec03ab23268b187bb3e5bb369d8b69"
+    },
+    {
+      "job": "build",
+      "step": "Build identity (the release binary reports a real fingerprint)",
+      "sha256": "a649e13a351d116e2dc0b46ad498cc1d5735439c2b62d6e1a7cdca0b5cbc025c"
+    },
+    {
+      "job": "build",
+      "step": "Parity geometry and argmax instrument tests",
+      "sha256": "1fb4778bee977ed08f862ffe242ee4bc16592241e9e1b0adb14b179fb7f854bb"
+    },
+    {
+      "job": "build",
+      "step": "DSV4 sampled, drift and composition CPU contract tests",
+      "sha256": "68d82437365653198e4e256cc06b091b614379aa6eb17cd068e949c4989295a1"
+    },
+    {
+      "job": "clippy",
+      "step": "Install CUDA 13.1 (nvcc + headers only \u2014 compile needs no GPU)",
+      "sha256": "3060f51981a1b3a218170425cbd5facb8540361ca66b15772d92d661117edaa7"
+    },
+    {
+      "job": "clippy",
+      "step": "Clippy affected packages and consumers (-D warnings)",
+      "sha256": "81ece8fb50ecaff77fca3d6e094a4b18c708759435fa504b2e697eee012e3601"
+    },
+    {
+      "job": "server-tests",
+      "step": "Install CUDA 13.1 (nvcc + headers only \u2014 compile needs no GPU)",
+      "sha256": "3060f51981a1b3a218170425cbd5facb8540361ca66b15772d92d661117edaa7"
+    },
+    {
+      "job": "server-tests",
+      "step": "Unit suite (memra-server \u2014 HTTP surface + ledger contracts)",
+      "sha256": "8d4bd2fdd51dba88c9b12ab997c7054bbabb23c0c86a7f9015bc7e7cec5c8401"
+    },
+    {
+      "job": "server-tests",
+      "step": "Compile n-choice accounting observer (no native execution)",
+      "sha256": "8dd8a9c56ee4808e9223cc58c5faafb9feb6da5d298d318fa9adb5f9c2f99a6a"
+    },
+    {
+      "job": "portable-suites",
+      "step": "Warm the registry (the suites run --offline against the committed lockfile)",
+      "sha256": "3cf0b25883c7b622d5ab1049e424cbcf26f44b2c8bda7285e471f786db68f000"
+    },
+    {
+      "job": "portable-suites",
+      "step": "Tier, KV and onboarding-CLI suites (CPU execution through the skip census; NOT GPU qualification)",
+      "sha256": "e51213bd0e716bce3ccee8d3d0ac82630168fb9f4676c6eb87e73885c7002bee"
+    },
+    {
+      "job": "portable-suites",
+      "step": "Portable-suites teeth (planted tier/KV/CLI failures and an undeclared skip must red the same wrapper)",
+      "sha256": "442fdbbbd3809bf7dcd35fafef3d1bcb37dec4ab1f820104784e4ce5e6e39102"
+    },
+    {
+      "job": "portable-suites",
+      "step": "Collector test suite with BOTH rig lock paths held (ruling 12; CPU tests, not qualification)",
+      "sha256": "4206d3ac69f663ed51914ab02fc66380fc349cb86e7e631b12e9bbe42a0d465a"
+    },
+    {
+      "job": "portable-suites",
+      "step": "unittest-floor teeth (empty discovery, a failing test and a floor above the count must all red)",
+      "sha256": "645a0e37fb301916954b638b2684eabe225f41aa141714e2634f59fb27bd2497"
+    },
+    {
+      "job": "portable-suites",
+      "step": "GPU CI orchestration failure controls (CPU only; from #590, unittest floor 9, 10 measured 2026-09-21)",
+      "sha256": "511fe4ec82b2fd5d2aa467e45bdb557b96b4f2f274af65379d18f7c075259487"
+    },
+    {
+      "job": "engine-tests",
+      "step": "Install CUDA 13.1 (nvcc + headers only \u2014 compile needs no GPU)",
+      "sha256": "3060f51981a1b3a218170425cbd5facb8540361ca66b15772d92d661117edaa7"
+    },
+    {
+      "job": "engine-tests",
+      "step": "Build and verify memra-native CPU expert backend",
+      "sha256": "79df3130a14ec7e79d8521bb664758e85053652131bcf3aeae60f2b2a5e5f02f"
+    },
+    {
+      "job": "engine-tests",
+      "step": "CPU expert companion prefetch accounting cells",
+      "sha256": "f6525ff12fe1cfdec6aa4e2f1c8343c681057308e8c0e485e092019d7ea937be"
+    },
+    {
+      "job": "engine-tests",
+      "step": "DSV4F door reach gate",
+      "sha256": "f76c195e1d73b30a8c19b1b7f86a4d249e81bbe197028085eba9a0c900c42f02"
+    },
+    {
+      "job": "engine-tests",
+      "step": "Unit suite (memra-engine --lib, unfiltered) + skip census",
+      "sha256": "090a4a4523dafac9e4a0d4f68a27891c33d0e22027cac3f1548b315956ead9cb"
+    },
+    {
+      "job": "arch-coverage",
+      "step": "Install CUDA 13.1 (nvcc + headers + SASS tools \u2014 no GPU needed)",
+      "sha256": "db169f203c29b98d42f5429ca34403514686d1fd203383e441cc46478df9e6ce"
+    },
+    {
+      "job": "arch-coverage",
+      "step": "Build affected native packages at sm_${{ matrix.cuda_arch }}",
+      "sha256": "c7957beaf66e6580a500ef3cb8182167d6ec03ab23268b187bb3e5bb369d8b69"
+    },
+    {
+      "job": "arch-coverage",
+      "step": "B200 kernel-twin ABI, SASS, layout, and admission gates",
+      "sha256": "f101f9deaf9827ff720d5d2aa9930a213a5840468931bcd30b2032f8b360b4f6"
+    },
+    {
+      "job": "arch-coverage",
+      "step": "Fatbin-vs-lookup census at sm_${{ matrix.cuda_arch }}",
+      "sha256": "aeb0d47bf58702e844fe59060f8da997f469eca3b4382a9793057b190a396d55"
+    },
+    {
+      "job": "publish-dryrun",
+      "step": "Install CUDA 13.1 (publish verification compiles the kernels)",
+      "sha256": "3060f51981a1b3a218170425cbd5facb8540361ca66b15772d92d661117edaa7"
+    },
+    {
+      "job": "publish-dryrun",
+      "step": "Package verification over affected members and their dependencies",
+      "sha256": "e748d804424de4425e771fe880e599af82589d87e8bee5b3b42b52277a8cf94f"
+    }
+  ],
+  "guards": [
+    {
+      "id": "action-pins",
+      "inputs": [
+        "tools/check-action-pins.sh"
+      ],
+      "cpu": [
+        "bash",
+        "tools/check-action-pins.sh"
+      ]
+    },
+    {
+      "id": "workflow-keys",
+      "inputs": [
+        "tools/check-workflow-keys.py"
+      ],
+      "cpu": [
+        "python3",
+        "tools/check-workflow-keys.py"
+      ]
+    },
+    {
+      "id": "conflict-markers",
+      "inputs": [
+        "tools/check-conflict-markers.sh"
+      ],
+      "cpu": [
+        "bash",
+        "tools/check-conflict-markers.sh"
+      ]
+    },
+    {
+      "id": "docs-registry",
+      "inputs": [
+        "tools/docs-registry-census.sh",
+        "tools/check-flags.sh",
+        "tools/flags-row-shape.py",
+        "tools/flags-table-census.py"
+      ],
+      "cpu": [
+        "bash",
+        "tools/docs-registry-census.sh"
+      ]
+    },
+    {
+      "id": "publish-members",
+      "inputs": [
+        "tools/workspace-publish-census.sh"
+      ],
+      "cpu": [
+        "bash",
+        "tools/workspace-publish-census.sh"
+      ]
+    },
+    {
+      "id": "stub-abi",
+      "inputs": [
+        "tools/stub-abi-census.py"
+      ],
+      "cpu": [
+        "python3",
+        "tools/stub-abi-census.py"
+      ]
+    },
+    {
+      "id": "arch-matrix",
+      "inputs": [
+        "tools/arch-matrix-census.sh"
+      ],
+      "cpu": [
+        "bash",
+        "tools/arch-matrix-census.sh"
+      ]
+    },
+    {
+      "id": "pdl-chain",
+      "inputs": [
+        "tools/check-pdl-chain.py"
+      ],
+      "cpu": [
+        "python3",
+        "tools/check-pdl-chain.py"
+      ]
+    },
+    {
+      "id": "flags-coverage",
+      "inputs": [
+        "tools/check-flags.sh",
+        "tools/flags-row-shape.py"
+      ],
+      "cpu": [
+        "bash",
+        "tools/check-flags.sh"
+      ]
+    },
+    {
+      "id": "gate-off-arms",
+      "inputs": [
+        "tools/check-no-remove-var-gates.sh",
+        "tools/gate-remove-var-allowlist.txt"
+      ],
+      "cpu": [
+        "bash",
+        "tools/check-no-remove-var-gates.sh"
+      ]
+    },
+    {
+      "id": "support-state",
+      "inputs": [
+        "tools/check-support-states.py",
+        "tools/support_record_inputs.py"
+      ],
+      "cpu": [
+        "python3",
+        "tools/check-support-states.py"
+      ]
+    },
+    {
+      "id": "coalescer",
+      "inputs": [
+        "tools/check-coalescer-contract.py"
+      ],
+      "cpu": [
+        "python3",
+        "tools/check-coalescer-contract.py"
+      ]
+    }
+  ],
+  "contracts": [
+    "background-chat-text",
+    "cache-meter",
+    "expert-tier-caller",
+    "metrics-live",
+    "n-choice",
+    "physical-gpu",
+    "public-boundary",
+    "q35-cache",
+    "sampled-mtp",
+    "score-shard-caller",
+    "serving-qualification",
+    "sft-generator-caller",
+    "support-records",
+    "tool-choice"
+  ],
+  "full_workflow_sha256": "dc2fa3011de476d01f138969094c1b434356abcabcb6a3c5cde86b9bbff3dbd0",
+  "public_workflow_sha256": "0dd70f2fb2b5fe7135e911b01d1cd16a0d9987ddd7aabbba7d43f3804e531f3a"
+}

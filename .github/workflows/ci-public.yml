@@ -1,0 +1,383 @@
+name: public-ci
+
+# Owner PRs and postmerge main pushes use scoped build/lint and merge guards.
+# External/unknown inputs delegate to the unchanged complete CPU inventory.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  route:
+    runs-on: ubuntu-24.04
+    env:
+      TRUSTED_HEAD: ${{ github.event.pull_request.base.sha || github.event.before || github.sha }}
+    outputs:
+      ci_mode: ${{ (github.repository == 'avifenesh/memra' && github.event.repository.owner.login == 'avifenesh' && github.event.repository.owner.id == 55848801 && ((github.event_name == 'pull_request' && github.event.pull_request.user.login == 'avifenesh' && github.event.pull_request.user.id == 55848801 && github.event.pull_request.base.ref == 'main' && github.event.pull_request.base.repo.full_name == 'avifenesh/memra' && github.event.pull_request.head.repo.owner.login == 'avifenesh' && github.event.pull_request.head.repo.owner.id == 55848801 && startsWith(github.event.pull_request.head.repo.full_name, 'avifenesh/')) || (github.event_name == 'push' && github.ref == 'refs/heads/main'))) && steps.plan.outputs.ci_mode == 'thin' && 'thin' || 'full' }}
+      packages: ${{ steps.plan.outputs.packages }}
+      requires_cuda: ${{ steps.plan.outputs.requires_cuda }}
+      build: ${{ steps.plan.outputs.build }}
+      clippy: ${{ steps.plan.outputs.clippy }}
+      arch: ${{ steps.plan.outputs.arch }}
+      engine: ${{ steps.plan.outputs.engine }}
+      server: ${{ steps.plan.outputs.server }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          path: candidate
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        id: trusted-checkout
+        continue-on-error: true
+        with:
+          ref: ${{ env.TRUSTED_HEAD }}
+          path: trusted
+      - name: Route with the immutable base entry or literal full bootstrap
+        id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          TRUSTED_CHECKOUT: ${{ steps.trusted-checkout.outcome }}
+          OWNER_MODE: ${{ github.repository == 'avifenesh/memra' && github.event.repository.owner.login == 'avifenesh' && github.event.repository.owner.id == 55848801 && ((github.event_name == 'pull_request' && github.event.pull_request.user.login == 'avifenesh' && github.event.pull_request.user.id == 55848801 && github.event.pull_request.base.ref == 'main' && github.event.pull_request.base.repo.full_name == 'avifenesh/memra' && github.event.pull_request.head.repo.owner.login == 'avifenesh' && github.event.pull_request.head.repo.owner.id == 55848801 && startsWith(github.event.pull_request.head.repo.full_name, 'avifenesh/')) || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
+        run: |
+          if [ "$OWNER_MODE" = true ] && [ "$TRUSTED_CHECKOUT" = success ] && [ -f trusted/tools/trusted_public_ci.py ] && [ ! -L trusted/tools/trusted_public_ci.py ]; then
+            python3 -I trusted/tools/trusted_public_ci.py route-plan --trusted-head "$TRUSTED_HEAD" \
+              --event-name "$EVENT_NAME" --event "$GITHUB_EVENT_PATH" --repo "$GITHUB_WORKSPACE/candidate" \
+              --head "$GITHUB_SHA" --out-dir "$GITHUB_WORKSPACE" --github-output "$GITHUB_OUTPUT"
+          else
+            python3 -I - <<'PY'
+          import json, os, pathlib
+          reason = 'external/unknown context selects full' if os.environ['OWNER_MODE'] != 'true' else 'trusted base entry unavailable; full bootstrap'
+          route = {'schema': 'memra-public-ci-route-v1', 'mode': 'full', 'event': os.environ['EVENT_NAME'], 'reason': reason, 'qualification': False}
+          plan = {'schema': 'memra-validation-plan-v1', 'mode': 'full', 'ci_mode': 'full', 'head': os.environ['GITHUB_SHA'], 'trusted_base': os.environ['TRUSTED_HEAD'], 'reason': reason, 'cpu_inventory': 'complete', 'selection_source': 'workflow literals', 'qualification': False}
+          pathlib.Path('route.json').write_text(json.dumps(route, indent=2) + '\n')
+          pathlib.Path('validation-plan.json').write_text(json.dumps(plan, indent=2) + '\n')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('ci_mode=full\npackages=\nrequires_cuda=true\n')
+              output.write(''.join(name + '=true\n' for name in ('build', 'clippy', 'arch', 'engine', 'server')))
+          print(reason)
+          PY
+          fi
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: public-ci-plan
+          path: |
+            route.json
+            validation-plan.json
+          if-no-files-found: error
+
+  full:
+    needs: route
+    if: ${{ !cancelled() && (needs.route.result != 'success' || needs.route.outputs.ci_mode != 'thin') }}
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  merge-validation:
+    needs: route
+    if: ${{ !cancelled() && needs.route.outputs.ci_mode == 'thin' }}
+    runs-on: ubuntu-24.04
+    env:
+      TRUSTED_HEAD: ${{ github.event.pull_request.base.sha || github.event.before || github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          path: candidate
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.TRUSTED_HEAD }}
+          path: trusted
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: public-ci-plan
+      - name: Ensure ripgrep for source admission censuses
+        run: |
+          if ! command -v rg >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends -y ripgrep
+          fi
+          rg --version
+
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+        if: needs.route.outputs.server == 'true'
+        with:
+          toolchain: "1.97.1"
+
+      - name: Execute mapped merge guards and affected callers once
+        run: python3 -I trusted/tools/trusted_public_ci.py contracts --trusted-head "$TRUSTED_HEAD" --repo "$GITHUB_WORKSPACE/candidate" --plan validation-plan.json --out contract-execution.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: public-ci-execution
+          path: contract-execution.json
+          if-no-files-found: error
+
+  boundary:
+    needs: route
+    if: ${{ !cancelled() && needs.route.outputs.ci_mode == 'thin' }}
+    runs-on: ubuntu-24.04
+    env:
+      TRUSTED_HEAD: ${{ github.event.pull_request.base.sha || github.event.before || github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          path: candidate
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.TRUSTED_HEAD }}
+          path: trusted
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: public-ci-plan
+      - name: Check every introduced blob in the pinned commit range
+        run: python3 -I trusted/tools/trusted_public_ci.py boundary --trusted-head "$TRUSTED_HEAD" --repo "$GITHUB_WORKSPACE/candidate" --plan validation-plan.json --out boundary-range.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: public-ci-boundary
+          path: boundary-range.json
+          if-no-files-found: error
+
+  build:
+    needs: route
+    if: ${{ !cancelled() && needs.route.outputs.ci_mode == 'thin' && needs.route.outputs.build == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CI_VALIDATION_PACKAGES: ${{ needs.route.outputs.packages }}
+      MEMRA_CUDA_ARCH: "120a"
+      MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install the unchanged CUDA compiler
+        if: needs.route.outputs.requires_cuda == 'true'
+        run: tools/install-cuda-ci.sh
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          key: ci-build-120a
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        id: dense_cache
+        with:
+          path: target/dsv4-control-cache
+          key: dense-control-v2-${{ runner.os }}-lookup-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: dense-control-v2-${{ runner.os }}-
+
+      - name: Compile affected bins and consumers
+        run: python3 tools/validation_plan.py cargo build
+      - name: Build identity (the release binary reports a real fingerprint)
+        if: ${{ needs.route.result != 'success' || needs.route.outputs.server != 'false' }}
+        run: |
+          set -euo pipefail
+          out=$(./target/release/memra-server --version)
+          echo "$out"
+          fp=$(printf '%s\n' "$out" | awk '$1=="system_fingerprint"{print $2}')
+          src=$(printf '%s\n' "$out" | awk '$1=="build_id_src"{print $2}')
+          shape='^memra-[0-9][0-9A-Za-z.+-]*-[0-9a-f]{12}$'
+          if printf '%s' 'memra-unknown' | grep -Eq "$shape"; then
+            echo "GATE BROKEN: the shape matcher accepts memra-unknown" >&2; exit 1
+          fi
+          if printf '%s' 'memra-0.123.0-4b1f9c02d7a3' | grep -Evq "$shape"; then
+            echo "GATE BROKEN: the shape matcher rejects a valid fingerprint" >&2; exit 1
+          fi
+          [ -n "$fp" ] || { echo "no system_fingerprint on --version" >&2; exit 1; }
+          case "$fp" in *unknown*) echo "fingerprint is degraded: $fp" >&2; exit 1;; esac
+          printf '%s' "$fp" | grep -Eq "$shape" || {
+            echo "fingerprint $fp is not memra-<version>-<12 hex>" >&2; exit 1; }
+          [ "$src" = "source-tree" ] || {
+            echo "build id came from '$src', not the source tree" >&2; exit 1; }
+          echo "build identity OK: $fp (id: $src)"
+
+      - name: DSV4 native CPU control admission
+        id: dense_controls
+        if: ${{ needs.route.result != 'success' || needs.route.outputs.engine != 'false' }}
+        run: |
+          set -euo pipefail
+          CARGO_TARGET_DIR="$PWD/target" bash tools/test-dsv4-dense-control-policy.sh | tee "$RUNNER_TEMP/dense-control-policy.log"
+          python3 - "$RUNNER_TEMP/dense-control-policy.log" "$GITHUB_OUTPUT" <<'PY'
+          import json, re, sys
+          from pathlib import Path
+          records = [json.loads(line) for line in Path(sys.argv[1]).read_text().splitlines()
+                     if line.startswith('{"status"')]
+          if len(records) != 1:
+              raise SystemExit("dense cache must report exactly one result")
+          record = records[0]
+          key = record.get("key") if record["status"] in ("built", "restored") else None
+          if key is not None:
+              if not isinstance(key, str) or not re.fullmatch(r"[0-9a-f]{64}", key):
+                  raise SystemExit("invalid validated dense cache key")
+              with Path(sys.argv[2]).open("a") as output:
+                  output.write("cache-key=" + key + "\n")
+          PY
+        env:
+          MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+          MEMRA_CUDA_ARCH: "120a"
+          MEMRA_DSV4_REPLAY_CADENCE: "1"
+          MEMRA_DSV4_DENSE_EXACT_TAIL: "1"
+
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        if: ${{ steps.dense_controls.outputs.cache-key != '' && steps.dense_cache.outputs.cache-matched-key != format('dense-control-v2-{0}-{1}', runner.os, steps.dense_controls.outputs.cache-key) }}
+        with:
+          path: target/dsv4-control-cache
+          key: dense-control-v2-${{ runner.os }}-${{ steps.dense_controls.outputs.cache-key }}
+
+
+  clippy:
+    needs: route
+    if: ${{ !cancelled() && needs.route.outputs.ci_mode == 'thin' && needs.route.outputs.clippy == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CI_VALIDATION_PACKAGES: ${{ needs.route.outputs.packages }}
+      MEMRA_CUDA_ARCH: "120a"
+      MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install the unchanged CUDA compiler
+        if: needs.route.outputs.requires_cuda == 'true'
+        run: tools/install-cuda-ci.sh
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+        with:
+          toolchain: "1.97.1"
+          components: clippy,rustfmt
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          key: ci-clippy
+      - name: Lint affected packages and consumers
+        run: |
+          cargo fmt --all -- --check
+          python3 tools/validation_plan.py cargo clippy
+
+  arch:
+    needs: route
+    env:
+      CI_VALIDATION_PACKAGES: ${{ needs.route.result == 'success' && needs.route.outputs.packages || '' }}
+    if: ${{ !cancelled() && needs.route.outputs.ci_mode == 'thin' && needs.route.outputs.arch == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false      # one arch failing must not hide the other's result
+      matrix:
+        cuda_arch: ["100a"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # cuda-cuobjdump-13-1 is here for the fatbin census below, and it is a SEPARATE package
+      # from cuda-nvcc-13-1 — the first run of that census failed in CI for exactly this reason
+      # (the census refused, correctly, rather than reporting a vacuous pass). It is a host tool;
+      # no GPU and no runtime libs. cuobjdump delegates SASS decoding to nvdisasm, which is also
+      # packaged separately; the first B200 static-SASS run proved both are required.
+      - name: Install CUDA 13.1 (nvcc + headers + SASS tools — no GPU needed)
+        run: tools/install-cuda-ci.sh cuda-cuobjdump-13-1 cuda-nvdisasm-13-1
+
+      # Mirrors the release exactly, so it builds on the release's toolchain: the repo-root
+      # rust-toolchain.toml pin (which release.yml now names explicitly too). Floating
+      # stable here stopped mirroring anything the day releases were pinned.
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          key: ci-arch-sm${{ matrix.cuda_arch }}
+      - name: Build affected native packages at sm_${{ matrix.cuda_arch }}
+        run: python3 tools/validation_plan.py cargo build
+        env:
+          MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+          MEMRA_CUDA_ARCH: ${{ matrix.cuda_arch }}
+      # STATIC B200 TEETH. A successful 100a link is insufficient: replacing a real static-lib
+      # translation unit with an ABI-compatible stub would still link and the fatbin census below
+      # cannot see static archives. These gates compile the exact production TUs, assert their C
+      # ABI symbols, inspect SASS for NVFP4 UTCOMMA.4X / FP8 UTCQMMA / grouped HMMA, and execute
+      # the host-constexpr operand/scale layout bijection test. The policy tests prove block-FP8
+      # remains literal-1 opt-in and install.sh refuses an unpublished B200 prebuilt before network.
+      # Every command is host-only; none opens the CUDA driver.
+      - name: B200 kernel-twin ABI, SASS, layout, and admission gates
+        if: ${{ needs.route.result != 'success' || needs.route.outputs.engine != 'false' }}
+        run: |
+          research/b200-kernel-twins-dry-20260901/check-layouts.sh
+          research/b200-kernel-twins-dry-20260901/check-nvfp4.sh
+          research/b200-kernel-twins-dry-20260901/check-fp8.sh
+          tools/test_install_b200_policy.sh
+          tools/test_b200_phase0_harness.sh
+          cargo test --release -p memra-engine b200_dry_policy_tests --lib
+          cargo test --release -p memra-engine --bin kernel-check \
+            b200_runs_static_nvfp4_checks_without_the_sm120_fatbin_cell
+          cargo test --release -p memra-engine --bin kernel-check \
+            explicit_fp8_mmq_subcell_skips_without_aborting_default_coverage
+          cargo test --release -p memra-engine --bin nvfp4_mmq_check \
+            synthetic_fixture_covers_codes_scales_and_exact_activation_blocks
+        env:
+          MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+          MEMRA_CUDA_ARCH: "100a"
+
+      # Every kernel the Rust side looks up must be IN the fatbins for this arch.
+      # `Engine::func` resolves kernels lazily and panics on a miss, so an arch-scoped `#if`
+      # that drops a kernel with no `#else` is a RUNTIME failure on a shipped binary that every
+      # compile gate passes. Exceptions are per symbol in tools/fatbin-lookup-exceptions.txt.
+      - name: Fatbin-vs-lookup census at sm_${{ matrix.cuda_arch }}
+        if: ${{ needs.route.result != 'success' || needs.route.outputs.engine != 'false' }}
+        run: tools/fatbin-lookup-census.py --arch ${{ matrix.cuda_arch }}
+
+
+  merge-result:
+    name: ci/merge-result
+    needs: [route, full, merge-validation, boundary, build, clippy, arch]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    env:
+      TRUSTED_HEAD: ${{ github.event.pull_request.base.sha || github.event.before || github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          path: candidate
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        if: needs.route.outputs.ci_mode == 'thin'
+        with:
+          ref: ${{ env.TRUSTED_HEAD }}
+          path: trusted
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: public-ci-plan
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        if: needs.route.outputs.ci_mode == 'thin'
+        with:
+          name: public-ci-execution
+      - name: Refuse missing, stale or failed required work
+        env:
+          JOB_RESULTS: ${{ toJSON(needs) }}
+          CI_MODE: ${{ needs.route.outputs.ci_mode }}
+        run: |
+          python3 -I -c 'import os,pathlib; pathlib.Path("job-results.json").write_text(os.environ["JOB_RESULTS"])'
+          if [ "$CI_MODE" = thin ]; then
+            python3 -I trusted/tools/trusted_public_ci.py result --trusted-head "$TRUSTED_HEAD" \
+              --repo "$GITHUB_WORKSPACE/candidate" --plan validation-plan.json --needs job-results.json \
+              --execution contract-execution.json --out merge-result.json
+          else
+            python3 -I - <<'PY'
+          import json, os, pathlib
+          plan = json.loads(pathlib.Path('validation-plan.json').read_text())
+          needs = json.loads(os.environ['JOB_RESULTS'])
+          head = os.environ['GITHUB_SHA']
+          if plan.get('schema') != 'memra-validation-plan-v1' or plan.get('mode') != 'full' or plan.get('head') != head or plan.get('qualification') is not False:
+              raise SystemExit('Missing or stale full plan')
+          if needs.get('route', {}).get('result') != 'success' or needs.get('full', {}).get('result') != 'success' or needs.get('full', {}).get('outputs', {}).get('validated_head') != head:
+              raise SystemExit('Full CPU result is missing, failed or stale')
+          result = {'schema': 'memra-ci-merge-result-v1', 'head': head, 'mode': 'full', 'required_jobs': ['route', 'full'], 'success': True, 'qualification': False}
+          pathlib.Path('merge-result.json').write_text(json.dumps(result, indent=2) + '\n')
+          print('Conclusive full CPU result: ' + head)
+          PY
+          fi
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: public-ci-result
+          path: merge-result.json
+          if-no-files-found: error

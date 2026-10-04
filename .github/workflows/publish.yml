@@ -27,7 +27,13 @@ permissions:
   contents: read
 
 jobs:
+  cpu-suite:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
   publish:
+    needs: cpu-suite
     runs-on: ubuntu-24.04
     environment: crates-io
     steps:

@@ -1,0 +1,19 @@
+ok   arm1 docs-only pull_request (reason=dependency closure plus declared input contracts)
+ok   arm2 docs-only push (reason=dependency closure plus declared input contracts)
+ok   arm3 source file (reason=dependency closure plus declared input contracts)
+ok   arm4 docs+tools (reason=unmodelled input: tools/thing.sh)
+ok   arm5 crate README (reason=unmodelled input: crates/memra-gguf/README.md)
+ok   arm6 workflow file (reason=dependency/input analysis unavailable: missing or nonregular workflow input: tools/cpu_workflow_contracts.json)
+ok   arm7 Cargo.toml (reason=dependency/input analysis unavailable: Expected '=' after a key in a key/value pair (at line 3, column 5))
+ok   arm8 zero before (reason=missing event base/head)
+ok   arm9 unreachable base (reason=Git change set unavailable: Command '['git', '-C', '/tmp/tmp.KmAS1Zt2so/repo', 'rev-parse', '--verify', 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef^{commit}']' returned non-zero exit status 128.)
+ok   arm10 empty diff (reason=empty or unavailable change set)
+ok   arm11 unknown event (reason=unrecognized event)
+ok   arm12 missing args
+ok   arm13 non-repo dir
+ok   arm15 included research file (reason=dependency closure plus declared input contracts)
+ok   arm16 non-included research file beside an include (reason=dependency closure plus declared input contracts)
+ok   arm17 multi-line included research file (reason=dependency closure plus declared input contracts)
+ok   arm18 real-tree census (63 paths, none unresolved)
+ok   arm14 per-component CI selection fails closed
+test_ci_change_class: 18 arms PASS

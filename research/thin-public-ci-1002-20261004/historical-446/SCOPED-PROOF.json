@@ -1,0 +1,62 @@
+{
+  "schema": 1,
+  "execution_source": "d1482c462295350dd0bf5087a4db22acce88bcbc",
+  "rebased_source": "c1993d62c649e077d9725e19b367698c8d67020a",
+  "base": "71a91c6fce00fda25a2562387c1bf521e259c23a",
+  "code_source_sha256": {
+    ".github/workflows/ci-public.yml": "8b1d914773aafc7b2bac117d0963f6e72de981822ca71888c4ab0c57136afeae",
+    "docs/TESTING.md": "e3265ead68ef611744e580931f1c46da07a131ec33ab446d78d572b4a3bce4c5",
+    "tools/ci_merge_validation.json": "d69a0dbd35ba6a0e63ceb4ae09b6f58a4a486467e95f7f7e4c4bafe691d94ce6",
+    "tools/public_ci.py": "0ef33f5a56aa9badb21979a6ca5d7ffb72941cfd5254668a4623db9d139e0bd5",
+    "tools/test_public_ci_integration.py": "d729b184cfd10baf265622c3045daf6bc153f9e353b01ab76d7d1cbf4df46964",
+    ".github/workflows/ci.yml": "a262afe27643348399a6088eec62cf070177e9a28d37cc053a98085cf5fb6ed2",
+    ".github/workflows/publish.yml": "b9694854007b5bcd12b9ed5484b5b5faf041309016c82a6e21a596f7c1aafffe",
+    ".github/workflows/release.yml": "bad9adc3b0b4f3fd021711f8788594e838f3e94d8f4d8ff29f0cf1adb9c2b755",
+    "tools/cpu_workflow_contracts.json": "12543703a339d6457162499bb2f80795fe2222349eed88103b7543b0dab90bd0",
+    "tools/cpu_workflow_inputs.py": "d8041dac1acbdd232b1662f60673766fe55f639c488e8229c27f00b689aee937",
+    "tools/validation_plan.py": "326558061ee7e8bf0d6057c15a0dd0a2563e0b10fae82d0a47130afd45e53385"
+  },
+  "execution": {
+    "one_real_Git_event_integration": {
+      "seconds": 83.109,
+      "SFT_executed_once": true,
+      "coherent_refusals": [
+        "native_dense_block_omitted_with_new_shape_hash",
+        "shortened_mutable_policy_before_caller_execution"
+      ],
+      "result": "PASS"
+    },
+    "inventory": "PASS",
+    "workflow_keys": "PASS",
+    "raw_sha256": {
+      "integration.log": "79ecb3441aff48ced99d1f3438631a86afe7192faf4cb7fe547085192f25574f",
+      "inventory.json": "1c921e87da297994a0d379fa02e8ca543e309ae61b6770e47d5bea900b7e65fd",
+      "workflow-keys.log": "392a97d85364b12b58fe915de6466112ce005f5ef467ac8f0fc374f39a137586"
+    }
+  },
+  "prior_scoped_results": {
+    "source": "df19ab41f5d39fec3f9fb23f9a504001b7c485e5",
+    "policy": 25,
+    "classifier": 18,
+    "caller_controls": [
+      14,
+      18,
+      14,
+      16
+    ],
+    "legacy_framework": {
+      "run": 241,
+      "passed": 240,
+      "failed": 1,
+      "failure": "Concurrency expectation literal; corrected affected25 passed. Failed cohort retained."
+    }
+  },
+  "review": "Two findings fixed and incremental source review finding-free; eleven reviewed source pins equal rebased source",
+  "legacy_full_non_selection_command_bodies_preserved": 74,
+  "limits": [
+    "No uniform241 execution at current source claimed",
+    "Full current hosted CPU inventory remains required before merge",
+    "No native hardware, model, runtime or serving qualification",
+    "No speed percentage or enforcement installation claimed"
+  ]
+}

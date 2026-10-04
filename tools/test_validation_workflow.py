@@ -103,7 +103,7 @@ class CpuWorkflowTests(unittest.TestCase):
         replacements = [('key: ci-build-120a', 'key: changed-native-cache'),
                         ('cargo test --release -p memra-server', 'cargo test -p memra-server'),
                         ('toolchain: "1.97.1"', 'toolchain: "nightly"'),
-                        ('group: ci-${{ github.event.pull_request.number || github.ref }}',
+                        ('group: ci-full-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}',
                          'group: changed-workflow-concurrency'),
                         ('timeout-minutes: 30', 'timeout-minutes: 31')]
         for old, new in replacements:

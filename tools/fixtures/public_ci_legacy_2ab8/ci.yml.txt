@@ -30,41 +30,32 @@ jobs:
   changes:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    # Full inventory selection is a workflow constant, never PR script output.
     outputs:
-      code: "true"
-      reason: Complete CPU inventory selected by workflow
-      build: "true"
-      clippy: "true"
-      server: "true"
-      engine: "true"
-      portable: "true"
-      core: "true"
-      lanes: "true"
-      arch: "true"
-      publish: "true"
-      packages: ""
-      requires_cuda: "true"
-      contracts: ""
+      code: ${{ steps.classify.outputs.code }}
+      reason: ${{ steps.classify.outputs.reason }}
+      build: ${{ steps.classify.outputs.build }}
+      clippy: ${{ steps.classify.outputs.clippy }}
+      server: ${{ steps.classify.outputs.server }}
+      engine: ${{ steps.classify.outputs.engine }}
+      portable: ${{ steps.classify.outputs.portable }}
+      core: ${{ steps.classify.outputs.core }}
+      lanes: ${{ steps.classify.outputs.lanes }}
+      arch: ${{ steps.classify.outputs.arch }}
+      publish: ${{ steps.classify.outputs.publish }}
+      packages: ${{ steps.classify.outputs.packages }}
+      requires_cuda: ${{ steps.classify.outputs.requires_cuda }}
+      contracts: ${{ steps.classify.outputs.contracts }}
     steps:
-      # Selection and the head receipt are workflow literals. No candidate
-      # planner or change-class script can suppress the complete inventory.
+      # Keep history for PR/push diffs. The planner reads Git trees, so the selection
+      # checkout does not need to materialize the research receipt corpus.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - id: classify
         name: Plan the complete CPU inventory
         run: |
-          python3 -I - <<'PY'
-          import json, os, pathlib
-          jobs = {name: True for name in ('build', 'clippy', 'server', 'engine', 'portable', 'core', 'lanes', 'arch', 'publish')}
-          plan = {'schema': 'memra-full-workflow-selection-v1', 'mode': 'full',
-                  'head': os.environ['GITHUB_SHA'], 'jobs': jobs, 'packages': 'workspace',
-                  'contracts': 'all available normal/native; mandatory callers remain dedicated steps',
-                  'selection_source': 'workflow literals', 'qualification': False}
-          pathlib.Path('validation-plan.json').write_text(json.dumps(plan, indent=2) + '\n')
-          print(json.dumps(plan, sort_keys=True))
-          PY
+          tools/ci-change-class.sh full "$GITHUB_SHA" validation-plan.json "$GITHUB_OUTPUT"
+          cat validation-plan.json
       - name: Retain the affected-edge and omitted-check explanation
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -825,13 +816,6 @@ jobs:
         env:
           JOB_RESULTS: ${{ toJSON(needs) }}
         run: |
-          python3 -I - <<'PY'
-          import json, os
-          names = ('changes', 'gates', 'boundary', 'build', 'clippy', 'server-tests', 'portable-suites', 'engine-tests', 'arch-coverage', 'publish-dryrun')
-          needs = json.loads(os.environ['JOB_RESULTS'])
-          if any(needs.get(name, {}).get('result') != 'success' for name in names):
-              raise SystemExit('Complete CPU inventory did not succeed')
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              output.write('validated_head=' + os.environ['GITHUB_SHA'] + '\n')
-          print('Complete CPU inventory passed: ' + os.environ['GITHUB_SHA'])
-          PY
+          python3 -c 'import os,pathlib; pathlib.Path("job-results.json").write_text(os.environ["JOB_RESULTS"])'
+          python3 tools/public_ci.py full-result --head "$GITHUB_SHA" \
+            --needs job-results.json --github-output "$GITHUB_OUTPUT"

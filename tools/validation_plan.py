@@ -678,7 +678,7 @@ class LocalTree(Tree):
                 result[name] = 'unreadable'
                 continue
             result[name] = ('120000' if stat.S_ISLNK(mode) else '040000' if stat.S_ISDIR(mode)
-                            else '100755' if stat.S_ISREG(mode) and mode & 0o111
+                            else '100755' if stat.S_ISREG(mode) and mode & stat.S_IXUSR
                             else '100644' if stat.S_ISREG(mode) else 'unsupported')
         for row in git(self.repo, 'ls-files', '--stage', '-z', '--', *prefixes).split(b'\0'):
             if row:

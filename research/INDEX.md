@@ -738,3 +738,5 @@ support-source-doc-copy-inputs-20261003 | 97 exact source/docs omissions repaire
 | atomic-update-alias-978-20261003 | Twelve atomic API aliases preserve actual emitted operations. Same530 real CPU IDs perarm,18 copied boundary controls perarm and fault witnesses. No native qualification. | [LANE.md](atomic-update-alias-978-20261003/LANE.md) |
 
 | mtp-wrapper-triggers-997-20261004 | Four path entries select both shared wrapper files in both MTP workflows. Existing 39 CPU controls and seven retained-data workflow blocks verified. No qualification promotion. | [LANE.md](mtp-wrapper-triggers-997-20261004/LANE.md) |
+
+| thin-public-ci-1002-20261004 | Fresh depth-one Git/event replay PASS408.819s with historical object absent, pinned old callers and trust/guard controls. Production unchanged; current hosted/review pending, no native qualification. | [LANE.md](thin-public-ci-1002-20261004/LANE.md) |
