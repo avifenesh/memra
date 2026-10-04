@@ -12,7 +12,7 @@ import shlex
 import sys
 
 import validation_plan
-from cpu_workflow_inputs import _regular, COMMANDS
+from cpu_workflow_inputs import _regular, _policy, POLICY_PATH, COMMANDS
 
 REPOSITORY = 'avifenesh/memra'
 OWNER = 'avifenesh'
@@ -204,6 +204,16 @@ def inventory(root):
     for row in data['full_steps']:
         if row['job'] == 'arch-coverage' and row not in native:
             raise Refused('thin native compile coverage differs from full inventory')
+    full = validation_plan.read_local_input(root, '.github/workflows/ci.yml')
+    begin = full.index('      - name: DSV4 sampled, drift and composition CPU contract tests\n')
+    end = full.index('\n      # Reuse one bounded artifact', begin)
+    dense = full[begin:end].replace(
+        'DSV4 sampled, drift and composition CPU contract tests',
+        'DSV4 native CPU control admission').replace('needs.changes', 'needs.route')
+    dense = ''.join(line for line in dense.splitlines(keepends=True)
+                    if not line.startswith('          cargo test --release -p memra-engine --bin dsv4_tp_ep_sampled_perf_gate'))
+    if public.count(dense) != 1:
+        raise Refused('thin native dense admission differs from full inventory')
     return data
 
 
@@ -221,7 +231,7 @@ def source_plan(root, receipt, head):
         elif receipt.get('head') != head:
             raise Refused('event head does not match candidate source')
         for name in ('tools/public_ci.py', 'tools/ci_merge_validation.json',
-                     'tools/validation_plan.py', 'tools/cpu_workflow_inputs.py',
+                     'tools/validation_plan.py', 'tools/cpu_workflow_inputs.py', POLICY_PATH,
                      '.github/workflows/ci-public.yml'):
             if _regular(before, name) != _regular(after, name):
                 raise Refused('routing or merge policy bootstrap/change: ' + name)
@@ -251,10 +261,11 @@ def execute_contracts(root, plan):
     if validation_plan.git(root, 'rev-parse', 'HEAD').decode().strip() != head:
         raise Refused('plan source does not match checkout')
     for path in ('tools/public_ci.py', 'tools/validation_plan.py',
-                 'tools/cpu_workflow_inputs.py', INVENTORY, '.github/workflows/ci-public.yml'):
+                 'tools/cpu_workflow_inputs.py', POLICY_PATH, INVENTORY, '.github/workflows/ci-public.yml'):
         if _regular(validation_plan.Tree(root, head), path) != _regular(
                 validation_plan.LocalTree(root), path):
             raise Refused('execution helper differs from pinned source')
+    policy_rows = _policy(_regular(validation_plan.Tree(root, head), POLICY_PATH)[0])
     rows = plan.get('cpu_contracts')
     if type(rows) is not list or any(type(row) is not dict for row in rows):
         raise Refused('missing selected contract identities')
@@ -281,8 +292,7 @@ def execute_contracts(root, plan):
         subprocess.run(row['cpu'], cwd=root, check=True)
     for name in names:
         contract = validation_plan.TOOL_CONTRACTS[name]
-        inputs = (next(row['inputs'] for row in json.loads(
-            validation_plan.read_local_input(root, 'tools/cpu_workflow_contracts.json'))['contracts']
+        inputs = (next(row['inputs'] for row in policy_rows
             if row['id'] == name) if contract.get('workflow_only') else contract['inputs'])
         for path in inputs:
             if _regular(validation_plan.Tree(root, head), path) != _regular(validation_plan.LocalTree(root), path):

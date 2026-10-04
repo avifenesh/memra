@@ -2572,7 +2572,8 @@ missing inputs, changed routing policy and unknown dependency ownership expand
 to the complete CPU workflow or fail the result check.
 
 Thin mode runs affected build and clippy commands, the applicable existing native
-compile/ABI/SASS/admission cells, static merge censuses, changed-input CPU
+compile/ABI/SASS/admission cells, including all 18 dense native control arms
+when the engine is affected, static merge censuses, changed-input CPU
 contracts and a scan of every introduced blob in the pinned commit range.
 Functional tests for an owner change run locally before push. The contract runner
 records selected, executed and successful identities against the same commit.

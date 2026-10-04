@@ -143,6 +143,22 @@ class PublicCiIntegration(unittest.TestCase):
             self.assertEqual(output.count('SFT CPU contract: PASS: original=9 executed=18'), 1, output)
             execution = json.loads(execution_file.read_text())
             self.assertEqual(execution['executed'], ['sft-generator-caller'])
+            # A schema-valid shortened mutable policy cannot omit producer checks
+            # from the pinned execution tuple, even with the command unchanged.
+            policy_path = repo / 'tools/cpu_workflow_contracts.json'
+            policy_original = policy_path.read_bytes()
+            shortened = json.loads(policy_original)
+            sft_row = next(row for row in shortened['contracts'] if row['id'] == 'sft-generator-caller')
+            sft_row['inputs'] = ['tools/cpu_workflow_inputs.py', 'tools/run_sft_gen_contract.py']
+            policy_path.write_text(json.dumps(shortened))
+            try:
+                refused = command([sys.executable, str(repo / 'tools/public_ci.py'), 'contracts',
+                                   '--plan', str(plan_file), '--repo', str(repo),
+                                   '--out', str(execution_file)], ok=False)
+                self.assertIn('execution helper differs from pinned source', refused)
+                self.assertNotIn('SFT CPU contract: PASS', refused)
+            finally:
+                policy_path.write_bytes(policy_original)
             # Coherent masked/swallowed full caller changes leave its run body
             # intact. Whole execution-shape binding must refuse the actual CLI.
             full_path = repo / '.github/workflows/ci.yml'
@@ -155,6 +171,24 @@ class PublicCiIntegration(unittest.TestCase):
                     command([sys.executable, str(repo / 'tools/public_ci.py'), 'check-inventory'], ok=False)
                 finally:
                     full_path.write_text(workflow)
+            # Removing native admission while updating the public shape hash must
+            # still refuse. A coherent inventory cannot authorize that omission.
+            public_path = repo / '.github/workflows/ci-public.yml'
+            public_bytes = public_path.read_text()
+            inventory_path = repo / ci.INVENTORY
+            inventory_bytes = inventory_path.read_text()
+            begin = public_bytes.index('      - name: DSV4 native CPU control admission\n')
+            end = public_bytes.index('      - uses: actions/cache/save@', begin)
+            omitted = public_bytes[:begin] + public_bytes[end:]
+            public_path.write_text(omitted)
+            changed_inventory = json.loads(inventory_bytes)
+            changed_inventory['public_workflow_sha256'] = __import__('hashlib').sha256(omitted.encode()).hexdigest()
+            inventory_path.write_text(json.dumps(changed_inventory))
+            try:
+                command([sys.executable, str(repo / 'tools/public_ci.py'), 'check-inventory'], ok=False)
+            finally:
+                public_path.write_text(public_bytes)
+                inventory_path.write_text(inventory_bytes)
             # Conclusive actual CLI result and a coherent missing-execution mutant.
             needs = {name: {'result': 'success'} for name in
                      ('route', 'merge-validation', 'boundary', 'build', 'clippy', 'arch')}
