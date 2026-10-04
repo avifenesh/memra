@@ -19,6 +19,12 @@ spec.loader.exec_module(m)
 
 class PackageSourceIntegration(unittest.TestCase):
     def test_normal_cargo_source_and_input_contract(self):
+        self.cargo_contract()
+
+    def test_coherent_midcompiler_source_replacement(self):
+        self.cargo_contract(midcompiler=True)
+
+    def cargo_contract(self, midcompiler=False):
         env = dict(os.environ)
         for key in ('RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER', 'CARGO_BUILD_RUSTC_WRAPPER', 'CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER'):
             env.pop(key, None)
@@ -87,6 +93,41 @@ class PackageSourceIntegration(unittest.TestCase):
             finally:
                 os.environ.clear(); os.environ.update(saved)
             command = ['cargo', 'build', '--offline', '--locked', '--target-dir', str(output)]
+            if midcompiler:
+                # An owned real compiler proxy changes the source and coherently
+                # reseals every capsule layer after rustc returns. Freshness must
+                # retain the captured capsule, not accept any later valid one.
+                proxy = base / 'owned-compiler.py'
+                mutation = base / 'mutation.json'
+                proxy.write_text("#!/usr/bin/python3 -I\n" +
+                    "import hashlib,json,os,subprocess,sys\nfrom pathlib import Path\n" +
+                    "compiler=" + repr(cap['compiler']['path']) + "\n" +
+                    "code=subprocess.run([compiler,*sys.argv[1:]],check=False).returncode\n" +
+                    "if code==0 and '--crate-name' in sys.argv and sys.argv[sys.argv.index('--crate-name')+1]=='memra_server':\n" +
+                    " root=Path(" + repr(str(app)) + "); source=root/'src/lib.rs'; info=source.stat()\n" +
+                    " source.write_bytes(source.read_bytes().replace(b'wrong-cfg-body',b'drift-cfg-body')); os.utime(source,ns=(info.st_atime_ns,info.st_mtime_ns))\n" +
+                    " cpath=root/'.memra-package-source.json'; c=json.loads(cpath.read_bytes()); key=c['snapshot']['payload']['entry']\n" +
+                    " canonical=lambda x:json.dumps(x,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()\n" +
+                    " digest=lambda x:hashlib.sha256(canonical(x)).hexdigest()\n" +
+                    " c['snapshot']['payload']['packages'][key]['files']['src/lib.rs']['sha256']=hashlib.sha256(source.read_bytes()).hexdigest()\n" +
+                    " c['snapshot']['sha256']=digest(c['snapshot']['payload'])\n" +
+                    " c['source_seal']=digest({'source':c['snapshot']['payload'],'recipe':c['recipe'],'supplementary':c['supplementary'],'ambient':c['ambient']})\n" +
+                    " c['seal']=digest({k:v for k,v in c.items() if k!='seal'}); cpath.write_bytes(canonical(c)+b'\\n')\n" +
+                    " Path(" + repr(str(mutation)) + ").write_text(json.dumps({'mtime_preserved':source.stat().st_mtime_ns==info.st_mtime_ns,'new_seal':c['seal']}))\n" +
+                    "sys.exit(code)\n")
+                proxy.chmod(0o755)
+                cap['compiler'] = {'path': str(proxy), 'file': m.regular(base, proxy.name)}
+                cap['seal'] = m.digest({k: v for k, v in cap.items() if k != 'seal'})
+                (app / m.RESERVED).write_bytes(m.canonical(cap) + b'\n')
+                context = dict(env); context['RUSTC'] = str(proxy)
+                run(command, app, context=context, fail='package capsule/source changed during compiler execution')
+                changed = json.loads(mutation.read_bytes())
+                self.assertTrue(changed['mtime_preserved'])
+                self.assertNotEqual(changed['new_seal'], cap['seal'])
+                self.assertNotEqual(m.package_capsule(app), cap)
+                self.assertFalse(list(output.glob('identity-*.json')))
+                self.assertFalse(list(expectations.glob('identity-*.json')))
+                return
             run(command, app)
             binary = output / 'debug/memra-server'
             baseline = run([str(binary)], app).stdout.strip().split()
