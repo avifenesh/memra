@@ -11,3 +11,5 @@ The CUDA profile covers actual vendor-default single and three concurrent reques
 Input artifacts, vendor metadata, private wiring, billing and raw hardware receipts remain in the private evidence bank. The public proof contains their admission digests. Owner review and current PR checks gate the merge.
 
 The current wrapper uses the existing planned cache allocator, prime selector and eager HC/PP dispatch. Tokenwise overrides and frozen mixed expert residency keep their existing policy. The numerical engine and rewrite-qualification guards are unchanged. CPU routing evidence does not grant HC or PP pair qualification. Merge waits for the applicable current-source acceptance.
+
+The cache-site census separately classifies the private warmup and retains the seven non-warmup sites and their VMM scope checks. It checks the bounded model-plan allocation and context fence before decode errors can return. Five VMM and two required-warmup CPU controls pass with zero failures or ignores. The exact source census refuses an unclassified cache site and an early private-cache drop. These controls do not replace current native validation.

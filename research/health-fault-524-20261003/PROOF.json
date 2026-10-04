@@ -31,8 +31,10 @@
     "cache_lifetime_join": "67e2319b648e9b5112320836cd5b04b0bfb846c007788ed19a46c3dc9e5b71f1",
     "exact_guard_controls": "138c46850e271597333d7914375259a509176f71503fd313dd0ee4766fcd4f57"
   },
-  "status": "Historical e372 hardware acceptance. Placement-aware context-fenced warmup has current CPU proof; current native replay is blocked by foreign GPU occupancy. No hardware qualification transfer.",
+  "status": "Historical e372 hardware acceptance. Placement-aware context-fenced warmup has CPU proof; the cache-site classifier rework passes its relevant CPU contracts. Current native replay remains pending. No hardware qualification transfer.",
   "current_source": "f04c141fed9970243e61aff75271baa471466754",
   "current_native_acceptance": false,
-  "current_CPU_package_controls": 14
+  "current_CPU_package_controls": 7,
+  "current_CPU_scope": "Current cache-classification rework: five VMM controls and two required-warmup controls, zero failures or ignores. Earlier placement-aware source has fourteen focused CPU controls. Native evidence remains historical.",
+  "current_worker_sha256": "8f1c2f595a39365f6ee39c075cf1dec38e417a75719045a03f20a1e51d8d3e89"
 }

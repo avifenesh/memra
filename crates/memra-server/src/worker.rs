@@ -60441,17 +60441,56 @@ mod tests {
 
     /// WP-B day 37 (DAY37 1.2 ensure points 1 and 3, 1.3): every session-cache construction in
     /// the admission paths goes through the on-demand scope, the spec sessions through one
-    /// closure; the only direct constructions left are the park compaction's fed-length cache
-    /// and the boot calibration probe, both pooled by design. The admitted session is ensured
-    /// before it leaves admission. A new construction site fails this census until classified.
+    /// closure; park compaction, boot calibration and the private readiness warmup use pooled
+    /// caches by design. The warmup uses a bounded planned cache and drains every placement
+    /// context before returning or dropping it. It never becomes an admitted session. The
+    /// admitted session is ensured before it leaves admission. A new construction site fails
+    /// this census until classified.
     #[test]
     fn vmm_every_admission_cache_is_built_under_the_scope() {
         let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
-        let worker = squash(include_str!("worker.rs"));
-        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let worker = include_str!("worker.rs");
+        let prod = &worker[..worker
+            .find("\nmod tests {")
+            .expect("the test module exists")];
+        let warmup = &prod[prod
+            .find("\nfn run_required_boot_warmup(")
+            .expect("private readiness warmup")..];
+        let warmup = squash(&warmup[..warmup.find("\n}\n").expect("warmup end")]);
+        let live = squash(prod);
         assert_eq!(
             live.matches("memra_engine::pp::new_cache_planned(").count(),
+            8
+        );
+        assert_eq!(
+            warmup
+                .matches("memra_engine::pp::new_cache_planned(")
+                .count(),
+            1
+        );
+        // The seven classified non-warmup constructions and their scopes remain intact.
+        assert_eq!(
+            live.matches("memra_engine::pp::new_cache_planned(").count()
+                - warmup
+                    .matches("memra_engine::pp::new_cache_planned(")
+                    .count(),
             7
+        );
+        assert!(warmup.contains(
+            "memra_engine::pp::new_cache_planned( engine, &model.model.cfg, &model.model.plan, prompt.len() + 2 + 8, )"
+        ));
+        assert!(!warmup.contains("vmm_build_cache("));
+        assert!(!warmup.contains("vmm_scope("));
+        let fence = warmup
+            .find("for owner in model_device_engines(engine, loaded)")
+            .expect("warmup drains all placement contexts");
+        assert!(!warmup[..fence].contains("drop(cache)"));
+        assert!(warmup[fence..].contains("owner.ctx().synchronize()"));
+        assert!(
+            fence
+                < warmup
+                    .find("decode_result.map_err(")
+                    .expect("decode result")
         );
         // Six wrapped sites plus the helper's own definition.
         assert_eq!(live.matches("vmm_build_cache(").count(), 7);
