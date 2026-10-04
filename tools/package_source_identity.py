@@ -17,6 +17,13 @@ MAX_JSON = 64 * 1024 * 1024
 SHA256 = re.compile('[0-9a-f]{64}')
 
 
+def file_entry_shape(row):
+    require(type(row) is dict and set(row) == {'sha256', 'bytes', 'mode'}
+            and type(row['bytes']) is int and row['bytes'] >= 0
+            and type(row['sha256']) is str and SHA256.fullmatch(row['sha256'])
+            and row['mode'] in ('100644', '100755'), 'invalid source file identity')
+
+
 class Refused(ValueError):
     pass
 
@@ -197,10 +204,8 @@ def snapshot_shape(snapshot):
                 and all(type(row[k]) is list and all(type(x) is str for x in row[k])
                         for k in ('features', 'dependencies')), 'invalid package source values')
         for path, entry in row['files'].items():
-            require(type(path) is str and type(entry) is dict and set(entry) == {'sha256', 'bytes', 'mode'}
-                    and type(entry['bytes']) is int and entry['bytes'] >= 0
-                    and type(entry['sha256']) is str and SHA256.fullmatch(entry['sha256'])
-                    and entry['mode'] in ('100644', '100755'), 'invalid source file identity')
+            require(type(path) is str, 'invalid source file path')
+            file_entry_shape(entry)
             parsed = PurePosixPath(path)
             require(path and not parsed.is_absolute() and '..' not in parsed.parts
                     and parsed.as_posix() == path, 'invalid source inventory path')
@@ -495,6 +500,7 @@ def package_capsule(root):
         relative_name(row['root'])
         require(type(row['files']) is dict and row['files'], 'empty supplementary custody')
         for path, expected in row['files'].items():
+            file_entry_shape(expected)
             require(regular(root / row['root'], relative_name(path)) == expected, 'supplementary source differs')
         require(inventory(root / row['root'], package=False) == row['files'], 'supplementary membership differs')
     logical = {'source': snap['payload'], 'recipe': cap['recipe'], 'supplementary': supplemental, 'ambient': cap['ambient']}

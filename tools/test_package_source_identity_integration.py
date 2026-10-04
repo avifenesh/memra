@@ -66,7 +66,7 @@ class PackageSourceIntegration(unittest.TestCase):
                 shutil.copy2(ROOT / 'tools' / name, support / name)
             (app / '.cargo').mkdir()
             (app / '.cargo/config.toml').write_text('[source.crates-io]\nreplace-with="memra-package-source"\n[source.memra-package-source]\ndirectory="vendor"\n[build]\nrustc-wrapper="build-support/package_source_rustc.py"\n')
-            (app / 'src/lib.rs').write_text('pub fn identity()-> &\'static str{env!("MEMRA_BUILD_ID")} pub fn source()-> &\'static str{env!("MEMRA_BUILD_ID_SRC")} pub fn value()-> &\'static str{source_witness_dep::token()}\n')
+            (app / 'src/lib.rs').write_text('pub fn identity()-> &\'static str{env!("MEMRA_BUILD_ID")} pub fn source()-> &\'static str{env!("MEMRA_BUILD_ID_SRC")} #[cfg(not(unadmitted))] pub fn value()-> &\'static str{source_witness_dep::token()} #[cfg(unadmitted)] pub fn value()-> &\'static str{"wrong-cfg-body"}\n')
             (app / 'src/main.rs').write_text('fn main(){println!("{} {} {} {}",env!("MEMRA_BUILD_ID"),memra_server::identity(),memra_server::source(),memra_server::value());}\n')
             run(['cargo', 'generate-lockfile', '--offline'], app)
             output, expectations = base / 'output', base / 'expectations'
@@ -94,6 +94,11 @@ class PackageSourceIntegration(unittest.TestCase):
             self.assertEqual(baseline[2:], ['package-source-v1', 'baseline'])
             run(command, app)
             self.assertEqual(run([str(binary)], app).stdout.strip().split(), baseline)
+            rustc = ['cargo', 'rustc', '--offline', '--locked', '--lib', '--target-dir', str(output), '--']
+            run(rustc + ['--cfg=unadmitted'], app, fail='unknown actual compiler cfg')
+            run(rustc + ['--cfg', 'unadmitted'], app, fail='unknown actual compiler cfg')
+            run(rustc + ['--cfg=unadmitted', '--cfg', 'unadmitted'], app, fail='duplicate compiler cfg')
+            run(rustc + ['--test'], app, fail='unadmitted implicit compiler test mode')
             # No same-mtime source, new member, executable mode or mixed source
             # may reuse the declared package identity on a cached Cargo build.
             source = vendor / 'src/lib.rs'

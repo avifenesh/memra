@@ -30,6 +30,15 @@ def codes(args,key):
  m.require(len(found)<=1,'duplicate compiler code option')
  return found[0] if found else ''
 
+def cfg_options(args):
+ found=[]
+ for index,arg in enumerate(args):
+  if arg=='--cfg':
+   m.require(index+1<len(args),'missing compiler cfg value');found.append(args[index+1])
+  elif arg.startswith('--cfg='):found.append(arg[len('--cfg='):])
+ m.require(len(found)==len(set(found)),'duplicate compiler cfg')
+ return found
+
 def record_path(artifact):
  path=Path(artifact)
  members=[path.with_suffix('.rlib'),path.with_suffix('.rmeta')] if path.suffix in ('.rlib','.rmeta') else [path]
@@ -140,6 +149,7 @@ def receiver(argv):
   print(cap['snapshot']['sha256']);return 0
  m.require(argv,'missing rustc executable')
  compiler,args=argv[0],argv[1:]
+ m.require(not any(arg=='--test' or arg.startswith('--test=') for arg in args),'unadmitted implicit compiler test mode')
  if ('--crate-name' not in args and not any(x.startswith('--crate-name=') for x in args)) or ('-' in args and val(args,'--crate-name')=='___' and any(x.startswith('--print') for x in args) and val(args,'--out-dir') is None):
   return subprocess.run([compiler,*args],check=False,pass_fds=compiler_fds()).returncode
  cap=fresh()
@@ -149,7 +159,7 @@ def receiver(argv):
  m.require(len(keys)==1,'actual compiler manifest/source root is unbound')
  key=keys[0];row=cap['snapshot']['payload']['packages'][key]
  m.require(os.environ.get('CARGO_PKG_NAME')==row['name'] and os.environ.get('CARGO_PKG_VERSION')==row['version'],'actual compiler package identity differs')
- cfgs=[x for i,x in enumerate(args) if i and args[i-1]=='--cfg']
+ cfgs=cfg_options(args)
  m.require(all(x.startswith('feature=') or x in cap['recipe']['cfgs'][key] for x in cfgs),'unknown actual compiler cfg outside prepared recipe')
  features=sorted(x.split('=',1)[1].strip('"') for x in cfgs if x.startswith('feature='))
  m.require(set(features)<=set(row['features']),'actual compiler features outside admitted source graph')
@@ -184,7 +194,7 @@ def receiver(argv):
  m.require(set(changed_env_keys)<=set(metadata),'unexpected compiler env mutation')
  forward=[compiler,*args];code=subprocess.run(forward,env=env,check=False,pass_fds=compiler_fds()).returncode
  if code:return code
- fresh()
+ m.require(fresh()==cap,'package capsule/source changed during compiler execution')
  # Recheck inputs after actual compiler returns. No passing record after drift.
  dependencies(args,cap,key)
  stem=crate+extra;paths=[out/(('lib'+stem+'.rlib') if kind=='lib' else ('lib'+stem+'.so') if kind=='proc-macro' else stem)]
@@ -198,7 +208,7 @@ def receiver(argv):
   # read set permits the intended identity metadata on the second pass.
   env.update(metadata);code=subprocess.run(forward,env=env,check=False,pass_fds=compiler_fds()).returncode
   if code:return code
-  fresh();dependencies(args,cap,key)
+  m.require(fresh()==cap,'package capsule/source changed during compiler execution');dependencies(args,cap,key)
   m.require(own_inputs(cap,key,crate)==(own_generated,declared_generated,declared_env),'own compiler inputs changed')
   m.require(all(name in declared_generated and declared_generated[name]==entry for name,entry in dep_inputs(depfile,manifest,output,row['files']).items()),'actual generated input binding differs')
   checked_env_reads(depfile,declared_env,declared_generated)
