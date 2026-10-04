@@ -101,6 +101,14 @@ jobs:
           tools/unittest-floor.sh tools 'test_validation_*.py' 241
           tools/unittest-floor.sh tools test_model_memory_fixture.py 3
 
+      - name: Ensure ripgrep for source admission censuses
+        run: |
+          if ! command -v rg >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends -y ripgrep
+          fi
+          rg --version
+
       - name: Public CPU CI event, source and result integration
         run: python3 tools/test_public_ci_integration.py
 

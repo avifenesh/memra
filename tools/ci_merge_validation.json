@@ -28,6 +28,11 @@
     },
     {
       "job": "gates",
+      "step": "Ensure ripgrep for source admission censuses",
+      "sha256": "f26f46e4492490696821151544e4255eddca4cbd8f31ecc4f3342ac58301ea15"
+    },
+    {
+      "job": "gates",
       "step": "Public CPU CI event, source and result integration",
       "sha256": "381749e3335e5cbe268fe3a72ebdb8bdca073fed5d7d39592c817113276f1f42"
     },
@@ -455,6 +460,59 @@
         "bash",
         "tools/arch-matrix-census.sh"
       ]
+    },
+    {
+      "id": "pdl-chain",
+      "inputs": [
+        "tools/check-pdl-chain.py"
+      ],
+      "cpu": [
+        "python3",
+        "tools/check-pdl-chain.py"
+      ]
+    },
+    {
+      "id": "flags-coverage",
+      "inputs": [
+        "tools/check-flags.sh",
+        "tools/flags-row-shape.py"
+      ],
+      "cpu": [
+        "bash",
+        "tools/check-flags.sh"
+      ]
+    },
+    {
+      "id": "gate-off-arms",
+      "inputs": [
+        "tools/check-no-remove-var-gates.sh",
+        "tools/gate-remove-var-allowlist.txt"
+      ],
+      "cpu": [
+        "bash",
+        "tools/check-no-remove-var-gates.sh"
+      ]
+    },
+    {
+      "id": "support-state",
+      "inputs": [
+        "tools/check-support-states.py",
+        "tools/support_record_inputs.py"
+      ],
+      "cpu": [
+        "python3",
+        "tools/check-support-states.py"
+      ]
+    },
+    {
+      "id": "coalescer",
+      "inputs": [
+        "tools/check-coalescer-contract.py"
+      ],
+      "cpu": [
+        "python3",
+        "tools/check-coalescer-contract.py"
+      ]
     }
   ],
   "contracts": [
@@ -473,6 +531,6 @@
     "support-records",
     "tool-choice"
   ],
-  "full_workflow_sha256": "a262afe27643348399a6088eec62cf070177e9a28d37cc053a98085cf5fb6ed2",
-  "public_workflow_sha256": "8b1d914773aafc7b2bac117d0963f6e72de981822ca71888c4ab0c57136afeae"
+  "full_workflow_sha256": "c17a6e46444d573c8da8eaaaf826bae3d7dc7570cd2325bff5913f4322bad2aa",
+  "public_workflow_sha256": "9d9d4a2d57034a1e972b622ad6457241e7939ba86ee00c8ae8b4ad9a87c980fc"
 }

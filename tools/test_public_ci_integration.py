@@ -74,6 +74,14 @@ class PublicCiIntegration(unittest.TestCase):
 
             source = command(['/usr/bin/git', 'rev-parse', 'HEAD']).strip()
             self.assertEqual(len(vp.workspace(vp.Tree(repo, source))[0]), 14)
+            # Materialize the exact existing support evidence for the live guard.
+            # This is source transport, never model/runtime qualification.
+            support_tree = vp.Tree(repo, source)
+            support = vp.support_record_data_inputs(support_tree)
+            present = set(support_tree.paths('research', 'docs'))
+            for path in set(support['required']) | (set(support['optional']) & present):
+                target = repo / path; target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(support_tree.read_bytes(path))
             descriptor = {'full_name': ci.REPOSITORY,
                           'owner': {'login': ci.OWNER, 'id': ci.OWNER_ID}}
             external = {'login': 'contributor', 'id': 42}
@@ -225,6 +233,91 @@ class PublicCiIntegration(unittest.TestCase):
             self.assertTrue(native_plan['jobs']['arch'])
             self.assertTrue(native_plan['jobs']['server'])
             self.assertEqual(native_plan['native']['scope'], 'serving')
+            self.assertIn('coalescer', ci.guard_ids(native_plan))
+            # Real production CUDA path retains thin routing and the PDL guard.
+            # No nvcc/native execution: the existing CPU checker sees an actual
+            # first-statement omission in the source it ordinarily censuses.
+            cuda_path = 'crates/memra-engine/cu/dsv4_sampler.cu'
+            cuda_original = (repo / cuda_path).read_text()
+            cuda_green = commit_file(cuda_path, cuda_original + '\n// owned guard fixture\n')
+            cuda_plan = planned(routed('pull_request', event(native, cuda_green)), cuda_green)
+            self.assertEqual(cuda_plan.get('ci_mode'), 'thin', cuda_plan['reason'])
+            self.assertEqual(cuda_plan['native']['scope'], 'full')
+            self.assertIn('pdl-chain', ci.guard_ids(cuda_plan))
+            plan_file.write_text(json.dumps(cuda_plan))
+            output = command([sys.executable, str(repo / 'tools/public_ci.py'), 'contracts',
+                              '--plan', str(plan_file), '--repo', str(repo), '--out', str(execution_file)])
+            self.assertIn('pdl-chain:', output)
+            cuda_execution = json.loads(execution_file.read_text())
+            self.assertIn('pdl-chain', cuda_execution['merge_guards'])
+            self.assertIn('coalescer', cuda_execution['merge_guards'])
+            # The source census cannot pass against a missing pinned CUDA input.
+            required_cuda = repo / 'crates/memra-engine/cu/memra_pdl_chain.cuh'
+            required_bytes = required_cuda.read_bytes(); required_cuda.unlink()
+            try:
+                refused = command([sys.executable, str(repo / 'tools/public_ci.py'), 'contracts',
+                                   '--plan', str(plan_file), '--repo', str(repo), '--out', str(execution_file)], ok=False)
+                self.assertIn('PDL input census is missing', refused)
+            finally:
+                required_cuda.write_bytes(required_bytes)
+            needs_file.write_text(json.dumps(needs))
+            command(result_args)
+            # An otherwise complete receipt with the PDL execution omitted must
+            # refuse, reproducing the old seven-guard omission at the result seam.
+            cuda_execution['merge_guards'].remove('pdl-chain')
+            execution_file.write_text(json.dumps(cuda_execution))
+            refused = command(result_args, ok=False)
+            self.assertIn('selected contract execution is missing or incomplete', refused)
+            cuda_bad = commit_file(cuda_path, cuda_original.replace('    MEMRA_PDL_CHAIN_ENTRY();\n', '', 1))
+            bad_plan = planned(routed('pull_request', event(cuda_green, cuda_bad)), cuda_bad)
+            self.assertEqual(bad_plan.get('ci_mode'), 'thin', bad_plan['reason'])
+            self.assertEqual(bad_plan['native']['scope'], 'full')
+            plan_file.write_text(json.dumps(bad_plan))
+            refused = command([sys.executable, str(repo / 'tools/public_ci.py'), 'contracts',
+                               '--plan', str(plan_file), '--repo', str(repo), '--out', str(execution_file)], ok=False)
+            self.assertIn('dsv4_sample_prepare does not open with MEMRA_PDL_CHAIN_ENTRY()', refused)
+            cuda_restored = commit_file(cuda_path, cuda_original)
+            header_path = 'crates/memra-engine/cu/dsv4_replay_control.cuh'
+            header = commit_file(header_path, (repo / header_path).read_text() + '\n// header guard fixture\n')
+            header_plan = planned(routed('pull_request', event(cuda_restored, header)), header)
+            self.assertEqual(header_plan.get('ci_mode'), 'thin', header_plan['reason'])
+            self.assertEqual(header_plan['native']['scope'], 'full')
+            self.assertIn('pdl-chain', ci.guard_ids(header_plan))
+            # --list is weaker than coverage: an actual undocumented read in an
+            # owned Rust source must fail the selected live coverage guard.
+            runtime_path = 'crates/memra-server/src/public_ci_fixture.rs'
+            runtime = commit_file(runtime_path, 'fn fixture() { let _ = std::env::var("MEMRA_PUBLIC_CI_UNDOCUMENTED_FIXTURE"); }\n')
+            runtime_plan = planned(routed('pull_request', event(header, runtime)), runtime)
+            self.assertEqual(runtime_plan.get('ci_mode'), 'thin', runtime_plan['reason'])
+            self.assertIn('flags-coverage', ci.guard_ids(runtime_plan))
+            plan_file.write_text(json.dumps(runtime_plan))
+            refused = command([sys.executable, str(repo / 'tools/public_ci.py'), 'contracts',
+                               '--plan', str(plan_file), '--repo', str(repo), '--out', str(execution_file)], ok=False)
+            self.assertIn('MEMRA_PUBLIC_CI_UNDOCUMENTED_FIXTURE', refused)
+            self.assertIn('UNCOVERED runtime names', refused)
+            runtime_restored = commit_file(runtime_path, '// native fixture\n')
+            # Gate OFF-arm and live support-state checks are merge guards, not
+            # substituted by their refusal fixtures or a list-only census.
+            off_path = 'crates/memra-server/src/bin/public_ci_off_fixture.rs'
+            off = commit_file(off_path, 'fn main() { std::env::remove_var("MEMRA_PUBLIC_CI_OFF_FIXTURE"); }\n')
+            off_plan = planned(routed('pull_request', event(runtime_restored, off)), off)
+            self.assertEqual(off_plan.get('ci_mode'), 'thin', off_plan['reason'])
+            self.assertIn('gate-off-arms', ci.guard_ids(off_plan))
+            plan_file.write_text(json.dumps(off_plan))
+            refused = command([sys.executable, str(repo / 'tools/public_ci.py'), 'contracts',
+                               '--plan', str(plan_file), '--repo', str(repo), '--out', str(execution_file)], ok=False)
+            self.assertIn('VACUOUS GATE HAZARD', refused)
+            off_restored = commit_file(off_path, 'fn main() {}\n')
+            readme = (repo / 'README.md').read_text()
+            support_bad = commit_file('README.md', readme + '\nNativeQualified\n')
+            support_plan = planned(routed('pull_request', event(off_restored, support_bad)), support_bad)
+            self.assertEqual(support_plan.get('ci_mode'), 'thin', support_plan['reason'])
+            self.assertIn('support-state', ci.guard_ids(support_plan))
+            plan_file.write_text(json.dumps(support_plan))
+            refused = command([sys.executable, str(repo / 'tools/public_ci.py'), 'contracts',
+                               '--plan', str(plan_file), '--repo', str(repo), '--out', str(execution_file)], ok=False)
+            self.assertIn('check-support-states: FAIL', refused)
+            support_restored = commit_file('README.md', readme)
             include = commit_file('crates/memra-server/src/public_ci_fixture.rs',
                                   'const INPUT: &str = include_str!("../../../.github/workflows/ci.yml");\n')
             no_step = commit_file('.github/workflows/ci.yml', workflow.replace(block, '', 1))

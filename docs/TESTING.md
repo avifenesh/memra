@@ -2605,3 +2605,18 @@ real caller execution and coherent routing/execution refusal controls. This is
 CPU CI orchestration evidence, not model, runtime or serving qualification.
 Manual/funded GPU and receipt workflows are outside this change. No new runtime
 flag or speed claim accompanies these modes.
+
+
+Thin merge validation also retains the live admission guards reached by its source
+plan. Engine reach runs the PDL first-statement census over every pinned immediate
+`.cu`/`.cuh` input. Runtime Rust or FLAGS.md changes run flag coverage and row shape,
+rather than using `--list` as coverage. Gate/test Rust changes run the OFF-arm
+unset lint. Support-record reach runs the live support-state census in addition
+to its selected refusal controls. Server reach keeps the exact-source coalescer
+contract. Reader code stays frozen; current input membership, bytes and executable
+modes are checked before execution. Missing/unproven closure expands or refuses.
+The receipt distinguishes selected, executed and successful merge guards; an
+omitted required guard cannot become a successful result. The real Git/event
+witness includes production PDL omission, undocumented runtime read, unpinned
+OFF-arm unset and unsupported doc claim refusals. These are CPU source/admission
+checks, with no native compilation or numerical qualification claimed.

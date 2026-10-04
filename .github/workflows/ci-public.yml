@@ -66,6 +66,14 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: public-ci-plan
+      - name: Ensure ripgrep for source admission censuses
+        run: |
+          if ! command -v rg >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends -y ripgrep
+          fi
+          rg --version
+
       - name: Execute mapped merge guards and affected callers once
         run: python3 tools/public_ci.py contracts --plan validation-plan.json --out contract-execution.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

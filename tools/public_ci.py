@@ -29,7 +29,13 @@ MERGE_GUARDS = {
     'publish-members': ['bash', 'tools/workspace-publish-census.sh'],
     'stub-abi': ['python3', 'tools/stub-abi-census.py'],
     'arch-matrix': ['bash', 'tools/arch-matrix-census.sh'],
+    'pdl-chain': ['python3', 'tools/check-pdl-chain.py'],
+    'flags-coverage': ['bash', 'tools/check-flags.sh'],
+    'gate-off-arms': ['bash', 'tools/check-no-remove-var-gates.sh'],
+    'support-state': ['python3', 'tools/check-support-states.py'],
+    'coalescer': ['python3', 'tools/check-coalescer-contract.py'],
 }
+SCOPED_GUARDS = {'pdl-chain', 'flags-coverage', 'gate-off-arms', 'support-state', 'coalescer'}
 
 
 class Refused(ValueError):
@@ -246,10 +252,94 @@ def source_plan(root, receipt, head):
             for path in row['inputs']:
                 if _regular(before, path) != _regular(after, path):
                     raise Refused('merge guard implementation changed: ' + path)
+        for name in guard_ids(plan):
+            guard_data_inputs(root, head, name)
         plan.update(ci_mode='thin', qualification=False)
         return plan
     except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
         return full_cpu_plan(root, head, 'unproven thin source/input ownership: ' + str(error))
+
+
+def guard_ids(plan):
+    """Static censuses plus the existing guards reached by this source plan."""
+    jobs, paths = plan['jobs'], plan['changed']
+    if (type(jobs) is not dict or set(jobs) != set(validation_plan.JOBS)
+            or any(type(value) is not bool for value in jobs.values())
+            or type(paths) is not list or any(type(path) is not str for path in paths)):
+        raise Refused('incomplete guard ownership decisions')
+    selected = set(MERGE_GUARDS) - SCOPED_GUARDS
+    if jobs['engine']:
+        selected.add('pdl-chain')
+    if any(path.startswith('crates/') and '/src/' in path and path.endswith('.rs')
+           or path == 'docs/FLAGS.md' for path in paths):
+        selected.add('flags-coverage')
+    if any(path.startswith('crates/') and path.endswith('.rs')
+           and ('/tests/' in path or '/src/bin/' in path) for path in paths):
+        selected.add('gate-off-arms')
+    if any(row.get('id') == 'support-records' for row in plan['cpu_contracts']):
+        selected.add('support-state')
+    if jobs['server']:
+        selected.add('coalescer')
+    return [name for name in MERGE_GUARDS if name in selected]
+
+
+def guard_data_inputs(root, head, name):
+    """Bind the checker to its actual Git/physical input census, not a label."""
+    root = Path(root)
+    tree = validation_plan.Tree(root, commit(head))
+    paths = set()
+    if name == 'pdl-chain':
+        prefix = 'crates/memra-engine/cu'
+        paths = {path for path in tree.paths(prefix)
+                 if Path(path).parent.as_posix() == prefix and Path(path).suffix in ('.cu', '.cuh')}
+        actual = {path.relative_to(root).as_posix() for pattern in ('*.cu', '*.cuh')
+                  for path in (root / prefix).glob(pattern)}
+        if not paths or paths != actual:
+            raise Refused('PDL input census is missing or differs from pinned source')
+    elif name in ('flags-coverage', 'gate-off-arms'):
+        def relevant(path):
+            return (path.startswith('crates/') and path.endswith('.rs')
+                    and ('/src/' in path if name == 'flags-coverage'
+                         else '/tests/' in path or '/src/bin/' in path))
+        paths = {path for path in tree.paths('crates') if relevant(path)}
+        actual = {path.relative_to(root).as_posix() for path in (root / 'crates').rglob('*.rs')
+                  if relevant(path.relative_to(root).as_posix())}
+        if not paths or paths != actual:
+            raise Refused('runtime/gate input census is missing or differs from pinned source')
+        paths.add('docs/FLAGS.md' if name == 'flags-coverage' else 'tools/gate-remove-var-allowlist.txt')
+    elif name == 'support-state':
+        resolved = validation_plan.support_record_data_inputs(tree)
+        paths.update(validation_plan.support_record_source_inputs(tree)['inputs'])
+        paths.update(resolved['required'])
+        all_paths = set(tree.paths('research', 'docs'))
+        optional = {path for path in resolved['optional'] if path in all_paths}
+        actual_optional = {path for path in resolved['optional'] if (root / path).exists()
+                           or (root / path).is_symlink()}
+        if optional != actual_optional:
+            raise Refused('support sidecar membership differs from pinned source')
+        paths.update(optional)
+        # The live checker reads the published docs and pack program, as well as
+        # family sidecars. Keep absence/presence and bytes pinned at execution.
+        docs = {path for path in tree.paths('docs') if path.endswith('.md')
+                and not path.startswith('docs/archive/')}
+        actual_docs = {path.relative_to(root).as_posix() for path in (root / 'docs').rglob('*.md')
+                       if not path.relative_to(root).as_posix().startswith('docs/archive/')}
+        if docs != actual_docs:
+            raise Refused('support doc membership differs from pinned source')
+        paths.update(docs)
+        paths.update(('README.md', 'STATUS.md', 'AGENTS.md', 'crates/memra-cli/src/lib.rs'))
+        pack_root = 'crates/memra-gguf/src/model_packs'
+        packs = {path for path in tree.paths(pack_root) if path.endswith('.rs')}
+        actual_packs = {path.relative_to(root).as_posix() for path in (root / pack_root).rglob('*.rs')}
+        if packs != actual_packs:
+            raise Refused('support pack membership differs from pinned source')
+        paths.update(packs)
+    elif name == 'coalescer':
+        paths.add('crates/memra-server/src/dsv4_serve.rs')
+    for path in sorted(paths):
+        if _regular(tree, path) != _regular(validation_plan.LocalTree(root), path):
+            raise Refused('merge guard data differs from pinned source: ' + path)
+    return sorted(paths)
 
 
 def execute_contracts(root, plan):
@@ -284,12 +374,23 @@ def execute_contracts(root, plan):
     if set(available) != set(normal):
         raise Refused('execution input reader expanded beyond the selected plan')
     executed = []
-    guards = inventory(root)['guards']
+    selected_guards = guard_ids(plan)
+    guards = [row for row in inventory(root)['guards'] if row['id'] in selected_guards]
+    guard_executed = []
     for row in guards:
         for path in row['inputs']:
             if _regular(validation_plan.Tree(root, head), path) != _regular(validation_plan.LocalTree(root), path):
                 raise Refused('merge guard differs from pinned source: ' + path)
-        subprocess.run(row['cpu'], cwd=root, check=True)
+        guard_data_inputs(root, head, row['id'])
+        if row['id'] == 'gate-off-arms' and 'ALLOWLIST' in os.environ:
+            raise Refused('gate allowlist environment override is not source-bound')
+        if row['id'] == 'coalescer':
+            import tempfile
+            with tempfile.TemporaryDirectory(prefix='memra-ci-coalescer-') as directory:
+                subprocess.run([*row['cpu'], '--out', directory], cwd=root, check=True)
+        else:
+            subprocess.run(row['cpu'], cwd=root, check=True)
+        guard_executed.append(row['id'])
     for name in names:
         contract = validation_plan.TOOL_CONTRACTS[name]
         inputs = (next(row['inputs'] for row in policy_rows
@@ -308,7 +409,9 @@ def execute_contracts(root, plan):
         executed.append(name)
     return {'schema': 'memra-thin-contract-execution-v1', 'head': head,
             'selected': names, 'executed': executed, 'successful': executed,
-            'merge_guards': [row['id'] for row in guards],
+            'merge_guard_selected': selected_guards,
+            'merge_guards': guard_executed,
+            'merge_guard_successful': guard_executed,
             'qualification': False}
 
 
@@ -340,7 +443,8 @@ def merge_result(plan, needs, execution=None):
                 or execution.get('schema') != 'memra-thin-contract-execution-v1'
                 or execution.get('head') != plan['head']
                 or execution.get('qualification') is not False
-                or execution.get('merge_guards') != list(MERGE_GUARDS)
+                or any(execution.get(key) != guard_ids(plan)
+                       for key in ('merge_guard_selected', 'merge_guards', 'merge_guard_successful'))
                 or any(execution.get(key) != selected
                        for key in ('selected', 'executed', 'successful'))):
             raise Refused('selected contract execution is missing or incomplete')
