@@ -53,17 +53,17 @@ jobs:
               --head "$GITHUB_SHA" --out-dir "$GITHUB_WORKSPACE" --github-output "$GITHUB_OUTPUT"
           else
             python3 -I - <<'PY'
-            import json, os, pathlib
-            reason = 'external/unknown context selects full' if os.environ['OWNER_MODE'] != 'true' else 'trusted base entry unavailable; full bootstrap'
-            route = {'schema': 'memra-public-ci-route-v1', 'mode': 'full', 'event': os.environ['EVENT_NAME'], 'reason': reason, 'qualification': False}
-            plan = {'schema': 'memra-validation-plan-v1', 'mode': 'full', 'ci_mode': 'full', 'head': os.environ['GITHUB_SHA'], 'trusted_base': os.environ['TRUSTED_HEAD'], 'reason': reason, 'cpu_inventory': 'complete', 'selection_source': 'workflow literals', 'qualification': False}
-            pathlib.Path('route.json').write_text(json.dumps(route, indent=2) + '\n')
-            pathlib.Path('validation-plan.json').write_text(json.dumps(plan, indent=2) + '\n')
-            with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-                output.write('ci_mode=full\npackages=\nrequires_cuda=true\n')
-                output.write(''.join(name + '=true\n' for name in ('build', 'clippy', 'arch', 'engine', 'server')))
-            print(reason)
-            PY
+          import json, os, pathlib
+          reason = 'external/unknown context selects full' if os.environ['OWNER_MODE'] != 'true' else 'trusted base entry unavailable; full bootstrap'
+          route = {'schema': 'memra-public-ci-route-v1', 'mode': 'full', 'event': os.environ['EVENT_NAME'], 'reason': reason, 'qualification': False}
+          plan = {'schema': 'memra-validation-plan-v1', 'mode': 'full', 'ci_mode': 'full', 'head': os.environ['GITHUB_SHA'], 'trusted_base': os.environ['TRUSTED_HEAD'], 'reason': reason, 'cpu_inventory': 'complete', 'selection_source': 'workflow literals', 'qualification': False}
+          pathlib.Path('route.json').write_text(json.dumps(route, indent=2) + '\n')
+          pathlib.Path('validation-plan.json').write_text(json.dumps(plan, indent=2) + '\n')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('ci_mode=full\npackages=\nrequires_cuda=true\n')
+              output.write(''.join(name + '=true\n' for name in ('build', 'clippy', 'arch', 'engine', 'server')))
+          print(reason)
+          PY
           fi
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -363,18 +363,18 @@ jobs:
               --execution contract-execution.json --out merge-result.json
           else
             python3 -I - <<'PY'
-            import json, os, pathlib
-            plan = json.loads(pathlib.Path('validation-plan.json').read_text())
-            needs = json.loads(os.environ['JOB_RESULTS'])
-            head = os.environ['GITHUB_SHA']
-            if plan.get('schema') != 'memra-validation-plan-v1' or plan.get('mode') != 'full' or plan.get('head') != head or plan.get('qualification') is not False:
-                raise SystemExit('Missing or stale full plan')
-            if needs.get('route', {}).get('result') != 'success' or needs.get('full', {}).get('result') != 'success' or needs.get('full', {}).get('outputs', {}).get('validated_head') != head:
-                raise SystemExit('Full CPU result is missing, failed or stale')
-            result = {'schema': 'memra-ci-merge-result-v1', 'head': head, 'mode': 'full', 'required_jobs': ['route', 'full'], 'success': True, 'qualification': False}
-            pathlib.Path('merge-result.json').write_text(json.dumps(result, indent=2) + '\n')
-            print('Conclusive full CPU result: ' + head)
-            PY
+          import json, os, pathlib
+          plan = json.loads(pathlib.Path('validation-plan.json').read_text())
+          needs = json.loads(os.environ['JOB_RESULTS'])
+          head = os.environ['GITHUB_SHA']
+          if plan.get('schema') != 'memra-validation-plan-v1' or plan.get('mode') != 'full' or plan.get('head') != head or plan.get('qualification') is not False:
+              raise SystemExit('Missing or stale full plan')
+          if needs.get('route', {}).get('result') != 'success' or needs.get('full', {}).get('result') != 'success' or needs.get('full', {}).get('outputs', {}).get('validated_head') != head:
+              raise SystemExit('Full CPU result is missing, failed or stale')
+          result = {'schema': 'memra-ci-merge-result-v1', 'head': head, 'mode': 'full', 'required_jobs': ['route', 'full'], 'success': True, 'qualification': False}
+          pathlib.Path('merge-result.json').write_text(json.dumps(result, indent=2) + '\n')
+          print('Conclusive full CPU result: ' + head)
+          PY
           fi
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:

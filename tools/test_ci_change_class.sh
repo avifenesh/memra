@@ -122,7 +122,16 @@ ok "arm18 real-tree census ($(printf '%s\n' "$census" | grep -c .) paths, none u
 # arm 14: every selected job fails closed when its output is absent.
 ci=$here/.github/workflows/ci.yml
 live=$(grep -vE '^\s*#' "$ci")
-grep -q 'tools/ci-change-class.sh' <<< "$live" || bad "arm14: missing planner caller"
+# Full selection is no longer delegated to PR-modifiable planner code.
+changes=$(awk '/^  changes:/{s=1} /^  gates:/{s=0} s{print}' "$ci")
+for selected in build clippy server engine portable core lanes arch publish requires_cuda; do
+  grep -Fq "      $selected: \"true\"" <<< "$changes" || bad "arm14: full $selected is not a workflow literal"
+done
+grep -Fq '      packages: ""' <<< "$changes" || bad "arm14: full packages do not expand to workspace"
+grep -Fq '      contracts: ""' <<< "$changes" || bad "arm14: full contracts do not run the available inventory"
+if grep -Eq 'ci-change-class.sh full|public_ci.py full-plan' <<< "$changes"; then
+  bad "arm14: candidate planner can select the full inventory"
+fi
 grep -q 'tools/test_ci_change_class.sh' <<< "$live" || bad "arm14: missing fixture caller"
 for job in build clippy server engine portable arch publish; do
   grep -Fq "!cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.$job != 'false')" <<< "$live" || bad "arm14: $job does not fail closed"
