@@ -259,7 +259,9 @@ else:
             commit_file('tools/ci-change-class.sh', producer_original)
             command(['/usr/bin/git', 'rm', '--sparse', 'sitecustomize.py', 'tools/json.py'])
             command(['/usr/bin/git', 'commit', '-qm', 'restore hostile fixture'])
-            restored_head = command(['/usr/bin/git', 'rev-parse', 'HEAD']).strip()
+            # Empty diffs deliberately expand FULL. Use a real owned docs edge
+            # for the restored legitimate thin control.
+            restored_head = commit_file('research/trusted-entry-restored.md', 'Owned documentation control.\n')
             event_file.write_text(json.dumps(event(source, restored_head)))
             command(trusted_args[:-4] + ['--head', restored_head, '--out-dir', str(out_dir)], extra_env=attack_env)
             restored_plan = json.loads((out_dir / 'validation-plan.json').read_text())
