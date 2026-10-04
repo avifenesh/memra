@@ -262,7 +262,8 @@ else:
             restored_head = command(['/usr/bin/git', 'rev-parse', 'HEAD']).strip()
             event_file.write_text(json.dumps(event(source, restored_head)))
             command(trusted_args[:-4] + ['--head', restored_head, '--out-dir', str(out_dir)], extra_env=attack_env)
-            self.assertEqual(json.loads((out_dir / 'validation-plan.json').read_text())['ci_mode'], 'thin')
+            restored_plan = json.loads((out_dir / 'validation-plan.json').read_text())
+            self.assertEqual(restored_plan.get('ci_mode'), 'thin', restored_plan.get('reason'))
             self.assertFalse(marker.exists())
 
             # Actual graph, immutable source, ordinary owner docs change.
