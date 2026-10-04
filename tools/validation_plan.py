@@ -61,7 +61,8 @@ TOOL_CONTRACTS = {
     },
     'n-choice': {
         'required': True,
-        'inputs': ['tools/native_choices.py', 'tools/choice_verifier.py',
+        'inputs': ['tools/unittest-floor.sh', 'tools/unittest_floor.py',
+                   'tools/native_choices.py', 'tools/choice_verifier.py',
                    'tools/replay_native_choices.py', 'tools/replay_choice_composite.py', 'tools/test_choice_verifier.py'] + [
             'research/n-choices-528-20261003/receipts/native-final-v5/' + name
             for name in (
@@ -368,7 +369,8 @@ TOOL_CONTRACTS = {
     },
     'tool-choice': {
         'presence': ['tools/tool-choice-gate.py', 'tools/test_tool_choice_gate.py'],
-        'inputs': ['tools/tool-choice-gate.py', 'tools/test_tool_choice_gate.py',
+        'inputs': ['tools/unittest-floor.sh', 'tools/unittest_floor.py',
+                   'tools/tool-choice-gate.py', 'tools/test_tool_choice_gate.py',
                    'tools/validation_coverage.py'] + [
             f'research/tool-choice-20261003/receipts/{run}/{name}'
             for run in ('native-v3', 'native-v4')
@@ -401,7 +403,8 @@ TOOL_CONTRACTS = {
     },
     'q35-cache': {
         'required': True,
-        'inputs': ['tools/q35-cold-mixed-gate.py', 'tools/test_q35_cold_mixed_gate.py',
+        'inputs': ['tools/unittest-floor.sh', 'tools/unittest_floor.py',
+                   'tools/q35-cold-mixed-gate.py', 'tools/test_q35_cold_mixed_gate.py',
                    'research/sellgate-20260812/sellgate_replay.py', 'tools/cache_qualification.py',
                    'research/sellgate-20260812/workload.lock.json',
                    'research/spill-lead-20260919/integration-day12/integ68-q35ab/main-q35-cold-mixed.log',
@@ -411,27 +414,31 @@ TOOL_CONTRACTS = {
     },
     'cache-meter': {
         'presence': ['tools/cache-meter-gate.py', 'tools/test_cache_meter_gate.py'],
-        'inputs': ['tools/cache-meter-gate.py', 'tools/prometheus_metrics.py',
+        'inputs': ['tools/unittest-floor.sh', 'tools/unittest_floor.py',
+                   'tools/cache-meter-gate.py', 'tools/prometheus_metrics.py',
                    'tools/test_cache_meter_gate.py'],
         'cpu': ['tools/unittest-floor.sh', 'tools', 'test_cache_meter_gate.py', '3'],
         'native': ['Pinned local model cache-meter closed form, native/OpenAI format parity, authenticated Prometheus and exact usage/token distributions'],
     },
     'metrics-live': {
         'presence': ['tools/metrics-live-gate.py', 'tools/test_prometheus_metrics.py'],
-        'inputs': ['tools/metrics-live-gate.py', 'tools/prometheus_metrics.py',
+        'inputs': ['tools/unittest-floor.sh', 'tools/unittest_floor.py',
+                   'tools/metrics-live-gate.py', 'tools/prometheus_metrics.py',
                    'tools/test_prometheus_metrics.py'],
         'cpu': ['tools/unittest-floor.sh', 'tools', 'test_prometheus_metrics.py', '7'],
         'native': ['Pinned local plain/MTP lifecycle, real queue/cancellation, live capacity and owned-worker-fault assertions; CPU parser success does not qualify serving'],
     },
     'physical-gpu': {
         'required': True,
-        'inputs': ['tools/resolve-physical-gpu.py', 'tools/test_resolve_physical_gpu.py'],
+        'inputs': ['tools/unittest-floor.sh', 'tools/unittest_floor.py',
+                   'tools/resolve-physical-gpu.py', 'tools/test_resolve_physical_gpu.py'],
         'cpu': ['tools/unittest-floor.sh', 'tools', 'test_resolve_physical_gpu.py', '21'],
         'native': ['Selected physical GPU refusal/ready test when resolver behavior changes'],
     },
     'support-records': {
         'required': True,
-        'inputs': ['tools/check-support-states.py', 'tools/test_check_support_states.py',
+        'inputs': ['tools/unittest-floor.sh', 'tools/unittest_floor.py',
+                   'tools/check-support-states.py', 'tools/test_check_support_states.py',
                    'docs/support-records.toml', 'tools/support_record_inputs.py',
                    'tools/test_validation_support_record_inputs.py',
                    'tools/test_validation_support_source_inputs.py',
@@ -441,14 +448,16 @@ TOOL_CONTRACTS = {
     },
     'serving-qualification': {
         'presence': ['tools/collect-serving-qualification.py', 'tools/test_collect_serving_qualification.py'],
-        'inputs': ['tools/collect-serving-qualification.py', 'tools/test_collect_serving_qualification.py',
+        'inputs': ['tools/unittest-floor.sh', 'tools/unittest_floor.py',
+                   'tools/collect-serving-qualification.py', 'tools/test_collect_serving_qualification.py',
                    'tools/cache_qualification.py'],
         'cpu': ['tools/unittest-floor.sh', 'tools', 'test_collect_serving_qualification.py', '8'],
         'native': ['Source-bound composite streaming/cache/offered-concurrency/cancellation/context collector, with the separate cache-disabled red boot'],
     },
     'background-chat-text': {
         'presence': ['tools/background-chat-text-gate.py', 'tools/test_background_chat_text_gate.py'],
-        'inputs': ['tools/background-chat-text-gate.py', 'tools/test_background_chat_text_gate.py', 'tools/cache_qualification.py',
+        'inputs': ['tools/unittest-floor.sh', 'tools/unittest_floor.py',
+                   'tools/background-chat-text-gate.py', 'tools/test_background_chat_text_gate.py', 'tools/cache_qualification.py',
                    'research/background-chat-text-20261002/tools/vendor-profile.toml'],
         'cpu': ['tools/unittest-floor.sh', 'tools', 'test_background_chat_text_gate.py', '9'],
         'native': ['Pinned-artifact fresh OFF/ON identity and bare-default probes; paired real chat/text delivery beyond 90 seconds, tenant isolation, native-progress cancellation and exactly-one final callback'],
@@ -456,7 +465,8 @@ TOOL_CONTRACTS = {
     'sampled-mtp': {
         'presence': ['tools/collect-sampled-mtp.py', 'tools/test_collect_sampled_mtp.py',
                      'tools/sampled-mtp-requirements.txt'],
-        'inputs': ['tools/collect-sampled-mtp.py', 'tools/test_collect_sampled_mtp.py',
+        'inputs': ['tools/unittest-floor.sh', 'tools/unittest_floor.py',
+                   'tools/collect-sampled-mtp.py', 'tools/test_collect_sampled_mtp.py',
                    'tools/sampled-mtp-requirements.txt', 'tools/collect-serving-qualification.py',
                    'tools/cache_qualification.py'],
         'cpu': ['tools/unittest-floor.sh', 'tools', 'test_collect_sampled_mtp.py', '7'],
@@ -1135,6 +1145,10 @@ def make_plan(paths, base_tree, head_tree):
     for path in paths:
         if PurePosixPath(path).is_absolute() or '..' in PurePosixPath(path).parts or any(c in path for c in '\n\r\t\0'):
             return full('noncanonical changed path')
+    # The shared admission implementation reaches all standing floor callers.
+    # Input closure does not narrow its existing complete validation selection.
+    if any(path in ('tools/unittest-floor.sh', 'tools/unittest_floor.py') for path in paths):
+        return full('shared unittest admission implementation changed', paths)
     try:
         support_data, support_sources, source_reader_active = set(), set(), False
         for tree in (base_tree, head_tree):
