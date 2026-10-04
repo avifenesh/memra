@@ -214,7 +214,7 @@ class PublicCiIntegration(unittest.TestCase):
             try:
                 refused = command([sys.executable, str(repo / 'tools/public_ci.py'), 'contracts',
                                    '--plan', str(plan_file), '--repo', str(repo), '--out', str(execution_file)], ok=False)
-                self.assertIn('merge guard data differs from pinned source: docs/ROUTER.md', refused)
+                self.assertRegex(refused, r'merge guard data (?:length )?differs from pinned source: docs/ROUTER\.md')
             finally:
                 registry_doc.write_bytes(registry_original)
             # A schema-valid shortened mutable policy cannot omit producer checks
