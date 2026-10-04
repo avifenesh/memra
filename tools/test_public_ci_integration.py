@@ -173,6 +173,27 @@ class PublicCiIntegration(unittest.TestCase):
             self.assertEqual(output.count('SFT CPU contract: PASS: original=9 executed=18'), 1, output)
             execution = json.loads(execution_file.read_text())
             self.assertEqual(execution['executed'], ['sft-generator-caller'])
+            # Git executable mode follows the owner bit, not group/other bits.
+            executable = repo / 'tools/check-action-pins.sh'
+            original_mode = executable.stat().st_mode & 0o777
+            for mode in (0o700, 0o744):
+                executable.chmod(mode)
+                self.assertEqual(vp.LocalTree(repo).input_modes('tools/check-action-pins.sh', recursive=False)
+                                 ['tools/check-action-pins.sh'], '100755')
+                ci.pin_data_inputs(repo, restored, ['tools/check-action-pins.sh'])
+            executable.chmod(0o654)
+            with self.assertRaises(ci.Refused):
+                ci.pin_data_inputs(repo, restored, ['tools/check-action-pins.sh'])
+            executable.chmod(original_mode)
+            regular = repo / 'docs/ROUTER.md'; regular_mode = regular.stat().st_mode & 0o777
+            regular.chmod(0o641)
+            self.assertEqual(vp.LocalTree(repo).input_modes('docs/ROUTER.md', recursive=False)
+                             ['docs/ROUTER.md'], '100644')
+            ci.pin_data_inputs(repo, restored, ['docs/ROUTER.md'])
+            # Coherent all-bits mutation misclassifies this actual Git-clean file.
+            with self.assertRaises(AssertionError):
+                self.assertEqual('100755' if regular.stat().st_mode & 0o111 else '100644', '100644')
+            regular.chmod(regular_mode)
             # Actual tracked contained aliases are part of the conflict census.
             # A changed target string must refuse without following it.
             alias = repo / 'research/qwen4exp-bringup-20260829/round2-box-receipts/expand-goldens.py'

@@ -544,7 +544,7 @@ def compare_data_inputs(root, head, paths):
         descriptor = local_data_fd(root, path)
         try:
             snapshot = os.fstat(descriptor)
-            mode = '100755' if snapshot.st_mode & 0o111 else '100644'
+            mode = '100755' if snapshot.st_mode & stat.S_IXUSR else '100644'
             if mode != before[path]:
                 raise Refused('merge guard data mode differs from pinned source: ' + path)
             process, remaining = blob_header(root, head, path)
