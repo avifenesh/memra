@@ -39,11 +39,26 @@ def cfg_options(args):
  m.require(len(found)==len(set(found)),'duplicate compiler cfg')
  return found
 
+def artifact_role(path):
+ suffix=Path(path).suffix
+ return suffix[1:] if suffix in ('.rlib','.rmeta','.so','.a') else 'binary'
+
+def physical_bundle(path):
+ path=Path(path);role=artifact_role(path)
+ if role=='binary':members=[path]
+ elif role in ('a','so') and not path.with_suffix('.rlib').exists():
+  m.require(role=='so','static archive compiler bundle is incomplete');members=[path]
+ else:
+  members=[path.with_suffix('.rlib')]
+  native=[path.with_suffix(x) for x in ('.a','.so')]
+  if any(os.path.lexists(x) for x in native):
+   m.require(all(os.path.lexists(x) for x in native) and not os.path.lexists(path.with_suffix('.rmeta')),'multi-product compiler bundle is incomplete or mixed')
+   members+=native
+  elif os.path.lexists(path.with_suffix('.rmeta')):members.append(path.with_suffix('.rmeta'))
+ return {artifact_role(member):m.regular(member.parent,member.name) for member in members}
+
 def record_path(artifact):
- path=Path(artifact)
- members=[path.with_suffix('.rlib'),path.with_suffix('.rmeta')] if path.suffix in ('.rlib','.rmeta') else [path]
- bundle={member.suffix or 'binary':m.regular(member.parent,member.name) for member in members}
- return Path(str(path)+'.'+m.digest(bundle)+'.memra-source.json')
+ path=Path(artifact);return Path(str(path)+'.'+m.digest(physical_bundle(path))+'.memra-source.json')
 def artifact_record(path,cap):
  path=Path(path).absolute();out=Path(cap['output']);m.require(path.is_relative_to(out),'unmatched extern outside owned output')
  record=m.owned_json(record_path(path))
@@ -63,9 +78,10 @@ def artifact_record(path,cap):
  m.require(record['input_tuple']['admission']==current_admission,'stale compiler recipe admission')
  m.require(record['manifest_root']==cap['roots'][record['package']],'artifact manifest differs')
  m.require(checked(out,path)==record['artifact'],'extern artifact bytes/mode differ')
+ m.require(physical_bundle(path)==record['artifact_bundle'],'compiler produced member set differs')
  m.require(record['artifact_role'] in record['artifact_bundle'] and record['artifact_bundle'][record['artifact_role']]==record['artifact'],'consumed compiler unit member differs')
  for role,entry in record['artifact_bundle'].items():
-  m.require(role in ('rlib','rmeta','so','binary'),'unknown produced compiler member role')
+  m.require(role in ('rlib','rmeta','so','a','binary'),'unknown produced compiler member role')
   member=path if role=='binary' else path.with_suffix('.'+role)
   m.require(checked(out,member)==entry,'compiler unit bundle member bytes/mode differ')
  checked_declared_outputs(record['declared_output_root'],record['declared_outputs'],record['input_tuple']['own_generated'],out)
@@ -121,9 +137,10 @@ def dep_inputs(depfile,package_root,output,source_files):
   else:fail('compiler consumed unbound generated/source input: '+str(path))
  return generated
 
-def own_inputs(cap,key,crate):
+def own_inputs(cap,key,custom_build):
+ m.require(type(custom_build) is bool,'unknown compiler producer phase')
  generated={};physical={}
- if crate!='build_script_build':
+ if not custom_build:
   expected=sorted(cap['recipe']['generated'][key])
   if 'OUT_DIR' not in os.environ:
    m.require(not expected,'generated input declaration requires actual OUT_DIR')
@@ -138,7 +155,7 @@ def own_inputs(cap,key,crate):
    m.require(sorted(found)==expected,'unknown generated OUT_DIR membership')
    for name in expected:
     generated[name]=m.regular(root,name);physical[str(root/name)]=generated[name]
- names=cap['recipe']['env'][key] if crate!='build_script_build' else []
+ names=cap['recipe']['env'][key] if not custom_build else []
  env={name:{'present':name in os.environ,'sha256':hashlib.sha256(os.environ[name].encode()).hexdigest() if name in os.environ else None} for name in names}
  return generated,physical,env
 
@@ -323,15 +340,59 @@ def finite_metadata_probe(compiler,args,cap,key,row,manifest):
 
 
 # Proposed receiver-only guard. No helper/API change or error latch.
+def crate_types(args):
+    kinds=[]
+    for index,arg in enumerate(args):
+        if arg=='--crate-type':
+            m.require(index+1<len(args),'missing compiler crate type');kinds.append(args[index+1])
+        elif arg.startswith('--crate-type='):kinds.append(arg[len('--crate-type='):])
+    m.require(kinds and len(kinds)==len(set(kinds)),'missing or duplicate compiler crate type')
+    return kinds
+
 def original_custom_build_unit(args,row,manifest):
     import tomllib
     sources=[x for x in args if x.endswith('.rs') and not x.startswith('-')]
     config=tomllib.loads(m.regular(manifest,'Cargo.toml',contents=True).decode())
     declared=config.get('package',{}).get('build')
-    return (declared=='build.rs' and val(args,'--crate-name')=='build_script_build'
-            and val(args,'--crate-type')=='bin' and len(sources)==1
-            and Path(sources[0]).absolute()==manifest/'build.rs'
-            and 'build.rs' in row['files'] and m.regular(manifest,'build.rs')==row['files']['build.rs'])
+    if type(declared) is not str:return False
+    relative=m.relative_name(declared)
+    name='build_script_'+Path(relative).stem.replace('-','_')
+    return (val(args,'--crate-name')==name and crate_types(args)==['bin']
+            and len(sources)==1 and Path(sources[0]).absolute()==manifest/relative
+            and relative in row['files'] and m.regular(manifest,relative)==row['files'][relative])
+
+def selected_codegen_values(args,allowed):
+ selected={}
+ for index,arg in enumerate(args):
+  if arg=='-C':m.require(index+1<len(args),'missing codegen option');option=args[index+1]
+  elif arg.startswith('-C'):option=arg[2:]
+  else:continue
+  name,separator,value=option.partition('=')
+  if option=='prefer-dynamic':
+   m.require(crate_types(args)==['proc-macro'],'unadmitted bare codegen context');separator='=';value='yes'
+  m.require(separator and name,'invalid codegen option')
+  if name in ('metadata','extra-filename','incremental'):continue
+  m.require(name in allowed and value in allowed[name],'unknown compiler profile/default')
+  m.require(name not in selected,'duplicate nonidentity compiler codegen choice')
+  selected[name]=value
+ return selected
+
+def compiler_products(args,row,manifest):
+    import tomllib
+    kinds=crate_types(args);crate=val(args,'--crate-name');out=Path(val(args,'--out-dir','')).absolute()
+    stem=crate+codes(args,'extra-filename')
+    if kinds==['staticlib','rlib','cdylib']:
+        config=tomllib.loads(m.regular(manifest,'Cargo.toml',contents=True).decode())
+        sources=[Path(x).absolute() for x in args if x.endswith('.rs') and not x.startswith('-')]
+        m.require(row['name']=='llguidance' and row['version']=='1.7.6' and crate=='llguidance'
+                  and config.get('lib',{}).get('crate-type')==kinds
+                  and config.get('lib',{}).get('path')=='src/lib.rs' and sources==[manifest/'src/lib.rs'],
+                  'unadmitted multi-product Cargo target')
+        return [out/('lib'+stem+suffix) for suffix in ['.a','.rlib','.so']]
+    m.require(kinds in (['lib'],['bin'],['proc-macro']),'unsupported compiler crate type')
+    kind=kinds[0];paths=[out/(('lib'+stem+'.rlib') if kind=='lib' else ('lib'+stem+'.so') if kind=='proc-macro' else stem)]
+    if kind=='lib' and 'metadata' in val(args,'--emit','').split(','):paths.append(out/('lib'+stem+'.rmeta'))
+    return paths
 
 def require_probe_custody_set(cap,key,row,manifest,args):
     # Only the real declared Cargo custom-build source/kind can precede producer.
@@ -404,22 +465,12 @@ def receiver(argv):
  m.require(all(x.startswith('feature=') or x in cap['recipe']['cfgs'][key] for x in cfgs),'unknown actual compiler cfg outside prepared recipe')
  features=sorted(x.split('=',1)[1].strip('"') for x in cfgs if x.startswith('feature='))
  m.require(set(features)<=set(row['features']),'actual compiler features outside admitted source graph')
- crate=val(args,'--crate-name');kind=val(args,'--crate-type');out=Path(val(args,'--out-dir','')).absolute();output=Path(cap['output'])
+ crate=val(args,'--crate-name');custom_build=original_custom_build_unit(args,row,manifest);out=Path(val(args,'--out-dir','')).absolute();output=Path(cap['output'])
  m.require(out.is_relative_to(output),'compiler output outside owned role')
- selected_codegen={}
- for index,arg in enumerate(args):
-  if arg=='-C':m.require(index+1<len(args),'missing codegen option');option=args[index+1]
-  elif arg.startswith('-C'):option=arg[2:]
-  else:continue
-  name,separator,value=option.partition('=')
-  m.require(separator and name,'invalid codegen option')
-  if name in ('metadata','extra-filename','incremental'):continue
-  m.require(name in cap['recipe']['codegen'] and value in cap['recipe']['codegen'][name],'unknown compiler profile/default')
-  m.require(name not in selected_codegen,'duplicate nonidentity compiler codegen choice')
-  selected_codegen[name]=value
- extra=codes(args,'extra-filename');m.require(kind in ('lib','bin','proc-macro'),'unsupported compiler crate type')
+ selected_codegen=selected_codegen_values(args,cap['recipe']['codegen'])
+ products=compiler_products(args,row,manifest)
  m.require(val(args,'--target',cap['recipe']['target'])==cap['recipe']['target'],'compiler target differs')
- if key==cap['snapshot']['payload']['entry']:m.require(crate in cap['recipe']['targets'] or crate=='build_script_build','unknown root Cargo target')
+ if key==cap['snapshot']['payload']['entry']:m.require(crate in cap['recipe']['targets'] or custom_build,'unknown root Cargo target')
  m.require('link' in val(args,'--emit','').split(','),'metadata-only compiler mode unsupported in prepared recipe')
  require_probe_custody_set(cap,key,row,manifest,args)
  input_files=[Path(x).absolute() for x in args if x.endswith('.rs') and not x.startswith('-')]
@@ -427,14 +478,14 @@ def receiver(argv):
  checked(manifest,input_files[0])
  deps,own=dependencies(args,cap,key)
  source=cap['source_seal']
- own_generated,declared_generated,declared_env=own_inputs(cap,key,crate)
+ own_generated,declared_generated,declared_env=own_inputs(cap,key,custom_build)
  admission = m.digest({'recipe':cap['recipe'],'supplementary':{k:v for k,v in cap['supplementary'].items() if v['owner']==key}})
  input_payload={'domain':'memra-package-input-tuple-v2','source_seal':m.digest(row),'admission':admission,'package':key,'features':features,'cfgs':sorted(cfgs),'dependencies':deps,'own_generated':own_generated,'nonidentity_env':declared_env,'codegen':selected_codegen}
  input_seal=m.digest(input_payload)
  id_value=m.identity('memra-package-compiled-input-v1',input_payload)
  m.require(all(x['input_seal']==input_seal for x in own),'own library foreign input identity differs')
  env=dict(os.environ);metadata={'MEMRA_BUILD_ID':id_value,'MEMRA_BUILD_ID_SRC':'package-source-v1','MEMRA_BUILD_ID_NOTE':'package source='+m.identity('memra-package-source-v1',source)+'; checked compiler inputs, not binary recipe or native qualification','MEMRA_BUILD_SHA':os.environ.get('MEMRA_BUILD_SHA','unknown')}
- if key==cap['snapshot']['payload']['entry'] and crate!='build_script_build':env.update({'MEMRA_BUILD_ID':os.environ.get('MEMRA_BUILD_ID','000000000000'),'MEMRA_BUILD_ID_SRC':'degraded','MEMRA_BUILD_ID_NOTE':'package compiler read bootstrap; not admitted','MEMRA_BUILD_SHA':'unknown'})
+ if key==cap['snapshot']['payload']['entry'] and not custom_build:env.update({'MEMRA_BUILD_ID':os.environ.get('MEMRA_BUILD_ID','000000000000'),'MEMRA_BUILD_ID_SRC':'degraded','MEMRA_BUILD_ID_NOTE':'package compiler read bootstrap; not admitted','MEMRA_BUILD_SHA':'unknown'})
  changed_env_keys=sorted(k for k in set(env)|set(os.environ) if env.get(k)!=os.environ.get(k))
  m.require(set(changed_env_keys)<=set(metadata),'unexpected compiler env mutation')
  forward=[compiler,*args];code=subprocess.run(forward,env=env,check=False,pass_fds=compiler_fds()).returncode
@@ -442,29 +493,29 @@ def receiver(argv):
  m.require(fresh()==cap,'package capsule/source changed during compiler execution')
  # Recheck inputs after actual compiler returns. No passing record after drift.
  dependencies(args,cap,key)
- stem=crate+extra;paths=[out/(('lib'+stem+'.rlib') if kind=='lib' else ('lib'+stem+'.so') if kind=='proc-macro' else stem)]
- if kind=='lib' and (out/('lib'+stem+'.rmeta')).exists():paths.append(out/('lib'+stem+'.rmeta'))
- depfile=out/(stem+'.d');generated=dep_inputs(depfile,manifest,output,row['files'])
- if crate!='build_script_build':
+ paths=products
+ depfile=out/(crate+codes(args,'extra-filename')+'.d');generated=dep_inputs(depfile,manifest,output,row['files'])
+ if not custom_build:
   m.require(all(name in declared_generated and declared_generated[name]==entry for name,entry in generated.items()),'actual generated input binding differs')
   checked_env_reads(depfile,declared_env,declared_generated)
- if key==cap['snapshot']['payload']['entry'] and crate!='build_script_build':
+ if key==cap['snapshot']['payload']['entry'] and not custom_build:
   # First compiler result is explicitly unaccepted. Only a checked complete
   # read set permits the intended identity metadata on the second pass.
   env.update(metadata);code=subprocess.run(forward,env=env,check=False,pass_fds=compiler_fds()).returncode
   if code:return code
   m.require(fresh()==cap,'package capsule/source changed during compiler execution');dependencies(args,cap,key)
-  m.require(own_inputs(cap,key,crate)==(own_generated,declared_generated,declared_env),'own compiler inputs changed')
+  m.require(own_inputs(cap,key,custom_build)==(own_generated,declared_generated,declared_env),'own compiler inputs changed')
   m.require(all(name in declared_generated and declared_generated[name]==entry for name,entry in dep_inputs(depfile,manifest,output,row['files']).items()),'actual generated input binding differs')
   checked_env_reads(depfile,declared_env,declared_generated)
- m.require(own_inputs(cap,key,crate)==(own_generated,declared_generated,declared_env),'own compiler inputs changed before publication')
+ m.require(own_inputs(cap,key,custom_build)==(own_generated,declared_generated,declared_env),'own compiler inputs changed before publication')
  declared_output_root=str(Path(os.environ['OUT_DIR']).absolute()) if own_generated else None
  checked_declared_outputs(declared_output_root,declared_generated,own_generated,output)
  require_probe_custody_set(cap,key,row,manifest,args)
- artifact_bundle={('rlib' if x.suffix=='.rlib' else 'rmeta' if x.suffix=='.rmeta' else 'so' if x.suffix=='.so' else 'binary'):checked(output,x) for x in paths}
+ artifact_bundle={artifact_role(x):checked(output,x) for x in paths}
+ for artifact in paths:m.require(physical_bundle(artifact)==artifact_bundle,'compiler produced member set differs before publication')
  compiler_unit=m.digest({'inputs':input_payload,'argv':forward})
  for artifact in paths:
-  body={'schema':'memra-package-compiler-unit-v2','source_seal':m.digest(row),'package':key,'manifest_root':cap['roots'][key],'features':features,'argv':forward,'artifact':checked(output,artifact),'generated':generated,'declared_outputs':declared_generated,'declared_output_root':declared_output_root,'input_seal':input_seal,'input_tuple':input_payload,'compiler_unit':compiler_unit,'artifact_bundle':artifact_bundle,'artifact_role':'rlib' if artifact.suffix=='.rlib' else 'rmeta' if artifact.suffix=='.rmeta' else 'so' if artifact.suffix=='.so' else 'binary'}
+  body={'schema':'memra-package-compiler-unit-v2','source_seal':m.digest(row),'package':key,'manifest_root':cap['roots'][key],'features':features,'argv':forward,'artifact':checked(output,artifact),'generated':generated,'declared_outputs':declared_generated,'declared_output_root':declared_output_root,'input_seal':input_seal,'input_tuple':input_payload,'compiler_unit':compiler_unit,'artifact_bundle':artifact_bundle,'artifact_role':artifact_role(artifact)}
   custody_key=m.digest({'inputs':input_payload,'argv':forward,'artifact':str(artifact),'produced':artifact_bundle})
   body['custody_key']=custody_key
   record={**body,'seal':m.digest(body)}
@@ -473,7 +524,7 @@ def receiver(argv):
   if expected_path.exists():m.require(m.owned_json(expected_path)==expectation,'external producer custody differs')
   else:m.immutable_json(expected_path,expectation)
   m.immutable_json(record_path(artifact),record)
- if key==cap['snapshot']['payload']['entry'] and crate!='build_script_build':
+ if key==cap['snapshot']['payload']['entry'] and not custom_build:
   bindings=[]
   for index,arg in enumerate(args):
    item=args[index+1] if arg=='--extern' else arg[len('--extern='):] if arg.startswith('--extern=') else None
