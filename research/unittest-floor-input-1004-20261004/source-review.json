@@ -1,0 +1,27 @@
+{
+  "source_commit": "cb62bb34aada07528faf80aaa8e2a6adfd9170ab",
+  "legacy": "71a91c6fce00fda25a2562387c1bf521e259c23a",
+  "contracts": [
+    "n-choice",
+    "tool-choice",
+    "q35-cache",
+    "cache-meter",
+    "metrics-live",
+    "physical-gpu",
+    "support-records",
+    "serving-qualification",
+    "background-chat-text",
+    "sampled-mtp"
+  ],
+  "exact_input_additions": 20,
+  "sole_other_semantic_change": "explicit shared wrapper full-selection guard",
+  "planner_rest_ast_identical": true,
+  "source_pins": {
+    "tools/validation_plan.py": "6d7b4ba74be3560708194faf4a8a2985601eb252456924e78f57fb64d08772d1",
+    "tools/test_unittest_floor_input_integration.py": "a5005798337096c256e1852011a2a98987aa8e807106a5cfbeae380dd802f042"
+  },
+  "test_execution_result": "success at clean cb62 with empty source diff",
+  "fixture_files": 1509,
+  "field_drift_refusals": 60,
+  "native_qualification": false
+}
