@@ -86,12 +86,12 @@ class PublicCiIntegration(unittest.TestCase):
             # excluding raw/receipt/log trees. Materialize exactly that census.
             conflict_paths = [path for path in support_tree.paths() if ci.conflict_input(path)]
             conflict_modes = ci.data_input_modes(support_tree, conflict_paths)
-            for path in conflict_paths:
+            missing_conflict = [path for path in conflict_paths if not (repo / path).exists()]
+            for path, data in ci.pinned_data(repo, source, missing_conflict):
                 target = repo / path
-                if not target.exists():
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    target.write_bytes(support_tree.read_bytes(path))
-                    target.chmod(0o755 if conflict_modes[path] == '100755' else 0o644)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(data)
+                target.chmod(0o755 if conflict_modes[path] == '100755' else 0o644)
             descriptor = {'full_name': ci.REPOSITORY,
                           'owner': {'login': ci.OWNER, 'id': ci.OWNER_ID}}
             external = {'login': 'contributor', 'id': 42}

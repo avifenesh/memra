@@ -409,7 +409,15 @@ def pin_data_inputs(root, head, paths):
     for path in paths:
         if before.get(path) not in ('100644', '100755') or before.get(path) != after.get(path):
             raise Refused('merge guard data mode differs from pinned source: ' + path)
-    # Chunking keeps receipt/source buffers bounded without a process per file.
+    for path, pinned in pinned_data(root, head, paths):
+        if pinned != validation_plan.read_local_input(root, path, binary=True):
+            raise Refused('merge guard data differs from pinned source: ' + path)
+
+
+def pinned_data(root, head, paths):
+    """Yield exact raw Git blobs in bounded chunks, also for fixture transport."""
+    head = commit(head)
+    paths = [_path(path) for path in paths]
     for start in range(0, len(paths), 64):
         chunk = paths[start:start + 64]
         raw = subprocess.check_output(['git', '-C', str(root), 'cat-file', '--batch'],
@@ -424,8 +432,7 @@ def pin_data_inputs(root, head, paths):
             size = int(fields[2]); begin = end + 1; offset = begin + size + 1
             if offset > len(raw) or raw[offset - 1:offset] != b'\n':
                 raise Refused('incomplete pinned merge guard blob: ' + path)
-            if raw[begin:begin + size] != validation_plan.read_local_input(root, path, binary=True):
-                raise Refused('merge guard data differs from pinned source: ' + path)
+            yield path, raw[begin:begin + size]
         if offset != len(raw):
             raise Refused('unexpected pinned merge guard batch output')
 
@@ -434,7 +441,11 @@ def data_input_modes(tree, paths):
     """Bound argv even for the tracked conflict census in receipt-heavy trees."""
     modes = {}
     for start in range(0, len(paths), 64):
-        modes.update(tree.input_modes(*paths[start:start + 64], recursive=False))
+        chunk = paths[start:start + 64]
+        current = tree.input_modes(*chunk, recursive=False)
+        if set(current) != set(chunk):
+            raise Refused('merge guard data leaf membership is incomplete')
+        modes.update(current)
     return modes
 
 
