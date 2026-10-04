@@ -562,12 +562,6 @@ def evaluate_refs(
     return list(violations.values()), carriers
 
 
-def sha256_of(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 16), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def worktree_blob_bytes(path: Path) -> bytes:
