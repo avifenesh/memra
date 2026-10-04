@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Source-closure prototype. Run outside Cargo; never grants a build identity marker."""
+"""Prepare and verify finite package source custody; receivers never invoke Cargo."""
 import argparse
 import hashlib
 import json
@@ -8,6 +8,8 @@ from pathlib import Path, PurePosixPath
 import stat
 import subprocess
 import re
+import sys
+sys.dont_write_bytecode = True
 
 SCHEMA = 'memra-package-input-prototype-v1'
 RESERVED = '.memra-package-source.json'
@@ -122,7 +124,7 @@ def regular(root, name, *, contents=False):
         os.close(parent)
 
 
-def inventory(root):
+def inventory(root, *, package=True):
     """All physical package resources, except named output/history/derived metadata."""
     root = Path(root)
     require(not root.is_symlink() and root.is_dir(), 'source root is not a contained directory')
@@ -138,11 +140,11 @@ def inventory(root):
                 require(not path.is_symlink(), 'source directory link is not admitted')
                 # Only an actual package-root Git history directory is a role;
                 # src/target and nested .git are source, not blanket exclusions.
-                if path == root / '.git' and (path / 'HEAD').is_file() and (path / 'objects').is_dir():
+                if package and path == root / '.git' and (path / 'HEAD').is_file() and (path / 'objects').is_dir():
                     dirs.remove(name)
             for name in files:
                 relative = (Path(parent) / name).relative_to(root).as_posix()
-                if relative in (RESERVED, '.cargo_vcs_info.json', '.cargo-ok'):
+                if package and relative in (RESERVED, '.cargo_vcs_info.json', '.cargo-ok'):
                     continue
                 paths.append(relative)
                 info = os.lstat(Path(parent) / name)
@@ -150,7 +152,7 @@ def inventory(root):
                                     info.st_mtime_ns, info.st_ctime_ns)
         return sorted(paths), directories, identity, leaves
     paths, dirs, identity, leaves = membership()
-    require('Cargo.toml' in paths and paths, 'package source inventory is empty')
+    require(paths and (not package or 'Cargo.toml' in paths), 'source inventory is empty')
     result = {name: regular(root, name) for name in paths}
     require(membership() == (paths, dirs, identity, leaves), 'source membership or directory binding changed')
     return result
@@ -354,6 +356,222 @@ def compiler_bindings(snapshot, messages):
             'closure_limit': 'Cargo source binding only; native/generated/external operative closure remains pending'}
 
 
+# Prepared package contract. Cargo runs only in prepare_package, never receive.
+PACKAGE_SCHEMA = 'memra-package-source-v1'
+PACKAGE_FIELDS = {'schema', 'snapshot', 'roots', 'recipe', 'supplementary', 'output',
+                  'expectations', 'compiler', 'ambient', 'source_seal', 'seal'}
+METADATA_ENV = {'MEMRA_BUILD_ID', 'MEMRA_BUILD_ID_SRC', 'MEMRA_BUILD_ID_NOTE', 'MEMRA_BUILD_SHA'}
+
+
+def identity(domain, value):
+    """FNV metadata label, not an integrity or qualification seal."""
+    h = 0x6c62272e07bb014262b821756295c58d
+    for byte in domain.encode() + b'\0' + canonical(value):
+        h = ((h ^ byte) * 0x1000000000000000000013b) & ((1 << 128) - 1)
+    return f'{h >> 80:012x}'
+
+
+def immutable_json(path, value):
+    """Publish a complete no-follow owned leaf atomically; never replace history."""
+    import secrets
+    path = Path(path).absolute()
+    parent, before = directory(path.parent)
+    temporary = '.memra-write-' + secrets.token_hex(16)
+    fd = None
+    try:
+        raw = canonical(value) + b'\n'
+        require(len(raw) <= MAX_JSON, 'derived JSON exceeds bound')
+        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=parent)
+        with os.fdopen(fd, 'wb') as stream:
+            fd = None
+            stream.write(raw); stream.flush(); os.fsync(stream.fileno())
+        check, after = directory(path.parent); os.close(check)
+        require(before == after, 'derived output ancestor replaced')
+        try:
+            os.link(temporary, path.name, src_dir_fd=parent, dst_dir_fd=parent, follow_symlinks=False)
+        except FileExistsError:
+            require(regular(path.parent, path.name, contents=True) == raw, 'immutable custody collision: ' + str(path))
+        os.fsync(parent)
+        check, after = directory(path.parent); os.close(check)
+        require(before == after, 'derived output ancestor replaced')
+    finally:
+        if fd is not None: os.close(fd)
+        try: os.unlink(temporary, dir_fd=parent)
+        except FileNotFoundError: pass
+        os.close(parent)
+
+
+def relative_name(value):
+    require(type(value) is str, 'relative source role is not text')
+    p = PurePosixPath(value)
+    require(value and not p.is_absolute() and '..' not in p.parts and p.as_posix() == value
+            and not any(c in value for c in '\0\n\r\\'), 'invalid source role path')
+    return value
+
+
+def recipe_shape(recipe, packages):
+    fields = {'config', 'wrapper', 'target', 'env', 'generated', 'cfgs', 'codegen', 'targets'}
+    require(type(recipe) is dict and set(recipe) == fields, 'unknown supported recipe')
+    require(recipe['wrapper'] == 'build-support/package_source_rustc.py'
+            and type(recipe['target']) is str and recipe['target'].endswith('-unknown-linux-gnu'), 'unsupported recipe platform')
+    for name in ('env', 'generated', 'cfgs'):
+        rows = recipe[name]
+        require(type(rows) is dict and set(rows) == set(packages), 'missing package ' + name + ' declarations')
+        for items in rows.values():
+            require(type(items) is list and len(items) <= 10000 and len(set(items)) == len(items)
+                    and all(type(x) is str for x in items), 'invalid recipe ' + name)
+            if name == 'generated':
+                for item in items: relative_name(item)
+            if name == 'env':
+                require(all(re.fullmatch('[A-Z][A-Z0-9_]{0,100}', item) and item not in METADATA_ENV
+                            for item in items), 'invalid nonidentity env declaration')
+    require(type(recipe['codegen']) is dict and len(recipe['codegen']) <= 32
+            and all(type(k) is str and type(v) is list and len(v) <= 32 and all(type(x) is str for x in v) for k, v in recipe['codegen'].items())
+            and type(recipe['targets']) is list
+            and recipe['targets'] and all(type(x) is str for x in recipe['targets']), 'invalid compiler context')
+
+
+def ambient_config(root):
+    import tomllib
+    rows = {}
+    candidates = [(f'ancestor:{index}:{name}', parent / '.cargo' / name)
+                  for index, parent in enumerate(root.parents)
+                  for name in ('config', 'config.toml')]
+    cargo_dir = Path(os.environ.get('CARGO_HOME', str(Path.home() / '.cargo')))
+    candidates += [('cargo-home:' + name, cargo_dir / name) for name in ('config', 'config.toml')]
+    require(not os.path.lexists(root / '.cargo/config'), 'ambiguous local Cargo config')
+    for role, path in candidates:
+        if not os.path.lexists(path): continue
+        raw = regular(path.parent, path.name, contents=True)
+        cfg = tomllib.loads(raw.decode())
+        # The package's nearer exact wrapper config overrides this one known
+        # build setting. Other source/profile/default controls are unsupported.
+        require(set(cfg) == {'build'} and set(cfg['build']) == {'rustc-wrapper'}
+                and type(cfg['build']['rustc-wrapper']) is str, 'unknown ambient Cargo controls')
+        rows[role] = regular(path.parent, path.name)
+    return rows
+
+def package_capsule(root):
+    root = Path(root).absolute()
+    cap = owned_json(root / RESERVED)
+    require(type(cap) is dict and set(cap) == PACKAGE_FIELDS and cap['schema'] == PACKAGE_SCHEMA,
+            'unknown package source capsule')
+    require(cap['seal'] == digest({k: v for k, v in cap.items() if k != 'seal'}), 'capsule seal differs')
+    snapshot_shape(cap['snapshot'])
+    snap = cap['snapshot']
+    require(digest(snap['payload']) == snap['sha256'], 'source snapshot seal differs')
+    packages = snap['payload']['packages']
+    require(type(cap['roots']) is dict and set(cap['roots']) == set(packages), 'source roots differ')
+    for key, name in cap['roots'].items():
+        relative_name(name)
+        require(inventory(root / name) == packages[key]['files'], 'fresh package source/mode/membership differs: ' + key)
+    recipe_shape(cap['recipe'], packages)
+    require(ambient_config(root) == cap['ambient'], 'ambient Cargo config differs')
+    require(not any(key.startswith('CARGO_SOURCE_') or key in ('CARGO_BUILD_RUSTC','CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER') for key in os.environ), 'unknown Cargo source/builder environment')
+    import tomllib
+    config = regular(root, '.cargo/config.toml', contents=True)
+    require(tomllib.loads(config.decode()) == cap['recipe']['config'], 'source config differs')
+    cfg = cap['recipe']['config']
+    require(set(cfg) == {'source', 'build'} and set(cfg['build']) == {'rustc-wrapper'}
+            and cfg['build']['rustc-wrapper'] == cap['recipe']['wrapper'], 'unknown Cargo build config')
+    require(cfg['source'] == {'crates-io': {'replace-with': 'memra-package-source'},
+                             'memra-package-source': {'directory': 'vendor'}}, 'unknown Cargo source replacement')
+    for name in ('output', 'expectations'):
+        require(type(cap[name]) is str and Path(cap[name]).is_absolute()
+                and not Path(cap[name]).is_relative_to(root), 'derived role overlaps source')
+        fd, _ = directory(cap[name]); os.close(fd)
+    require(not Path(cap['expectations']).is_relative_to(Path(cap['output']))
+            and not Path(cap['output']).is_relative_to(Path(cap['expectations'])), 'custody roles overlap')
+    require(type(cap['compiler']) is dict and set(cap['compiler']) == {'path', 'file'}, 'unknown builder')
+    compiler = Path(cap['compiler']['path'])
+    require(compiler.is_absolute() and regular(compiler.parent, compiler.name) == cap['compiler']['file'], 'compiler bytes/mode differ')
+    supplemental = cap['supplementary']
+    require(type(supplemental) is dict, 'supplementary input shape differs')
+    for key, row in supplemental.items():
+        require(key.startswith('supplementary:') and type(row) is dict
+                and set(row) == {'owner', 'role', 'root', 'files'} and row['owner'] in packages,
+                'supplementary owner is not an actual Cargo package')
+        relative_name(row['root'])
+        require(type(row['files']) is dict and row['files'], 'empty supplementary custody')
+        for path, expected in row['files'].items():
+            require(regular(root / row['root'], relative_name(path)) == expected, 'supplementary source differs')
+        require(inventory(root / row['root'], package=False) == row['files'], 'supplementary membership differs')
+    logical = {'source': snap['payload'], 'recipe': cap['recipe'], 'supplementary': supplemental, 'ambient': cap['ambient']}
+    require(cap['source_seal'] == digest(logical), 'logical package source seal differs')
+    return cap
+
+
+def receive(root):
+    cap = package_capsule(root)
+    wrapper = os.environ.get('RUSTC_WRAPPER', '')
+    if not wrapper: return 'degraded'
+    require(Path(wrapper).absolute() == Path(root).absolute() / cap['recipe']['wrapper'], 'unmatched effective wrapper')
+    require(not os.environ.get('RUSTC_WORKSPACE_WRAPPER'), 'nested compiler receiver unsupported')
+    require(os.environ.get('TARGET', cap['recipe']['target']) == cap['recipe']['target'], 'package target differs')
+    return 'prepared'
+
+
+def prepare_package(manifest, target, features, declarations, output, expectations):
+    root = Path(manifest).absolute().parent
+    require(root / RESERVED != declarations.absolute(), 'declarations cannot be own capsule')
+    plan = owned_json(declarations)
+    require(type(plan) is dict and set(plan) == {'env', 'generated', 'cfgs', 'codegen', 'targets', 'supplementary'}, 'unknown source declaration plan')
+    # Source capture runs before Cargo acquires build-script locks.
+    snapshot = cargo_graph(manifest, target, features)
+    require(Path(snapshot['workspace_root_observed']) == root, 'normal package borrowed a parent workspace')
+    roots = {}
+    for key, binding in snapshot['bindings'].items():
+        path = Path(binding['manifest_path']).parent
+        require(path.is_relative_to(root), 'resolved package outside owned recipe')
+        roots[key] = path.relative_to(root).as_posix()
+    import tomllib
+    recipe = {'config': tomllib.loads(regular(root, '.cargo/config.toml', contents=True).decode()),
+              'wrapper': 'build-support/package_source_rustc.py', 'target': target,
+              **{key: plan[key] for key in ('env', 'generated', 'cfgs', 'codegen', 'targets')}}
+    sysroot = subprocess.run(['rustc', '--print', 'sysroot'], capture_output=True, check=True).stdout.decode().strip()
+    compiler = Path(sysroot) / 'bin/rustc'
+    cap = {'schema': PACKAGE_SCHEMA, 'snapshot': snapshot, 'roots': roots, 'recipe': recipe,
+           'supplementary': plan['supplementary'], 'output': str(output.absolute()),
+           'expectations': str(expectations.absolute()),
+           'compiler': {'path': str(compiler), 'file': regular(compiler.parent, compiler.name)}, 'ambient': ambient_config(root)}
+    cap['source_seal'] = digest({'source': snapshot['payload'], 'recipe': recipe, 'supplementary': cap['supplementary'], 'ambient': cap['ambient']})
+    cap['seal'] = digest(cap)
+    immutable_json(root / RESERVED, cap)
+    package_capsule(root)
+    return cap
+
+
+def production_main(args):
+    parser = argparse.ArgumentParser()
+    parser.add_argument('command', choices=('prepare-package', 'receive', 'rederive'))
+    parser.add_argument('--manifest', type=Path, required=True)
+    parser.add_argument('--target')
+    parser.add_argument('--features', default='')
+    parser.add_argument('--declarations', type=Path)
+    parser.add_argument('--output', type=Path)
+    parser.add_argument('--expectations', type=Path)
+    parser.add_argument('--identity')
+    a = parser.parse_args(args)
+    if a.command == 'prepare-package':
+        require(all((a.target, a.declarations, a.output, a.expectations)), 'missing source recipe inputs')
+        cap = prepare_package(a.manifest, a.target, a.features.split(',') if a.features else [], a.declarations, a.output, a.expectations)
+        print(cap['source_seal'])
+    elif a.command == 'receive': print(receive(a.manifest.absolute().parent))
+    else:
+        cap = package_capsule(a.manifest.absolute().parent)
+        require(type(a.identity) is str and re.fullmatch('[0-9a-f]{12}', a.identity), 'rederivation requires expected identity')
+        value = owned_json(Path(cap['output']) / ('identity-' + a.identity + '.json'))
+        require(set(value) == {'source_seal', 'tuple', 'bindings'} and value['source_seal'] == cap['source_seal']
+                and identity('memra-package-compiled-input-v1', value['tuple']) == a.identity, 'package identity differs')
+        expected = owned_json(Path(cap['expectations']) / ('identity-' + a.identity + '.json'))
+        require(expected == {'sha256': digest(value)}, 'identity producer custody differs')
+        for binding in value['bindings']:
+            require(type(binding) is dict and set(binding) == {'path', 'file'}, 'unknown identity input binding')
+            path = Path(binding['path'])
+            require(path.is_absolute() and path.is_relative_to(Path(cap['output']))
+                    and regular(path.parent, path.name) == binding['file'], 'identity compiled input differs')
+        print(a.identity)
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=('prepare', 'verify'))
@@ -380,4 +598,9 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    import sys
+    try:
+        if len(sys.argv)>1 and sys.argv[1] in ('prepare-package', 'receive', 'rederive'): production_main(sys.argv[1:])
+        else: main()
+    except (Refused, OSError, ValueError, KeyError) as error:
+        print('package source refused: ' + str(error), file=sys.stderr);sys.exit(86)

@@ -6139,7 +6139,8 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
     // defect hid: a build with a meaningless identity looked exactly like a good one, on
     // both sides of the deploy.
     eprintln!("{}", build_identity_line());
-    if BUILD_ID_SRC != build_id::BUILD_ID_SRC_TREE {
+    if BUILD_ID_SRC != build_id::BUILD_ID_SRC_TREE && BUILD_ID_SRC != build_id::BUILD_ID_SRC_PACKAGE
+    {
         eprintln!(
             "[server] WARNING: build identity is DEGRADED: {BUILD_ID_NOTE}. \
              system_fingerprint {SYSTEM_FINGERPRINT} carries a version-only id, so it does \
@@ -29860,6 +29861,20 @@ mod build_identity_tests {
                 assert!(scan.files.len() > 100, "suspiciously small hashed file set");
             }
             None => {
+                if BUILD_ID_SRC == build_id::BUILD_ID_SRC_PACKAGE {
+                    let expected = SYSTEM_FINGERPRINT.rsplit('-').next().unwrap();
+                    let id = build_id::package_content_id(env!("CARGO_MANIFEST_DIR"), expected)
+                        .expect("package identity requires current source and producer custody");
+                    assert_eq!(
+                        SYSTEM_FINGERPRINT,
+                        format!(concat!("memra-", env!("CARGO_PKG_VERSION"), "-{}"), id)
+                    );
+                    assert!(
+                        !BUILD_ID_NOTE.is_empty(),
+                        "package input domain must be explicit"
+                    );
+                    return;
+                }
                 // Not a pass by omission: an unreadable tree MUST have produced the
                 // degraded marker and a stated reason, and the fingerprint must still be
                 // shaped (asserted by baked_fingerprint_is_real_and_well_formed).
@@ -29918,7 +29933,16 @@ mod build_identity_tests {
     #[test]
     fn two_scans_of_one_tree_agree() {
         let Some(root) = build_id::workspace_root(env!("CARGO_MANIFEST_DIR")) else {
-            assert_eq!(BUILD_ID_SRC, build_id::BUILD_ID_SRC_DEGRADED);
+            if BUILD_ID_SRC == build_id::BUILD_ID_SRC_PACKAGE {
+                let expected = SYSTEM_FINGERPRINT.rsplit('-').next().unwrap();
+                let first =
+                    build_id::package_content_id(env!("CARGO_MANIFEST_DIR"), expected).unwrap();
+                let second =
+                    build_id::package_content_id(env!("CARGO_MANIFEST_DIR"), expected).unwrap();
+                assert_eq!(first, second);
+            } else {
+                assert_eq!(BUILD_ID_SRC, build_id::BUILD_ID_SRC_DEGRADED);
+            }
             return;
         };
         let first = build_id::content_id(&root).expect("first scan");

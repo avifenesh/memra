@@ -69,11 +69,58 @@ fn main() {
     let pkg_name = std::env::var("CARGO_PKG_NAME").unwrap_or_default();
     let pkg_version = std::env::var("CARGO_PKG_VERSION").unwrap_or_default();
 
-    watch_git_head();
+    let package = std::path::Path::new(&manifest_dir).join(".memra-package-source.json");
+    if std::fs::symlink_metadata(&package).is_ok() {
+        // The finite prepared package recipe must be checked on every normal
+        // Cargo invocation, including same-mtime mutations and cached outputs.
+        println!("cargo:rerun-if-changed={}", package.display());
+        println!("cargo:rerun-if-changed={manifest_dir}/.memra-source-freshness-required");
+        println!("cargo:rerun-if-env-changed=RUSTC_WRAPPER");
+        println!("cargo:rerun-if-env-changed=RUSTC_WORKSPACE_WRAPPER");
+        let checked = std::process::Command::new("python3")
+            .arg("-I")
+            .arg(
+                std::path::Path::new(&manifest_dir)
+                    .join("build-support/package_source_identity.py"),
+            )
+            .args(["receive", "--manifest"])
+            .arg(std::path::Path::new(&manifest_dir).join("Cargo.toml"))
+            .output()
+            .expect("present package provenance requires its bounded receiver");
+        assert!(
+            checked.status.success(),
+            "package provenance refused: {}",
+            String::from_utf8_lossy(&checked.stderr)
+        );
+        let reply = String::from_utf8(checked.stdout).expect("package receiver UTF-8 response");
+        assert!(
+            reply.trim() == "prepared" || reply.trim() == "degraded",
+            "unknown package receiver response"
+        );
+        let reason = if reply.trim() == "prepared" {
+            "prepared package source awaits the checked compiler receiver; no native or model qualification"
+        } else {
+            "prepared package compiler receiver is absent; source provenance is not admitted"
+        };
+        // A bootstrap compile is always explicit. Only the checked compiler
+        // receiver replaces these identity fields after actual read validation.
+        println!("cargo:warning=memra build identity DEGRADED: {reason}");
+        println!(
+            "cargo:rustc-env=MEMRA_BUILD_ID={}",
+            degraded_build_id(&pkg_name, &pkg_version)
+        );
+        println!("cargo:rustc-env=MEMRA_BUILD_ID_SRC={BUILD_ID_SRC_DEGRADED}");
+        println!("cargo:rustc-env=MEMRA_BUILD_ID_NOTE={reason}");
+        println!("cargo:rustc-env=MEMRA_BUILD_SHA=unknown");
+        return;
+    }
 
-    let scan = workspace_root(&manifest_dir)
-        .as_deref()
-        .and_then(content_id);
+    let workspace = workspace_root(&manifest_dir);
+    if workspace.is_some() {
+        watch_git_head();
+    }
+
+    let scan = workspace.as_deref().and_then(content_id);
     let (build_id, id_src, note) = match scan {
         Some(scan) => {
             // Files AND directories: a file's mtime covers edits, a directory's covers a
@@ -113,6 +160,11 @@ fn main() {
 
     // Extra provenance only. `unknown` here is a fact about the build environment, not a
     // hole in the customer-visible fingerprint.
-    let sha = git(&["rev-parse", "--short=12", "HEAD"]).unwrap_or_else(|| "unknown".into());
+    let sha = if workspace_root(&manifest_dir).is_some() {
+        git(&["rev-parse", "--short=12", "HEAD"])
+    } else {
+        None
+    }
+    .unwrap_or_else(|| "unknown".into());
     println!("cargo:rustc-env=MEMRA_BUILD_SHA={sha}");
 }

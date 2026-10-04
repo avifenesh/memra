@@ -559,8 +559,8 @@ jobs:
   # memra-server's test files (the request-contract invariants, the ledger, auth, tool-call
   # parsing, the four API surfaces) had no caller until 2026-08-19. The crate links cudarc,
   # but with `dynamic-loading`, and no test in it constructs an Engine or touches the driver,
-  # so it runs on a GPU-less runner. No `--lib`: memra-server is a BINARY-ONLY crate, and
-  # `cargo test -p memra-server --lib` exits 101 with "no library targets found".
+  # so it runs on a GPU-less runner. The crate has both library and binary targets;
+  # this job runs the library request contracts and the binary argument contracts.
   server-tests:
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.server != 'false') }}
