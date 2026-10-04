@@ -548,9 +548,94 @@ def prepare_package(manifest, target, features, declarations, output, expectatio
     return cap
 
 
+MAX_REGISTRY_RESPONSE = MAX_JSON
+# Source-and-byte transport only. A derives semantic parser/member roles.
+def registry_inputs(engine_manifest):
+    import base64
+    manifest = Path(engine_manifest).absolute()
+    require(manifest.name == 'Cargo.toml', 'registry caller requires Cargo manifest')
+    candidates = []
+    if os.path.lexists(manifest.parent / RESERVED):
+        candidates.append(manifest.parent)  # Actual engine ENTRY role.
+    if manifest.parent.parent.name == 'vendor':
+        entry = manifest.parent.parent.parent
+        if os.path.lexists(entry / RESERVED):
+            candidates.append(entry)  # Exact engine dependency role.
+    require(len(candidates) == 1, 'missing or ambiguous finite registry entry role')
+    entry = candidates[0]
+    cap = package_capsule(entry)
+    owners = [key for key, path in cap['roots'].items()
+              if entry / path / 'Cargo.toml' == manifest
+              and cap['snapshot']['payload']['packages'][key]['name'] == 'memra-engine']
+    require(len(owners) == 1, 'registry caller is not the actual owned engine package')
+    owner = owners[0]
+    attachments = [row for row in cap['supplementary'].values()
+                   if row['owner'] == owner and row['role'] == 'env-registry-source-v1']
+    require(len(attachments) == 1, 'missing or ambiguous registry source attachment')
+    attachment = attachments[0]
+    roots = cap['snapshot']['payload']['packages'][owner]['files']
+    planned = [(('crates/memra-engine/' + path), expected) for path, expected in roots.items()
+               if path.startswith('src/') and path.endswith('.rs')]
+    planned += list(attachment['files'].items())
+    require(len(planned) <= 10000 and len({name for name, _ in planned}) == len(planned),
+            'registry response input count/owner collision')
+    # Prepared BEFORE transport from independently pinned actual archives and
+    # original workspace/FLAGS/probe inputs. Neither reference nor corpus lives
+    # in candidate source/output; capsule declarations cannot replace them.
+    reference = owned_json(Path(cap['expectations']) / ('registry-corpus-' + cap['source_seal'] + '.json'))
+    require(type(reference) is dict and set(reference) == {'schema', 'owner', 'corpus_sha256'}
+            and reference['schema'] == 'memra-registry-corpus-reference-v1'
+            and reference['owner'] == owner and type(reference['corpus_sha256']) is str
+            and SHA256.fullmatch(reference['corpus_sha256']), 'registry producer corpus reference differs')
+    corpus = owned_json(Path(cap['expectations']) / (reference['corpus_sha256'] + '.registry-corpus.json'))
+    require(type(corpus) is dict and set(corpus) == {'schema', 'workspace_members', 'inputs', 'engine_manifest'}
+            and corpus['schema'] == 'memra-registry-original-corpus-v1'
+            and digest(corpus) == reference['corpus_sha256'], 'registry independent corpus commitment differs')
+    require(type(corpus['workspace_members']) is dict and corpus['workspace_members']
+            and all(type(name) is str and type(path) is str for name, path in corpus['workspace_members'].items())
+            and type(corpus['inputs']) is dict and corpus['inputs'], 'registry original corpus shape differs')
+    file_entry_shape(corpus['engine_manifest'])
+    require(roots['Cargo.toml'] == corpus['engine_manifest'], 'registry normalized engine manifest differs from original corpus')
+    for path, row in corpus['inputs'].items():
+        relative_name(path); file_entry_shape(row)
+    for path in corpus['workspace_members'].values():
+        relative_name(path)
+    require(dict(planned) == corpus['inputs'], 'registry input set/bytes/modes differs from independent original corpus')
+    response = {'schema': 'memra-registry-source-inputs-v2', 'owner': owner,
+                'source_seal': cap['source_seal'], 'corpus_sha256': reference['corpus_sha256'],
+                'workspace_members': corpus['workspace_members'], 'inputs': {},
+                'engine_manifest': '', 'qualification': False}
+    encoded_budget = sum(4 * ((row['bytes'] + 2) // 3) + len(canonical(name)) + 3 for name, row in planned)
+    encoded_budget += max(0, len(planned) - 1)  # Entry commas inside existing {}.
+    encoded_budget += 4 * ((corpus['engine_manifest']['bytes'] + 2) // 3)
+    require(encoded_budget + len(canonical(response)) <= MAX_REGISTRY_RESPONSE,
+            'registry response aggregate exceeds bound')
+    bodies = {}
+    def admit(name, root, path, expected):
+        require(name not in bodies, 'duplicate canonical registry input owner')
+        raw = regular(root, path, contents=True)
+        require(hashlib.sha256(raw).hexdigest() == expected['sha256'] and len(raw) == expected['bytes']
+                and regular(root, path) == expected, 'registry input changed during return')
+        bodies[name] = base64.b64encode(raw).decode('ascii')
+    for path, expected in roots.items():
+        if path.startswith('src/') and path.endswith('.rs'):
+            admit('crates/memra-engine/' + path, manifest.parent, path, expected)
+    for path, expected in attachment['files'].items():
+        admit(path, entry / attachment['root'], path, expected)
+    require('docs/FLAGS.md' in bodies, 'registry FLAGS ownership missing')
+    engine_manifest = regular(manifest.parent, 'Cargo.toml', contents=True)
+    require(hashlib.sha256(engine_manifest).hexdigest() == corpus['engine_manifest']['sha256']
+            and len(engine_manifest) == corpus['engine_manifest']['bytes'], 'engine manifest changed during return')
+    response['inputs'] = bodies
+    response['engine_manifest'] = base64.b64encode(engine_manifest).decode('ascii')
+    require(package_capsule(entry) == cap, 'registry capsule/source identity changed during return')
+    require(len(canonical(response)) <= MAX_REGISTRY_RESPONSE, 'registry final response exceeds bound')
+    return response
+
+
 def production_main(args):
     parser = argparse.ArgumentParser()
-    parser.add_argument('command', choices=('prepare-package', 'receive', 'rederive'))
+    parser.add_argument('command', choices=('prepare-package', 'receive', 'rederive', 'registry-inputs'))
     parser.add_argument('--manifest', type=Path, required=True)
     parser.add_argument('--target')
     parser.add_argument('--features', default='')
@@ -564,6 +649,10 @@ def production_main(args):
         cap = prepare_package(a.manifest, a.target, a.features.split(',') if a.features else [], a.declarations, a.output, a.expectations)
         print(cap['source_seal'])
     elif a.command == 'receive': print(receive(a.manifest.absolute().parent))
+    elif a.command == 'registry-inputs':
+        require(not any((a.target, a.features, a.declarations, a.output, a.expectations, a.identity)),
+                'registry transport accepts only the actual engine manifest')
+        print(canonical(registry_inputs(a.manifest)).decode())
     else:
         cap = package_capsule(a.manifest.absolute().parent)
         require(type(a.identity) is str and re.fullmatch('[0-9a-f]{12}', a.identity), 'rederivation requires expected identity')
@@ -607,7 +696,7 @@ def main():
 if __name__ == '__main__':
     import sys
     try:
-        if len(sys.argv)>1 and sys.argv[1] in ('prepare-package', 'receive', 'rederive'): production_main(sys.argv[1:])
+        if len(sys.argv)>1 and sys.argv[1] in ('prepare-package', 'receive', 'rederive', 'registry-inputs'): production_main(sys.argv[1:])
         else: main()
     except (Refused, OSError, ValueError, KeyError) as error:
         print('package source refused: ' + str(error), file=sys.stderr);sys.exit(86)
