@@ -14,7 +14,7 @@ Production trust helpers, workflows and standing test support retain the same 17
 
 All 74 legacy non-selection full command bodies remain exact. Mandatory Python callers, native compile/ABI/SASS and dense-control admission stay intact. Checker code and consumed data retain exact byte/mode/membership binding. Native math, emitted programs, compiler/build defaults, model artifacts/defaults, tolerances and GPU shadow behavior are unchanged.
 
-The current full witness job took 409.855 seconds wall and 459.183 CPU seconds, with 5.6G peak memory and zero swap. No overall speed comparison is claimed.
+The current full witness job took 409.803 seconds wall and 459.183 CPU seconds, with 5.6G peak memory and zero swap. No overall speed comparison is claimed.
 
 The prior source's 494.577s local integration remains [historical](historical-de584/SCOPED-PROOF.json). Hosted de584 gates failed at 110.008s because a historical Git object path was unavailable in its source checkout. The first fresh local fixture setup failed at 85.612s because an identical adapter did not need a commit. Both failed cohorts are retained; exact adapter bytes were preserved and the unnecessary commit removed. The new witness has no historical Git-object dependency. Earlier 241/25/classifier/caller results retain their original sources; no unchanged 25/241/native compiler replay is claimed.
 
