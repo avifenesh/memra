@@ -12,6 +12,7 @@ import shlex
 import sys
 
 import validation_plan
+import sparse_input_preflight as sparse_inputs
 from cpu_workflow_inputs import _regular, _policy, _path, POLICY_PATH, COMMANDS
 
 REPOSITORY = 'avifenesh/memra'
@@ -243,6 +244,7 @@ def source_plan(root, receipt, head):
         elif receipt.get('head') != head:
             raise Refused('event head does not match candidate source')
         for name in ('tools/public_ci.py', 'tools/ci_merge_validation.json',
+                     'tools/sparse_input_preflight.py',
                      'tools/validation_plan.py', 'tools/cpu_workflow_inputs.py', POLICY_PATH,
                      '.github/workflows/ci-public.yml'):
             if _regular(before, name) != _regular(after, name):
@@ -406,10 +408,32 @@ def pin_data_inputs(root, head, paths):
     tree, local = validation_plan.Tree(root, commit(head)), validation_plan.LocalTree(root)
     before = data_input_modes(tree, paths)
     after = data_input_modes(local, paths)
+    links = {path for path in paths if before.get(path) == '120000'}
+    if links:
+        descriptor = sparse_inputs.open_root(root)
+        try:
+            link_tree = sparse_inputs.GitTree(descriptor, head)
+            closure = sparse_inputs.link_closure(link_tree, links)
+            targets = []
+            for path in sorted(closure):
+                mode = link_tree.entries[path][0]
+                if mode in ('040000', '120000'):
+                    problem = sparse_inputs.inspect_path(descriptor, link_tree, path)
+                    if problem:
+                        raise Refused('pinned contained alias differs: ' + path + ': ' + problem)
+                elif mode in ('100644', '100755'):
+                    targets.append(path)
+                else:
+                    raise Refused('unsupported contained alias target type: ' + path)
+            # The shared resolver validates links/directories. Targets still use
+            # this lane's exact raw-blob comparison, not an OID-only shortcut.
+            pin_data_inputs(root, head, targets)
+        finally:
+            os.close(descriptor)
     for path in paths:
-        if before.get(path) not in ('100644', '100755') or before.get(path) != after.get(path):
+        if before.get(path) not in ('100644', '100755', '120000') or before.get(path) != after.get(path):
             raise Refused('merge guard data mode differs from pinned source: ' + path)
-    for path, pinned in pinned_data(root, head, paths):
+    for path, pinned in pinned_data(root, head, [path for path in paths if path not in links]):
         if pinned != validation_plan.read_local_input(root, path, binary=True):
             raise Refused('merge guard data differs from pinned source: ' + path)
 
@@ -458,6 +482,7 @@ def execute_contracts(root, plan):
     if validation_plan.git(root, 'rev-parse', 'HEAD').decode().strip() != head:
         raise Refused('plan source does not match checkout')
     for path in ('tools/public_ci.py', 'tools/validation_plan.py',
+                 'tools/sparse_input_preflight.py',
                  'tools/cpu_workflow_inputs.py', POLICY_PATH, INVENTORY, '.github/workflows/ci-public.yml'):
         if _regular(validation_plan.Tree(root, head), path) != _regular(
                 validation_plan.LocalTree(root), path):

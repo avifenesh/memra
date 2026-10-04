@@ -90,13 +90,20 @@ class PublicCiIntegration(unittest.TestCase):
             for path, data in ci.pinned_data(repo, source, missing_conflict):
                 target = repo / path
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(data)
-                target.chmod(0o755 if conflict_modes[path] == '100755' else 0o644)
+                if conflict_modes[path] == '120000':
+                    target.symlink_to(data.decode())
+                else:
+                    target.write_bytes(data)
+                    target.chmod(0o755 if conflict_modes[path] == '100755' else 0o644)
             # Support evidence may have materialized an eligible executable
             # before this transport pass. Restore its exact Git executable mode.
             for path in conflict_paths:
-                self.assertIn(conflict_modes[path], ('100644', '100755'))
-                (repo / path).chmod(0o755 if conflict_modes[path] == '100755' else 0o644)
+                self.assertIn(conflict_modes[path], ('100644', '100755', '120000'))
+                if conflict_modes[path] == '120000' and not (repo / path).is_symlink():
+                    (repo / path).unlink()
+                    (repo / path).symlink_to(support_tree.read_bytes(path).decode())
+                elif conflict_modes[path] != '120000':
+                    (repo / path).chmod(0o755 if conflict_modes[path] == '100755' else 0o644)
             descriptor = {'full_name': ci.REPOSITORY,
                           'owner': {'login': ci.OWNER, 'id': ci.OWNER_ID}}
             external = {'login': 'contributor', 'id': 42}
@@ -166,6 +173,19 @@ class PublicCiIntegration(unittest.TestCase):
             self.assertEqual(output.count('SFT CPU contract: PASS: original=9 executed=18'), 1, output)
             execution = json.loads(execution_file.read_text())
             self.assertEqual(execution['executed'], ['sft-generator-caller'])
+            # Actual tracked contained aliases are part of the conflict census.
+            # A changed target string must refuse without following it.
+            alias = repo / 'research/qwen4exp-bringup-20260829/round2-box-receipts/expand-goldens.py'
+            self.assertTrue(alias.is_symlink())
+            alias_target = os.readlink(alias)
+            self.assertEqual(alias_target, 'bin/expand-goldens.py')
+            alias.unlink(); alias.symlink_to('bin/make-ladder-ids.py')
+            try:
+                refused = command([sys.executable, str(repo / 'tools/public_ci.py'), 'contracts',
+                                   '--plan', str(plan_file), '--repo', str(repo), '--out', str(execution_file)], ok=False)
+                self.assertIn('pinned contained alias differs', refused)
+            finally:
+                alias.unlink(); alias.symlink_to(alias_target)
             # A harmless physical doc change cannot stamp HEAD merely because
             # its static census still passes. Exact data binding must refuse.
             registry_doc = repo / 'docs/ROUTER.md'; registry_original = registry_doc.read_bytes()
