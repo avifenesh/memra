@@ -179,6 +179,14 @@ class ValidationPlanTests(unittest.TestCase):
         for path in contract['inputs']:
             with self.subTest(path=path):
                 plan = self.plan([path])
+                if path in ('tools/unittest-floor.sh', 'tools/unittest_floor.py'):
+                    self.assertEqual(plan['mode'], 'full')
+                    self.assertEqual(plan['reason'], 'shared unittest admission implementation changed')
+                    self.assertTrue(all(plan['jobs'].values()))
+                    self.assertTrue(plan['requires_cuda'])
+                    self.assertEqual(plan['native']['scope'], 'full')
+                    self.assertFalse(plan['native']['qualification'])
+                    continue
                 expected = {'background-chat-text'}
                 if path == 'tools/cache_qualification.py': expected.add('q35-cache')
                 self.assertEqual({c['id'] for c in plan['cpu_contracts']}, expected)
