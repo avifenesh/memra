@@ -234,6 +234,52 @@ FINITE_METADATA_PROBES = {'0': {'argv_template': ['--cfg=procmacro2_build_probe'
                        'mode': '100644',
                        'sha256': '1c0aeadfcdbe22f8f807b185dec1a7448c378bddb37689714944b60473b58049'}}}
 
+# Independent finite original-producer catalogue, not caller-supplied modes.
+NUM_TRAITS_PROBE_SOURCES = {
+ 'num-traits': {'version':'0.2.19','files':'529b5eaf32a03ea101ec8b02da39efed4aba5250b5769fb2251ff59a7e96d57d','archive':'071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841'},
+ 'autocfg': {'version':'1.5.1','files':'a0268eb2c1931709a0769f35a0f2d64ca63cd301173fb19f049311aaad5648e7','archive':'f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53'}}
+NUM_TRAITS_STDIN = {'0':b'', '1':b'pub fn probe() { let _ = 1f64.total_cmp(&2f64); }'}
+NUM_TRAITS_CAPTURE = {'0': {'stdin_bytes': 0, 'stdin_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'capture_sha256': '8557a2ac23ce5010fe9da64b0f12a298dd0fe34597cf69aa798fc679f7ac6d65'}, '1': {'stdin_bytes': 49, 'stdin_sha256': '4413f23fc88f80784bc38c0596e470b2a62bd5c29edf8d750709442bb82c9abb', 'capture_sha256': '6b6849a3ada4d7f7d33ba99aa029ddc6881c89935ffe241c710d59b6a91e0f42'}}
+
+def num_traits_authority(cap,key,row,manifest):
+ m.require(row['name']=='num-traits' and row['version']=='0.2.19' and row['features']==['default','std'],'unadmitted num-traits source/features')
+ m.require(cap['recipe']['target']=='x86_64-unknown-linux-gnu','unadmitted num-traits recipe target')
+ sources={};autocfg=None
+ for name,spec in NUM_TRAITS_PROBE_SOURCES.items():
+  keys=[k for k,v in cap['snapshot']['payload']['packages'].items() if v['name']==name and v['version']==spec['version']]
+  m.require(len(keys)==1,'num-traits original dependency owner differs')
+  owner=keys[0];source=cap['snapshot']['payload']['packages'][owner];root=ROOT/cap['roots'][owner]
+  m.require(m.digest(source['files'])==spec['files'],'num-traits original source bytes/modes differ')
+  checksum=m.owned_json(root/'.cargo-checksum.json');m.require(type(checksum) is dict and checksum.get('package')==spec['archive'],'num-traits original archive custody differs')
+  sources[owner]=m.digest(source)
+  if name=='autocfg':autocfg=owner
+ m.require(row['dependencies']==[autocfg] and cap['snapshot']['payload']['packages'][autocfg]['features']==[],'num-traits original dependency profile differs')
+ m.require(cap['compiler']['file']['sha256']=='d3a664c970a9fd8361b64194861bebc1ae37b9054e5ee3400dc1c9e691797eea' and cap['compiler']['file']['mode']=='100755','num-traits original compiler differs')
+ authority=m.owned_json(Path(cap['expectations'])/'stdin-probe-num-traits.json')
+ m.require(type(authority) is dict and set(authority)=={'schema','package','sources','compiler','out_relative','profile','roles'},'num-traits producer custody shape differs')
+ m.require(type(authority['roles']) is dict and set(authority['roles'])=={'0','1'},'num-traits authority roles differ')
+ for role,value in authority['roles'].items():m.require(type(value) is dict and set(value)=={'stdin_bytes','stdin_sha256','capture_sha256'} and type(value['stdin_bytes']) is int,'num-traits authority role shape differs')
+ relative=m.relative_name(authority['out_relative']);out=Path(cap['output'])/relative
+ profile={'target':'x86_64-unknown-linux-gnu','features':['default','std'],'runtime_cfg':'has_total_cmp','encoded_rustflags_sha256':hashlib.sha256(b'').hexdigest()}
+ m.require(authority=={'schema':'memra-owned-num-traits-probe-v1','package':key,'sources':sources,'compiler':cap['compiler'],'out_relative':relative,'profile':profile,'roles':NUM_TRAITS_CAPTURE},'num-traits producer custody differs')
+ m.require(Path(os.environ.get('OUT_DIR','')).absolute()==out and Path.cwd().absolute()==manifest,'num-traits actual producer context differs')
+ descriptor,_=m.directory(out);os.close(descriptor)
+ return out
+
+def finite_num_traits_probe(compiler,args,cap,key,row,manifest):
+ if row['name']!='num-traits' or '-' not in args or val(args,'--emit')!='llvm-ir':return None
+ out=num_traits_authority(cap,key,row,manifest)
+ m.require(len(args)==9 and args[0]=='--crate-name' and re.fullmatch(r'autocfg_[0-9a-f]{16}_[01]',args[1]) is not None,'unadmitted num-traits producer UUID/counter')
+ m.require(args[2:]==['--crate-type=lib','--out-dir',str(out),'--emit=llvm-ir','--target','x86_64-unknown-linux-gnu','-'],'unadmitted num-traits probe argv')
+ m.require(os.environ.get('TARGET')==os.environ.get('HOST')=='x86_64-unknown-linux-gnu' and os.environ.get('CARGO_ENCODED_RUSTFLAGS')=='','unadmitted num-traits target/flags')
+ m.require(os.environ.get('CARGO_FEATURE_DEFAULT')=='1' and os.environ.get('CARGO_FEATURE_STD')=='1' and os.environ.get('CARGO_CFG_FEATURE')=='default,std','unadmitted num-traits standard feature profile')
+ role=args[1].rsplit('_',1)[1];body=sys.stdin.buffer.read(4097)
+ m.require(body==NUM_TRAITS_STDIN[role],'unadmitted num-traits stdin body')
+ m.require(fresh()==cap,'package capsule/source changed before stdin probe')
+ code=subprocess.run([compiler,*args],input=body,check=False,pass_fds=compiler_fds()).returncode
+ m.require(fresh()==cap,'package capsule/source changed during stdin probe')
+ return code
+
 def finite_metadata_probe(compiler,args,cap,key,row,manifest):
  # Not a generic cfg or emit allowance: exact four original producer roles.
  primary=[x for x in args if x.endswith('.rs') and not x.startswith('-')]
@@ -291,6 +337,11 @@ def require_probe_custody_set(cap,key,row,manifest,args):
     # Only the real declared Cargo custom-build source/kind can precede producer.
     # An ordinary source renamed --crate-name build_script_build does not skip.
     if original_custom_build_unit(args,row,manifest):return
+    if row['name']=='num-traits':
+        num_traits_authority(cap,key,row,manifest)
+        features=sorted(x.split('=',1)[1].strip(chr(34)) for x in cfg_options(args) if x.startswith('feature='))
+        m.require(features==['default','std'] and 'has_total_cmp' in cfg_options(args),'num-traits successful standard producer cfg missing')
+        return
     applicable=[(role,spec) for role,spec in FINITE_METADATA_PROBES.items()
                 if row['name']+'-'+row['version']==spec['package']]
     if not applicable:return
@@ -345,6 +396,8 @@ def receiver(argv):
  m.require(len(keys)==1,'actual compiler manifest/source root is unbound')
  key=keys[0];row=cap['snapshot']['payload']['packages'][key]
  m.require(os.environ.get('CARGO_PKG_NAME')==row['name'] and os.environ.get('CARGO_PKG_VERSION')==row['version'],'actual compiler package identity differs')
+ probe=finite_num_traits_probe(compiler,args,cap,key,row,manifest)
+ if probe is not None:return probe
  probe=finite_metadata_probe(compiler,args,cap,key,row,manifest)
  if probe is not None:return probe
  cfgs=cfg_options(args)
