@@ -68,7 +68,7 @@ memra-server
 ```
 
 On a 24 GB card, set `MEMRA_CTX` to the workload instead: 262144 reserves KV for clients
-that never send it; [SERVING.md](SERVING.md#admission) covers the ladder and the
+that never send it; [SERVING.md](SERVING.md#config-recommendation-send-max_tokens) covers the ladder and the
 `MEMRA_CTX` fallback trade.
 
 ### RTX PRO 6000 Blackwell: DFlash2 drafter (the measured-fastest spec route)
