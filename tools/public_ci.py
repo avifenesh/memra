@@ -178,8 +178,13 @@ def run_steps(text):
 
 def inventory(root):
     data, _ = read_json(Path(root) / INVENTORY)
-    if (type(data) is not dict or set(data) != {'schema', 'full_steps', 'guards', 'contracts'}
+    if (type(data) is not dict or set(data) != {'schema', 'full_steps', 'guards', 'contracts',
+                                             'full_workflow_sha256', 'public_workflow_sha256'}
             or data['schema'] != 'memra-ci-merge-inventory-v1'
+            or data['full_workflow_sha256'] != hashlib.sha256(validation_plan.read_local_input(
+                root, '.github/workflows/ci.yml', binary=True)).hexdigest()
+            or data['public_workflow_sha256'] != hashlib.sha256(validation_plan.read_local_input(
+                root, '.github/workflows/ci-public.yml', binary=True)).hexdigest()
             or data['contracts'] != sorted(validation_plan.TOOL_CONTRACTS)
             or data['full_steps'] != run_steps(validation_plan.read_local_input(root, '.github/workflows/ci.yml'))
             or type(data['guards']) is not list
@@ -400,6 +405,7 @@ def main():
         print(json.dumps(inventory(Path(__file__).resolve().parents[1]), sort_keys=True))
         return
     if args.command == 'full-result':
+        inventory(Path(__file__).resolve().parents[1])
         needs, _ = read_json(args.needs)
         if validation_plan.git(Path(__file__).resolve().parents[1], 'rev-parse', 'HEAD').decode().strip() != commit(args.head):
             raise Refused('complete CPU result source differs from checkout')

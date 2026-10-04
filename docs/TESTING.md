@@ -2578,9 +2578,10 @@ Functional tests for an owner change run locally before push. The contract runne
 records selected, executed and successful identities against the same commit.
 Workflow-only labels execute their exact commands once in thin mode; the full
 workflow continues to execute its original four mandatory dedicated callers.
-`tools/ci_merge_validation.json` binds the full command inventory and static
-merge guard inputs. A changed command or missing mapping cannot silently skip
-coverage. Update its full step hashes deliberately with a reviewed workflow edit.
+`tools/ci_merge_validation.json` binds the full command inventory, the complete
+full/public workflow bytes (including conditions, error handling, matrices and
+environment), and static merge guard inputs. A changed command or missing mapping cannot silently skip
+coverage. Update its workflow and full step hashes deliberately with a reviewed workflow edit.
 
 External PRs, the daily default-branch schedule and release/publish dependencies
 run the existing complete CPU inventory in `ci.yml`, including the 241 validation

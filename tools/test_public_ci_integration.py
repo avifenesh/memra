@@ -143,6 +143,18 @@ class PublicCiIntegration(unittest.TestCase):
             self.assertEqual(output.count('SFT CPU contract: PASS: original=9 executed=18'), 1, output)
             execution = json.loads(execution_file.read_text())
             self.assertEqual(execution['executed'], ['sft-generator-caller'])
+            # Coherent masked/swallowed full caller changes leave its run body
+            # intact. Whole execution-shape binding must refuse the actual CLI.
+            full_path = repo / '.github/workflows/ci.yml'
+            for property_line in ('        if: ${{ false }}\n',
+                                  '        continue-on-error: true\n'):
+                full_path.write_text(workflow.replace(
+                    '        run: python3 tools/run_sft_gen_contract.py',
+                    property_line + '        run: python3 tools/run_sft_gen_contract.py', 1))
+                try:
+                    command([sys.executable, str(repo / 'tools/public_ci.py'), 'check-inventory'], ok=False)
+                finally:
+                    full_path.write_text(workflow)
             # Conclusive actual CLI result and a coherent missing-execution mutant.
             needs = {name: {'result': 'success'} for name in
                      ('route', 'merge-validation', 'boundary', 'build', 'clippy', 'arch')}
