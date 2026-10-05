@@ -2,7 +2,7 @@
 
 Standing rules for this repo. The user's own words in the current conversation come first, above these rules and above any skill. Rules for every repo are in `~/.config/agents/SHARED.md`; this file adds what is specific to memra.
 
-Memra development stopped on 2026-09-28 and the work is banked: start no Memra GPU work or new lane without a new owner order, and resume only from the recorded bank branches, re-derived against current `main` (darklanes `DIRECTION.md`, [project status](README.md#project-status)).
+Memra follows darklanes `DIRECTION.md` and the [project status](README.md#project-status): general engine development and routine bring-ups are paused; scoped, budgeted research and maintenance continue. Banked work lives on `origin/bank/*`; re-derive it against current `main` before resuming.
 
 `AGENTS.md` is the only instruction file here. Put scoped rules in nested `AGENTS.md` files; do not add a `CLAUDE.md`, an import stub or a symlink.
 
@@ -71,8 +71,12 @@ The prefill numeric config is part of the acceptance config: prefill writes the 
 - Step-3.7 multi-card: RTX PRO 6000 Blackwell is the blocking qualification target. Local RTX 5090 evidence is a later compatibility follow-up and does not block a Step release unless the change also alters a generic 5090-facing mechanism or default. Use the hash-bound `step-pro` pre-push gate, never a skip override.
 - Multi-card topology: never call PP or replicas TP, and never force a TP degree that violates attention-head, KV-head or expert partitioning.
 - Another accelerator: an admitted experiment chooses its runtime per the project status; a new Memra backend is not the default answer. An admitted secondary backend keeps the model bytes, is off at build time by default, documents its disabled target-specific kernels and passes a same-prompt golden-output gate before producing scored evidence. The naked sm_120a build and its defaults do not change.
-- Hopper (sm_90a): the arch auto-detects on an H100 (`MEMRA_CUDA_ARCH=90a` forces it). Promotions are compile-gated behind `memra_hopper_mma`, so the sm_120a build stays byte-identical. Ledger: `ARCHITECTURE-H100.md` (append-only); flags: `docs/FLAGS.md` §7. The Hopper CI lane is retired, so run kernel-check config pins, decode-batch (config and strict), decode-dc, graph-decode and graph-session on Hopper hardware directly. Lessons from that lane: compare perf only interleaved x5 on the same box (cross-run and cross-day comparisons are invalid from clock drift, competitor denominators included); re-sweep thresholds and verdicts when the code under them moves; put any guard for a live lane inside a battery that runs; measure every wgmma scheduling change, since nvcc 13.1 is form-sensitive there (C7514/15/17/19).
+- Hopper (sm_90a): the arch auto-detects on an H100 (`MEMRA_CUDA_ARCH=90a` forces it). Promotions are compile-gated behind `memra_hopper_mma`, so the sm_120a build stays byte-identical. Ledger: `ARCHITECTURE-H100.md` (append-only); flags: `docs/FLAGS.md` §7. The Hopper CI lane is retired, so run kernel-check config pins, decode-batch (config and strict), decode-dc, graph-decode and graph-session on Hopper hardware directly. Lessons from that lane: compare perf only interleaved on the same box (cross-run and cross-day comparisons are invalid from clock drift, competitor denominators included); re-sweep thresholds and verdicts when the code under them moves; put any guard for a live lane inside a battery that runs; measure every wgmma scheduling change, since nvcc 13.1 is form-sensitive there (C7514/15/17/19).
 - Rented box and instance ids live in the gitignored `LANE-LOCAL.md`, never in tracked files.
+
+### Per-hardware arm selection (owner, 2026-08-13)
+
+Do not give up a local win to simplify a remote default. When a mechanism's win depends on the hardware, measure it on both the 5090 and a PRO 6000 and enable the arm that fits each, keyed on the device. One-rig evidence sets a one-rig default at most. Prefer detection (arch, VRAM, card class) over env flags for hardware-shaped choices, and keep the env var as the rollback and measurement seam; naked commands stay full speed on whatever card they run on.
 
 ## Flags doctrine and door hygiene
 
@@ -89,7 +93,7 @@ Doors are decided, not kept (owner, 2026-09-05: "we stop leaving unneeded flags.
 Changing a default:
 
 - Give each new or changed mechanism, flag, hardware default or release gate its own branch and receipt namespace, and prove forced ON/OFF correctness first.
-- A performance or default decision needs a balanced same-window interleaved A/B in both orders with N>=5, raw hashes, failures and 250 ms telemetry. Serving claims also record TTFT, E2E, TPOT and ITL p50/p95/p99 plus request and token throughput.
+- A performance or default decision needs a balanced same-window interleaved A/B in both orders (three runs by default, five on an anomaly; LAW:interleaved-ab, owner 2026-08-30), raw hashes, failures and 250 ms telemetry. Serving claims also record TTFT, E2E, TPOT and ITL p50/p95/p99 plus request and token throughput.
 - Winners become naked hardware-specific defaults, losing or flat arms are deleted, and inconclusive arms stay default-OFF with a named missing gate.
 - When a win depends on the hardware, measure it on both the local RTX 5090 and a PRO 6000 and key the arm on the device (owner, 2026-08-13: "Local performance is not sacrificed to make a remote default simpler."). One-rig evidence sets a one-rig default at most. Prefer detection (SM, VRAM, card class) over env flags for hardware-shaped choices, and keep the env var as the rollback seam.
 - Update the board source and regenerate (next section), and keep `docs/FLAGS.md` and `docs/TESTING.md` aligned.
@@ -125,7 +129,7 @@ Documentation changes use text and link checks. CPU-only development, admission 
 - Every published median states its N and thermal regime; single runs are labeled as single runs.
 - Run one scored campaign at a time per multi-card box, under `flock /tmp/memra-gpu.lock`. Both cards of a 2x RTX PRO 6000 box share a PCIe path (`nvidia-smi topo -m`), so work on the "idle" card changes the thermal and I/O regime of the campaign even with `CUDA_VISIBLE_DEVICES` pinning. The other card may take only builds, staging and short untimed pass/fail cells.
 
-### GPU lock names
+### Lock names are a correctness surface
 
 Exactly two memra GPU lock files exist, one per rig class. A third name gives no mutual exclusion with the others, so do not add one.
 
