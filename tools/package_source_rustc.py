@@ -128,6 +128,54 @@ def dependencies(args,cap,owner=None):
   pairs.append({'alias':alias,'package':record['package'],'artifact_bundle':record['artifact_bundle'],'compiler_unit':record['compiler_unit'],'input_seal':record['input_seal']})
  return sorted(pairs,key=lambda x:(x['alias'],x.get('package',''))),own
 
+def checked_lexical_source(path, package_root, source_files):
+    """Admit source-local dotdot only after pinning each traversed directory."""
+    path = Path(path)
+    root = Path(package_root)
+    m.require(path.is_absolute() and root.is_absolute()
+              and path.is_relative_to(root), 'lexical source is outside package owner')
+    parts = path.relative_to(root).parts
+    m.require(0 < len(parts) <= 128 and len(str(path).encode()) <= 4096
+              and parts[-1] not in ('.', '..')
+              and not any(c in str(path) for c in '\0\n\r\\'),
+              'unsupported lexical source path')
+    stack = []
+    directories = {}
+
+    def pin_directory(relative):
+        directory = root.joinpath(*relative)
+        descriptor, identity = m.directory(directory)
+        os.close(descriptor)
+        key = tuple(relative)
+        if key in directories:
+            m.require(directories[key] == identity, 'lexical source ancestor changed')
+        else:
+            directories[key] = identity
+
+    pin_directory([])
+    for part in parts[:-1]:
+        if part == '..':
+            m.require(stack, 'lexical source leaves package owner')
+            # The directory being canceled was already opened with O_NOFOLLOW.
+            # Thus link/../file cannot be collapsed past an unverified alias.
+            pin_directory(stack)
+            stack.pop()
+        else:
+            m.require(part not in ('', '.'), 'unsupported lexical source component')
+            stack.append(part)
+            pin_directory(stack)
+    relative = '/'.join([*stack, parts[-1]])
+    m.require(relative in source_files, 'compiler source was excluded from capsule')
+    expected = source_files[relative]
+    m.file_entry_shape(expected)
+    actual = m.regular(root, relative)
+    m.require(actual == expected, 'lexical source bytes/mode differ from capsule')
+    for relative_directory, before in directories.items():
+        descriptor, after = m.directory(root.joinpath(*relative_directory))
+        os.close(descriptor)
+        m.require(before == after, 'lexical source ancestor changed')
+    return root / relative
+
 def dep_inputs(depfile,package_root,output,source_files):
  # Pilot supports normal Cargo dep-info in owned paths without whitespace.
  raw=m.regular(depfile.parent,depfile.name,contents=True).decode()
@@ -142,8 +190,11 @@ def dep_inputs(depfile,package_root,output,source_files):
  generated={}
  for path in sorted(files):
   if path.is_relative_to(package_root):
-   m.require(path.relative_to(package_root).as_posix() in source_files,'compiler source was excluded from capsule')
-   checked(package_root,path)
+   if '..' in path.parts:
+    checked_lexical_source(path,package_root,source_files)
+   else:
+    m.require(path.relative_to(package_root).as_posix() in source_files,'compiler source was excluded from capsule')
+    checked(package_root,path)
   elif path.is_relative_to(output):generated[str(path)]=checked(output,path)
   else:fail('compiler consumed unbound generated/source input: '+str(path))
  return generated
