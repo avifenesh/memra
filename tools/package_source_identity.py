@@ -131,6 +131,103 @@ def regular(root, name, *, contents=False):
         os.close(parent)
 
 
+def _inventory_anchor(root):
+    path = Path(root).absolute()
+    require('..' not in path.parts, 'noncanonical source root')
+    handles = [os.open('/', os.O_RDONLY | os.O_DIRECTORY)]
+    checks, identity = [], []
+    try:
+        for part in path.parts[1:]:
+            parent = handles[-1]
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+            handles.append(child)
+            info = os.fstat(child)
+            item = (info.st_dev, info.st_ino, info.st_mode)
+            checks.append((parent, part, item)); identity.append(item)
+        return handles, checks, identity
+    except BaseException:
+        for handle in reversed(handles): os.close(handle)
+        raise
+
+
+def _inventory_ancestry(checks):
+    # Re-stat every absolute pathname component before and after each leaf.
+    # Descriptor reuse never reuses a prior physical result or follows aliases.
+    for parent, name, expected in checks:
+        current = os.stat(name, dir_fd=parent, follow_symlinks=False)
+        require((current.st_dev, current.st_ino, current.st_mode) == expected,
+                'source absolute ancestor replaced during inventory: ' + name)
+
+
+def _inventory_regular(root, name, anchor, checks, *, contents=False):
+    # Anchor is opened no-follow for one inventory only; each leaf and relative
+    # ancestry are still freshly opened/read/rechecked. Global absolute ancestry
+    # and the whole root/member/leaf identities are checked at both boundaries.
+    path = PurePosixPath(name)
+    require(name and not path.is_absolute() and '..' not in path.parts
+            and path.as_posix() == name and not any(c in name for c in '\0\n\r\\'),
+            'noncanonical source path')
+    _inventory_ancestry(checks)
+    parent = os.dup(anchor)
+    root_info = os.fstat(anchor)
+    ancestor_identity = []
+    descriptor = None
+    try:
+        for part in path.parts[:-1]:
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+            os.close(parent); parent = child
+            info = os.fstat(parent)
+            ancestor_identity.append((info.st_dev, info.st_ino, info.st_mode))
+        descriptor = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+        before = os.fstat(descriptor)
+        require(stat.S_ISREG(before.st_mode), 'source is not a regular file: ' + name)
+        hasher = hashlib.sha256()
+        length = 0
+        blocks = []
+        while True:
+            data = os.read(descriptor, 1024 * 1024)
+            if not data:
+                break
+            hasher.update(data); length += len(data)
+            if contents:
+                require(length <= MAX_JSON, 'owned JSON input exceeds bound')
+                blocks.append(data)
+        after = os.fstat(descriptor)
+        require((before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns)
+                == (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns),
+                'source changed while read: ' + name)
+        current = os.stat(path.name, dir_fd=parent, follow_symlinks=False)
+        require((current.st_dev, current.st_ino, current.st_size, current.st_mode,
+                 current.st_mtime_ns, current.st_ctime_ns)
+                == (after.st_dev, after.st_ino, after.st_size, after.st_mode,
+                    after.st_mtime_ns, after.st_ctime_ns), 'source pathname replaced: ' + name)
+        _inventory_ancestry(checks)
+        current_root = os.stat(root, follow_symlinks=False)
+        require((current_root.st_dev, current_root.st_ino, current_root.st_mode)
+                == (root_info.st_dev, root_info.st_ino, root_info.st_mode),
+                'source root pathname replaced: ' + name)
+        check = os.dup(anchor)
+        fresh_ancestors = []
+        try:
+            for part in path.parts[:-1]:
+                child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=check)
+                os.close(check); check = child
+                info = os.fstat(check)
+                fresh_ancestors.append((info.st_dev, info.st_ino, info.st_mode))
+        finally:
+            os.close(check)
+        require(fresh_ancestors == ancestor_identity,
+                'source ancestor replaced: ' + name)
+        if contents:
+            return b''.join(blocks)
+        return {'sha256': hasher.hexdigest(), 'bytes': length,
+                'mode': '100755' if before.st_mode & stat.S_IXUSR else '100644'}
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        os.close(parent)
+
+
 def inventory(root, *, package=True):
     """All physical package resources, except named output/history/derived metadata."""
     root = Path(root)
@@ -160,9 +257,15 @@ def inventory(root, *, package=True):
         return sorted(paths), directories, identity, leaves
     paths, dirs, identity, leaves = membership()
     require(paths and (not package or 'Cargo.toml' in paths), 'source inventory is empty')
-    result = {name: regular(root, name) for name in paths}
-    require(membership() == (paths, dirs, identity, leaves), 'source membership or directory binding changed')
-    return result
+    handles, checks, anchored_identity = _inventory_anchor(root)
+    anchor = handles[-1]
+    try:
+        require(anchored_identity == identity, 'source root ancestry changed before inventory read')
+        result = {name: _inventory_regular(root, name, anchor, checks) for name in paths}
+        require(membership() == (paths, dirs, identity, leaves), 'source membership or directory binding changed')
+        return result
+    finally:
+        for handle in reversed(handles): os.close(handle)
 
 
 def package_key(package):

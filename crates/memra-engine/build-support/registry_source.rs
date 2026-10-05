@@ -28,7 +28,7 @@ const SCHEMA: &str = "memra-registry-source-inputs-v2";
 // Independent shared implementation pin. Update only with its source/control
 // review; capsule declarations cannot replace the code that verifies them.
 const SHARED_RECEIVER_SHA256: &str =
-    "8fd45919a290062b1553d120535b1496982c6b852bd8f0cb2ad5707e2c64563c";
+    "bdbfe568d72654c220a7b20df0c678568c7395ed192df329fb8ba61980666a39";
 
 type Result<T> = std::result::Result<T, String>;
 type DirectoryChain = Vec<(u64, u64, u32)>;
