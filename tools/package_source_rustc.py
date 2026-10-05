@@ -1,6 +1,6 @@
 #!/usr/bin/python3 -I
 """Finite prepared Linux/Cargo compiler-input receiver; no Cargo recursion."""
-import hashlib,importlib.util,json,os,re,stat,subprocess,sys
+import fcntl,hashlib,importlib.util,json,os,re,secrets,stat,subprocess,sys
 from pathlib import Path
 sys.dont_write_bytecode=True
 ROOT=Path(__file__).absolute().parent.parent
@@ -111,6 +111,157 @@ def compiler_builtin(cap,args,alias):
            and cap['compiler']['file']['mode']=='100755','unadmitted bare compiler extern')
  return {'alias':'proc_macro','compiler_builtin':{'name':'proc_macro','compiler':cap['compiler']['file'],'target':cap['recipe']['target'],'scope':'selected compiler metadata, not package artifact or sysroot/binary recipe'}}
 
+# The full compiler-unit contract remains unchanged. This external observation
+# only delays a consumer until its exact admitted producer has published it.
+def producer_role(path, cap):
+ path=Path(path).absolute();out=Path(cap['output'])
+ m.require(path.is_relative_to(out),'producer role outside owned output')
+ stem=path.with_suffix('') if artifact_role(path)!='binary' else path
+ return m.digest({'capsule':cap['seal'],'output_stem':str(stem)})
+
+def process_observation(pid):
+ def read(name):
+  fd=os.open('/proc/'+str(pid)+'/'+name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+  try:
+   raw=os.read(fd,65537);m.require(len(raw)<=65536,'producer process observation exceeds bound');return raw
+  finally:os.close(fd)
+ before=read('stat');args=read('cmdline');after=read('stat')
+ def start(raw):
+  fields=raw[raw.rfind(b')')+2:].split();m.require(len(fields)>=20,'producer process stat is incomplete');return fields[19].decode('ascii')
+ m.require(start(before)==start(after),'producer process was replaced')
+ return {'pid':pid,'start':start(after),'cmdline_sha256':hashlib.sha256(args).hexdigest()},args.rstrip(b'\0').split(b'\0')
+
+def producer_descriptor(path,cap,create=False):
+ role=producer_role(path,cap);parent,identity=m.directory(Path(cap['expectations']))
+ name='producer-'+role+'.lock'
+ try:
+  flags=os.O_RDWR|os.O_NOFOLLOW|os.O_NONBLOCK
+  if create:flags|=os.O_CREAT
+  fd=os.open(name,flags,0o600,dir_fd=parent)
+  info=os.fstat(fd)
+  m.require(stat.S_ISREG(info.st_mode) and info.st_uid==os.getuid() and info.st_nlink==1 and stat.S_IMODE(info.st_mode)==0o600,'producer handoff is not an owned regular leaf')
+  return fd,parent,identity,name,(info.st_dev,info.st_ino)
+ except BaseException:
+  os.close(parent)
+  if 'fd' in locals():os.close(fd)
+  raise
+
+def check_producer_descriptor(handle,cap):
+ fd,parent,identity,name,inode=handle
+ info=os.fstat(fd);current=os.stat(name,dir_fd=parent,follow_symlinks=False)
+ m.require((info.st_dev,info.st_ino)==inode==(current.st_dev,current.st_ino) and stat.S_ISREG(current.st_mode) and current.st_nlink==1 and current.st_uid==os.getuid() and stat.S_IMODE(current.st_mode)==0o600,'producer handoff pathname replaced')
+ check,fresh_identity=m.directory(Path(cap['expectations']));os.close(check)
+ m.require(identity==fresh_identity,'producer handoff ancestor replaced')
+
+def read_producer_registration(handle,cap,path):
+ check_producer_descriptor(handle,cap)
+ fd=handle[0];before=os.fstat(fd);os.lseek(fd,0,os.SEEK_SET);raw=os.read(fd,m.MAX_JSON+1);after=os.fstat(fd)
+ m.require((before.st_dev,before.st_ino,before.st_size,before.st_mtime_ns,before.st_ctime_ns)==(after.st_dev,after.st_ino,after.st_size,after.st_mtime_ns,after.st_ctime_ns),'producer registration changed while read')
+ row=m.json_bytes(raw)
+ fields={'schema','capsule','role','attempt','process','argv','package','input_seal','compiler_unit','products','seal'}
+ m.require(type(row) is dict and set(row)==fields and row['schema']=='memra-active-producer-v1','producer registration shape differs')
+ m.require(row['seal']==m.digest({k:v for k,v in row.items() if k!='seal'}) and row['capsule']==cap['seal'] and row['role']==producer_role(path,cap),'producer registration context differs')
+ m.require(type(row['attempt']) is str and re.fullmatch('[0-9a-f]{32}',row['attempt']) and type(row['process']) is dict and set(row['process'])=={'pid','start','cmdline_sha256'} and type(row['process']['pid']) is int and row['process']['pid']>0 and type(row['process']['start']) is str and row['process']['start'].isdigit() and type(row['process']['cmdline_sha256']) is str and m.SHA256.fullmatch(row['process']['cmdline_sha256']),'producer process binding differs')
+ m.require(type(row['argv']) is list and len(row['argv'])>=2 and all(type(x) is str for x in row['argv']) and row['argv'][0]==cap['compiler']['path'],'producer compiler binding differs')
+ m.require(row['package'] in cap['roots'] and type(row['input_seal']) is str and m.SHA256.fullmatch(row['input_seal']) and type(row['compiler_unit']) is str and m.SHA256.fullmatch(row['compiler_unit']),'producer unit binding differs')
+ args=row['argv'][1:];manifest=ROOT/cap['roots'][row['package']]
+ sources=[Path(x).absolute() for x in args if x.endswith('.rs') and not x.startswith('-')]
+ m.require(len(sources)==1 and sources[0].is_relative_to(manifest),'producer source owner differs')
+ products=[str(x) for x in compiler_products(args,cap['snapshot']['payload']['packages'][row['package']],manifest)]
+ m.require(type(row['products']) is list and row['products']==products and str(Path(path).absolute()) in products and all(producer_role(x,cap)==row['role'] for x in products),'producer artifact role differs')
+ return row
+
+def wait_producer_lock(fd,seconds=600):
+ # One blocking kernel wait, interrupted by a bounded deadline. No file poll.
+ import signal
+ m.require(signal.getitimer(signal.ITIMER_REAL)==(0.0,0.0),'producer wait would replace an active deadline')
+ previous=signal.getsignal(signal.SIGALRM)
+ def expired(signum,frame):fail('producer completion deadline exceeded')
+ signal.signal(signal.SIGALRM,expired)
+ try:
+  signal.setitimer(signal.ITIMER_REAL,seconds)
+  fcntl.flock(fd,fcntl.LOCK_SH)
+ finally:
+  signal.setitimer(signal.ITIMER_REAL,0);signal.signal(signal.SIGALRM,previous)
+
+def reject_current_output_dependencies(args,cap,products):
+ roles={producer_role(path,cap) for path in products};output=Path(cap['output'])
+ for index,arg in enumerate(args):
+  if arg=='--extern':
+   m.require(index+1<len(args),'missing extern value');item=args[index+1]
+  elif arg.startswith('--extern='):item=arg[len('--extern='):]
+  else:continue
+  alias,separator,path=item.partition('=')
+  if separator and path and Path(path).absolute().is_relative_to(output):
+   m.require(producer_role(path,cap) not in roles,'dependency extern targets current compiler output role: '+alias)
+
+def completed_artifact_record(path,cap):
+ try:handle=producer_descriptor(path,cap)
+ except FileNotFoundError:
+  # No active producer registration exists. Existing complete sealed custody
+  # is still mandatory, including for restored outputs; no partial admission.
+  return artifact_record(path,cap)
+ fd=handle[0]
+ try:
+  try:fcntl.flock(fd,fcntl.LOCK_SH|fcntl.LOCK_NB);active=False
+  except BlockingIOError:active=True
+  registration=read_producer_registration(handle,cap,path)
+  if active:
+   try:
+    observed,cmdline=process_observation(registration['process']['pid'])
+    expected=[str(Path(__file__).absolute()),*registration['argv']]
+    matches=observed==registration['process'] and cmdline[-len(expected):]==[x.encode() for x in expected]
+   except OSError:matches=False
+   if not matches:
+    # Completion can race the process observation. One kernel acquisition
+    # distinguishes that completed handoff from a wrong/stale active lease.
+    try:fcntl.flock(fd,fcntl.LOCK_SH|fcntl.LOCK_NB);active=False
+    except BlockingIOError:fail('active producer process differs')
+   if active:wait_producer_lock(fd)
+   m.require(read_producer_registration(handle,cap,path)==registration,'producer attempt changed during handoff')
+  terminal=m.owned_json(Path(cap['expectations'])/('producer-terminal-'+registration['attempt']+'.json'))
+  fields={'schema','registration_seal','status','records','seal'}
+  m.require(type(terminal) is dict and set(terminal)==fields and terminal['schema']=='memra-producer-completion-v1' and terminal['seal']==m.digest({k:v for k,v in terminal.items() if k!='seal'}) and terminal['registration_seal']==registration['seal'] and terminal['status']=='complete','producer did not complete successfully')
+  m.require(type(terminal['records']) is dict and set(terminal['records'])==set(registration['products']),'producer completion member set differs')
+  for product in registration['products']:
+   record=artifact_record(product,cap)
+   m.require(record['seal']==terminal['records'][product] and record['compiler_unit']==registration['compiler_unit'] and record['input_seal']==registration['input_seal'] and record['package']==registration['package'] and record['argv']==registration['argv'],'producer completion custody differs')
+  check_producer_descriptor(handle,cap)
+  return artifact_record(path,cap)
+ finally:
+  os.close(fd);os.close(handle[1])
+
+class ProducerHandoff:
+ def __init__(self,cap,products,argv,inputs):
+  self.cap,self.products=cap,products;self.handle=None;self.registration=None;self.done=False
+  role=producer_role(products[0],cap)
+  m.require(all(producer_role(x,cap)==role for x in products),'producer unit spans multiple artifact roles')
+  self.handle=producer_descriptor(products[0],cap,create=True)
+  try:
+   fcntl.flock(self.handle[0],fcntl.LOCK_EX|fcntl.LOCK_NB)
+   observation,_=process_observation(os.getpid())
+   body={'schema':'memra-active-producer-v1','capsule':cap['seal'],'role':role,'attempt':secrets.token_hex(16),'process':observation,'argv':argv,'package':inputs['package'],'input_seal':m.digest(inputs),'compiler_unit':m.digest({'inputs':inputs,'argv':argv}),'products':[str(x) for x in products]}
+   self.registration={**body,'seal':m.digest(body)}
+   raw=m.canonical(self.registration)+b'\n';fd=self.handle[0]
+   os.ftruncate(fd,0);os.lseek(fd,0,os.SEEK_SET)
+   with os.fdopen(os.dup(fd),'wb') as stream:stream.write(raw);stream.flush();os.fsync(stream.fileno())
+   check_producer_descriptor(self.handle,cap)
+  except BaseException:
+   os.close(self.handle[0]);os.close(self.handle[1]);self.handle=None;raise
+ def __enter__(self):return self
+ def complete(self):
+  records={str(path):artifact_record(path,self.cap)['seal'] for path in self.products}
+  self.publish('complete',records);self.done=True
+ def publish(self,status,records):
+  check_producer_descriptor(self.handle,self.cap)
+  body={'schema':'memra-producer-completion-v1','registration_seal':self.registration['seal'],'status':status,'records':records}
+  m.immutable_json(Path(self.cap['expectations'])/('producer-terminal-'+self.registration['attempt']+'.json'),{**body,'seal':m.digest(body)})
+ def __exit__(self,kind,error,trace):
+  try:
+   if not self.done:self.publish('failed',{})
+  finally:
+   os.close(self.handle[0]);os.close(self.handle[1])
+
 def dependencies(args,cap,owner=None):
  pairs=[];own=[];seen=set()
  for index,arg in enumerate(args):
@@ -122,7 +273,7 @@ def dependencies(args,cap,owner=None):
    pairs.append(compiler_builtin(cap,args,alias))
    continue
   alias,path=item.split('=',1);m.require(path and alias!='proc_macro','invalid or shadowed extern binding')
-  record=artifact_record(path,cap)
+  record=completed_artifact_record(path,cap)
   if record['package']==owner:
    own.append(record);continue
   pairs.append({'alias':alias,'package':record['package'],'artifact_bundle':record['artifact_bundle'],'compiler_unit':record['compiler_unit'],'input_seal':record['input_seal']})
@@ -538,6 +689,7 @@ def receiver(argv):
  input_files=[Path(x).absolute() for x in args if x.endswith('.rs') and not x.startswith('-')]
  m.require(len(input_files)==1 and input_files[0].is_relative_to(manifest),'primary compiler source is unbound')
  checked(manifest,input_files[0])
+ reject_current_output_dependencies(args,cap,products)
  deps,own=dependencies(args,cap,key)
  source=cap['source_seal']
  own_generated,declared_generated,declared_env=own_inputs(cap,key,custom_build)
@@ -550,57 +702,61 @@ def receiver(argv):
  if key==cap['snapshot']['payload']['entry'] and not custom_build:env.update({'MEMRA_BUILD_ID':os.environ.get('MEMRA_BUILD_ID','000000000000'),'MEMRA_BUILD_ID_SRC':'degraded','MEMRA_BUILD_ID_NOTE':'package compiler read bootstrap; not admitted','MEMRA_BUILD_SHA':'unknown'})
  changed_env_keys=sorted(k for k in set(env)|set(os.environ) if env.get(k)!=os.environ.get(k))
  m.require(set(changed_env_keys)<=set(metadata),'unexpected compiler env mutation')
- forward=[compiler,*args];code=subprocess.run(forward,env=env,check=False,pass_fds=compiler_fds()).returncode
- if code:return code
- m.require(fresh()==cap,'package capsule/source changed during compiler execution')
- # Recheck inputs after actual compiler returns. No passing record after drift.
- dependencies(args,cap,key)
- paths=products
- depfile=out/(crate+codes(args,'extra-filename')+'.d');generated=dep_inputs(depfile,manifest,output,row['files'])
- if not custom_build:
-  m.require(all(name in declared_generated and declared_generated[name]==entry for name,entry in generated.items()),'actual generated input binding differs')
-  checked_env_reads(depfile,declared_env,declared_generated)
- if key==cap['snapshot']['payload']['entry'] and not custom_build:
-  # First compiler result is explicitly unaccepted. Only a checked complete
-  # read set permits the intended identity metadata on the second pass.
-  env.update(metadata);code=subprocess.run(forward,env=env,check=False,pass_fds=compiler_fds()).returncode
+ forward=[compiler,*args]
+ with ProducerHandoff(cap,products,forward,input_payload) as handoff:
+  code=subprocess.run(forward,env=env,check=False,pass_fds=compiler_fds()).returncode
   if code:return code
-  m.require(fresh()==cap,'package capsule/source changed during compiler execution');dependencies(args,cap,key)
-  m.require(own_inputs(cap,key,custom_build)==(own_generated,declared_generated,declared_env),'own compiler inputs changed')
-  m.require(all(name in declared_generated and declared_generated[name]==entry for name,entry in dep_inputs(depfile,manifest,output,row['files']).items()),'actual generated input binding differs')
-  checked_env_reads(depfile,declared_env,declared_generated)
- m.require(own_inputs(cap,key,custom_build)==(own_generated,declared_generated,declared_env),'own compiler inputs changed before publication')
- declared_output_root=str(Path(os.environ['OUT_DIR']).absolute()) if own_generated else None
- checked_declared_outputs(declared_output_root,declared_generated,own_generated,output)
- require_probe_custody_set(cap,key,row,manifest,args)
- artifact_bundle={artifact_role(x):checked(output,x) for x in paths}
- for artifact in paths:m.require(physical_bundle(artifact)==artifact_bundle,'compiler produced member set differs before publication')
- compiler_unit=m.digest({'inputs':input_payload,'argv':forward})
- for artifact in paths:
-  body={'schema':'memra-package-compiler-unit-v2','source_seal':m.digest(row),'package':key,'manifest_root':cap['roots'][key],'features':features,'argv':forward,'artifact':checked(output,artifact),'generated':generated,'declared_outputs':declared_generated,'declared_output_root':declared_output_root,'input_seal':input_seal,'input_tuple':input_payload,'compiler_unit':compiler_unit,'artifact_bundle':artifact_bundle,'artifact_role':artifact_role(artifact)}
-  custody_key=m.digest({'inputs':input_payload,'argv':forward,'artifact':str(artifact),'produced':artifact_bundle})
-  body['custody_key']=custody_key
-  record={**body,'seal':m.digest(body)}
-  expected_path=Path(cap['expectations'])/(custody_key+'.json')
-  expectation={'receipt_seal':record['seal']}
-  if expected_path.exists():m.require(m.owned_json(expected_path)==expectation,'external producer custody differs')
-  else:m.immutable_json(expected_path,expectation)
-  m.immutable_json(record_path(artifact),record)
- if key==cap['snapshot']['payload']['entry'] and not custom_build:
-  bindings=[]
-  for index,arg in enumerate(args):
-   item=args[index+1] if arg=='--extern' else arg[len('--extern='):] if arg.startswith('--extern=') else None
-   if item is None or '=' not in item:continue
-   record=artifact_record(item.split('=',1)[1],cap)
-   if record['package']==key:continue
-   path=Path(item.split('=',1)[1])
-   for role,file in record['artifact_bundle'].items():bindings.append({'path':str(path.with_suffix('.'+role)),'file':file})
-   bindings.extend({'path':name,'file':file} for name,file in record['declared_outputs'].items())
-  bindings.extend({'path':name,'file':file} for name,file in declared_generated.items())
-  value={'source_seal':source,'tuple':input_payload,'bindings':sorted(bindings,key=lambda x:x['path'])}
-  m.immutable_json(output/('identity-'+id_value+'.json'),value)
-  m.immutable_json(Path(cap['expectations'])/('identity-'+id_value+'.json'),{'sha256':m.digest(value)})
- return 0
+  m.require(fresh()==cap,'package capsule/source changed during compiler execution')
+  # Recheck inputs after actual compiler returns. No passing record after drift.
+  dependencies(args,cap,key)
+  paths=products
+  depfile=out/(crate+codes(args,'extra-filename')+'.d');generated=dep_inputs(depfile,manifest,output,row['files'])
+  if not custom_build:
+   m.require(all(name in declared_generated and declared_generated[name]==entry for name,entry in generated.items()),'actual generated input binding differs')
+   checked_env_reads(depfile,declared_env,declared_generated)
+  if key==cap['snapshot']['payload']['entry'] and not custom_build:
+   # First compiler result is explicitly unaccepted. Only a checked complete
+   # read set permits the intended identity metadata on the second pass.
+   env.update(metadata);code=subprocess.run(forward,env=env,check=False,pass_fds=compiler_fds()).returncode
+   if code:return code
+   m.require(fresh()==cap,'package capsule/source changed during compiler execution');dependencies(args,cap,key)
+   m.require(own_inputs(cap,key,custom_build)==(own_generated,declared_generated,declared_env),'own compiler inputs changed')
+   m.require(all(name in declared_generated and declared_generated[name]==entry for name,entry in dep_inputs(depfile,manifest,output,row['files']).items()),'actual generated input binding differs')
+   checked_env_reads(depfile,declared_env,declared_generated)
+  m.require(own_inputs(cap,key,custom_build)==(own_generated,declared_generated,declared_env),'own compiler inputs changed before publication')
+  declared_output_root=str(Path(os.environ['OUT_DIR']).absolute()) if own_generated else None
+  checked_declared_outputs(declared_output_root,declared_generated,own_generated,output)
+  require_probe_custody_set(cap,key,row,manifest,args)
+  artifact_bundle={artifact_role(x):checked(output,x) for x in paths}
+  for artifact in paths:m.require(physical_bundle(artifact)==artifact_bundle,'compiler produced member set differs before publication')
+  compiler_unit=m.digest({'inputs':input_payload,'argv':forward})
+  for artifact in paths:
+   body={'schema':'memra-package-compiler-unit-v2','source_seal':m.digest(row),'package':key,'manifest_root':cap['roots'][key],'features':features,'argv':forward,'artifact':checked(output,artifact),'generated':generated,'declared_outputs':declared_generated,'declared_output_root':declared_output_root,'input_seal':input_seal,'input_tuple':input_payload,'compiler_unit':compiler_unit,'artifact_bundle':artifact_bundle,'artifact_role':artifact_role(artifact)}
+   custody_key=m.digest({'inputs':input_payload,'argv':forward,'artifact':str(artifact),'produced':artifact_bundle})
+   body['custody_key']=custody_key
+   record={**body,'seal':m.digest(body)}
+   expected_path=Path(cap['expectations'])/(custody_key+'.json')
+   expectation={'receipt_seal':record['seal']}
+   if expected_path.exists():m.require(m.owned_json(expected_path)==expectation,'external producer custody differs')
+   else:m.immutable_json(expected_path,expectation)
+   m.immutable_json(record_path(artifact),record)
+  if key==cap['snapshot']['payload']['entry'] and not custom_build:
+   bindings=[]
+   for index,arg in enumerate(args):
+    item=args[index+1] if arg=='--extern' else arg[len('--extern='):] if arg.startswith('--extern=') else None
+    if item is None or '=' not in item:continue
+    record=artifact_record(item.split('=',1)[1],cap)
+    if record['package']==key:continue
+    path=Path(item.split('=',1)[1])
+    for role,file in record['artifact_bundle'].items():bindings.append({'path':str(path.with_suffix('.'+role)),'file':file})
+    bindings.extend({'path':name,'file':file} for name,file in record['declared_outputs'].items())
+   bindings.extend({'path':name,'file':file} for name,file in declared_generated.items())
+   value={'source_seal':source,'tuple':input_payload,'bindings':sorted(bindings,key=lambda x:x['path'])}
+   m.immutable_json(output/('identity-'+id_value+'.json'),value)
+   m.immutable_json(Path(cap['expectations'])/('identity-'+id_value+'.json'),{'sha256':m.digest(value)})
+  handoff.complete()
+  return 0
+
 if __name__=='__main__':
  try:sys.exit(receiver(sys.argv[1:]))
  except (m.Refused,OSError,ValueError,KeyError) as error:print('package compiler refused: '+str(error),file=sys.stderr);sys.exit(86)
