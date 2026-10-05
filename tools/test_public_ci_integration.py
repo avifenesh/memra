@@ -81,11 +81,10 @@ def bounded_public_witness(seconds):
     def expire(_signal, _frame):
         print("public-ci whole witness DEADLINE", flush=True)
         for process in children:
-            if process.poll() is None:
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
         # These are exact Popen objects created by this process's trusted module.
         # Do not scan PID names or touch another lane's Git readers.
         for process in list(ci._BLOB_READERS.values()):
@@ -106,14 +105,20 @@ def bounded_public_witness(seconds):
         cleanup_errors = []
         for process in children:
             try:
-                if process.poll() is None:
-                    try:
-                        os.killpg(process.pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
                 process.wait(timeout=5)
             except (OSError, subprocess.TimeoutExpired) as error:
                 cleanup_errors.append(type(error).__name__)
+            finally:
+                for stream in (process.stdin, process.stdout):
+                    try:
+                        if stream is not None:
+                            stream.close()
+                    except OSError as error:
+                        cleanup_errors.append(type(error).__name__)
         # Drain every exact owned reader independently. The module's reset helper
         # has an unbounded final wait, so this witness keeps its own bounded waits.
         for root, process in list(ci._BLOB_READERS.items()):
@@ -193,6 +198,7 @@ class PublicCiIntegration(unittest.TestCase):
                     self.fail(f"public-ci command {command_number} timed out; "
                               f"executable={Path(args[0]).name}; argv_sha256={argv_digest}; "
                               f"partial_output={output[-4096:]}")
+                owned_children.remove(process)
                 print(f"public-ci command {command_number} END status={process.returncode} "
                       f"seconds={time.monotonic() - started:.3f}", flush=True)
                 if ok:
