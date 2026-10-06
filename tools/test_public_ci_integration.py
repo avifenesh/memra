@@ -78,6 +78,17 @@ class PublicWitnessDeadline(BaseException):
     """A whole-witness deadline must escape expected-failure handlers."""
 
 
+def emit_command_diagnostics(number, stream):
+    """Read only the owned diagnostic channel; never filter semantic output."""
+    stream.flush(); stream.seek(0)
+    for raw in stream.read().splitlines():
+        record = json.loads(raw)
+        if (type(record) is not dict or record.get("event") not in ("begin", "end")
+                or type(record.get("phase")) is not str):
+            raise ValueError("malformed owned source-phase diagnostic")
+        print(f"public-ci command {number} diagnostic " + json.dumps(record, sort_keys=True), flush=True)
+
+
 @contextlib.contextmanager
 def bounded_public_witness(seconds):
     """Bound this one witness, including direct Git reads, and only its children."""
@@ -169,47 +180,58 @@ class PublicCiIntegration(unittest.TestCase):
             witness_deadline = time.monotonic() + 420
 
             def command(args, *, ok=True, cwd=repo, extra_env=None):
-                nonlocal command_number
-                command_number += 1
-                started = time.monotonic()
-                remaining = witness_deadline - started
-                if remaining <= 0:
-                    self.fail("public-ci witness exceeded its 420-second deadline")
-                argv_digest = hashlib.sha256(json.dumps([str(a) for a in args]).encode()).hexdigest()
-                print(f"public-ci command {command_number} START executable={Path(args[0]).name} "
-                      f"argv_sha256={argv_digest}", flush=True)
-                process = subprocess.Popen(args, cwd=cwd, env=dict(env, **(extra_env or {})), text=True,
-                                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                           start_new_session=True)
-                owned_children.append(process)
-                try:
-                    output, _ = process.communicate(timeout=min(120, remaining))
-                except subprocess.TimeoutExpired:
-                    # Only this owned child session. Killing the Python CLI alone
-                    # leaves its Git readers alive and gives no bounded failure.
+                with tempfile.TemporaryFile(mode="w+b", dir=scratch) as diagnostics:
+                    nonlocal command_number
+                    command_number += 1
+                    started = time.monotonic()
+                    remaining = witness_deadline - started
+                    if remaining <= 0:
+                        self.fail("public-ci witness exceeded its 420-second deadline")
+                    argv_digest = hashlib.sha256(json.dumps([str(a) for a in args]).encode()).hexdigest()
+                    print(f"public-ci command {command_number} START executable={Path(args[0]).name} "
+                          f"argv_sha256={argv_digest}", flush=True)
+                    child_env = dict(env, **(extra_env or {}))
+                    child_env["PUBLIC_CI_DIAG_FD"] = str(diagnostics.fileno())
+                    process = subprocess.Popen(args, cwd=cwd, env=child_env, text=True,
+                                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                               start_new_session=True, pass_fds=(diagnostics.fileno(),))
+                    owned_children.append(process)
                     try:
-                        os.killpg(process.pid, signal.SIGTERM)
-                    except ProcessLookupError:
-                        pass
-                    try:
-                        output, _ = process.communicate(timeout=5)
-                    except subprocess.TimeoutExpired:
+                        output, _ = process.communicate(timeout=min(120, remaining))
+                    except PublicWitnessDeadline as deadline:
                         try:
-                            os.killpg(process.pid, signal.SIGKILL)
+                            process.communicate(timeout=5)
+                            emit_command_diagnostics(command_number, diagnostics)
+                        except (OSError, subprocess.TimeoutExpired, ValueError, UnicodeError) as capture_error:
+                            deadline.add_note("diagnostic capture failed: " + type(capture_error).__name__)
+                        raise
+                    except subprocess.TimeoutExpired:
+                        # Only this owned child session. Killing the Python CLI alone
+                        # leaves its Git readers alive and gives no bounded failure.
+                        try:
+                            os.killpg(process.pid, signal.SIGTERM)
                         except ProcessLookupError:
                             pass
-                        output, _ = process.communicate(timeout=5)
-                    self.fail(f"public-ci command {command_number} timed out; "
-                              f"executable={Path(args[0]).name}; argv_sha256={argv_digest}; "
-                              f"partial_output={output[-4096:]}")
-                owned_children.remove(process)
-                print(f"public-ci command {command_number} END status={process.returncode} "
-                      f"seconds={time.monotonic() - started:.3f}", flush=True)
-                if ok:
-                    self.assertEqual(process.returncode, 0, output)
-                else:
-                    self.assertNotEqual(process.returncode, 0, output)
-                return output
+                        try:
+                            output, _ = process.communicate(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            try:
+                                os.killpg(process.pid, signal.SIGKILL)
+                            except ProcessLookupError:
+                                pass
+                            output, _ = process.communicate(timeout=5)
+                        self.fail(f"public-ci command {command_number} timed out; "
+                                  f"executable={Path(args[0]).name}; argv_sha256={argv_digest}; "
+                                  f"partial_output={output[-4096:]}")
+                    emit_command_diagnostics(command_number, diagnostics)
+                    owned_children.remove(process)
+                    print(f"public-ci command {command_number} END status={process.returncode} "
+                          f"seconds={time.monotonic() - started:.3f}", flush=True)
+                    if ok:
+                        self.assertEqual(process.returncode, 0, output)
+                    else:
+                        self.assertNotEqual(process.returncode, 0, output)
+                    return output
 
             # A real shallow source clone has no historical topic objects or
             # alternates. Hosted depth-one checkout must replay the same proof.

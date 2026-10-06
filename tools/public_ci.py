@@ -879,5 +879,100 @@ def main():
     print(json.dumps(receipt, sort_keys=True))
 
 
+def _diagnostic_main(stream):
+    """Temporary source-phase profiler for the public CI deadline investigation."""
+    import cProfile
+    import functools
+    import pstats
+    import time
+
+    def emit(record):
+        stream.write(json.dumps(record, sort_keys=True) + "\n")
+        stream.flush()
+
+    def phase(function, label, guard=False):
+        @functools.wraps(function)
+        def observed(*args, **kwargs):
+            record = {"phase": label}
+            if guard:
+                record["guard"] = args[2]
+            emit(dict(record, event="begin"))
+            started = time.monotonic()
+            try:
+                return function(*args, **kwargs)
+            finally:
+                emit(dict(record, event="end", seconds=time.monotonic() - started))
+        return observed
+
+    original_functions = []
+    for name in ("source_plan", "execute_contracts", "guard_data_inputs", "compare_data_inputs"):
+        original_functions.append((globals(), name, globals()[name]))
+        globals()[name] = phase(globals()[name], name, name == "guard_data_inputs")
+    for name in ("event_plan", "make_plan", "included_inputs"):
+        original_functions.append((validation_plan.__dict__, name, getattr(validation_plan, name)))
+        setattr(validation_plan, name, phase(getattr(validation_plan, name), name))
+    original_run = subprocess.run
+    def observed_run(command, *args, **kwargs):
+        name = None
+        if isinstance(command, (list, tuple)):
+            for guard, declared in MERGE_GUARDS.items():
+                if list(command[:len(declared)]) == declared:
+                    name = guard
+                    break
+        if name is None and isinstance(command, (list, tuple)):
+            for contract, lines in COMMANDS.items():
+                for line in lines:
+                    declared = shlex.split(line)
+                    if declared and declared[0] == "python3":
+                        declared[0] = sys.executable
+                    if list(command) == declared:
+                        name = "contract:" + contract
+                        break
+                if name is not None:
+                    break
+        if name is None:
+            return original_run(command, *args, **kwargs)
+        emit({"event": "begin", "phase": "checker", "guard": name})
+        started = time.monotonic()
+        try:
+            return original_run(command, *args, **kwargs)
+        finally:
+            emit({"event": "end", "phase": "checker", "guard": name,
+                  "seconds": time.monotonic() - started})
+    subprocess.run = observed_run
+    profiler = cProfile.Profile()
+    started = time.monotonic()
+    emit({"event": "begin", "phase": "CLI", "mode": sys.argv[1]})
+    profiler.enable()
+    try:
+        main()
+    finally:
+        profiler.disable()
+        subprocess.run = original_run
+        for namespace, name, function in original_functions:
+            namespace[name] = function
+        rows = []
+        wanted_root = str(Path(__file__).parent) + os.sep
+        for (filename, line, name), (primitive, calls, own, total, _callers) in pstats.Stats(profiler).stats.items():
+            if filename.startswith(wanted_root) or any(value in name for value in (
+                    "open", "fstat", "read", "write", "waitpid", "_try_wait",
+                    "_execute_child", "communicate", "poll", "spawn")):
+                rows.append({"file": Path(filename).name, "line": line, "name": name,
+                             "calls": calls, "self_seconds": own, "cumulative_seconds": total})
+        rows.sort(key=lambda item: item["cumulative_seconds"], reverse=True)
+        emit({"event": "end", "phase": "CLI", "seconds": time.monotonic() - started,
+              "profile_rows": rows, "diagnostic_only": True})
+
+
 if __name__ == '__main__':
-    main()
+    diagnostic_fd = os.environ.pop("PUBLIC_CI_DIAG_FD", None)
+    if diagnostic_fd is not None and len(sys.argv) > 1 and sys.argv[1] in ("plan", "contracts"):
+        descriptor = int(diagnostic_fd)
+        info = os.fstat(descriptor)
+        if descriptor < 3 or not stat.S_ISREG(info.st_mode) or info.st_nlink != 0 or info.st_uid != os.geteuid() or info.st_mode & 0o077:
+            raise Refused("diagnostic descriptor is not a private unlinked regular channel")
+        with os.fdopen(descriptor, "w", encoding="utf-8", closefd=False) as diagnostic_stream:
+            os.set_inheritable(int(diagnostic_fd), False)
+            _diagnostic_main(diagnostic_stream)
+    else:
+        main()
