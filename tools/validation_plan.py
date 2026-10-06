@@ -588,14 +588,102 @@ def git(repo, *args):
     return subprocess.check_output(['git', '-C', str(repo), *args], stderr=subprocess.PIPE)
 
 
+def git_text_batch(repo, requests):
+    """Keep a builtin Git reader inside the existing tracked CLI group.
+
+    The 110-second read and two five-second teardown arms derive from its
+    existing 120-second child contract. Local objects never trigger lazy fetch.
+    """
+    command = ['/usr/bin/git', '--no-lazy-fetch', '-C', str(repo), 'cat-file', '--batch']
+    process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, start_new_session=False)
+    primary_error = None
+    cleanup_errors = []
+    try:
+        output, errors = process.communicate(input=requests, timeout=110)
+        if process.returncode:
+            raise subprocess.CalledProcessError(process.returncode, command, output=output, stderr=errors)
+        return subprocess.CompletedProcess(command, process.returncode, output, errors)
+    except BaseException as error:
+        primary_error = error
+        try:
+            process.terminate()
+        except ProcessLookupError:
+            pass
+        except OSError as cleanup_error:
+            cleanup_errors.append(type(cleanup_error).__name__)
+        try:
+            process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
+            except OSError as cleanup_error:
+                cleanup_errors.append(type(cleanup_error).__name__)
+            try:
+                process.communicate(timeout=5)
+            except (OSError, subprocess.TimeoutExpired) as cleanup_error:
+                cleanup_errors.append(type(cleanup_error).__name__)
+        except OSError as cleanup_error:
+            cleanup_errors.append(type(cleanup_error).__name__)
+        raise
+    finally:
+        for stream in (process.stdin, process.stdout, process.stderr):
+            if stream is not None:
+                try:
+                    stream.close()
+                except OSError as cleanup_error:
+                    cleanup_errors.append(type(cleanup_error).__name__)
+        if cleanup_errors:
+            detail = 'owned Git batch cleanup failed: ' + ', '.join(cleanup_errors)
+            if primary_error is not None:
+                primary_error.add_note(detail)
+            else:
+                raise Refused(detail)
+
+
 class Tree:
     def __init__(self, repo, ref):
         self.repo, self.ref = Path(repo), ref
         self.cache = {}
+        self.prefetched = {}
+
+    def prefetch_text(self, paths):
+        """Batch only pinned Git reads; decoding and local observations stay fresh."""
+        paths = list(dict.fromkeys(path for path in paths if path not in self.cache))
+        if (not paths or not re.fullmatch(r'[0-9a-f]{40}', self.ref)
+                or any('\n' in path or '\r' in path for path in paths)):
+            return
+        requests = ''.join(f'{self.ref}:{path}\n' for path in paths).encode()
+        # communicate drains both pipes concurrently. Writing all requests first
+        # and then reading stdout can deadlock when a blob fills the output pipe.
+        result = git_text_batch(self.repo, requests)
+        data, offset, staged = result.stdout, 0, {}
+        for path in paths:
+            end = data.find(b'\n', offset)
+            if end < 0:
+                raise Refused('incomplete immutable source batch header')
+            fields = data[offset:end].split()
+            if (len(fields) != 3 or fields[1] != b'blob' or not fields[2].isdigit()
+                    or not re.fullmatch(rb'[0-9a-f]{40}', fields[0])):
+                raise Refused('invalid immutable source batch header')
+            size, start = int(fields[2]), end + 1
+            offset = start + size
+            if offset >= len(data) or data[offset:offset + 1] != b'\n':
+                raise Refused('incomplete immutable source batch body')
+            staged[path] = data[start:offset]
+            offset += 1
+        if offset != len(data):
+            raise Refused('unexpected immutable source batch trailer')
+        self.prefetched.update(staged)
 
     def read(self, path):
         if path not in self.cache:
-            self.cache[path] = git(self.repo, 'show', f'{self.ref}:{path}').decode()
+            raw = self.prefetched.pop(path, None)
+            if raw is None:
+                raw = git(self.repo, 'show', f'{self.ref}:{path}')
+            self.cache[path] = raw.decode()
         return self.cache[path]
 
     def read_bytes(self, path):
@@ -866,10 +954,11 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
     if result.returncode not in (0, 1):
         raise Refused('include census failed')
     pattern = re.compile(r'\b(include(?:_str|_bytes)?)\s*!\s*\(')
-    for raw in result.stdout.split(b'\0'):
-        if not raw:
-            continue
-        path = raw.decode() if isinstance(tree, LocalTree) else raw.decode().split(':', 1)[1]
+    matches = [raw.decode() if isinstance(tree, LocalTree) else raw.decode().split(':', 1)[1]
+               for raw in result.stdout.split(b'\0') if raw]
+    if type(tree) is Tree:
+        tree.prefetch_text(matches)
+    for path in matches:
         package = owner(path, owners)
         if package is None:
             raise Refused('include has no package owner')
