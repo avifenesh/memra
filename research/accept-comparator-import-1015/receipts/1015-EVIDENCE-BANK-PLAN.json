@@ -1,0 +1,701 @@
+{
+  "schema": "memra-accept-comparator-evidence-plan-v1",
+  "creation_state": "Root review nomination; not copied/banked",
+  "implementation_commit": "5a744d092dd3abed37099943290f828a3886015d",
+  "implementation_base": "372a4cf284a99dac31b545f68873e45f1e15f8cd",
+  "original_source_sha256": "5eb8073d0e0d3d1fe00387fbfacd0073298848fa74147a9d76cfda5f5f936f96",
+  "candidate_source_sha256": "19f3b7eafdfc294b4b7287218791f4071dcc62405482157d6381c7150483dd60",
+  "source_git_mode": "100755",
+  "retained_CPU_result_sha256": "9d242d72a1f56878f33775842a2114b62c1e5eefa9878d0ad70207ad27c6516b",
+  "original_execution_commit_not_retagged": true,
+  "qualification": false,
+  "manifest_target": "research/accept-comparator-import-1015/receipts/1015-EVIDENCE-BANK-PLAN.json",
+  "files": [
+    {
+      "path": "research/accept-comparator-import-1015/receipts/PUBLIC-1015-EVIDENCE-SUMMARY.json",
+      "sha256": "ebc73be9938194d008885194e62ff9a31fc0b35fd6c207ade64155464943b536",
+      "bytes": 127518,
+      "git_mode": "100644",
+      "payload": "clearly labelled retained-evidence/current-source provenance derivative",
+      "source_label": "1015-custody-source-summary"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/RESULT.json",
+      "sha256": "9d242d72a1f56878f33775842a2114b62c1e5eefa9878d0ad70207ad27c6516b",
+      "bytes": 73839,
+      "git_mode": "100644",
+      "payload": "byte-identical original receipt",
+      "source_label": "retained-D-20-pair-result"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/ROOT-PROOF-SOURCE-PINS.json",
+      "sha256": "2abe01a3e810b6bc1df8f0bbc307cd3b547c9d1d891784fa3a6a59091f822d15",
+      "bytes": 488,
+      "git_mode": "100644",
+      "payload": "byte-identical original receipt",
+      "source_label": "Root-original-proof-source-pins"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/all-comparisons-fail.candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/all-comparisons-fail.candidate.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/all-comparisons-fail.candidate.stdout",
+      "sha256": "c6763687cc9246ec02f8b954a4759d61b57ad63d0eac82b7721ba469af95d473",
+      "bytes": 372,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/all-comparisons-fail.candidate.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/all-comparisons-fail.original.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/all-comparisons-fail.original.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/all-comparisons-fail.original.stdout",
+      "sha256": "c6763687cc9246ec02f8b954a4759d61b57ad63d0eac82b7721ba469af95d473",
+      "bytes": 372,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/all-comparisons-fail.original.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-count.candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/completion-count.candidate.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-count.candidate.stdout",
+      "sha256": "36fae53f7933c95e6bbca5ff85ad66ae741c0de14f8d7fe928ee64975525eb58",
+      "bytes": 185,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/completion-count.candidate.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-count.original.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/completion-count.original.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-count.original.stdout",
+      "sha256": "36fae53f7933c95e6bbca5ff85ad66ae741c0de14f8d7fe928ee64975525eb58",
+      "bytes": 185,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/completion-count.original.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-null.candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/completion-null.candidate.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-null.candidate.stdout",
+      "sha256": "cb4849c592d8d693484f5f73171bfde64efe11ff4abb81faedb4c097ee6ae32f",
+      "bytes": 187,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/completion-null.candidate.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-null.original.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/completion-null.original.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-null.original.stdout",
+      "sha256": "cb4849c592d8d693484f5f73171bfde64efe11ff4abb81faedb4c097ee6ae32f",
+      "bytes": 187,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/completion-null.original.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-ref-absent.candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/completion-ref-absent.candidate.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-ref-absent.candidate.stdout",
+      "sha256": "e182add738bac187c6414712f9c11f8c4bcc4cae6e10efdaca044f9a1aac9d95",
+      "bytes": 187,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/completion-ref-absent.candidate.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-ref-absent.original.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/completion-ref-absent.original.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-ref-absent.original.stdout",
+      "sha256": "e182add738bac187c6414712f9c11f8c4bcc4cae6e10efdaca044f9a1aac9d95",
+      "bytes": 187,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/completion-ref-absent.original.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-zero.candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/completion-zero.candidate.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-zero.candidate.stdout",
+      "sha256": "b0104597936cd33884a6953bcddb3d08cde0c645d2b2f7a066bb933aa385f897",
+      "bytes": 184,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/completion-zero.candidate.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-zero.original.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/completion-zero.original.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-zero.original.stdout",
+      "sha256": "b0104597936cd33884a6953bcddb3d08cde0c645d2b2f7a066bb933aa385f897",
+      "bytes": 184,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/completion-zero.original.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/config-mismatch-explicit-description.candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/config-mismatch-explicit-description.candidate.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/config-mismatch-explicit-description.candidate.stdout",
+      "sha256": "8926568926073b3f5181e9a619a4ff860a365cebd9f62f2dab3e3f4dfd6eec9e",
+      "bytes": 276,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/config-mismatch-explicit-description.candidate.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/config-mismatch-explicit-description.original.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/config-mismatch-explicit-description.original.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/config-mismatch-explicit-description.original.stdout",
+      "sha256": "8926568926073b3f5181e9a619a4ff860a365cebd9f62f2dab3e3f4dfd6eec9e",
+      "bytes": 276,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/config-mismatch-explicit-description.original.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/config-mismatch.candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/config-mismatch.candidate.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/config-mismatch.candidate.stdout",
+      "sha256": "deb19767ccce49f158cd4d0ceae3f5c7c65e4086be303b644855b2e190815a17",
+      "bytes": 283,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/config-mismatch.candidate.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/config-mismatch.original.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/config-mismatch.original.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/config-mismatch.original.stdout",
+      "sha256": "deb19767ccce49f158cd4d0ceae3f5c7c65e4086be303b644855b2e190815a17",
+      "bytes": 283,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/config-mismatch.original.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/failed-zero-rate.candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/failed-zero-rate.candidate.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/failed-zero-rate.candidate.stdout",
+      "sha256": "e3aee20396e31dc0b679d231f23000263cb2f7192ab5d51fc24ebc689f92961e",
+      "bytes": 258,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/failed-zero-rate.candidate.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/failed-zero-rate.original.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/failed-zero-rate.original.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/failed-zero-rate.original.stdout",
+      "sha256": "e3aee20396e31dc0b679d231f23000263cb2f7192ab5d51fc24ebc689f92961e",
+      "bytes": 258,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/failed-zero-rate.original.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/hash-only.candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/hash-only.candidate.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/hash-only.candidate.stdout",
+      "sha256": "32e5c894004ea22efcc5411e2790ebb5b85d88100a6fdd038c65d3c94158a1f2",
+      "bytes": 207,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/hash-only.candidate.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/hash-only.original.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/hash-only.original.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/hash-only.original.stdout",
+      "sha256": "32e5c894004ea22efcc5411e2790ebb5b85d88100a6fdd038c65d3c94158a1f2",
+      "bytes": 207,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/hash-only.original.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/initializer-candidate.json",
+      "sha256": "7b67379de81a1240fc37ce3efe0a35972d1ec09e89f9116671408588f1956243",
+      "bytes": 6915,
+      "git_mode": "100644",
+      "payload": "byte-identical original receipt",
+      "source_label": "retained-D-initializer-candidate"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/initializer-original.json",
+      "sha256": "e9f80e95194c24c017a00989abcdd52e8e3044b25770b8751e1db88edf4f9b3a",
+      "bytes": 7290,
+      "git_mode": "100644",
+      "payload": "byte-identical original receipt",
+      "source_label": "retained-D-initializer-original"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/matching.candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/matching.candidate.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/matching.candidate.stdout",
+      "sha256": "d8a2b20170d8cbcfb15f3f40b2eaa130aeecac6ee2a18b6ef63bae1a0f5808fc",
+      "bytes": 92,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/matching.candidate.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/matching.original.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/matching.original.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/matching.original.stdout",
+      "sha256": "d8a2b20170d8cbcfb15f3f40b2eaa130aeecac6ee2a18b6ef63bae1a0f5808fc",
+      "bytes": 92,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/matching.original.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/mismatch-accepted.candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/mismatch-accepted.candidate.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/mismatch-accepted.candidate.stdout",
+      "sha256": "fa0011889435064a5c8d89ffed6558c57e817a185991bd0b673ae78f7bafd458",
+      "bytes": 181,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/mismatch-accepted.candidate.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/mismatch-accepted.original.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/mismatch-accepted.original.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/mismatch-accepted.original.stdout",
+      "sha256": "fa0011889435064a5c8d89ffed6558c57e817a185991bd0b673ae78f7bafd458",
+      "bytes": 181,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/mismatch-accepted.original.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/mismatch-drafted.candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/mismatch-drafted.candidate.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/mismatch-drafted.candidate.stdout",
+      "sha256": "7cdc7f3e77fb3145ec705f097884093facf77a5c1617be0f1b5b4016cfa12752",
+      "bytes": 180,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/mismatch-drafted.candidate.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/mismatch-drafted.original.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/mismatch-drafted.original.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/mismatch-drafted.original.stdout",
+      "sha256": "7cdc7f3e77fb3145ec705f097884093facf77a5c1617be0f1b5b4016cfa12752",
+      "bytes": 180,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/mismatch-drafted.original.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/mismatch-rounds.candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/mismatch-rounds.candidate.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/mismatch-rounds.candidate.stdout",
+      "sha256": "3c1e0b077b881678e25d17a4f2e083e1065c8cb1f39d26da93850b079510d1b2",
+      "bytes": 179,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/mismatch-rounds.candidate.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/mismatch-rounds.original.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/mismatch-rounds.original.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/mismatch-rounds.original.stdout",
+      "sha256": "3c1e0b077b881678e25d17a4f2e083e1065c8cb1f39d26da93850b079510d1b2",
+      "bytes": 179,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/mismatch-rounds.original.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/missing-reference.candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/missing-reference.candidate.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/missing-reference.original.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/missing-reference.original.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/missing-text.candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/missing-text.candidate.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/missing-text.original.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/missing-text.original.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/text-after-golden-window.candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/text-after-golden-window.candidate.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/text-after-golden-window.candidate.stdout",
+      "sha256": "4d989c136b160106f1c121a09a539aca6cedae641365cd0906774febfb4ae6c9",
+      "bytes": 671,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/text-after-golden-window.candidate.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/text-after-golden-window.original.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/text-after-golden-window.original.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/text-after-golden-window.original.stdout",
+      "sha256": "4d989c136b160106f1c121a09a539aca6cedae641365cd0906774febfb4ae6c9",
+      "bytes": 671,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/text-after-golden-window.original.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/text-first-character.candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/text-first-character.candidate.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/text-first-character.candidate.stdout",
+      "sha256": "a1785c020cc3c31d446cd826d7521a4140819e14c8cf3aa48be815f367b366d2",
+      "bytes": 475,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/text-first-character.candidate.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/text-first-character.original.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/text-first-character.original.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/text-first-character.original.stdout",
+      "sha256": "a1785c020cc3c31d446cd826d7521a4140819e14c8cf3aa48be815f367b366d2",
+      "bytes": 475,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/text-first-character.original.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/text-longer-prefix.candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/text-longer-prefix.candidate.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/text-longer-prefix.candidate.stdout",
+      "sha256": "9f49a631386e875c4d9e82de331f54327a259f260d6adad8586360e90913236e",
+      "bytes": 551,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/text-longer-prefix.candidate.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/text-longer-prefix.original.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/text-longer-prefix.original.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/text-longer-prefix.original.stdout",
+      "sha256": "9f49a631386e875c4d9e82de331f54327a259f260d6adad8586360e90913236e",
+      "bytes": 551,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/text-longer-prefix.original.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/text-shorter-prefix.candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/text-shorter-prefix.candidate.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/text-shorter-prefix.candidate.stdout",
+      "sha256": "7b5929463ea84bdeb4b058c93c4edef0828c8ff5111eb06bf66e789ed40170fd",
+      "bytes": 415,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/text-shorter-prefix.candidate.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/text-shorter-prefix.original.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/text-shorter-prefix.original.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/text-shorter-prefix.original.stdout",
+      "sha256": "7b5929463ea84bdeb4b058c93c4edef0828c8ff5111eb06bf66e789ed40170fd",
+      "bytes": 415,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/text-shorter-prefix.original.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/zero-drafted.candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/zero-drafted.candidate.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/zero-drafted.candidate.stdout",
+      "sha256": "4c5b853843083be32296a40a9146572e98d8015dcd0e4b55cf5b1edbb0ebb945",
+      "bytes": 89,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/zero-drafted.candidate.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/zero-drafted.original.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/zero-drafted.original.stderr"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/original-controls/zero-drafted.original.stdout",
+      "sha256": "4c5b853843083be32296a40a9146572e98d8015dcd0e4b55cf5b1edbb0ebb945",
+      "bytes": 89,
+      "git_mode": "100644",
+      "payload": "byte-identical original raw comparator output",
+      "source_label": "retained-D-CPU-control/zero-drafted.original.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/public-derivatives/missing-reference.candidate.stdout.PUBLIC-PATH-NORMALIZED.txt",
+      "sha256": "2d456ce87e3ddcf7fd871c831735672c6b7c17f52499998563b71ca104c8a1cb",
+      "bytes": 123,
+      "git_mode": "100644",
+      "payload": "labelled path-normalized derivative; not original raw output",
+      "source_label": "retained-D-CPU-control/missing-reference.candidate.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/public-derivatives/missing-reference.original.stdout.PUBLIC-PATH-NORMALIZED.txt",
+      "sha256": "2d456ce87e3ddcf7fd871c831735672c6b7c17f52499998563b71ca104c8a1cb",
+      "bytes": 123,
+      "git_mode": "100644",
+      "payload": "labelled path-normalized derivative; not original raw output",
+      "source_label": "retained-D-CPU-control/missing-reference.original.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/public-derivatives/missing-text.candidate.stdout.PUBLIC-PATH-NORMALIZED.txt",
+      "sha256": "fd25adf1e75698d7536d0746e7c51727d4d7ecbc535196f86a83f537b9f31e47",
+      "bytes": 119,
+      "git_mode": "100644",
+      "payload": "labelled path-normalized derivative; not original raw output",
+      "source_label": "retained-D-CPU-control/missing-text.candidate.stdout"
+    },
+    {
+      "path": "research/accept-comparator-import-1015/receipts/public-derivatives/missing-text.original.stdout.PUBLIC-PATH-NORMALIZED.txt",
+      "sha256": "fd25adf1e75698d7536d0746e7c51727d4d7ecbc535196f86a83f537b9f31e47",
+      "bytes": 119,
+      "git_mode": "100644",
+      "payload": "labelled path-normalized derivative; not original raw output",
+      "source_label": "retained-D-CPU-control/missing-text.original.stdout"
+    }
+  ],
+  "raw_output_coverage": {
+    "total": 80,
+    "exact_public_originals": 76,
+    "private_exact_originals_with_labelled_public_derivatives": 4
+  },
+  "current_review_CI_and_1017_operational_dependency_required": true
+}
