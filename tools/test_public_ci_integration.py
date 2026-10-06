@@ -74,6 +74,10 @@ def publication_dependency(text, consumer):
         raise AssertionError('publication preflight is not the existing full workflow')
 
 
+class PublicWitnessDeadline(BaseException):
+    """A whole-witness deadline must escape expected-failure handlers."""
+
+
 @contextlib.contextmanager
 def bounded_public_witness(seconds):
     """Bound this one witness, including direct Git reads, and only its children."""
@@ -93,7 +97,7 @@ def bounded_public_witness(seconds):
                     process.kill()
                 except ProcessLookupError:
                     pass
-        raise TimeoutError("public-ci whole witness exceeded 420 seconds")
+        raise PublicWitnessDeadline("public-ci whole witness exceeded 420 seconds")
     previous = signal.signal(signal.SIGALRM, expire)
     signal.alarm(seconds)
     try:

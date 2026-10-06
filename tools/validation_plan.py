@@ -551,6 +551,27 @@ def rust_code_view(text, string_spans=None):
         raise Refused(str(error)) from error
 
 
+class _RustCodeViews:
+    """Pure code and literal positions, owned by one pinned plan call."""
+    def __init__(self):
+        self._views = {}
+
+    def view(self, text, string_spans=None):
+        if type(text) is not str or (
+                string_spans is not None and type(string_spans) is not list):
+            return rust_code_view(text, string_spans)
+        cached = self._views.get(text)
+        if cached is None:
+            spans = string_spans if string_spans is not None else []
+            start = len(spans)
+            code = rust_code_view(text, spans)
+            cached = (code, tuple(spans[start:]))
+            self._views[text] = cached
+        elif string_spans is not None:
+            string_spans.extend(cached[1])
+        return cached[0]
+
+
 def read_local_input(root, name, *, binary=False):
     """Read a regular file anchored below the trusted root, without following links."""
     root = Path(root).resolve()
@@ -872,7 +893,7 @@ def include_argument(argument, package_root, generated_env=()):
     raise Refused('unresolved include expression')
 
 
-def included_inputs(tree, owners):
+def included_inputs(tree, owners, *, code_views=None):
     """Literal includes, including old-tree consumers of deleted/renamed fixtures.
 
 The census does not exempt arbitrary research data. Unknown non-document inputs still
@@ -964,7 +985,8 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
             raise Refused('include has no package owner')
         source = tree.read(path)
         string_spans = []
-        code = rust_code_view(source, string_spans)
+        code = (code_views.view(source, string_spans) if code_views is not None
+                else rust_code_view(source, string_spans))
         prefix = next(k for k, v in owners.items() if v == package)
         # A conditional path can select a module whose own includes are outside
         # the scanned crate. Do not guess cfg truth or treat it as a data reader.
@@ -1262,8 +1284,12 @@ def make_plan(paths, base_tree, head_tree):
                or p.endswith(('/Cargo.toml', '/build.rs'))
                for p in paths):
             return full('compiler/build/workflow/dependency input changed', paths)
-        includes = included_inputs(head_tree, owners)
-        for path, packages in included_inputs(base_tree, base_owners).items():
+        code_views = (_RustCodeViews() if all(
+            type(tree) is Tree and type(tree.ref) is str
+            and re.fullmatch(r"[0-9a-f]{40}", tree.ref)
+            for tree in (base_tree, head_tree)) else None)
+        includes = included_inputs(head_tree, owners, code_views=code_views)
+        for path, packages in included_inputs(base_tree, base_owners, code_views=code_views).items():
             includes[path].update(packages)
         direct, contracts, native_requirements = set(), set(workflow_contracts), set()
         contract_paths = set(base_tree.paths('tools')) | set(head_tree.paths('tools'))
