@@ -1,0 +1,99 @@
+{
+  "schema": "tokenizer-warning-publication-copies-v1",
+  "code_commit": "320d1e3a897cfb054fbe9b878aca7d61748b26a2",
+  "lib_sha256": "e87aefe0d458a7638d6baab9a5ef833bafddc0db464fc34e4c301728a38068ca",
+  "control_sha256": "cf01ebd0cc72a1453ec4264daca5b877bf61f484de3c6909e5fa5111f6622500",
+  "candidate_binary_sha256": "141b9d90233a94a475891788d95fee8b46064aa108051e621ea48a59850d553e",
+  "original_precode_result_sha256": "eb1282bd8114b19deed7fb8ec4535c04ac7c21eaa877eb337a204c5ccd1ccdc6",
+  "files": [
+    {
+      "path": "raw/synthetic-cases.tsv",
+      "sha256": "9b0b5ae5018cd9401640feeca6b6fe44534fe4feed8efd450f23ab7a6d21b406",
+      "bytes": 355,
+      "original_sha256": "b0965f320c58801ce3b72964b60e279eca065c801c1e912e6940817a42654b95",
+      "original_bytes": 284,
+      "transform": "hex-byte-spacing: removing spaces from each hex field recovers the exact original synthetic TSV bytes"
+    },
+    {
+      "path": "raw/vendor-reference.tsv",
+      "sha256": "af304080123725b19cbd670e2c28ef7b39de92e1c9af1e27d88455e3ca822e6c",
+      "bytes": 513,
+      "original_sha256": "af304080123725b19cbd670e2c28ef7b39de92e1c9af1e27d88455e3ca822e6c",
+      "original_bytes": 513,
+      "transform": "exact raw bytes; no rewrite"
+    },
+    {
+      "path": "raw/warning-RESULT.json",
+      "sha256": "e854bf1b1cb3e32237457463a1f9b4caaa9e4d285e6df54a565aa8799e8160e8",
+      "bytes": 1468,
+      "original_sha256": "e854bf1b1cb3e32237457463a1f9b4caaa9e4d285e6df54a565aa8799e8160e8",
+      "original_bytes": 1468,
+      "transform": "exact raw bytes; no rewrite"
+    },
+    {
+      "path": "raw/vendor-stdout.log",
+      "sha256": "fe8e53c53cf601e0346936e5c38e0f6a932d29db3f2d08980b87e1b5304cd389",
+      "bytes": 309,
+      "original_sha256": "00994be9e8defaa2ae5845724505d3f9fe05fff155a1ae9bf8962358f4995cf4",
+      "original_bytes": 370,
+      "transform": "model-path-only"
+    },
+    {
+      "path": "raw/vendor-stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_bytes": 0,
+      "transform": "exact raw bytes; no rewrite"
+    },
+    {
+      "path": "raw/regex_only-stdout.log",
+      "sha256": "e62db951435b2ec65256e4486814fe779e313a48bbe81acd1048bff618bee0ea",
+      "bytes": 313,
+      "original_sha256": "83da1c08a7c369c4696e2758952823f68c53525b8825807a383d1921036c095b",
+      "original_bytes": 374,
+      "transform": "model-path-only"
+    },
+    {
+      "path": "raw/regex_only-stderr.log",
+      "sha256": "3bcad57f683e32d59c892fedefe716df56f18dccbf1a9e76f593a7db3e5511b4",
+      "bytes": 210,
+      "original_sha256": "3bcad57f683e32d59c892fedefe716df56f18dccbf1a9e76f593a7db3e5511b4",
+      "original_bytes": 210,
+      "transform": "exact raw bytes; no rewrite"
+    },
+    {
+      "path": "raw/flags_only-stdout.log",
+      "sha256": "b8254ac36c630d5190ec046d72a72b8d1991d4e4a6f038b20c818143720c231b",
+      "bytes": 313,
+      "original_sha256": "03399c624f441fba8ec7b6fc63eb5360425371a29a17c84f180e3832dd1665db",
+      "original_bytes": 374,
+      "transform": "model-path-only"
+    },
+    {
+      "path": "raw/flags_only-stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_bytes": 0,
+      "transform": "exact raw bytes; no rewrite"
+    },
+    {
+      "path": "raw/combined-stdout.log",
+      "sha256": "e57bd1ba0d798923291de00d0669bff2e7cb6c1d1bc2c48af82eed278e2a0925",
+      "bytes": 311,
+      "original_sha256": "b500aed264277e166ed9334fa9935762c422179a0202a1c879fa9d72d996f4ba",
+      "original_bytes": 372,
+      "transform": "model-path-only"
+    },
+    {
+      "path": "raw/combined-stderr.log",
+      "sha256": "3bcad57f683e32d59c892fedefe716df56f18dccbf1a9e76f593a7db3e5511b4",
+      "bytes": 210,
+      "original_sha256": "3bcad57f683e32d59c892fedefe716df56f18dccbf1a9e76f593a7db3e5511b4",
+      "original_bytes": 210,
+      "transform": "exact raw bytes; no rewrite"
+    }
+  ],
+  "scope": "CPU synthetic Unicode parity and mismatch-warning evidence only. No model/GPU/performance/serving qualification."
+}
