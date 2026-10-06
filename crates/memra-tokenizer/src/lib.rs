@@ -936,6 +936,26 @@ impl Tokenizer {
             }
         })?;
 
+        // Keep the existing authority and ids. Report descriptor drift that external
+        // readers can interpret differently; do not refuse an otherwise valid load.
+        if let Some(regex) = cfg_regex
+            && !tj_regexes.is_empty()
+            && (tj_regexes.len() != 1 || tj_regexes[0] != regex)
+        {
+            let authority = if pre_from_split_regexes(&[regex.to_string()]).is_some() {
+                "tokenizer_config.json"
+            } else if pre_from_split_regexes(&tj_regexes).is_some() {
+                "tokenizer.json"
+            } else {
+                "existing unknown-pretokenizer policy"
+            };
+            eprintln!(
+                "[tokenizer] WARN: tokenizer.json Split regex disagrees with \
+                 tokenizer_config.json pretokenize_regex; selected descriptor={authority}, \
+                 pre={pre}. External tokenizer readers can produce different ids."
+            );
+        }
+
         // deepseek-v4 encoding revision from the checkpoint's own config.json (dspark_* key
         // census — the only artifact-level marker; tokenizer/template files are byte-identical
         // across the preview and 0731 checkpoints). Missing/unparseable config.json (e.g. a
