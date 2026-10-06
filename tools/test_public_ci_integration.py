@@ -17,6 +17,10 @@ import public_ci as ci
 import validation_plan as vp
 
 ROOT = Path(__file__).resolve().parents[1]
+PUBLIC_CI_WITNESS_SECONDS = 660
+# Matched hosted prefix 402 s + projected tail 228 s + overhead 25 s.
+# Round 655 s up to 11 minutes. Children keep the 120-second bound.
+
 LEGACY_SOURCE = '2ab8eec8ddd5b27ecaaf22f55ddf728151be560c'
 LEGACY_MANIFEST_SHA256 = '0bbc14dd37b72d1058b399963d174d3aed10932b8b704e26f7d3aab3169a5e1d'
 
@@ -97,7 +101,7 @@ def bounded_public_witness(seconds):
                     process.kill()
                 except ProcessLookupError:
                     pass
-        raise PublicWitnessDeadline("public-ci whole witness exceeded 420 seconds")
+        raise PublicWitnessDeadline(f"public-ci whole witness exceeded {seconds} seconds")
     previous = signal.signal(signal.SIGALRM, expire)
     signal.alarm(seconds)
     try:
@@ -154,7 +158,7 @@ def bounded_public_witness(seconds):
 
 class PublicCiIntegration(unittest.TestCase):
     def test_modes_sources_commands_and_results(self):
-        with bounded_public_witness(420) as owned_children, tempfile.TemporaryDirectory(prefix='memra-public-ci-') as folder:
+        with bounded_public_witness(PUBLIC_CI_WITNESS_SECONDS) as owned_children, tempfile.TemporaryDirectory(prefix='memra-public-ci-') as folder:
             scratch = Path(folder)
             hooks, templates = scratch / 'hooks', scratch / 'templates'
             hooks.mkdir(); templates.mkdir()
@@ -166,7 +170,7 @@ class PublicCiIntegration(unittest.TestCase):
             repo = scratch / 'repo'
 
             command_number = 0
-            witness_deadline = time.monotonic() + 420
+            witness_deadline = time.monotonic() + PUBLIC_CI_WITNESS_SECONDS
 
             def command(args, *, ok=True, cwd=repo, extra_env=None):
                 nonlocal command_number
@@ -174,7 +178,7 @@ class PublicCiIntegration(unittest.TestCase):
                 started = time.monotonic()
                 remaining = witness_deadline - started
                 if remaining <= 0:
-                    self.fail("public-ci witness exceeded its 420-second deadline")
+                    self.fail(f"public-ci witness exceeded its {PUBLIC_CI_WITNESS_SECONDS}-second deadline")
                 argv_digest = hashlib.sha256(json.dumps([str(a) for a in args]).encode()).hexdigest()
                 print(f"public-ci command {command_number} START executable={Path(args[0]).name} "
                       f"argv_sha256={argv_digest}", flush=True)

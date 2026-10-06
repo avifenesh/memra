@@ -119,7 +119,7 @@ jobs:
           rg --version
 
       - name: Public CPU CI event, source and result integration
-        timeout-minutes: 8
+        timeout-minutes: 12
         run: python3 tools/test_public_ci_integration.py
 
       - name: Declared changed-input CPU contracts (missing selection runs all available)
