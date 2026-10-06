@@ -1,0 +1,157 @@
+{
+  "schema": "memra-public-ci-evidence-summary-v1",
+  "state": "nomination only; actual final whole result now passed; not banked or published",
+  "final_source_commit": "aafa4d7b943355364b48606708c5f46c8179bf9e",
+  "final_source_base": "372a4cf284a99dac31b545f68873e45f1e15f8cd",
+  "final_source_diff_sha256": "349c0aaef57466ec3b09af83ec19f261dbd5c730ee991ee9e18f79a14ce96377",
+  "qualification": false,
+  "temporary_source_diagnostics": "removed before final source composition",
+  "path_control": {
+    "source_sha256": "9d764867039c9c6766e964fd85d083c603e27e5c99bf4592faeff551d9b4659d",
+    "success": true,
+    "synthetic_cases": 7407,
+    "actual_git_names": 201874,
+    "name_source_commit": "ca297e1c5624d12780893c13144aa4dc2d0be9b2",
+    "name_source_sha256": "d3f01b4828093c61d8557c2d8248a7a9254c645064ed7de5374e43408a152abf",
+    "returned_input_identity_preserved": true,
+    "invalid_exact_ValueError_message_preserved": true,
+    "valid_PurePosixPath_allocations": {
+      "old": 3,
+      "new": 1
+    },
+    "physical_cache": false
+  },
+  "original_failed_combined": {
+    "job": "5af9cd5b1f63",
+    "status": "failed remains failed",
+    "reason": "worker expected scoped/thin but combined CPU workflow/server/CUDA inputs correctly selected full",
+    "emitted_plan_sha256": "a6d797eefedba5f70390aca186645007be52b207922a0fc6cd6a596cffeb7ffc",
+    "failed_observations_sha256": "80f53f1b566bb698152f579f1a76a7d3189fd592fd89fa7f94ba0ffce937611c",
+    "raw_log_sha256": "0e4213e2c215827c02856288cb5cbdb61f94610b0e0d207dce2b73f7a185e7d8",
+    "completed_contracts": false,
+    "observed_physical_reads": 0,
+    "observed_alias_checks": 0
+  },
+  "remaining_only_suffix": {
+    "job": "833f8e6d94bf",
+    "status": "passed",
+    "report_sha256": "f3cd079cb62d93bfbfb47b75be0f902da38e9d798cf445eaed5a34697d938b43",
+    "source_main": "372a4cf284a99dac31b545f68873e45f1e15f8cd",
+    "diagnostic_worktree_commit": "ca297e1c5624d12780893c13144aa4dc2d0be9b2",
+    "composed_fixture_commit": "e9d0fa4dc3e4e308294d9dd11ec5e8cd68b7639e",
+    "full_prefix_comparison": {
+      "all_plan_fields_except_explicit_provenance_equal": true,
+      "source_readsets_equal_except_declared_helper": true,
+      "physical_and_alias_sets_equal_but_empty": true,
+      "full_required_contracts": [
+        "public-boundary",
+        "n-choice",
+        "q35-cache",
+        "physical-gpu",
+        "support-records",
+        "tool-choice",
+        "cache-meter",
+        "metrics-live",
+        "serving-qualification",
+        "background-chat-text",
+        "sampled-mtp"
+      ],
+      "full_native_scope": "full",
+      "requires_cuda": true,
+      "all_job_flags_retained": true,
+      "guard_ids_derived_from_actual_full_plan": [
+        "action-pins",
+        "workflow-keys",
+        "conflict-markers",
+        "docs-registry",
+        "publish-members",
+        "stub-abi",
+        "arch-matrix",
+        "pdl-chain",
+        "support-state",
+        "coalescer"
+      ],
+      "full_inventory_not_executed": true
+    },
+    "separate_sft_comparison": {
+      "all_plan_and_execution_fields_except_explicit_provenance_equal": true,
+      "source_physical_readsets_equal_except_declared_helper": true,
+      "fresh_read_counts_modes_stable_metadata_and_aliases_equal": true,
+      "selected_contracts": [
+        "sft-generator-caller"
+      ],
+      "guard_ids": [
+        "action-pins",
+        "workflow-keys",
+        "conflict-markers",
+        "docs-registry",
+        "publish-members",
+        "stub-abi",
+        "arch-matrix"
+      ],
+      "coverage_only_for_separate_cpu_sft_source_cell": true,
+      "wall_seconds": {
+        "old": {
+          "plan_wall_seconds": 15.857304465956986,
+          "contracts_wall_seconds": 24.872366308933124
+        },
+        "new": {
+          "plan_wall_seconds": 13.872772900038399,
+          "contracts_wall_seconds": 25.585696559981443
+        }
+      },
+      "single_pair_not_median_performance_claim": true
+    },
+    "arms": [
+      {
+        "label": "new-combined-full-prefix",
+        "kind": "full-plan",
+        "base": "b97b21809cb2837c63eba9d13cbd91138377ee8c",
+        "head": "c7a7b9439389626d8cf42e39af0ec5e478950df7",
+        "route_sha256": "d3903f30f65ea3db832f8dc7a18567fdb63b8f21c40f646a1eca00add5a0ea1f",
+        "sha256": "44242b633f89a3f4f27c971854a502a3f93496f6061c7fb43f77a430f7681bc3"
+      },
+      {
+        "label": "old-separate-sft",
+        "kind": "sft-plan-contracts",
+        "base": "a34b7b1bd6a65489fb00e8614d5ac00ec221870e",
+        "head": "844a5fa96b832c2ea9179bbef160d9e45384ae76",
+        "route_sha256": "8de0ca63944e59cbb568b2d8d26b417143a0499bf5fac4469ee72d38fee88a17",
+        "sha256": "6b869786f85e9c9eee60367105828db136848f148d28223423246a12a7e3139c"
+      },
+      {
+        "label": "new-separate-sft",
+        "kind": "sft-plan-contracts",
+        "base": "a5de75798b331e6d6beafa378b5f036571d8445c",
+        "head": "eddbd33c97b82e0c705519fe10d9419811128c25",
+        "route_sha256": "e4e943ed79acb91bc7001725a4c11baedb48633d553a1cbff6fb11f53211b7ec",
+        "sha256": "f578bf9e46cc3076dd71ce1d638f9b2523ffe1e70affae0a0449580955133214"
+      }
+    ],
+    "old_full_plan_replayed": false,
+    "old_controls_replayed": false,
+    "full_witness_reexecuted": false,
+    "owned_scratch_removed": true
+  },
+  "scope_limit": "Separate SFT-only plan/contracts is not execution of the combined full native/workflow inventory. Full plan physical/alias sets are equal but empty.",
+  "timing_limit": "Each duration is a single actual run. No median speedup or hosted deadline fit claim.",
+  "final_whole_witness": {
+    "job": "58b902c2937f",
+    "state": "passed at source aafa4d7",
+    "source_commit": "aafa4d7b943355364b48606708c5f46c8179bf9e",
+    "actual_executor_sha256": "4edef707f49c996170850fa106ca9547942bb0da22d43954479274c52d5c1dc5",
+    "original_whole_seconds": 420,
+    "original_child_seconds": 120,
+    "original_commands": 164,
+    "outer_assertions": 112,
+    "nested_status_assertions": 2,
+    "source_report_sha256": "a75817ba63245603df55a0620b4d3f2a97e6d26af7cacfacda4febcddd70397c",
+    "raw_log_sha256": "8a7ee15dda916e7503707572f99bdacb76100583bc57224fd5d1b64e86fbd7f3",
+    "raw_log_bytes": 28158,
+    "expected_negative_statuses": 20,
+    "unittest_wall_seconds": 308.477,
+    "single_run_no_median_or_host_fit_claim": true,
+    "hosted_CI": "still required for final published head"
+  },
+  "private_custody": "Path-bearing raw originals remain byte-identical under private custody. This public-safe summary is a labelled derivative with original hashes, not a retagged raw payload."
+}

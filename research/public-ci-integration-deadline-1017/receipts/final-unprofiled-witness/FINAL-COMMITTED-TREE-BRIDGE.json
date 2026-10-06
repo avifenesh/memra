@@ -1,0 +1,45 @@
+{
+  "source_bridge_passed": true,
+  "qualification": false,
+  "base": "372a4cf284a99dac31b545f68873e45f1e15f8cd",
+  "head": "aafa4d7b943355364b48606708c5f46c8179bf9e",
+  "diff_sha256": "349c0aaef57466ec3b09af83ec19f261dbd5c730ee991ee9e18f79a14ce96377",
+  "changed": [
+    ".github/workflows/ci.yml",
+    "tools/ci_merge_validation.json",
+    "tools/cpu_workflow_inputs.py",
+    "tools/public_ci.py",
+    "tools/test_public_ci_integration.py",
+    "tools/validation_plan.py"
+  ],
+  "source_sha256": {
+    ".github/workflows/ci.yml": "e1582d41a569e0257b94b240f6c610bf974db99e30a2d1f4892813f28220d9e9",
+    "tools/ci_merge_validation.json": "663bac761f4e99945fe270e866b1495dc8a81617887be94505dedcaba0359ecd",
+    "tools/public_ci.py": "db68b7e0ca7922e5a6761a8edcf295d9bb1727ec9410be13ba41fc0aa702c180",
+    "tools/test_public_ci_integration.py": "204dafb427f43a98223c8368af4b4e81624b36e59c0d6100d387171889fba8f7",
+    "tools/validation_plan.py": "80f1af836b93e09736ed48347a6885da1a931230ce002c431f8a5d1aa0ba914c",
+    "tools/cpu_workflow_inputs.py": "1719047de5645bed8c286a8ddf03492337fa46d99054a38cf3b6e205f3765047"
+  },
+  "git_modes": {
+    ".github/workflows/ci.yml": "100644",
+    "tools/ci_merge_validation.json": "100644",
+    "tools/public_ci.py": "100644",
+    "tools/test_public_ci_integration.py": "100644",
+    "tools/validation_plan.py": "100644",
+    "tools/cpu_workflow_inputs.py": "100644"
+  },
+  "diagnostics_absent": true,
+  "public_and_witness_AST_identical_to_permanent_source": true,
+  "path_helper_unchanged_outside_pure_path_function": true,
+  "outer_assertions": 112,
+  "nested_status_assertions": 2,
+  "existing_command_bodies_preserved": 164,
+  "literal_workflow_runs": 78,
+  "indexed_full_steps": 77,
+  "guards": 12,
+  "contracts": 14,
+  "whole420_child120_and_workflow8min_preserved": true,
+  "all_nontarget_main_files_including_tokenizer_PR1021_unchanged": true,
+  "public_workflow_unchanged": true,
+  "whole_witness_not_run_by_this_bridge": true
+}
