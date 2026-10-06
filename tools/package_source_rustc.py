@@ -165,8 +165,8 @@ def read_producer_registration(handle,cap,path):
  m.require(type(row['argv']) is list and len(row['argv'])>=2 and all(type(x) is str for x in row['argv']) and row['argv'][0]==cap['compiler']['path'],'producer compiler binding differs')
  m.require(row['package'] in cap['roots'] and type(row['input_seal']) is str and m.SHA256.fullmatch(row['input_seal']) and type(row['compiler_unit']) is str and m.SHA256.fullmatch(row['compiler_unit']),'producer unit binding differs')
  args=row['argv'][1:];manifest=ROOT/cap['roots'][row['package']]
- sources=[Path(x).absolute() for x in args if x.endswith('.rs') and not x.startswith('-')]
- m.require(len(sources)==1 and sources[0].is_relative_to(manifest),'producer source owner differs')
+ source=owned_primary_source(args,cap['snapshot']['payload']['packages'][row['package']],manifest)
+ m.require(source.is_relative_to(manifest),'producer source owner differs')
  products=[str(x) for x in compiler_products(args,cap['snapshot']['payload']['packages'][row['package']],manifest)]
  m.require(type(row['products']) is list and row['products']==products and str(Path(path).absolute()) in products and all(producer_role(x,cap)==row['role'] for x in products),'producer artifact role differs')
  return row
@@ -326,6 +326,13 @@ def checked_lexical_source(path, package_root, source_files):
         os.close(descriptor)
         m.require(before == after, 'lexical source ancestor changed')
     return root / relative
+
+def owned_primary_source(args,row,manifest):
+    """Resolve sealed compiler argv under its package owner, never consumer cwd."""
+    sources=[arg for arg in args if arg.endswith('.rs') and not arg.startswith('-')]
+    m.require(len(sources)==1,'primary compiler source is ambiguous')
+    raw=Path(sources[0]);lexical=raw if raw.is_absolute() else manifest/raw
+    return checked_lexical_source(lexical,manifest,row['files'])
 
 def dep_inputs(depfile,package_root,output,source_files):
  # Pilot supports normal Cargo dep-info in owned paths without whitespace.
@@ -571,7 +578,7 @@ def original_custom_build_unit(args,row,manifest):
     relative=m.relative_name(declared)
     name='build_script_'+Path(relative).stem.replace('-','_')
     return (val(args,'--crate-name')==name and crate_types(args)==['bin']
-            and len(sources)==1 and Path(sources[0]).absolute()==manifest/relative
+            and len(sources)==1 and owned_primary_source(args,row,manifest)==manifest/relative
             and relative in row['files'] and m.regular(manifest,relative)==row['files'][relative])
 
 def selected_codegen_values(args,allowed):
@@ -592,11 +599,11 @@ def selected_codegen_values(args,allowed):
 
 def compiler_products(args,row,manifest):
     import tomllib
-    kinds=crate_types(args);crate=val(args,'--crate-name');out=Path(val(args,'--out-dir','')).absolute()
+    kinds=crate_types(args);crate=val(args,'--crate-name');raw_out=Path(val(args,'--out-dir',''));out=raw_out if raw_out.is_absolute() else manifest/raw_out
     stem=crate+codes(args,'extra-filename')
     if kinds==['staticlib','rlib','cdylib']:
         config=tomllib.loads(m.regular(manifest,'Cargo.toml',contents=True).decode())
-        sources=[Path(x).absolute() for x in args if x.endswith('.rs') and not x.startswith('-')]
+        sources=[owned_primary_source(args,row,manifest)]
         m.require(row['name']=='llguidance' and row['version']=='1.7.6' and crate=='llguidance'
                   and config.get('lib',{}).get('crate-type')==kinds
                   and config.get('lib',{}).get('path')=='src/lib.rs' and sources==[manifest/'src/lib.rs'],
