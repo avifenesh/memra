@@ -1,0 +1,7 @@
+execve("/bin/sh", ["sh", "-c", "--", "gcc -std=c++17 -D__CUDA_ARCH__=1200 -D__CUDA_ARCH_FEAT_SM120_ALL -D__CUDA_ARCH_SPECIFIC__=1200 -D__CUDA_ARCH_FAMILY_SPECIFIC__=1200 -D__CUDA_ARCH_LIST__=1200 -E -x c++  -DCUDA_DOUBLE_MATH_FUNCTIONS -D__CUDACC__ -D__NVCC__ -D__CUDACC_RELAXED_CONSTEXPR__  -O3 \"-I/usr/local/cuda-13.1/bin/../targets/x86_64-linux/include\"   \"-isystem\" \"/usr/local/cuda-13.1/bin/../targets/x86_64-linux/include/cccl\"    -D__CUDACC_VER_MAJOR__=13 -D__CUDACC_VER_MINOR__=1 -D__CUDACC_VER_BUILD__=115 -D__CUDA_API_VER_MAJOR__=13 -D__CUDA_API_VER_MINOR__=1 -D__NVCC_DIAG_PRAGMA_SUPPORT__=1 -D__CUDACC_DEVICE_ATOMIC_BUILTINS__=1 -include \"cuda_runtime.h\" -m64 \"cu/mmq_iq_experts.cu\" -o \"/tmp/tmpxft_000e0f55_00000000-7_mmq_iq_experts.cpp1.ii\" "], 0x5769a19ded10 /* 125 vars */) = 0
+vfork()                                 = 921461
+wait4(-1, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 921461
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=921461, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+wait4(-1, 0x7ffcef6d003c, WNOHANG, NULL) = -1 ECHILD (No child processes)
+exit_group(0)                           = ?
++++ exited with 0 +++

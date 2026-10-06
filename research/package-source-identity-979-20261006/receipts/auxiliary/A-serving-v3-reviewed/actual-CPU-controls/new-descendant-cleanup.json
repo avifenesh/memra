@@ -1,0 +1,37 @@
+{
+  "owned_pid": 2432144,
+  "exit": 0,
+  "owned_process_retired": true,
+  "owned_session_retirement": [
+    {
+      "ownership_anchor": "unreaped-session-leader-plus-pidfd",
+      "members_before": [
+        {
+          "pid": 2432155,
+          "start": "86621922"
+        }
+      ],
+      "live_members_after": [],
+      "leader_reaped_after_session_retired": true
+    }
+  ],
+  "reader_joined": true,
+  "reader_pipe_closed": true,
+  "canonical_lock_before_after": [
+    {
+      "CPU_fixture_lock_proof": true
+    },
+    {
+      "CPU_fixture_lock_proof": true
+    }
+  ],
+  "cleanup_errors": [],
+  "primary_error": null,
+  "elapsed_seconds": 0.18147214606869966,
+  "whole_budget": {
+    "total_seconds": 1.8,
+    "work_seconds": 1.0,
+    "cleanup_reserve_seconds": 0.8000000000465661,
+    "elapsed_seconds": 0.18147761502768844
+  }
+}

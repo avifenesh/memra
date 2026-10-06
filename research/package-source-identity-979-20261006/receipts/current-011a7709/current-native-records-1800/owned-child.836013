@@ -1,0 +1,5 @@
+clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|CLONE_CHILD_SETTID|SIGCHLD, child_tidptr=0x73745bfff990) = 836014
+wait4(836014, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 836014
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=836014, si_uid=1000, si_status=0, si_utime=456 /* 4.56 s */, si_stime=150 /* 1.50 s */} ---
+exit(0)                                 = ?
++++ exited with 0 +++

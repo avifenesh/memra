@@ -1,0 +1,769 @@
+#!/usr/bin/python3 -I
+"""Finite prepared Linux/Cargo compiler-input receiver; no Cargo recursion."""
+import fcntl,hashlib,importlib.util,json,os,re,secrets,stat,subprocess,sys
+from pathlib import Path
+sys.dont_write_bytecode=True
+ROOT=Path(__file__).absolute().parent.parent
+spec=importlib.util.spec_from_file_location('source_io',Path(__file__).absolute().parent/'package_source_identity.py')
+m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+def fail(reason):raise m.Refused(reason)
+def checked(root,path):
+ p=Path(path).absolute();return m.regular(root,p.relative_to(root).as_posix())
+def fresh():return m.package_capsule(ROOT)
+
+def val(args,key,default=None):
+ found=[]
+ for index,arg in enumerate(args):
+  if arg==key:
+   m.require(index+1<len(args),'missing compiler option value');found.append(args[index+1])
+  elif arg.startswith(key+'='):found.append(arg[len(key)+1:])
+ m.require(len(found)<=1,'duplicate compiler option: '+key)
+ return found[0] if found else default
+
+def codes(args,key):
+ found=[]
+ for index,arg in enumerate(args):
+  if arg=='-C' and index+1<len(args):item=args[index+1]
+  elif arg.startswith('-C'):item=arg[2:]
+  else:continue
+  if item.startswith(key+'='):found.append(item[len(key)+1:])
+ m.require(len(found)<=1,'duplicate compiler code option')
+ return found[0] if found else ''
+
+def cfg_options(args):
+ found=[]
+ for index,arg in enumerate(args):
+  if arg=='--cfg':
+   m.require(index+1<len(args),'missing compiler cfg value');found.append(args[index+1])
+  elif arg.startswith('--cfg='):found.append(arg[len('--cfg='):])
+ m.require(len(found)==len(set(found)),'duplicate compiler cfg')
+ return found
+
+def artifact_role(path):
+ suffix=Path(path).suffix
+ return suffix[1:] if suffix in ('.rlib','.rmeta','.so','.a') else 'binary'
+
+def physical_bundle(path):
+ path=Path(path);role=artifact_role(path)
+ if role=='binary':members=[path]
+ elif role in ('a','so') and not path.with_suffix('.rlib').exists():
+  m.require(role=='so','static archive compiler bundle is incomplete');members=[path]
+ else:
+  members=[path.with_suffix('.rlib')]
+  native=[path.with_suffix(x) for x in ('.a','.so')]
+  if any(os.path.lexists(x) for x in native):
+   m.require(all(os.path.lexists(x) for x in native) and not os.path.lexists(path.with_suffix('.rmeta')),'multi-product compiler bundle is incomplete or mixed')
+   members+=native
+  elif os.path.lexists(path.with_suffix('.rmeta')):members.append(path.with_suffix('.rmeta'))
+ return {artifact_role(member):m.regular(member.parent,member.name) for member in members}
+
+def record_path(artifact):
+ path=Path(artifact);return Path(str(path)+'.'+m.digest(physical_bundle(path))+'.memra-source.json')
+def artifact_record(path,cap):
+ path=Path(path).absolute();out=Path(cap['output']);m.require(path.is_relative_to(out),'unmatched extern outside owned output')
+ record=m.owned_json(record_path(path))
+ fields={'schema','source_seal','package','manifest_root','features','argv','artifact','generated','input_seal','input_tuple','custody_key','compiler_unit','artifact_bundle','artifact_role','declared_outputs','declared_output_root','seal'}
+ m.require(type(record) is dict and set(record)==fields and record['schema']=='memra-package-compiler-unit-v2','unknown artifact receipt shape')
+ body={k:v for k,v in record.items() if k!='seal'};m.require(m.digest(body)==record['seal'],'artifact receipt seal differs')
+ tuple_fields={'domain','source_seal','admission','package','features','cfgs','dependencies','own_generated','nonidentity_env','codegen'}
+ m.require(type(record['input_tuple']) is dict and set(record['input_tuple'])==tuple_fields and record['input_seal']==m.digest(record['input_tuple']),'compiled input tuple seal differs')
+ m.require(record['compiler_unit']==m.digest({'inputs':record['input_tuple'],'argv':record['argv']}),'compiler unit context seal differs')
+ key=m.digest({'inputs':record['input_tuple'],'argv':record['argv'],'artifact':str(path),'produced':record['artifact_bundle']})
+ m.require(record['custody_key']==key,'producer observation key differs')
+ expected_path=Path(cap['expectations'])/(key+'.json')
+ m.require(expected_path.exists(),'external producer observation expectation missing: '+key)
+ m.require(m.owned_json(expected_path)=={'receipt_seal':record['seal']},'external producer custody differs')
+ m.require(record['package'] in cap['roots'] and record['source_seal']==m.digest(cap['snapshot']['payload']['packages'][record['package']]),'stale artifact source seal')
+ current_admission=m.digest({'recipe':cap['recipe'],'supplementary':{k:v for k,v in cap['supplementary'].items() if v['owner']==record['package']}})
+ m.require(record['input_tuple']['admission']==current_admission,'stale compiler recipe admission')
+ m.require(record['manifest_root']==cap['roots'][record['package']],'artifact manifest differs')
+ m.require(checked(out,path)==record['artifact'],'extern artifact bytes/mode differ')
+ m.require(physical_bundle(path)==record['artifact_bundle'],'compiler produced member set differs')
+ m.require(record['artifact_role'] in record['artifact_bundle'] and record['artifact_bundle'][record['artifact_role']]==record['artifact'],'consumed compiler unit member differs')
+ for role,entry in record['artifact_bundle'].items():
+  m.require(role in ('rlib','rmeta','so','a','binary'),'unknown produced compiler member role')
+  member=path if role=='binary' else path.with_suffix('.'+role)
+  m.require(checked(out,member)==entry,'compiler unit bundle member bytes/mode differ')
+ checked_declared_outputs(record['declared_output_root'],record['declared_outputs'],record['input_tuple']['own_generated'],out)
+ for name,row in record['generated'].items():
+  p=Path(name);m.require(p.is_absolute() and p.is_relative_to(out),'generated input outside owned output')
+  m.require(checked(out,p)==row,'generated input bytes/mode differ')
+ return record
+
+
+def checked_declared_outputs(root,physical,logical,output):
+ m.require(type(physical) is dict and type(logical) is dict,'declared output custody shape differs')
+ if not logical:
+  m.require(root is None and physical=={},'empty declared output binding differs');return
+ m.require(type(root) is str and Path(root).is_absolute() and Path(root).is_relative_to(output),'declared output root outside owned output')
+ directory=Path(root)
+ expected={str(directory/m.relative_name(name)):entry for name,entry in logical.items()}
+ m.require(physical==expected,'declared output physical/logical binding differs')
+ for name,row in physical.items():
+  m.file_entry_shape(row);m.require(checked(output,Path(name))==row,'declared output bytes/mode differ')
+ m.require(m.inventory(directory,package=False)==logical,'declared output membership differs')
+
+def compiler_builtin(cap,args,alias):
+ m.require(alias=='proc_macro' and crate_types(args)==['proc-macro']
+           and cap['recipe']['target']=='x86_64-unknown-linux-gnu'
+           and val(args,'--target',cap['recipe']['target'])==cap['recipe']['target']
+           and cap['compiler']['file']['sha256']=='d3a664c970a9fd8361b64194861bebc1ae37b9054e5ee3400dc1c9e691797eea'
+           and cap['compiler']['file']['mode']=='100755','unadmitted bare compiler extern')
+ return {'alias':'proc_macro','compiler_builtin':{'name':'proc_macro','compiler':cap['compiler']['file'],'target':cap['recipe']['target'],'scope':'selected compiler metadata, not package artifact or sysroot/binary recipe'}}
+
+# The full compiler-unit contract remains unchanged. This external observation
+# only delays a consumer until its exact admitted producer has published it.
+def producer_role(path, cap):
+ path=Path(path).absolute();out=Path(cap['output'])
+ m.require(path.is_relative_to(out),'producer role outside owned output')
+ stem=path.with_suffix('') if artifact_role(path)!='binary' else path
+ return m.digest({'capsule':cap['seal'],'output_stem':str(stem)})
+
+def process_observation(pid):
+ def read(name):
+  fd=os.open('/proc/'+str(pid)+'/'+name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+  try:
+   raw=os.read(fd,65537);m.require(len(raw)<=65536,'producer process observation exceeds bound');return raw
+  finally:os.close(fd)
+ before=read('stat');args=read('cmdline');after=read('stat')
+ def start(raw):
+  fields=raw[raw.rfind(b')')+2:].split();m.require(len(fields)>=20,'producer process stat is incomplete');return fields[19].decode('ascii')
+ m.require(start(before)==start(after),'producer process was replaced')
+ return {'pid':pid,'start':start(after),'cmdline_sha256':hashlib.sha256(args).hexdigest()},args.rstrip(b'\0').split(b'\0')
+
+def producer_descriptor(path,cap,create=False):
+ role=producer_role(path,cap);parent,identity=m.directory(Path(cap['expectations']))
+ name='producer-'+role+'.lock'
+ try:
+  flags=os.O_RDWR|os.O_NOFOLLOW|os.O_NONBLOCK
+  if create:flags|=os.O_CREAT
+  fd=os.open(name,flags,0o600,dir_fd=parent)
+  info=os.fstat(fd)
+  m.require(stat.S_ISREG(info.st_mode) and info.st_uid==os.getuid() and info.st_nlink==1 and stat.S_IMODE(info.st_mode)==0o600,'producer handoff is not an owned regular leaf')
+  return fd,parent,identity,name,(info.st_dev,info.st_ino)
+ except BaseException:
+  os.close(parent)
+  if 'fd' in locals():os.close(fd)
+  raise
+
+def check_producer_descriptor(handle,cap):
+ fd,parent,identity,name,inode=handle
+ info=os.fstat(fd);current=os.stat(name,dir_fd=parent,follow_symlinks=False)
+ m.require((info.st_dev,info.st_ino)==inode==(current.st_dev,current.st_ino) and stat.S_ISREG(current.st_mode) and current.st_nlink==1 and current.st_uid==os.getuid() and stat.S_IMODE(current.st_mode)==0o600,'producer handoff pathname replaced')
+ check,fresh_identity=m.directory(Path(cap['expectations']));os.close(check)
+ m.require(identity==fresh_identity,'producer handoff ancestor replaced')
+
+def read_producer_registration(handle,cap,path):
+ check_producer_descriptor(handle,cap)
+ fd=handle[0];before=os.fstat(fd);os.lseek(fd,0,os.SEEK_SET);raw=os.read(fd,m.MAX_JSON+1);after=os.fstat(fd)
+ m.require((before.st_dev,before.st_ino,before.st_size,before.st_mtime_ns,before.st_ctime_ns)==(after.st_dev,after.st_ino,after.st_size,after.st_mtime_ns,after.st_ctime_ns),'producer registration changed while read')
+ row=m.json_bytes(raw)
+ fields={'schema','capsule','role','attempt','process','argv','package','input_seal','compiler_unit','products','seal'}
+ m.require(type(row) is dict and set(row)==fields and row['schema']=='memra-active-producer-v1','producer registration shape differs')
+ m.require(row['seal']==m.digest({k:v for k,v in row.items() if k!='seal'}) and row['capsule']==cap['seal'] and row['role']==producer_role(path,cap),'producer registration context differs')
+ m.require(type(row['attempt']) is str and re.fullmatch('[0-9a-f]{32}',row['attempt']) and type(row['process']) is dict and set(row['process'])=={'pid','start','cmdline_sha256'} and type(row['process']['pid']) is int and row['process']['pid']>0 and type(row['process']['start']) is str and row['process']['start'].isdigit() and type(row['process']['cmdline_sha256']) is str and m.SHA256.fullmatch(row['process']['cmdline_sha256']),'producer process binding differs')
+ m.require(type(row['argv']) is list and len(row['argv'])>=2 and all(type(x) is str for x in row['argv']) and row['argv'][0]==cap['compiler']['path'],'producer compiler binding differs')
+ m.require(row['package'] in cap['roots'] and type(row['input_seal']) is str and m.SHA256.fullmatch(row['input_seal']) and type(row['compiler_unit']) is str and m.SHA256.fullmatch(row['compiler_unit']),'producer unit binding differs')
+ args=row['argv'][1:];manifest=ROOT/cap['roots'][row['package']]
+ source=owned_primary_source(args,cap['snapshot']['payload']['packages'][row['package']],manifest)
+ m.require(source.is_relative_to(manifest),'producer source owner differs')
+ products=[str(x) for x in compiler_products(args,cap['snapshot']['payload']['packages'][row['package']],manifest)]
+ m.require(type(row['products']) is list and row['products']==products and str(Path(path).absolute()) in products and all(producer_role(x,cap)==row['role'] for x in products),'producer artifact role differs')
+ return row
+
+def wait_producer_lock(fd,seconds=600):
+ # One blocking kernel wait, interrupted by a bounded deadline. No file poll.
+ import signal
+ m.require(signal.getitimer(signal.ITIMER_REAL)==(0.0,0.0),'producer wait would replace an active deadline')
+ previous=signal.getsignal(signal.SIGALRM)
+ def expired(signum,frame):fail('producer completion deadline exceeded')
+ signal.signal(signal.SIGALRM,expired)
+ try:
+  signal.setitimer(signal.ITIMER_REAL,seconds)
+  fcntl.flock(fd,fcntl.LOCK_SH)
+ finally:
+  signal.setitimer(signal.ITIMER_REAL,0);signal.signal(signal.SIGALRM,previous)
+
+def reject_current_output_dependencies(args,cap,products):
+ roles={producer_role(path,cap) for path in products};output=Path(cap['output'])
+ for index,arg in enumerate(args):
+  if arg=='--extern':
+   m.require(index+1<len(args),'missing extern value');item=args[index+1]
+  elif arg.startswith('--extern='):item=arg[len('--extern='):]
+  else:continue
+  alias,separator,path=item.partition('=')
+  if separator and path and Path(path).absolute().is_relative_to(output):
+   m.require(producer_role(path,cap) not in roles,'dependency extern targets current compiler output role: '+alias)
+
+def completed_artifact_record(path,cap):
+ try:handle=producer_descriptor(path,cap)
+ except FileNotFoundError:
+  # No active producer registration exists. Existing complete sealed custody
+  # is still mandatory, including for restored outputs; no partial admission.
+  return artifact_record(path,cap)
+ fd=handle[0]
+ try:
+  try:fcntl.flock(fd,fcntl.LOCK_SH|fcntl.LOCK_NB);active=False
+  except BlockingIOError:active=True
+  registration=read_producer_registration(handle,cap,path)
+  if active:
+   try:
+    observed,cmdline=process_observation(registration['process']['pid'])
+    expected=[str(Path(__file__).absolute()),*registration['argv']]
+    matches=observed==registration['process'] and cmdline[-len(expected):]==[x.encode() for x in expected]
+   except OSError:matches=False
+   if not matches:
+    # Completion can race the process observation. One kernel acquisition
+    # distinguishes that completed handoff from a wrong/stale active lease.
+    try:fcntl.flock(fd,fcntl.LOCK_SH|fcntl.LOCK_NB);active=False
+    except BlockingIOError:fail('active producer process differs')
+   if active:wait_producer_lock(fd)
+   m.require(read_producer_registration(handle,cap,path)==registration,'producer attempt changed during handoff')
+  terminal=m.owned_json(Path(cap['expectations'])/('producer-terminal-'+registration['attempt']+'.json'))
+  fields={'schema','registration_seal','status','records','seal'}
+  m.require(type(terminal) is dict and set(terminal)==fields and terminal['schema']=='memra-producer-completion-v1' and terminal['seal']==m.digest({k:v for k,v in terminal.items() if k!='seal'}) and terminal['registration_seal']==registration['seal'] and terminal['status']=='complete','producer did not complete successfully')
+  m.require(type(terminal['records']) is dict and set(terminal['records'])==set(registration['products']),'producer completion member set differs')
+  for product in registration['products']:
+   record=artifact_record(product,cap)
+   m.require(record['seal']==terminal['records'][product] and record['compiler_unit']==registration['compiler_unit'] and record['input_seal']==registration['input_seal'] and record['package']==registration['package'] and record['argv']==registration['argv'],'producer completion custody differs')
+  check_producer_descriptor(handle,cap)
+  return artifact_record(path,cap)
+ finally:
+  os.close(fd);os.close(handle[1])
+
+class ProducerHandoff:
+ def __init__(self,cap,products,argv,inputs):
+  self.cap,self.products=cap,products;self.handle=None;self.registration=None;self.done=False
+  role=producer_role(products[0],cap)
+  m.require(all(producer_role(x,cap)==role for x in products),'producer unit spans multiple artifact roles')
+  self.handle=producer_descriptor(products[0],cap,create=True)
+  try:
+   fcntl.flock(self.handle[0],fcntl.LOCK_EX|fcntl.LOCK_NB)
+   observation,_=process_observation(os.getpid())
+   body={'schema':'memra-active-producer-v1','capsule':cap['seal'],'role':role,'attempt':secrets.token_hex(16),'process':observation,'argv':argv,'package':inputs['package'],'input_seal':m.digest(inputs),'compiler_unit':m.digest({'inputs':inputs,'argv':argv}),'products':[str(x) for x in products]}
+   self.registration={**body,'seal':m.digest(body)}
+   raw=m.canonical(self.registration)+b'\n';fd=self.handle[0]
+   os.ftruncate(fd,0);os.lseek(fd,0,os.SEEK_SET)
+   with os.fdopen(os.dup(fd),'wb') as stream:stream.write(raw);stream.flush();os.fsync(stream.fileno())
+   check_producer_descriptor(self.handle,cap)
+  except BaseException:
+   os.close(self.handle[0]);os.close(self.handle[1]);self.handle=None;raise
+ def __enter__(self):return self
+ def complete(self):
+  records={str(path):artifact_record(path,self.cap)['seal'] for path in self.products}
+  self.publish('complete',records);self.done=True
+ def publish(self,status,records):
+  check_producer_descriptor(self.handle,self.cap)
+  body={'schema':'memra-producer-completion-v1','registration_seal':self.registration['seal'],'status':status,'records':records}
+  m.immutable_json(Path(self.cap['expectations'])/('producer-terminal-'+self.registration['attempt']+'.json'),{**body,'seal':m.digest(body)})
+ def __exit__(self,kind,error,trace):
+  try:
+   if not self.done:self.publish('failed',{})
+  finally:
+   os.close(self.handle[0]);os.close(self.handle[1])
+
+def dependencies(args,cap,owner=None):
+ pairs=[];own=[];seen=set()
+ for index,arg in enumerate(args):
+  if arg=='--extern':m.require(index+1<len(args),'missing extern value');item=args[index+1]
+  elif arg.startswith('--extern='):item=arg[len('--extern='):]
+  else:continue
+  alias=item.split('=',1)[0];m.require(alias and alias not in seen,'missing or duplicate extern alias');seen.add(alias)
+  if '=' not in item:
+   pairs.append(compiler_builtin(cap,args,alias))
+   continue
+  alias,path=item.split('=',1);m.require(path and alias!='proc_macro','invalid or shadowed extern binding')
+  record=completed_artifact_record(path,cap)
+  if record['package']==owner:
+   own.append(record);continue
+  pairs.append({'alias':alias,'package':record['package'],'artifact_bundle':record['artifact_bundle'],'compiler_unit':record['compiler_unit'],'input_seal':record['input_seal']})
+ return sorted(pairs,key=lambda x:(x['alias'],x.get('package',''))),own
+
+def checked_lexical_source(path, package_root, source_files):
+    """Admit source-local dotdot only after pinning each traversed directory."""
+    path = Path(path)
+    root = Path(package_root)
+    m.require(path.is_absolute() and root.is_absolute()
+              and path.is_relative_to(root), 'lexical source is outside package owner')
+    parts = path.relative_to(root).parts
+    m.require(0 < len(parts) <= 128 and len(str(path).encode()) <= 4096
+              and parts[-1] not in ('.', '..')
+              and not any(c in str(path) for c in '\0\n\r\\'),
+              'unsupported lexical source path')
+    stack = []
+    directories = {}
+
+    def pin_directory(relative):
+        directory = root.joinpath(*relative)
+        descriptor, identity = m.directory(directory)
+        os.close(descriptor)
+        key = tuple(relative)
+        if key in directories:
+            m.require(directories[key] == identity, 'lexical source ancestor changed')
+        else:
+            directories[key] = identity
+
+    pin_directory([])
+    for part in parts[:-1]:
+        if part == '..':
+            m.require(stack, 'lexical source leaves package owner')
+            # The directory being canceled was already opened with O_NOFOLLOW.
+            # Thus link/../file cannot be collapsed past an unverified alias.
+            pin_directory(stack)
+            stack.pop()
+        else:
+            m.require(part not in ('', '.'), 'unsupported lexical source component')
+            stack.append(part)
+            pin_directory(stack)
+    relative = '/'.join([*stack, parts[-1]])
+    m.require(relative in source_files, 'compiler source was excluded from capsule')
+    expected = source_files[relative]
+    m.file_entry_shape(expected)
+    actual = m.regular(root, relative)
+    m.require(actual == expected, 'lexical source bytes/mode differ from capsule')
+    for relative_directory, before in directories.items():
+        descriptor, after = m.directory(root.joinpath(*relative_directory))
+        os.close(descriptor)
+        m.require(before == after, 'lexical source ancestor changed')
+    return root / relative
+
+def owned_primary_source(args,row,manifest):
+    """Resolve sealed compiler argv under its package owner, never consumer cwd."""
+    sources=[arg for arg in args if arg.endswith('.rs') and not arg.startswith('-')]
+    m.require(len(sources)==1,'primary compiler source is ambiguous')
+    raw=Path(sources[0]);lexical=raw if raw.is_absolute() else manifest/raw
+    return checked_lexical_source(lexical,manifest,row['files'])
+
+def dep_inputs(depfile,package_root,output,source_files):
+ # Pilot supports normal Cargo dep-info in owned paths without whitespace.
+ raw=m.regular(depfile.parent,depfile.name,contents=True).decode()
+ files=set()
+ for line in raw.replace('\\\n','').splitlines():
+  if not line or line.startswith('#'):continue
+  m.require(': ' in line or line.endswith(':'),'unknown dep-info form')
+  if ': ' not in line:continue
+  for word in line.split(': ',1)[1].split():
+   m.require('\\' not in word,'escaped dep-info path unsupported in prepared recipe')
+   p=Path(word);p=p if p.is_absolute() else Path.cwd()/p;files.add(p.absolute())
+ generated={}
+ for path in sorted(files):
+  if path.is_relative_to(package_root):
+   if '..' in path.parts:
+    checked_lexical_source(path,package_root,source_files)
+   else:
+    m.require(path.relative_to(package_root).as_posix() in source_files,'compiler source was excluded from capsule')
+    checked(package_root,path)
+  elif path.is_relative_to(output):generated[str(path)]=checked(output,path)
+  else:fail('compiler consumed unbound generated/source input: '+str(path))
+ return generated
+
+def own_inputs(cap,key,custom_build):
+ m.require(type(custom_build) is bool,'unknown compiler producer phase')
+ generated={};physical={}
+ if not custom_build:
+  expected=sorted(cap['recipe']['generated'][key])
+  if 'OUT_DIR' not in os.environ:
+   m.require(not expected,'generated input declaration requires actual OUT_DIR')
+  else:
+   root=Path(os.environ['OUT_DIR']).absolute()
+   m.require(root.is_relative_to(Path(cap['output'])),'unknown own OUT_DIR binding')
+   found=[]
+   for parent,dirs,files in os.walk(root,followlinks=False):
+    for name in dirs:
+     fd,_=m.directory(Path(parent)/name);os.close(fd)
+    found.extend((Path(parent)/name).relative_to(root).as_posix() for name in files)
+   m.require(sorted(found)==expected,'unknown generated OUT_DIR membership')
+   for name in expected:
+    generated[name]=m.regular(root,name);physical[str(root/name)]=generated[name]
+ names=cap['recipe']['env'][key] if not custom_build else []
+ env={name:{'present':name in os.environ,'sha256':hashlib.sha256(os.environ[name].encode()).hexdigest() if name in os.environ else None} for name in names}
+ return generated,physical,env
+
+def checked_env_reads(depfile,declared,generated_env):
+ raw=m.regular(depfile.parent,depfile.name,contents=True).decode()
+ for line in raw.splitlines():
+  if not line.startswith('# env-dep:'):continue
+  item=line[len('# env-dep:'):];name,separator,value=item.partition('=')
+  if name in m.METADATA_ENV:continue
+  m.require(name in declared,'unknown compiler env read: '+name)
+  m.require(declared[name]['present']==bool(separator) and (not separator or hashlib.sha256(value.encode()).hexdigest()==declared[name]['sha256']),'actual compiled env binding differs')
+
+def compiler_fds():
+ pairs=re.findall(r'--jobserver-(?:auth|fds)=(\d+),(\d+)',os.environ.get('CARGO_MAKEFLAGS',''))
+ if not pairs:return ()
+ m.require(len(set(pairs))==1,'ambiguous inherited Cargo jobserver descriptors')
+ descriptors=tuple(int(x) for x in pairs[0])
+ m.require(len(set(descriptors))==2 and all(2<x<65536 for x in descriptors),'invalid Cargo jobserver descriptors')
+ for descriptor in descriptors:m.require(stat.S_ISFIFO(os.fstat(descriptor).st_mode),'jobserver descriptor is not a pipe')
+ return descriptors
+
+# Receiver-only proposal; helper API and recipe schema unchanged.
+FINITE_METADATA_PROBES = {'0': {'argv_template': ['--cfg=procmacro2_build_probe',
+                         '--edition=2021',
+                         '--crate-name=proc_macro2',
+                         '--crate-type=lib',
+                         '--cap-lints=allow',
+                         '--emit=dep-info,metadata',
+                         '--out-dir',
+                         '<owned-output-role>',
+                         'src/probe/proc_macro_span.rs',
+                         '--target',
+                         'x86_64-unknown-linux-gnu'],
+       'authority_record_sha256': '74925e56bed6c7f57b198176925830051babf745f5c92a849ccbe31ffa34f63b',
+       'package': 'proc-macro2-1.0.106',
+       'package_archive_sha256': '8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934',
+       'source': 'src/probe/proc_macro_span.rs',
+       'source_file': {'bytes': 1217,
+                       'mode': '100644',
+                       'sha256': '53853f0c70170c9695294b8867821664d9b8f1c901957b003003a3c26987abbe'}},
+ '1': {'argv_template': ['--cfg=procmacro2_build_probe',
+                         '--edition=2021',
+                         '--crate-name=proc_macro2',
+                         '--crate-type=lib',
+                         '--cap-lints=allow',
+                         '--emit=dep-info,metadata',
+                         '--out-dir',
+                         '<owned-output-role>',
+                         'src/probe/proc_macro_span_location.rs',
+                         '--target',
+                         'x86_64-unknown-linux-gnu'],
+       'authority_record_sha256': '3b8167bb550658cd666c9c44a8a9984f3ce138401bd9c01f999f2a7bf38ed0fc',
+       'package': 'proc-macro2-1.0.106',
+       'package_archive_sha256': '8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934',
+       'source': 'src/probe/proc_macro_span_location.rs',
+       'source_file': {'bytes': 408,
+                       'mode': '100644',
+                       'sha256': 'e022386204b6e042b3c55a6c809923849a2f915199bcbf3be72d0b7c8ffa7f83'}},
+ '2': {'argv_template': ['--cfg=procmacro2_build_probe',
+                         '--edition=2021',
+                         '--crate-name=proc_macro2',
+                         '--crate-type=lib',
+                         '--cap-lints=allow',
+                         '--emit=dep-info,metadata',
+                         '--out-dir',
+                         '<owned-output-role>',
+                         'src/probe/proc_macro_span_file.rs',
+                         '--target',
+                         'x86_64-unknown-linux-gnu'],
+       'authority_record_sha256': '12f878e2e270286fab88d5d527479d8f7f5103ba528305aac25ab02e4b52054a',
+       'package': 'proc-macro2-1.0.106',
+       'package_archive_sha256': '8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934',
+       'source': 'src/probe/proc_macro_span_file.rs',
+       'source_file': {'bytes': 370,
+                       'mode': '100644',
+                       'sha256': 'e7fb4cf8852d9d589bfa3321d8d5cdc8cccb45606ec816a6b8a08f73e416b9ce'}},
+ '3': {'argv_template': ['--cfg=anyhow_build_probe',
+                         '--edition=2018',
+                         '--crate-name=anyhow',
+                         '--crate-type=lib',
+                         '--cap-lints=allow',
+                         '--emit=dep-info,metadata',
+                         '--out-dir',
+                         '<owned-output-role>',
+                         'src/nightly.rs',
+                         '--target',
+                         'x86_64-unknown-linux-gnu'],
+       'authority_record_sha256': '2e2d6f9894a245ffbe9d126785796f7b423597e2ce11a39a796d10ef1f152e23',
+       'package': 'anyhow-1.0.104',
+       'package_archive_sha256': '330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470',
+       'source': 'src/nightly.rs',
+       'source_file': {'bytes': 1563,
+                       'mode': '100644',
+                       'sha256': '1c0aeadfcdbe22f8f807b185dec1a7448c378bddb37689714944b60473b58049'}}}
+
+# Independent finite original-producer catalogue, not caller-supplied modes.
+NUM_TRAITS_PROBE_SOURCES = {
+ 'num-traits': {'version':'0.2.19','files':'529b5eaf32a03ea101ec8b02da39efed4aba5250b5769fb2251ff59a7e96d57d','archive':'071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841'},
+ 'autocfg': {'version':'1.5.1','files':'a0268eb2c1931709a0769f35a0f2d64ca63cd301173fb19f049311aaad5648e7','archive':'f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53'}}
+NUM_TRAITS_STDIN = {'0':b'', '1':b'pub fn probe() { let _ = 1f64.total_cmp(&2f64); }'}
+NUM_TRAITS_CAPTURE = {'0': {'stdin_bytes': 0, 'stdin_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'capture_sha256': '8557a2ac23ce5010fe9da64b0f12a298dd0fe34597cf69aa798fc679f7ac6d65'}, '1': {'stdin_bytes': 49, 'stdin_sha256': '4413f23fc88f80784bc38c0596e470b2a62bd5c29edf8d750709442bb82c9abb', 'capture_sha256': '6b6849a3ada4d7f7d33ba99aa029ddc6881c89935ffe241c710d59b6a91e0f42'}}
+
+def num_traits_authority(cap,key,row,manifest):
+ m.require(row['name']=='num-traits' and row['version']=='0.2.19' and row['features']==['default','std'],'unadmitted num-traits source/features')
+ m.require(cap['recipe']['target']=='x86_64-unknown-linux-gnu','unadmitted num-traits recipe target')
+ sources={};autocfg=None
+ for name,spec in NUM_TRAITS_PROBE_SOURCES.items():
+  keys=[k for k,v in cap['snapshot']['payload']['packages'].items() if v['name']==name and v['version']==spec['version']]
+  m.require(len(keys)==1,'num-traits original dependency owner differs')
+  owner=keys[0];source=cap['snapshot']['payload']['packages'][owner];root=ROOT/cap['roots'][owner]
+  m.require(m.digest(source['files'])==spec['files'],'num-traits original source bytes/modes differ')
+  checksum=m.owned_json(root/'.cargo-checksum.json');m.require(type(checksum) is dict and checksum.get('package')==spec['archive'],'num-traits original archive custody differs')
+  sources[owner]=m.digest(source)
+  if name=='autocfg':autocfg=owner
+ m.require(row['dependencies']==[autocfg] and cap['snapshot']['payload']['packages'][autocfg]['features']==[],'num-traits original dependency profile differs')
+ m.require(cap['compiler']['file']['sha256']=='d3a664c970a9fd8361b64194861bebc1ae37b9054e5ee3400dc1c9e691797eea' and cap['compiler']['file']['mode']=='100755','num-traits original compiler differs')
+ authority=m.owned_json(Path(cap['expectations'])/'stdin-probe-num-traits.json')
+ m.require(type(authority) is dict and set(authority)=={'schema','package','sources','compiler','out_relative','profile','roles'},'num-traits producer custody shape differs')
+ m.require(type(authority['roles']) is dict and set(authority['roles'])=={'0','1'},'num-traits authority roles differ')
+ for role,value in authority['roles'].items():m.require(type(value) is dict and set(value)=={'stdin_bytes','stdin_sha256','capture_sha256'} and type(value['stdin_bytes']) is int,'num-traits authority role shape differs')
+ relative=m.relative_name(authority['out_relative']);out=Path(cap['output'])/relative
+ profile={'target':'x86_64-unknown-linux-gnu','features':['default','std'],'runtime_cfg':'has_total_cmp','encoded_rustflags_sha256':hashlib.sha256(b'').hexdigest()}
+ m.require(authority=={'schema':'memra-owned-num-traits-probe-v1','package':key,'sources':sources,'compiler':cap['compiler'],'out_relative':relative,'profile':profile,'roles':NUM_TRAITS_CAPTURE},'num-traits producer custody differs')
+ m.require(Path(os.environ.get('OUT_DIR','')).absolute()==out and Path.cwd().absolute()==manifest,'num-traits actual producer context differs')
+ descriptor,_=m.directory(out);os.close(descriptor)
+ return out
+
+def finite_num_traits_probe(compiler,args,cap,key,row,manifest):
+ if row['name']!='num-traits' or '-' not in args or val(args,'--emit')!='llvm-ir':return None
+ out=num_traits_authority(cap,key,row,manifest)
+ m.require(len(args)==9 and args[0]=='--crate-name' and re.fullmatch(r'autocfg_[0-9a-f]{16}_[01]',args[1]) is not None,'unadmitted num-traits producer UUID/counter')
+ m.require(args[2:]==['--crate-type=lib','--out-dir',str(out),'--emit=llvm-ir','--target','x86_64-unknown-linux-gnu','-'],'unadmitted num-traits probe argv')
+ m.require(os.environ.get('TARGET')==os.environ.get('HOST')=='x86_64-unknown-linux-gnu' and os.environ.get('CARGO_ENCODED_RUSTFLAGS')=='','unadmitted num-traits target/flags')
+ m.require(os.environ.get('CARGO_FEATURE_DEFAULT')=='1' and os.environ.get('CARGO_FEATURE_STD')=='1' and os.environ.get('CARGO_CFG_FEATURE')=='default,std','unadmitted num-traits standard feature profile')
+ role=args[1].rsplit('_',1)[1];body=sys.stdin.buffer.read(4097)
+ m.require(body==NUM_TRAITS_STDIN[role],'unadmitted num-traits stdin body')
+ m.require(fresh()==cap,'package capsule/source changed before stdin probe')
+ code=subprocess.run([compiler,*args],input=body,check=False,pass_fds=compiler_fds()).returncode
+ m.require(fresh()==cap,'package capsule/source changed during stdin probe')
+ return code
+
+def finite_metadata_probe(compiler,args,cap,key,row,manifest):
+ # Not a generic cfg or emit allowance: exact four original producer roles.
+ primary=[x for x in args if x.endswith('.rs') and not x.startswith('-')]
+ if len(primary)!=1:return None
+ out_value=val(args,'--out-dir')
+ if out_value is None:return None
+ out=Path(out_value).absolute();output=Path(cap['output'])
+ candidate=list(args)
+ if '--out-dir' not in candidate:return None
+ candidate[candidate.index('--out-dir')+1]='<owned-output-role>'
+ named=[(role,spec) for role,spec in FINITE_METADATA_PROBES.items()
+        if row['name']+'-'+row['version']==spec['package'] and candidate==spec['argv_template']]
+ if not named:return None
+ m.require(len(named)==1,'ambiguous finite compiler probe role')
+ role,spec=named[0]
+ m.require(cap['compiler']['file']['sha256']=='d3a664c970a9fd8361b64194861bebc1ae37b9054e5ee3400dc1c9e691797eea'
+           and cap['compiler']['file']['mode']=='100755','probe original compiler custody differs')
+ checksum=m.owned_json(manifest/'.cargo-checksum.json')
+ m.require(type(checksum) is dict and checksum.get('package')==spec['package_archive_sha256'],'probe archive custody differs')
+ m.require('RUSTC_BOOTSTRAP' not in os.environ,'unsupported compiler bootstrap mode')
+ m.require(Path.cwd().absolute()==manifest and out.is_relative_to(output),'probe cwd/output role is unowned')
+ descriptor,_=m.directory(out);os.close(descriptor)
+ source=spec['source'];m.require(primary[0]==source and m.regular(manifest,source)==spec['source_file'],'probe source bytes/mode differ')
+ authority=m.owned_json(Path(cap['expectations'])/('metadata-probe-'+role+'.json'))
+ fields={'schema','role','package','source_seal','compiler','argv','out_relative','source','source_file','authority_record_sha256','package_archive_sha256'}
+ m.require(type(authority) is dict and set(authority)==fields
+           and authority['schema']=='memra-owned-metadata-probe-v1' and authority['role']==role
+           and authority['package']==key and authority['source_seal']==m.digest(row)
+           and authority['compiler']==cap['compiler'] and authority['argv']==args
+           and authority['out_relative']==out.relative_to(output).as_posix()
+           and authority['source']==source and authority['source_file']==spec['source_file']
+           and authority['authority_record_sha256']==spec['authority_record_sha256']
+           and authority['package_archive_sha256']==spec['package_archive_sha256'],
+           'finite probe producer custody differs')
+ m.require(fresh()==cap,'package capsule/source changed before probe')
+ # Same argv/env/stdin/actual exit and validated jobserver; no marker metadata
+ # or artifact/identity/expectation output is produced by this branch.
+ code=subprocess.run([compiler,*args],check=False,pass_fds=compiler_fds()).returncode
+ m.require(fresh()==cap,'package capsule/source changed during probe')
+ return code
+
+
+# Proposed receiver-only guard. No helper/API change or error latch.
+def crate_types(args):
+    kinds=[]
+    for index,arg in enumerate(args):
+        if arg=='--crate-type':
+            m.require(index+1<len(args),'missing compiler crate type');kinds.append(args[index+1])
+        elif arg.startswith('--crate-type='):kinds.append(arg[len('--crate-type='):])
+    m.require(kinds and len(kinds)==len(set(kinds)),'missing or duplicate compiler crate type')
+    return kinds
+
+def original_custom_build_unit(args,row,manifest):
+    import tomllib
+    sources=[x for x in args if x.endswith('.rs') and not x.startswith('-')]
+    config=tomllib.loads(m.regular(manifest,'Cargo.toml',contents=True).decode())
+    declared=config.get('package',{}).get('build')
+    if type(declared) is not str:return False
+    relative=m.relative_name(declared)
+    name='build_script_'+Path(relative).stem.replace('-','_')
+    return (val(args,'--crate-name')==name and crate_types(args)==['bin']
+            and len(sources)==1 and owned_primary_source(args,row,manifest)==manifest/relative
+            and relative in row['files'] and m.regular(manifest,relative)==row['files'][relative])
+
+def selected_codegen_values(args,allowed):
+ selected={}
+ for index,arg in enumerate(args):
+  if arg=='-C':m.require(index+1<len(args),'missing codegen option');option=args[index+1]
+  elif arg.startswith('-C'):option=arg[2:]
+  else:continue
+  name,separator,value=option.partition('=')
+  if option=='prefer-dynamic':
+   m.require(crate_types(args)==['proc-macro'],'unadmitted bare codegen context');separator='=';value='yes'
+  m.require(separator and name,'invalid codegen option')
+  if name in ('metadata','extra-filename','incremental'):continue
+  m.require(name in allowed and value in allowed[name],'unknown compiler profile/default')
+  m.require(name not in selected,'duplicate nonidentity compiler codegen choice')
+  selected[name]=value
+ return selected
+
+def compiler_products(args,row,manifest):
+    import tomllib
+    kinds=crate_types(args);crate=val(args,'--crate-name');raw_out=Path(val(args,'--out-dir',''));out=raw_out if raw_out.is_absolute() else manifest/raw_out
+    stem=crate+codes(args,'extra-filename')
+    if kinds==['staticlib','rlib','cdylib']:
+        config=tomllib.loads(m.regular(manifest,'Cargo.toml',contents=True).decode())
+        sources=[owned_primary_source(args,row,manifest)]
+        m.require(row['name']=='llguidance' and row['version']=='1.7.6' and crate=='llguidance'
+                  and config.get('lib',{}).get('crate-type')==kinds
+                  and config.get('lib',{}).get('path')=='src/lib.rs' and sources==[manifest/'src/lib.rs'],
+                  'unadmitted multi-product Cargo target')
+        return [out/('lib'+stem+suffix) for suffix in ['.a','.rlib','.so']]
+    m.require(kinds in (['lib'],['bin'],['proc-macro']),'unsupported compiler crate type')
+    kind=kinds[0];paths=[out/(('lib'+stem+'.rlib') if kind=='lib' else ('lib'+stem+'.so') if kind=='proc-macro' else stem)]
+    if kind=='lib' and 'metadata' in val(args,'--emit','').split(','):paths.append(out/('lib'+stem+'.rmeta'))
+    return paths
+
+def require_probe_custody_set(cap,key,row,manifest,args):
+    # Only the real declared Cargo custom-build source/kind can precede producer.
+    # An ordinary source renamed --crate-name build_script_build does not skip.
+    if original_custom_build_unit(args,row,manifest):return
+    if row['name']=='num-traits':
+        num_traits_authority(cap,key,row,manifest)
+        features=sorted(x.split('=',1)[1].strip(chr(34)) for x in cfg_options(args) if x.startswith('feature='))
+        m.require(features==['default','std'] and 'has_total_cmp' in cfg_options(args),'num-traits successful standard producer cfg missing')
+        return
+    applicable=[(role,spec) for role,spec in FINITE_METADATA_PROBES.items()
+                if row['name']+'-'+row['version']==spec['package']]
+    if not applicable:return
+    m.require('OUT_DIR' in os.environ,'runtime unit probe producer OUT_DIR missing')
+    producer=Path(os.environ['OUT_DIR']).absolute()
+    m.require(producer.is_relative_to(Path(cap['output'])),'runtime probe producer output is unowned')
+    expected_probe=producer/'probe'
+    for role,spec in applicable:
+        authority=m.owned_json(Path(cap['expectations'])/('metadata-probe-'+role+'.json'))
+        fields={'schema','role','package','source_seal','compiler','argv','out_relative','source','source_file','authority_record_sha256','package_archive_sha256'}
+        m.require(type(authority) is dict and set(authority)==fields,
+                  'ordinary unit requires finite probe producer custody')
+        out_relative=m.relative_name(authority['out_relative'])
+        out=Path(cap['output'])/out_relative
+        m.require(out==expected_probe,'runtime probe custody does not match actual producer OUT_DIR/probe')
+        descriptor,_=m.directory(producer);os.close(descriptor)
+        argv=list(authority['argv']);m.require('--out-dir' in argv,'unknown finite probe output binding')
+        actual_out=argv[argv.index('--out-dir')+1]
+        argv[argv.index('--out-dir')+1]='<owned-output-role>'
+        checksum=m.owned_json(manifest/'.cargo-checksum.json')
+        m.require(authority['schema']=='memra-owned-metadata-probe-v1'
+                  and authority['role']==role and authority['package']==key
+                  and authority['source_seal']==m.digest(row)
+                  and authority['compiler']==cap['compiler']
+                  and cap['compiler']['file']['sha256']=='d3a664c970a9fd8361b64194861bebc1ae37b9054e5ee3400dc1c9e691797eea'
+                  and cap['compiler']['file']['mode']=='100755'
+                  and actual_out==str(out) and argv==spec['argv_template']
+                  and authority['source']==spec['source']
+                  and authority['source_file']==spec['source_file']
+                  and m.regular(manifest,spec['source'])==spec['source_file']
+                  and authority['authority_record_sha256']==spec['authority_record_sha256']
+                  and authority['package_archive_sha256']==spec['package_archive_sha256']
+                  and type(checksum) is dict and checksum.get('package')==spec['package_archive_sha256'],
+                  'ordinary unit finite probe custody differs')
+
+
+def receiver(argv):
+ m.require('RUSTC_BOOTSTRAP' not in os.environ,'unsupported compiler bootstrap mode')
+ if argv==['--fresh']:
+  cap=fresh();expected=ROOT/cap['recipe']['wrapper'];actual=os.environ.get('RUSTC_WRAPPER','')
+  m.require(actual and Path(actual).absolute()==expected,'effective wrapper missing or unmatched')
+  print(cap['snapshot']['sha256']);return 0
+ m.require(argv,'missing rustc executable')
+ compiler,args=argv[0],argv[1:]
+ m.require(not any(arg=='--test' or arg.startswith('--test=') for arg in args),'unadmitted implicit compiler test mode')
+ if ('--crate-name' not in args and not any(x.startswith('--crate-name=') for x in args)) or ('-' in args and val(args,'--crate-name')=='___' and any(x.startswith('--print') for x in args) and val(args,'--out-dir') is None):
+  return subprocess.run([compiler,*args],check=False,pass_fds=compiler_fds()).returncode
+ cap=fresh()
+ m.require(type(cap['compiler']) is dict and set(cap['compiler'])=={'path','file'} and Path(compiler).absolute()==Path(cap['compiler']['path']) and m.regular(Path(compiler).absolute().parent,Path(compiler).name)==cap['compiler']['file'],'actual compiler differs from supported builder')
+ manifest=Path(os.environ.get('CARGO_MANIFEST_DIR','')).absolute()
+ keys=[key for key,rel in cap['roots'].items() if ROOT/rel==manifest]
+ m.require(len(keys)==1,'actual compiler manifest/source root is unbound')
+ key=keys[0];row=cap['snapshot']['payload']['packages'][key]
+ m.require(os.environ.get('CARGO_PKG_NAME')==row['name'] and os.environ.get('CARGO_PKG_VERSION')==row['version'],'actual compiler package identity differs')
+ probe=finite_num_traits_probe(compiler,args,cap,key,row,manifest)
+ if probe is not None:return probe
+ probe=finite_metadata_probe(compiler,args,cap,key,row,manifest)
+ if probe is not None:return probe
+ cfgs=cfg_options(args)
+ m.require(all(x.startswith('feature=') or x in cap['recipe']['cfgs'][key] for x in cfgs),'unknown actual compiler cfg outside prepared recipe')
+ features=sorted(x.split('=',1)[1].strip('"') for x in cfgs if x.startswith('feature='))
+ m.require(set(features)<=set(row['features']),'actual compiler features outside admitted source graph')
+ crate=val(args,'--crate-name');custom_build=original_custom_build_unit(args,row,manifest);out=Path(val(args,'--out-dir','')).absolute();output=Path(cap['output'])
+ m.require(out.is_relative_to(output),'compiler output outside owned role')
+ selected_codegen=selected_codegen_values(args,cap['recipe']['codegen'])
+ products=compiler_products(args,row,manifest)
+ m.require(val(args,'--target',cap['recipe']['target'])==cap['recipe']['target'],'compiler target differs')
+ if key==cap['snapshot']['payload']['entry']:m.require(crate in cap['recipe']['targets'] or custom_build,'unknown root Cargo target')
+ m.require('link' in val(args,'--emit','').split(','),'metadata-only compiler mode unsupported in prepared recipe')
+ require_probe_custody_set(cap,key,row,manifest,args)
+ input_files=[Path(x).absolute() for x in args if x.endswith('.rs') and not x.startswith('-')]
+ m.require(len(input_files)==1 and input_files[0].is_relative_to(manifest),'primary compiler source is unbound')
+ checked(manifest,input_files[0])
+ reject_current_output_dependencies(args,cap,products)
+ deps,own=dependencies(args,cap,key)
+ source=cap['source_seal']
+ own_generated,declared_generated,declared_env=own_inputs(cap,key,custom_build)
+ admission = m.digest({'recipe':cap['recipe'],'supplementary':{k:v for k,v in cap['supplementary'].items() if v['owner']==key}})
+ input_payload={'domain':'memra-package-input-tuple-v2','source_seal':m.digest(row),'admission':admission,'package':key,'features':features,'cfgs':sorted(cfgs),'dependencies':deps,'own_generated':own_generated,'nonidentity_env':declared_env,'codegen':selected_codegen}
+ input_seal=m.digest(input_payload)
+ id_value=m.identity('memra-package-compiled-input-v1',input_payload)
+ m.require(all(x['input_seal']==input_seal for x in own),'own library foreign input identity differs')
+ env=dict(os.environ);metadata={'MEMRA_BUILD_ID':id_value,'MEMRA_BUILD_ID_SRC':'package-source-v1','MEMRA_BUILD_ID_NOTE':'package source='+m.identity('memra-package-source-v1',source)+'; checked compiler inputs, not binary recipe or native qualification','MEMRA_BUILD_SHA':os.environ.get('MEMRA_BUILD_SHA','unknown')}
+ if key==cap['snapshot']['payload']['entry'] and not custom_build:env.update({'MEMRA_BUILD_ID':os.environ.get('MEMRA_BUILD_ID','000000000000'),'MEMRA_BUILD_ID_SRC':'degraded','MEMRA_BUILD_ID_NOTE':'package compiler read bootstrap; not admitted','MEMRA_BUILD_SHA':'unknown'})
+ changed_env_keys=sorted(k for k in set(env)|set(os.environ) if env.get(k)!=os.environ.get(k))
+ m.require(set(changed_env_keys)<=set(metadata),'unexpected compiler env mutation')
+ forward=[compiler,*args]
+ with ProducerHandoff(cap,products,forward,input_payload) as handoff:
+  code=subprocess.run(forward,env=env,check=False,pass_fds=compiler_fds()).returncode
+  if code:return code
+  m.require(fresh()==cap,'package capsule/source changed during compiler execution')
+  # Recheck inputs after actual compiler returns. No passing record after drift.
+  dependencies(args,cap,key)
+  paths=products
+  depfile=out/(crate+codes(args,'extra-filename')+'.d');generated=dep_inputs(depfile,manifest,output,row['files'])
+  if not custom_build:
+   m.require(all(name in declared_generated and declared_generated[name]==entry for name,entry in generated.items()),'actual generated input binding differs')
+   checked_env_reads(depfile,declared_env,declared_generated)
+  if key==cap['snapshot']['payload']['entry'] and not custom_build:
+   # First compiler result is explicitly unaccepted. Only a checked complete
+   # read set permits the intended identity metadata on the second pass.
+   env.update(metadata);code=subprocess.run(forward,env=env,check=False,pass_fds=compiler_fds()).returncode
+   if code:return code
+   m.require(fresh()==cap,'package capsule/source changed during compiler execution');dependencies(args,cap,key)
+   m.require(own_inputs(cap,key,custom_build)==(own_generated,declared_generated,declared_env),'own compiler inputs changed')
+   m.require(all(name in declared_generated and declared_generated[name]==entry for name,entry in dep_inputs(depfile,manifest,output,row['files']).items()),'actual generated input binding differs')
+   checked_env_reads(depfile,declared_env,declared_generated)
+  m.require(own_inputs(cap,key,custom_build)==(own_generated,declared_generated,declared_env),'own compiler inputs changed before publication')
+  declared_output_root=str(Path(os.environ['OUT_DIR']).absolute()) if own_generated else None
+  checked_declared_outputs(declared_output_root,declared_generated,own_generated,output)
+  require_probe_custody_set(cap,key,row,manifest,args)
+  artifact_bundle={artifact_role(x):checked(output,x) for x in paths}
+  for artifact in paths:m.require(physical_bundle(artifact)==artifact_bundle,'compiler produced member set differs before publication')
+  compiler_unit=m.digest({'inputs':input_payload,'argv':forward})
+  for artifact in paths:
+   body={'schema':'memra-package-compiler-unit-v2','source_seal':m.digest(row),'package':key,'manifest_root':cap['roots'][key],'features':features,'argv':forward,'artifact':checked(output,artifact),'generated':generated,'declared_outputs':declared_generated,'declared_output_root':declared_output_root,'input_seal':input_seal,'input_tuple':input_payload,'compiler_unit':compiler_unit,'artifact_bundle':artifact_bundle,'artifact_role':artifact_role(artifact)}
+   custody_key=m.digest({'inputs':input_payload,'argv':forward,'artifact':str(artifact),'produced':artifact_bundle})
+   body['custody_key']=custody_key
+   record={**body,'seal':m.digest(body)}
+   expected_path=Path(cap['expectations'])/(custody_key+'.json')
+   expectation={'receipt_seal':record['seal']}
+   if expected_path.exists():m.require(m.owned_json(expected_path)==expectation,'external producer custody differs')
+   else:m.immutable_json(expected_path,expectation)
+   m.immutable_json(record_path(artifact),record)
+  if key==cap['snapshot']['payload']['entry'] and not custom_build:
+   bindings=[]
+   for index,arg in enumerate(args):
+    item=args[index+1] if arg=='--extern' else arg[len('--extern='):] if arg.startswith('--extern=') else None
+    if item is None or '=' not in item:continue
+    record=artifact_record(item.split('=',1)[1],cap)
+    if record['package']==key:continue
+    path=Path(item.split('=',1)[1])
+    for role,file in record['artifact_bundle'].items():bindings.append({'path':str(path.with_suffix('.'+role)),'file':file})
+    bindings.extend({'path':name,'file':file} for name,file in record['declared_outputs'].items())
+   bindings.extend({'path':name,'file':file} for name,file in declared_generated.items())
+   value={'source_seal':source,'tuple':input_payload,'bindings':sorted(bindings,key=lambda x:x['path'])}
+   m.immutable_json(output/('identity-'+id_value+'.json'),value)
+   m.immutable_json(Path(cap['expectations'])/('identity-'+id_value+'.json'),{'sha256':m.digest(value)})
+  handoff.complete()
+  return 0
+
+if __name__=='__main__':
+ try:sys.exit(receiver(sys.argv[1:]))
+ except (m.Refused,OSError,ValueError,KeyError) as error:print('package compiler refused: '+str(error),file=sys.stderr);sys.exit(86)

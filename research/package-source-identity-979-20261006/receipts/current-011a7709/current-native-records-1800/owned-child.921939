@@ -1,0 +1,7 @@
+execve("/bin/sh", ["sh", "-c", "--", "\"$CICC_PATH/cicc\" --c++17 --static-host-stub --device-hidden-visibility --gnu_version=150200 --display_error_number --orig_src_file_name \"cu/mmq_q4_0.cu\" --orig_src_path_name \"/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/vendor/memra-engine-0.138.0/cu/mmq_q4_0.cu\" --allow_managed --relaxed_constexpr   -arch compute_120a -m64 --no-version-ident -ftz=0 -prec_div=1 -prec_sqrt=1 -fmad=1 --include_file_name \"tmpxft_000e1132_00000000-3_mmq_q4_0.fatbin.c\" -tused --module_id_file_name \"/tmp/tmpxft_000e1132_00000000-4_mmq_q4_0.module_id\" --gen_c_file_name \"/tmp/tmpxft_000e1132_00000000-6_mmq_q4_0.cudafe1.c\" --stub_file_name \"/tmp/tmpxft_000e1132_00000000-6_mmq_q4_0.cudafe1.stub.c\" --gen_device_file_name \"/tmp/tmpxft_000e1132_00000000-6_mmq_q4_0.cudafe1.gpu\"  \"/tmp/tmpxft_000e1132_00000000-7_mmq_q4_0.cpp1.ii\" -o \"/tmp/tmpxft_000e1132_00000000-6_mmq_q4_0.ptx\""], 0x5ba2b337d180 /* 125 vars */) = 0
+vfork()                                 = 921940
+wait4(-1, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 921940
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=921940, si_uid=1000, si_status=0, si_utime=382 /* 3.82 s */, si_stime=7 /* 0.07 s */} ---
+wait4(-1, 0x7ffd0366faec, WNOHANG, NULL) = -1 ECHILD (No child processes)
+exit_group(0)                           = ?
++++ exited with 0 +++

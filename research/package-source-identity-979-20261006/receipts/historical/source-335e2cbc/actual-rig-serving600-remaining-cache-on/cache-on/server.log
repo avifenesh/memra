@@ -1,0 +1,130 @@
+[server] build: memra-0.138.0-85650875b725 (id: package-source-v1, git: unknown)
+[env-audit] warning: 1 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: MEMRA_RIG_LOCK_FD. Left alone: launchers and gate scripts own names outside the engine's families.
+[server] OpenRouter metadata loaded: 1 model(s), sha256 6b32975e329589404d76f7ba8884b91d870de3454eb1fcf42590fcba623bbd1c from /home/evidence-user/.local/state/evidence-campaign-20261002/receipts/A-package-flag-registry-1000/rig-acceptance-design/models.toml
+[server] starting; models config = [("package-probe", "/evidence/model-store/ornith15-9b/gguf/Ornith-1.5-9B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "package-probe" <- /evidence/model-store/ornith15-9b/gguf/Ornith-1.5-9B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 442 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[mtp-draft] loading external MTP draft: /evidence/model-store/ornith15-9b/gguf/mtp-Ornith-1.5-9B-NVFP4-frspec-sxc32768.gguf
+[mtp-draft] external draft head: blk.32, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[frspec-trim] per-head trim: 0 extra chain head(s) gathered from their own blocks
+[worker]   loaded "package-probe": 33 layers, eos=248046, stop=[248046]
+[worker] package-probe: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="package-probe" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] package-probe: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "package-probe": plain 14848 B/token, spec 16704 B/token; fixed residual learns from effective-free deltas
+[prime-walk] model="package-probe" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[fa-pool] grow #0 dev=0 o_len 0 -> 266240 ml_len 0 -> 1040 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q4_K_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q6_K_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[fa-pool] grow #1 dev=0 o_len 266240 -> 532480 ml_len 1040 -> 2080 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[spec] draft-session state high-water: 37MB (max of parked delta 37MB and capture-time pool peak 5MB; charged per spec admission and gating future captures)
+[fa-pool] grow #2 dev=0 o_len 532480 -> 1064960 ml_len 2080 -> 4160 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 1064960 -> 2129920 ml_len 4160 -> 8320 (retired kept, zero=false)
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1442840576,"still_owned_bytes":6728204160,"pool_reserved_bytes":6845104128,"pool_cached_bytes":116899968,"driver_free_bytes":17905025024,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1376MB cached back to the driver
+[admit-cal] boot calibration done: model="package-probe" route=mtp transient floor 1536MB (static was 1536MB; measured 1270MB; probe kv charge 67MB, draft-state 37MB, drafted 75 accepted 41; [dev0 peak-mapped 7904MB rest-mapped 6528MB charged 105MB -> 1270MB]; 1.5s)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[server] worker ready; serving models: ["package-probe"]
+[server] listening on http://127.0.0.1:18579
+[meter] admit id=chatcmpl-5e8b193d9f61e26e7bffe4d908540f93 tenant=default lane=interactive model="package-probe"
+[admission] per-session draft-state charge: model="package-probe" +40MB (measured capture high-water)
+[admission] request cost: model="package-probe" ctx=444 path=spec = 16704 B/token x ctx + 114MB prefill-workspace + 0MB fixed = 121MB
+[spec-k] model="package-probe" tenant="" K=3 source=cold-short prompt=316 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="package-probe" 104MB (observed 110MB at ctx 388 path=spec)
+[spec-acc] ctx=316 burst=12/57 cum=12/57=0.211
+[prefix-cache] insert (spec-boundary): 288 tokens, 57.5MB (resident 57.5MB / 1074MB, model package-probe)
+[spec-acc] ctx=348 burst=14/51 cum=26/108=0.241
+[meter] admit id=chatcmpl-de8de0e1f835dba268dccaa9199aa68c tenant=default lane=interactive model="package-probe"
+[admission] per-session draft-state charge: model="package-probe" +40MB (measured capture high-water)
+[admission] request cost: model="package-probe" ctx=471 path=spec = 16704 B/token x ctx + 124MB prefill-workspace + 104MB fixed = 235MB
+[prefix-cache] hit: 288 of 343 prompt tokens from cache (model package-probe)
+[prefix-cache] spec restore: 288 of 343 prompt tokens + draft plane from cache [suffix queued] (model package-probe)
+[spec-k] model="package-probe" tenant="" K=3 source=cold-short prompt=343 cached=288 lcp=288 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="package-probe" 104MB (observed 111MB at ctx 415 path=spec)
+[spec-acc] ctx=55 burst=18/39 cum=18/39=0.462
+[prefix-cache] insert (spec-boundary): 320 tokens, 58.1MB (resident 115.6MB / 1074MB, model package-probe)
+[spec-acc] ctx=87 burst=17/42 cum=35/81=0.432
+[meter] admit id=chatcmpl-8790d5b851f200a427fc311465c19e6f tenant=default lane=interactive model="package-probe"
+[admission] per-session draft-state charge: model="package-probe" +40MB (measured capture high-water)
+[admission] request cost: model="package-probe" ctx=498 path=spec = 16704 B/token x ctx + 133MB prefill-workspace + 104MB fixed = 245MB
+[prefix-cache] hit: 320 of 370 prompt tokens from cache (model package-probe)
+[prefix-cache] spec restore: 320 of 370 prompt tokens + draft plane from cache [suffix queued] (model package-probe)
+[spec-k] model="package-probe" tenant="" K=3 source=cold-short prompt=370 cached=320 lcp=320 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="package-probe" 104MB (observed 111MB at ctx 442 path=spec)
+[spec-acc] ctx=50 burst=17/42 cum=17/42=0.405
+[prefix-cache] insert (spec-boundary): 352 tokens, 58.6MB (resident 174.2MB / 1074MB, model package-probe)
+[spec-acc] ctx=82 burst=12/63 cum=29/105=0.276
+[meter] admit id=chatcmpl-f05eff7a47eab93e50c43082ab08ac40 tenant=default lane=interactive model="package-probe"
+[admission] per-session draft-state charge: model="package-probe" +40MB (measured capture high-water)
+[admission] request cost: model="package-probe" ctx=525 path=spec = 16704 B/token x ctx + 143MB prefill-workspace + 104MB fixed = 256MB
+[prefix-cache] hit: 352 of 397 prompt tokens from cache (model package-probe)
+[prefix-cache] spec restore: 352 of 397 prompt tokens + draft plane from cache [suffix queued] (model package-probe)
+[spec-k] model="package-probe" tenant="" K=3 source=cold-short prompt=397 cached=352 lcp=352 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="package-probe" 104MB (observed 112MB at ctx 469 path=spec)
+[spec-acc] ctx=45 burst=16/45 cum=16/45=0.356
+[spec-acc] ctx=77 burst=16/45 cum=32/90=0.356
+[meter] admit id=chatcmpl-9c463a2aeedaa68753c708b625f1e039 tenant=default lane=interactive model="package-probe"
+[admission] per-session draft-state charge: model="package-probe" +40MB (measured capture high-water)
+[admission] request cost: model="package-probe" ctx=552 path=spec = 16704 B/token x ctx + 153MB prefill-workspace + 104MB fixed = 266MB
+[prefix-cache] hit: 352 of 424 prompt tokens from cache (model package-probe)
+[prefix-cache] spec restore: 352 of 424 prompt tokens + draft plane from cache [suffix queued] (model package-probe)
+[spec-k] model="package-probe" tenant="" K=3 source=cold-short prompt=424 cached=352 lcp=352 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="package-probe" 104MB (observed 112MB at ctx 496 path=spec)
+[spec-acc] ctx=72 burst=16/45 cum=16/45=0.356
+[prefix-cache] insert (spec-boundary): 384 tokens, 59.1MB (resident 233.3MB / 1074MB, model package-probe)
+[spec-acc] ctx=104 burst=15/48 cum=31/93=0.333
+[meter] admit id=chatcmpl-f41a8fb268eed27137fb7c4c2a9a94cd tenant=default lane=interactive model="package-probe"
+[admission] per-session draft-state charge: model="package-probe" +40MB (measured capture high-water)
+[admission] request cost: model="package-probe" ctx=579 path=spec = 16704 B/token x ctx + 163MB prefill-workspace + 104MB fixed = 276MB
+[prefix-cache] hit: 384 of 451 prompt tokens from cache (model package-probe)
+[prefix-cache] spec restore: 384 of 451 prompt tokens + draft plane from cache [suffix queued] (model package-probe)
+[spec-k] model="package-probe" tenant="" K=3 source=cold-short prompt=451 cached=384 lcp=384 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="package-probe" 104MB (observed 113MB at ctx 523 path=spec)
+[spec-acc] ctx=67 burst=21/39 cum=21/39=0.538
+[prefix-cache] insert (spec-boundary): 416 tokens, 59.7MB (resident 292.9MB / 1074MB, model package-probe)
+[spec-acc] ctx=102 burst=15/45 cum=36/84=0.429
+[meter] admit id=chatcmpl-880d4dbe738c9cb1c33aecd8a05d5d8d tenant=default lane=interactive model="package-probe"
+[admission] per-session draft-state charge: model="package-probe" +40MB (measured capture high-water)
+[admission] request cost: model="package-probe" ctx=606 path=spec = 16704 B/token x ctx + 172MB prefill-workspace + 104MB fixed = 286MB
+[prefix-cache] hit: 416 of 478 prompt tokens from cache (model package-probe)
+[prefix-cache] spec restore: 416 of 478 prompt tokens + draft plane from cache [suffix queued] (model package-probe)
+[spec-k] model="package-probe" tenant="" K=3 source=cold-short prompt=478 cached=416 lcp=416 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="package-probe" 104MB (observed 113MB at ctx 550 path=spec)
+[spec-acc] ctx=62 burst=17/42 cum=17/42=0.405
+[prefix-cache] insert (spec-boundary): 448 tokens, 60.2MB (resident 353.1MB / 1074MB, model package-probe)
+[spec-acc] ctx=94 burst=17/42 cum=34/84=0.405
+[meter] admit id=chatcmpl-00c1cdf527424b1f406deac5740d1b86 tenant=default lane=interactive model="package-probe"
+[admission] per-session draft-state charge: model="package-probe" +40MB (measured capture high-water)
+[admission] request cost: model="package-probe" ctx=633 path=spec = 16704 B/token x ctx + 182MB prefill-workspace + 104MB fixed = 297MB
+[prefix-cache] hit: 448 of 505 prompt tokens from cache (model package-probe)
+[prefix-cache] spec restore: 448 of 505 prompt tokens + draft plane from cache [suffix queued] (model package-probe)
+[spec-k] model="package-probe" tenant="" K=3 source=cold-short prompt=505 cached=448 lcp=448 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="package-probe" 104MB (observed 114MB at ctx 577 path=spec)
+[spec-acc] ctx=57 burst=18/39 cum=18/39=0.462
+[prefix-cache] insert (spec-boundary): 480 tokens, 60.7MB (resident 413.9MB / 1074MB, model package-probe)
+[spec-acc] ctx=89 burst=18/45 cum=36/84=0.429
+[meter] admit id=chatcmpl-654f0ea36e44f490784a9ce95b16c888 tenant=default lane=interactive model="package-probe"
+[admission] per-session draft-state charge: model="package-probe" +40MB (measured capture high-water)
+[admission] request cost: model="package-probe" ctx=444 path=spec = 16704 B/token x ctx + 114MB prefill-workspace + 104MB fixed = 225MB
+[prefix-cache] hit: 288 of 316 prompt tokens from cache (model package-probe)
+[prefix-cache] spec restore: 288 of 316 prompt tokens + draft plane from cache [suffix queued] (model package-probe)
+[spec-k] model="package-probe" tenant="" K=3 source=cold-short prompt=316 cached=288 lcp=314 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=28 burst=16/48 cum=16/48=0.333
+[spec-acc] ctx=61 burst=13/51 cum=29/99=0.293
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

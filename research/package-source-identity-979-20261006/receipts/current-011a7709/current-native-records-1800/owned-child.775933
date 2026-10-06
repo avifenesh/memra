@@ -1,0 +1,9 @@
+clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7e97611ffce8, parent_tid=0x7e97611ff990, exit_signal=0, stack=0x7e9760fff000, stack_size=0x1fc300, tls=0x7e97611ff6c0} => {parent_tid=[775934]}, 88) = 775934
+clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7e97611ffce8, parent_tid=0x7e97611ff990, exit_signal=0, stack=0x7e9760fff000, stack_size=0x1fc300, tls=0x7e97611ff6c0} => {parent_tid=[775949]}, 88) = 775949
+tgkill(775925, 775932, SIGUSR1)         = 0
+clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7e9761fffce8, parent_tid=0x7e9761fff990, exit_signal=0, stack=0x7e9761dff000, stack_size=0x1fc300, tls=0x7e9761fff6c0} => {parent_tid=[775953]}, 88) = 775953
+clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7e97611ffce8, parent_tid=0x7e97611ff990, exit_signal=0, stack=0x7e9760fff000, stack_size=0x1fc300, tls=0x7e97611ff6c0} => {parent_tid=[775954]}, 88) = 775954
+clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7e976bbabce8, parent_tid=0x7e976bbab990, exit_signal=0, stack=0x7e976b9ab000, stack_size=0x1fc300, tls=0x7e976bbab6c0} => {parent_tid=[775961]}, 88) = 775961
+tgkill(775925, 775953, SIGUSR1)         = 0
+exit(0)                                 = ?
++++ exited with 0 +++

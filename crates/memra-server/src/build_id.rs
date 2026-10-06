@@ -37,6 +37,9 @@ pub(crate) const BUILD_ID_HEX: usize = 12;
 
 /// Marker for an id derived from the real source tree.
 pub(crate) const BUILD_ID_SRC_TREE: &str = "source-tree";
+/// Source plus checked compiler inputs from the finite prepared Cargo recipe.
+/// This marker grants no native, binary-recipe, model, or serving qualification.
+pub(crate) const BUILD_ID_SRC_PACKAGE: &str = "package-source-v1";
 /// Marker for an id that could NOT be derived from source. Always paired with a build
 /// `cargo:warning` and a boot WARN naming the reason.
 pub(crate) const BUILD_ID_SRC_DEGRADED: &str = "degraded";
@@ -80,11 +83,93 @@ pub(crate) struct BuildIdScan {
 }
 
 /// The workspace root, derived from a crate manifest dir: `<root>/crates/memra-server`.
-/// `None` when the layout is not there (a vendored or packaged crate), which is a degraded
-/// build, not a panic.
+/// `None` means no owned workspace. The separate prepared-package receiver may provide
+/// package-source-v1; unsupported package builds remain explicitly degraded.
 pub(crate) fn workspace_root(manifest_dir: &str) -> Option<std::path::PathBuf> {
-    let root = std::path::Path::new(manifest_dir).parent()?.parent()?;
-    (root.join("crates").is_dir() && root.join("Cargo.toml").is_file()).then(|| root.to_path_buf())
+    let manifest = std::path::Path::new(manifest_dir);
+    if manifest.file_name()? != "memra-server" || manifest.parent()?.file_name()? != "crates" {
+        return None;
+    }
+    let root = manifest.parent()?.parent()?;
+    let member = std::fs::read_to_string(manifest.join("Cargo.toml")).ok()?;
+    let workspace = std::fs::read_to_string(root.join("Cargo.toml")).ok()?;
+    // Only the repository's explicit membership/inheritance layout is a tree.
+    // Cargo-normalized packages have their own version and cannot borrow this
+    // identity merely by being placed below an unrelated workspace directory.
+    if table_value(&member, "package", "name")? != "\"memra-server\""
+        || table_value(&member, "package", "version.workspace")? != "true"
+    {
+        return None;
+    }
+    let members = table_value(&workspace, "workspace", "members")?;
+    let members = members.strip_prefix('[')?.strip_suffix(']')?;
+    let mut owns = false;
+    for value in members.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        let value = value.strip_prefix('"')?.strip_suffix('"')?;
+        if value.contains(['"', '\\', '\n']) {
+            return None;
+        }
+        owns |= value == "crates/memra-server";
+    }
+    (owns
+        && root.join("crates/memra-server").canonicalize().ok()? == manifest.canonicalize().ok()?)
+    .then(|| root.to_path_buf())
+}
+
+/// Finite repository manifest form; unknown TOML forms degrade instead of
+/// guessing ownership. This is not a general TOML parser.
+fn table_value(text: &str, table: &str, key: &str) -> Option<String> {
+    let mut active = false;
+    let mut found = None;
+    let mut lines = text.lines();
+    while let Some(line) = lines.next() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            active = line == format!("[{table}]");
+            continue;
+        }
+        if !active || line.starts_with('#') {
+            continue;
+        }
+        let Some((name, value)) = line.split_once('=') else {
+            continue;
+        };
+        if name.trim() != key {
+            continue;
+        }
+        if found.is_some() {
+            return None;
+        }
+        let mut value = value.split('#').next()?.trim().to_owned();
+        if value.starts_with('[') {
+            while !value.ends_with(']') {
+                value.push_str(lines.next()?.split('#').next()?.trim());
+            }
+        }
+        found = Some(value);
+    }
+    found
+}
+
+pub(crate) fn package_content_id(manifest_dir: &str, expected: &str) -> Option<String> {
+    let root = std::path::Path::new(manifest_dir);
+    let out = std::process::Command::new("python3")
+        .arg("-I")
+        .arg(root.join("build-support/package_source_identity.py"))
+        .args(["rederive", "--manifest"])
+        .arg(root.join("Cargo.toml"))
+        .args(["--identity", expected])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let id = std::str::from_utf8(&out.stdout).ok()?.trim();
+    (id.len() == BUILD_ID_HEX
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()))
+    .then(|| id.to_owned())
 }
 
 /// Workspace-relative path with forward slashes, so the digest does not depend on WHERE

@@ -1,0 +1,254 @@
+{
+  "source": "011a7709b1d2f2c1fa81a9f4e3bf4e1030a68b6c",
+  "source_seal": "edffef28a1c84df9f543967a00a385a7ea260a94d1eb0734e885364ad10dd97b",
+  "failed_job": "58f6c59572f8",
+  "failed_inspector_sha256": "4667bf0c9739396d27ed0614098a04d2f5ce57523d371743b36e794ea4ce0b52",
+  "Root_inspected_source_flow_reachedRust_mapping_afterallNative_assertions": true,
+  "passed": {
+    "native43": 43,
+    "fatbins": 10,
+    "archive_members": 33,
+    "engine_outputs": 46
+  },
+  "Cargo_sha256": "f7805181e4ed03648d6681b1de5064289e19ca864c21e3129b1e7ce8141548be",
+  "native_review_sha256": "5968c8ff71e52c5f1c07278b9be210eb79178cc2d456e20f0b4f5fdf6e22c4c9",
+  "partial_root": "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/current-issued-products",
+  "ar_files": {
+    "ar-members.stdout": "027fa7728e567750189c902c77cec811cd921f57d672821b44f7a78fc16195d4",
+    "ar-members.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "engine_out": "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/build/memra-engine-788f6a603b2fbba1/out",
+  "engine_outputs": {
+    "dsv4_gpu.o": {
+      "sha256": "8b0d7629ca3b790e08d6590fc7b7f98d44d2599a87812ae09b73222d200ad875",
+      "bytes": 2890312,
+      "mode": "100644"
+    },
+    "dsv4_sampler.o": {
+      "sha256": "6f453d7cf201779968a5cc193fe8ebc7440b1896e021d38b34c184bb17c7db9b",
+      "bytes": 62816,
+      "mode": "100644"
+    },
+    "f16_prefill.o": {
+      "sha256": "cbeda54bc8d89e2e146ebb16db1a98457e03b939d15de0c942441c1a54c3a076",
+      "bytes": 216784,
+      "mode": "100644"
+    },
+    "fa3_prefill.o": {
+      "sha256": "3e739825db3c595907805401db7ea4b4ef840cd3381542a8cb6fddd0e9c456b2",
+      "bytes": 5176,
+      "mode": "100644"
+    },
+    "flash_attn.fatbin": {
+      "sha256": "1583c87127c5d2fe4872ccb42f826bc3be9b3a521c7e90a7037acd6ad21d47c6",
+      "bytes": 3979488,
+      "mode": "100644"
+    },
+    "flash_attn_kf8vf8.fatbin": {
+      "sha256": "90e626fa0819ca2792b3cd0a1257af25637e48815edf8d172da086a85258c9f0",
+      "bytes": 3871288,
+      "mode": "100644"
+    },
+    "fp8_blk_dequant.o": {
+      "sha256": "7e8bc70279bf0c289c26e9ff87cb7b55d95b1a27c4dfa79205a267c1a2dd80ca",
+      "bytes": 39832,
+      "mode": "100644"
+    },
+    "fp8_prefill.o": {
+      "sha256": "cf6d5b45be1deede420220596b95c55e2cf59e83f0c0bdf618edeb3e1ebf5109",
+      "bytes": 36496,
+      "mode": "100644"
+    },
+    "hybrid.fatbin": {
+      "sha256": "21798cc4f08e22d0585007b9696fab1a17add6fafd7a043929966ba73cbab941",
+      "bytes": 1049328,
+      "mode": "100644"
+    },
+    "kda.fatbin": {
+      "sha256": "229e27b4b3bc9a48b04cf5ffe720e39e9277991bc4ed2e7df7158fa484192a5d",
+      "bytes": 96912,
+      "mode": "100644"
+    },
+    "kernels.fatbin": {
+      "sha256": "43275ff3e0f81e956d7ea9cdb35813bdab9a5c547b98f0304bf47484c895ed31",
+      "bytes": 1725120,
+      "mode": "100644"
+    },
+    "libmemra_mmq.a": {
+      "sha256": "eab801e2a06947041a3f7bb6cd54f3267bb053cbfe14d99da28dbcb23a57cb11",
+      "bytes": 11821184,
+      "mode": "100644"
+    },
+    "memra_env_registry.provenance.json": {
+      "sha256": "d35b87a21b07c39f2aead1f935bff93f6c1d59b6d11b143cfc39a6db49c5da50",
+      "bytes": 28521,
+      "mode": "100644"
+    },
+    "memra_env_registry.rs": {
+      "sha256": "0f49399ac119d2ddb51d323129833decb0e634d1fc85bdb7c36102e7027d058a",
+      "bytes": 48782,
+      "mode": "100644"
+    },
+    "mimo_audio_attn.o": {
+      "sha256": "45680a1e65773c462c87dc24706bfe8eeb7cc3c9ed0248e2027cd172bd175d62",
+      "bytes": 33144,
+      "mode": "100644"
+    },
+    "mimo_audio_codec_frontend.o": {
+      "sha256": "791732017b396e76c1152f093628d90cae727829a7d69f79dce237ae5c4987fb",
+      "bytes": 54320,
+      "mode": "100644"
+    },
+    "mimo_audio_codec_layer.o": {
+      "sha256": "e8a08bf553aa79dacbadc93e8a6e1f315e43a7daade57922e43b177267f1dbc2",
+      "bytes": 98016,
+      "mode": "100644"
+    },
+    "mimo_audio_codec_rvq.o": {
+      "sha256": "91227f232c052f3b8cbaf351f59d6405c5e5a079c73cefc98e908dd3e3a209ad",
+      "bytes": 40496,
+      "mode": "100644"
+    },
+    "mimo_audio_embed.o": {
+      "sha256": "70f5f4d25ffcaa511b959844d8929cf0425bf388082538d3fef45708b029bcf4",
+      "bytes": 20720,
+      "mode": "100644"
+    },
+    "mimo_audio_patch_forward.o": {
+      "sha256": "cc8cafe4d69f656f163949a33a03b33e4d300cd682988a98390fe0539e218077",
+      "bytes": 45224,
+      "mode": "100644"
+    },
+    "mimo_kv_nvfp4.o": {
+      "sha256": "4bbf35a89da22e5e94f7b3fe524779993c958adc583db7711074fec1bd425445",
+      "bytes": 34736,
+      "mode": "100644"
+    },
+    "mimo_mixed_attn.o": {
+      "sha256": "6c6cbe041156794ef5191ac4f6fba373ecdfd3744873a285c16ee0348bcc89d1",
+      "bytes": 153824,
+      "mode": "100644"
+    },
+    "mimo_qkv_gather.o": {
+      "sha256": "38058f0e39763a041a26ad4343c2ca83c4716abc22241971974cbcfb11bfefc3",
+      "bytes": 16168,
+      "mode": "100644"
+    },
+    "mimo_sink_attn.o": {
+      "sha256": "77c8f2a60b23adce8202d19b125f4b28da9aba3655e248cf70ffd3f8da2b49d5",
+      "bytes": 22760,
+      "mode": "100644"
+    },
+    "mimo_swa_ring_attn.o": {
+      "sha256": "ed39cd8aa3c121eb8bf60021cde811bfad1854c125febea453ccc470cb74a155",
+      "bytes": 20960,
+      "mode": "100644"
+    },
+    "mimo_text_chunk_attn.o": {
+      "sha256": "b44625b0de1da65f186fa7a424d9616ed2193eb05a08e9e181f0c564679546dd",
+      "bytes": 35104,
+      "mode": "100644"
+    },
+    "mimo_vision_attn.o": {
+      "sha256": "61a9ba221d1c96665d7c39d4f25641bc9367145f2cd0324324e69aea83d04dec",
+      "bytes": 32240,
+      "mode": "100644"
+    },
+    "mimo_vision_block.o": {
+      "sha256": "8001205c800f00724bb8930dd177c0b07ecfa128da9eb607f202f9be609e0519",
+      "bytes": 42504,
+      "mode": "100644"
+    },
+    "mimo_vision_rope.o": {
+      "sha256": "37f6d53b4ff006d99b6da15d27ca321325c5b1289e4170cbece1bfcf8d90c78d",
+      "bytes": 17344,
+      "mode": "100644"
+    },
+    "mla_attn.o": {
+      "sha256": "4eab260e4c55043615f3ae0204f64c8110fe4c806377ea6eedbc911cc0462204",
+      "bytes": 1429536,
+      "mode": "100644"
+    },
+    "mmq_fp4.o": {
+      "sha256": "d0ccfdf22397099cfab7fdfd26c7947f1459152baa289a8cbff90a11101afa45",
+      "bytes": 557120,
+      "mode": "100644"
+    },
+    "mmq_fp8_blk.o": {
+      "sha256": "7edb7957bffff27eab9904359fed42a59ce84ac875ae58c2c48e94cc413159fc",
+      "bytes": 321984,
+      "mode": "100644"
+    },
+    "mmq_iq_experts.o": {
+      "sha256": "9f447e78e34ee94277b731498d4bca2492576a73ed72fc6945151e46757c326d",
+      "bytes": 783088,
+      "mode": "100644"
+    },
+    "mmq_nvfp4_f8f4.o": {
+      "sha256": "384111f36773fd384befe55b3e89ce5e96ca82e11e0dc20ec16d8ab90ae56452",
+      "bytes": 18088,
+      "mode": "100644"
+    },
+    "mmq_nvfp4_w4a8.o": {
+      "sha256": "ceb5cbf003a33778f01d7bf70356b670b746b447838bb8654e740ae5a604285b",
+      "bytes": 1504504,
+      "mode": "100644"
+    },
+    "mmq_q45k.o": {
+      "sha256": "ae405e9f1840398a5a37296f48ce262e5fd93e0bce4f16d863aef38881a0e8e8",
+      "bytes": 351880,
+      "mode": "100644"
+    },
+    "mmq_q4_0.o": {
+      "sha256": "2a6eb077174ecc6972838d514cf7597f3d5059ea2dd7c09ebf0e1abcaa733df7",
+      "bytes": 936088,
+      "mode": "100644"
+    },
+    "mmq_q8_0.o": {
+      "sha256": "3dd1bf84a8d0bc1bbdf42ea1c46f6ac19ac2d94db379b6df5a326660cd632f2d",
+      "bytes": 158144,
+      "mode": "100644"
+    },
+    "mmq_q8_0_f32acc.o": {
+      "sha256": "2b638f9a9e4b991a7cbd449f813fd502159cf0baeda6e8a2b1c925a298852911",
+      "bytes": 269888,
+      "mode": "100644"
+    },
+    "moe_f16_grouped.o": {
+      "sha256": "ff5ff4d62b642e7f5f0aa52a072250da4e9731db657f25cde1cff14e3c431d0b",
+      "bytes": 1345760,
+      "mode": "100644"
+    },
+    "moe_router.fatbin": {
+      "sha256": "b0b057f786a1b89a96d79dba72aa969b3d559e8c8fa052ad7e8d1f87233c068e",
+      "bytes": 215472,
+      "mode": "100644"
+    },
+    "qmatvec.fatbin": {
+      "sha256": "935cdff83e35ceff0e52cd3d4050f6c8efde72908fb712d78e5f1949cd44c72f",
+      "bytes": 8343480,
+      "mode": "100644"
+    },
+    "qmatvec_gemm.fatbin": {
+      "sha256": "827aa1bd13a97c9f88a212889b4a63203c8f310e8290ac2c88f509630cfb3f13",
+      "bytes": 531344,
+      "mode": "100644"
+    },
+    "spec_sample.fatbin": {
+      "sha256": "6fffee42b18009ca2608db8ffab326103a6afa5aba38b7ad87d92b7ba79aa6b4",
+      "bytes": 349664,
+      "mode": "100644"
+    },
+    "tier_receipt.fatbin": {
+      "sha256": "03fb1b884adda88ae82bdc14188ea246baf4338adf46041e0541ca29c9748b77",
+      "bytes": 72096,
+      "mode": "100644"
+    },
+    "tp_ar.o": {
+      "sha256": "6639883e54a0f328b1aa393e909d7baf76f1a898e4ce9d5f1bb46dcbfac6a3e5",
+      "bytes": 174008,
+      "mode": "100644"
+    }
+  },
+  "limits": "Currentfailed-source execution trace reachedline111 onlyafterNative43/ar33/sourcechecks; prefixkeepsoriginalfailedjobFAILED; currentdata custody compared anew butnoNativeBuild/ar command ororiginalprefix test replay"
+}

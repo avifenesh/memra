@@ -1,0 +1,7 @@
+execve("/bin/sh", ["sh", "-c", "--", "\"$CICC_PATH/cicc\" --c++17 --static-host-stub --device-hidden-visibility --gnu_version=150200 --display_error_number --orig_src_file_name \"cu/dsv4_gpu.cu\" --orig_src_path_name \"/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/vendor/memra-engine-0.138.0/cu/dsv4_gpu.cu\" --allow_managed --relaxed_constexpr   -arch compute_120a -m64 --no-version-ident -ftz=0 -prec_div=1 -prec_sqrt=1 -fmad=0 --include_file_name \"tmpxft_000e1cdf_00000000-3_dsv4_gpu.fatbin.c\" -tused --module_id_file_name \"/tmp/tmpxft_000e1cdf_00000000-4_dsv4_gpu.module_id\" --gen_c_file_name \"/tmp/tmpxft_000e1cdf_00000000-6_dsv4_gpu.cudafe1.c\" --stub_file_name \"/tmp/tmpxft_000e1cdf_00000000-6_dsv4_gpu.cudafe1.stub.c\" --gen_device_file_name \"/tmp/tmpxft_000e1cdf_00000000-6_dsv4_gpu.cudafe1.gpu\"  \"/tmp/tmpxft_000e1cdf_00000000-7_dsv4_gpu.cpp1.ii\" -o \"/tmp/tmpxft_000e1cdf_00000000-6_dsv4_gpu.ptx\""], 0x5c605a844d80 /* 125 vars */) = 0
+vfork()                                 = 924990
+wait4(-1, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 924990
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=924990, si_uid=1000, si_status=0, si_utime=2450 /* 24.50 s */, si_stime=31 /* 0.31 s */} ---
+wait4(-1, 0x7ffe5232408c, WNOHANG, NULL) = -1 ECHILD (No child processes)
+exit_group(0)                           = ?
++++ exited with 0 +++

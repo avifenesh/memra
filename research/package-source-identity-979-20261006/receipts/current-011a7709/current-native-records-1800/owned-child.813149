@@ -1,0 +1,6 @@
+execve("/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/build/zerocopy-cd1471cdbbc0eca4/build-script-build", ["/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/build/zerocopy-cd1471cdbbc0eca4/build-script-build"], 0x73745000b300 /* 111 vars */) = 0
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x7f5e6c69e000, stack_size=0x9000}, 88) = 813150
+wait4(813150, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 813150
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=813150, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+exit_group(0)                           = ?
++++ exited with 0 +++

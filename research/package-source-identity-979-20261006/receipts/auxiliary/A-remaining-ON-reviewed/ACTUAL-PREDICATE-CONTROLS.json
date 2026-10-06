@@ -1,0 +1,248 @@
+{
+  "status": "PASS",
+  "scope": "Exact extracted ON-predicate CPU controls only",
+  "source": "335e2cbcbdb808ffa62688d40a299a3dd58ab51e",
+  "candidate_extraction": {
+    "path": "/home/evidence-user/.cache/evidence-manager-20261006/A-remaining-ON-reviewed/run_cell.py",
+    "sha256": "1657d15eec6a587a14922445743945a594ef466a5d18240a0e388029e96fee43",
+    "line_start": 147,
+    "line_end": 164,
+    "source": "prefix_store_spec_hits = []\nfor row in turns[1:]:\n                if row['cached_tokens'] <= 0 or row['spec'].get('accepted', 0) <= 0:\n                    continue\n                block = re.search(r'^\\[meter\\] admit id='+re.escape(row['id'])+\n                                  r' [^\\n]*\\n(.*?)(?=^\\[meter\\] admit id=|\\Z)',\n                                  current_log, re.M | re.S)\n                assert block is not None, 'missing request admission log: '+row['id']\n                shape = str(row['cached_tokens'])+' of '+str(row['prompt_tokens'])+' prompt tokens'\n                hit = re.search('^'+re.escape('[prefix-cache] hit: '+shape+\n                                ' from cache (model package-probe)')+'$', block[1], re.M)\n                restore = re.search(r'^\\[prefix-cache\\] spec restore: '+re.escape(shape)+\n                                    r' \\+ draft plane from cache \\[(?:continuation|suffix queued|suffix fed)\\]'\n                                    r' \\(model package-probe\\)$', block[1], re.M)\n                if hit is not None and restore is not None and hit.end() < restore.start():\n                    prefix_store_spec_hits.append({'turn': row['turn'], 'id': row['id'],\n                                                   'hit': hit[0], 'spec_restore': restore[0]})\nassert prefix_store_spec_hits, 'no prefix-store hit with same-request spec restore and acceptance'",
+    "compiled_nodes": [
+      "Assign(prefix_store_spec_hits)",
+      "For(row in turns[1:])",
+      "Assert(prefix_store_spec_hits)"
+    ]
+  },
+  "old_ON_extraction": {
+    "path": "/home/evidence-user/.cache/evidence-manager-20261006/A-serving-v3-reviewed/run_cell.py",
+    "sha256": "05ebe7f41d17f92b3e634d137bf3dabef3ff27a7282f17f8b75e9b36c6e63bc6",
+    "line": 140,
+    "source": "any(row['cached_tokens'] > 0 for row in turns[1:])"
+  },
+  "retained_files": [
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/turn1.response",
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/turn2.response",
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/turn3.response",
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/turn4.response",
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/turn5.response",
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/turn6.response",
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/turn7.response",
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/turn8.response",
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/server.log"
+  ],
+  "retained_turns": [
+    {
+      "turn": 1,
+      "id": "chatcmpl-fa8801168a853a363f8a592d29bd384a",
+      "prompt_tokens": 316,
+      "cached_tokens": 0,
+      "spec": {
+        "rounds": 33,
+        "drafted": 99,
+        "accepted": 29,
+        "acceptance_rate": 0.29292929292929293
+      }
+    },
+    {
+      "turn": 2,
+      "id": "chatcmpl-261ae8c86a2fadfaa98354baac02cb52",
+      "prompt_tokens": 343,
+      "cached_tokens": 288,
+      "spec": {
+        "rounds": 30,
+        "drafted": 90,
+        "accepted": 32,
+        "acceptance_rate": 0.35555555555555557
+      }
+    },
+    {
+      "turn": 3,
+      "id": "chatcmpl-21d941665911987efc12297acd244afe",
+      "prompt_tokens": 370,
+      "cached_tokens": 320,
+      "spec": {
+        "rounds": 26,
+        "drafted": 78,
+        "accepted": 37,
+        "acceptance_rate": 0.47435897435897434
+      }
+    },
+    {
+      "turn": 4,
+      "id": "chatcmpl-d732a29bd4fe830d56c88b9feba8a6b5",
+      "prompt_tokens": 397,
+      "cached_tokens": 352,
+      "spec": {
+        "rounds": 31,
+        "drafted": 93,
+        "accepted": 33,
+        "acceptance_rate": 0.3548387096774194
+      }
+    },
+    {
+      "turn": 5,
+      "id": "chatcmpl-f84d3dec1515452e3b07175ecd033de5",
+      "prompt_tokens": 424,
+      "cached_tokens": 0,
+      "spec": {
+        "rounds": 28,
+        "drafted": 84,
+        "accepted": 35,
+        "acceptance_rate": 0.4166666666666667
+      }
+    },
+    {
+      "turn": 6,
+      "id": "chatcmpl-76ec6ad3e4e25e560bb2384107bbf7fa",
+      "prompt_tokens": 451,
+      "cached_tokens": 384,
+      "spec": {
+        "rounds": 32,
+        "drafted": 96,
+        "accepted": 30,
+        "acceptance_rate": 0.3125
+      }
+    },
+    {
+      "turn": 7,
+      "id": "chatcmpl-9ff002252d6443a45e14588fad079608",
+      "prompt_tokens": 478,
+      "cached_tokens": 416,
+      "spec": {
+        "rounds": 29,
+        "drafted": 87,
+        "accepted": 36,
+        "acceptance_rate": 0.41379310344827586
+      }
+    },
+    {
+      "turn": 8,
+      "id": "chatcmpl-73bfc91248cce8b666ef42238ff4a84e",
+      "prompt_tokens": 505,
+      "cached_tokens": 448,
+      "spec": {
+        "rounds": 30,
+        "drafted": 90,
+        "accepted": 33,
+        "acceptance_rate": 0.36666666666666664
+      }
+    }
+  ],
+  "cases": [
+    {
+      "case": "retained_OFF_affinity",
+      "data_kind": "retained_OFF_bytes",
+      "old_ON_any_cached_accepts": true,
+      "candidate_accepts": false,
+      "expected_candidate_accepts": false,
+      "candidate_assertion": "no prefix-store hit with same-request spec restore and acceptance",
+      "prefix_store_spec_hits": [],
+      "status": "PASS"
+    },
+    {
+      "case": "synthetic_matching_store_spec_accepted_positive",
+      "data_kind": "synthetic",
+      "old_ON_any_cached_accepts": true,
+      "candidate_accepts": true,
+      "expected_candidate_accepts": true,
+      "candidate_assertion": null,
+      "prefix_store_spec_hits": [
+        {
+          "turn": 2,
+          "id": "synthetic-turn-2",
+          "hit": "[prefix-cache] hit: 96 of 128 prompt tokens from cache (model package-probe)",
+          "spec_restore": "[prefix-cache] spec restore: 96 of 128 prompt tokens + draft plane from cache [suffix queued] (model package-probe)"
+        }
+      ],
+      "status": "PASS"
+    },
+    {
+      "case": "synthetic_wrong_request",
+      "data_kind": "synthetic",
+      "old_ON_any_cached_accepts": true,
+      "candidate_accepts": false,
+      "expected_candidate_accepts": false,
+      "candidate_assertion": "no prefix-store hit with same-request spec restore and acceptance",
+      "prefix_store_spec_hits": [],
+      "status": "PASS"
+    },
+    {
+      "case": "synthetic_wrong_cached_count",
+      "data_kind": "synthetic",
+      "old_ON_any_cached_accepts": true,
+      "candidate_accepts": false,
+      "expected_candidate_accepts": false,
+      "candidate_assertion": "no prefix-store hit with same-request spec restore and acceptance",
+      "prefix_store_spec_hits": [],
+      "status": "PASS"
+    },
+    {
+      "case": "synthetic_wrong_prompt_count",
+      "data_kind": "synthetic",
+      "old_ON_any_cached_accepts": true,
+      "candidate_accepts": false,
+      "expected_candidate_accepts": false,
+      "candidate_assertion": "no prefix-store hit with same-request spec restore and acceptance",
+      "prefix_store_spec_hits": [],
+      "status": "PASS"
+    },
+    {
+      "case": "synthetic_restore_count_disagrees",
+      "data_kind": "synthetic",
+      "old_ON_any_cached_accepts": true,
+      "candidate_accepts": false,
+      "expected_candidate_accepts": false,
+      "candidate_assertion": "no prefix-store hit with same-request spec restore and acceptance",
+      "prefix_store_spec_hits": [],
+      "status": "PASS"
+    },
+    {
+      "case": "synthetic_missing_restore",
+      "data_kind": "synthetic",
+      "old_ON_any_cached_accepts": true,
+      "candidate_accepts": false,
+      "expected_candidate_accepts": false,
+      "candidate_assertion": "no prefix-store hit with same-request spec restore and acceptance",
+      "prefix_store_spec_hits": [],
+      "status": "PASS"
+    },
+    {
+      "case": "synthetic_missing_hit",
+      "data_kind": "synthetic",
+      "old_ON_any_cached_accepts": true,
+      "candidate_accepts": false,
+      "expected_candidate_accepts": false,
+      "candidate_assertion": "no prefix-store hit with same-request spec restore and acceptance",
+      "prefix_store_spec_hits": [],
+      "status": "PASS"
+    },
+    {
+      "case": "synthetic_reversed_order",
+      "data_kind": "synthetic",
+      "old_ON_any_cached_accepts": true,
+      "candidate_accepts": false,
+      "expected_candidate_accepts": false,
+      "candidate_assertion": "no prefix-store hit with same-request spec restore and acceptance",
+      "prefix_store_spec_hits": [],
+      "status": "PASS"
+    },
+    {
+      "case": "synthetic_accepted_zero",
+      "data_kind": "synthetic",
+      "old_ON_any_cached_accepts": true,
+      "candidate_accepts": false,
+      "expected_candidate_accepts": false,
+      "candidate_assertion": "no prefix-store hit with same-request spec restore and acceptance",
+      "prefix_store_spec_hits": [],
+      "status": "PASS"
+    }
+  ],
+  "original_GPU_job": "d6f7265ceab8",
+  "original_GPU_job_status": "FAILED and unchanged",
+  "runner_imported_or_executed": false,
+  "runtime_helper_imported": false,
+  "artifact_hashes_or_server_or_GPU_executed": false,
+  "model_or_runtime_or_serving_qualification": false,
+  "limits": "Synthetic positives prove predicate discrimination only. Actual cache-ON server engagement remains untested here. The enclosing runner checks, Budget, HTTP, ownership, FD9 and teardown are outside this extracted predicate control."
+}

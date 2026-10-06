@@ -1,0 +1,16 @@
+Running as unit: memra-rig-job-097b0ebdef71.service; invocation ID: b2b23670d2784c0c853ad5aa0fedeabd
+/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/final-joint-preparation/current-rust-role-paths/INPUT-PINS.json: OK
+/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/final-joint-preparation/current-rust-role-paths/observe-rustc.py: OK
+/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/final-joint-preparation/current-rust-role-paths/witness.py: OK
+Traceback (most recent call last):
+  File "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/final-joint-preparation/current-rust-role-paths/witness.py", line 18, in <module>
+    m.require(not any(name in env for name in reject),'unknown role-preparation compiler override')
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/evidence-user/projects/evidence-source-worktree-979/tools/package_source_identity.py", line 33, in require
+    raise Refused(reason)
+source_io.Refused: unknown role-preparation compiler override
+          Finished with result: exit-code
+Main processes terminated with: code=exited, status=1/FAILURE
+               Service runtime: 537ms
+             CPU time consumed: 929ms
+                   Memory peak: 58.3M (swap: 0B)

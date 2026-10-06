@@ -1,0 +1,18 @@
+execve("/usr/local/cuda-13.1/bin/nvcc", ["/usr/local/cuda-13.1/bin/nvcc", "-gencode", "arch=compute_120a,code=sm_120a", "-O3", "--fatbin", "-DMEMRA_KV_KFMT=1", "-DMEMRA_KV_VFMT=2", "-o", "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/build/memra-engine-788f6a603b2fbba1/out/flash_attn_kf8vf8.fatbin", "cu/flash_attn.cu"], 0x7ffde1d67c78 /* 110 vars */) = 0
+clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|CLONE_CHILD_SETTID|SIGCHLD, child_tidptr=0x7b469a3d5910) = 898436
+wait4(898436, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 898436
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=898436, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x7b469a548000, stack_size=0x9000}, 88) = 898438
+wait4(898438, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 898438
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=898438, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x7b469a548000, stack_size=0x9000}, 88) = 898446
+wait4(898446, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 898446
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=898446, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x7b469a548000, stack_size=0x9000}, 88) = 919751
+wait4(919751, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 919751
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=919751, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x7b469a548000, stack_size=0x9000}, 88) = 920143
+wait4(920143, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 920143
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=920143, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+exit_group(0)                           = ?
++++ exited with 0 +++

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -448,6 +449,119 @@ class ValidationPlanTests(unittest.TestCase):
         self.put('crates/memra-server/build.rs', 'fn main() { std::fs::read_to_string("../../README.md").unwrap(); }')
         self.commit()
         self.assertEqual(self.plan(['README.md'])['mode'], 'full')
+
+    @contextlib.contextmanager
+    def workspace_reader_contracts(self):
+        # Exercise the repository's actual declarations through the existing Git
+        # planner. Only the stub build-script hashes belong to this CPU fixture.
+        policy_root = Path(vp.__file__).parent
+        policy = json.loads((policy_root / 'validation_inputs.json').read_text())
+        stub = 'fn main() {}\n'
+        for package in ('memra-engine', 'memra-server'):
+            path = f'crates/{package}/build.rs'
+            self.put(path, stub)
+            policy['build_scripts'][path]['sha256'] = hashlib.sha256(stub.encode()).hexdigest()
+        original_read = vp.read_local_input
+
+        def fixture_policy(root, name, *, binary=False):
+            if Path(root) == policy_root and name == 'validation_inputs.json':
+                raw = json.dumps(policy)
+                return raw.encode() if binary else raw
+            return original_read(root, name, binary=binary)
+
+        with mock.patch.object(vp, 'read_local_input', side_effect=fixture_policy):
+            yield policy
+
+    @contextlib.contextmanager
+    def without_workspace_reader_edges(self, policy):
+        # The applied hash-only v1 admitted these scripts with missing readers.
+        engine = policy['build_scripts']['crates/memra-engine/build.rs']
+        server = policy['build_scripts']['crates/memra-server/build.rs']
+        saved = engine['external_inputs'], server['external_inputs']
+        engine['external_inputs'], server['external_inputs'] = ['docs/FLAGS.md'], []
+        try:
+            yield
+        finally:
+            engine['external_inputs'], server['external_inputs'] = saved
+
+    def test_workspace_build_readers_reach_independent_sibling_inputs(self):
+        # No fixture package depends on memra-cli. Cargo closure alone cannot
+        # select the engine/server for these changes.
+        cases = [
+            ('crates/memra-cli/src/reader.rs', True),
+            ('crates/memra-cli/src/nested/reader.rs', True),
+            ('crates/memra-cli/config/settings.toml', False),
+            ('crates/memra-cli/native/nested/kernel.cu', False),
+            ('crates/memra-cli/native/nested/kernel.cuh', False),
+            ('crates/memra-cli/native/nested/kernel.h', False),
+        ]
+        with self.workspace_reader_contracts() as policy:
+            for path, engine_reads in cases:
+                with self.subTest(path=path):
+                    self.put(path, '// original fixture\n')
+                    before = self.commit()
+                    self.put(path, '// changed fixture\n')
+                    after = self.commit()
+                    plan = vp.event_plan(self.repo, 'push', '', before, after)
+                    expected = {'memra-cli', 'memra-server'}
+                    if engine_reads:
+                        expected.add('memra-engine')
+                    self.assertEqual(plan['changed'], [path])
+                    self.assertEqual(plan['mode'], 'scoped')
+                    self.assertEqual(set(plan['packages']), expected)
+                    self.assertTrue(plan['jobs']['server'])
+                    self.assertEqual(plan['jobs']['engine'], engine_reads)
+                    self.assertFalse(plan['native']['qualification'])
+                    with self.without_workspace_reader_edges(policy):
+                        missing = vp.event_plan(self.repo, 'push', '', before, after)
+                    self.assertEqual(missing['mode'], 'scoped')
+                    self.assertEqual(missing['packages'], ['memra-cli'])
+                    self.assertFalse(missing['jobs']['engine'])
+                    self.assertFalse(missing['jobs']['server'])
+
+            tree = vp.Tree(self.repo, 'HEAD')
+            _, owners = vp.workspace(tree)
+            inputs = vp.included_inputs(tree, owners)
+            for path in ('Cargo.toml', 'crates/memra-cli/Cargo.toml'):
+                self.assertTrue({'memra-engine', 'memra-server'} <= vp.input_consumers(path, inputs))
+            self.assertIn('memra-server', vp.input_consumers('Cargo.lock', inputs))
+            for path in ('Cargo.toml', 'Cargo.lock', 'crates/memra-cli/Cargo.toml'):
+                self.assertEqual(self.plan([path])['mode'], 'full')
+            self.assertEqual(self.plan(['docs/FLAGS.md'])['packages'], ['memra-engine', 'memra-server'])
+            before = self.g('rev-parse', 'HEAD')
+            self.put('README.md', 'changed documentation\n')
+            self.put('research/unrelated/result.md', 'unrelated receipt\n')
+            after = self.commit()
+            docs = vp.event_plan(self.repo, 'push', '', before, after)
+            self.assertEqual(docs['mode'], 'scoped')
+            self.assertEqual(docs['packages'], [])
+            self.assertFalse(any(docs['jobs'].values()))
+
+    def test_workspace_build_readers_keep_deleted_and_renamed_inputs(self):
+        path = 'crates/memra-cli/src/nested/reader.rs'
+        renamed = 'crates/memra-cli/examples/renamed.rs'
+        with self.workspace_reader_contracts() as policy:
+            for operation in ('delete', 'rename'):
+                with self.subTest(operation=operation):
+                    self.put(path, '// original fixture\n')
+                    before = self.commit()
+                    if operation == 'delete':
+                        self.g('rm', path)
+                        changed = [path]
+                    else:
+                        (self.repo / renamed).parent.mkdir(parents=True, exist_ok=True)
+                        self.g('mv', path, renamed)
+                        changed = sorted([path, renamed])
+                    after = self.commit()
+                    plan = vp.event_plan(self.repo, 'push', '', before, after)
+                    self.assertEqual(plan['changed'], changed)
+                    self.assertEqual(plan['mode'], 'scoped')
+                    self.assertEqual(plan['packages'], ['memra-cli', 'memra-engine', 'memra-server'])
+                    self.assertTrue(plan['jobs']['engine'] and plan['jobs']['server'])
+                    with self.without_workspace_reader_edges(policy):
+                        missing = vp.event_plan(self.repo, 'push', '', before, after)
+                    self.assertEqual(missing['mode'], 'scoped')
+                    self.assertEqual(missing['packages'], ['memra-cli'])
 
     def test_publish_includes_selected_packages_forward_dependencies(self):
         args = vp.publish_packages('memra-cli', self.repo)

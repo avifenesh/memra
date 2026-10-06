@@ -1,0 +1,7 @@
+execve("/bin/sh", ["sh", "-c", "--", "fatbinary --create=\"/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/build/memra-engine-788f6a603b2fbba1/out/flash_attn.fatbin\" -64 --cicc-cmdline=\"-ftz=0 -prec_div=1 -prec_sqrt=1 -fmad=1 \" \"--image3=kind=elf,sm=120a,file=/tmp/tmpxft_000dad89_00000000-8_flash_attn.cubin\" "], 0x640cf5345b60 /* 125 vars */) = 0
+vfork()                                 = 897832
+wait4(-1, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 897832
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=897832, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+wait4(-1, 0x7ffe5cb751ac, WNOHANG, NULL) = -1 ECHILD (No child processes)
+exit_group(0)                           = ?
++++ exited with 0 +++

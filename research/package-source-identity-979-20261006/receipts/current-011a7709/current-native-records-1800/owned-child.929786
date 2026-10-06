@@ -1,0 +1,6 @@
+execve("/usr/bin/gcc", ["gcc", "-std=c++17", "-D__CUDA_ARCH__=1200", "-D__CUDA_ARCH_FEAT_SM120_ALL", "-D__CUDA_ARCH_SPECIFIC__=1200", "-D__CUDA_ARCH_FAMILY_SPECIFIC__=1200", "-D__CUDA_ARCH_LIST__=1200", "-E", "-x", "c++", "-DCUDA_DOUBLE_MATH_FUNCTIONS", "-D__CUDACC__", "-D__NVCC__", "-D__CUDACC_RELAXED_CONSTEXPR__", "-O3", "-I/usr/local/cuda-13.1/bin/../targets/x86_64-linux/include", "-isystem", "/usr/local/cuda-13.1/bin/../targets/x86_64-linux/include/cccl", "-D__CUDACC_VER_MAJOR__=13", "-D__CUDACC_VER_MINOR__=1", "-D__CUDACC_VER_BUILD__=115", "-D__CUDA_API_VER_MAJOR__=13", "-D__CUDA_API_VER_MINOR__=1", "-D__NVCC_DIAG_PRAGMA_SUPPORT__=1", "-D__CUDACC_DEVICE_ATOMIC_BUILTINS__=1", "-include", "cuda_runtime.h", "-m64", "cu/mimo_vision_block.cu", "-o", "/tmp/tmpxft_000e2fc9_00000000-7_mimo_vision_block.cpp1.ii"], 0x5cf7c5ed4e28 /* 125 vars */) = 0
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x7bb4fb6a6000, stack_size=0x9000}, 88) = 929787
+wait4(929787, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 929787
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=929787, si_uid=1000, si_status=0, si_utime=7 /* 0.07 s */, si_stime=2 /* 0.02 s */} ---
+exit_group(0)                           = ?
++++ exited with 0 +++

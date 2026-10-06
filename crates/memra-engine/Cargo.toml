@@ -28,6 +28,14 @@ sha2 = "0.10"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp"] }
 base64 = "0.22"
 
+[build-dependencies]
+base64 = "0.22"
+libc = "0.2"
+serde = { version = "1.0", default-features = false, features = ["std"] }
+serde_json = "1.0"
+sha2 = "0.10"
+toml = "0.8"
+
 [[bin]]
 name = "storage-bench"
 path = "src/bin/storage_bench.rs"

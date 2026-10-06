@@ -1,0 +1,27 @@
+execve("/usr/local/cuda-13.1/bin/nvcc", ["/usr/local/cuda-13.1/bin/nvcc", "-gencode", "arch=compute_120a,code=sm_120a", "-O3", "-std=c++17", "--expt-relaxed-constexpr", "-c", "cu/mimo_vision_block.cu", "-o", "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/build/memra-engine-788f6a603b2fbba1/out/mimo_vision_block.o"], 0x7ffde1d67c78 /* 110 vars */) = 0
+clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|CLONE_CHILD_SETTID|SIGCHLD, child_tidptr=0x7e660cac0910) = 929738
+wait4(929738, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 929738
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=929738, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x7e660cc33000, stack_size=0x9000}, 88) = 929741
+wait4(929741, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 929741
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=929741, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x7e660cc33000, stack_size=0x9000}, 88) = 929767
+wait4(929767, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 929767
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=929767, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x7e660cc33000, stack_size=0x9000}, 88) = 929785
+wait4(929785, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 929785
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=929785, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x7e660cc33000, stack_size=0x9000}, 88) = 929799
+wait4(929799, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 929799
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=929799, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x7e660cc33000, stack_size=0x9000}, 88) = 929822
+wait4(929822, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 929822
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=929822, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x7e660cc33000, stack_size=0x9000}, 88) = 929825
+wait4(929825, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 929825
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=929825, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x7e660cc33000, stack_size=0x9000}, 88) = 929827
+wait4(929827, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 929827
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=929827, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+exit_group(0)                           = ?
++++ exited with 0 +++

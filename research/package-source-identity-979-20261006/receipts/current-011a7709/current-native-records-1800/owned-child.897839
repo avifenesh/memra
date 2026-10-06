@@ -1,0 +1,18 @@
+execve("/usr/local/cuda-13.1/bin/nvcc", ["/usr/local/cuda-13.1/bin/nvcc", "-gencode", "arch=compute_120a,code=sm_120a", "-O3", "--fatbin", "-o", "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/build/memra-engine-788f6a603b2fbba1/out/qmatvec_gemm.fatbin", "cu/qmatvec_gemm.cu"], 0x7ffde1d67c78 /* 110 vars */) = 0
+clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|CLONE_CHILD_SETTID|SIGCHLD, child_tidptr=0x74c93d051910) = 897840
+wait4(897840, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 897840
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=897840, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x74c93d1c4000, stack_size=0x9000}, 88) = 897843
+wait4(897843, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 897843
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=897843, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x74c93d1c4000, stack_size=0x9000}, 88) = 897867
+wait4(897867, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 897867
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=897867, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x74c93d1c4000, stack_size=0x9000}, 88) = 898047
+wait4(898047, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 898047
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=898047, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x74c93d1c4000, stack_size=0x9000}, 88) = 898129
+wait4(898129, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 898129
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=898129, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+exit_group(0)                           = ?
++++ exited with 0 +++

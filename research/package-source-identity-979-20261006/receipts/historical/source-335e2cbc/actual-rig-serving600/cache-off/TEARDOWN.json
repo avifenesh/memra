@@ -1,0 +1,51 @@
+{
+  "owned_pid": 2591818,
+  "exit": 0,
+  "owned_process_retired": true,
+  "owned_session_retirement": [
+    {
+      "ownership_anchor": "unreaped-session-leader-plus-pidfd",
+      "members_before": [
+        {
+          "pid": 2591818,
+          "start": "86661683"
+        },
+        {
+          "pid": 2591850,
+          "start": "86661688"
+        }
+      ],
+      "live_members_after": [],
+      "leader_reaped_after_session_retired": true
+    }
+  ],
+  "reader_joined": true,
+  "reader_pipe_closed": true,
+  "canonical_lock_before_after": [
+    {
+      "owner": "collector",
+      "lock": "/tmp/memra-5090.lock",
+      "mechanism": "inherited-flock-same-open-description",
+      "device": 48,
+      "inode": 3072,
+      "qualification": false
+    },
+    {
+      "owner": "collector",
+      "lock": "/tmp/memra-5090.lock",
+      "mechanism": "inherited-flock-same-open-description",
+      "device": 48,
+      "inode": 3072,
+      "qualification": false
+    }
+  ],
+  "cleanup_errors": [],
+  "primary_error": "AssertionError: ",
+  "elapsed_seconds": 0.4410195170203224,
+  "whole_budget": {
+    "total_seconds": 600,
+    "work_seconds": 530.0,
+    "cleanup_reserve_seconds": 70.0,
+    "elapsed_seconds": 15.594945700955577
+  }
+}
