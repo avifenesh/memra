@@ -1,0 +1,719 @@
+{
+  "native_commands": [
+    {
+      "kind": "fatbin",
+      "source": "cu/kernels.cu",
+      "output_name": "kernels.fatbin",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "--fatbin",
+        "-o",
+        "{OUT_DIR}/kernels.fatbin",
+        "cu/kernels.cu"
+      ]
+    },
+    {
+      "kind": "fatbin",
+      "source": "cu/hybrid.cu",
+      "output_name": "hybrid.fatbin",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "--fatbin",
+        "-o",
+        "{OUT_DIR}/hybrid.fatbin",
+        "cu/hybrid.cu"
+      ]
+    },
+    {
+      "kind": "fatbin",
+      "source": "cu/kda.cu",
+      "output_name": "kda.fatbin",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "--fatbin",
+        "-o",
+        "{OUT_DIR}/kda.fatbin",
+        "cu/kda.cu"
+      ]
+    },
+    {
+      "kind": "fatbin",
+      "source": "cu/qmatvec.cu",
+      "output_name": "qmatvec.fatbin",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "--fatbin",
+        "-o",
+        "{OUT_DIR}/qmatvec.fatbin",
+        "cu/qmatvec.cu"
+      ]
+    },
+    {
+      "kind": "fatbin",
+      "source": "cu/flash_attn.cu",
+      "output_name": "flash_attn.fatbin",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "--fatbin",
+        "-o",
+        "{OUT_DIR}/flash_attn.fatbin",
+        "cu/flash_attn.cu"
+      ]
+    },
+    {
+      "kind": "fatbin",
+      "source": "cu/qmatvec_gemm.cu",
+      "output_name": "qmatvec_gemm.fatbin",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "--fatbin",
+        "-o",
+        "{OUT_DIR}/qmatvec_gemm.fatbin",
+        "cu/qmatvec_gemm.cu"
+      ]
+    },
+    {
+      "kind": "fatbin",
+      "source": "cu/moe_router.cu",
+      "output_name": "moe_router.fatbin",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "--fatbin",
+        "-o",
+        "{OUT_DIR}/moe_router.fatbin",
+        "cu/moe_router.cu"
+      ]
+    },
+    {
+      "kind": "fatbin",
+      "source": "cu/spec_sample.cu",
+      "output_name": "spec_sample.fatbin",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "--fatbin",
+        "-o",
+        "{OUT_DIR}/spec_sample.fatbin",
+        "cu/spec_sample.cu"
+      ]
+    },
+    {
+      "kind": "fatbin",
+      "source": "cu/tier_receipt.cu",
+      "output_name": "tier_receipt.fatbin",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "--fatbin",
+        "-o",
+        "{OUT_DIR}/tier_receipt.fatbin",
+        "cu/tier_receipt.cu"
+      ]
+    },
+    {
+      "kind": "fatbin",
+      "source": "cu/flash_attn.cu",
+      "output_name": "flash_attn_kf8vf8.fatbin",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "--fatbin",
+        "-DMEMRA_KV_KFMT=1",
+        "-DMEMRA_KV_VFMT=2",
+        "-o",
+        "{OUT_DIR}/flash_attn_kf8vf8.fatbin",
+        "cu/flash_attn.cu"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/mmq_fp4.cu",
+      "output_name": "mmq_fp4.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/mmq_fp4.cu",
+        "-o",
+        "{OUT_DIR}/mmq_fp4.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/mmq_q45k.cu",
+      "output_name": "mmq_q45k.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/mmq_q45k.cu",
+        "-o",
+        "{OUT_DIR}/mmq_q45k.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/mmq_nvfp4_w4a8.cu",
+      "output_name": "mmq_nvfp4_w4a8.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/mmq_nvfp4_w4a8.cu",
+        "-o",
+        "{OUT_DIR}/mmq_nvfp4_w4a8.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/mmq_iq_experts.cu",
+      "output_name": "mmq_iq_experts.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/mmq_iq_experts.cu",
+        "-o",
+        "{OUT_DIR}/mmq_iq_experts.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/mmq_q8_0.cu",
+      "output_name": "mmq_q8_0.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/mmq_q8_0.cu",
+        "-o",
+        "{OUT_DIR}/mmq_q8_0.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/mmq_q4_0.cu",
+      "output_name": "mmq_q4_0.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/mmq_q4_0.cu",
+        "-o",
+        "{OUT_DIR}/mmq_q4_0.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/fp8_prefill.cu",
+      "output_name": "fp8_prefill.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/fp8_prefill.cu",
+        "-o",
+        "{OUT_DIR}/fp8_prefill.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/f16_prefill.cu",
+      "output_name": "f16_prefill.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/f16_prefill.cu",
+        "-o",
+        "{OUT_DIR}/f16_prefill.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/mmq_nvfp4_f8f4.cu",
+      "output_name": "mmq_nvfp4_f8f4.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/mmq_nvfp4_f8f4.cu",
+        "-o",
+        "{OUT_DIR}/mmq_nvfp4_f8f4.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/fa3_prefill.cu",
+      "output_name": "fa3_prefill.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-DMEMRA_FA3_STUB",
+        "-c",
+        "cu/fa3_prefill.cu",
+        "-o",
+        "{OUT_DIR}/fa3_prefill.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/moe_f16_grouped.cu",
+      "output_name": "moe_f16_grouped.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/moe_f16_grouped.cu",
+        "-o",
+        "{OUT_DIR}/moe_f16_grouped.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/fp8_blk_dequant.cu",
+      "output_name": "fp8_blk_dequant.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/fp8_blk_dequant.cu",
+        "-o",
+        "{OUT_DIR}/fp8_blk_dequant.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/mmq_fp8_blk.cu",
+      "output_name": "mmq_fp8_blk.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/mmq_fp8_blk.cu",
+        "-o",
+        "{OUT_DIR}/mmq_fp8_blk.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/mmq_q8_0_f32acc.cu",
+      "output_name": "mmq_q8_0_f32acc.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/mmq_q8_0_f32acc.cu",
+        "-o",
+        "{OUT_DIR}/mmq_q8_0_f32acc.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/mla_attn.cu",
+      "output_name": "mla_attn.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/mla_attn.cu",
+        "-o",
+        "{OUT_DIR}/mla_attn.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/dsv4_gpu.cu",
+      "output_name": "dsv4_gpu.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-fmad=false",
+        "-c",
+        "cu/dsv4_gpu.cu",
+        "-o",
+        "{OUT_DIR}/dsv4_gpu.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/dsv4_sampler.cu",
+      "output_name": "dsv4_sampler.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/dsv4_sampler.cu",
+        "-o",
+        "{OUT_DIR}/dsv4_sampler.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/mimo_qkv_gather.cu",
+      "output_name": "mimo_qkv_gather.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/mimo_qkv_gather.cu",
+        "-o",
+        "{OUT_DIR}/mimo_qkv_gather.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/mimo_sink_attn.cu",
+      "output_name": "mimo_sink_attn.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/mimo_sink_attn.cu",
+        "-o",
+        "{OUT_DIR}/mimo_sink_attn.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/mimo_text_chunk_attn.cu",
+      "output_name": "mimo_text_chunk_attn.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/mimo_text_chunk_attn.cu",
+        "-o",
+        "{OUT_DIR}/mimo_text_chunk_attn.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/mimo_vision_attn.cu",
+      "output_name": "mimo_vision_attn.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/mimo_vision_attn.cu",
+        "-o",
+        "{OUT_DIR}/mimo_vision_attn.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/mimo_vision_rope.cu",
+      "output_name": "mimo_vision_rope.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/mimo_vision_rope.cu",
+        "-o",
+        "{OUT_DIR}/mimo_vision_rope.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/mimo_vision_block.cu",
+      "output_name": "mimo_vision_block.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/mimo_vision_block.cu",
+        "-o",
+        "{OUT_DIR}/mimo_vision_block.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/mimo_mixed_attn.cu",
+      "output_name": "mimo_mixed_attn.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/mimo_mixed_attn.cu",
+        "-o",
+        "{OUT_DIR}/mimo_mixed_attn.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/mimo_swa_ring_attn.cu",
+      "output_name": "mimo_swa_ring_attn.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/mimo_swa_ring_attn.cu",
+        "-o",
+        "{OUT_DIR}/mimo_swa_ring_attn.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/mimo_kv_nvfp4.cu",
+      "output_name": "mimo_kv_nvfp4.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/mimo_kv_nvfp4.cu",
+        "-o",
+        "{OUT_DIR}/mimo_kv_nvfp4.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/mimo_audio_embed.cu",
+      "output_name": "mimo_audio_embed.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/mimo_audio_embed.cu",
+        "-o",
+        "{OUT_DIR}/mimo_audio_embed.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/mimo_audio_attn.cu",
+      "output_name": "mimo_audio_attn.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/mimo_audio_attn.cu",
+        "-o",
+        "{OUT_DIR}/mimo_audio_attn.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/mimo_audio_patch_forward.cu",
+      "output_name": "mimo_audio_patch_forward.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/mimo_audio_patch_forward.cu",
+        "-o",
+        "{OUT_DIR}/mimo_audio_patch_forward.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/mimo_audio_codec_frontend.cu",
+      "output_name": "mimo_audio_codec_frontend.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/mimo_audio_codec_frontend.cu",
+        "-o",
+        "{OUT_DIR}/mimo_audio_codec_frontend.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/mimo_audio_codec_layer.cu",
+      "output_name": "mimo_audio_codec_layer.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/mimo_audio_codec_layer.cu",
+        "-o",
+        "{OUT_DIR}/mimo_audio_codec_layer.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/mimo_audio_codec_rvq.cu",
+      "output_name": "mimo_audio_codec_rvq.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-fmad=false",
+        "-c",
+        "cu/mimo_audio_codec_rvq.cu",
+        "-o",
+        "{OUT_DIR}/mimo_audio_codec_rvq.o"
+      ]
+    },
+    {
+      "kind": "object",
+      "source": "cu/tp_ar.cu",
+      "output_name": "tp_ar.o",
+      "argv_template": [
+        "-gencode",
+        "arch=compute_120a,code=sm_120a",
+        "-O3",
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "-c",
+        "cu/tp_ar.cu",
+        "-o",
+        "{OUT_DIR}/tp_ar.o"
+      ]
+    }
+  ],
+  "ar_options": "crus",
+  "MMQ_members_in_order": [
+    "mmq_fp4.o",
+    "mmq_q45k.o",
+    "mmq_nvfp4_w4a8.o",
+    "mmq_iq_experts.o",
+    "mmq_q8_0.o",
+    "mmq_q4_0.o",
+    "fp8_prefill.o",
+    "f16_prefill.o",
+    "mmq_nvfp4_f8f4.o",
+    "fa3_prefill.o",
+    "moe_f16_grouped.o",
+    "fp8_blk_dequant.o",
+    "mmq_fp8_blk.o",
+    "mmq_q8_0_f32acc.o",
+    "mla_attn.o",
+    "dsv4_gpu.o",
+    "dsv4_sampler.o",
+    "mimo_qkv_gather.o",
+    "mimo_sink_attn.o",
+    "mimo_text_chunk_attn.o",
+    "mimo_vision_attn.o",
+    "mimo_vision_rope.o",
+    "mimo_vision_block.o",
+    "mimo_mixed_attn.o",
+    "mimo_swa_ring_attn.o",
+    "mimo_kv_nvfp4.o",
+    "mimo_audio_embed.o",
+    "mimo_audio_attn.o",
+    "mimo_audio_patch_forward.o",
+    "mimo_audio_codec_frontend.o",
+    "mimo_audio_codec_layer.o",
+    "mimo_audio_codec_rvq.o",
+    "tp_ar.o"
+  ],
+  "current_main_sha256": "234e539875dcef28bec815bdf9041cae017aa3a711463816e7cfca6b33f827a3",
+  "current_main_bytes": 39864,
+  "native_helpers_header_equal_after_only_parser_import_normalization": true,
+  "source_command_data_reference": "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/A-package-flag-registry-1000/native-plan-census/RESULT.json",
+  "source_command_data_sha256": "a5538d1e246a25332e5bdaf80869484d40d39a1845704ce67a77fdd96a30b628",
+  "actual4951_ar_listing_equal": true
+}

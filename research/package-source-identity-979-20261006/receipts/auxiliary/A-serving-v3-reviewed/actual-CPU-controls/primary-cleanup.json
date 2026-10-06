@@ -1,0 +1,39 @@
+{
+  "owned_pid": 2432062,
+  "exit": -15,
+  "owned_process_retired": true,
+  "owned_session_retirement": [
+    {
+      "ownership_anchor": "unreaped-session-leader-plus-pidfd",
+      "members_before": [
+        {
+          "pid": 2432062,
+          "start": "86621908"
+        }
+      ],
+      "live_members_after": [],
+      "leader_reaped_after_session_retired": true
+    }
+  ],
+  "reader_joined": true,
+  "reader_pipe_closed": true,
+  "canonical_lock_before_after": [],
+  "cleanup_errors": [
+    {
+      "stage": "lock-before-teardown",
+      "error": "RuntimeError: synthetic cleanup lock-proof failure"
+    },
+    {
+      "stage": "lock-after-teardown",
+      "error": "RuntimeError: synthetic cleanup lock-proof failure"
+    }
+  ],
+  "primary_error": "ValueError: synthetic primary body failure",
+  "elapsed_seconds": 0.059958689962513745,
+  "whole_budget": {
+    "total_seconds": 1.2,
+    "work_seconds": 0.5999999999767169,
+    "cleanup_reserve_seconds": 0.5999999999767169,
+    "elapsed_seconds": 0.06806685507763177
+  }
+}

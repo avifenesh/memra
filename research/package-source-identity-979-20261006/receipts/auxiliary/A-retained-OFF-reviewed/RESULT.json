@@ -1,0 +1,203 @@
+{
+  "status": "Retained OFF predicates inspected and passed in a separate CPU validation",
+  "original_GPU_job": "d6f7265ceab8",
+  "original_GPU_job_status": "FAILED and unchanged",
+  "original_failure": "private cached_tokens-zero predicate conflated affinity with prefix storage",
+  "source": "335e2cbcbdb808ffa62688d40a299a3dd58ab51e",
+  "binary_sha256": "4974312b8bc7c00627f83ba2edaf9a5f9752b849e73dced84225481c724dd89c",
+  "fingerprint": "memra-0.138.0-85650875b725",
+  "turns": [
+    {
+      "turn": 1,
+      "cached_tokens": 0,
+      "spec": {
+        "rounds": 33,
+        "drafted": 99,
+        "accepted": 29,
+        "acceptance_rate": 0.29292929292929293
+      }
+    },
+    {
+      "turn": 2,
+      "cached_tokens": 288,
+      "spec": {
+        "rounds": 30,
+        "drafted": 90,
+        "accepted": 32,
+        "acceptance_rate": 0.35555555555555557
+      }
+    },
+    {
+      "turn": 3,
+      "cached_tokens": 320,
+      "spec": {
+        "rounds": 26,
+        "drafted": 78,
+        "accepted": 37,
+        "acceptance_rate": 0.47435897435897434
+      }
+    },
+    {
+      "turn": 4,
+      "cached_tokens": 352,
+      "spec": {
+        "rounds": 31,
+        "drafted": 93,
+        "accepted": 33,
+        "acceptance_rate": 0.3548387096774194
+      }
+    },
+    {
+      "turn": 5,
+      "cached_tokens": 0,
+      "spec": {
+        "rounds": 28,
+        "drafted": 84,
+        "accepted": 35,
+        "acceptance_rate": 0.4166666666666667
+      }
+    },
+    {
+      "turn": 6,
+      "cached_tokens": 384,
+      "spec": {
+        "rounds": 32,
+        "drafted": 96,
+        "accepted": 30,
+        "acceptance_rate": 0.3125
+      }
+    },
+    {
+      "turn": 7,
+      "cached_tokens": 416,
+      "spec": {
+        "rounds": 29,
+        "drafted": 87,
+        "accepted": 36,
+        "acceptance_rate": 0.41379310344827586
+      }
+    },
+    {
+      "turn": 8,
+      "cached_tokens": 448,
+      "spec": {
+        "rounds": 30,
+        "drafted": 90,
+        "accepted": 33,
+        "acceptance_rate": 0.36666666666666664
+      }
+    }
+  ],
+  "SSE_frames": 65,
+  "prefix_budget_zero_and_insert_refusals": true,
+  "affinity_reuse_distinct": true,
+  "retained_teardown_and_lock_proofs": true,
+  "new_server_or_GPU_or_artifact_hash_run": false,
+  "qualification": false,
+  "readset": {
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/A-package-flag-registry-1000/rig-acceptance-design/REQUESTS.json": {
+      "bytes": 21739,
+      "sha256": "bea89569ce4b2be899d80f5392c753eeb8752448f7424b4dd382a04683ed66de"
+    },
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/version.stdout": {
+      "bytes": 225,
+      "sha256": "bd079160ccbcf459a50496e46b16ef4911f266fd1621f335163d240c1debdd28"
+    },
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/version.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/ready.request.json": {
+      "bytes": 5,
+      "sha256": "38e0b9de817f645c4bec37c0d4a3e58baecccb040f5718dc069a72c7385a0bed"
+    },
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/ready.response": {
+      "bytes": 447,
+      "sha256": "894e97c74381e07b9d1397887e20b45ae95c4eb82abe2f438273ca3e469becfd"
+    },
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/models.response": {
+      "bytes": 864,
+      "sha256": "8e7e350a184a20cb9b014156505f5161112465233bcd87a97aecfc85e44f396f"
+    },
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/turn1.request.json": {
+      "bytes": 1609,
+      "sha256": "bd18c29e7308f37fa5b1f74215761ad9395aded47ed97b652725b7d01068dab3"
+    },
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/turn1.response": {
+      "bytes": 1154,
+      "sha256": "4f7bda76877275e2d9b0ad8d57d8a941ce4962d0e57f961d1fda36ae6eecc3f3"
+    },
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/turn2.request.json": {
+      "bytes": 1748,
+      "sha256": "f212f8cd8d58a9e87e82dd6ab148b38ad621382f39a5d05b678ff989fa12cfb2"
+    },
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/turn2.response": {
+      "bytes": 1202,
+      "sha256": "29661382755b26604d42be4fe8be4b59866cb56ba624d84087dc1a6e46b67277"
+    },
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/turn3.request.json": {
+      "bytes": 1887,
+      "sha256": "926581284639e01a0e21214074c50b416cabc159e2096e3b476001151370d09e"
+    },
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/turn3.response": {
+      "bytes": 1116,
+      "sha256": "964133361bfb4bb2e13b673da7224e0b4565fbb45d6ce76ac35a813ae3dc0b84"
+    },
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/turn4.request.json": {
+      "bytes": 2026,
+      "sha256": "086582070c030e72a342db529d9bed79816c2fe87c458ce3a63427527f1fd126"
+    },
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/turn4.response": {
+      "bytes": 1277,
+      "sha256": "5b7223266cdf2eda703367e978d87372f86b02124cec8196d8251d2b0f8cc93c"
+    },
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/turn5.request.json": {
+      "bytes": 2165,
+      "sha256": "ce85680d2a2303253b1a657c79fdadbd4b52b60819ef012d6ca4954adf25d0c0"
+    },
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/turn5.response": {
+      "bytes": 1249,
+      "sha256": "c790bb915c6f7a62e1c941755b41f5047f4e36b1a5b2192a3f6796ee12413c9f"
+    },
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/turn6.request.json": {
+      "bytes": 2304,
+      "sha256": "ece301d65cb73e3632213d6a83430cc1578e4f49a644b90044fd8da98a653156"
+    },
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/turn6.response": {
+      "bytes": 1199,
+      "sha256": "67780a6f08b67dcd1648233ba25acef54525838c2e0bbc41866b010cc3651f7f"
+    },
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/turn7.request.json": {
+      "bytes": 2443,
+      "sha256": "3c4f64f72878ff9c3af78e866bf8a51f429cbec384b975a884b16967e0eb24bc"
+    },
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/turn7.response": {
+      "bytes": 1172,
+      "sha256": "e2972dc877a47382efe724f95ab24e5988541a69eff768a714a24338760d80af"
+    },
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/turn8.request.json": {
+      "bytes": 2582,
+      "sha256": "8a1edf9d3cd2336a5e5ae01c6ad78f8d8d2fe13e4fd7bf5db0fd94fd42814be3"
+    },
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/turn8.response": {
+      "bytes": 1213,
+      "sha256": "f2739352c011b106850255061f9679f718775a75b575a4a072db0dc0ce699733"
+    },
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/stream.request.json": {
+      "bytes": 1608,
+      "sha256": "5acd5a56af47b6d7eaced692933e41d1d31f08fda41f70be8898d53b0e25aa9d"
+    },
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/stream.response": {
+      "bytes": 17223,
+      "sha256": "20a3b09a514e40476577ae7892fae06c1ddd110183349316e4f7708291450087"
+    },
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/server.log": {
+      "bytes": 12382,
+      "sha256": "41a3571319083d88c050dc413aee3b548cd4150e245023a009050a2401b569d2"
+    },
+    "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/actual-rig-serving600/cache-off/TEARDOWN.json": {
+      "bytes": 1229,
+      "sha256": "71841c766cfa14ebe37aaf0cdbaa57e85f275a60c8445a9b98eca6eb15f42c31"
+    }
+  }
+}

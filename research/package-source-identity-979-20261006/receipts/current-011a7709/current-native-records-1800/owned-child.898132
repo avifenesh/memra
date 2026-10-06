@@ -1,0 +1,13 @@
+execve("/home/evidence-user/.local/bin/gcc", ["gcc", "-E", "/tmp/tmpxft_000db453_00000000-2.cpp"], 0x7ffeec9b3070 /* 110 vars */) = -1 ENOENT (No such file or directory)
+execve("/home/evidence-user/.local/bin/gcc", ["gcc", "-E", "/tmp/tmpxft_000db453_00000000-2.cpp"], 0x7ffeec9b3070 /* 110 vars */) = -1 ENOENT (No such file or directory)
+execve("/usr/local/cuda-13.1/bin/gcc", ["gcc", "-E", "/tmp/tmpxft_000db453_00000000-2.cpp"], 0x7ffeec9b3070 /* 110 vars */) = -1 ENOENT (No such file or directory)
+execve("/home/evidence-user/.cargo/bin/gcc", ["gcc", "-E", "/tmp/tmpxft_000db453_00000000-2.cpp"], 0x7ffeec9b3070 /* 110 vars */) = -1 ENOENT (No such file or directory)
+execve("/home/evidence-user/.local/bin/gcc", ["gcc", "-E", "/tmp/tmpxft_000db453_00000000-2.cpp"], 0x7ffeec9b3070 /* 110 vars */) = -1 ENOENT (No such file or directory)
+execve("/home/evidence-user/.nvm/versions/node/v26.6.0/bin/gcc", ["gcc", "-E", "/tmp/tmpxft_000db453_00000000-2.cpp"], 0x7ffeec9b3070 /* 110 vars */) = -1 ENOENT (No such file or directory)
+execve("/usr/local/bin/gcc", ["gcc", "-E", "/tmp/tmpxft_000db453_00000000-2.cpp"], 0x7ffeec9b3070 /* 110 vars */) = -1 ENOENT (No such file or directory)
+execve("/usr/bin/gcc", ["gcc", "-E", "/tmp/tmpxft_000db453_00000000-2.cpp"], 0x7ffeec9b3070 /* 110 vars */) = 0
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x7414926aa000, stack_size=0x9000}, 88) = 898133
+wait4(898133, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 898133
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=898133, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+exit_group(0)                           = ?
++++ exited with 0 +++

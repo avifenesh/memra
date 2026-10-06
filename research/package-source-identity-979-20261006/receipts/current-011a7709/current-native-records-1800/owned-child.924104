@@ -1,0 +1,7 @@
+execve("/bin/sh", ["sh", "-c", "--", "gcc -std=c++17 -D__CUDA_ARCH__=1200 -D__CUDA_ARCH_FEAT_SM120_ALL -D__CUDA_ARCH_SPECIFIC__=1200 -D__CUDA_ARCH_FAMILY_SPECIFIC__=1200 -D__CUDA_ARCH_LIST__=1200 -c -x c++  -DCUDA_DOUBLE_MATH_FUNCTIONS -O3 -Wno-psabi \"-I/usr/local/cuda-13.1/bin/../targets/x86_64-linux/include\"   \"-isystem\" \"/usr/local/cuda-13.1/bin/../targets/x86_64-linux/include/cccl\"   -m64 \"/tmp/tmpxft_000e18d2_00000000-6_mmq_fp8_blk.cudafe1.cpp\" -o \"/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/build/memra-engine-788f6a603b2fbba1/out/mmq_fp8_blk.o\" "], 0x558c2cf5ed10 /* 125 vars */) = 0
+vfork()                                 = 924105
+wait4(-1, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 924105
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=924105, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+wait4(-1, 0x7ffcaab0858c, WNOHANG, NULL) = -1 ECHILD (No child processes)
+exit_group(0)                           = ?
++++ exited with 0 +++

@@ -1,0 +1,8 @@
+clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7c60149ffce8, parent_tid=0x7c60149ff990, exit_signal=0, stack=0x7c60147ff000, stack_size=0x1fc300, tls=0x7c60149ff6c0} => {parent_tid=[866984]}, 88) = 866984
+clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7c6009fffce8, parent_tid=0x7c6009fff990, exit_signal=0, stack=0x7c6009dff000, stack_size=0x1fc300, tls=0x7c6009fff6c0} => {parent_tid=[866989]}, 88) = 866989
+clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7c6009dfece8, parent_tid=0x7c6009dfe990, exit_signal=0, stack=0x7c6009bfe000, stack_size=0x1fc300, tls=0x7c6009dfe6c0} => {parent_tid=[866990]}, 88) = 866990
+clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|CLONE_CHILD_SETTID|SIGCHLD, child_tidptr=0x7c60157ff990) = 866997
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=866997, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+wait4(866997, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 866997
+exit(0)                                 = ?
++++ exited with 0 +++

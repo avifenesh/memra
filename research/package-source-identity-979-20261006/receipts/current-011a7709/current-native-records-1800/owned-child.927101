@@ -1,0 +1,7 @@
+execve("/bin/sh", ["sh", "-c", "--", "ptxas -arch=sm_120a -m64  --fmad false \"/tmp/tmpxft_000e1cdf_00000000-6_dsv4_gpu.ptx\"  -o \"/tmp/tmpxft_000e1cdf_00000000-8_dsv4_gpu.cubin\" "], 0x5c605a844d80 /* 125 vars */) = 0
+vfork()                                 = 927102
+wait4(-1, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 927102
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=927102, si_uid=1000, si_status=0, si_utime=1477 /* 14.77 s */, si_stime=37 /* 0.37 s */} ---
+wait4(-1, 0x7fffe88b606c, WNOHANG, NULL) = -1 ECHILD (No child processes)
+exit_group(0)                           = ?
++++ exited with 0 +++

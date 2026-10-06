@@ -1,0 +1,15 @@
+Running as unit: memra-rig-job-d6f7265ceab8.service; invocation ID: fbd7318b9d814436b0f6e15d742bc571
+gpulock: 5090 leased as shell-20261006T111200-2590640 for 11m
+Traceback (most recent call last):
+  File "/home/evidence-user/.cache/evidence-manager-20261006/A-serving-v3-reviewed/run_cell.py", line 170, in <module>
+    main()
+    ~~~~^^
+  File "/home/evidence-user/.cache/evidence-manager-20261006/A-serving-v3-reviewed/run_cell.py", line 138, in main
+    assert all(row['cached_tokens'] == 0 for row in turns)
+           ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+          Finished with result: exit-code
+Main processes terminated with: code=exited, status=1/FAILURE
+               Service runtime: 15.878s
+             CPU time consumed: 15.485s
+                   Memory peak: 6G (swap: 0B)

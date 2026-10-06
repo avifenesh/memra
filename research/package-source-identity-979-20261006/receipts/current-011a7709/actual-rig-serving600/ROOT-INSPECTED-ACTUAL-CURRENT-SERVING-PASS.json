@@ -1,0 +1,77 @@
+{
+  "job": "43ddd9041ebf",
+  "exit": 0,
+  "wall": 29.6208,
+  "actual_current_source_binary_fp": true,
+  "results": [
+    {
+      "arm": "cache-off",
+      "SSE": 65,
+      "cache": {
+        "prefix_insert_refusal_budgets": [
+          "0",
+          "0",
+          "0"
+        ],
+        "prefix_store_hit_or_restore": false,
+        "affinity_reuse_allowed": true
+      },
+      "teardown_exit": 0
+    },
+    {
+      "arm": "cache-on",
+      "SSE": 65,
+      "cache": {
+        "prefix_store_spec_hits": [
+          {
+            "turn": 2,
+            "id": "chatcmpl-3c07882005aabf5675754d02c7aa7145",
+            "hit": "[prefix-cache] hit: 288 of 343 prompt tokens from cache (model package-probe)",
+            "spec_restore": "[prefix-cache] spec restore: 288 of 343 prompt tokens + draft plane from cache [suffix queued] (model package-probe)"
+          },
+          {
+            "turn": 3,
+            "id": "chatcmpl-a30927775746f7a36f3fd08e9b8425cb",
+            "hit": "[prefix-cache] hit: 320 of 370 prompt tokens from cache (model package-probe)",
+            "spec_restore": "[prefix-cache] spec restore: 320 of 370 prompt tokens + draft plane from cache [suffix queued] (model package-probe)"
+          },
+          {
+            "turn": 4,
+            "id": "chatcmpl-eb423a36865f49cc2a7794dd785def33",
+            "hit": "[prefix-cache] hit: 352 of 397 prompt tokens from cache (model package-probe)",
+            "spec_restore": "[prefix-cache] spec restore: 352 of 397 prompt tokens + draft plane from cache [suffix queued] (model package-probe)"
+          },
+          {
+            "turn": 5,
+            "id": "chatcmpl-a6299fe57785e4ccb0369b45109710b6",
+            "hit": "[prefix-cache] hit: 352 of 424 prompt tokens from cache (model package-probe)",
+            "spec_restore": "[prefix-cache] spec restore: 352 of 424 prompt tokens + draft plane from cache [suffix queued] (model package-probe)"
+          },
+          {
+            "turn": 6,
+            "id": "chatcmpl-fcc0f37949246ec4b11ca74366bbfed3",
+            "hit": "[prefix-cache] hit: 384 of 451 prompt tokens from cache (model package-probe)",
+            "spec_restore": "[prefix-cache] spec restore: 384 of 451 prompt tokens + draft plane from cache [suffix queued] (model package-probe)"
+          },
+          {
+            "turn": 7,
+            "id": "chatcmpl-edb7d52f7b44b1ffe0d68ea83cb3a870",
+            "hit": "[prefix-cache] hit: 416 of 478 prompt tokens from cache (model package-probe)",
+            "spec_restore": "[prefix-cache] spec restore: 416 of 478 prompt tokens + draft plane from cache [suffix queued] (model package-probe)"
+          },
+          {
+            "turn": 8,
+            "id": "chatcmpl-10dee2e53bc3916831fb9fd5ddcc1cd1",
+            "hit": "[prefix-cache] hit: 448 of 505 prompt tokens from cache (model package-probe)",
+            "spec_restore": "[prefix-cache] spec restore: 448 of 505 prompt tokens + draft plane from cache [suffix queued] (model package-probe)"
+          }
+        ]
+      },
+      "teardown_exit": 0
+    }
+  ],
+  "FD9canonical_throughbothowned_teardowns": true,
+  "allmodel_draft_binary_integrity_checked": true,
+  "result_sha256": "2094c8bd04b1c73c651bc22b6e8008afb859239845ddf014aa39800a7c5bc858",
+  "noModel_orNativeServingQualification": true
+}

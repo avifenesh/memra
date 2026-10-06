@@ -1,0 +1,9 @@
+tests::a_retired_door_refuses_with_its_ledger: test
+tests::every_legal_name_passes: test
+tests::os_audit_all_legal_names_accept_uninterpretable_values: test
+tests::os_audit_classifies_raw_prefixes_before_rendering_and_keeps_utf8_distinct: test
+tests::os_audit_preserves_utf8_retired_wildcard_and_value_ignorance: test
+tests::os_audit_refuses_owned_bytes_and_summarizes_deduplicated_unowned_names: test
+tests::registry_is_populated_sorted_and_disjoint: test
+tests::retired_names_are_not_read_at_runtime: test
+tests::unknown_names_refuse_inside_owned_families_and_warn_outside: test

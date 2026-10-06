@@ -1,0 +1,7 @@
+execve("/bin/sh", ["sh", "-c", "--", "\"$CICC_PATH/cicc\" --c++17 --static-host-stub --device-hidden-visibility --gnu_version=150200 --display_error_number --orig_src_file_name \"cu/dsv4_sampler.cu\" --orig_src_path_name \"/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/vendor/memra-engine-0.138.0/cu/dsv4_sampler.cu\" --allow_managed --relaxed_constexpr   -arch compute_120a -m64 --no-version-ident -ftz=0 -prec_div=1 -prec_sqrt=1 -fmad=1 --include_file_name \"tmpxft_000e2de7_00000000-3_dsv4_sampler.fatbin.c\" -tused --module_id_file_name \"/tmp/tmpxft_000e2de7_00000000-4_dsv4_sampler.module_id\" --gen_c_file_name \"/tmp/tmpxft_000e2de7_00000000-6_dsv4_sampler.cudafe1.c\" --stub_file_name \"/tmp/tmpxft_000e2de7_00000000-6_dsv4_sampler.cudafe1.stub.c\" --gen_device_file_name \"/tmp/tmpxft_000e2de7_00000000-6_dsv4_sampler.cudafe1.gpu\"  \"/tmp/tmpxft_000e2de7_00000000-7_dsv4_sampler.cpp1.ii\" -o \"/tmp/tmpxft_000e2de7_00000000-6_dsv4_sampler.ptx\""], 0x5c6ff57b8da0 /* 125 vars */) = 0
+vfork()                                 = 929291
+wait4(-1, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 929291
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=929291, si_uid=1000, si_status=0, si_utime=13 /* 0.13 s */, si_stime=3 /* 0.03 s */} ---
+wait4(-1, 0x7fff01b2b19c, WNOHANG, NULL) = -1 ECHILD (No child processes)
+exit_group(0)                           = ?
++++ exited with 0 +++

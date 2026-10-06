@@ -1,0 +1,112 @@
+warning: unexpected `cfg` condition name: `test`
+   --> /home/evidence-user/projects/evidence-source-worktree-979/crates/memra-engine/src/env_audit.rs:258:7
+    |
+258 | #[cfg(test)]
+    |       ^^^^
+    |
+    = help: expected names are: `memra_env_registry_present` and 32 more
+    = help: to expect this configuration use `--check-cfg=cfg(test)`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg.html> for more information about checking conditional configuration
+    = note: `#[warn(unexpected_cfgs)]` on by default
+
+warning: unexpected `cfg` condition name: `test`
+   --> /home/evidence-user/projects/evidence-source-worktree-979/crates/memra-engine/src/env_audit.rs:266:5
+    |
+266 |     #[test]
+    |     ^^^^^^^
+    |
+    = note: using a cfg inside a attribute macro will use the cfgs from the destination crate and not the ones from the defining crate
+    = help: try referring to `test` crate for guidance on how handle this unexpected cfg
+    = help: to expect this configuration use `--check-cfg=cfg(test)`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition name: `test`
+   --> /home/evidence-user/projects/evidence-source-worktree-979/crates/memra-engine/src/env_audit.rs:297:5
+    |
+297 |     #[test]
+    |     ^^^^^^^
+    |
+    = note: using a cfg inside a attribute macro will use the cfgs from the destination crate and not the ones from the defining crate
+    = help: try referring to `test` crate for guidance on how handle this unexpected cfg
+    = help: to expect this configuration use `--check-cfg=cfg(test)`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition name: `test`
+   --> /home/evidence-user/projects/evidence-source-worktree-979/crates/memra-engine/src/env_audit.rs:333:5
+    |
+333 |     #[test]
+    |     ^^^^^^^
+    |
+    = note: using a cfg inside a attribute macro will use the cfgs from the destination crate and not the ones from the defining crate
+    = help: try referring to `test` crate for guidance on how handle this unexpected cfg
+    = help: to expect this configuration use `--check-cfg=cfg(test)`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition name: `test`
+   --> /home/evidence-user/projects/evidence-source-worktree-979/crates/memra-engine/src/env_audit.rs:368:5
+    |
+368 |     #[test]
+    |     ^^^^^^^
+    |
+    = note: using a cfg inside a attribute macro will use the cfgs from the destination crate and not the ones from the defining crate
+    = help: try referring to `test` crate for guidance on how handle this unexpected cfg
+    = help: to expect this configuration use `--check-cfg=cfg(test)`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition name: `test`
+   --> /home/evidence-user/projects/evidence-source-worktree-979/crates/memra-engine/src/env_audit.rs:382:5
+    |
+382 |     #[test]
+    |     ^^^^^^^
+    |
+    = note: using a cfg inside a attribute macro will use the cfgs from the destination crate and not the ones from the defining crate
+    = help: try referring to `test` crate for guidance on how handle this unexpected cfg
+    = help: to expect this configuration use `--check-cfg=cfg(test)`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition name: `test`
+   --> /home/evidence-user/projects/evidence-source-worktree-979/crates/memra-engine/src/env_audit.rs:404:5
+    |
+404 |     #[test]
+    |     ^^^^^^^
+    |
+    = note: using a cfg inside a attribute macro will use the cfgs from the destination crate and not the ones from the defining crate
+    = help: try referring to `test` crate for guidance on how handle this unexpected cfg
+    = help: to expect this configuration use `--check-cfg=cfg(test)`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition name: `test`
+   --> /home/evidence-user/projects/evidence-source-worktree-979/crates/memra-engine/src/env_audit.rs:420:5
+    |
+420 |     #[test]
+    |     ^^^^^^^
+    |
+    = note: using a cfg inside a attribute macro will use the cfgs from the destination crate and not the ones from the defining crate
+    = help: try referring to `test` crate for guidance on how handle this unexpected cfg
+    = help: to expect this configuration use `--check-cfg=cfg(test)`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition name: `test`
+   --> /home/evidence-user/projects/evidence-source-worktree-979/crates/memra-engine/src/env_audit.rs:457:5
+    |
+457 |     #[test]
+    |     ^^^^^^^
+    |
+    = note: using a cfg inside a attribute macro will use the cfgs from the destination crate and not the ones from the defining crate
+    = help: try referring to `test` crate for guidance on how handle this unexpected cfg
+    = help: to expect this configuration use `--check-cfg=cfg(test)`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition name: `test`
+   --> /home/evidence-user/projects/evidence-source-worktree-979/crates/memra-engine/src/env_audit.rs:534:5
+    |
+534 |     #[test]
+    |     ^^^^^^^
+    |
+    = note: using a cfg inside a attribute macro will use the cfgs from the destination crate and not the ones from the defining crate
+    = help: try referring to `test` crate for guidance on how handle this unexpected cfg
+    = help: to expect this configuration use `--check-cfg=cfg(test)`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg.html> for more information about checking conditional configuration
+
+warning: 10 warnings emitted
+

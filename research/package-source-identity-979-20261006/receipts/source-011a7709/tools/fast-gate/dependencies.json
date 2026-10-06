@@ -1,0 +1,147 @@
+{
+  "schema": "memra-dev-dependencies-v1",
+  "nodes": {
+    "build-inputs": {
+      "paths": [
+        "Cargo.*",
+        "rust-toolchain*",
+        ".cargo/**",
+        "**/build.rs",
+        "**/Cargo.toml"
+      ],
+      "needs": []
+    },
+    "generated-and-oracle-inputs": {
+      "paths": [
+        "research/**",
+        "probe/**"
+      ],
+      "needs": []
+    },
+    "harness": {
+      "paths": [
+        "tools/**",
+        ".github/**"
+      ],
+      "needs": [
+        "generated-and-oracle-inputs"
+      ]
+    },
+    "cuda": {
+      "paths": [
+        "crates/memra-engine/cu/**"
+      ],
+      "needs": [
+        "build-inputs"
+      ]
+    },
+    "shared-runtime": {
+      "paths": [
+        "crates/memra-engine/src/**",
+        "crates/memra-kv/**",
+        "crates/memra-runtime/**",
+        "crates/memra-server/**",
+        "crates/memra-sampling/**",
+        "crates/memra-tokenizer/**",
+        "crates/memra-reference/**"
+      ],
+      "needs": [
+        "cuda",
+        "build-inputs"
+      ]
+    },
+    "model-plans": {
+      "paths": [
+        "crates/memra-gguf/**",
+        "crates/memra-cli/**"
+      ],
+      "needs": [
+        "shared-runtime"
+      ]
+    },
+    "mimo": {
+      "paths": [
+        "**/*mimo*",
+        "**/mimo*/**"
+      ],
+      "needs": [
+        "model-plans",
+        "shared-runtime",
+        "harness"
+      ],
+      "required": [
+        "MiMo text checkpoint parity",
+        "MiMo vision",
+        "MiMo audio",
+        "MiMo MTP",
+        "MiMo serving and topology"
+      ]
+    },
+    "native-checkpoint": {
+      "paths": [],
+      "needs": [
+        "model-plans",
+        "shared-runtime",
+        "harness"
+      ],
+      "contexts": [
+        "compiler",
+        "build",
+        "runtime",
+        "numeric",
+        "harness",
+        "oracle",
+        "model",
+        "binary",
+        "hardware",
+        "topology",
+        "request"
+      ],
+      "expand": "Native dependencies are not admitted for result reuse. Run the full battery at the qualification checkpoint, including each affected model's own gates."
+    }
+  },
+  "components": {
+    "qualification-contracts": {
+      "description": "CPU tests of receipt admission using fabricated temporary records",
+      "modules": [
+        "test_release_qualification"
+      ],
+      "inputs": [
+        "tools/test_release_qualification.py",
+        "tools/release_qualification.py",
+        "tools/release_input_view.py",
+        "tools/release_inputs.py",
+        "tools/check_hardware_gate.py",
+        "tools/release-coverage.py",
+        "tools/kernel-check-27b.cells",
+        "tools/kernel-check-step35.cells",
+        "tools/qualify-release.py",
+        "tools/hooks/pre-push",
+        ".github/workflows/release.yml",
+        ".github/workflows/publish.yml"
+      ],
+      "scope": "CPU contract tests only; no native execution or model qualification",
+      "min_tests": 15
+    },
+    "release-inputs": {
+      "description": "CPU tests of actual checkout, hidden inputs and fixture admission",
+      "modules": [
+        "test_release_inputs"
+      ],
+      "inputs": [
+        "tools/test_release_inputs.py",
+        "tools/test_release_qualification.py",
+        "tools/qualify-release.py",
+        "tools/release_qualification.py",
+        "tools/release_input_view.py",
+        "tools/release_inputs.py",
+        "tools/check_hardware_gate.py",
+        "tools/release-coverage.py",
+        "tools/kernel-check-27b.cells",
+        "tools/kernel-check-step35.cells"
+      ],
+      "scope": "CPU input admission tests only; no compiler or model qualification",
+      "min_tests": 21
+    }
+  }
+}

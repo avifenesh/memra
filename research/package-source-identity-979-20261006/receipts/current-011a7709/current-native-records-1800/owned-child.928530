@@ -1,0 +1,7 @@
+execve("/bin/sh", ["sh", "-c", "--", "fatbinary -64 --cmdline=\" --fmad false \" --cicc-cmdline=\"-ftz=0 -prec_div=1 -prec_sqrt=1 -fmad=0 \" \"--image3=kind=elf,sm=120a,file=/tmp/tmpxft_000e1cdf_00000000-8_dsv4_gpu.cubin\" --embedded-fatbin=\"/tmp/tmpxft_000e1cdf_00000000-3_dsv4_gpu.fatbin.c\" "], 0x5c605a844d80 /* 125 vars */) = 0
+vfork()                                 = 928532
+wait4(-1, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 928532
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=928532, si_uid=1000, si_status=0, si_utime=6 /* 0.06 s */, si_stime=1 /* 0.01 s */} ---
+wait4(-1, 0x7ffcd4545f7c, WNOHANG, NULL) = -1 ECHILD (No child processes)
+exit_group(0)                           = ?
++++ exited with 0 +++

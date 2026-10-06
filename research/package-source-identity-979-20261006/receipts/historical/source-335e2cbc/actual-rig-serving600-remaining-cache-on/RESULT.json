@@ -1,0 +1,172 @@
+{
+  "source": "335e2cbcbdb808ffa62688d40a299a3dd58ab51e",
+  "binary_sha256": "4974312b8bc7c00627f83ba2edaf9a5f9752b849e73dced84225481c724dd89c",
+  "request_sha256": "bea89569ce4b2be899d80f5392c753eeb8752448f7424b4dd382a04683ed66de",
+  "results": [
+    {
+      "arm": "cache-on",
+      "turns": [
+        {
+          "turn": 1,
+          "id": "chatcmpl-5e8b193d9f61e26e7bffe4d908540f93",
+          "prompt_tokens": 316,
+          "cached_tokens": 0,
+          "spec": {
+            "rounds": 36,
+            "drafted": 108,
+            "accepted": 26,
+            "acceptance_rate": 0.24074074074074073
+          },
+          "fingerprint": "memra-0.138.0-85650875b725"
+        },
+        {
+          "turn": 2,
+          "id": "chatcmpl-de8de0e1f835dba268dccaa9199aa68c",
+          "prompt_tokens": 343,
+          "cached_tokens": 288,
+          "spec": {
+            "rounds": 27,
+            "drafted": 81,
+            "accepted": 35,
+            "acceptance_rate": 0.43209876543209874
+          },
+          "fingerprint": "memra-0.138.0-85650875b725"
+        },
+        {
+          "turn": 3,
+          "id": "chatcmpl-8790d5b851f200a427fc311465c19e6f",
+          "prompt_tokens": 370,
+          "cached_tokens": 320,
+          "spec": {
+            "rounds": 35,
+            "drafted": 105,
+            "accepted": 29,
+            "acceptance_rate": 0.2761904761904762
+          },
+          "fingerprint": "memra-0.138.0-85650875b725"
+        },
+        {
+          "turn": 4,
+          "id": "chatcmpl-f05eff7a47eab93e50c43082ab08ac40",
+          "prompt_tokens": 397,
+          "cached_tokens": 352,
+          "spec": {
+            "rounds": 30,
+            "drafted": 90,
+            "accepted": 32,
+            "acceptance_rate": 0.35555555555555557
+          },
+          "fingerprint": "memra-0.138.0-85650875b725"
+        },
+        {
+          "turn": 5,
+          "id": "chatcmpl-9c463a2aeedaa68753c708b625f1e039",
+          "prompt_tokens": 424,
+          "cached_tokens": 352,
+          "spec": {
+            "rounds": 31,
+            "drafted": 93,
+            "accepted": 31,
+            "acceptance_rate": 0.3333333333333333
+          },
+          "fingerprint": "memra-0.138.0-85650875b725"
+        },
+        {
+          "turn": 6,
+          "id": "chatcmpl-f41a8fb268eed27137fb7c4c2a9a94cd",
+          "prompt_tokens": 451,
+          "cached_tokens": 384,
+          "spec": {
+            "rounds": 28,
+            "drafted": 84,
+            "accepted": 36,
+            "acceptance_rate": 0.42857142857142855
+          },
+          "fingerprint": "memra-0.138.0-85650875b725"
+        },
+        {
+          "turn": 7,
+          "id": "chatcmpl-880d4dbe738c9cb1c33aecd8a05d5d8d",
+          "prompt_tokens": 478,
+          "cached_tokens": 416,
+          "spec": {
+            "rounds": 28,
+            "drafted": 84,
+            "accepted": 34,
+            "acceptance_rate": 0.40476190476190477
+          },
+          "fingerprint": "memra-0.138.0-85650875b725"
+        },
+        {
+          "turn": 8,
+          "id": "chatcmpl-00c1cdf527424b1f406deac5740d1b86",
+          "prompt_tokens": 505,
+          "cached_tokens": 448,
+          "spec": {
+            "rounds": 28,
+            "drafted": 84,
+            "accepted": 36,
+            "acceptance_rate": 0.42857142857142855
+          },
+          "fingerprint": "memra-0.138.0-85650875b725"
+        }
+      ],
+      "SSE_frames": 65,
+      "prefix_store_spec_hits": [
+        {
+          "turn": 2,
+          "id": "chatcmpl-de8de0e1f835dba268dccaa9199aa68c",
+          "hit": "[prefix-cache] hit: 288 of 343 prompt tokens from cache (model package-probe)",
+          "spec_restore": "[prefix-cache] spec restore: 288 of 343 prompt tokens + draft plane from cache [suffix queued] (model package-probe)"
+        },
+        {
+          "turn": 3,
+          "id": "chatcmpl-8790d5b851f200a427fc311465c19e6f",
+          "hit": "[prefix-cache] hit: 320 of 370 prompt tokens from cache (model package-probe)",
+          "spec_restore": "[prefix-cache] spec restore: 320 of 370 prompt tokens + draft plane from cache [suffix queued] (model package-probe)"
+        },
+        {
+          "turn": 4,
+          "id": "chatcmpl-f05eff7a47eab93e50c43082ab08ac40",
+          "hit": "[prefix-cache] hit: 352 of 397 prompt tokens from cache (model package-probe)",
+          "spec_restore": "[prefix-cache] spec restore: 352 of 397 prompt tokens + draft plane from cache [suffix queued] (model package-probe)"
+        },
+        {
+          "turn": 5,
+          "id": "chatcmpl-9c463a2aeedaa68753c708b625f1e039",
+          "hit": "[prefix-cache] hit: 352 of 424 prompt tokens from cache (model package-probe)",
+          "spec_restore": "[prefix-cache] spec restore: 352 of 424 prompt tokens + draft plane from cache [suffix queued] (model package-probe)"
+        },
+        {
+          "turn": 6,
+          "id": "chatcmpl-f41a8fb268eed27137fb7c4c2a9a94cd",
+          "hit": "[prefix-cache] hit: 384 of 451 prompt tokens from cache (model package-probe)",
+          "spec_restore": "[prefix-cache] spec restore: 384 of 451 prompt tokens + draft plane from cache [suffix queued] (model package-probe)"
+        },
+        {
+          "turn": 7,
+          "id": "chatcmpl-880d4dbe738c9cb1c33aecd8a05d5d8d",
+          "hit": "[prefix-cache] hit: 416 of 478 prompt tokens from cache (model package-probe)",
+          "spec_restore": "[prefix-cache] spec restore: 416 of 478 prompt tokens + draft plane from cache [suffix queued] (model package-probe)"
+        },
+        {
+          "turn": 8,
+          "id": "chatcmpl-00c1cdf527424b1f406deac5740d1b86",
+          "hit": "[prefix-cache] hit: 448 of 505 prompt tokens from cache (model package-probe)",
+          "spec_restore": "[prefix-cache] spec restore: 448 of 505 prompt tokens + draft plane from cache [suffix queued] (model package-probe)"
+        }
+      ],
+      "fingerprint": "memra-0.138.0-85650875b725",
+      "external_drafter_engaged": true
+    }
+  ],
+  "cached_model_draft_before_after_identity_and_bytes": true,
+  "scope": "Package-source identity and vendor-default local serving engagement only. Remaining cache-ON arm only; no OFF replay or relabeling.",
+  "model_or_serving_qualification": false,
+  "whole_cell_budget": {
+    "total_seconds": 600,
+    "work_seconds": 530.0,
+    "cleanup_reserve_seconds": 70.0,
+    "elapsed_seconds": 20.4960714149056
+  }
+}
