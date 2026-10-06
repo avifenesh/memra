@@ -49,11 +49,8 @@ jobs:
     steps:
       # Selection and the head receipt are workflow literals. No candidate
       # planner or change-class script can suppress the complete inventory.
-      # The workflow-literal selector needs only the exact event commit.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 1
+      # This workflow-literal plan reads only GITHUB_SHA and writes its receipt.
+      # Source checkouts belong to the validation jobs below.
       - id: classify
         name: Plan the complete CPU inventory
         run: |
