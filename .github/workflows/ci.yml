@@ -820,7 +820,7 @@ jobs:
     outputs:
       validated_head: ${{ steps.result.outputs.validated_head }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      # Result validation reads only the dependency results and event SHA.
       - id: result
         env:
           JOB_RESULTS: ${{ toJSON(needs) }}
