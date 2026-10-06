@@ -8425,10 +8425,22 @@ const STEP_OOM_FAULT_MSG: &str =
 enum StepOomFaultSite {
     Any,
     BatchMulti,
+    Prime,
+    SerialAfter(usize),
 }
 
-/// Parse the door's value: `<n>` or `batch:<n>`. `None` is malformed (the door stays OFF).
+/// Parse an explicit diagnostic target and count. Malformed values keep the door OFF.
 fn parse_step_oom_fault(raw: &str) -> Option<(StepOomFaultSite, u32)> {
+    if let Some(target) = raw.strip_prefix("serial-after:") {
+        let (generated, count) = target.split_once(':')?;
+        return Some((
+            StepOomFaultSite::SerialAfter(generated.parse::<usize>().ok()?),
+            count.parse::<u32>().ok()?,
+        ));
+    }
+    if let Some(n) = raw.strip_prefix("prime:") {
+        return n.parse::<u32>().ok().map(|n| (StepOomFaultSite::Prime, n));
+    }
     match raw.strip_prefix("batch:") {
         Some(n) => n
             .parse::<u32>()
@@ -8458,6 +8470,11 @@ fn step_oom_fault_state() -> &'static (StepOomFaultSite, std::sync::atomic::Atom
         if n > 0 {
             let (value, at) = match site {
                 StepOomFaultSite::Any => (n.to_string(), "session step(s)"),
+                StepOomFaultSite::Prime => (format!("prime:{n}"), "prefill tick(s)"),
+                StepOomFaultSite::SerialAfter(generated) => (
+                    format!("serial-after:{generated}:{n}"),
+                    "serial decode steps after generated output",
+                ),
                 StepOomFaultSite::BatchMulti => (
                     format!("batch:{n}"),
                     "batched decode chunk(s) of at least two sessions",
@@ -8491,6 +8508,7 @@ fn step_oom_fault_consume(remaining: &std::sync::atomic::AtomicU32) -> bool {
 fn step_oom_fault_site_admits(site: StepOomFaultSite, batch_sessions: Option<usize>) -> bool {
     match site {
         StepOomFaultSite::Any => true,
+        StepOomFaultSite::Prime | StepOomFaultSite::SerialAfter(_) => false,
         StepOomFaultSite::BatchMulti => batch_sessions.is_some_and(|k| k >= 2),
     }
 }
@@ -8504,6 +8522,19 @@ fn step_oom_fault_fire() -> bool {
 fn step_oom_fault_fire_batch(sessions: usize) -> bool {
     let (site, remaining) = step_oom_fault_state();
     step_oom_fault_site_admits(*site, Some(sessions)) && step_oom_fault_consume(remaining)
+}
+
+/// Target the serial honest-error path after output exists. Normal steps are unchanged.
+fn serial_after_oom_fault_fire(generated: usize) -> bool {
+    let (site, remaining) = step_oom_fault_state();
+    matches!(*site, StepOomFaultSite::SerialAfter(minimum) if generated >= minimum)
+        && step_oom_fault_consume(remaining)
+}
+
+/// A prime-targeted budget never fires in decode or required private boot warmup.
+fn prime_oom_fault_fire() -> bool {
+    let (site, remaining) = step_oom_fault_state();
+    *site == StepOomFaultSite::Prime && step_oom_fault_consume(remaining)
 }
 
 /// Run one allocation retry only when the first failure released reclaimable state. The caller
@@ -27372,6 +27403,12 @@ pub fn run(
         &mut admission_costs,
         &health,
     );
+    // Calibration is optional and may skip a loaded route. Readiness warmup is
+    // separate: every loaded model must prime and decode before accepting work.
+    if let Err(error) = run_required_boot_warmup(&engine, &loaded, &health) {
+        let _ = ready_tx.send(Err(error));
+        return;
+    }
     let mut prime_policy = crate::prime_fairness::PrimePolicy::default();
 
     // ---- serving counters + engine-truth step stats (30s percentile window) ----
@@ -30170,19 +30207,37 @@ pub fn run(
                 let step_started = Instant::now();
                 let (fault_id, fault_route) =
                     (active[i].request_id.clone(), fault_route(&active[i]));
-                let step_result =
-                    guard_request(&engine, &fault_id, &fault_route, "decode step", || {
+                let step_result = guard_request(
+                    &engine,
+                    &fault_id,
+                    &fault_route,
+                    "decode step",
+                    || {
                         // MEMRA_STEP_OOM_FAULT's non-batching injection point (WP-B day 38
                         // addenda A and D): the forged quoted OOM stands in for this step, before
                         // any device work; the error arm below is production logic. It fires only
                         // on a session past its prime (a step that decodes), so the forged failure
                         // lands where an errored session could otherwise park.
-                        if active[i].prefill_done && step_oom_fault_fire() {
+                        if !active[i].prefill_done
+                            && !active[i].prefill_queue.is_empty()
+                            && prime_oom_fault_fire()
+                        {
+                            eprintln!(
+                                "[admit-oom] MEMRA_STEP_OOM_FAULT fired: this serial prime reports a SYNTHETIC CUDA OOM (request {}, model {})",
+                                active[i].request_id, active[i].model
+                            );
+                            return Err(STEP_OOM_FAULT_MSG.into());
+                        }
+                        if active[i].prefill_done
+                            && (step_oom_fault_fire()
+                                || serial_after_oom_fault_fire(active[i].generated.len()))
+                        {
                             eprintln!(
                                 "[admit-oom] MEMRA_STEP_OOM_FAULT fired: this non-batching step \
-                                 reports a synthetic CUDA OOM (model {}, generated {})",
+                                 reports a synthetic CUDA OOM (model {}, generated {}, streamed {})",
                                 active[i].model,
                                 active[i].generated.len(),
+                                active[i].tokens_emitted,
                             );
                             return Err(STEP_OOM_FAULT_MSG.into());
                         }
@@ -30193,7 +30248,8 @@ pub fn run(
                             }
                             Err(err) => Err(err),
                         }
-                    });
+                    },
+                );
                 record_output_progress(
                     generated_before,
                     active[i].generated.len(),
@@ -30207,7 +30263,44 @@ pub fn run(
                 match step_result {
                     Ok(true) => {}
                     Ok(false) => finished.push(i),
+                    Err(err)
+                        if is_cuda_oom(&err.to_string())
+                            && (active[i].prefill_done || admit_memory_cfg.armed)
+                            && step_oom_parkable(
+                                active[i].generated.len(),
+                                active[i].tokens_emitted,
+                                active[i].oom_retries,
+                                step_oom_retries(),
+                            ) =>
+                    {
+                        // The serial scheduler owns the same pre-emission park
+                        // contract as the speculative step. Never restart emitted
+                        // output or relax the retry bound.
+                        let session = &mut active[i];
+                        session.oom_retries += 1;
+                        session.oom_teardown = true;
+                        eprintln!(
+                            "[admit-oom] step OOM parked session back to queue \
+                             (serial model {}, retry {}/{}): {err}",
+                            session.model,
+                            session.oom_retries,
+                            step_oom_retries()
+                        );
+                        if let Some(request) = park_requeue(&loaded, session) {
+                            n_step_oom_parks += 1;
+                            reserve_internal_admission(request.lane);
+                            requeue_oom.push_back(request);
+                        } else {
+                            session.errored = true;
+                            let _ = session.tx.send(Event::Error(EngineError::engine(format!(
+                                "step error: {err}"
+                            ))));
+                        }
+                        finished.push(i);
+                    }
                     Err(err) => {
+                        // Unparkable OOM still needs the retirement fence.
+                        active[i].oom_teardown |= is_cuda_oom(&err.to_string());
                         quarantine_request_fault(&mut active[i], err.as_ref());
                         active[i].errored = true;
                         let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
@@ -31354,6 +31447,8 @@ pub fn run(
                         finished.push(i);
                     }
                     Err(err) => {
+                        // Terminal prefill OOM also releases device state behind a fence.
+                        s.oom_teardown |= is_cuda_oom(&err.to_string());
                         quarantine_request_fault(s, err.as_ref());
                         s.errored = true;
                         let _ = s.tx.send(Event::Error(EngineError::engine(format!(
@@ -31913,6 +32008,8 @@ pub fn run(
                             &mut n_step_oom_parks,
                         );
                     } else {
+                        // Terminal prefill OOM also releases device state behind a fence.
+                        s.oom_teardown |= is_cuda_oom(&err.to_string());
                         quarantine_request_fault(s, err.as_ref());
                         s.errored = true;
                         let _ = s.tx.send(Event::Error(EngineError::engine(format!(
@@ -38519,6 +38616,17 @@ fn prefill_tick(
         }
         return Ok(0);
     }
+    if prime_oom_fault_fire() {
+        eprintln!(
+            "[admit-oom] MEMRA_STEP_OOM_FAULT fired: this prefill tick reports a \
+             SYNTHETIC CUDA OOM (request {}, model {}, generated {}, streamed {})",
+            s.request_id,
+            s.model,
+            s.generated.len(),
+            s.tokens_emitted,
+        );
+        return Err(STEP_OOM_FAULT_MSG.into());
+    }
     let mut consumed = 0usize;
     // MONOLITHIC-PRIME shape (lane/gemma4-serve-gaps, 2026-08-07; narrowed by memra#535 P1a):
     // a model whose prime has no chunked/continuation program takes the WHOLE queued prompt
@@ -41510,6 +41618,99 @@ fn calibration_transient_floor(
         .saturating_sub(used_rest)
         .saturating_sub(charged_kv)
         .saturating_sub(charged_draft)
+}
+
+/// Required readiness warmup, independent of admission calibration doors.
+/// Every loaded model uses planned stage-owned cache allocation and existing
+/// route-aware prime/decode entry points.
+/// Two outputs execute real decode calls after the prompt prime; a stream fence
+/// completes them before readiness. No customer sampler or reusable state is used.
+/// Graph engagement is a separate served-route property, not implied by this API.
+fn run_required_boot_warmup(
+    engine: &Engine,
+    loaded: &HashMap<String, LoadedModel>,
+    health: &crate::health::SharedHealth,
+) -> Result<(), String> {
+    for (name, model) in loaded {
+        health.mark_warming();
+        let seed = model.tok.encode("A mutex protects shared state. ", true);
+        if seed.is_empty() {
+            return Err(format!(
+                "required warmup {name:?}: tokenizer returned no tokens"
+            ));
+        }
+        let mut prompt = seed.clone();
+        let minimum = memra_engine::hybrid_forward::PRIME_MIN_T.max(32);
+        while prompt.len() < minimum {
+            prompt.extend_from_slice(&seed);
+        }
+        prompt.truncate(minimum);
+        eprintln!(
+            "[boot-warmup] start: model={name:?} prompt_tokens={}",
+            prompt.len()
+        );
+        // Use the same placement-aware cache and eager dispatch as serving.
+        // The legacy generate/DC convenience loop rejects HC and sharded PP.
+        let mut cache = memra_engine::pp::new_cache_planned(
+            engine,
+            &model.model.cfg,
+            &model.model.plan,
+            prompt.len() + 2 + 8,
+        )
+        .map_err(|error| format!("required warmup {name:?} cache: {error}"))?;
+        let decode_result = (|| -> Result<usize, Box<dyn std::error::Error>> {
+            // Preserve the existing prime selector: a tokenwise override or
+            // frozen mixed expert residency must not transiently stage a bank.
+            let batched_prime = prompt.len() >= memra_engine::hybrid_forward::PRIME_MIN_T
+                && std::env::var("MEMRA_PRIME_TOKENWISE").is_err()
+                && !engine.frozen_cpu_experts_prefer_tokenwise_prime();
+            let mut logits = if batched_prime {
+                model.model.prime_cache(engine, &prompt, &mut cache, 0)?.0
+            } else {
+                let mut logits = Vec::new();
+                for &token in &prompt {
+                    logits = model.model.decode_step(engine, token, &mut cache)?;
+                }
+                logits
+            };
+            for _ in 0..2 {
+                if logits.is_empty() {
+                    return Err("warmup route returned empty logits".into());
+                }
+                let token = memra_engine::forward::argmax(&logits) as u32;
+                logits = model.model.decode_step(engine, token, &mut cache)?;
+            }
+            Ok(2)
+        })();
+        // PP stage streams and readback share each owner context but are not
+        // the owner worker stream. Context-wide fences drain all of them.
+        // Fence every placement owner before the private cache drops, including
+        // an error from prime or decode. A failed fence cannot mark ready.
+        let mut fence_error = None;
+        for owner in model_device_engines(engine, loaded) {
+            if let Err(error) = owner.ctx().synchronize() {
+                fence_error
+                    .get_or_insert_with(|| format!("required warmup {name:?} fence: {error}"));
+            }
+        }
+        if let Err(error) = engine.ctx().bind_to_thread() {
+            fence_error.get_or_insert_with(|| {
+                format!("required warmup {name:?} primary context: {error}")
+            });
+        }
+        if let Some(error) = fence_error {
+            return Err(error);
+        }
+        let generated =
+            decode_result.map_err(|error| format!("required warmup {name:?}: {error}"))?;
+        eprintln!(
+            "[boot-warmup] complete: model={name:?} prompt_tokens={} generated_tokens={} \
+             private_cache=true warmup_api=planned_prime_eager_decode",
+            prompt.len(),
+            generated
+        );
+    }
+    Ok(())
 }
 
 /// BOOT ADMISSION CALIBRATION (lane/step37-vram-admission-20260830, defect 1): measure the
@@ -49265,6 +49466,32 @@ mod tests {
             .join("\n");
         let prod = &code[..code.find("\nmod tests").expect("tests module exists")];
         let flat: String = prod.chars().filter(|c| !c.is_whitespace()).collect();
+        let serial = flat
+            .find("matchstep_result{Ok(true)=>{}Ok(false)=>finished.push(i),")
+            .expect("serial error match");
+        let serial = &flat[serial
+            ..flat[serial..]
+                .find("// (a-)")
+                .map(|n| serial + n)
+                .unwrap_or(serial + 4000)
+                .min(flat.len())];
+        let mark = serial
+            .find("active[i].oom_teardown|=is_cuda_oom(&err.to_string());")
+            .expect("unparkable serial OOM fences");
+        let error = serial[mark..]
+            .find("quarantine_request_fault(&mutactive[i],err.as_ref());")
+            .expect("serial error follows mark");
+        assert!(error > 0);
+        let retire = flat
+            .find("if s.oom_teardown".replace(' ', "").as_str())
+            .expect("OOM retirement arm");
+        let retire = &flat[retire..retire + 500];
+        assert!(
+            retire.find("oom_teardown_fence(&engine,&loaded);").unwrap()
+                < retire.find("continue;").unwrap()
+        );
+        assert_eq!(flat.matches("s.oom_teardown|=is_cuda_oom(&err.to_string());quarantine_request_fault(s,err.as_ref());s.errored=true;").count(), 2,
+            "both terminal prefill arms mark only OOM for fenced retirement");
         let block = flat.find("ifoom_teardowns>0{").expect("teardown block");
         let end = flat[block..]
             .find("}else{oom_evict_streak=0;}")
@@ -49298,6 +49525,85 @@ mod tests {
     /// send because `health.mark_ready()` follows it; until then `WorkerHealth` is in
     /// PHASE_LOADING (`health::tests::loading_is_not_live_and_not_ready`). Anchored on the
     /// comment-stripped production text so a reorder is a red test, not a log archaeology.
+    #[test]
+    fn required_warmup_precedes_readiness_independently_of_calibration() {
+        let src = include_str!("worker.rs");
+        let code: String = src
+            .lines()
+            .map(|line| line.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let prod = &code[..code.find("\nmod tests").expect("tests module")];
+        let run = &prod[prod.find("pub fn run(").expect("worker run")..];
+        let calibrate = run.find("run_boot_calibration(").expect("calibration call");
+        let warmup = run
+            .find("run_required_boot_warmup(")
+            .expect("required warmup call");
+        let ready = run.find("ready_tx.send(Ok(").expect("readiness success");
+        assert!(calibrate < warmup && warmup < ready);
+        let helper = &prod[prod.find("fn run_required_boot_warmup(").expect("helper")..];
+        let helper = &helper[..helper.find("\n}\n").expect("helper end")];
+        assert!(helper.contains("for (name, model) in loaded"));
+        assert!(helper.contains("health.mark_warming();"));
+        assert!(helper.contains("memra_engine::pp::new_cache_planned("));
+        assert!(helper.contains("model.model.prime_cache(engine, &prompt, &mut cache, 0)"));
+        assert!(helper.contains("model.model.decode_step(engine, token, &mut cache)"));
+        assert!(helper.contains("for _ in 0..2"));
+        assert!(helper.contains("MEMRA_PRIME_TOKENWISE"));
+        assert!(helper.contains("!engine.frozen_cpu_experts_prefer_tokenwise_prime()"));
+        assert!(helper.contains("for &token in &prompt"));
+        assert!(helper.contains("for owner in model_device_engines(engine, loaded)"));
+        assert!(!helper.contains(".generate("));
+        assert!(!helper.contains("decode_step_dc"));
+        assert!(helper.contains("owner.ctx().synchronize()"));
+        assert!(!helper.contains("owner.stream().synchronize()"));
+        assert!(!helper.contains("admit_calibrate_on"));
+        assert!(!helper.contains("serve_spec_enabled"));
+        assert!(!helper.contains("admit_reserve_override"));
+        assert!(run[warmup..ready].contains("ready_tx.send(Err(error))"));
+    }
+
+    #[test]
+    fn required_warmup_keeps_hyper_and_pipeline_dispatch_contracts() {
+        let decode = include_str!("../../memra-engine/src/decode.rs");
+        let eager = &decode[decode.find("    pub fn decode_step(").unwrap()..];
+        let eager = &eager[..eager.find("    /// Dense-FFN").unwrap()];
+        assert!(eager.contains("self.decode_step_h(e, token, cache)?.0"));
+        let routed = &decode[decode.find("    pub fn decode_step_h(").unwrap()..];
+        let routed = &routed[..routed.find("        let cfg = &self.cfg;").unwrap()];
+        assert!(routed.contains("return self.decode_step_hyper(e, token, cache)"));
+        assert!(routed.contains(
+            "self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::Pipeline)"
+        ));
+        assert!(routed.contains("self.decode_step_h_ppn(e, token, cache, &fence)"));
+        assert!(!routed.contains("refuse_hyper"));
+        let prime = include_str!("../../memra-engine/src/hybrid_forward.rs");
+        let wrapper = &prime[prime.find("    pub fn prime_cache(").unwrap()..];
+        assert!(
+            wrapper.contains("self.prime_cache_overlaid(e, tokens, cache, queued_after, None)")
+        );
+        let routed_prime = &prime[prime.find("    pub fn prime_cache_overlaid(").unwrap()..];
+        assert!(
+            routed_prime
+                .contains("return self.prime_cache_hyper(e, tokens, cache, queued_after, overlay)")
+        );
+        assert!(routed_prime.contains("prime_cache_ppn_pipelined"));
+        assert!(prime.contains(
+            "self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::Pipeline)"
+        ));
+        let placement = include_str!("../../memra-engine/src/pp.rs");
+        assert!(placement.contains("let ctx = e.ctx().clone();"));
+        assert!(placement.contains("let ctx = eng.ctx().clone();"));
+        assert!(placement.contains("let stream = ctx.new_stream()?;"));
+        let owners = include_str!("../../memra-engine/src/model_memory.rs");
+        assert!(owners.contains("if let Some(pp) = crate::pp::PpNRt::initialized()"));
+        assert!(owners.contains("owners.push(pp.engine(stage, primary))"));
+
+        let planned = &placement[placement.find("pub fn new_cache_planned(").unwrap()..];
+        assert!(planned.contains("new_cache_inner(e, cfg, Some(plan), max_ctx)"));
+        assert!(planned.contains("plan: Option<&memra_gguf::model_plan::ModelPlan>"));
+    }
+
     #[test]
     fn readiness_follows_the_boot_calibration_probe() {
         let src = include_str!("worker.rs");
@@ -60135,17 +60441,56 @@ mod tests {
 
     /// WP-B day 37 (DAY37 1.2 ensure points 1 and 3, 1.3): every session-cache construction in
     /// the admission paths goes through the on-demand scope, the spec sessions through one
-    /// closure; the only direct constructions left are the park compaction's fed-length cache
-    /// and the boot calibration probe, both pooled by design. The admitted session is ensured
-    /// before it leaves admission. A new construction site fails this census until classified.
+    /// closure; park compaction, boot calibration and the private readiness warmup use pooled
+    /// caches by design. The warmup uses a bounded planned cache and drains every placement
+    /// context before returning or dropping it. It never becomes an admitted session. The
+    /// admitted session is ensured before it leaves admission. A new construction site fails
+    /// this census until classified.
     #[test]
     fn vmm_every_admission_cache_is_built_under_the_scope() {
         let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
-        let worker = squash(include_str!("worker.rs"));
-        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let worker = include_str!("worker.rs");
+        let prod = &worker[..worker
+            .find("\nmod tests {")
+            .expect("the test module exists")];
+        let warmup = &prod[prod
+            .find("\nfn run_required_boot_warmup(")
+            .expect("private readiness warmup")..];
+        let warmup = squash(&warmup[..warmup.find("\n}\n").expect("warmup end")]);
+        let live = squash(prod);
         assert_eq!(
             live.matches("memra_engine::pp::new_cache_planned(").count(),
+            8
+        );
+        assert_eq!(
+            warmup
+                .matches("memra_engine::pp::new_cache_planned(")
+                .count(),
+            1
+        );
+        // The seven classified non-warmup constructions and their scopes remain intact.
+        assert_eq!(
+            live.matches("memra_engine::pp::new_cache_planned(").count()
+                - warmup
+                    .matches("memra_engine::pp::new_cache_planned(")
+                    .count(),
             7
+        );
+        assert!(warmup.contains(
+            "memra_engine::pp::new_cache_planned( engine, &model.model.cfg, &model.model.plan, prompt.len() + 2 + 8, )"
+        ));
+        assert!(!warmup.contains("vmm_build_cache("));
+        assert!(!warmup.contains("vmm_scope("));
+        let fence = warmup
+            .find("for owner in model_device_engines(engine, loaded)")
+            .expect("warmup drains all placement contexts");
+        assert!(!warmup[..fence].contains("drop(cache)"));
+        assert!(warmup[fence..].contains("owner.ctx().synchronize()"));
+        assert!(
+            fence
+                < warmup
+                    .find("decode_result.map_err(")
+                    .expect("decode result")
         );
         // Six wrapped sites plus the helper's own definition.
         assert_eq!(live.matches("vmm_build_cache(").count(), 7);
@@ -61009,13 +61354,12 @@ mod tests {
         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
         let live_sq = squash(live);
         let pred = format!("step_oom_parkable{}", "(");
-        // 1. Exactly one definition, the step guard's call, the memra#680 prefill-OOM
-        //    predicate's call, and the WP-B day 37 on-demand ensure guard (MEMRA_KV_ALLOCATOR=vmm)
-        //    in live code.
+        // 1. Exactly one definition, both scheduler step guards, the memra#680
+        //    prefill-OOM predicate and the on-demand ensure guard in live code.
         assert_eq!(
             live.matches(pred.as_str()).count(),
-            4,
-            "expected the predicate's definition, the step guard, the prefill-OOM predicate and \
+            5,
+            "expected the predicate's definition, both step guards, the prefill-OOM predicate and \
              the on-demand ensure guard"
         );
         // 1a. The on-demand ensure guard feeds BOTH markers too.
@@ -61048,9 +61392,20 @@ mod tests {
             "if is_cuda_oom(&err.to_string()) && {pred} active[i].generated.len(), \
              active[i].tokens_emitted, active[i].oom_retries, step_oom_retries(), ) =>"
         );
-        assert!(
-            live_sq.contains(guard.as_str()),
-            "the park arm must gate on the predicate fed BOTH markers"
+        assert_eq!(
+            live_sq.matches(guard.as_str()).count(),
+            1,
+            "the speculative step park must gate on OOM and BOTH markers"
+        );
+        let serial_guard = format!(
+            "if is_cuda_oom(&err.to_string()) && (active[i].prefill_done || admit_memory_cfg.armed) \
+             && {pred} active[i].generated.len(), active[i].tokens_emitted, \
+             active[i].oom_retries, step_oom_retries(), ) =>"
+        );
+        assert_eq!(
+            live_sq.matches(serial_guard.as_str()).count(),
+            1,
+            "the serial park must gate on OOM, phase policy and BOTH markers"
         );
         // 2. The glm5 round-cadence hook advances the marker at the send, before the burst.
         let glm5 = live
@@ -61129,7 +61484,7 @@ mod tests {
     /// a plain `<n>` fires anywhere, as before; anything else is malformed (OFF).
     #[test]
     fn step_oom_fault_site_value_parses_and_aims() {
-        use super::StepOomFaultSite::{Any, BatchMulti};
+        use super::StepOomFaultSite::{Any, BatchMulti, Prime, SerialAfter};
         assert_eq!(super::parse_step_oom_fault("1"), Some((Any, 1)));
         assert_eq!(super::parse_step_oom_fault("0"), Some((Any, 0)));
         assert_eq!(
@@ -61139,12 +61494,56 @@ mod tests {
         for bad in ["", "batch:", "batch:x", "spec:1", "-1", "batch:-1", " 1"] {
             assert_eq!(super::parse_step_oom_fault(bad), None, "{bad:?}");
         }
+        assert_eq!(
+            super::parse_step_oom_fault("serial-after:1:1"),
+            Some((SerialAfter(1), 1))
+        );
+        assert!(!super::step_oom_fault_site_admits(SerialAfter(1), None));
+        assert_eq!(super::parse_step_oom_fault("prime:1"), Some((Prime, 1)));
+        assert_eq!(super::parse_step_oom_fault("prime:0"), Some((Prime, 0)));
+        for bad in ["prime:", "prime:x", "prime:-1"] {
+            assert_eq!(super::parse_step_oom_fault(bad), None);
+        }
+        assert!(!super::step_oom_fault_site_admits(Prime, None));
+        assert!(!super::step_oom_fault_site_admits(Prime, Some(8)));
         assert!(super::step_oom_fault_site_admits(Any, None));
         assert!(super::step_oom_fault_site_admits(Any, Some(1)));
         assert!(!super::step_oom_fault_site_admits(BatchMulti, None));
         assert!(!super::step_oom_fault_site_admits(BatchMulti, Some(1)));
         assert!(super::step_oom_fault_site_admits(BatchMulti, Some(2)));
         assert!(super::step_oom_fault_site_admits(BatchMulti, Some(8)));
+    }
+
+    #[test]
+    fn prime_oom_fault_target_uses_only_nonempty_prime_boundaries() {
+        let source = include_str!("worker.rs");
+        let live = &source[..source.find("mod tests").unwrap()];
+        let call = format!("prime_oom_fault_fire{}", "()");
+        assert_eq!(live.matches(call.as_str()).count(), 3);
+        let start = live.find("\nfn prefill_tick(").unwrap();
+        let body = &live[start
+            ..live[start + 1..]
+                .find("\nfn ")
+                .map(|n| start + 1 + n)
+                .unwrap_or(live.len())];
+        let flat: String = live.chars().filter(|c| !c.is_whitespace()).collect();
+        assert!(
+            flat.contains(
+                format!("!active[i].prefill_done&&!active[i].prefill_queue.is_empty()&&{call}")
+                    .as_str()
+            )
+        );
+        let injection = body.find(format!("if {call}").as_str()).unwrap();
+        assert!(body.find("if q == 0").unwrap() < injection);
+        assert!(injection < body.find("let mut consumed = 0usize;").unwrap());
+        let arm = &body[injection..body.find("let mut consumed = 0usize;").unwrap()];
+        assert!(arm.contains("return Err(STEP_OOM_FAULT_MSG.into());"));
+        let warmup = &live[live.find("fn run_required_boot_warmup(").unwrap()..];
+        let warmup = &warmup[..warmup[1..]
+            .find("\nfn ")
+            .map(|n| n + 1)
+            .unwrap_or(warmup.len())];
+        assert!(!warmup.contains(call.as_str()));
     }
 
     /// The door's SCOPE contract (battery-20260831 tenancy-gates T2): injection only in
@@ -61186,14 +61585,18 @@ mod tests {
             1
         );
         // Addendum D: the non-batching site fires only on a session past its prime.
-        let gated = format!("if active[i].prefill_done && {call}");
+        let gated = "serial_after_oom_fault_fire(active[i].generated.len())";
         let mut sites: Vec<usize> = live
             .match_indices(format!("if {call}").as_str())
             .map(|(at, _)| at)
             .collect();
         assert_eq!(sites.len(), 1, "the spec site fires on any step it reaches");
-        assert_eq!(live.matches(gated.as_str()).count(), 1);
-        sites.extend(live.match_indices(gated.as_str()).map(|(at, _)| at));
+        assert_eq!(live.matches(gated).count(), 1);
+        let serial_at = live.find(gated).unwrap();
+        assert!(
+            live[serial_at.saturating_sub(160)..serial_at].contains("if active[i].prefill_done")
+        );
+        sites.extend(live.match_indices(gated).map(|(at, _)| at));
         sites.extend(
             live.match_indices(format!("if {batch_call}").as_str())
                 .map(|(at, _)| at),

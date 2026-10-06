@@ -1,0 +1,49 @@
+{
+  "schema": "health-fault-acceptance-v1",
+  "tested_source": "d39481ff9233d46b2ce47eefebeffd25d13c9f67",
+  "tested_ELF_sha256": "cbbdea12d4fb7e21eba6bad14d91a688dbfd3bed06ad864400686b875f476a20",
+  "native_rows": 62,
+  "native_failed_predicates": 0,
+  "queued_work_controls": 6,
+  "queued_work_failed_predicates": 0,
+  "CPU_package_controls": 7,
+  "coherent_guard_controls": {
+    "current": true,
+    "remove_oom_type_guard": false,
+    "remove_phase_policy": false
+  },
+  "scope": "Two pinned cached text artifacts with vendor-declared metadata; private artifact, metadata, billing and raw hardware receipts retained for owner review. No support state or fleet promotion.",
+  "behavior": [
+    "Calibration-disabled boots complete private native warmup before the listener opens.",
+    "Both scheduler prime paths cover control, bounded park, retry exhaustion and unarmed failure.",
+    "Serial errors after output and with retries disabled do not replay; device state retires behind a fence.",
+    "Batch control, recovery ON, retry failure and default-OFF arms retain their policy.",
+    "Panic recovery, disconnect, canary policy, drain and stalled worker detection/recovery pass their HTTP and terminal-accounting predicates."
+  ],
+  "queued_work_limits": [
+    "An owned helper returns a forged driver OOM only after actual pending GPU work in the ELF-bound prefill path. This is not allocator exhaustion.",
+    "Stock-before source has no retirement fence before target request-cache drops; fixed source synchronizes the same stream first.",
+    "Helper identifies PID/stream and ELF callsite; no explicit CUcontext handle receipt. Peer request in this control is sequential recovery."
+  ],
+  "profile_scope": "Actual default-vendor single and three concurrent requests complete with positive CUDA engagement. No graph capture, instantiate or launch API rows in these observed routes. This is not graph qualification.",
+  "private_proof_digests": {
+    "native_admission": "14e9656efcfa29250c74f102660bf8fbafc47e05fcfcbf60cd8026ca1a872a0d",
+    "cache_lifetime_join": "2866bd4129438e6daefe304139be18bf5c7e49e2f19d513722c4eab3db002a14",
+    "exact_guard_controls": "138c46850e271597333d7914375259a509176f71503fd313dd0ee4766fcd4f57",
+    "current_CPU_inspection": "becb9d5a46d4cb72bebcc6895e76cce9c882470c33e1e8bb27e8f932c2837b5c",
+    "current_census_controls": "8a6a1448672fe33a8353622e047cd77b762252469803ad0893af6f9fe4b968ab"
+  },
+  "status": "Current source-bound local-rig health/fault acceptance: 62 native vendor-default rows and six queued-work controls passed all independent predicates. No automatic model, graph or HC/PP target qualification.",
+  "current_source": "d39481ff9233d46b2ce47eefebeffd25d13c9f67",
+  "current_native_acceptance": true,
+  "current_CPU_package_controls": 7,
+  "current_CPU_scope": "Five VMM and two required-warmup CPU checks, zero failures or ignores; exact source census refuses an unclassified production construction and an early cache drop.",
+  "current_worker_sha256": "8f1c2f595a39365f6ee39c075cf1dec38e417a75719045a03f20a1e51d8d3e89",
+  "historical_native_tuple": {
+    "source": "e372dfd2c819fca026a198ad7dfedc2f53035e16",
+    "ELF": "c05d6352c981369c4105713ce96aeff611809e41c7880a34a5dfff6be6a181bc",
+    "native_rows": 62,
+    "queued_work_controls": 6,
+    "status": "Historical; current evidence is separately source-bound."
+  }
+}
