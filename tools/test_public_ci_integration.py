@@ -205,7 +205,7 @@ class PublicCiIntegration(unittest.TestCase):
                         except (OSError, subprocess.TimeoutExpired, ValueError, UnicodeError) as capture_error:
                             deadline.add_note("diagnostic capture failed: " + type(capture_error).__name__)
                         raise
-                    except subprocess.TimeoutExpired:
+                    except subprocess.TimeoutExpired as command_timeout:
                         # Only this owned child session. Killing the Python CLI alone
                         # leaves its Git readers alive and gives no bounded failure.
                         try:
@@ -220,9 +220,14 @@ class PublicCiIntegration(unittest.TestCase):
                             except ProcessLookupError:
                                 pass
                             output, _ = process.communicate(timeout=5)
-                        self.fail(f"public-ci command {command_number} timed out; "
+                        primary_timeout = self.failureException(f"public-ci command {command_number} timed out; "
                                   f"executable={Path(args[0]).name}; argv_sha256={argv_digest}; "
                                   f"partial_output={output[-4096:]}")
+                        try:
+                            emit_command_diagnostics(command_number, diagnostics)
+                        except Exception as capture_error:
+                            primary_timeout.add_note("diagnostic capture failed: " + type(capture_error).__name__)
+                        raise primary_timeout from command_timeout
                     emit_command_diagnostics(command_number, diagnostics)
                     owned_children.remove(process)
                     print(f"public-ci command {command_number} END status={process.returncode} "
