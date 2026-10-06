@@ -1,0 +1,69 @@
+{
+  "schema": "memra-public-ci-final-witness-summary-v1",
+  "source_report_sha256": "a75817ba63245603df55a0620b4d3f2a97e6d26af7cacfacda4febcddd70397c",
+  "source_raw_log_sha256": "8a7ee15dda916e7503707572f99bdacb76100583bc57224fd5d1b64e86fbd7f3",
+  "source_raw_bytes": 28158,
+  "actual_job": "58b902c2937f",
+  "actual_executor_sha256": "4edef707f49c996170850fa106ca9547942bb0da22d43954479274c52d5c1dc5",
+  "source_label": "final-unprofiled-witness-aafa4d7",
+  "source_commit": "aafa4d7b943355364b48606708c5f46c8179bf9e",
+  "report_fields": {
+    "success": true,
+    "qualification": false,
+    "reviewed_head": "aafa4d7b943355364b48606708c5f46c8179bf9e",
+    "base": "372a4cf284a99dac31b545f68873e45f1e15f8cd",
+    "source_bridge_sha256": "e8c490a4038b094a3d03bc8f7b6fc93b4ad86796b7e175522f4ce9e11c96a302",
+    "diff_sha256": "349c0aaef57466ec3b09af83ec19f261dbd5c730ee991ee9e18f79a14ce96377",
+    "source_sha256": {
+      ".github/workflows/ci.yml": "e1582d41a569e0257b94b240f6c610bf974db99e30a2d1f4892813f28220d9e9",
+      "tools/ci_merge_validation.json": "663bac761f4e99945fe270e866b1495dc8a81617887be94505dedcaba0359ecd",
+      "tools/public_ci.py": "db68b7e0ca7922e5a6761a8edcf295d9bb1727ec9410be13ba41fc0aa702c180",
+      "tools/test_public_ci_integration.py": "204dafb427f43a98223c8368af4b4e81624b36e59c0d6100d387171889fba8f7",
+      "tools/validation_plan.py": "80f1af836b93e09736ed48347a6885da1a931230ce002c431f8a5d1aa0ba914c",
+      "tools/cpu_workflow_inputs.py": "1719047de5645bed8c286a8ddf03492337fa46d99054a38cf3b6e205f3765047"
+    },
+    "source_git_modes": {
+      ".github/workflows/ci.yml": "100644",
+      "tools/ci_merge_validation.json": "100644",
+      "tools/public_ci.py": "100644",
+      "tools/test_public_ci_integration.py": "100644",
+      "tools/validation_plan.py": "100644",
+      "tools/cpu_workflow_inputs.py": "100644"
+    },
+    "remaining_suffix_sha256": "f3cd079cb62d93bfbfb47b75be0f902da38e9d798cf445eaed5a34697d938b43",
+    "first_failure_preserved": true,
+    "whole_deadline_seconds": 420,
+    "child_deadline_seconds": 120,
+    "whole_witness_source_sha256": "204dafb427f43a98223c8368af4b4e81624b36e59c0d6100d387171889fba8f7",
+    "original_command_bodies": 164,
+    "outer_assertion_bodies": 112,
+    "nested_status_assertion_bodies": 2,
+    "prior_controls_or_plan_contract_pairs_replayed": false,
+    "whole_witness_actual_run": true,
+    "single_actual_run_not_median_or_host_fit_claim": true,
+    "outer_operation_budget_seconds": 580.0,
+    "cleanup_reserve_seconds": 10,
+    "argv": [
+      "/usr/bin/python3",
+      "tools/test_public_ci_integration.py"
+    ],
+    "whole_exit_code": 0,
+    "complete_start_end_indices": true,
+    "expected_negative_statuses_retained": true,
+    "one_unittest_OK": true,
+    "original_fixture_removed": true,
+    "raw_log_sha256": "8a7ee15dda916e7503707572f99bdacb76100583bc57224fd5d1b64e86fbd7f3",
+    "owned_scratch_removed": true,
+    "wall_seconds_including_bridge": 309.3716454709647
+  },
+  "expected_negative_status_count": 20,
+  "unittest_wall_seconds": 308.477,
+  "omitted_private_field_names": [
+    "owned_scratch",
+    "raw_log"
+  ],
+  "derivative_not_raw_report": true,
+  "private_original_sha_retained": true,
+  "scope": "Whole witness passed only at source aafa4d7. Later evidence bank commit is distinct and still needs hosted CI.",
+  "single_run_no_median_or_host_fit_claim": true
+}

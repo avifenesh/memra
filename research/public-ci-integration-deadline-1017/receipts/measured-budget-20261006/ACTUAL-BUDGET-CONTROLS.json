@@ -1,0 +1,87 @@
+{
+  "success": true,
+  "qualification": false,
+  "cases": [
+    {
+      "case": "exact-source-and-inventory-binding",
+      "assert_calls": 114,
+      "literal_command_sites": 46,
+      "existing164_runtime_command_bodies_preserved": true,
+      "source_AST_same_except_budget_message_slots": true,
+      "workflow_step": 12,
+      "job_minutes": 30,
+      "inventory_digest_binds_workflow": true,
+      "guards": 12,
+      "contracts": 14,
+      "baseline420_would_fail660_binding": true
+    },
+    {
+      "case": "child-cap120",
+      "communicate_timeout": [
+        120
+      ],
+      "owned_child_removed": true
+    },
+    {
+      "case": "child-remaining17",
+      "communicate_timeout": [
+        17.0
+      ],
+      "owned_child_removed": true
+    },
+    {
+      "case": "exhausted-remaining-no-child",
+      "Popen_calls": 0
+    },
+    {
+      "case": "actual-alarm-budget-message-restoration",
+      "alarms": [
+        660,
+        0
+      ],
+      "deadline_type": "PublicWitnessDeadline",
+      "signal_restored": true
+    },
+    {
+      "case": "child-timeout-bounded-owned-teardown",
+      "communicate_timeouts": [
+        120,
+        5,
+        5
+      ],
+      "context_waits": [
+        5
+      ],
+      "owned_group_signal_sequence": [
+        "TERM",
+        "KILL",
+        "KILL"
+      ],
+      "signal_restored": true,
+      "timer_disarmed": true
+    },
+    {
+      "case": "new-real-accelerated-dynamic-deadline",
+      "control_seconds": 1,
+      "production_seconds": 660,
+      "message": "public-ci whole witness exceeded 1 seconds",
+      "owned_child_reaped_by_source_helper_before_harness_recovery": true,
+      "owned_stream_closed_by_source_helper": true,
+      "signal_restored": true,
+      "timer_disarmed": true,
+      "old_hardcoded420_message_would_fail": true
+    }
+  ],
+  "source_base": "149ed7cd1afcce26974df6aeeba5545bf42e17e0",
+  "candidate_sha256": {
+    "test_public_ci_integration.py": "ad5ac277c4993562b6217d3919c415f76b0a9a689adf2878ed4edc75c168d5ce",
+    "ci.yml": "cde0e4f1fcae33c17ef2d04c11873df865175ea2aae6a98490fcda38ac42b1bd",
+    "ci_merge_validation.json": "5f8c47500e03735a7da791e3a88285572ac0c421c1260dc4e872bf65bab7f12d"
+  },
+  "old_whole_controls_replayed": false,
+  "whole_witness_replayed": false,
+  "all_existing_guard_and_native_coverage_preserved": true,
+  "actual_control_count": 7,
+  "control_scope": "Actual extracted candidate source: six binding/flow controls use controlled APIs; one new real1-second timer check owns and reaps one new sleep child. No whole witness or prior control program replay.",
+  "raw_control_stdout": "public-ci command 1 START executable=owned-control argv_sha256=06e038806f6fe59d1a6fa1471e9c8bd10078013861e4f583d7b43d9e7e7a5d69\npublic-ci command 1 END status=0 seconds=0.000\npublic-ci command 1 START executable=owned-control argv_sha256=06e038806f6fe59d1a6fa1471e9c8bd10078013861e4f583d7b43d9e7e7a5d69\npublic-ci command 1 END status=0 seconds=0.000\npublic-ci whole witness DEADLINE\npublic-ci command 1 START executable=owned-control argv_sha256=06e038806f6fe59d1a6fa1471e9c8bd10078013861e4f583d7b43d9e7e7a5d69\npublic-ci whole witness DEADLINE\n"
+}

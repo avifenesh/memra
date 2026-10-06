@@ -551,6 +551,27 @@ def rust_code_view(text, string_spans=None):
         raise Refused(str(error)) from error
 
 
+class _RustCodeViews:
+    """Pure code and literal positions, owned by one pinned plan call."""
+    def __init__(self):
+        self._views = {}
+
+    def view(self, text, string_spans=None):
+        if type(text) is not str or (
+                string_spans is not None and type(string_spans) is not list):
+            return rust_code_view(text, string_spans)
+        cached = self._views.get(text)
+        if cached is None:
+            spans = string_spans if string_spans is not None else []
+            start = len(spans)
+            code = rust_code_view(text, spans)
+            cached = (code, tuple(spans[start:]))
+            self._views[text] = cached
+        elif string_spans is not None:
+            string_spans.extend(cached[1])
+        return cached[0]
+
+
 def read_local_input(root, name, *, binary=False):
     """Read a regular file anchored below the trusted root, without following links."""
     root = Path(root).resolve()
@@ -588,14 +609,102 @@ def git(repo, *args):
     return subprocess.check_output(['git', '-C', str(repo), *args], stderr=subprocess.PIPE)
 
 
+def git_text_batch(repo, requests):
+    """Keep a builtin Git reader inside the existing tracked CLI group.
+
+    The 110-second read and two five-second teardown arms derive from its
+    existing 120-second child contract. Local objects never trigger lazy fetch.
+    """
+    command = ['/usr/bin/git', '--no-lazy-fetch', '-C', str(repo), 'cat-file', '--batch']
+    process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, start_new_session=False)
+    primary_error = None
+    cleanup_errors = []
+    try:
+        output, errors = process.communicate(input=requests, timeout=110)
+        if process.returncode:
+            raise subprocess.CalledProcessError(process.returncode, command, output=output, stderr=errors)
+        return subprocess.CompletedProcess(command, process.returncode, output, errors)
+    except BaseException as error:
+        primary_error = error
+        try:
+            process.terminate()
+        except ProcessLookupError:
+            pass
+        except OSError as cleanup_error:
+            cleanup_errors.append(type(cleanup_error).__name__)
+        try:
+            process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
+            except OSError as cleanup_error:
+                cleanup_errors.append(type(cleanup_error).__name__)
+            try:
+                process.communicate(timeout=5)
+            except (OSError, subprocess.TimeoutExpired) as cleanup_error:
+                cleanup_errors.append(type(cleanup_error).__name__)
+        except OSError as cleanup_error:
+            cleanup_errors.append(type(cleanup_error).__name__)
+        raise
+    finally:
+        for stream in (process.stdin, process.stdout, process.stderr):
+            if stream is not None:
+                try:
+                    stream.close()
+                except OSError as cleanup_error:
+                    cleanup_errors.append(type(cleanup_error).__name__)
+        if cleanup_errors:
+            detail = 'owned Git batch cleanup failed: ' + ', '.join(cleanup_errors)
+            if primary_error is not None:
+                primary_error.add_note(detail)
+            else:
+                raise Refused(detail)
+
+
 class Tree:
     def __init__(self, repo, ref):
         self.repo, self.ref = Path(repo), ref
         self.cache = {}
+        self.prefetched = {}
+
+    def prefetch_text(self, paths):
+        """Batch only pinned Git reads; decoding and local observations stay fresh."""
+        paths = list(dict.fromkeys(path for path in paths if path not in self.cache))
+        if (not paths or not re.fullmatch(r'[0-9a-f]{40}', self.ref)
+                or any('\n' in path or '\r' in path for path in paths)):
+            return
+        requests = ''.join(f'{self.ref}:{path}\n' for path in paths).encode()
+        # communicate drains both pipes concurrently. Writing all requests first
+        # and then reading stdout can deadlock when a blob fills the output pipe.
+        result = git_text_batch(self.repo, requests)
+        data, offset, staged = result.stdout, 0, {}
+        for path in paths:
+            end = data.find(b'\n', offset)
+            if end < 0:
+                raise Refused('incomplete immutable source batch header')
+            fields = data[offset:end].split()
+            if (len(fields) != 3 or fields[1] != b'blob' or not fields[2].isdigit()
+                    or not re.fullmatch(rb'[0-9a-f]{40}', fields[0])):
+                raise Refused('invalid immutable source batch header')
+            size, start = int(fields[2]), end + 1
+            offset = start + size
+            if offset >= len(data) or data[offset:offset + 1] != b'\n':
+                raise Refused('incomplete immutable source batch body')
+            staged[path] = data[start:offset]
+            offset += 1
+        if offset != len(data):
+            raise Refused('unexpected immutable source batch trailer')
+        self.prefetched.update(staged)
 
     def read(self, path):
         if path not in self.cache:
-            self.cache[path] = git(self.repo, 'show', f'{self.ref}:{path}').decode()
+            raw = self.prefetched.pop(path, None)
+            if raw is None:
+                raw = git(self.repo, 'show', f'{self.ref}:{path}')
+            self.cache[path] = raw.decode()
         return self.cache[path]
 
     def read_bytes(self, path):
@@ -784,7 +893,7 @@ def include_argument(argument, package_root, generated_env=()):
     raise Refused('unresolved include expression')
 
 
-def included_inputs(tree, owners):
+def included_inputs(tree, owners, *, code_views=None):
     """Literal includes, including old-tree consumers of deleted/renamed fixtures.
 
 The census does not exempt arbitrary research data. Unknown non-document inputs still
@@ -866,16 +975,18 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
     if result.returncode not in (0, 1):
         raise Refused('include census failed')
     pattern = re.compile(r'\b(include(?:_str|_bytes)?)\s*!\s*\(')
-    for raw in result.stdout.split(b'\0'):
-        if not raw:
-            continue
-        path = raw.decode() if isinstance(tree, LocalTree) else raw.decode().split(':', 1)[1]
+    matches = [raw.decode() if isinstance(tree, LocalTree) else raw.decode().split(':', 1)[1]
+               for raw in result.stdout.split(b'\0') if raw]
+    if type(tree) is Tree:
+        tree.prefetch_text(matches)
+    for path in matches:
         package = owner(path, owners)
         if package is None:
             raise Refused('include has no package owner')
         source = tree.read(path)
         string_spans = []
-        code = rust_code_view(source, string_spans)
+        code = (code_views.view(source, string_spans) if code_views is not None
+                else rust_code_view(source, string_spans))
         prefix = next(k for k, v in owners.items() if v == package)
         # A conditional path can select a module whose own includes are outside
         # the scanned crate. Do not guess cfg truth or treat it as a data reader.
@@ -1173,8 +1284,12 @@ def make_plan(paths, base_tree, head_tree):
                or p.endswith(('/Cargo.toml', '/build.rs'))
                for p in paths):
             return full('compiler/build/workflow/dependency input changed', paths)
-        includes = included_inputs(head_tree, owners)
-        for path, packages in included_inputs(base_tree, base_owners).items():
+        code_views = (_RustCodeViews() if all(
+            type(tree) is Tree and type(tree.ref) is str
+            and re.fullmatch(r"[0-9a-f]{40}", tree.ref)
+            for tree in (base_tree, head_tree)) else None)
+        includes = included_inputs(head_tree, owners, code_views=code_views)
+        for path, packages in included_inputs(base_tree, base_owners, code_views=code_views).items():
             includes[path].update(packages)
         direct, contracts, native_requirements = set(), set(workflow_contracts), set()
         contract_paths = set(base_tree.paths('tools')) | set(head_tree.paths('tools'))

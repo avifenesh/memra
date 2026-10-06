@@ -1,0 +1,251 @@
+{
+  "schema": "memra-public-ci-evidence-bank-plan-v1",
+  "creation_state": "proposal prepared before Root review/bank; not a bank execution receipt",
+  "implementation_commit": "aafa4d7b943355364b48606708c5f46c8179bf9e",
+  "implementation_base": "372a4cf284a99dac31b545f68873e45f1e15f8cd",
+  "implementation_diff_sha256": "349c0aaef57466ec3b09af83ec19f261dbd5c730ee991ee9e18f79a14ce96377",
+  "actual_whole_witness_source_commit": "aafa4d7b943355364b48606708c5f46c8179bf9e",
+  "actual_whole_witness_report_sha256": "a75817ba63245603df55a0620b4d3f2a97e6d26af7cacfacda4febcddd70397c",
+  "actual_whole_witness_raw_sha256": "8a7ee15dda916e7503707572f99bdacb76100583bc57224fd5d1b64e86fbd7f3",
+  "manifest_target": "research/public-ci-integration-deadline-1017/receipts/EVIDENCE-BANK-PLAN.json",
+  "bank_identity": "later bank commit is distinct; this plan does not claim witness execution or CI at the bank commit",
+  "qualification": false,
+  "hosted_CI_required_at_published_head": true,
+  "private_originals": "Private path-bearing payloads are excluded. Exact private originals and custody maps remain under Root control.",
+  "files": [
+    {
+      "path": "research/public-ci-integration-deadline-1017/receipts/PUBLIC-EVIDENCE-SUMMARY-FINAL.json",
+      "sha256": "1a96c58e08604f64a0c2033a46e5d1b0ae2903585dc8ae772a37ac9b93b9203c",
+      "bytes": 6604,
+      "git_mode": "100644",
+      "source_label": "PUBLIC-EVIDENCE-SUMMARY-FINAL.json",
+      "original_status_label": "explicit source statuses retained in labelled derivative",
+      "payload": "public-safe derived summary; original private hashes retained"
+    },
+    {
+      "path": "research/public-ci-integration-deadline-1017/receipts/PUBLIC-FINAL-WHOLE-SUMMARY.json",
+      "sha256": "30f942d4ed3ba227ea35587fdb77f1634c3ea9d0c610165ca9e11aa88c01ef17",
+      "bytes": 3385,
+      "git_mode": "100644",
+      "source_label": "PUBLIC-FINAL-WHOLE-SUMMARY.json",
+      "original_status_label": "explicit source statuses retained in labelled derivative",
+      "payload": "public-safe derived summary; original private hashes retained"
+    },
+    {
+      "path": "research/public-ci-integration-deadline-1017/receipts/PUBLIC-HISTORICAL-FAILURES-FINAL.json",
+      "sha256": "45ea3f7c6f1205e5e2e19165b7cf45a148f102e7cf346ace93d4006a00f3be61",
+      "bytes": 1777,
+      "git_mode": "100644",
+      "source_label": "PUBLIC-HISTORICAL-FAILURES-FINAL.json",
+      "original_status_label": "explicit source statuses retained in labelled derivative",
+      "payload": "public-safe derived summary; original private hashes retained"
+    },
+    {
+      "path": "research/public-ci-integration-deadline-1017/receipts/actual-path-control/ACTUAL-CONTROL.json",
+      "sha256": "9d764867039c9c6766e964fd85d083c603e27e5c99bf4592faeff551d9b4659d",
+      "bytes": 905,
+      "git_mode": "100644",
+      "source_label": "actual-path-control/ACTUAL-CONTROL.json",
+      "original_status_label": "passed",
+      "payload": "byte-identical original"
+    },
+    {
+      "path": "research/public-ci-integration-deadline-1017/receipts/final-unprofiled-witness/FINAL-COMMITTED-TREE-BRIDGE.json",
+      "sha256": "e8c490a4038b094a3d03bc8f7b6fc93b4ad86796b7e175522f4ce9e11c96a302",
+      "bytes": 1974,
+      "git_mode": "100644",
+      "source_label": "final-unprofiled-witness/FINAL-COMMITTED-TREE-BRIDGE.json",
+      "original_status_label": "passed at source aafa4d7",
+      "payload": "byte-identical original"
+    },
+    {
+      "path": "research/public-ci-integration-deadline-1017/receipts/final-unprofiled-witness/ROOT-INSPECTED-FINAL-WHOLE-WITNESS.json",
+      "sha256": "d9ed3571059e4ef14f1f639790b36d80c09efe60f43ffb3ae6a2970cba5d9ff1",
+      "bytes": 390,
+      "git_mode": "100644",
+      "source_label": "final-unprofiled-witness/ROOT-INSPECTED-FINAL-WHOLE-WITNESS.json",
+      "original_status_label": "passed at source aafa4d7",
+      "payload": "byte-identical original"
+    },
+    {
+      "path": "research/public-ci-integration-deadline-1017/receipts/final-unprofiled-witness/whole.raw.log",
+      "sha256": "8a7ee15dda916e7503707572f99bdacb76100583bc57224fd5d1b64e86fbd7f3",
+      "bytes": 28158,
+      "git_mode": "100644",
+      "source_label": "final-unprofiled-witness/whole.raw.log",
+      "original_status_label": "passed at source aafa4d7",
+      "payload": "byte-identical original"
+    },
+    {
+      "path": "research/public-ci-integration-deadline-1017/receipts/original-failed-combined/old.event.json",
+      "sha256": "355b9898f8ed5ca38a337c820b64dcdb2710d1d3b02b8d2c84d8eb8675296eae",
+      "bytes": 521,
+      "git_mode": "100644",
+      "source_label": "original-failed-combined/old.event.json",
+      "original_status_label": "failed",
+      "payload": "byte-identical original"
+    },
+    {
+      "path": "research/public-ci-integration-deadline-1017/receipts/original-failed-combined/old.plan.json",
+      "sha256": "a6d797eefedba5f70390aca186645007be52b207922a0fc6cd6a596cffeb7ffc",
+      "bytes": 42881,
+      "git_mode": "100644",
+      "source_label": "original-failed-combined/old.plan.json",
+      "original_status_label": "failed",
+      "payload": "byte-identical original"
+    },
+    {
+      "path": "research/public-ci-integration-deadline-1017/receipts/original-failed-combined/old.route.json",
+      "sha256": "e489bb260bd3c71cb91e6e9988cc7b1374c41b7460c25bca96e8eed359eee6d8",
+      "bytes": 459,
+      "git_mode": "100644",
+      "source_label": "original-failed-combined/old.route.json",
+      "original_status_label": "failed",
+      "payload": "byte-identical original"
+    },
+    {
+      "path": "research/public-ci-integration-deadline-1017/receipts/original-failed-combined/old.route.log",
+      "sha256": "1e849489b94fec7d1146fbc8dda603fdda4542bcca5be0526238fc5f42b72fba",
+      "bytes": 439,
+      "git_mode": "100644",
+      "source_label": "original-failed-combined/old.route.log",
+      "original_status_label": "failed",
+      "payload": "byte-identical original"
+    },
+    {
+      "path": "research/public-ci-integration-deadline-1017/receipts/remaining-only-suffix/ROOT-INSPECTED-REMAINING-SUFFIX-PASS.json",
+      "sha256": "dc9c17f4f5a65905c350d76e1d2e16d88a8fbe203f0f3eab4d0540c283ceb6bc",
+      "bytes": 559,
+      "git_mode": "100644",
+      "source_label": "remaining-only-suffix/ROOT-INSPECTED-REMAINING-SUFFIX-PASS.json",
+      "original_status_label": "passed",
+      "payload": "byte-identical original"
+    },
+    {
+      "path": "research/public-ci-integration-deadline-1017/receipts/remaining-only-suffix/new-combined-full-prefix.event.json",
+      "sha256": "48fad049a1410f74c0fa3be73f92a97aba492b3432d5d23989b6d3a83eb77557",
+      "bytes": 521,
+      "git_mode": "100644",
+      "source_label": "remaining-only-suffix/new-combined-full-prefix.event.json",
+      "original_status_label": "actual suffix arm artifact",
+      "payload": "byte-identical original"
+    },
+    {
+      "path": "research/public-ci-integration-deadline-1017/receipts/remaining-only-suffix/new-combined-full-prefix.plan.json",
+      "sha256": "16656a006009394c6bef33d1e8b659d431c3181fb9ab738ff4a3e3041d643bcc",
+      "bytes": 42881,
+      "git_mode": "100644",
+      "source_label": "remaining-only-suffix/new-combined-full-prefix.plan.json",
+      "original_status_label": "actual suffix arm artifact",
+      "payload": "byte-identical original"
+    },
+    {
+      "path": "research/public-ci-integration-deadline-1017/receipts/remaining-only-suffix/new-combined-full-prefix.route.json",
+      "sha256": "d3903f30f65ea3db832f8dc7a18567fdb63b8f21c40f646a1eca00add5a0ea1f",
+      "bytes": 459,
+      "git_mode": "100644",
+      "source_label": "remaining-only-suffix/new-combined-full-prefix.route.json",
+      "original_status_label": "actual suffix arm artifact",
+      "payload": "byte-identical original"
+    },
+    {
+      "path": "research/public-ci-integration-deadline-1017/receipts/remaining-only-suffix/new-combined-full-prefix.route.log",
+      "sha256": "5a66b87399e40ccfcf9d50dd93bf8ac148abe09c007c3c9f7c9e813584a740d0",
+      "bytes": 439,
+      "git_mode": "100644",
+      "source_label": "remaining-only-suffix/new-combined-full-prefix.route.log",
+      "original_status_label": "actual suffix arm artifact",
+      "payload": "byte-identical original"
+    },
+    {
+      "path": "research/public-ci-integration-deadline-1017/receipts/remaining-only-suffix/new-separate-sft.event.json",
+      "sha256": "27d86428aeff0e0336981c8370a83e6a04fea9015add597afc82d96b4f522380",
+      "bytes": 521,
+      "git_mode": "100644",
+      "source_label": "remaining-only-suffix/new-separate-sft.event.json",
+      "original_status_label": "actual suffix arm artifact",
+      "payload": "byte-identical original"
+    },
+    {
+      "path": "research/public-ci-integration-deadline-1017/receipts/remaining-only-suffix/new-separate-sft.plan.execution.json",
+      "sha256": "abf53dd2ad528c1a665ef42dc049ec436d119c90078e01f469d553652d2ac84b",
+      "bytes": 796,
+      "git_mode": "100644",
+      "source_label": "remaining-only-suffix/new-separate-sft.plan.execution.json",
+      "original_status_label": "actual suffix arm artifact",
+      "payload": "byte-identical original"
+    },
+    {
+      "path": "research/public-ci-integration-deadline-1017/receipts/remaining-only-suffix/new-separate-sft.plan.json",
+      "sha256": "d6eb80328a0fdd9326a08943411a1363d75caecbfa9f8a7e3b8b00e07e1867e7",
+      "bytes": 8457,
+      "git_mode": "100644",
+      "source_label": "remaining-only-suffix/new-separate-sft.plan.json",
+      "original_status_label": "actual suffix arm artifact",
+      "payload": "byte-identical original"
+    },
+    {
+      "path": "research/public-ci-integration-deadline-1017/receipts/remaining-only-suffix/new-separate-sft.route.json",
+      "sha256": "e4e943ed79acb91bc7001725a4c11baedb48633d553a1cbff6fb11f53211b7ec",
+      "bytes": 459,
+      "git_mode": "100644",
+      "source_label": "remaining-only-suffix/new-separate-sft.route.json",
+      "original_status_label": "actual suffix arm artifact",
+      "payload": "byte-identical original"
+    },
+    {
+      "path": "research/public-ci-integration-deadline-1017/receipts/remaining-only-suffix/new-separate-sft.route.log",
+      "sha256": "f5df476523eb5815869d52fa0c29a62e5bbd6b6d3115c1aaaa828f9707f727b8",
+      "bytes": 439,
+      "git_mode": "100644",
+      "source_label": "remaining-only-suffix/new-separate-sft.route.log",
+      "original_status_label": "actual suffix arm artifact",
+      "payload": "byte-identical original"
+    },
+    {
+      "path": "research/public-ci-integration-deadline-1017/receipts/remaining-only-suffix/old-separate-sft.event.json",
+      "sha256": "6ad346624fd354a21f7df0cbbe239936c9722070bbb0a9874f929d5136e43b42",
+      "bytes": 521,
+      "git_mode": "100644",
+      "source_label": "remaining-only-suffix/old-separate-sft.event.json",
+      "original_status_label": "actual suffix arm artifact",
+      "payload": "byte-identical original"
+    },
+    {
+      "path": "research/public-ci-integration-deadline-1017/receipts/remaining-only-suffix/old-separate-sft.plan.execution.json",
+      "sha256": "36ce7c3cd9b16ff41befeb9407c7c5bc09cdacfde2be830773ebc2500eebc040",
+      "bytes": 796,
+      "git_mode": "100644",
+      "source_label": "remaining-only-suffix/old-separate-sft.plan.execution.json",
+      "original_status_label": "actual suffix arm artifact",
+      "payload": "byte-identical original"
+    },
+    {
+      "path": "research/public-ci-integration-deadline-1017/receipts/remaining-only-suffix/old-separate-sft.plan.json",
+      "sha256": "a78c77ca075493dd82dbf6f08f5bdba507c1bf828f008d451f9304564bccc60b",
+      "bytes": 8457,
+      "git_mode": "100644",
+      "source_label": "remaining-only-suffix/old-separate-sft.plan.json",
+      "original_status_label": "actual suffix arm artifact",
+      "payload": "byte-identical original"
+    },
+    {
+      "path": "research/public-ci-integration-deadline-1017/receipts/remaining-only-suffix/old-separate-sft.route.json",
+      "sha256": "8de0ca63944e59cbb568b2d8d26b417143a0499bf5fac4469ee72d38fee88a17",
+      "bytes": 459,
+      "git_mode": "100644",
+      "source_label": "remaining-only-suffix/old-separate-sft.route.json",
+      "original_status_label": "actual suffix arm artifact",
+      "payload": "byte-identical original"
+    },
+    {
+      "path": "research/public-ci-integration-deadline-1017/receipts/remaining-only-suffix/old-separate-sft.route.log",
+      "sha256": "18b7244cc663e498a87c38aba12d387f640ea12ff512bdce4586c757f3a9ab7b",
+      "bytes": 439,
+      "git_mode": "100644",
+      "source_label": "remaining-only-suffix/old-separate-sft.route.log",
+      "original_status_label": "actual suffix arm artifact",
+      "payload": "byte-identical original"
+    }
+  ]
+}

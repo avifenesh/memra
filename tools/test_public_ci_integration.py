@@ -3,17 +3,24 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import signal
+import time
 import sys
 import tempfile
 import unittest
 import re
 import importlib.util
 import hashlib
+import contextlib
 
 import public_ci as ci
 import validation_plan as vp
 
 ROOT = Path(__file__).resolve().parents[1]
+PUBLIC_CI_WITNESS_SECONDS = 660
+# Matched hosted prefix 402 s + projected tail 228 s + overhead 25 s.
+# Round 655 s up to 11 minutes. Children keep the 120-second bound.
+
 LEGACY_SOURCE = '2ab8eec8ddd5b27ecaaf22f55ddf728151be560c'
 LEGACY_MANIFEST_SHA256 = '0bbc14dd37b72d1058b399963d174d3aed10932b8b704e26f7d3aab3169a5e1d'
 
@@ -71,9 +78,87 @@ def publication_dependency(text, consumer):
         raise AssertionError('publication preflight is not the existing full workflow')
 
 
+class PublicWitnessDeadline(BaseException):
+    """A whole-witness deadline must escape expected-failure handlers."""
+
+
+@contextlib.contextmanager
+def bounded_public_witness(seconds):
+    """Bound this one witness, including direct Git reads, and only its children."""
+    children = []
+    def expire(_signal, _frame):
+        print("public-ci whole witness DEADLINE", flush=True)
+        for process in children:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        # These are exact Popen objects created by this process's trusted module.
+        # Do not scan PID names or touch another lane's Git readers.
+        for process in list(ci._BLOB_READERS.values()):
+            if process.poll() is None:
+                try:
+                    process.kill()
+                except ProcessLookupError:
+                    pass
+        raise PublicWitnessDeadline(f"public-ci whole witness exceeded {seconds} seconds")
+    previous = signal.signal(signal.SIGALRM, expire)
+    signal.alarm(seconds)
+    try:
+        yield children
+    finally:
+        original_error = sys.exc_info()[1]
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, previous)
+        cleanup_errors = []
+        for process in children:
+            try:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait(timeout=5)
+            except (OSError, subprocess.TimeoutExpired) as error:
+                cleanup_errors.append(type(error).__name__)
+            finally:
+                for stream in (process.stdin, process.stdout):
+                    try:
+                        if stream is not None:
+                            stream.close()
+                    except OSError as error:
+                        cleanup_errors.append(type(error).__name__)
+        # Drain every exact owned reader independently. The module's reset helper
+        # has an unbounded final wait, so this witness keeps its own bounded waits.
+        for root, process in list(ci._BLOB_READERS.items()):
+            ci._BLOB_READERS.pop(root, None)
+            try:
+                if process.poll() is None:
+                    try:
+                        process.kill()
+                    except ProcessLookupError:
+                        pass
+                process.wait(timeout=5)
+            except (OSError, subprocess.TimeoutExpired) as error:
+                cleanup_errors.append(type(error).__name__)
+            finally:
+                for stream in (process.stdin, process.stdout):
+                    try:
+                        if stream is not None:
+                            stream.close()
+                    except OSError as error:
+                        cleanup_errors.append(type(error).__name__)
+        if cleanup_errors:
+            detail = "public-ci owned cleanup errors: " + ", ".join(cleanup_errors)
+            print(detail, flush=True)
+            if original_error is not None:
+                original_error.add_note(detail)
+            else:
+                raise RuntimeError(detail)
+
+
 class PublicCiIntegration(unittest.TestCase):
     def test_modes_sources_commands_and_results(self):
-        with tempfile.TemporaryDirectory(prefix='memra-public-ci-') as folder:
+        with bounded_public_witness(PUBLIC_CI_WITNESS_SECONDS) as owned_children, tempfile.TemporaryDirectory(prefix='memra-public-ci-') as folder:
             scratch = Path(folder)
             hooks, templates = scratch / 'hooks', scratch / 'templates'
             hooks.mkdir(); templates.mkdir()
@@ -84,14 +169,51 @@ class PublicCiIntegration(unittest.TestCase):
                        OMP_NUM_THREADS='1')
             repo = scratch / 'repo'
 
+            command_number = 0
+            witness_deadline = time.monotonic() + PUBLIC_CI_WITNESS_SECONDS
+
             def command(args, *, ok=True, cwd=repo, extra_env=None):
-                result = subprocess.run(args, cwd=cwd, env=dict(env, **(extra_env or {})), text=True,
-                                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                nonlocal command_number
+                command_number += 1
+                started = time.monotonic()
+                remaining = witness_deadline - started
+                if remaining <= 0:
+                    self.fail(f"public-ci witness exceeded its {PUBLIC_CI_WITNESS_SECONDS}-second deadline")
+                argv_digest = hashlib.sha256(json.dumps([str(a) for a in args]).encode()).hexdigest()
+                print(f"public-ci command {command_number} START executable={Path(args[0]).name} "
+                      f"argv_sha256={argv_digest}", flush=True)
+                process = subprocess.Popen(args, cwd=cwd, env=dict(env, **(extra_env or {})), text=True,
+                                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                           start_new_session=True)
+                owned_children.append(process)
+                try:
+                    output, _ = process.communicate(timeout=min(120, remaining))
+                except subprocess.TimeoutExpired:
+                    # Only this owned child session. Killing the Python CLI alone
+                    # leaves its Git readers alive and gives no bounded failure.
+                    try:
+                        os.killpg(process.pid, signal.SIGTERM)
+                    except ProcessLookupError:
+                        pass
+                    try:
+                        output, _ = process.communicate(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        try:
+                            os.killpg(process.pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                        output, _ = process.communicate(timeout=5)
+                    self.fail(f"public-ci command {command_number} timed out; "
+                              f"executable={Path(args[0]).name}; argv_sha256={argv_digest}; "
+                              f"partial_output={output[-4096:]}")
+                owned_children.remove(process)
+                print(f"public-ci command {command_number} END status={process.returncode} "
+                      f"seconds={time.monotonic() - started:.3f}", flush=True)
                 if ok:
-                    self.assertEqual(result.returncode, 0, result.stdout)
+                    self.assertEqual(process.returncode, 0, output)
                 else:
-                    self.assertNotEqual(result.returncode, 0, result.stdout)
-                return result.stdout
+                    self.assertNotEqual(process.returncode, 0, output)
+                return output
 
             # A real shallow source clone has no historical topic objects or
             # alternates. Hosted depth-one checkout must replay the same proof.
@@ -113,7 +235,7 @@ class PublicCiIntegration(unittest.TestCase):
 
             source = command(['/usr/bin/git', 'rev-parse', 'HEAD']).strip()
             absent = subprocess.run(['/usr/bin/git', 'cat-file', '-e', LEGACY_SOURCE + '^{commit}'],
-                                    cwd=repo, env=env, capture_output=True)
+                                    cwd=repo, env=env, capture_output=True, timeout=30)
             self.assertNotEqual(absent.returncode, 0, 'historical topic object unexpectedly available')
             self.assertFalse((repo / '.git/objects/info/alternates').exists())
             legacy = legacy_fixtures(repo)
@@ -132,6 +254,7 @@ class PublicCiIntegration(unittest.TestCase):
             self.assertEqual(len(vp.workspace(vp.Tree(repo, source))[0]), 14)
             # Materialize the exact existing support evidence for the live guard.
             # This is source transport, never model/runtime qualification.
+            print("public-ci direct phase support/source census START", flush=True)
             support_tree = vp.Tree(repo, source)
             support = vp.support_record_data_inputs(support_tree)
             present = set(support_tree.paths('research', 'docs'))
@@ -160,6 +283,7 @@ class PublicCiIntegration(unittest.TestCase):
                     (repo / path).symlink_to(support_tree.read_bytes(path).decode())
                 elif conflict_modes[path] != '120000':
                     (repo / path).chmod(0o755 if conflict_modes[path] == '100755' else 0o644)
+            print("public-ci direct phase support/source census END", flush=True)
             descriptor = {'full_name': ci.REPOSITORY,
                           'owner': {'login': ci.OWNER, 'id': ci.OWNER_ID}}
             external = {'login': 'contributor', 'id': 42}

@@ -1,0 +1,135 @@
+{
+  "success": true,
+  "qualification": false,
+  "cases": [
+    {
+      "case": "exact-text-0",
+      "same_code_and_positions": true,
+      "lexer_calls": 1,
+      "caller_spans_independent": true
+    },
+    {
+      "case": "exact-text-1",
+      "same_code_and_positions": true,
+      "lexer_calls": 1,
+      "caller_spans_independent": true
+    },
+    {
+      "case": "exact-text-2",
+      "same_code_and_positions": true,
+      "lexer_calls": 1,
+      "caller_spans_independent": true
+    },
+    {
+      "case": "exact-text-3",
+      "same_code_and_positions": true,
+      "lexer_calls": 1,
+      "caller_spans_independent": true
+    },
+    {
+      "case": "refusal",
+      "input_sha256": "cabf96ab3076a844bc0fb79bb8ef970b37b0f3ea16a783b2cedccd7cd73e1625",
+      "baseline_and_candidate_error": [
+        "Refused",
+        "unterminated Rust block comment"
+      ],
+      "partial_spans_equal": true,
+      "failed_result_not_cached": true,
+      "stale_path_red_accepts": true
+    },
+    {
+      "case": "refusal",
+      "input_sha256": "1aa1bf888d62fbc00dbb663e507d9e833f60dde50ba71b048469c013ceca0de0",
+      "baseline_and_candidate_error": [
+        "Refused",
+        "unterminated Rust string"
+      ],
+      "partial_spans_equal": true,
+      "failed_result_not_cached": true,
+      "stale_path_red_accepts": true
+    },
+    {
+      "case": "refusal",
+      "input_sha256": "c7da714769840aaa090fd286f3ad46bcc1962a4a4077801ee4126015c9bcc650",
+      "baseline_and_candidate_error": [
+        "Refused",
+        "unterminated Rust raw string"
+      ],
+      "partial_spans_equal": true,
+      "failed_result_not_cached": true,
+      "stale_path_red_accepts": true
+    },
+    {
+      "case": "changed-text-raw-Unicode-positions",
+      "same_as_baseline": true,
+      "stale_path_red_code_positions_differ": true
+    },
+    {
+      "case": "typed-str-subclass",
+      "uncached_same_projection": true
+    },
+    {
+      "case": "typed-span-subclass",
+      "uncached_append_behavior_same": true
+    },
+    {
+      "case": "real-two-owner-identical-text",
+      "head": "08fc45cb784daa6cce09f88164adef99b6970daf",
+      "mapping_sha256": "1c5407c8e650e885c16f66a05e9f2ddb184aacc4fd3a5d5a6ee471425c0155d4",
+      "distinct_relative_targets_preserved": true,
+      "cached_results_equal": true
+    },
+    {
+      "case": "real-shifted-raw-position-map",
+      "head": "541ed768c6daf6948c1585e6556365b0e4ce601f",
+      "same_mapping": true
+    },
+    {
+      "case": "same-text-fresh-target-alias",
+      "head": "c260c008524ff94e02ba7a687651d9ff06c6c36f",
+      "same_refusal": [
+        "Refused",
+        "included symlink needs a transitive input contract: research/safe.txt"
+      ]
+    },
+    {
+      "case": "real-include-expression",
+      "head": "bd133b9a0eba98af4f1cdae7eee0f544173fdffd",
+      "same_refusal": [
+        "Refused",
+        "unterminated include expression"
+      ]
+    },
+    {
+      "case": "real-conditional-position",
+      "head": "893c98fa013d76561e1be3c21ab5ae0005571f65",
+      "same_refusal": [
+        "Refused",
+        "unterminated conditional Rust attribute"
+      ]
+    },
+    {
+      "case": "real-escaped-line",
+      "head": "16c2024863a16862be6ec164bb99e1928eafc357",
+      "same_refusal": [
+        "Refused",
+        "crates/a/src/lib.rs:2: escaped Rust include path needs an explicit input contract"
+      ]
+    },
+    {
+      "case": "real-same-size-LocalTree",
+      "same_as_fresh_baseline": true,
+      "changed_target_observed": true,
+      "cache_not_passed": true
+    }
+  ],
+  "no_649_reader_pairs": true,
+  "no_whole_witness": true,
+  "no_model_plan_execution": true,
+  "scratch_removed": true,
+  "lexer_call_counts": {
+    "old": 10,
+    "new": 25
+  },
+  "wall_seconds": 0.228940119035542
+}

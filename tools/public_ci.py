@@ -108,7 +108,7 @@ def reset_blob_reader(root):
         process.kill(); process.wait()
 
 
-def blob_header(root, head, path):
+def blob_header(root, head, path, *, requested=False):
     process = blob_reader(root)
     entry = DataTree(root, commit(head)).entries.get(_path(path))
     if entry is None or entry[1] != 'blob':
@@ -118,7 +118,8 @@ def blob_header(root, head, path):
         # The immutable tree already resolved this path. Fetching its object ID
         # avoids rewalking a receipt-heavy tree for every file. Verification
         # still compares all raw bytes to fresh local descriptor reads.
-        process.stdin.write((oid + '\n').encode()); process.stdin.flush()
+        if not requested:
+            process.stdin.write((oid + '\n').encode()); process.stdin.flush()
         fields = process.stdout.readline(512).split()
     except (OSError, BrokenPipeError):
         reset_blob_reader(root)
@@ -127,6 +128,35 @@ def blob_header(root, head, path):
         reset_blob_reader(root)
         raise Refused('pinned merge guard blob unavailable: ' + path)
     return process, int(fields[2])
+
+
+
+def blob_request_windows(root, head, paths):
+    """Queue immutable OIDs only; every physical path is opened later and fresh.
+
+    Each write fits the actual pipe's atomic bound. The consumer must drain all
+    responses in one window before asking for the next, so stdin is empty then.
+    This never writes the whole inventory ahead of a possibly full stdout pipe.
+    """
+    tree = DataTree(root, commit(head))
+    process = blob_reader(root)
+    limit = os.fpathconf(process.stdin.fileno(), 'PC_PIPE_BUF')
+    window, requests, count = [], [], 0
+    for path in paths:
+        entry = tree.entries.get(_path(path))
+        if entry is None or entry[0] not in ('100644', '100755') or entry[1] != 'blob':
+            raise Refused('unavailable regular pinned request: ' + path)
+        request = (entry[2] + '\n').encode()
+        if len(request) > limit:
+            raise Refused('pinned request exceeds actual atomic pipe bound')
+        if window and count + len(request) > limit:
+            process.stdin.write(b''.join(requests)); process.stdin.flush()
+            yield window
+            window, requests, count = [], [], 0
+        window.append(path); requests.append(request); count += len(request)
+    if window:
+        process.stdin.write(b''.join(requests)); process.stdin.flush()
+        yield window
 
 
 def local_data_fd(root, path):
@@ -547,30 +577,32 @@ def compare_data_inputs(root, head, paths):
     for path in paths:
         if before.get(path) not in ('100644', '100755', '120000'):
             raise Refused('merge guard data mode differs from pinned source: ' + path)
-        if path in links:
-            continue
-        descriptor = local_data_fd(root, path)
-        try:
-            snapshot = os.fstat(descriptor)
-            mode = '100755' if snapshot.st_mode & stat.S_IXUSR else '100644'
-            if mode != before[path]:
-                raise Refused('merge guard data mode differs from pinned source: ' + path)
-            process, remaining = blob_header(root, head, path)
-            while remaining:
-                amount = min(1024 * 1024, remaining)
-                pinned = process.stdout.read(amount)
-                actual = os.read(descriptor, amount)
-                if len(pinned) != amount or actual != pinned:
-                    raise Refused('merge guard data differs from pinned source: ' + path)
-                remaining -= amount
-            if process.stdout.read(1) != b'\n' or os.read(descriptor, 1):
-                raise Refused('merge guard data length differs from pinned source: ' + path)
-            after = os.fstat(descriptor)
-            if (snapshot.st_ino, snapshot.st_size, snapshot.st_mtime_ns, snapshot.st_ctime_ns) != (
-                    after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns):
-                raise Refused('merge guard data changed during read: ' + path)
-        finally:
-            os.close(descriptor)
+    regular = [path for path in paths if path not in links]
+    for window in blob_request_windows(root, head, regular):
+        for path in window:
+            descriptor = local_data_fd(root, path)
+            try:
+                snapshot = os.fstat(descriptor)
+                mode = '100755' if snapshot.st_mode & stat.S_IXUSR else '100644'
+                if mode != before[path]:
+                    raise Refused('merge guard data mode differs from pinned source: ' + path)
+                process, remaining = blob_header(root, head, path, requested=True)
+                while remaining:
+                    amount = min(1024 * 1024, remaining)
+                    pinned = process.stdout.read(amount)
+                    actual = os.read(descriptor, amount)
+                    if len(pinned) != amount or actual != pinned:
+                        raise Refused('merge guard data differs from pinned source: ' + path)
+                    remaining -= amount
+                if process.stdout.read(1) != b'\n' or os.read(descriptor, 1):
+                    raise Refused('merge guard data length differs from pinned source: ' + path)
+                after = os.fstat(descriptor)
+                if (snapshot.st_ino, snapshot.st_size, snapshot.st_mtime_ns, snapshot.st_ctime_ns) != (
+                        after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+                    raise Refused('merge guard data changed during read: ' + path)
+            finally:
+                os.close(descriptor)
+
 
 
 def pinned_data(root, head, paths):
