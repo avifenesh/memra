@@ -1,0 +1,1978 @@
+{
+  "schema": "memra-accept-comparator-retained-evidence-v1",
+  "creation_state": "nomination only; no controls rerun, banking or publication",
+  "issue": 1015,
+  "PR": 1016,
+  "current_local_implementation_commit": "5a744d092dd3abed37099943290f828a3886015d",
+  "current_local_base": "372a4cf284a99dac31b545f68873e45f1e15f8cd",
+  "original_cpu_receipt_label": "retained D deletion comparator proof; no execution at current rebased head claimed",
+  "old_published_topic_commit": "985d93a4dbcc8f191c22c438534d3f2f8c15bd65",
+  "original_receipt_base": "ae197b6d3637f19ded93cdb5f92e87c697247eec",
+  "measurement_commit_recording": "RESULT.json binds exact source file hashes and runtime; it records no execution commit SHA. Old topic/base are separate source-history labels.",
+  "source_file": "tools/accept-gate.sh",
+  "original_sha256": "5eb8073d0e0d3d1fe00387fbfacd0073298848fa74147a9d76cfda5f5f936f96",
+  "candidate_sha256": "19f3b7eafdfc294b4b7287218791f4071dcc62405482157d6381c7150483dd60",
+  "source_git_mode": "100755",
+  "current_baseline_and_candidate_match_original_hashes": true,
+  "retained_result_sha256": "9d242d72a1f56878f33775842a2114b62c1e5eefa9878d0ad70207ad27c6516b",
+  "retained_proof_script_sha256": "160e4b76931e7471ca735485f51111b7941a4bbebe0705d043ac5e4de60fa15e",
+  "python": "/usr/bin/python3.14",
+  "paired_cases": 20,
+  "comparator_invocations": 40,
+  "raw_outputs": 80,
+  "byte_identical_public_raw_outputs": 76,
+  "path_bearing_private_original_outputs": 4,
+  "labelled_public_output_derivatives": 4,
+  "syntax": [
+    {
+      "arm": "original",
+      "status": 0
+    },
+    {
+      "arm": "candidate",
+      "status": 0
+    }
+  ],
+  "AST_equal_except_alias": true,
+  "source_outside_alias_identical": true,
+  "removed_initializer_modules": [
+    "_blake2",
+    "_hashlib",
+    "hashlib"
+  ],
+  "original_fixture_scratch_removed": true,
+  "original_single_run_wall_seconds": 0.7811728010419756,
+  "no_new_timing_or_speedup_claim": true,
+  "cases": [
+    {
+      "case": "matching",
+      "status": 0,
+      "original_and_candidate_equal": true,
+      "input_hashes_unchanged": {
+        "matching/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "matching/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "matching/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69"
+      },
+      "outputs": [
+        {
+          "source_label": "retained-D-CPU-control/matching.original.stdout",
+          "original_sha256": "d8a2b20170d8cbcfb15f3f40b2eaa130aeecac6ee2a18b6ef63bae1a0f5808fc",
+          "original_bytes": 92,
+          "case": "matching",
+          "arm": "original",
+          "stream": "stdout",
+          "original_status": 0,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/matching.original.stdout",
+            "sha256": "d8a2b20170d8cbcfb15f3f40b2eaa130aeecac6ee2a18b6ef63bae1a0f5808fc"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/matching.candidate.stdout",
+          "original_sha256": "d8a2b20170d8cbcfb15f3f40b2eaa130aeecac6ee2a18b6ef63bae1a0f5808fc",
+          "original_bytes": 92,
+          "case": "matching",
+          "arm": "candidate",
+          "stream": "stdout",
+          "original_status": 0,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/matching.candidate.stdout",
+            "sha256": "d8a2b20170d8cbcfb15f3f40b2eaa130aeecac6ee2a18b6ef63bae1a0f5808fc"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/matching.original.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "matching",
+          "arm": "original",
+          "stream": "stderr",
+          "original_status": 0,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/matching.original.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/matching.candidate.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "matching",
+          "arm": "candidate",
+          "stream": "stderr",
+          "original_status": 0,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/matching.candidate.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        }
+      ]
+    },
+    {
+      "case": "zero-drafted",
+      "status": 0,
+      "original_and_candidate_equal": true,
+      "input_hashes_unchanged": {
+        "zero-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "zero-drafted/measured.json": "c32b52ccc8ca75c47f6300dbb31fcd4cac9eb54ad21ace139fcffb47214caac5",
+        "zero-drafted/fixture.ref": "c5cfebe2c32264ec2a650068d056100bf782f998b1c84848fa9696382bbb5bb5",
+        "matching/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "matching/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "matching/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69"
+      },
+      "outputs": [
+        {
+          "source_label": "retained-D-CPU-control/zero-drafted.original.stdout",
+          "original_sha256": "4c5b853843083be32296a40a9146572e98d8015dcd0e4b55cf5b1edbb0ebb945",
+          "original_bytes": 89,
+          "case": "zero-drafted",
+          "arm": "original",
+          "stream": "stdout",
+          "original_status": 0,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/zero-drafted.original.stdout",
+            "sha256": "4c5b853843083be32296a40a9146572e98d8015dcd0e4b55cf5b1edbb0ebb945"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/zero-drafted.candidate.stdout",
+          "original_sha256": "4c5b853843083be32296a40a9146572e98d8015dcd0e4b55cf5b1edbb0ebb945",
+          "original_bytes": 89,
+          "case": "zero-drafted",
+          "arm": "candidate",
+          "stream": "stdout",
+          "original_status": 0,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/zero-drafted.candidate.stdout",
+            "sha256": "4c5b853843083be32296a40a9146572e98d8015dcd0e4b55cf5b1edbb0ebb945"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/zero-drafted.original.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "zero-drafted",
+          "arm": "original",
+          "stream": "stderr",
+          "original_status": 0,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/zero-drafted.original.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/zero-drafted.candidate.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "zero-drafted",
+          "arm": "candidate",
+          "stream": "stderr",
+          "original_status": 0,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/zero-drafted.candidate.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        }
+      ]
+    },
+    {
+      "case": "mismatch-rounds",
+      "status": 1,
+      "original_and_candidate_equal": true,
+      "input_hashes_unchanged": {
+        "zero-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "zero-drafted/measured.json": "c32b52ccc8ca75c47f6300dbb31fcd4cac9eb54ad21ace139fcffb47214caac5",
+        "zero-drafted/fixture.ref": "c5cfebe2c32264ec2a650068d056100bf782f998b1c84848fa9696382bbb5bb5",
+        "mismatch-rounds/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-rounds/measured.json": "7a3154ce3ef6170e262533f714bd77e897a60a4d28f8b849facb7dfc298c0703",
+        "mismatch-rounds/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "matching/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "matching/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "matching/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69"
+      },
+      "outputs": [
+        {
+          "source_label": "retained-D-CPU-control/mismatch-rounds.original.stdout",
+          "original_sha256": "3c1e0b077b881678e25d17a4f2e083e1065c8cb1f39d26da93850b079510d1b2",
+          "original_bytes": 179,
+          "case": "mismatch-rounds",
+          "arm": "original",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/mismatch-rounds.original.stdout",
+            "sha256": "3c1e0b077b881678e25d17a4f2e083e1065c8cb1f39d26da93850b079510d1b2"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/mismatch-rounds.candidate.stdout",
+          "original_sha256": "3c1e0b077b881678e25d17a4f2e083e1065c8cb1f39d26da93850b079510d1b2",
+          "original_bytes": 179,
+          "case": "mismatch-rounds",
+          "arm": "candidate",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/mismatch-rounds.candidate.stdout",
+            "sha256": "3c1e0b077b881678e25d17a4f2e083e1065c8cb1f39d26da93850b079510d1b2"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/mismatch-rounds.original.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "mismatch-rounds",
+          "arm": "original",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/mismatch-rounds.original.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/mismatch-rounds.candidate.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "mismatch-rounds",
+          "arm": "candidate",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/mismatch-rounds.candidate.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        }
+      ]
+    },
+    {
+      "case": "mismatch-drafted",
+      "status": 1,
+      "original_and_candidate_equal": true,
+      "input_hashes_unchanged": {
+        "zero-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "zero-drafted/measured.json": "c32b52ccc8ca75c47f6300dbb31fcd4cac9eb54ad21ace139fcffb47214caac5",
+        "zero-drafted/fixture.ref": "c5cfebe2c32264ec2a650068d056100bf782f998b1c84848fa9696382bbb5bb5",
+        "mismatch-rounds/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-rounds/measured.json": "7a3154ce3ef6170e262533f714bd77e897a60a4d28f8b849facb7dfc298c0703",
+        "mismatch-rounds/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "matching/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "matching/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "matching/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "mismatch-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-drafted/measured.json": "a6c9a7158d8feeeb17c99d41685655d984253419a311310a3429608bf48ca472",
+        "mismatch-drafted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69"
+      },
+      "outputs": [
+        {
+          "source_label": "retained-D-CPU-control/mismatch-drafted.original.stdout",
+          "original_sha256": "7cdc7f3e77fb3145ec705f097884093facf77a5c1617be0f1b5b4016cfa12752",
+          "original_bytes": 180,
+          "case": "mismatch-drafted",
+          "arm": "original",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/mismatch-drafted.original.stdout",
+            "sha256": "7cdc7f3e77fb3145ec705f097884093facf77a5c1617be0f1b5b4016cfa12752"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/mismatch-drafted.candidate.stdout",
+          "original_sha256": "7cdc7f3e77fb3145ec705f097884093facf77a5c1617be0f1b5b4016cfa12752",
+          "original_bytes": 180,
+          "case": "mismatch-drafted",
+          "arm": "candidate",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/mismatch-drafted.candidate.stdout",
+            "sha256": "7cdc7f3e77fb3145ec705f097884093facf77a5c1617be0f1b5b4016cfa12752"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/mismatch-drafted.original.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "mismatch-drafted",
+          "arm": "original",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/mismatch-drafted.original.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/mismatch-drafted.candidate.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "mismatch-drafted",
+          "arm": "candidate",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/mismatch-drafted.candidate.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        }
+      ]
+    },
+    {
+      "case": "mismatch-accepted",
+      "status": 1,
+      "original_and_candidate_equal": true,
+      "input_hashes_unchanged": {
+        "zero-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "zero-drafted/measured.json": "c32b52ccc8ca75c47f6300dbb31fcd4cac9eb54ad21ace139fcffb47214caac5",
+        "zero-drafted/fixture.ref": "c5cfebe2c32264ec2a650068d056100bf782f998b1c84848fa9696382bbb5bb5",
+        "mismatch-accepted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-accepted/measured.json": "5e23284d61d51f6bed39584ee344c37a44778835a3608cabdfb1b83d1cb0cf32",
+        "mismatch-accepted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "mismatch-rounds/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-rounds/measured.json": "7a3154ce3ef6170e262533f714bd77e897a60a4d28f8b849facb7dfc298c0703",
+        "mismatch-rounds/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "matching/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "matching/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "matching/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "mismatch-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-drafted/measured.json": "a6c9a7158d8feeeb17c99d41685655d984253419a311310a3429608bf48ca472",
+        "mismatch-drafted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69"
+      },
+      "outputs": [
+        {
+          "source_label": "retained-D-CPU-control/mismatch-accepted.original.stdout",
+          "original_sha256": "fa0011889435064a5c8d89ffed6558c57e817a185991bd0b673ae78f7bafd458",
+          "original_bytes": 181,
+          "case": "mismatch-accepted",
+          "arm": "original",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/mismatch-accepted.original.stdout",
+            "sha256": "fa0011889435064a5c8d89ffed6558c57e817a185991bd0b673ae78f7bafd458"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/mismatch-accepted.candidate.stdout",
+          "original_sha256": "fa0011889435064a5c8d89ffed6558c57e817a185991bd0b673ae78f7bafd458",
+          "original_bytes": 181,
+          "case": "mismatch-accepted",
+          "arm": "candidate",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/mismatch-accepted.candidate.stdout",
+            "sha256": "fa0011889435064a5c8d89ffed6558c57e817a185991bd0b673ae78f7bafd458"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/mismatch-accepted.original.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "mismatch-accepted",
+          "arm": "original",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/mismatch-accepted.original.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/mismatch-accepted.candidate.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "mismatch-accepted",
+          "arm": "candidate",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/mismatch-accepted.candidate.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        }
+      ]
+    },
+    {
+      "case": "hash-only",
+      "status": 1,
+      "original_and_candidate_equal": true,
+      "input_hashes_unchanged": {
+        "zero-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "zero-drafted/measured.json": "c32b52ccc8ca75c47f6300dbb31fcd4cac9eb54ad21ace139fcffb47214caac5",
+        "zero-drafted/fixture.ref": "c5cfebe2c32264ec2a650068d056100bf782f998b1c84848fa9696382bbb5bb5",
+        "mismatch-accepted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-accepted/measured.json": "5e23284d61d51f6bed39584ee344c37a44778835a3608cabdfb1b83d1cb0cf32",
+        "mismatch-accepted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "mismatch-rounds/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-rounds/measured.json": "7a3154ce3ef6170e262533f714bd77e897a60a4d28f8b849facb7dfc298c0703",
+        "mismatch-rounds/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "matching/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "matching/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "matching/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "mismatch-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-drafted/measured.json": "a6c9a7158d8feeeb17c99d41685655d984253419a311310a3429608bf48ca472",
+        "mismatch-drafted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "hash-only/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "hash-only/measured.json": "715f23b0c5a5c29ad831182534aa50dacde4e16e18e85b6cd6417789c131bafe",
+        "hash-only/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69"
+      },
+      "outputs": [
+        {
+          "source_label": "retained-D-CPU-control/hash-only.original.stdout",
+          "original_sha256": "32e5c894004ea22efcc5411e2790ebb5b85d88100a6fdd038c65d3c94158a1f2",
+          "original_bytes": 207,
+          "case": "hash-only",
+          "arm": "original",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/hash-only.original.stdout",
+            "sha256": "32e5c894004ea22efcc5411e2790ebb5b85d88100a6fdd038c65d3c94158a1f2"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/hash-only.candidate.stdout",
+          "original_sha256": "32e5c894004ea22efcc5411e2790ebb5b85d88100a6fdd038c65d3c94158a1f2",
+          "original_bytes": 207,
+          "case": "hash-only",
+          "arm": "candidate",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/hash-only.candidate.stdout",
+            "sha256": "32e5c894004ea22efcc5411e2790ebb5b85d88100a6fdd038c65d3c94158a1f2"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/hash-only.original.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "hash-only",
+          "arm": "original",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/hash-only.original.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/hash-only.candidate.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "hash-only",
+          "arm": "candidate",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/hash-only.candidate.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        }
+      ]
+    },
+    {
+      "case": "completion-count",
+      "status": 1,
+      "original_and_candidate_equal": true,
+      "input_hashes_unchanged": {
+        "completion-count/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-count/measured.json": "1514ba9a6ad41be45f6a8b1a74a9783eac741e9341d1152dd974122cd8206949",
+        "completion-count/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "zero-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "zero-drafted/measured.json": "c32b52ccc8ca75c47f6300dbb31fcd4cac9eb54ad21ace139fcffb47214caac5",
+        "zero-drafted/fixture.ref": "c5cfebe2c32264ec2a650068d056100bf782f998b1c84848fa9696382bbb5bb5",
+        "mismatch-accepted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-accepted/measured.json": "5e23284d61d51f6bed39584ee344c37a44778835a3608cabdfb1b83d1cb0cf32",
+        "mismatch-accepted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "mismatch-rounds/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-rounds/measured.json": "7a3154ce3ef6170e262533f714bd77e897a60a4d28f8b849facb7dfc298c0703",
+        "mismatch-rounds/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "matching/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "matching/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "matching/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "mismatch-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-drafted/measured.json": "a6c9a7158d8feeeb17c99d41685655d984253419a311310a3429608bf48ca472",
+        "mismatch-drafted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "hash-only/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "hash-only/measured.json": "715f23b0c5a5c29ad831182534aa50dacde4e16e18e85b6cd6417789c131bafe",
+        "hash-only/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69"
+      },
+      "outputs": [
+        {
+          "source_label": "retained-D-CPU-control/completion-count.original.stdout",
+          "original_sha256": "36fae53f7933c95e6bbca5ff85ad66ae741c0de14f8d7fe928ee64975525eb58",
+          "original_bytes": 185,
+          "case": "completion-count",
+          "arm": "original",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-count.original.stdout",
+            "sha256": "36fae53f7933c95e6bbca5ff85ad66ae741c0de14f8d7fe928ee64975525eb58"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/completion-count.candidate.stdout",
+          "original_sha256": "36fae53f7933c95e6bbca5ff85ad66ae741c0de14f8d7fe928ee64975525eb58",
+          "original_bytes": 185,
+          "case": "completion-count",
+          "arm": "candidate",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-count.candidate.stdout",
+            "sha256": "36fae53f7933c95e6bbca5ff85ad66ae741c0de14f8d7fe928ee64975525eb58"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/completion-count.original.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "completion-count",
+          "arm": "original",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-count.original.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/completion-count.candidate.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "completion-count",
+          "arm": "candidate",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-count.candidate.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        }
+      ]
+    },
+    {
+      "case": "completion-zero",
+      "status": 1,
+      "original_and_candidate_equal": true,
+      "input_hashes_unchanged": {
+        "completion-count/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-count/measured.json": "1514ba9a6ad41be45f6a8b1a74a9783eac741e9341d1152dd974122cd8206949",
+        "completion-count/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "zero-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "zero-drafted/measured.json": "c32b52ccc8ca75c47f6300dbb31fcd4cac9eb54ad21ace139fcffb47214caac5",
+        "zero-drafted/fixture.ref": "c5cfebe2c32264ec2a650068d056100bf782f998b1c84848fa9696382bbb5bb5",
+        "mismatch-accepted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-accepted/measured.json": "5e23284d61d51f6bed39584ee344c37a44778835a3608cabdfb1b83d1cb0cf32",
+        "mismatch-accepted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "mismatch-rounds/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-rounds/measured.json": "7a3154ce3ef6170e262533f714bd77e897a60a4d28f8b849facb7dfc298c0703",
+        "mismatch-rounds/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "matching/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "matching/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "matching/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "mismatch-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-drafted/measured.json": "a6c9a7158d8feeeb17c99d41685655d984253419a311310a3429608bf48ca472",
+        "mismatch-drafted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "completion-zero/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-zero/measured.json": "10692bfd9158e4d76e6f0985d98c5fce94a69d01e3c990d74faeee7c35c47b32",
+        "completion-zero/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "hash-only/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "hash-only/measured.json": "715f23b0c5a5c29ad831182534aa50dacde4e16e18e85b6cd6417789c131bafe",
+        "hash-only/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69"
+      },
+      "outputs": [
+        {
+          "source_label": "retained-D-CPU-control/completion-zero.original.stdout",
+          "original_sha256": "b0104597936cd33884a6953bcddb3d08cde0c645d2b2f7a066bb933aa385f897",
+          "original_bytes": 184,
+          "case": "completion-zero",
+          "arm": "original",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-zero.original.stdout",
+            "sha256": "b0104597936cd33884a6953bcddb3d08cde0c645d2b2f7a066bb933aa385f897"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/completion-zero.candidate.stdout",
+          "original_sha256": "b0104597936cd33884a6953bcddb3d08cde0c645d2b2f7a066bb933aa385f897",
+          "original_bytes": 184,
+          "case": "completion-zero",
+          "arm": "candidate",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-zero.candidate.stdout",
+            "sha256": "b0104597936cd33884a6953bcddb3d08cde0c645d2b2f7a066bb933aa385f897"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/completion-zero.original.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "completion-zero",
+          "arm": "original",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-zero.original.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/completion-zero.candidate.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "completion-zero",
+          "arm": "candidate",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-zero.candidate.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        }
+      ]
+    },
+    {
+      "case": "completion-null",
+      "status": 1,
+      "original_and_candidate_equal": true,
+      "input_hashes_unchanged": {
+        "completion-count/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-count/measured.json": "1514ba9a6ad41be45f6a8b1a74a9783eac741e9341d1152dd974122cd8206949",
+        "completion-count/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "zero-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "zero-drafted/measured.json": "c32b52ccc8ca75c47f6300dbb31fcd4cac9eb54ad21ace139fcffb47214caac5",
+        "zero-drafted/fixture.ref": "c5cfebe2c32264ec2a650068d056100bf782f998b1c84848fa9696382bbb5bb5",
+        "mismatch-accepted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-accepted/measured.json": "5e23284d61d51f6bed39584ee344c37a44778835a3608cabdfb1b83d1cb0cf32",
+        "mismatch-accepted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "mismatch-rounds/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-rounds/measured.json": "7a3154ce3ef6170e262533f714bd77e897a60a4d28f8b849facb7dfc298c0703",
+        "mismatch-rounds/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "matching/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "matching/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "matching/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "completion-null/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-null/measured.json": "8970a68a841b719e65cf336f63ab7e4c86bb2dd955f07076ae44b14d510592b2",
+        "completion-null/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "mismatch-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-drafted/measured.json": "a6c9a7158d8feeeb17c99d41685655d984253419a311310a3429608bf48ca472",
+        "mismatch-drafted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "completion-zero/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-zero/measured.json": "10692bfd9158e4d76e6f0985d98c5fce94a69d01e3c990d74faeee7c35c47b32",
+        "completion-zero/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "hash-only/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "hash-only/measured.json": "715f23b0c5a5c29ad831182534aa50dacde4e16e18e85b6cd6417789c131bafe",
+        "hash-only/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69"
+      },
+      "outputs": [
+        {
+          "source_label": "retained-D-CPU-control/completion-null.original.stdout",
+          "original_sha256": "cb4849c592d8d693484f5f73171bfde64efe11ff4abb81faedb4c097ee6ae32f",
+          "original_bytes": 187,
+          "case": "completion-null",
+          "arm": "original",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-null.original.stdout",
+            "sha256": "cb4849c592d8d693484f5f73171bfde64efe11ff4abb81faedb4c097ee6ae32f"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/completion-null.candidate.stdout",
+          "original_sha256": "cb4849c592d8d693484f5f73171bfde64efe11ff4abb81faedb4c097ee6ae32f",
+          "original_bytes": 187,
+          "case": "completion-null",
+          "arm": "candidate",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-null.candidate.stdout",
+            "sha256": "cb4849c592d8d693484f5f73171bfde64efe11ff4abb81faedb4c097ee6ae32f"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/completion-null.original.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "completion-null",
+          "arm": "original",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-null.original.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/completion-null.candidate.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "completion-null",
+          "arm": "candidate",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-null.candidate.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        }
+      ]
+    },
+    {
+      "case": "completion-ref-absent",
+      "status": 1,
+      "original_and_candidate_equal": true,
+      "input_hashes_unchanged": {
+        "completion-count/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-count/measured.json": "1514ba9a6ad41be45f6a8b1a74a9783eac741e9341d1152dd974122cd8206949",
+        "completion-count/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "zero-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "zero-drafted/measured.json": "c32b52ccc8ca75c47f6300dbb31fcd4cac9eb54ad21ace139fcffb47214caac5",
+        "zero-drafted/fixture.ref": "c5cfebe2c32264ec2a650068d056100bf782f998b1c84848fa9696382bbb5bb5",
+        "mismatch-accepted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-accepted/measured.json": "5e23284d61d51f6bed39584ee344c37a44778835a3608cabdfb1b83d1cb0cf32",
+        "mismatch-accepted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "mismatch-rounds/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-rounds/measured.json": "7a3154ce3ef6170e262533f714bd77e897a60a4d28f8b849facb7dfc298c0703",
+        "mismatch-rounds/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "matching/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "matching/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "matching/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "completion-null/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-null/measured.json": "8970a68a841b719e65cf336f63ab7e4c86bb2dd955f07076ae44b14d510592b2",
+        "completion-null/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "mismatch-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-drafted/measured.json": "a6c9a7158d8feeeb17c99d41685655d984253419a311310a3429608bf48ca472",
+        "mismatch-drafted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "completion-zero/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-zero/measured.json": "10692bfd9158e4d76e6f0985d98c5fce94a69d01e3c990d74faeee7c35c47b32",
+        "completion-zero/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "hash-only/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "hash-only/measured.json": "715f23b0c5a5c29ad831182534aa50dacde4e16e18e85b6cd6417789c131bafe",
+        "hash-only/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "completion-ref-absent/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-ref-absent/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "completion-ref-absent/fixture.ref": "d7e7e51fc408a480e3eed0826d551895f56a2ca699da0a331f4fd536a9797a27"
+      },
+      "outputs": [
+        {
+          "source_label": "retained-D-CPU-control/completion-ref-absent.original.stdout",
+          "original_sha256": "e182add738bac187c6414712f9c11f8c4bcc4cae6e10efdaca044f9a1aac9d95",
+          "original_bytes": 187,
+          "case": "completion-ref-absent",
+          "arm": "original",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-ref-absent.original.stdout",
+            "sha256": "e182add738bac187c6414712f9c11f8c4bcc4cae6e10efdaca044f9a1aac9d95"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/completion-ref-absent.candidate.stdout",
+          "original_sha256": "e182add738bac187c6414712f9c11f8c4bcc4cae6e10efdaca044f9a1aac9d95",
+          "original_bytes": 187,
+          "case": "completion-ref-absent",
+          "arm": "candidate",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-ref-absent.candidate.stdout",
+            "sha256": "e182add738bac187c6414712f9c11f8c4bcc4cae6e10efdaca044f9a1aac9d95"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/completion-ref-absent.original.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "completion-ref-absent",
+          "arm": "original",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-ref-absent.original.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/completion-ref-absent.candidate.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "completion-ref-absent",
+          "arm": "candidate",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/completion-ref-absent.candidate.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        }
+      ]
+    },
+    {
+      "case": "config-mismatch",
+      "status": 1,
+      "original_and_candidate_equal": true,
+      "input_hashes_unchanged": {
+        "completion-count/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-count/measured.json": "1514ba9a6ad41be45f6a8b1a74a9783eac741e9341d1152dd974122cd8206949",
+        "completion-count/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "zero-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "zero-drafted/measured.json": "c32b52ccc8ca75c47f6300dbb31fcd4cac9eb54ad21ace139fcffb47214caac5",
+        "zero-drafted/fixture.ref": "c5cfebe2c32264ec2a650068d056100bf782f998b1c84848fa9696382bbb5bb5",
+        "mismatch-accepted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-accepted/measured.json": "5e23284d61d51f6bed39584ee344c37a44778835a3608cabdfb1b83d1cb0cf32",
+        "mismatch-accepted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "mismatch-rounds/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-rounds/measured.json": "7a3154ce3ef6170e262533f714bd77e897a60a4d28f8b849facb7dfc298c0703",
+        "mismatch-rounds/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "config-mismatch/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "config-mismatch/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "config-mismatch/fixture.ref": "2234ea1c9f22cb0a204ea8699f7361ab3d5a70e43f436b092dfe4f6fa9ea3222",
+        "matching/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "matching/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "matching/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "completion-null/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-null/measured.json": "8970a68a841b719e65cf336f63ab7e4c86bb2dd955f07076ae44b14d510592b2",
+        "completion-null/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "mismatch-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-drafted/measured.json": "a6c9a7158d8feeeb17c99d41685655d984253419a311310a3429608bf48ca472",
+        "mismatch-drafted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "completion-zero/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-zero/measured.json": "10692bfd9158e4d76e6f0985d98c5fce94a69d01e3c990d74faeee7c35c47b32",
+        "completion-zero/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "hash-only/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "hash-only/measured.json": "715f23b0c5a5c29ad831182534aa50dacde4e16e18e85b6cd6417789c131bafe",
+        "hash-only/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "completion-ref-absent/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-ref-absent/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "completion-ref-absent/fixture.ref": "d7e7e51fc408a480e3eed0826d551895f56a2ca699da0a331f4fd536a9797a27"
+      },
+      "outputs": [
+        {
+          "source_label": "retained-D-CPU-control/config-mismatch.original.stdout",
+          "original_sha256": "deb19767ccce49f158cd4d0ceae3f5c7c65e4086be303b644855b2e190815a17",
+          "original_bytes": 283,
+          "case": "config-mismatch",
+          "arm": "original",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/config-mismatch.original.stdout",
+            "sha256": "deb19767ccce49f158cd4d0ceae3f5c7c65e4086be303b644855b2e190815a17"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/config-mismatch.candidate.stdout",
+          "original_sha256": "deb19767ccce49f158cd4d0ceae3f5c7c65e4086be303b644855b2e190815a17",
+          "original_bytes": 283,
+          "case": "config-mismatch",
+          "arm": "candidate",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/config-mismatch.candidate.stdout",
+            "sha256": "deb19767ccce49f158cd4d0ceae3f5c7c65e4086be303b644855b2e190815a17"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/config-mismatch.original.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "config-mismatch",
+          "arm": "original",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/config-mismatch.original.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/config-mismatch.candidate.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "config-mismatch",
+          "arm": "candidate",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/config-mismatch.candidate.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        }
+      ]
+    },
+    {
+      "case": "config-mismatch-explicit-description",
+      "status": 1,
+      "original_and_candidate_equal": true,
+      "input_hashes_unchanged": {
+        "completion-count/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-count/measured.json": "1514ba9a6ad41be45f6a8b1a74a9783eac741e9341d1152dd974122cd8206949",
+        "completion-count/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "zero-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "zero-drafted/measured.json": "c32b52ccc8ca75c47f6300dbb31fcd4cac9eb54ad21ace139fcffb47214caac5",
+        "zero-drafted/fixture.ref": "c5cfebe2c32264ec2a650068d056100bf782f998b1c84848fa9696382bbb5bb5",
+        "mismatch-accepted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-accepted/measured.json": "5e23284d61d51f6bed39584ee344c37a44778835a3608cabdfb1b83d1cb0cf32",
+        "mismatch-accepted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "mismatch-rounds/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-rounds/measured.json": "7a3154ce3ef6170e262533f714bd77e897a60a4d28f8b849facb7dfc298c0703",
+        "mismatch-rounds/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "config-mismatch/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "config-mismatch/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "config-mismatch/fixture.ref": "2234ea1c9f22cb0a204ea8699f7361ab3d5a70e43f436b092dfe4f6fa9ea3222",
+        "matching/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "matching/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "matching/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "completion-null/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-null/measured.json": "8970a68a841b719e65cf336f63ab7e4c86bb2dd955f07076ae44b14d510592b2",
+        "completion-null/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "mismatch-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-drafted/measured.json": "a6c9a7158d8feeeb17c99d41685655d984253419a311310a3429608bf48ca472",
+        "mismatch-drafted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "completion-zero/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-zero/measured.json": "10692bfd9158e4d76e6f0985d98c5fce94a69d01e3c990d74faeee7c35c47b32",
+        "completion-zero/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "hash-only/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "hash-only/measured.json": "715f23b0c5a5c29ad831182534aa50dacde4e16e18e85b6cd6417789c131bafe",
+        "hash-only/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "config-mismatch-explicit-description/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "config-mismatch-explicit-description/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "config-mismatch-explicit-description/fixture.ref": "b31b0153bb289f343f93a997dc858407b92cdb726946096254faaa31ff662703",
+        "completion-ref-absent/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-ref-absent/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "completion-ref-absent/fixture.ref": "d7e7e51fc408a480e3eed0826d551895f56a2ca699da0a331f4fd536a9797a27"
+      },
+      "outputs": [
+        {
+          "source_label": "retained-D-CPU-control/config-mismatch-explicit-description.original.stdout",
+          "original_sha256": "8926568926073b3f5181e9a619a4ff860a365cebd9f62f2dab3e3f4dfd6eec9e",
+          "original_bytes": 276,
+          "case": "config-mismatch-explicit-description",
+          "arm": "original",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/config-mismatch-explicit-description.original.stdout",
+            "sha256": "8926568926073b3f5181e9a619a4ff860a365cebd9f62f2dab3e3f4dfd6eec9e"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/config-mismatch-explicit-description.candidate.stdout",
+          "original_sha256": "8926568926073b3f5181e9a619a4ff860a365cebd9f62f2dab3e3f4dfd6eec9e",
+          "original_bytes": 276,
+          "case": "config-mismatch-explicit-description",
+          "arm": "candidate",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/config-mismatch-explicit-description.candidate.stdout",
+            "sha256": "8926568926073b3f5181e9a619a4ff860a365cebd9f62f2dab3e3f4dfd6eec9e"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/config-mismatch-explicit-description.original.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "config-mismatch-explicit-description",
+          "arm": "original",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/config-mismatch-explicit-description.original.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/config-mismatch-explicit-description.candidate.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "config-mismatch-explicit-description",
+          "arm": "candidate",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/config-mismatch-explicit-description.candidate.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        }
+      ]
+    },
+    {
+      "case": "missing-reference",
+      "status": 3,
+      "original_and_candidate_equal": true,
+      "input_hashes_unchanged": {
+        "completion-count/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-count/measured.json": "1514ba9a6ad41be45f6a8b1a74a9783eac741e9341d1152dd974122cd8206949",
+        "completion-count/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "zero-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "zero-drafted/measured.json": "c32b52ccc8ca75c47f6300dbb31fcd4cac9eb54ad21ace139fcffb47214caac5",
+        "zero-drafted/fixture.ref": "c5cfebe2c32264ec2a650068d056100bf782f998b1c84848fa9696382bbb5bb5",
+        "mismatch-accepted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-accepted/measured.json": "5e23284d61d51f6bed39584ee344c37a44778835a3608cabdfb1b83d1cb0cf32",
+        "mismatch-accepted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "mismatch-rounds/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-rounds/measured.json": "7a3154ce3ef6170e262533f714bd77e897a60a4d28f8b849facb7dfc298c0703",
+        "mismatch-rounds/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "config-mismatch/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "config-mismatch/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "config-mismatch/fixture.ref": "2234ea1c9f22cb0a204ea8699f7361ab3d5a70e43f436b092dfe4f6fa9ea3222",
+        "matching/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "matching/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "matching/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "completion-null/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-null/measured.json": "8970a68a841b719e65cf336f63ab7e4c86bb2dd955f07076ae44b14d510592b2",
+        "completion-null/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "missing-reference/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "missing-reference/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "mismatch-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-drafted/measured.json": "a6c9a7158d8feeeb17c99d41685655d984253419a311310a3429608bf48ca472",
+        "mismatch-drafted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "completion-zero/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-zero/measured.json": "10692bfd9158e4d76e6f0985d98c5fce94a69d01e3c990d74faeee7c35c47b32",
+        "completion-zero/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "hash-only/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "hash-only/measured.json": "715f23b0c5a5c29ad831182534aa50dacde4e16e18e85b6cd6417789c131bafe",
+        "hash-only/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "config-mismatch-explicit-description/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "config-mismatch-explicit-description/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "config-mismatch-explicit-description/fixture.ref": "b31b0153bb289f343f93a997dc858407b92cdb726946096254faaa31ff662703",
+        "completion-ref-absent/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-ref-absent/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "completion-ref-absent/fixture.ref": "d7e7e51fc408a480e3eed0826d551895f56a2ca699da0a331f4fd536a9797a27"
+      },
+      "outputs": [
+        {
+          "source_label": "retained-D-CPU-control/missing-reference.original.stdout",
+          "original_sha256": "bfca9a30d92591d2bfc433b2e09c78b8a535b848b6874195f34482459dd52ec2",
+          "original_bytes": 245,
+          "case": "missing-reference",
+          "arm": "original",
+          "stream": "stdout",
+          "original_status": 3,
+          "public_payload": {
+            "type": "labelled path-normalized derivative",
+            "path": "research/accept-comparator-import-1015/receipts/public-derivatives/missing-reference.original.stdout.PUBLIC-PATH-NORMALIZED.txt",
+            "sha256": "2d456ce87e3ddcf7fd871c831735672c6b7c17f52499998563b71ca104c8a1cb",
+            "normalization": "only the private owned fixture root is replaced with <OWNED_FIXTURE_ROOT>",
+            "original_raw_remains_private": true,
+            "original_sha256": "bfca9a30d92591d2bfc433b2e09c78b8a535b848b6874195f34482459dd52ec2"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/missing-reference.candidate.stdout",
+          "original_sha256": "bfca9a30d92591d2bfc433b2e09c78b8a535b848b6874195f34482459dd52ec2",
+          "original_bytes": 245,
+          "case": "missing-reference",
+          "arm": "candidate",
+          "stream": "stdout",
+          "original_status": 3,
+          "public_payload": {
+            "type": "labelled path-normalized derivative",
+            "path": "research/accept-comparator-import-1015/receipts/public-derivatives/missing-reference.candidate.stdout.PUBLIC-PATH-NORMALIZED.txt",
+            "sha256": "2d456ce87e3ddcf7fd871c831735672c6b7c17f52499998563b71ca104c8a1cb",
+            "normalization": "only the private owned fixture root is replaced with <OWNED_FIXTURE_ROOT>",
+            "original_raw_remains_private": true,
+            "original_sha256": "bfca9a30d92591d2bfc433b2e09c78b8a535b848b6874195f34482459dd52ec2"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/missing-reference.original.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "missing-reference",
+          "arm": "original",
+          "stream": "stderr",
+          "original_status": 3,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/missing-reference.original.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/missing-reference.candidate.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "missing-reference",
+          "arm": "candidate",
+          "stream": "stderr",
+          "original_status": 3,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/missing-reference.candidate.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        }
+      ]
+    },
+    {
+      "case": "missing-text",
+      "status": 3,
+      "original_and_candidate_equal": true,
+      "input_hashes_unchanged": {
+        "completion-count/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-count/measured.json": "1514ba9a6ad41be45f6a8b1a74a9783eac741e9341d1152dd974122cd8206949",
+        "completion-count/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "zero-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "zero-drafted/measured.json": "c32b52ccc8ca75c47f6300dbb31fcd4cac9eb54ad21ace139fcffb47214caac5",
+        "zero-drafted/fixture.ref": "c5cfebe2c32264ec2a650068d056100bf782f998b1c84848fa9696382bbb5bb5",
+        "mismatch-accepted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-accepted/measured.json": "5e23284d61d51f6bed39584ee344c37a44778835a3608cabdfb1b83d1cb0cf32",
+        "mismatch-accepted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "mismatch-rounds/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-rounds/measured.json": "7a3154ce3ef6170e262533f714bd77e897a60a4d28f8b849facb7dfc298c0703",
+        "mismatch-rounds/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "config-mismatch/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "config-mismatch/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "config-mismatch/fixture.ref": "2234ea1c9f22cb0a204ea8699f7361ab3d5a70e43f436b092dfe4f6fa9ea3222",
+        "matching/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "matching/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "matching/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "completion-null/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-null/measured.json": "8970a68a841b719e65cf336f63ab7e4c86bb2dd955f07076ae44b14d510592b2",
+        "completion-null/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "missing-reference/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "missing-reference/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "mismatch-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-drafted/measured.json": "a6c9a7158d8feeeb17c99d41685655d984253419a311310a3429608bf48ca472",
+        "mismatch-drafted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "missing-text/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "missing-text/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "completion-zero/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-zero/measured.json": "10692bfd9158e4d76e6f0985d98c5fce94a69d01e3c990d74faeee7c35c47b32",
+        "completion-zero/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "hash-only/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "hash-only/measured.json": "715f23b0c5a5c29ad831182534aa50dacde4e16e18e85b6cd6417789c131bafe",
+        "hash-only/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "config-mismatch-explicit-description/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "config-mismatch-explicit-description/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "config-mismatch-explicit-description/fixture.ref": "b31b0153bb289f343f93a997dc858407b92cdb726946096254faaa31ff662703",
+        "completion-ref-absent/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-ref-absent/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "completion-ref-absent/fixture.ref": "d7e7e51fc408a480e3eed0826d551895f56a2ca699da0a331f4fd536a9797a27"
+      },
+      "outputs": [
+        {
+          "source_label": "retained-D-CPU-control/missing-text.original.stdout",
+          "original_sha256": "ed33612b0acde3af3cc645e715581e8250b28cefdc19d21459f0ca0bb990c37d",
+          "original_bytes": 241,
+          "case": "missing-text",
+          "arm": "original",
+          "stream": "stdout",
+          "original_status": 3,
+          "public_payload": {
+            "type": "labelled path-normalized derivative",
+            "path": "research/accept-comparator-import-1015/receipts/public-derivatives/missing-text.original.stdout.PUBLIC-PATH-NORMALIZED.txt",
+            "sha256": "fd25adf1e75698d7536d0746e7c51727d4d7ecbc535196f86a83f537b9f31e47",
+            "normalization": "only the private owned fixture root is replaced with <OWNED_FIXTURE_ROOT>",
+            "original_raw_remains_private": true,
+            "original_sha256": "ed33612b0acde3af3cc645e715581e8250b28cefdc19d21459f0ca0bb990c37d"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/missing-text.candidate.stdout",
+          "original_sha256": "ed33612b0acde3af3cc645e715581e8250b28cefdc19d21459f0ca0bb990c37d",
+          "original_bytes": 241,
+          "case": "missing-text",
+          "arm": "candidate",
+          "stream": "stdout",
+          "original_status": 3,
+          "public_payload": {
+            "type": "labelled path-normalized derivative",
+            "path": "research/accept-comparator-import-1015/receipts/public-derivatives/missing-text.candidate.stdout.PUBLIC-PATH-NORMALIZED.txt",
+            "sha256": "fd25adf1e75698d7536d0746e7c51727d4d7ecbc535196f86a83f537b9f31e47",
+            "normalization": "only the private owned fixture root is replaced with <OWNED_FIXTURE_ROOT>",
+            "original_raw_remains_private": true,
+            "original_sha256": "ed33612b0acde3af3cc645e715581e8250b28cefdc19d21459f0ca0bb990c37d"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/missing-text.original.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "missing-text",
+          "arm": "original",
+          "stream": "stderr",
+          "original_status": 3,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/missing-text.original.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/missing-text.candidate.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "missing-text",
+          "arm": "candidate",
+          "stream": "stderr",
+          "original_status": 3,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/missing-text.candidate.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        }
+      ]
+    },
+    {
+      "case": "text-first-character",
+      "status": 1,
+      "original_and_candidate_equal": true,
+      "input_hashes_unchanged": {
+        "completion-count/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-count/measured.json": "1514ba9a6ad41be45f6a8b1a74a9783eac741e9341d1152dd974122cd8206949",
+        "completion-count/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "zero-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "zero-drafted/measured.json": "c32b52ccc8ca75c47f6300dbb31fcd4cac9eb54ad21ace139fcffb47214caac5",
+        "zero-drafted/fixture.ref": "c5cfebe2c32264ec2a650068d056100bf782f998b1c84848fa9696382bbb5bb5",
+        "mismatch-accepted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-accepted/measured.json": "5e23284d61d51f6bed39584ee344c37a44778835a3608cabdfb1b83d1cb0cf32",
+        "mismatch-accepted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "mismatch-rounds/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-rounds/measured.json": "7a3154ce3ef6170e262533f714bd77e897a60a4d28f8b849facb7dfc298c0703",
+        "mismatch-rounds/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "config-mismatch/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "config-mismatch/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "config-mismatch/fixture.ref": "2234ea1c9f22cb0a204ea8699f7361ab3d5a70e43f436b092dfe4f6fa9ea3222",
+        "matching/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "matching/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "matching/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "completion-null/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-null/measured.json": "8970a68a841b719e65cf336f63ab7e4c86bb2dd955f07076ae44b14d510592b2",
+        "completion-null/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "missing-reference/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "missing-reference/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "mismatch-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-drafted/measured.json": "a6c9a7158d8feeeb17c99d41685655d984253419a311310a3429608bf48ca472",
+        "mismatch-drafted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "missing-text/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "missing-text/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "completion-zero/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-zero/measured.json": "10692bfd9158e4d76e6f0985d98c5fce94a69d01e3c990d74faeee7c35c47b32",
+        "completion-zero/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "hash-only/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "hash-only/measured.json": "715f23b0c5a5c29ad831182534aa50dacde4e16e18e85b6cd6417789c131bafe",
+        "hash-only/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "text-first-character/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "text-first-character/measured.json": "1256267326ca751764fef8e8b45ddb1613ab8345864959303bcc9ad2ee7772e8",
+        "text-first-character/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "config-mismatch-explicit-description/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "config-mismatch-explicit-description/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "config-mismatch-explicit-description/fixture.ref": "b31b0153bb289f343f93a997dc858407b92cdb726946096254faaa31ff662703",
+        "completion-ref-absent/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-ref-absent/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "completion-ref-absent/fixture.ref": "d7e7e51fc408a480e3eed0826d551895f56a2ca699da0a331f4fd536a9797a27"
+      },
+      "outputs": [
+        {
+          "source_label": "retained-D-CPU-control/text-first-character.original.stdout",
+          "original_sha256": "a1785c020cc3c31d446cd826d7521a4140819e14c8cf3aa48be815f367b366d2",
+          "original_bytes": 475,
+          "case": "text-first-character",
+          "arm": "original",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/text-first-character.original.stdout",
+            "sha256": "a1785c020cc3c31d446cd826d7521a4140819e14c8cf3aa48be815f367b366d2"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/text-first-character.candidate.stdout",
+          "original_sha256": "a1785c020cc3c31d446cd826d7521a4140819e14c8cf3aa48be815f367b366d2",
+          "original_bytes": 475,
+          "case": "text-first-character",
+          "arm": "candidate",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/text-first-character.candidate.stdout",
+            "sha256": "a1785c020cc3c31d446cd826d7521a4140819e14c8cf3aa48be815f367b366d2"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/text-first-character.original.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "text-first-character",
+          "arm": "original",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/text-first-character.original.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/text-first-character.candidate.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "text-first-character",
+          "arm": "candidate",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/text-first-character.candidate.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        }
+      ]
+    },
+    {
+      "case": "text-shorter-prefix",
+      "status": 1,
+      "original_and_candidate_equal": true,
+      "input_hashes_unchanged": {
+        "completion-count/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-count/measured.json": "1514ba9a6ad41be45f6a8b1a74a9783eac741e9341d1152dd974122cd8206949",
+        "completion-count/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "zero-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "zero-drafted/measured.json": "c32b52ccc8ca75c47f6300dbb31fcd4cac9eb54ad21ace139fcffb47214caac5",
+        "zero-drafted/fixture.ref": "c5cfebe2c32264ec2a650068d056100bf782f998b1c84848fa9696382bbb5bb5",
+        "mismatch-accepted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-accepted/measured.json": "5e23284d61d51f6bed39584ee344c37a44778835a3608cabdfb1b83d1cb0cf32",
+        "mismatch-accepted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "text-shorter-prefix/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "text-shorter-prefix/measured.json": "755e314692fd6d01b142040ef3710dfeea8ea83c30d6479d035fa560cf13021b",
+        "text-shorter-prefix/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "mismatch-rounds/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-rounds/measured.json": "7a3154ce3ef6170e262533f714bd77e897a60a4d28f8b849facb7dfc298c0703",
+        "mismatch-rounds/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "config-mismatch/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "config-mismatch/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "config-mismatch/fixture.ref": "2234ea1c9f22cb0a204ea8699f7361ab3d5a70e43f436b092dfe4f6fa9ea3222",
+        "matching/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "matching/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "matching/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "completion-null/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-null/measured.json": "8970a68a841b719e65cf336f63ab7e4c86bb2dd955f07076ae44b14d510592b2",
+        "completion-null/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "missing-reference/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "missing-reference/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "mismatch-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-drafted/measured.json": "a6c9a7158d8feeeb17c99d41685655d984253419a311310a3429608bf48ca472",
+        "mismatch-drafted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "missing-text/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "missing-text/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "completion-zero/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-zero/measured.json": "10692bfd9158e4d76e6f0985d98c5fce94a69d01e3c990d74faeee7c35c47b32",
+        "completion-zero/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "hash-only/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "hash-only/measured.json": "715f23b0c5a5c29ad831182534aa50dacde4e16e18e85b6cd6417789c131bafe",
+        "hash-only/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "text-first-character/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "text-first-character/measured.json": "1256267326ca751764fef8e8b45ddb1613ab8345864959303bcc9ad2ee7772e8",
+        "text-first-character/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "config-mismatch-explicit-description/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "config-mismatch-explicit-description/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "config-mismatch-explicit-description/fixture.ref": "b31b0153bb289f343f93a997dc858407b92cdb726946096254faaa31ff662703",
+        "completion-ref-absent/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-ref-absent/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "completion-ref-absent/fixture.ref": "d7e7e51fc408a480e3eed0826d551895f56a2ca699da0a331f4fd536a9797a27"
+      },
+      "outputs": [
+        {
+          "source_label": "retained-D-CPU-control/text-shorter-prefix.original.stdout",
+          "original_sha256": "7b5929463ea84bdeb4b058c93c4edef0828c8ff5111eb06bf66e789ed40170fd",
+          "original_bytes": 415,
+          "case": "text-shorter-prefix",
+          "arm": "original",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/text-shorter-prefix.original.stdout",
+            "sha256": "7b5929463ea84bdeb4b058c93c4edef0828c8ff5111eb06bf66e789ed40170fd"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/text-shorter-prefix.candidate.stdout",
+          "original_sha256": "7b5929463ea84bdeb4b058c93c4edef0828c8ff5111eb06bf66e789ed40170fd",
+          "original_bytes": 415,
+          "case": "text-shorter-prefix",
+          "arm": "candidate",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/text-shorter-prefix.candidate.stdout",
+            "sha256": "7b5929463ea84bdeb4b058c93c4edef0828c8ff5111eb06bf66e789ed40170fd"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/text-shorter-prefix.original.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "text-shorter-prefix",
+          "arm": "original",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/text-shorter-prefix.original.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/text-shorter-prefix.candidate.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "text-shorter-prefix",
+          "arm": "candidate",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/text-shorter-prefix.candidate.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        }
+      ]
+    },
+    {
+      "case": "text-longer-prefix",
+      "status": 1,
+      "original_and_candidate_equal": true,
+      "input_hashes_unchanged": {
+        "completion-count/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-count/measured.json": "1514ba9a6ad41be45f6a8b1a74a9783eac741e9341d1152dd974122cd8206949",
+        "completion-count/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "zero-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "zero-drafted/measured.json": "c32b52ccc8ca75c47f6300dbb31fcd4cac9eb54ad21ace139fcffb47214caac5",
+        "zero-drafted/fixture.ref": "c5cfebe2c32264ec2a650068d056100bf782f998b1c84848fa9696382bbb5bb5",
+        "mismatch-accepted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-accepted/measured.json": "5e23284d61d51f6bed39584ee344c37a44778835a3608cabdfb1b83d1cb0cf32",
+        "mismatch-accepted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "text-shorter-prefix/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "text-shorter-prefix/measured.json": "755e314692fd6d01b142040ef3710dfeea8ea83c30d6479d035fa560cf13021b",
+        "text-shorter-prefix/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "mismatch-rounds/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-rounds/measured.json": "7a3154ce3ef6170e262533f714bd77e897a60a4d28f8b849facb7dfc298c0703",
+        "mismatch-rounds/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "config-mismatch/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "config-mismatch/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "config-mismatch/fixture.ref": "2234ea1c9f22cb0a204ea8699f7361ab3d5a70e43f436b092dfe4f6fa9ea3222",
+        "text-longer-prefix/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "text-longer-prefix/measured.json": "516785600d355dd0563dfe8d470a365d6397b5e3270d97e54c7ef4ba63872ae4",
+        "text-longer-prefix/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "matching/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "matching/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "matching/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "completion-null/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-null/measured.json": "8970a68a841b719e65cf336f63ab7e4c86bb2dd955f07076ae44b14d510592b2",
+        "completion-null/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "missing-reference/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "missing-reference/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "mismatch-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-drafted/measured.json": "a6c9a7158d8feeeb17c99d41685655d984253419a311310a3429608bf48ca472",
+        "mismatch-drafted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "missing-text/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "missing-text/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "completion-zero/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-zero/measured.json": "10692bfd9158e4d76e6f0985d98c5fce94a69d01e3c990d74faeee7c35c47b32",
+        "completion-zero/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "hash-only/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "hash-only/measured.json": "715f23b0c5a5c29ad831182534aa50dacde4e16e18e85b6cd6417789c131bafe",
+        "hash-only/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "text-first-character/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "text-first-character/measured.json": "1256267326ca751764fef8e8b45ddb1613ab8345864959303bcc9ad2ee7772e8",
+        "text-first-character/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "config-mismatch-explicit-description/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "config-mismatch-explicit-description/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "config-mismatch-explicit-description/fixture.ref": "b31b0153bb289f343f93a997dc858407b92cdb726946096254faaa31ff662703",
+        "completion-ref-absent/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-ref-absent/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "completion-ref-absent/fixture.ref": "d7e7e51fc408a480e3eed0826d551895f56a2ca699da0a331f4fd536a9797a27"
+      },
+      "outputs": [
+        {
+          "source_label": "retained-D-CPU-control/text-longer-prefix.original.stdout",
+          "original_sha256": "9f49a631386e875c4d9e82de331f54327a259f260d6adad8586360e90913236e",
+          "original_bytes": 551,
+          "case": "text-longer-prefix",
+          "arm": "original",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/text-longer-prefix.original.stdout",
+            "sha256": "9f49a631386e875c4d9e82de331f54327a259f260d6adad8586360e90913236e"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/text-longer-prefix.candidate.stdout",
+          "original_sha256": "9f49a631386e875c4d9e82de331f54327a259f260d6adad8586360e90913236e",
+          "original_bytes": 551,
+          "case": "text-longer-prefix",
+          "arm": "candidate",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/text-longer-prefix.candidate.stdout",
+            "sha256": "9f49a631386e875c4d9e82de331f54327a259f260d6adad8586360e90913236e"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/text-longer-prefix.original.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "text-longer-prefix",
+          "arm": "original",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/text-longer-prefix.original.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/text-longer-prefix.candidate.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "text-longer-prefix",
+          "arm": "candidate",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/text-longer-prefix.candidate.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        }
+      ]
+    },
+    {
+      "case": "text-after-golden-window",
+      "status": 1,
+      "original_and_candidate_equal": true,
+      "input_hashes_unchanged": {
+        "completion-count/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-count/measured.json": "1514ba9a6ad41be45f6a8b1a74a9783eac741e9341d1152dd974122cd8206949",
+        "completion-count/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "zero-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "zero-drafted/measured.json": "c32b52ccc8ca75c47f6300dbb31fcd4cac9eb54ad21ace139fcffb47214caac5",
+        "zero-drafted/fixture.ref": "c5cfebe2c32264ec2a650068d056100bf782f998b1c84848fa9696382bbb5bb5",
+        "mismatch-accepted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-accepted/measured.json": "5e23284d61d51f6bed39584ee344c37a44778835a3608cabdfb1b83d1cb0cf32",
+        "mismatch-accepted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "text-shorter-prefix/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "text-shorter-prefix/measured.json": "755e314692fd6d01b142040ef3710dfeea8ea83c30d6479d035fa560cf13021b",
+        "text-shorter-prefix/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "mismatch-rounds/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-rounds/measured.json": "7a3154ce3ef6170e262533f714bd77e897a60a4d28f8b849facb7dfc298c0703",
+        "mismatch-rounds/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "config-mismatch/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "config-mismatch/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "config-mismatch/fixture.ref": "2234ea1c9f22cb0a204ea8699f7361ab3d5a70e43f436b092dfe4f6fa9ea3222",
+        "text-longer-prefix/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "text-longer-prefix/measured.json": "516785600d355dd0563dfe8d470a365d6397b5e3270d97e54c7ef4ba63872ae4",
+        "text-longer-prefix/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "matching/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "matching/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "matching/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "text-after-golden-window/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "text-after-golden-window/measured.json": "4111196823ac1eebb66e3c94fa32cefef3ec3e8c3b60efa2df1026dfffc37562",
+        "text-after-golden-window/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "completion-null/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-null/measured.json": "8970a68a841b719e65cf336f63ab7e4c86bb2dd955f07076ae44b14d510592b2",
+        "completion-null/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "missing-reference/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "missing-reference/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "mismatch-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-drafted/measured.json": "a6c9a7158d8feeeb17c99d41685655d984253419a311310a3429608bf48ca472",
+        "mismatch-drafted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "missing-text/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "missing-text/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "completion-zero/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-zero/measured.json": "10692bfd9158e4d76e6f0985d98c5fce94a69d01e3c990d74faeee7c35c47b32",
+        "completion-zero/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "hash-only/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "hash-only/measured.json": "715f23b0c5a5c29ad831182534aa50dacde4e16e18e85b6cd6417789c131bafe",
+        "hash-only/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "text-first-character/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "text-first-character/measured.json": "1256267326ca751764fef8e8b45ddb1613ab8345864959303bcc9ad2ee7772e8",
+        "text-first-character/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "config-mismatch-explicit-description/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "config-mismatch-explicit-description/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "config-mismatch-explicit-description/fixture.ref": "b31b0153bb289f343f93a997dc858407b92cdb726946096254faaa31ff662703",
+        "completion-ref-absent/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-ref-absent/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "completion-ref-absent/fixture.ref": "d7e7e51fc408a480e3eed0826d551895f56a2ca699da0a331f4fd536a9797a27"
+      },
+      "outputs": [
+        {
+          "source_label": "retained-D-CPU-control/text-after-golden-window.original.stdout",
+          "original_sha256": "4d989c136b160106f1c121a09a539aca6cedae641365cd0906774febfb4ae6c9",
+          "original_bytes": 671,
+          "case": "text-after-golden-window",
+          "arm": "original",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/text-after-golden-window.original.stdout",
+            "sha256": "4d989c136b160106f1c121a09a539aca6cedae641365cd0906774febfb4ae6c9"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/text-after-golden-window.candidate.stdout",
+          "original_sha256": "4d989c136b160106f1c121a09a539aca6cedae641365cd0906774febfb4ae6c9",
+          "original_bytes": 671,
+          "case": "text-after-golden-window",
+          "arm": "candidate",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/text-after-golden-window.candidate.stdout",
+            "sha256": "4d989c136b160106f1c121a09a539aca6cedae641365cd0906774febfb4ae6c9"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/text-after-golden-window.original.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "text-after-golden-window",
+          "arm": "original",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/text-after-golden-window.original.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/text-after-golden-window.candidate.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "text-after-golden-window",
+          "arm": "candidate",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/text-after-golden-window.candidate.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        }
+      ]
+    },
+    {
+      "case": "all-comparisons-fail",
+      "status": 1,
+      "original_and_candidate_equal": true,
+      "input_hashes_unchanged": {
+        "completion-count/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-count/measured.json": "1514ba9a6ad41be45f6a8b1a74a9783eac741e9341d1152dd974122cd8206949",
+        "completion-count/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "zero-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "zero-drafted/measured.json": "c32b52ccc8ca75c47f6300dbb31fcd4cac9eb54ad21ace139fcffb47214caac5",
+        "zero-drafted/fixture.ref": "c5cfebe2c32264ec2a650068d056100bf782f998b1c84848fa9696382bbb5bb5",
+        "mismatch-accepted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-accepted/measured.json": "5e23284d61d51f6bed39584ee344c37a44778835a3608cabdfb1b83d1cb0cf32",
+        "mismatch-accepted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "text-shorter-prefix/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "text-shorter-prefix/measured.json": "755e314692fd6d01b142040ef3710dfeea8ea83c30d6479d035fa560cf13021b",
+        "text-shorter-prefix/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "mismatch-rounds/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-rounds/measured.json": "7a3154ce3ef6170e262533f714bd77e897a60a4d28f8b849facb7dfc298c0703",
+        "mismatch-rounds/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "config-mismatch/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "config-mismatch/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "config-mismatch/fixture.ref": "2234ea1c9f22cb0a204ea8699f7361ab3d5a70e43f436b092dfe4f6fa9ea3222",
+        "text-longer-prefix/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "text-longer-prefix/measured.json": "516785600d355dd0563dfe8d470a365d6397b5e3270d97e54c7ef4ba63872ae4",
+        "text-longer-prefix/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "all-comparisons-fail/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "all-comparisons-fail/measured.json": "27547caf8e274a42207838113eb45cf7ca63d390d6d81cb0d0e474bcf15b36b9",
+        "all-comparisons-fail/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "matching/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "matching/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "matching/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "text-after-golden-window/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "text-after-golden-window/measured.json": "4111196823ac1eebb66e3c94fa32cefef3ec3e8c3b60efa2df1026dfffc37562",
+        "text-after-golden-window/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "completion-null/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-null/measured.json": "8970a68a841b719e65cf336f63ab7e4c86bb2dd955f07076ae44b14d510592b2",
+        "completion-null/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "missing-reference/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "missing-reference/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "mismatch-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-drafted/measured.json": "a6c9a7158d8feeeb17c99d41685655d984253419a311310a3429608bf48ca472",
+        "mismatch-drafted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "missing-text/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "missing-text/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "completion-zero/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-zero/measured.json": "10692bfd9158e4d76e6f0985d98c5fce94a69d01e3c990d74faeee7c35c47b32",
+        "completion-zero/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "hash-only/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "hash-only/measured.json": "715f23b0c5a5c29ad831182534aa50dacde4e16e18e85b6cd6417789c131bafe",
+        "hash-only/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "text-first-character/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "text-first-character/measured.json": "1256267326ca751764fef8e8b45ddb1613ab8345864959303bcc9ad2ee7772e8",
+        "text-first-character/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "config-mismatch-explicit-description/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "config-mismatch-explicit-description/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "config-mismatch-explicit-description/fixture.ref": "b31b0153bb289f343f93a997dc858407b92cdb726946096254faaa31ff662703",
+        "completion-ref-absent/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-ref-absent/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "completion-ref-absent/fixture.ref": "d7e7e51fc408a480e3eed0826d551895f56a2ca699da0a331f4fd536a9797a27"
+      },
+      "outputs": [
+        {
+          "source_label": "retained-D-CPU-control/all-comparisons-fail.original.stdout",
+          "original_sha256": "c6763687cc9246ec02f8b954a4759d61b57ad63d0eac82b7721ba469af95d473",
+          "original_bytes": 372,
+          "case": "all-comparisons-fail",
+          "arm": "original",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/all-comparisons-fail.original.stdout",
+            "sha256": "c6763687cc9246ec02f8b954a4759d61b57ad63d0eac82b7721ba469af95d473"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/all-comparisons-fail.candidate.stdout",
+          "original_sha256": "c6763687cc9246ec02f8b954a4759d61b57ad63d0eac82b7721ba469af95d473",
+          "original_bytes": 372,
+          "case": "all-comparisons-fail",
+          "arm": "candidate",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/all-comparisons-fail.candidate.stdout",
+            "sha256": "c6763687cc9246ec02f8b954a4759d61b57ad63d0eac82b7721ba469af95d473"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/all-comparisons-fail.original.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "all-comparisons-fail",
+          "arm": "original",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/all-comparisons-fail.original.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/all-comparisons-fail.candidate.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "all-comparisons-fail",
+          "arm": "candidate",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/all-comparisons-fail.candidate.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        }
+      ]
+    },
+    {
+      "case": "failed-zero-rate",
+      "status": 1,
+      "original_and_candidate_equal": true,
+      "input_hashes_unchanged": {
+        "completion-count/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-count/measured.json": "1514ba9a6ad41be45f6a8b1a74a9783eac741e9341d1152dd974122cd8206949",
+        "completion-count/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "failed-zero-rate/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "failed-zero-rate/measured.json": "c32b52ccc8ca75c47f6300dbb31fcd4cac9eb54ad21ace139fcffb47214caac5",
+        "failed-zero-rate/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "zero-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "zero-drafted/measured.json": "c32b52ccc8ca75c47f6300dbb31fcd4cac9eb54ad21ace139fcffb47214caac5",
+        "zero-drafted/fixture.ref": "c5cfebe2c32264ec2a650068d056100bf782f998b1c84848fa9696382bbb5bb5",
+        "mismatch-accepted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-accepted/measured.json": "5e23284d61d51f6bed39584ee344c37a44778835a3608cabdfb1b83d1cb0cf32",
+        "mismatch-accepted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "text-shorter-prefix/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "text-shorter-prefix/measured.json": "755e314692fd6d01b142040ef3710dfeea8ea83c30d6479d035fa560cf13021b",
+        "text-shorter-prefix/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "mismatch-rounds/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-rounds/measured.json": "7a3154ce3ef6170e262533f714bd77e897a60a4d28f8b849facb7dfc298c0703",
+        "mismatch-rounds/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "config-mismatch/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "config-mismatch/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "config-mismatch/fixture.ref": "2234ea1c9f22cb0a204ea8699f7361ab3d5a70e43f436b092dfe4f6fa9ea3222",
+        "text-longer-prefix/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "text-longer-prefix/measured.json": "516785600d355dd0563dfe8d470a365d6397b5e3270d97e54c7ef4ba63872ae4",
+        "text-longer-prefix/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "all-comparisons-fail/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "all-comparisons-fail/measured.json": "27547caf8e274a42207838113eb45cf7ca63d390d6d81cb0d0e474bcf15b36b9",
+        "all-comparisons-fail/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "matching/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "matching/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "matching/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "text-after-golden-window/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "text-after-golden-window/measured.json": "4111196823ac1eebb66e3c94fa32cefef3ec3e8c3b60efa2df1026dfffc37562",
+        "text-after-golden-window/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "completion-null/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-null/measured.json": "8970a68a841b719e65cf336f63ab7e4c86bb2dd955f07076ae44b14d510592b2",
+        "completion-null/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "missing-reference/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "missing-reference/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "mismatch-drafted/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "mismatch-drafted/measured.json": "a6c9a7158d8feeeb17c99d41685655d984253419a311310a3429608bf48ca472",
+        "mismatch-drafted/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "missing-text/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "missing-text/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "completion-zero/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-zero/measured.json": "10692bfd9158e4d76e6f0985d98c5fce94a69d01e3c990d74faeee7c35c47b32",
+        "completion-zero/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "hash-only/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "hash-only/measured.json": "715f23b0c5a5c29ad831182534aa50dacde4e16e18e85b6cd6417789c131bafe",
+        "hash-only/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "text-first-character/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "text-first-character/measured.json": "1256267326ca751764fef8e8b45ddb1613ab8345864959303bcc9ad2ee7772e8",
+        "text-first-character/fixture.ref": "e74665eb54475862be5605d927991b2f8293623fc9d9bec9039357ad33c33c69",
+        "config-mismatch-explicit-description/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "config-mismatch-explicit-description/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "config-mismatch-explicit-description/fixture.ref": "b31b0153bb289f343f93a997dc858407b92cdb726946096254faaa31ff662703",
+        "completion-ref-absent/fixture.text": "60fadd36ab1a869cf5eb136fedfd445a0cfc5ed15d4612c4810c64c1f30481a8",
+        "completion-ref-absent/measured.json": "64a8f93e410818b9b472aeaf8f3f4941aa3caa9ca724989b815bf6f3f6636567",
+        "completion-ref-absent/fixture.ref": "d7e7e51fc408a480e3eed0826d551895f56a2ca699da0a331f4fd536a9797a27"
+      },
+      "outputs": [
+        {
+          "source_label": "retained-D-CPU-control/failed-zero-rate.original.stdout",
+          "original_sha256": "e3aee20396e31dc0b679d231f23000263cb2f7192ab5d51fc24ebc689f92961e",
+          "original_bytes": 258,
+          "case": "failed-zero-rate",
+          "arm": "original",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/failed-zero-rate.original.stdout",
+            "sha256": "e3aee20396e31dc0b679d231f23000263cb2f7192ab5d51fc24ebc689f92961e"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/failed-zero-rate.candidate.stdout",
+          "original_sha256": "e3aee20396e31dc0b679d231f23000263cb2f7192ab5d51fc24ebc689f92961e",
+          "original_bytes": 258,
+          "case": "failed-zero-rate",
+          "arm": "candidate",
+          "stream": "stdout",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/failed-zero-rate.candidate.stdout",
+            "sha256": "e3aee20396e31dc0b679d231f23000263cb2f7192ab5d51fc24ebc689f92961e"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/failed-zero-rate.original.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "failed-zero-rate",
+          "arm": "original",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/failed-zero-rate.original.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "source_label": "retained-D-CPU-control/failed-zero-rate.candidate.stderr",
+          "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "original_bytes": 0,
+          "case": "failed-zero-rate",
+          "arm": "candidate",
+          "stream": "stderr",
+          "original_status": 1,
+          "public_payload": {
+            "type": "byte-identical original",
+            "path": "research/accept-comparator-import-1015/receipts/original-controls/failed-zero-rate.candidate.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        }
+      ]
+    }
+  ],
+  "qualification": false,
+  "custody": "All80 original outputs stay in exact private custody. Public-safe originals are byte-for-byte copies; four path-bearing originals have clearly labelled reversible public derivatives, with original hashes preserved.",
+  "publication_dependency": "Root publishes only after the1017 operational CI fix and applicable current-head review/CI. Rebase, evidence bank and publication are new commit identities, not new comparator executions."
+}

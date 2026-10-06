@@ -1,0 +1,8 @@
+  fixture: FAIL — 1 assertion(s):
+      text sha256: pinned 60fadd36ab1a869c -> got ab133a5a23498e38
+      acceptance 0.8000 -> 0.8000 (+0.00pp)   <- clock-independent; a ratio, so this is real, not drift
+      TEXT DIVERGES at char 150 (~word 23; pinned len 213, got 213)
+        common:  ...'rd14 word15 word16 word17 word18 word19 word20 word21 word22'
+        pinned:  ' word23 word24 word25 word26 word27 word28 word29 word30 word31'
+        got:     'Xword23 word24 word25 word26 word27 word28 word29 word30 word31'
+        NOTE: this divergence is at/past the 20-token golden window — the token goldens are BLIND to it. That blindness is why this gate exists.
