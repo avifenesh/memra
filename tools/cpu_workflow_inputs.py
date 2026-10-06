@@ -21,10 +21,10 @@ COMMANDS = {
 
 def _path(name):
     if (type(name) is not str or not name or name == '.'
-            or any(c in name for c in '\r\n\t\0\\')
-            or PurePosixPath(name).is_absolute()
-            or '..' in PurePosixPath(name).parts
-            or PurePosixPath(name).as_posix() != name):
+            or any(c in name for c in '\r\n\t\0\\')):
+        raise ValueError('noncanonical workflow dependency path')
+    path = PurePosixPath(name)
+    if (path.is_absolute() or '..' in path.parts or path.as_posix() != name):
         raise ValueError('noncanonical workflow dependency path')
     return name
 
