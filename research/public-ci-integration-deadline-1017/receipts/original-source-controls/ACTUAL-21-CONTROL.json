@@ -1,0 +1,653 @@
+{
+  "success": true,
+  "qualification": false,
+  "cases": [
+    {
+      "case": "old-valid",
+      "arm": "old",
+      "events": {
+        "writes": [
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41
+        ],
+        "flushes": 104,
+        "positive_physical_bytes": 17586,
+        "opens": 102
+      },
+      "mutated": false,
+      "explicit_red_shortcut": false,
+      "accepted": true,
+      "seconds": 0.011501683038659394,
+      "kind": "valid",
+      "namespace_isolated": true,
+      "owned_readers_empty": true
+    },
+    {
+      "case": "new-valid",
+      "arm": "new",
+      "events": {
+        "writes": [
+          41,
+          41,
+          41,
+          4059,
+          82
+        ],
+        "flushes": 5,
+        "positive_physical_bytes": 17586,
+        "opens": 102
+      },
+      "mutated": false,
+      "explicit_red_shortcut": false,
+      "accepted": true,
+      "seconds": 0.008190673077479005,
+      "kind": "valid",
+      "namespace_isolated": true,
+      "owned_readers_empty": true
+    },
+    {
+      "case": "old-mutable",
+      "arm": "old",
+      "events": {
+        "writes": [
+          41,
+          41
+        ],
+        "flushes": 2,
+        "positive_physical_bytes": 16396,
+        "opens": 2
+      },
+      "mutated": true,
+      "explicit_red_shortcut": false,
+      "accepted": false,
+      "error": "merge guard data differs from pinned source: small-0000.rs",
+      "seconds": 0.005302774021402001,
+      "kind": "mutable",
+      "namespace_isolated": true,
+      "owned_readers_empty": true
+    },
+    {
+      "case": "red-stale-physical",
+      "arm": "new",
+      "events": {
+        "writes": [
+          4059,
+          82
+        ],
+        "flushes": 2,
+        "positive_physical_bytes": 17575,
+        "opens": 101
+      },
+      "mutated": true,
+      "explicit_red_shortcut": true,
+      "accepted": true,
+      "seconds": 0.0065937340259552,
+      "kind": "red",
+      "namespace_isolated": true,
+      "owned_readers_empty": true
+    },
+    {
+      "case": "new-mutable",
+      "arm": "new",
+      "events": {
+        "writes": [
+          4059
+        ],
+        "flushes": 1,
+        "positive_physical_bytes": 16396,
+        "opens": 2
+      },
+      "mutated": true,
+      "explicit_red_shortcut": false,
+      "accepted": false,
+      "error": "merge guard data differs from pinned source: small-0000.rs",
+      "seconds": 0.005417049978859723,
+      "kind": "mutable",
+      "namespace_isolated": true,
+      "owned_readers_empty": true
+    },
+    {
+      "case": "old-during-read",
+      "arm": "old",
+      "events": {
+        "writes": [
+          41,
+          41
+        ],
+        "flushes": 2,
+        "positive_physical_bytes": 16396,
+        "opens": 2
+      },
+      "mutated": false,
+      "explicit_red_shortcut": false,
+      "accepted": false,
+      "error": "merge guard data changed during read: small-0000.rs",
+      "seconds": 0.004892073920927942,
+      "kind": "during-read",
+      "namespace_isolated": true,
+      "owned_readers_empty": true
+    },
+    {
+      "case": "old-recheck",
+      "arm": "old",
+      "events": {
+        "writes": [
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41,
+          41
+        ],
+        "flushes": 103,
+        "positive_physical_bytes": 33971,
+        "opens": 103
+      },
+      "mutated": false,
+      "explicit_red_shortcut": false,
+      "warm_call_accepted": true,
+      "warm_opens": 101,
+      "accepted": false,
+      "error": "merge guard data differs from pinned source: small-0000.rs",
+      "seconds": 0.011072566965594888,
+      "kind": "recheck",
+      "namespace_isolated": true,
+      "owned_readers_empty": true
+    },
+    {
+      "case": "old-mode",
+      "arm": "old",
+      "events": {
+        "writes": [
+          41
+        ],
+        "flushes": 1,
+        "positive_physical_bytes": 16385,
+        "opens": 2
+      },
+      "mutated": false,
+      "explicit_red_shortcut": false,
+      "accepted": false,
+      "error": "merge guard data mode differs from pinned source: small-0000.rs",
+      "seconds": 0.005075105000287294,
+      "kind": "mode",
+      "namespace_isolated": true,
+      "owned_readers_empty": true
+    },
+    {
+      "case": "old-alias",
+      "arm": "old",
+      "events": {
+        "writes": [
+          41,
+          41
+        ],
+        "flushes": 2,
+        "positive_physical_bytes": 0,
+        "opens": 0
+      },
+      "mutated": false,
+      "explicit_red_shortcut": false,
+      "accepted": false,
+      "error": "pinned contained alias differs: alias.rs: link-target-mismatch",
+      "seconds": 0.00497696700040251,
+      "kind": "alias",
+      "namespace_isolated": true,
+      "owned_readers_empty": true
+    },
+    {
+      "case": "old-wrong-oid",
+      "arm": "old",
+      "events": {
+        "writes": [
+          41
+        ],
+        "flushes": 1,
+        "positive_physical_bytes": 0,
+        "opens": 1
+      },
+      "mutated": false,
+      "explicit_red_shortcut": false,
+      "accepted": false,
+      "error": "pinned merge guard blob unavailable: 000-payload.rs",
+      "seconds": 0.004379237070679665,
+      "kind": "wrong-oid",
+      "namespace_isolated": true,
+      "owned_readers_empty": true
+    },
+    {
+      "case": "old-missing",
+      "arm": "old",
+      "events": {
+        "writes": [
+          41
+        ],
+        "flushes": 1,
+        "positive_physical_bytes": 0,
+        "opens": 1
+      },
+      "mutated": false,
+      "explicit_red_shortcut": false,
+      "accepted": false,
+      "error": "pinned merge guard blob unavailable: 000-payload.rs",
+      "seconds": 0.004287748015485704,
+      "kind": "missing",
+      "namespace_isolated": true,
+      "owned_readers_empty": true
+    },
+    {
+      "case": "old-truncated",
+      "arm": "old",
+      "events": {
+        "writes": [
+          41
+        ],
+        "flushes": 1,
+        "positive_physical_bytes": 16385,
+        "opens": 1
+      },
+      "mutated": false,
+      "explicit_red_shortcut": false,
+      "accepted": false,
+      "error": "merge guard data differs from pinned source: 000-payload.rs",
+      "seconds": 0.0039968600030988455,
+      "kind": "truncated",
+      "namespace_isolated": true,
+      "owned_readers_empty": true
+    },
+    {
+      "case": "old-terminator",
+      "arm": "old",
+      "events": {
+        "writes": [
+          41
+        ],
+        "flushes": 1,
+        "positive_physical_bytes": 16385,
+        "opens": 1
+      },
+      "mutated": false,
+      "explicit_red_shortcut": false,
+      "accepted": false,
+      "error": "merge guard data length differs from pinned source: 000-payload.rs",
+      "seconds": 0.005580063094384968,
+      "kind": "terminator",
+      "namespace_isolated": true,
+      "owned_readers_empty": true
+    },
+    {
+      "case": "new-during-read",
+      "arm": "new",
+      "events": {
+        "writes": [
+          4059
+        ],
+        "flushes": 1,
+        "positive_physical_bytes": 16396,
+        "opens": 2
+      },
+      "mutated": false,
+      "explicit_red_shortcut": false,
+      "accepted": false,
+      "error": "merge guard data changed during read: small-0000.rs",
+      "seconds": 0.005279597011394799,
+      "kind": "during-read",
+      "namespace_isolated": true,
+      "owned_readers_empty": true
+    },
+    {
+      "case": "new-recheck",
+      "arm": "new",
+      "events": {
+        "writes": [
+          4059,
+          82,
+          4059
+        ],
+        "flushes": 3,
+        "positive_physical_bytes": 33971,
+        "opens": 103
+      },
+      "mutated": false,
+      "explicit_red_shortcut": false,
+      "warm_call_accepted": true,
+      "warm_opens": 101,
+      "accepted": false,
+      "error": "merge guard data differs from pinned source: small-0000.rs",
+      "seconds": 0.007735898019745946,
+      "kind": "recheck",
+      "namespace_isolated": true,
+      "owned_readers_empty": true
+    },
+    {
+      "case": "new-mode",
+      "arm": "new",
+      "events": {
+        "writes": [
+          4059
+        ],
+        "flushes": 1,
+        "positive_physical_bytes": 16385,
+        "opens": 2
+      },
+      "mutated": false,
+      "explicit_red_shortcut": false,
+      "accepted": false,
+      "error": "merge guard data mode differs from pinned source: small-0000.rs",
+      "seconds": 0.0050006849924102426,
+      "kind": "mode",
+      "namespace_isolated": true,
+      "owned_readers_empty": true
+    },
+    {
+      "case": "new-alias",
+      "arm": "new",
+      "events": {
+        "writes": [
+          41,
+          41
+        ],
+        "flushes": 2,
+        "positive_physical_bytes": 0,
+        "opens": 0
+      },
+      "mutated": false,
+      "explicit_red_shortcut": false,
+      "accepted": false,
+      "error": "pinned contained alias differs: alias.rs: link-target-mismatch",
+      "seconds": 0.003953419043682516,
+      "kind": "alias",
+      "namespace_isolated": true,
+      "owned_readers_empty": true
+    },
+    {
+      "case": "new-wrong-oid",
+      "arm": "new",
+      "events": {
+        "writes": [
+          4059
+        ],
+        "flushes": 1,
+        "positive_physical_bytes": 0,
+        "opens": 1
+      },
+      "mutated": false,
+      "explicit_red_shortcut": false,
+      "accepted": false,
+      "error": "pinned merge guard blob unavailable: 000-payload.rs",
+      "seconds": 0.0036284220404922962,
+      "kind": "wrong-oid",
+      "namespace_isolated": true,
+      "owned_readers_empty": true
+    },
+    {
+      "case": "new-missing",
+      "arm": "new",
+      "events": {
+        "writes": [
+          4059
+        ],
+        "flushes": 1,
+        "positive_physical_bytes": 0,
+        "opens": 1
+      },
+      "mutated": false,
+      "explicit_red_shortcut": false,
+      "accepted": false,
+      "error": "pinned merge guard blob unavailable: 000-payload.rs",
+      "seconds": 0.0035804189974442124,
+      "kind": "missing",
+      "namespace_isolated": true,
+      "owned_readers_empty": true
+    },
+    {
+      "case": "new-truncated",
+      "arm": "new",
+      "events": {
+        "writes": [
+          4059
+        ],
+        "flushes": 1,
+        "positive_physical_bytes": 16385,
+        "opens": 1
+      },
+      "mutated": false,
+      "explicit_red_shortcut": false,
+      "accepted": false,
+      "error": "merge guard data differs from pinned source: 000-payload.rs",
+      "seconds": 0.003706729970872402,
+      "kind": "truncated",
+      "namespace_isolated": true,
+      "owned_readers_empty": true
+    },
+    {
+      "case": "new-terminator",
+      "arm": "new",
+      "events": {
+        "writes": [
+          4059
+        ],
+        "flushes": 1,
+        "positive_physical_bytes": 16385,
+        "opens": 1
+      },
+      "mutated": false,
+      "explicit_red_shortcut": false,
+      "accepted": false,
+      "error": "merge guard data length differs from pinned source: 000-payload.rs",
+      "seconds": 0.006451425957493484,
+      "kind": "terminator",
+      "namespace_isolated": true,
+      "owned_readers_empty": true
+    }
+  ],
+  "full_plan_reexecuted": false,
+  "reader649_reexecuted": false,
+  "whole_witness_reexecuted": false,
+  "atomic_pipe_bytes": 4096,
+  "output_pipe_capacity": 8192,
+  "large_payload_bytes": 16385,
+  "small_path_count": 100,
+  "old_red_new_control_passed": true,
+  "scratch_removed": true,
+  "wall_seconds": 0.3017069810302928
+}

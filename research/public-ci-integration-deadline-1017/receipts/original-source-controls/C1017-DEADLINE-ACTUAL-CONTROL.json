@@ -1,0 +1,100 @@
+{
+  "success": true,
+  "qualification": false,
+  "cases": [
+    {
+      "arm": "old",
+      "handler": "OSError",
+      "swallowed": true,
+      "propagated": false,
+      "seconds": 1.002357934950851,
+      "module_readers_empty": true,
+      "signal_restored": true,
+      "timer_disarmed": true,
+      "child_reaped_by_witness": true,
+      "reader_reaped_by_witness": true,
+      "streams_closed_by_witness": true
+    },
+    {
+      "arm": "old",
+      "handler": "Exception",
+      "swallowed": true,
+      "propagated": false,
+      "seconds": 1.0033858369570225,
+      "module_readers_empty": true,
+      "signal_restored": true,
+      "timer_disarmed": true,
+      "child_reaped_by_witness": true,
+      "reader_reaped_by_witness": true,
+      "streams_closed_by_witness": true
+    },
+    {
+      "arm": "old",
+      "handler": "expected-Refused",
+      "swallowed": true,
+      "propagated": false,
+      "converted_to_expected_refusal": true,
+      "seconds": 1.0030563280452043,
+      "module_readers_empty": true,
+      "signal_restored": true,
+      "timer_disarmed": true,
+      "child_reaped_by_witness": true,
+      "reader_reaped_by_witness": true,
+      "streams_closed_by_witness": true
+    },
+    {
+      "arm": "new",
+      "handler": "OSError",
+      "swallowed": false,
+      "propagated": true,
+      "error_type": "PublicWitnessDeadline",
+      "message": "public-ci whole witness exceeded 420 seconds",
+      "seconds": 1.00217299698852,
+      "module_readers_empty": true,
+      "signal_restored": true,
+      "timer_disarmed": true,
+      "child_reaped_by_witness": true,
+      "reader_reaped_by_witness": true,
+      "streams_closed_by_witness": true
+    },
+    {
+      "arm": "new",
+      "handler": "Exception",
+      "swallowed": false,
+      "propagated": true,
+      "error_type": "PublicWitnessDeadline",
+      "message": "public-ci whole witness exceeded 420 seconds",
+      "seconds": 1.002336138044484,
+      "module_readers_empty": true,
+      "signal_restored": true,
+      "timer_disarmed": true,
+      "child_reaped_by_witness": true,
+      "reader_reaped_by_witness": true,
+      "streams_closed_by_witness": true
+    },
+    {
+      "arm": "new",
+      "handler": "expected-Refused",
+      "swallowed": false,
+      "propagated": true,
+      "error_type": "PublicWitnessDeadline",
+      "message": "public-ci whole witness exceeded 420 seconds",
+      "seconds": 1.0024150420213118,
+      "module_readers_empty": true,
+      "signal_restored": true,
+      "timer_disarmed": true,
+      "child_reaped_by_witness": true,
+      "reader_reaped_by_witness": true,
+      "streams_closed_by_witness": true
+    }
+  ],
+  "source": {
+    "old": "e5413d44c20115853fec3d497bbe5f9288b3567dbf4d28c7b64d4df51215d80c",
+    "new": "204dafb427f43a98223c8368af4b4e81624b36e59c0d6100d387171889fba8f7"
+  },
+  "production_deadline_seconds": 420,
+  "control_deadline_seconds": 1,
+  "whole_witness_replayed": false,
+  "scratch_removed": true,
+  "wall_seconds": 6.0285848079947755
+}
