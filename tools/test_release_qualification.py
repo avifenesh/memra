@@ -314,6 +314,29 @@ class QualificationTests(unittest.TestCase):
         with self.assertRaisesRegex(q.GateError, "no committed native qualification pointer"):
             q.verify_published(self.f.repo, "HEAD")
 
+    def test_docs_only_fast_forward_needs_no_qualification_but_tags_do(self):
+        f, unqualified = self.f, "no committed native qualification pointer"
+        (f.repo / "crates/memra-engine/build.rs").write_text('fn main() { read("../../docs/FLAGS.md"); }\n')
+        (f.repo / "docs").mkdir(); (f.repo / "docs/FLAGS.md").write_text("# Flags\n")
+        f.commit("unqualified main")
+        base = f.git("rev-parse", "HEAD").decode().strip()
+        def push(edit, remote="refs/heads/main"):
+            f.git("reset", "-q", "--hard", base); edit(); f.commit("candidate")
+            q.check_push(f.repo, [f"refs/heads/main {q.commit(f.repo, 'HEAD')} {remote} {base}"], "qualified")
+        readme = lambda: (f.repo / "README.md").write_text("# Memra\n")
+        push(readme)
+        for remote in ("refs/tags/v1.0.0",):
+            with self.assertRaisesRegex(q.GateError, unqualified): push(readme, remote)
+        for edit in (lambda: (f.repo / "docs/FLAGS.md").write_text("# Flags\nMEMRA_X\n"),
+                     lambda: (f.repo / "crates/memra-kv/README.md").write_text("# kv\n"),
+                     lambda: (readme(), (f.repo / "Cargo.lock").write_text("# changed\n")),
+                     lambda: (f.repo / "run.md").symlink_to("Cargo.lock")):
+            with self.assertRaisesRegex(q.GateError, unqualified): push(edit)
+        with self.assertRaisesRegex(q.GateError, unqualified):
+            f.git("reset", "-q", "--hard", base); readme(); f.commit("candidate")
+            q.check_push(f.repo, [f"refs/heads/main {q.commit(f.repo, 'HEAD')} refs/heads/main {'0'*40}"],
+                         "qualified")
+
     def test_index_is_append_only_and_source_modes_are_bound(self):
         (self.f.repo / "research/INDEX.md").write_text("# Research\nnew publication\n")
         self.f.commit("append metadata"); self.f.verify()

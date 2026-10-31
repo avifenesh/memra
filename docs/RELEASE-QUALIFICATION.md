@@ -18,7 +18,11 @@ MEMRA_RELEASE_QUALIFICATION_MODE=development git push origin HEAD
 
 The hook prints **UNQUALIFIED DEVELOPMENT** and records the ref/commit in the local Git
 skip ledger. This does not grant qualification, even if model files happen to exist.
-Development mode refuses main/master and every tag. `MEMRA_SKIP_PERF_CI=1` is retired
+Development mode refuses main/master and every tag. A branch push that fast-forwards the
+remote ref and changes only Markdown files needs no record: the hook prints **DOCS ONLY**
+and claims no qualification. It refuses any change under `crates/`, any Markdown a crate
+reads as `../<path>` (build.rs compiles `docs/FLAGS.md`), any symlink or mode change,
+and every tag. `MEMRA_SKIP_PERF_CI=1` is retired
 and refuses rather than bypassing the gate. `step-pro` remains an additional Step model
 and topology gate; its older partial source manifest cannot substitute for this record.
 That additional checker now requires hashes for every changed crate/build/tool input,

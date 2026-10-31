@@ -10,7 +10,7 @@ Memra follows darklanes `DIRECTION.md` and the [project status](README.md#projec
 
 - Work on a dedicated branch or worktree, never on `main`. Stage only your lane and leave unrelated dirty work alone.
 - Install the hook once with `git config core.hooksPath tools/hooks`, and do not bypass it with `--no-verify`. What it checks and its one skip switch are under [Perf board and pre-push hook](#perf-board-and-pre-push-hook).
-- For Memra topic pushes, use `MEMRA_RELEASE_QUALIFICATION_MODE=development` and state that the push has no native qualification. This does not replace native release or serving gates, and main and tags always refuse it (`docs/RELEASE-QUALIFICATION.md`).
+- For Memra topic pushes, use `MEMRA_RELEASE_QUALIFICATION_MODE=development` and state that the push has no native qualification. This does not replace native release or serving gates, and main and tags always refuse it (`docs/RELEASE-QUALIFICATION.md`). A docs-only fast-forward of main needs no GPU record; tags still do.
 - To integrate, fetch `origin/main` right before the merge, replay the whole lane on its tip and resolve overlapping behavior instead of picking one side. Migrate new upstream architecture checks to the equivalent plan operation or capability and keep the upstream numerical program. Run the affected upstream regressions, the ModelPlan/compiler suite, the engine and server suites, `cargo fmt --all -- --check` and `git diff --check`, then confirm the remote `main` SHA after the push.
 
 ## Model onboarding: compile a native plan, not a new engine path (owner, 2026-08-22)

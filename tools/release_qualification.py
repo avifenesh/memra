@@ -457,18 +457,44 @@ def verify_published(repo, head, binaries=None, profile=None, fetch_source=False
     raise GateError("UNQUALIFIED: rebuilt binaries match no qualified build")
 
 
+def docs_only_paths(repo, base, oid):
+    """Markdown paths a fast-forward from base changes, or None if anything else changes.
+
+    A Markdown file is still a build input when crate code names it (build.rs reads
+    docs/FLAGS.md), so any file under crates/ or named as ../<path> from crates/ refuses."""
+    if set(base) == {"0"} or subprocess.run(
+            ["git", "-C", str(repo), "merge-base", "--is-ancestor", base, oid],
+            capture_output=True).returncode != 0:
+        return None
+    fields = git(repo, "diff", "--raw", "--no-renames", "-z", base, oid).decode().split("\0")[:-1]
+    paths = fields[1::2]
+    for meta, path in zip(fields[0::2], paths):
+        old_mode, new_mode = meta.lstrip(":").split()[:2]
+        if (not path.endswith(".md") or path.startswith("crates/")
+                or {old_mode, new_mode} - {"000000", "100644"}):
+            return None
+    for path in paths:
+        if subprocess.run(["git", "-C", str(repo), "grep", "-q", "-F", f"../{path}", oid, "--", "crates"],
+                          capture_output=True).returncode == 0:
+            return None
+    return paths or None
+
+
 def check_push(repo, refs, mode):
     require(mode in ("qualified", "development"), "unknown qualification mode")
     for line in refs:
         fields = line.split()
         require(len(fields) == 4, "invalid push ref input")
-        local, oid, remote, _ = fields
+        local, oid, remote, base = fields
         if set(oid) == {"0"}:
             continue
         protected = remote.startswith("refs/tags/") or remote in ("refs/heads/main", "refs/heads/master")
         if mode == "development":
             require(not protected, "UNQUALIFIED development mode cannot push main or tags")
             print(f"UNQUALIFIED DEVELOPMENT: {remote} at {oid}; no GPU qualification claimed")
+        elif remote.startswith("refs/heads/") and (docs := docs_only_paths(repo, base, oid)):
+            # A docs-only fast-forward neither adds nor removes native evidence; tags still need it.
+            print(f"DOCS ONLY: {remote} at {oid}; no qualification claimed or needed ({', '.join(docs)})")
         else:
             result = verify_published(repo, oid)
             print(f"QUALIFIED SOURCE: {remote} at {result['candidate_commit']} tested={result['tested_commit']}")
