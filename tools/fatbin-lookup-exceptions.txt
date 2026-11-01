@@ -103,3 +103,10 @@
                               # the binary at all and the lookup cannot execute. This is why the
                               # census must never be landed without this line: it would red CI
                               # on the arch we actually serve, on a false positive.
+
+# =============================================================================================
+# sm_121a (GB10, DGX Spark): a 120a-family target, so it compiles the 120a source set and
+# inherits exactly the 120a entry above, for the same reason.
+121a qmatvec_gemm_q8_0_wgmma  # wgmma is Hopper-only; every call site sits inside a
+                              # `cfg!(memra_hopper_mma)` block, false on the 120a family, so the
+                              # lookup is not in the binary. Twin of the 120a entry.
