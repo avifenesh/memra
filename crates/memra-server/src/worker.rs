@@ -6786,7 +6786,88 @@ fn spec_trim_head(lm: &LoadedModel) -> bool {
     lm.model.mtp.as_ref().is_some_and(|h| h.d2t.is_some())
 }
 
+/// The automatic K table's four rungs. Defaults are the measured constants above; each rung has
+/// its own env override (`MEMRA_SPEC_K_COLD_SHORT`, `MEMRA_SPEC_K_COLD_LONG`,
+/// `MEMRA_SPEC_K_CACHED_LONG`, `MEMRA_SPEC_K_CACHED_LONG_TRIM`) for re-pricing a rung on a new
+/// device or head without `MEMRA_SPEC_K`, which pins every request and disables the
+/// concurrency gate and automatic demotion. Unset rungs keep the shipped values, so existing
+/// devices are unchanged.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SpecKTable {
+    cold_short: usize,
+    cold_long: usize,
+    cached_long: usize,
+    cached_long_trim: usize,
+}
+
+impl SpecKTable {
+    const SHIPPED: Self = Self {
+        cold_short: SPEC_K_COLD_SHORT,
+        cold_long: SPEC_K_COLD_LONG,
+        cached_long: SPEC_K_CACHED_LONG,
+        cached_long_trim: SPEC_K_CACHED_LONG_TRIM,
+    };
+}
+
+/// Pure half of [`spec_k_table`]: `get(name)` returns the raw env value. A rung must be a
+/// positive integer (K=0 is plain decode, which the gate and `MEMRA_SPEC_K=0` already own); an
+/// invalid value keeps that rung's shipped depth and is reported, never silently substituted.
+fn parse_spec_k_table(get: impl Fn(&str) -> Option<String>) -> (SpecKTable, Vec<String>) {
+    let mut table = SpecKTable::SHIPPED;
+    let mut errors = Vec::new();
+    for (name, rung) in [
+        ("MEMRA_SPEC_K_COLD_SHORT", &mut table.cold_short),
+        ("MEMRA_SPEC_K_COLD_LONG", &mut table.cold_long),
+        ("MEMRA_SPEC_K_CACHED_LONG", &mut table.cached_long),
+        ("MEMRA_SPEC_K_CACHED_LONG_TRIM", &mut table.cached_long_trim),
+    ] {
+        let Some(raw) = get(name) else { continue };
+        match raw.trim().parse::<usize>() {
+            Ok(k) if k > 0 => *rung = k,
+            _ => errors.push(format!(
+                "{name}={raw:?} is not a positive integer; keeping K={}",
+                *rung
+            )),
+        }
+    }
+    (table, errors)
+}
+
+fn spec_k_table() -> SpecKTable {
+    static T: std::sync::OnceLock<SpecKTable> = std::sync::OnceLock::new();
+    *T.get_or_init(|| {
+        let (table, errors) = parse_spec_k_table(|name| std::env::var(name).ok());
+        for err in errors {
+            eprintln!("[spec-k] WARN: {err}");
+        }
+        table
+    })
+}
+
 fn choose_spec_k(
+    pin: Option<usize>,
+    gate_on: bool,
+    thresholds: SpecGateThresholds,
+    projected_active: usize,
+    prompt_tokens: usize,
+    cached_tokens: usize,
+    trim_head: bool,
+) -> SpecKDecision {
+    choose_spec_k_with(
+        spec_k_table(),
+        pin,
+        gate_on,
+        thresholds,
+        projected_active,
+        prompt_tokens,
+        cached_tokens,
+        trim_head,
+    )
+}
+
+#[allow(clippy::too_many_arguments)] // allow: the table plus the six policy inputs of choose_spec_k
+fn choose_spec_k_with(
+    table: SpecKTable,
     pin: Option<usize>,
     gate_on: bool,
     thresholds: SpecGateThresholds,
@@ -6813,21 +6894,21 @@ fn choose_spec_k(
     if prompt_tokens >= SPEC_K_LONG_PROMPT_MIN && cached_tokens >= SPEC_K_LONG_CACHE_MIN {
         return SpecKDecision {
             k: if trim_head {
-                SPEC_K_CACHED_LONG_TRIM
+                table.cached_long_trim
             } else {
-                SPEC_K_CACHED_LONG
+                table.cached_long
             },
             reason: SpecKReason::CachedLong,
         };
     }
     if prompt_tokens < SPEC_K_LONG_PROMPT_MIN {
         SpecKDecision {
-            k: SPEC_K_COLD_SHORT,
+            k: table.cold_short,
             reason: SpecKReason::ColdShort,
         }
     } else {
         SpecKDecision {
-            k: SPEC_K_COLD_LONG,
+            k: table.cold_long,
             reason: SpecKReason::ColdLong,
         }
     }
@@ -6862,16 +6943,22 @@ fn log_spec_gate_policy() {
             thresholds.low, thresholds.high
         );
     }
+    let table = spec_k_table();
     eprintln!(
         "[spec-k] automatic table: prompt<{} -> K={}; cold-long -> K={}; \
-         prompt>= {} and cached>= {} -> K={} (K={} when the loaded MTP head is rank-trimmed)",
+         prompt>= {} and cached>= {} -> K={} (K={} when the loaded MTP head is rank-trimmed){}",
         SPEC_K_LONG_PROMPT_MIN,
-        SPEC_K_COLD_SHORT,
-        SPEC_K_COLD_LONG,
+        table.cold_short,
+        table.cold_long,
         SPEC_K_LONG_PROMPT_MIN,
         SPEC_K_LONG_CACHE_MIN,
-        SPEC_K_CACHED_LONG,
-        SPEC_K_CACHED_LONG_TRIM
+        table.cached_long,
+        table.cached_long_trim,
+        if table == SpecKTable::SHIPPED {
+            ""
+        } else {
+            " [rungs overridden by MEMRA_SPEC_K_* env]"
+        }
     );
 }
 
@@ -42565,10 +42652,10 @@ mod tests {
     };
     use super::{
         SPEC_K_CACHED_LONG, SPEC_K_CACHED_LONG_TRIM, SPEC_K_COLD_LONG, SPEC_K_COLD_SHORT,
-        SPEC_K_LONG_CACHE_MIN, SPEC_K_LONG_PROMPT_MIN, SpecKDecision, SpecKReason, choose_spec_k,
-        constrained_spec_supported, model_forces_spec_replay, parse_spec_k_pin,
-        resolve_spec_gate_thresholds, sampled_restore_load_admits, sampled_restore_watermark,
-        spec_gate_defaults,
+        SPEC_K_LONG_CACHE_MIN, SPEC_K_LONG_PROMPT_MIN, SpecKDecision, SpecKReason, SpecKTable,
+        choose_spec_k, choose_spec_k_with, constrained_spec_supported, model_forces_spec_replay,
+        parse_spec_k_pin, parse_spec_k_table, resolve_spec_gate_thresholds,
+        sampled_restore_load_admits, sampled_restore_watermark, spec_gate_defaults, spec_k_table,
     };
     use crate::lanes::{Lane, StepStats};
     use memra_engine::Engine;
@@ -46447,6 +46534,94 @@ mod tests {
                 reason: SpecKReason::Concurrency
             },
         );
+    }
+
+    #[test]
+    fn spec_k_table_rungs_override_one_at_a_time_and_keep_the_gate() {
+        let env = |pairs: &'static [(&'static str, &'static str)]| {
+            move |name: &str| {
+                pairs
+                    .iter()
+                    .find(|(k, _)| *k == name)
+                    .map(|(_, v)| v.to_string())
+            }
+        };
+        // Unset: the shipped table, so every existing device keeps its depths.
+        let (table, errors) = parse_spec_k_table(env(&[]));
+        assert_eq!(table, SpecKTable::SHIPPED);
+        assert!(errors.is_empty());
+        // One rung: the owner's measured masked-MTP depth on cached long prompts.
+        let (table, errors) = parse_spec_k_table(env(&[("MEMRA_SPEC_K_CACHED_LONG_TRIM", "2")]));
+        assert!(errors.is_empty());
+        assert_eq!(
+            table,
+            SpecKTable {
+                cached_long_trim: 2,
+                ..SpecKTable::SHIPPED
+            }
+        );
+        let single = resolve_spec_gate_thresholds(false, None, None);
+        let cached_long_trim = choose_spec_k_with(
+            table,
+            None,
+            true,
+            single,
+            1,
+            SPEC_K_LONG_PROMPT_MIN,
+            SPEC_K_LONG_CACHE_MIN,
+            true,
+        );
+        assert_eq!(
+            cached_long_trim,
+            SpecKDecision {
+                k: 2,
+                reason: SpecKReason::CachedLong
+            }
+        );
+        // The gate stays on: past LOW the same request demotes to plain, unlike MEMRA_SPEC_K.
+        assert_eq!(
+            choose_spec_k_with(
+                table,
+                None,
+                true,
+                single,
+                single.low + 1,
+                SPEC_K_LONG_PROMPT_MIN,
+                SPEC_K_LONG_CACHE_MIN,
+                true,
+            ),
+            SpecKDecision {
+                k: 0,
+                reason: SpecKReason::Concurrency
+            }
+        );
+        // The other rungs keep their shipped depths.
+        assert_eq!(
+            choose_spec_k_with(table, None, true, single, 1, 28, 0, false).k,
+            SPEC_K_COLD_SHORT
+        );
+        // All four, and invalid values (0, garbage) keep the shipped rung and are reported.
+        let (table, errors) = parse_spec_k_table(env(&[
+            ("MEMRA_SPEC_K_COLD_SHORT", "4"),
+            ("MEMRA_SPEC_K_COLD_LONG", " 5 "),
+            ("MEMRA_SPEC_K_CACHED_LONG", "0"),
+            ("MEMRA_SPEC_K_CACHED_LONG_TRIM", "two"),
+        ]));
+        assert_eq!(
+            table,
+            SpecKTable {
+                cold_short: 4,
+                cold_long: 5,
+                ..SpecKTable::SHIPPED
+            }
+        );
+        assert_eq!(errors.len(), 2, "{errors:?}");
+        assert!(
+            errors[0].contains("MEMRA_SPEC_K_CACHED_LONG=\"0\""),
+            "{errors:?}"
+        );
+        // The process-wide resolver reads no override in this test binary.
+        assert_eq!(spec_k_table(), SpecKTable::SHIPPED);
     }
 
     #[test]
