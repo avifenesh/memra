@@ -8,5 +8,6 @@ pages route to qualified configurations rather than promising that every model r
 - [H100](h100.md)
 - [Ada](ada.md)
 - [B200](b200.md)
+- [DGX Spark (GB10)](dgx-spark.md): builds `sm_121a`; no model supported yet
 
 Full measurement conditions and rig identities are in [performance](../PERFORMANCE.md#rigs--what-was-measured-on-what).

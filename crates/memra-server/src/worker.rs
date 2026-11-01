@@ -4571,6 +4571,27 @@ fn meter_cached_credit(ns_tokens: &mut HashMap<String, [u64; 2]>, cache_ns: &str
 /// allocations still win through the existing reclaim-on-allocation-failure path.
 const PREFIX_CACHE_DEFAULT_ENTRIES: usize = 2;
 
+/// UNIFIED-MEMORY SHARE (GB10 / DGX Spark, 2026-11-01). On a unified-memory device the boot free
+/// reading is the system pool left after the weights: one pool for session KV, the prefix cache,
+/// this process's host side and the OS, not a card's spare VRAM. Two full-context entries
+/// (15.9 GB for Qwen3.8-27B at 262,144 tokens) held ~20 of a 48-prompt agentic working set there,
+/// so 27 entries were evicted and every turn re-primed 14k-42k tokens. The unified default gives
+/// the prefix cache 1/`UNIFIED_PREFIX_CACHE_SHARE_DIV` of what remains after the transient reserve,
+/// the admission driver-headroom floor and any host KV tier (the same DRAM), and leaves the other
+/// part to sessions. Sessions still win: a failed session allocation evicts the cache. On the
+/// first Spark run (~70 GB free after weights) the half share is ~33 GB, the 32768 MB the run
+/// needed by hand. Discrete cards keep the two-entry rule unchanged.
+const UNIFIED_PREFIX_CACHE_SHARE_DIV: usize = 2;
+
+/// The unified-memory terms of the derived prefix-cache budget (absent on a discrete card).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct UnifiedPrefixTerms {
+    /// `MEMRA_ADMIT_DRIVER_HEADROOM_MB` in bytes: the floor admission keeps free.
+    driver_headroom_bytes: usize,
+    /// The host KV tier budget (`MEMRA_KV_HOST_MB`): pinned host bytes come out of the same DRAM.
+    host_tier_bytes: usize,
+}
+
 #[derive(Debug)]
 enum PrefixCacheBudget {
     Configured {
@@ -4587,6 +4608,8 @@ enum PrefixCacheBudget {
         ctx_source: &'static str,
         boot_free_bytes: usize,
         clamp_bytes: usize,
+        /// `Some` on a unified-memory device: the share rule above sized the request.
+        unified: Option<UnifiedPrefixTerms>,
     },
 }
 
@@ -4694,11 +4717,22 @@ fn prefix_budget_ctx(env_ctx: Option<&str>, model_ctx: usize) -> Result<usize, S
 fn derived_prefix_cache_budget(
     entry_bytes: usize,
     boot_free_bytes: usize,
+    unified: Option<UnifiedPrefixTerms>,
 ) -> (usize, usize, usize) {
-    let requested_bytes = entry_bytes.saturating_mul(PREFIX_CACHE_DEFAULT_ENTRIES);
+    let entries_bytes = entry_bytes.saturating_mul(PREFIX_CACHE_DEFAULT_ENTRIES);
     // Keep the serving transient floor free. Unlike an explicit operator budget, the naked
     // default must not claim the last bytes that prefill/FA workspaces or a new session need.
-    let clamp_bytes = boot_free_bytes.saturating_sub(SPEC_SHRINK_RESERVE);
+    let mut clamp_bytes = boot_free_bytes.saturating_sub(SPEC_SHRINK_RESERVE);
+    let requested_bytes = match unified {
+        None => entries_bytes,
+        Some(terms) => {
+            // The same DRAM also holds the admission headroom floor and the host tier.
+            clamp_bytes = clamp_bytes
+                .saturating_sub(terms.driver_headroom_bytes)
+                .saturating_sub(terms.host_tier_bytes);
+            entries_bytes.max(clamp_bytes / UNIFIED_PREFIX_CACHE_SHARE_DIV)
+        }
+    };
     (
         requested_bytes.min(clamp_bytes),
         requested_bytes,
@@ -4763,9 +4797,9 @@ fn init_prefix_cache_budget(
             .max_by_key(|(_, bytes, _)| *bytes)
             .map(|(name, bytes, ctx)| (name.to_string(), bytes, ctx))
             .unwrap_or_else(|| ("(none)".to_string(), 0, 0));
-        let boot_free_bytes = engine
-            .ctx()
-            .mem_get_info()
+        // Allocatable reading: `cuMemGetInfo` on a discrete card, page-cache aware on unified
+        // memory (`memra_engine::unified_memory`).
+        let boot_free_bytes = memra_engine::unified_memory::allocatable_mem_info(engine.ctx())
             .map(|(free, _)| free)
             .unwrap_or_else(|err| {
                 eprintln!(
@@ -4774,8 +4808,13 @@ fn init_prefix_cache_budget(
                 );
                 0
             });
+        let unified =
+            memra_engine::unified_memory::is_unified(engine.ctx()).then(|| UnifiedPrefixTerms {
+                driver_headroom_bytes: admit_driver_headroom_bytes(),
+                host_tier_bytes: kv_host_budget_bytes(),
+            });
         let (bytes, requested_bytes, clamp_bytes) =
-            derived_prefix_cache_budget(entry_bytes, boot_free_bytes);
+            derived_prefix_cache_budget(entry_bytes, boot_free_bytes, unified);
         PrefixCacheBudget::Derived {
             bytes,
             requested_bytes,
@@ -4785,6 +4824,7 @@ fn init_prefix_cache_budget(
             ctx_source,
             boot_free_bytes,
             clamp_bytes,
+            unified,
         }
     })
 }
@@ -6746,7 +6786,88 @@ fn spec_trim_head(lm: &LoadedModel) -> bool {
     lm.model.mtp.as_ref().is_some_and(|h| h.d2t.is_some())
 }
 
+/// The automatic K table's four rungs. Defaults are the measured constants above; each rung has
+/// its own env override (`MEMRA_SPEC_K_COLD_SHORT`, `MEMRA_SPEC_K_COLD_LONG`,
+/// `MEMRA_SPEC_K_CACHED_LONG`, `MEMRA_SPEC_K_CACHED_LONG_TRIM`) for re-pricing a rung on a new
+/// device or head without `MEMRA_SPEC_K`, which pins every request and disables the
+/// concurrency gate and automatic demotion. Unset rungs keep the shipped values, so existing
+/// devices are unchanged.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SpecKTable {
+    cold_short: usize,
+    cold_long: usize,
+    cached_long: usize,
+    cached_long_trim: usize,
+}
+
+impl SpecKTable {
+    const SHIPPED: Self = Self {
+        cold_short: SPEC_K_COLD_SHORT,
+        cold_long: SPEC_K_COLD_LONG,
+        cached_long: SPEC_K_CACHED_LONG,
+        cached_long_trim: SPEC_K_CACHED_LONG_TRIM,
+    };
+}
+
+/// Pure half of [`spec_k_table`]: `get(name)` returns the raw env value. A rung must be a
+/// positive integer (K=0 is plain decode, which the gate and `MEMRA_SPEC_K=0` already own); an
+/// invalid value keeps that rung's shipped depth and is reported, never silently substituted.
+fn parse_spec_k_table(get: impl Fn(&str) -> Option<String>) -> (SpecKTable, Vec<String>) {
+    let mut table = SpecKTable::SHIPPED;
+    let mut errors = Vec::new();
+    for (name, rung) in [
+        ("MEMRA_SPEC_K_COLD_SHORT", &mut table.cold_short),
+        ("MEMRA_SPEC_K_COLD_LONG", &mut table.cold_long),
+        ("MEMRA_SPEC_K_CACHED_LONG", &mut table.cached_long),
+        ("MEMRA_SPEC_K_CACHED_LONG_TRIM", &mut table.cached_long_trim),
+    ] {
+        let Some(raw) = get(name) else { continue };
+        match raw.trim().parse::<usize>() {
+            Ok(k) if k > 0 => *rung = k,
+            _ => errors.push(format!(
+                "{name}={raw:?} is not a positive integer; keeping K={}",
+                *rung
+            )),
+        }
+    }
+    (table, errors)
+}
+
+fn spec_k_table() -> SpecKTable {
+    static T: std::sync::OnceLock<SpecKTable> = std::sync::OnceLock::new();
+    *T.get_or_init(|| {
+        let (table, errors) = parse_spec_k_table(|name| std::env::var(name).ok());
+        for err in errors {
+            eprintln!("[spec-k] WARN: {err}");
+        }
+        table
+    })
+}
+
 fn choose_spec_k(
+    pin: Option<usize>,
+    gate_on: bool,
+    thresholds: SpecGateThresholds,
+    projected_active: usize,
+    prompt_tokens: usize,
+    cached_tokens: usize,
+    trim_head: bool,
+) -> SpecKDecision {
+    choose_spec_k_with(
+        spec_k_table(),
+        pin,
+        gate_on,
+        thresholds,
+        projected_active,
+        prompt_tokens,
+        cached_tokens,
+        trim_head,
+    )
+}
+
+#[allow(clippy::too_many_arguments)] // allow: the table plus the six policy inputs of choose_spec_k
+fn choose_spec_k_with(
+    table: SpecKTable,
     pin: Option<usize>,
     gate_on: bool,
     thresholds: SpecGateThresholds,
@@ -6773,21 +6894,21 @@ fn choose_spec_k(
     if prompt_tokens >= SPEC_K_LONG_PROMPT_MIN && cached_tokens >= SPEC_K_LONG_CACHE_MIN {
         return SpecKDecision {
             k: if trim_head {
-                SPEC_K_CACHED_LONG_TRIM
+                table.cached_long_trim
             } else {
-                SPEC_K_CACHED_LONG
+                table.cached_long
             },
             reason: SpecKReason::CachedLong,
         };
     }
     if prompt_tokens < SPEC_K_LONG_PROMPT_MIN {
         SpecKDecision {
-            k: SPEC_K_COLD_SHORT,
+            k: table.cold_short,
             reason: SpecKReason::ColdShort,
         }
     } else {
         SpecKDecision {
-            k: SPEC_K_COLD_LONG,
+            k: table.cold_long,
             reason: SpecKReason::ColdLong,
         }
     }
@@ -6822,16 +6943,22 @@ fn log_spec_gate_policy() {
             thresholds.low, thresholds.high
         );
     }
+    let table = spec_k_table();
     eprintln!(
         "[spec-k] automatic table: prompt<{} -> K={}; cold-long -> K={}; \
-         prompt>= {} and cached>= {} -> K={} (K={} when the loaded MTP head is rank-trimmed)",
+         prompt>= {} and cached>= {} -> K={} (K={} when the loaded MTP head is rank-trimmed){}",
         SPEC_K_LONG_PROMPT_MIN,
-        SPEC_K_COLD_SHORT,
-        SPEC_K_COLD_LONG,
+        table.cold_short,
+        table.cold_long,
         SPEC_K_LONG_PROMPT_MIN,
         SPEC_K_LONG_CACHE_MIN,
-        SPEC_K_CACHED_LONG,
-        SPEC_K_CACHED_LONG_TRIM
+        table.cached_long,
+        table.cached_long_trim,
+        if table == SpecKTable::SHIPPED {
+            ""
+        } else {
+            " [rungs overridden by MEMRA_SPEC_K_* env]"
+        }
     );
 }
 
@@ -25548,6 +25675,57 @@ fn drain_dspark_prefix_capture(
     publish_dspark_prefix_capture(engine, px, hpx, s, cap);
 }
 
+/// MTP spec boundary publication: drain this session's prime-boundary captures into the prefix
+/// cache. Two callers: the tick-top sweep, and the pre-retire drain for sessions that finish in
+/// the tick their prime completed (max_tokens=1, EOS at token 1). Before the second caller those
+/// captures were dropped with the session at retirement, so an identical prompt sent later
+/// re-primed from scratch (the memra#298 gap, which the dspark route already closed). The capture
+/// is the same one the next tick's sweep would publish, at the same grid position, so publishing
+/// it earlier changes no request's output.
+fn drain_mtp_prefix_captures(
+    engine: &Engine,
+    px: &mut PrefixCache,
+    hpx: &mut HostPrefixCache,
+    s: &mut Session,
+) {
+    // A saved prime is not a committed decode/park boundary. Its adapter owns the partial
+    // captures until finalization succeeds.
+    if s.prime_service.pending {
+        return;
+    }
+    let mtp_captures = s
+        .spec
+        .as_mut()
+        .map(|sp| std::mem::take(&mut sp.boundary_captures))
+        .unwrap_or_default();
+    if mtp_captures.is_empty() {
+        return;
+    }
+    let pool_key = s.pool_key();
+    let sp = s.spec.as_ref().expect("captures came from this session");
+    // MTP can produce one capture per prime stop (miss-LCP split + the stable pre-generation
+    // boundary, lane/frspec-multiturn-cache).
+    for cap in mtp_captures {
+        let end = cap.pos.min(sp.committed.len());
+        if end == 0 || px.has_key(&pool_key, &sp.committed[..end]) {
+            continue;
+        }
+        prefix_insert_from_spec_boundary(
+            engine,
+            px,
+            hpx,
+            &pool_key,
+            &sp.committed,
+            sp.cache_ref(),
+            sp.draft_plane_ref(),
+            None, // MTP publisher: its draft state rides `draft`, not the dspark tail
+            cap,
+            "spec-boundary",
+            &s.request_id,
+        );
+    }
+}
+
 /// GLM5 SPEC boundary publication (lane/glm5-prefix-latent2, 2026-09-01): the glm5 twin of
 /// the dspark drain above, with one timing difference — glm5 defers the prompt's drafter
 /// ingest to round 1, so the drain waits for `prefix_capture_ready` (drafter KV covers the
@@ -27279,11 +27457,12 @@ pub fn run(
                 ctx_source,
                 boot_free_bytes,
                 clamp_bytes,
+                unified,
             } => (
                 *bytes,
                 format!(
                     "{bytes} B, derived: {} x {entry_bytes} B max entry for model {model:?} at \
-                     served ctx {ctx} (from {ctx_source}; MEMRA_CTX {}), requested \
+                     served ctx {ctx} (from {ctx_source}; MEMRA_CTX {}){}, requested \
                      {requested_bytes} B; boot driver free {boot_free_bytes} B, post-reserve \
                      clamp {clamp_bytes} B",
                     PREFIX_CACHE_DEFAULT_ENTRIES,
@@ -27291,6 +27470,15 @@ pub fn run(
                         "set"
                     } else {
                         "unset"
+                    },
+                    match unified {
+                        Some(terms) => format!(
+                            ", unified memory: the larger of that and 1/{UNIFIED_PREFIX_CACHE_SHARE_DIV} of \
+                             allocatable free after the transient reserve, driver headroom {} B \
+                             and host tier {} B",
+                            terms.driver_headroom_bytes, terms.host_tier_bytes,
+                        ),
+                        None => String::new(),
                     },
                 ),
             ),
@@ -27564,6 +27752,10 @@ pub fn run(
             crate::capacity_metrics::device_free(device, free as u64);
         }
     });
+    // The device shape the HTTP layer's hardware-derived defaults read (the unified-memory
+    // streaming TTFT deadline and its SSE prefill commit). Published before the ready verdict:
+    // the listener binds only after it, so no request reads the discrete fallback by accident.
+    publish_serving_device(&engine, &loaded);
     // mem_get_info binds each queried CUDA context. Restore the worker's primary
     // before reporting readiness; a secondary device must not steer subsequent launches.
     if let Err(error) = engine.ctx().bind_to_thread() {
@@ -28284,6 +28476,7 @@ pub fn run(
             let peer_probe_allows_spec = health.peer_probe_allows_spec_admission();
             let estimate_spec = admission_request_may_spec(
                 &loaded[&model_key],
+                dspark_drafts.contains_key(&model_key),
                 &req,
                 // WAVE projection, not live-only active+1 — must match the serve-time
                 // K decision in `admit` or the estimate reserves a spec session the
@@ -28560,7 +28753,9 @@ pub fn run(
                 // backstops the floor was gated against.
                 let reserve = admission_reserve(
                     peer_probe_spec_admission(serve_spec_enabled(), peer_probe_allows_spec)
-                        && loaded.get(&req.model).is_some_and(mtp_spec_capable),
+                        && loaded.get(&req.model).is_some_and(|lm| {
+                            served_spec_route_capable(lm, dspark_drafts.contains_key(&model_key))
+                        }),
                     cost,
                     admission_costs
                         .get(&model_key)
@@ -30301,36 +30496,7 @@ pub fn run(
                 if s.prime_service.pending {
                     continue;
                 }
-                let mtp_captures = s
-                    .spec
-                    .as_mut()
-                    .map(|sp| std::mem::take(&mut sp.boundary_captures))
-                    .unwrap_or_default();
-                if !mtp_captures.is_empty() {
-                    let pool_key = s.pool_key();
-                    let sp = s.spec.as_ref().expect("captures came from this session");
-                    // MTP can produce one capture per prime stop (miss-LCP split + the stable
-                    // pre-generation boundary, lane/frspec-multiturn-cache).
-                    for cap in mtp_captures {
-                        let end = cap.pos.min(sp.committed.len());
-                        if end == 0 || px.has_key(&pool_key, &sp.committed[..end]) {
-                            continue;
-                        }
-                        prefix_insert_from_spec_boundary(
-                            &engine,
-                            &mut px,
-                            &mut hpx,
-                            &pool_key,
-                            &sp.committed,
-                            sp.cache_ref(),
-                            sp.draft_plane_ref(),
-                            None, // MTP publisher: its draft state rides `draft`, not the dspark tail
-                            cap,
-                            "spec-boundary",
-                            &s.request_id,
-                        );
-                    }
-                }
+                drain_mtp_prefix_captures(&engine, &mut px, &mut hpx, s);
 
                 // DFlash publishes trunk state PLUS its drafter's readable KV tail
                 // (lane/dspark-draft-plane-20260827), so a later hit can re-arm a dspark
@@ -31948,6 +32114,24 @@ pub fn run(
             for s in active.iter_mut() {
                 drain_dspark_prefix_capture(&engine, &mut px, &mut hpx, s);
             }
+            // The MTP twin of memra#298: a session that finished in the tick its prime
+            // completed (max_tokens=1, EOS at token 1) never reaches the next tick's sweep, so
+            // its prompt-boundary captures were dropped at retirement and an identical prompt
+            // sent later re-primed in full. Publish them before retirement. A faulted session's
+            // planes are not publishable.
+            for &i in &finished {
+                let s = &mut active[i];
+                if s.errored || s.oom_teardown {
+                    continue;
+                }
+                drain_mtp_prefix_captures(&engine, &mut px, &mut hpx, s);
+                // The glm5 route has the same gap: its capture drains from the tick-top sweep
+                // only. The drain self-gates on `prefix_capture_ready` (the DFlash2 drafter KV
+                // covers the boundary, which the default eager ingest at session creation
+                // guarantees), so under MEMRA_GLM5_DRAFT_PRIME_LAZY=1 a token-1 finish still
+                // publishes nothing rather than a trunk-only entry.
+                drain_glm5_prefix_capture(&engine, &mut px, &mut hpx, s);
+            }
         }
         // retire finished sessions (reverse order so indices stay valid). Long-enough sessions
         // park their (fed, cache, last_logits) in the reuse pool instead of dropping the cache.
@@ -33290,6 +33474,32 @@ pub fn resolve_ctx(raw: Option<&str>, model_ctx: usize) -> Result<usize, String>
     }
 }
 
+/// Publish the serving device's shape for the HTTP layer (`crate::serving_device`) and state the
+/// streaming deadline pair it resolves to, so the boot log names the values a request gets.
+fn publish_serving_device(engine: &Engine, loaded: &HashMap<String, LoadedModel>) {
+    use cudarc::driver::sys::CUdevice_attribute_enum as A;
+    let unified_memory = memra_engine::unified_memory::is_unified(engine.ctx());
+    let sm_count = engine
+        .ctx()
+        .attribute(A::CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT)
+        .ok()
+        .and_then(|v| u32::try_from(v).ok())
+        .unwrap_or(0);
+    let max_served_ctx = loaded
+        .values()
+        .filter_map(|lm| resolve_env_ctx(lm.model.cfg.context_length as usize).ok())
+        .max()
+        .unwrap_or(0);
+    crate::serving_device::publish(crate::serving_device::ServingDevice {
+        unified_memory,
+        sm_count,
+        max_served_ctx,
+    });
+    if unified_memory {
+        eprintln!("{}", crate::stream_deadline_boot_line());
+    }
+}
+
 /// `resolve_ctx` against the process environment. A non-Unicode value is treated like any other
 /// unusable value: it refuses, it does not silently become a default.
 pub fn resolve_env_ctx(model_ctx: usize) -> Result<usize, String> {
@@ -33531,12 +33741,16 @@ fn prepare_request(
 /// a program that never runs).
 fn admission_request_may_spec(
     lm: &LoadedModel,
+    dspark_armed: bool,
     req: &Request,
     projected_active: usize,
     prompt_len: usize,
     peer_probe_allows_spec: bool,
 ) -> bool {
-    if confidence_trace_enabled() || !mtp_spec_capable(lm) || !serve_spec_enabled() {
+    if confidence_trace_enabled()
+        || !served_spec_route_capable(lm, dspark_armed)
+        || !serve_spec_enabled()
+    {
         return false;
     }
     let candidate = req.spec_k_replay.unwrap_or_else(|| {
@@ -33552,6 +33766,17 @@ fn admission_request_may_spec(
         .k
     }) > 0;
     peer_probe_spec_admission(candidate, peer_probe_allows_spec)
+}
+
+/// Whether the model serves ANY speculation route: the embedded MTP head, or an armed DFlash2
+/// drafter. Admission keys its spec estimate (the per-session draft-plane charge) and its
+/// reserve (the full transient floor) on the SERVED route, not on the MTP head being loaded:
+/// under `MEMRA_MTP_SKIP=1` a dspark model has no MTP head but still speculates, and keying on
+/// `mtp_spec_capable` charged its draft plane at 0 and its reserve at `min(cost, floor)`, so
+/// admission could take more sessions than fit (an OOM on a unified-memory device, not a
+/// refusal).
+fn served_spec_route_capable(lm: &LoadedModel, dspark_armed: bool) -> bool {
+    dspark_armed || mtp_spec_capable(lm)
 }
 
 fn mtp_spec_capable(lm: &LoadedModel) -> bool {
@@ -33855,12 +34080,17 @@ fn constrained_spec_supported(
     !operator_replay && !model_forces_spec_replay(plan)
 }
 
-/// Driver-free plus bytes already mapped but reusable in the async pool.
+/// Driver-free plus bytes already mapped but reusable in the async pool. On a unified-memory
+/// device (GB10) the driver term is the allocatable reading, which counts the page cache the
+/// kernel reclaims on demand (`memra_engine::unified_memory`); discrete cards read
+/// `cuMemGetInfo` unchanged.
 fn effective_free_bytes(engine: &Engine) -> Option<(usize, usize)> {
-    engine.ctx().mem_get_info().ok().map(|(driver_free, _)| {
-        let pool_cached = engine.pool_cached_bytes();
-        (driver_free.saturating_add(pool_cached), pool_cached)
-    })
+    memra_engine::unified_memory::allocatable_mem_info(engine.ctx())
+        .ok()
+        .map(|(driver_free, _)| {
+            let pool_cached = engine.pool_cached_bytes();
+            (driver_free.saturating_add(pool_cached), pool_cached)
+        })
 }
 
 #[derive(Debug)]
@@ -37428,7 +37658,7 @@ fn admit(
         );
     }
     let (spec_k, resume_floor) = resumed_carrier_spec_k_floor(spec.is_some(), spec_k_decision.k);
-    if mtp_spec_capable(lm) {
+    if served_spec_route_capable(lm, dspark_draft_ready) {
         let source = if resume_floor {
             "resume-floor(k=0->1)"
         } else if spec_k == spec_k_decision.k {
@@ -42429,8 +42659,8 @@ mod tests {
     use super::{KV_FLEX_GRANT, KvFlex, kv_flex_effective_budget, prefix_cache_budget_bytes};
     use super::{MAX_EVENT_QUEUE_EVENTS, event_channel};
     use super::{
-        PREFIX_CACHE_DEFAULT_ENTRIES, derived_prefix_cache_budget, prefix_budget_ctx,
-        prefix_entry_geometry_bytes,
+        PREFIX_CACHE_DEFAULT_ENTRIES, UNIFIED_PREFIX_CACHE_SHARE_DIV, UnifiedPrefixTerms,
+        derived_prefix_cache_budget, prefix_budget_ctx, prefix_entry_geometry_bytes,
     };
     use super::{PpFreeSnapshot, concat_prime_pp_eligibility};
     use super::{
@@ -42440,10 +42670,10 @@ mod tests {
     };
     use super::{
         SPEC_K_CACHED_LONG, SPEC_K_CACHED_LONG_TRIM, SPEC_K_COLD_LONG, SPEC_K_COLD_SHORT,
-        SPEC_K_LONG_CACHE_MIN, SPEC_K_LONG_PROMPT_MIN, SpecKDecision, SpecKReason, choose_spec_k,
-        constrained_spec_supported, model_forces_spec_replay, parse_spec_k_pin,
-        resolve_spec_gate_thresholds, sampled_restore_load_admits, sampled_restore_watermark,
-        spec_gate_defaults,
+        SPEC_K_LONG_CACHE_MIN, SPEC_K_LONG_PROMPT_MIN, SpecKDecision, SpecKReason, SpecKTable,
+        choose_spec_k, choose_spec_k_with, constrained_spec_supported, model_forces_spec_replay,
+        parse_spec_k_pin, parse_spec_k_table, resolve_spec_gate_thresholds,
+        sampled_restore_load_admits, sampled_restore_watermark, spec_gate_defaults, spec_k_table,
     };
     use crate::lanes::{Lane, StepStats};
     use memra_engine::Engine;
@@ -42751,7 +42981,7 @@ mod tests {
         let requested = entry_bytes * PREFIX_CACHE_DEFAULT_ENTRIES;
         let boot_free = SPEC_SHRINK_RESERVE + requested + 123;
         let (budget, derived_requested, clamp) =
-            derived_prefix_cache_budget(entry_bytes, boot_free);
+            derived_prefix_cache_budget(entry_bytes, boot_free, None);
         assert_eq!(PREFIX_CACHE_DEFAULT_ENTRIES, 2);
         assert_eq!(derived_requested, requested);
         assert_eq!(budget, requested);
@@ -42759,7 +42989,7 @@ mod tests {
         assert!(budget <= boot_free);
 
         let constrained_free = SPEC_SHRINK_RESERVE + entry_bytes;
-        let (budget, _, clamp) = derived_prefix_cache_budget(entry_bytes, constrained_free);
+        let (budget, _, clamp) = derived_prefix_cache_budget(entry_bytes, constrained_free, None);
         assert_eq!(budget, entry_bytes);
         assert_eq!(budget, clamp);
         assert!(budget <= constrained_free);
@@ -42781,7 +43011,7 @@ mod tests {
         assert_eq!(ctx, 8192);
         let entry = prefix_entry_geometry_bytes(bpt, recurrent, ctx);
         assert_eq!(entry, 400_162_816);
-        let (budget, requested, clamp) = derived_prefix_cache_budget(entry, boot_free);
+        let (budget, requested, clamp) = derived_prefix_cache_budget(entry, boot_free, None);
         assert_eq!((budget, requested), (800_325_632, 800_325_632));
         assert_eq!(clamp, 84_909_096_960);
 
@@ -42790,14 +43020,14 @@ mod tests {
         assert_eq!(ctx, model_ctx);
         let entry = prefix_entry_geometry_bytes(bpt, recurrent, ctx);
         assert_eq!(entry, 7_941_521_408);
-        let (budget, requested, clamp) = derived_prefix_cache_budget(entry, boot_free);
+        let (budget, requested, clamp) = derived_prefix_cache_budget(entry, boot_free, None);
         assert_eq!(requested, 15_883_042_816);
         assert_eq!(clamp, boot_free - SPEC_SHRINK_RESERVE);
         assert_eq!(budget, 15_883_042_816);
 
         // The clamp is unchanged: a small card still keeps the serving-transient reserve.
         let small_free = 16_029_908_992;
-        let (budget, requested, clamp) = derived_prefix_cache_budget(entry, small_free);
+        let (budget, requested, clamp) = derived_prefix_cache_budget(entry, small_free, None);
         assert_eq!(clamp, small_free - SPEC_SHRINK_RESERVE);
         assert_eq!(budget, clamp);
         assert!(budget < requested);
@@ -42827,6 +43057,57 @@ mod tests {
             !prod.contains("PREFIX_CACHE_CTX_FALLBACK"),
             "no literal context fallback remains in the budget derivation"
         );
+    }
+
+    /// GB10 (DGX Spark) unified memory, Qwen3.8-27B at 262,144 tokens: the two-entry rule
+    /// (15.9 GB) held ~20 of a 48-prompt agentic working set; the unified share gives the cache
+    /// half of the system pool left after the reserves. The first Spark run read ~70 GB free
+    /// after weights and needed 32768 MB by hand; the share lands there. Discrete cards with the
+    /// same free reading keep the two-entry request exactly.
+    #[test]
+    fn unified_memory_prefix_budget_takes_half_the_post_load_pool_and_discrete_is_unchanged() {
+        let entry = prefix_entry_geometry_bytes(29_696, 156_893_184, 262_144);
+        assert_eq!(entry, 7_941_521_408);
+        let boot_free: usize = 70 << 30;
+        let terms = UnifiedPrefixTerms {
+            driver_headroom_bytes: 2048 << 20,
+            host_tier_bytes: 0,
+        };
+
+        let (budget, requested, clamp) = derived_prefix_cache_budget(entry, boot_free, Some(terms));
+        assert_eq!(clamp, boot_free - SPEC_SHRINK_RESERVE - (2048 << 20));
+        assert_eq!(requested, clamp / UNIFIED_PREFIX_CACHE_SHARE_DIV);
+        assert_eq!(budget, requested);
+        // (71,680 - 1,536 - 2,048) / 2 = 34,048 MiB: the hand-set 32,768 MiB of the first Spark
+        // run plus 1,280 MiB.
+        assert_eq!(budget, 34_048usize << 20);
+        assert!(budget >= 32_768 << 20);
+
+        // The same reading on a discrete card: two entries, as before.
+        let (budget, requested, _) = derived_prefix_cache_budget(entry, boot_free, None);
+        assert_eq!((budget, requested), (2 * entry, 2 * entry));
+
+        // A host KV tier lives in the same DRAM, so the share shrinks by its budget.
+        let with_host = UnifiedPrefixTerms {
+            host_tier_bytes: 8 << 30,
+            ..terms
+        };
+        let (budget_host, _, clamp_host) =
+            derived_prefix_cache_budget(entry, boot_free, Some(with_host));
+        assert_eq!(clamp_host, clamp - (8 << 30));
+        assert_eq!(budget_host, clamp_host / UNIFIED_PREFIX_CACHE_SHARE_DIV);
+
+        // A tight unified box never goes below the two-entry floor, and never past the clamp.
+        let tight_free = SPEC_SHRINK_RESERVE + (2048 << 20) + 3 * entry;
+        let (budget, requested, clamp) =
+            derived_prefix_cache_budget(entry, tight_free, Some(terms));
+        assert_eq!(requested, 2 * entry);
+        assert_eq!(clamp, 3 * entry);
+        assert_eq!(budget, 2 * entry);
+        let tighter_free = SPEC_SHRINK_RESERVE + (2048 << 20) + entry;
+        let (budget, _, clamp) = derived_prefix_cache_budget(entry, tighter_free, Some(terms));
+        assert_eq!(budget, clamp);
+        assert_eq!(budget, entry);
     }
 
     #[test]
@@ -43533,6 +43814,57 @@ mod tests {
             SPEC_SHRINK_RESERVE
         );
         assert!(SPEC_SHRINK_RESERVE < big_cost);
+    }
+
+    #[test]
+    fn admission_spec_estimate_and_reserve_follow_the_served_route_not_the_mtp_head() {
+        // Under MEMRA_MTP_SKIP=1 a DFlash2-armed model has no MTP head but still speculates.
+        // Admission keyed its spec estimate (which carries the per-session DFlash draft-plane
+        // charge, memra#302) and its reserve (the full transient floor vs min(cost, floor)) on
+        // `mtp_spec_capable`, so that model was admitted at the plain price and could take more
+        // sessions than fit. Both must key on the served route.
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let route = &production[production
+            .find("fn served_spec_route_capable(")
+            .expect("route predicate exists")..];
+        let route = &route[..route.find("\n}\n").unwrap()];
+        assert!(
+            route.contains("dspark_armed || mtp_spec_capable(lm)"),
+            "{route}"
+        );
+        let may_spec = &production[production.find("fn admission_request_may_spec(").unwrap()..];
+        let may_spec = &may_spec[..may_spec.find("\n}\n").unwrap()];
+        assert!(
+            may_spec.contains("!served_spec_route_capable(lm, dspark_armed)"),
+            "{may_spec}"
+        );
+        assert!(!may_spec.contains("!mtp_spec_capable(lm)"), "{may_spec}");
+        let call = &production[production
+            .find("let estimate_spec = admission_request_may_spec(")
+            .unwrap()..];
+        assert!(
+            call[..300].contains("dspark_drafts.contains_key(&model_key)"),
+            "{}",
+            &call[..300]
+        );
+        let reserve = &production[production.find("let reserve = admission_reserve(").unwrap()..];
+        let reserve = &reserve[..reserve.find("admit_reserve_override()").unwrap()];
+        assert!(
+            reserve
+                .contains("served_spec_route_capable(lm, dspark_drafts.contains_key(&model_key))"),
+            "{reserve}"
+        );
+        assert!(
+            !reserve.contains("is_some_and(mtp_spec_capable)"),
+            "{reserve}"
+        );
+        // The draft-plane charge itself keys on the armed drafter once the estimate is spec.
+        assert!(
+            production.contains("(true, Some(draft)) => draft.resident_kv_bytes(admission_cap),")
+        );
+        // The [spec-k] admit receipt prints on the DFlash route too.
+        assert!(production.contains("if served_spec_route_capable(lm, dspark_draft_ready) {"));
     }
 
     #[test]
@@ -46271,6 +46603,94 @@ mod tests {
                 reason: SpecKReason::Concurrency
             },
         );
+    }
+
+    #[test]
+    fn spec_k_table_rungs_override_one_at_a_time_and_keep_the_gate() {
+        let env = |pairs: &'static [(&'static str, &'static str)]| {
+            move |name: &str| {
+                pairs
+                    .iter()
+                    .find(|(k, _)| *k == name)
+                    .map(|(_, v)| v.to_string())
+            }
+        };
+        // Unset: the shipped table, so every existing device keeps its depths.
+        let (table, errors) = parse_spec_k_table(env(&[]));
+        assert_eq!(table, SpecKTable::SHIPPED);
+        assert!(errors.is_empty());
+        // One rung: the owner's measured masked-MTP depth on cached long prompts.
+        let (table, errors) = parse_spec_k_table(env(&[("MEMRA_SPEC_K_CACHED_LONG_TRIM", "2")]));
+        assert!(errors.is_empty());
+        assert_eq!(
+            table,
+            SpecKTable {
+                cached_long_trim: 2,
+                ..SpecKTable::SHIPPED
+            }
+        );
+        let single = resolve_spec_gate_thresholds(false, None, None);
+        let cached_long_trim = choose_spec_k_with(
+            table,
+            None,
+            true,
+            single,
+            1,
+            SPEC_K_LONG_PROMPT_MIN,
+            SPEC_K_LONG_CACHE_MIN,
+            true,
+        );
+        assert_eq!(
+            cached_long_trim,
+            SpecKDecision {
+                k: 2,
+                reason: SpecKReason::CachedLong
+            }
+        );
+        // The gate stays on: past LOW the same request demotes to plain, unlike MEMRA_SPEC_K.
+        assert_eq!(
+            choose_spec_k_with(
+                table,
+                None,
+                true,
+                single,
+                single.low + 1,
+                SPEC_K_LONG_PROMPT_MIN,
+                SPEC_K_LONG_CACHE_MIN,
+                true,
+            ),
+            SpecKDecision {
+                k: 0,
+                reason: SpecKReason::Concurrency
+            }
+        );
+        // The other rungs keep their shipped depths.
+        assert_eq!(
+            choose_spec_k_with(table, None, true, single, 1, 28, 0, false).k,
+            SPEC_K_COLD_SHORT
+        );
+        // All four, and invalid values (0, garbage) keep the shipped rung and are reported.
+        let (table, errors) = parse_spec_k_table(env(&[
+            ("MEMRA_SPEC_K_COLD_SHORT", "4"),
+            ("MEMRA_SPEC_K_COLD_LONG", " 5 "),
+            ("MEMRA_SPEC_K_CACHED_LONG", "0"),
+            ("MEMRA_SPEC_K_CACHED_LONG_TRIM", "two"),
+        ]));
+        assert_eq!(
+            table,
+            SpecKTable {
+                cold_short: 4,
+                cold_long: 5,
+                ..SpecKTable::SHIPPED
+            }
+        );
+        assert_eq!(errors.len(), 2, "{errors:?}");
+        assert!(
+            errors[0].contains("MEMRA_SPEC_K_CACHED_LONG=\"0\""),
+            "{errors:?}"
+        );
+        // The process-wide resolver reads no override in this test binary.
+        assert_eq!(spec_k_table(), SpecKTable::SHIPPED);
     }
 
     #[test]
@@ -53895,6 +54315,82 @@ mod tests {
     /// the retire pass computes the source test from both identities and settles only then; no
     /// other capture settle site changes.
     #[test]
+    fn glm5_prime_terminated_session_publishes_its_boundary_before_retirement() {
+        // The glm5 spec route publishes its prompt-boundary capture from the tick-top sweep
+        // only, so a glm5 request that finished in the tick its prime completed (max_tokens=1,
+        // EOS at token 1) dropped the capture at retirement, the same gap the MTP route had.
+        // The pre-retire drain must call the glm5 drain for finished, non-faulted sessions,
+        // and the drain must keep its readiness gate (no trunk-only entry before the drafter
+        // KV covers the boundary).
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        assert_eq!(
+            production
+                .matches("drain_glm5_prefix_capture(&engine, &mut px, &mut hpx, s);")
+                .count(),
+            2,
+            "tick-top sweep + pre-retire drain"
+        );
+        let drain = &production[production
+            .find("// The MTP twin of memra#298")
+            .expect("pre-retire drain present")..];
+        let block = &drain[..drain
+            .find("finished.sort_unstable();")
+            .expect("retirement follows the drain")];
+        assert!(block.contains("for &i in &finished {"), "{block}");
+        assert!(
+            block.contains("if s.errored || s.oom_teardown {"),
+            "{block}"
+        );
+        assert!(
+            block.contains("drain_glm5_prefix_capture(&engine, &mut px, &mut hpx, s);"),
+            "{block}"
+        );
+        let helper = &production[production.find("fn drain_glm5_prefix_capture(").unwrap()..];
+        let helper = &helper[..helper.find("\n}\n").unwrap()];
+        assert!(helper.contains("g.prefix_capture_ready()"), "{helper}");
+    }
+
+    #[test]
+    fn mtp_prime_terminated_session_publishes_its_boundary_before_retirement() {
+        // A spec session that finishes in the tick its prime completed (max_tokens=1, EOS at
+        // token 1) used to drop its MTP boundary captures at retirement: only the NEXT tick's
+        // sweep published them, and the session was gone by then, so an identical prompt sent
+        // later re-primed in full (GB10 agent bench, 2026-11-01: 48 primes, zero inserts). The
+        // drain must run for finished sessions, skip faulted ones, and sit before retirement.
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        // Exactly one publisher body, shared by the tick-top sweep and the pre-retire drain.
+        assert_eq!(production.matches("\"spec-boundary\",").count(), 1);
+        assert_eq!(
+            production
+                .matches("drain_mtp_prefix_captures(&engine, &mut px, &mut hpx, s);")
+                .count(),
+            2
+        );
+        let dspark_drain = production
+            .find("// The MTP twin of memra#298")
+            .expect("pre-retire MTP drain present");
+        let drain = &production[dspark_drain..];
+        let retire = drain
+            .find("finished.sort_unstable();")
+            .expect("retirement follows the drain");
+        let block = &drain[..retire];
+        assert!(block.contains("for &i in &finished {"), "{block}");
+        assert!(
+            block.contains("if s.errored || s.oom_teardown {"),
+            "{block}"
+        );
+        assert!(block.contains("drain_mtp_prefix_captures("), "{block}");
+        // The helper keeps the sweep's guards: a pending (saved) prime is not publishable, and an
+        // entry already keyed is not re-inserted.
+        let helper = &production[production.find("fn drain_mtp_prefix_captures(").unwrap()..];
+        let helper = &helper[..helper.find("\n}\n").unwrap()];
+        assert!(helper.contains("if s.prime_service.pending {"));
+        assert!(helper.contains("px.has_key(&pool_key, &sp.committed[..end])"));
+    }
+
+    #[test]
     fn day62_r1_every_capture_names_its_source_and_only_the_retire_settle_changes() {
         let worker = include_str!("worker.rs");
         let production = &worker[..worker.find("\nmod tests {").unwrap()];
@@ -53914,7 +54410,7 @@ mod tests {
         for publisher in [
             "\"dspark-boundary\",\n        &s.request_id,",
             "\"glm5-boundary\",\n        &s.request_id,",
-            "\"spec-boundary\",\n                            &s.request_id,",
+            "\"spec-boundary\",\n            &s.request_id,",
             "        why,\n        &s.request_id,\n    ) {",
         ] {
             assert!(

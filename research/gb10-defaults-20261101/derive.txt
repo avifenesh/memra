@@ -1,0 +1,18 @@
+entry at ctx 262144: 7941521408 B = 7.94 GB
+discrete default (2 entries): 15883042816 B = 15.88 GB
+unified, boot free 70 GiB: clamp 68096 MiB, budget 34048 MiB (4.5 full-ctx entries)
+unified, boot free 95 GiB: clamp 93696 MiB, budget 46848 MiB (6.2 full-ctx entries)
+entry at 14000 tokens: 0.57 GB
+entry at 28000 tokens: 0.99 GB
+entry at 42000 tokens: 1.40 GB
+GB10 prefill rate per concurrent prefill: 4118 x 48/188 / 4 = 262.9 tok/s
+served ctx 262144: streaming TTFT default 997311 ms (997 s)
+served ctx 131072: streaming TTFT default 498656 ms (499 s)
+served ctx 65536: streaming TTFT default 249328 ms (249 s)
+served ctx 32768: streaming TTFT default 124664 ms (125 s)
+served ctx 8192: streaming TTFT default 90000 ms (90 s)
+42k-token prompt in the c4 cell: 160 s (> 90 s shipped window)
+served ctx 262144: non-streaming default 3045311 ms (3045 s)
+served ctx 131072: non-streaming default 2546656 ms (2547 s)
+served ctx 32768: non-streaming default 2172664 ms (2173 s)
+served ctx 8192: non-streaming default 2138000 ms (2138 s)

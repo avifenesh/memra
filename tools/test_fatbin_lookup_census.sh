@@ -65,28 +65,28 @@ run() { local d=$1 arch=$2; shift 2; "$census" --arch "$arch" --out-dir "$d/out"
 # 1 — happy path must PASS, with no exceptions file needed.
 stage "$tmp/a" 89 alpha_kernel beta_kernel
 out=$(run "$tmp/a" 89 --exceptions "$tmp/none.txt") || fail "arm 1: refused a complete tree: $out"
-echo "$out" | grep -q 'fatbin-census: sm_89 OK' || fail "arm 1: no OK line: $out"
+grep -q 'fatbin-census: sm_89 OK' <<<"$out" || fail "arm 1: no OK line: $out"
 
 # 2 — no fatbins at all: an empty supply side must REFUSE, never read as "nothing missing".
 stage "$tmp/b" 89 alpha_kernel; rm -f "$tmp/b"/out/*.fatbin
 if out=$(run "$tmp/b" 89 --exceptions "$tmp/none.txt"); then
     fail "arm 2: accepted a tree with no fatbins: $out"
 fi
-echo "$out" | grep -q 'no \*.fatbin' || fail "arm 2: wrong refusal: $out"
+grep -q 'no \*.fatbin' <<<"$out" || fail "arm 2: wrong refusal: $out"
 
 # 3 — a module Engine::func searches is absent.
 stage "$tmp/c" 89 alpha_kernel; rm -f "$tmp/c/out/hybrid.fatbin"
 if out=$(run "$tmp/c" 89 --exceptions "$tmp/none.txt"); then
     fail "arm 3: accepted a build missing hybrid.fatbin: $out"
 fi
-echo "$out" | grep -q 'hybrid' || fail "arm 3: refusal does not name the missing module: $out"
+grep -q 'hybrid' <<<"$out" || fail "arm 3: refusal does not name the missing module: $out"
 
 # 4 — a fatbin yields zero kernel names (parser drift or an empty fatbin).
 stage "$tmp/d" 89 alpha_kernel; : > "$tmp/d/out/hybrid.fatbin.syms"
 if out=$(run "$tmp/d" 89 --exceptions "$tmp/none.txt"); then
     fail "arm 4: accepted a fatbin with zero kernels: $out"
 fi
-echo "$out" | grep -q 'zero kernel names' || fail "arm 4: wrong refusal: $out"
+grep -q 'zero kernel names' <<<"$out" || fail "arm 4: wrong refusal: $out"
 
 # 5 — THE DEFECT CLASS: a looked-up kernel in no fatbin (the live sm_89 GDN case).
 stage "$tmp/e" 89 alpha_kernel
@@ -94,15 +94,15 @@ echo '  self.func("gdn_l2_vl");' >> "$tmp/e/crate/src/lib.rs"
 if out=$(run "$tmp/e" 89 --exceptions "$tmp/none.txt"); then
     fail "arm 5: accepted a lookup present in NO fatbin: $out"
 fi
-echo "$out" | grep -q 'gdn_l2_vl' || fail "arm 5: refusal does not name the kernel: $out"
-echo "$out" | grep -q 'not in any fatbin' \
+grep -q 'gdn_l2_vl' <<<"$out" || fail "arm 5: refusal does not name the kernel: $out"
+grep -q 'not in any fatbin' <<<"$out" \
   || fail "arm 5: refusal does not name the runtime consequence: $out"
 
 # 6 — the same tree PASSES once the absence is declared for that arch.
 printf '89 gdn_l2_vl  # guarded at the call site\n' > "$tmp/exc-ok.txt"
 out=$(run "$tmp/e" 89 --exceptions "$tmp/exc-ok.txt") \
   || fail "arm 6: refused a declared exception: $out"
-echo "$out" | grep -q 'excused (declared, sm_89): gdn_l2_vl' \
+grep -q 'excused (declared, sm_89): gdn_l2_vl' <<<"$out" \
   || fail "arm 6: excused kernel not reported: $out"
 
 # 6b — a declaration for a DIFFERENT arch must not excuse this one.
@@ -116,8 +116,8 @@ stage "$tmp/f" 89 alpha_kernel gdn_l2_vl
 if out=$(run "$tmp/f" 89 --exceptions "$tmp/exc-ok.txt"); then
     fail "arm 7: accepted a dead exception (symbol now present): $out"
 fi
-echo "$out" | grep -q 'now PRESENT' || fail "arm 7: wrong refusal: $out"
-echo "$out" | grep -q 'delete the line' || fail "arm 7: refusal gives no remedy: $out"
+grep -q 'now PRESENT' <<<"$out" || fail "arm 7: wrong refusal: $out"
+grep -q 'delete the line' <<<"$out" || fail "arm 7: refusal gives no remedy: $out"
 
 # 8 — EXCEPTION ROT, direction 2: the symbol is no longer looked up (renamed/deleted), so the
 #     grant now covers whatever next occupies the name. This is the arm that the flags baseline
@@ -126,21 +126,21 @@ stage "$tmp/g" 89 alpha_kernel
 if out=$(run "$tmp/g" 89 --exceptions "$tmp/exc-ok.txt"); then
     fail "arm 8: accepted an exception for a symbol nothing looks up: $out"
 fi
-echo "$out" | grep -q 'no longer looked up' || fail "arm 8: wrong refusal: $out"
+grep -q 'no longer looked up' <<<"$out" || fail "arm 8: wrong refusal: $out"
 
 # 9 — zero lookups extracted: the demand side going empty must REFUSE, not pass vacuously.
 stage "$tmp/h" 89 alpha_kernel; echo 'fn nothing(){}' > "$tmp/h/crate/src/lib.rs"
 if out=$(run "$tmp/h" 89 --exceptions "$tmp/none.txt"); then
     fail "arm 9: accepted a crate with zero kernel lookups: $out"
 fi
-echo "$out" | grep -q 'vacuously' || fail "arm 9: wrong refusal: $out"
+grep -q 'vacuously' <<<"$out" || fail "arm 9: wrong refusal: $out"
 
 # 10 — arch mismatch: fatbins from a stale build directory.
 stage "$tmp/i" 120a alpha_kernel
 if out=$(run "$tmp/i" 89 --exceptions "$tmp/none.txt"); then
     fail "arm 10: accepted sm_120a fatbins under an sm_89 census: $out"
 fi
-echo "$out" | grep -q 'stale build directory' || fail "arm 10: wrong refusal: $out"
+grep -q 'stale build directory' <<<"$out" || fail "arm 10: wrong refusal: $out"
 
 # 11 — a malformed exceptions line must refuse rather than be silently skipped.
 printf 'just-one-field\n' > "$tmp/exc-bad.txt"
@@ -154,10 +154,10 @@ fi
 printf '89  # measured missing, compile-only, must not ship\n' > "$tmp/adv.txt"
 out=$(run "$tmp/e" 89 --exceptions "$tmp/none.txt" --advisory "$tmp/adv.txt") \
   || fail "arm 13: advisory arch still blocked: $out"
-echo "$out" | grep -q 'ADVISORY' || fail "arm 13: no ADVISORY marker: $out"
-echo "$out" | grep -q 'gdn_l2_vl' \
+grep -q 'ADVISORY' <<<"$out" || fail "arm 13: no ADVISORY marker: $out"
+grep -q 'gdn_l2_vl' <<<"$out" \
   || fail "arm 13: advisory must still REPORT the missing kernel, not hide it: $out"
-echo "$out" | grep -q 'must not appear in release.yml' \
+grep -q 'must not appear in release.yml' <<<"$out" \
   || fail "arm 13: advisory output does not state the shipping invariant: $out"
 
 # 14 — advisory must NOT weaken the structural refusals. Same advisory arch, but a broken tree:
@@ -174,18 +174,20 @@ stage "$tmp/k" 89 alpha_kernel gdn_l2_vl
 if out=$(run "$tmp/k" 89 --exceptions "$tmp/exc-ok.txt" --advisory "$tmp/adv.txt"); then
     fail "arm 15: advisory arch accepted a dead exception: $out"
 fi
-echo "$out" | grep -q 'now PRESENT' || fail "arm 15: wrong refusal: $out"
+grep -q 'now PRESENT' <<<"$out" || fail "arm 15: wrong refusal: $out"
 
 # 16 — WIRING. Comments stripped: the prose above the step names the script too, so a plain
 #      substring search would pass after the step itself was deleted.
+#      Here-strings, not `echo | grep -q`: under pipefail, grep -q exiting at its first match
+#      SIGPIPEs the echo of a long workflow (exit 141) and the arm failed on a correct ci.yml.
 live=$(grep -vE '^\s*#' "$ci")
-echo "$live" | grep -qF 'tools/fatbin-lookup-census.py' \
+grep -qF 'tools/fatbin-lookup-census.py' <<<"$live" \
   || fail "arm 16: $ci does not invoke the fatbin census"
-echo "$live" | grep -qF 'tools/test_fatbin_lookup_census.sh' \
+grep -qF 'tools/test_fatbin_lookup_census.sh' <<<"$live" \
   || fail "arm 16: $ci does not run this fixture"
 # It must run per-arch, inside the arch matrix — a single-arch invocation would miss the very
 # arches that break.
-echo "$live" | grep -qF 'matrix.cuda_arch }}' \
+grep -qF 'matrix.cuda_arch }}' <<<"$live" \
   || fail "arm 16: the census is not parameterised by the arch matrix"
 
 echo "fatbin-lookup-census fixture: 16 arms PASS"

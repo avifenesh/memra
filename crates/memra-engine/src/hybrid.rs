@@ -326,7 +326,9 @@ impl ResidentPlan {
             self.decisions.insert(device, false);
             return false;
         }
-        let (free, _total) = match e.ctx().mem_get_info() {
+        // Unified memory: the allocatable reading (page cache counts). Host pinning adds no
+        // capacity there, so every expert that fits in system memory should stay resident.
+        let (free, _total) = match crate::unified_memory::allocatable_mem_info(e.ctx()) {
             Ok(v) => v,
             Err(_) => {
                 self.decisions.insert(device, false);

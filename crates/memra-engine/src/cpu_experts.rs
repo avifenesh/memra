@@ -103,7 +103,7 @@ type MoeTokenFn = unsafe extern "C" fn(
 ) -> i32;
 type CacheStatsFn = unsafe extern "C" fn(*mut u64, *mut u64, *mut u64, *mut u64);
 type ProfileStatsFn = unsafe extern "C" fn(*mut u64, *mut u64, *mut u64, *mut u64);
-type PrefetchFn = unsafe extern "C" fn(*const CpuProjectionV2, i32, *mut i8, usize) -> i32;
+type PrefetchFn = unsafe extern "C" fn(*const CpuProjectionV2, i32, *mut c_char, usize) -> i32;
 type RowsFn = unsafe extern "C" fn(
     *const CpuExpertV2,
     *const f32,
@@ -456,7 +456,7 @@ fn execute_rows(job: CpuRowsJob) -> Result<Vec<f32>, String> {
     let expert = ffi_expert(&job.expert);
     let m_r = job.route_weights.len();
     let mut output = vec![0.0f32; m_r * job.output_features];
-    let mut error = vec![0i8; 1024];
+    let mut error = vec![0 as c_char; 1024];
     let start = std::time::Instant::now();
     // SAFETY: descriptors point into immutable model-owned bytes retained until the caller
     // joins this job; spans match the descriptor dimensions and the stable rows ABI (the raw
@@ -516,7 +516,7 @@ fn execute_token(job: CpuExpertJob) -> Result<Vec<f32>, String> {
     let count =
         i32::try_from(experts.len()).map_err(|_| "CPU expert count exceeds i32".to_string())?;
     let mut output = vec![0.0f32; job.output_features];
-    let mut error = vec![0i8; 1024];
+    let mut error = vec![0 as c_char; 1024];
     let start = std::time::Instant::now();
     // SAFETY: every descriptor points into immutable model-owned bytes retained until the caller
     // joins this job; all input/output/error spans have the dimensions encoded in the descriptors.
@@ -1055,7 +1055,7 @@ fn prefetch_worker(
     let Some(prefetch) = backend.prefetch else {
         return;
     };
-    let mut error = vec![0i8; 512];
+    let mut error = vec![0 as c_char; 512];
     while let Ok((layer, input)) = receiver.recv() {
         for d in 1..=depth {
             let target = layer + d as u16;
