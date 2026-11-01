@@ -68,6 +68,7 @@ The prefill numeric config is part of the acceptance config: prefill writes the 
 ## Hardware targets
 
 - Blackwell sm_120 is the primary optimized target.
+- GB10 (DGX Spark, compute capability 12.1) builds `121a`: its own SASS, the `120a` policy family (`BUILT_CUDA_ARCH` reads `120a`; the exact target is `BUILT_CUDA_TARGET`). Key new policy on the family, never on the target string. Record: `docs/decisions/SM121-SPARK-TARGET.md`.
 - Step-3.7 multi-card: RTX PRO 6000 Blackwell is the blocking qualification target. Local RTX 5090 evidence is a later compatibility follow-up and does not block a Step release unless the change also alters a generic 5090-facing mechanism or default. Use the hash-bound `step-pro` pre-push gate, never a skip override.
 - Multi-card topology: never call PP or replicas TP, and never force a TP degree that violates attention-head, KV-head or expert partitioning.
 - Another accelerator: an admitted experiment chooses its runtime per the project status; a new Memra backend is not the default answer. An admitted secondary backend keeps the model bytes, is off at build time by default, documents its disabled target-specific kernels and passes a same-prompt golden-output gate before producing scored evidence. The naked sm_120a build and its defaults do not change.

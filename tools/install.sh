@@ -36,7 +36,8 @@ ARCH="${MEMRA_CUDA_ARCH:-}"
 if [ -z "$ARCH" ] && command -v nvidia-smi >/dev/null 2>&1; then
     cap=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 | tr -d ' ') || cap=""
     case "$cap" in
-        12.0|12.1) ARCH=120a ;;
+        12.0)      ARCH=120a ;;
+        12.1)      ARCH=121a ;;
         10.0)      ARCH=100a ;;
         9.0)       ARCH=90a  ;;
         8.9)       ARCH=89   ;;

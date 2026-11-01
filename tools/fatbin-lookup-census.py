@@ -39,7 +39,7 @@ REFUSALS (all fail-closed; the empty cases are refusals, not passes)
 For the measured grandfather-list failure behind refusal 6, see the
 retired-grandfather note in tools/check-flags.sh.
 
-Usage: tools/fatbin-lookup-census.py --arch <120a|100a|90a|89> [--out-dir DIR] [--crate DIR]
+Usage: tools/fatbin-lookup-census.py --arch <120a|121a|100a|90a|89> [--out-dir DIR] [--crate DIR]
   --out-dir defaults to the newest target/*/build/memra-engine-*/out containing fatbins.
 Callers: ci.yml arch-coverage (after the build, per arch),
          tools/test_fatbin_lookup_census.sh (teeth).

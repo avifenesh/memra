@@ -57,7 +57,7 @@ ci_matrix=$( { sed -n '/cuda_arch:/p' "$ci" | grep -o '"[^"]*"' || true; } | tr 
 ci_arches="$ci_arches $ci_matrix"
 
 # build.rs: the accepted set, from the assert that guards it.
-ok_arches=$(grep -o 'matches!(cuda_arch.as_str(),[^)]*)' "$build_rs" \
+ok_arches=$(grep -o 'matches!(target.as_str(),[^)]*)' "$build_rs" \
             | head -1 | grep -o '"[^"]*"' | tr -d '"' | tr '\n' ' ')
 [ -n "$ok_arches" ] || fail "could not parse the accepted arch set out of $build_rs"
 

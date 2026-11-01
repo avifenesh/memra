@@ -267,7 +267,10 @@ jobs:
     strategy:
       fail-fast: false      # one arch failing must not hide the other's result
       matrix:
-        cuda_arch: ["100a"]
+        # 121a (GB10, DGX Spark) compiles the 120a family's sources with its own SASS target
+        # (docs/decisions/SM121-SPARK-TARGET.md). The cell proves every TU, block-scale MMA
+        # included, assembles for sm_121a and that the fatbins carry every looked-up kernel.
+        cuda_arch: ["100a", "121a"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # cuda-cuobjdump-13-1 is here for the fatbin census below, and it is a SEPARATE package
@@ -300,7 +303,7 @@ jobs:
       # remains literal-1 opt-in and install.sh refuses an unpublished B200 prebuilt before network.
       # Every command is host-only; none opens the CUDA driver.
       - name: B200 kernel-twin ABI, SASS, layout, and admission gates
-        if: ${{ needs.route.result != 'success' || needs.route.outputs.engine != 'false' }}
+        if: ${{ matrix.cuda_arch == '100a' && (needs.route.result != 'success' || needs.route.outputs.engine != 'false') }}
         run: |
           research/b200-kernel-twins-dry-20260901/check-layouts.sh
           research/b200-kernel-twins-dry-20260901/check-nvfp4.sh
