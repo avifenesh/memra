@@ -127,6 +127,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _ = model.prime_cache(&e, &prompt, &mut c, 0)?;
         let snap = c.snapshot(&e)?;
         let n_vocab = model.cfg.n_vocab as usize;
+        // The exact tier (m <= 16) the batched decode and dspark verify run under; without the
+        // scope, T = 16 falls into the prime GEMM class (PRIME_MIN_T).
+        let _exact = e.exact_scope(true);
         let mut base_ms = None;
         for &t in &ts {
             let toks: Vec<u32> = (0..t as u32).map(|j| (977 + j * 131) % vocab).collect();
