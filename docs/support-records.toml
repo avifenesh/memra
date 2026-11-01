@@ -31,6 +31,10 @@
 # Fields: id, pack, state, artifact, numeric_program, topology, route, memra_commit (required
 # for NativeQualified and NativeTuned), gates (Gate = "passed" | "pending"),
 # evidence (Gate = [paths or "ci:verify-tiny"]), notes.
+#
+# Topology is part of the key, and support is per machine. No record names a GB10 (DGX Spark,
+# sm_121a) topology: no model is supported there until its gates run on that machine
+# (docs/rigs/dgx-spark.md).
 
 [[record]]
 id = "qwen3-tiny-random"
