@@ -4571,6 +4571,27 @@ fn meter_cached_credit(ns_tokens: &mut HashMap<String, [u64; 2]>, cache_ns: &str
 /// allocations still win through the existing reclaim-on-allocation-failure path.
 const PREFIX_CACHE_DEFAULT_ENTRIES: usize = 2;
 
+/// UNIFIED-MEMORY SHARE (GB10 / DGX Spark, 2026-11-01). On a unified-memory device the boot free
+/// reading is the system pool left after the weights: one pool for session KV, the prefix cache,
+/// this process's host side and the OS, not a card's spare VRAM. Two full-context entries
+/// (15.9 GB for Qwen3.8-27B at 262,144 tokens) held ~20 of a 48-prompt agentic working set there,
+/// so 27 entries were evicted and every turn re-primed 14k-42k tokens. The unified default gives
+/// the prefix cache 1/`UNIFIED_PREFIX_CACHE_SHARE_DIV` of what remains after the transient reserve,
+/// the admission driver-headroom floor and any host KV tier (the same DRAM), and leaves the other
+/// part to sessions. Sessions still win: a failed session allocation evicts the cache. On the
+/// first Spark run (~70 GB free after weights) the half share is ~33 GB, the 32768 MB the run
+/// needed by hand. Discrete cards keep the two-entry rule unchanged.
+const UNIFIED_PREFIX_CACHE_SHARE_DIV: usize = 2;
+
+/// The unified-memory terms of the derived prefix-cache budget (absent on a discrete card).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct UnifiedPrefixTerms {
+    /// `MEMRA_ADMIT_DRIVER_HEADROOM_MB` in bytes: the floor admission keeps free.
+    driver_headroom_bytes: usize,
+    /// The host KV tier budget (`MEMRA_KV_HOST_MB`): pinned host bytes come out of the same DRAM.
+    host_tier_bytes: usize,
+}
+
 #[derive(Debug)]
 enum PrefixCacheBudget {
     Configured {
@@ -4587,6 +4608,8 @@ enum PrefixCacheBudget {
         ctx_source: &'static str,
         boot_free_bytes: usize,
         clamp_bytes: usize,
+        /// `Some` on a unified-memory device: the share rule above sized the request.
+        unified: Option<UnifiedPrefixTerms>,
     },
 }
 
@@ -4694,11 +4717,22 @@ fn prefix_budget_ctx(env_ctx: Option<&str>, model_ctx: usize) -> Result<usize, S
 fn derived_prefix_cache_budget(
     entry_bytes: usize,
     boot_free_bytes: usize,
+    unified: Option<UnifiedPrefixTerms>,
 ) -> (usize, usize, usize) {
-    let requested_bytes = entry_bytes.saturating_mul(PREFIX_CACHE_DEFAULT_ENTRIES);
+    let entries_bytes = entry_bytes.saturating_mul(PREFIX_CACHE_DEFAULT_ENTRIES);
     // Keep the serving transient floor free. Unlike an explicit operator budget, the naked
     // default must not claim the last bytes that prefill/FA workspaces or a new session need.
-    let clamp_bytes = boot_free_bytes.saturating_sub(SPEC_SHRINK_RESERVE);
+    let mut clamp_bytes = boot_free_bytes.saturating_sub(SPEC_SHRINK_RESERVE);
+    let requested_bytes = match unified {
+        None => entries_bytes,
+        Some(terms) => {
+            // The same DRAM also holds the admission headroom floor and the host tier.
+            clamp_bytes = clamp_bytes
+                .saturating_sub(terms.driver_headroom_bytes)
+                .saturating_sub(terms.host_tier_bytes);
+            entries_bytes.max(clamp_bytes / UNIFIED_PREFIX_CACHE_SHARE_DIV)
+        }
+    };
     (
         requested_bytes.min(clamp_bytes),
         requested_bytes,
@@ -4763,9 +4797,9 @@ fn init_prefix_cache_budget(
             .max_by_key(|(_, bytes, _)| *bytes)
             .map(|(name, bytes, ctx)| (name.to_string(), bytes, ctx))
             .unwrap_or_else(|| ("(none)".to_string(), 0, 0));
-        let boot_free_bytes = engine
-            .ctx()
-            .mem_get_info()
+        // Allocatable reading: `cuMemGetInfo` on a discrete card, page-cache aware on unified
+        // memory (`memra_engine::unified_memory`).
+        let boot_free_bytes = memra_engine::unified_memory::allocatable_mem_info(engine.ctx())
             .map(|(free, _)| free)
             .unwrap_or_else(|err| {
                 eprintln!(
@@ -4774,8 +4808,13 @@ fn init_prefix_cache_budget(
                 );
                 0
             });
+        let unified =
+            memra_engine::unified_memory::is_unified(engine.ctx()).then(|| UnifiedPrefixTerms {
+                driver_headroom_bytes: admit_driver_headroom_bytes(),
+                host_tier_bytes: kv_host_budget_bytes(),
+            });
         let (bytes, requested_bytes, clamp_bytes) =
-            derived_prefix_cache_budget(entry_bytes, boot_free_bytes);
+            derived_prefix_cache_budget(entry_bytes, boot_free_bytes, unified);
         PrefixCacheBudget::Derived {
             bytes,
             requested_bytes,
@@ -4785,6 +4824,7 @@ fn init_prefix_cache_budget(
             ctx_source,
             boot_free_bytes,
             clamp_bytes,
+            unified,
         }
     })
 }
@@ -27279,11 +27319,12 @@ pub fn run(
                 ctx_source,
                 boot_free_bytes,
                 clamp_bytes,
+                unified,
             } => (
                 *bytes,
                 format!(
                     "{bytes} B, derived: {} x {entry_bytes} B max entry for model {model:?} at \
-                     served ctx {ctx} (from {ctx_source}; MEMRA_CTX {}), requested \
+                     served ctx {ctx} (from {ctx_source}; MEMRA_CTX {}){}, requested \
                      {requested_bytes} B; boot driver free {boot_free_bytes} B, post-reserve \
                      clamp {clamp_bytes} B",
                     PREFIX_CACHE_DEFAULT_ENTRIES,
@@ -27291,6 +27332,15 @@ pub fn run(
                         "set"
                     } else {
                         "unset"
+                    },
+                    match unified {
+                        Some(terms) => format!(
+                            ", unified memory: the larger of that and 1/{UNIFIED_PREFIX_CACHE_SHARE_DIV} of \
+                             allocatable free after the transient reserve, driver headroom {} B \
+                             and host tier {} B",
+                            terms.driver_headroom_bytes, terms.host_tier_bytes,
+                        ),
+                        None => String::new(),
                     },
                 ),
             ),
@@ -27564,6 +27614,10 @@ pub fn run(
             crate::capacity_metrics::device_free(device, free as u64);
         }
     });
+    // The device shape the HTTP layer's hardware-derived defaults read (the unified-memory
+    // streaming TTFT deadline and its SSE prefill commit). Published before the ready verdict:
+    // the listener binds only after it, so no request reads the discrete fallback by accident.
+    publish_serving_device(&engine, &loaded);
     // mem_get_info binds each queried CUDA context. Restore the worker's primary
     // before reporting readiness; a secondary device must not steer subsequent launches.
     if let Err(error) = engine.ctx().bind_to_thread() {
@@ -33290,6 +33344,32 @@ pub fn resolve_ctx(raw: Option<&str>, model_ctx: usize) -> Result<usize, String>
     }
 }
 
+/// Publish the serving device's shape for the HTTP layer (`crate::serving_device`) and state the
+/// streaming deadline pair it resolves to, so the boot log names the values a request gets.
+fn publish_serving_device(engine: &Engine, loaded: &HashMap<String, LoadedModel>) {
+    use cudarc::driver::sys::CUdevice_attribute_enum as A;
+    let unified_memory = memra_engine::unified_memory::is_unified(engine.ctx());
+    let sm_count = engine
+        .ctx()
+        .attribute(A::CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT)
+        .ok()
+        .and_then(|v| u32::try_from(v).ok())
+        .unwrap_or(0);
+    let max_served_ctx = loaded
+        .values()
+        .filter_map(|lm| resolve_env_ctx(lm.model.cfg.context_length as usize).ok())
+        .max()
+        .unwrap_or(0);
+    crate::serving_device::publish(crate::serving_device::ServingDevice {
+        unified_memory,
+        sm_count,
+        max_served_ctx,
+    });
+    if unified_memory {
+        eprintln!("{}", crate::stream_deadline_boot_line());
+    }
+}
+
 /// `resolve_ctx` against the process environment. A non-Unicode value is treated like any other
 /// unusable value: it refuses, it does not silently become a default.
 pub fn resolve_env_ctx(model_ctx: usize) -> Result<usize, String> {
@@ -33855,12 +33935,17 @@ fn constrained_spec_supported(
     !operator_replay && !model_forces_spec_replay(plan)
 }
 
-/// Driver-free plus bytes already mapped but reusable in the async pool.
+/// Driver-free plus bytes already mapped but reusable in the async pool. On a unified-memory
+/// device (GB10) the driver term is the allocatable reading, which counts the page cache the
+/// kernel reclaims on demand (`memra_engine::unified_memory`); discrete cards read
+/// `cuMemGetInfo` unchanged.
 fn effective_free_bytes(engine: &Engine) -> Option<(usize, usize)> {
-    engine.ctx().mem_get_info().ok().map(|(driver_free, _)| {
-        let pool_cached = engine.pool_cached_bytes();
-        (driver_free.saturating_add(pool_cached), pool_cached)
-    })
+    memra_engine::unified_memory::allocatable_mem_info(engine.ctx())
+        .ok()
+        .map(|(driver_free, _)| {
+            let pool_cached = engine.pool_cached_bytes();
+            (driver_free.saturating_add(pool_cached), pool_cached)
+        })
 }
 
 #[derive(Debug)]
@@ -42429,8 +42514,8 @@ mod tests {
     use super::{KV_FLEX_GRANT, KvFlex, kv_flex_effective_budget, prefix_cache_budget_bytes};
     use super::{MAX_EVENT_QUEUE_EVENTS, event_channel};
     use super::{
-        PREFIX_CACHE_DEFAULT_ENTRIES, derived_prefix_cache_budget, prefix_budget_ctx,
-        prefix_entry_geometry_bytes,
+        PREFIX_CACHE_DEFAULT_ENTRIES, UNIFIED_PREFIX_CACHE_SHARE_DIV, UnifiedPrefixTerms,
+        derived_prefix_cache_budget, prefix_budget_ctx, prefix_entry_geometry_bytes,
     };
     use super::{PpFreeSnapshot, concat_prime_pp_eligibility};
     use super::{
@@ -42751,7 +42836,7 @@ mod tests {
         let requested = entry_bytes * PREFIX_CACHE_DEFAULT_ENTRIES;
         let boot_free = SPEC_SHRINK_RESERVE + requested + 123;
         let (budget, derived_requested, clamp) =
-            derived_prefix_cache_budget(entry_bytes, boot_free);
+            derived_prefix_cache_budget(entry_bytes, boot_free, None);
         assert_eq!(PREFIX_CACHE_DEFAULT_ENTRIES, 2);
         assert_eq!(derived_requested, requested);
         assert_eq!(budget, requested);
@@ -42759,7 +42844,7 @@ mod tests {
         assert!(budget <= boot_free);
 
         let constrained_free = SPEC_SHRINK_RESERVE + entry_bytes;
-        let (budget, _, clamp) = derived_prefix_cache_budget(entry_bytes, constrained_free);
+        let (budget, _, clamp) = derived_prefix_cache_budget(entry_bytes, constrained_free, None);
         assert_eq!(budget, entry_bytes);
         assert_eq!(budget, clamp);
         assert!(budget <= constrained_free);
@@ -42781,7 +42866,7 @@ mod tests {
         assert_eq!(ctx, 8192);
         let entry = prefix_entry_geometry_bytes(bpt, recurrent, ctx);
         assert_eq!(entry, 400_162_816);
-        let (budget, requested, clamp) = derived_prefix_cache_budget(entry, boot_free);
+        let (budget, requested, clamp) = derived_prefix_cache_budget(entry, boot_free, None);
         assert_eq!((budget, requested), (800_325_632, 800_325_632));
         assert_eq!(clamp, 84_909_096_960);
 
@@ -42790,14 +42875,14 @@ mod tests {
         assert_eq!(ctx, model_ctx);
         let entry = prefix_entry_geometry_bytes(bpt, recurrent, ctx);
         assert_eq!(entry, 7_941_521_408);
-        let (budget, requested, clamp) = derived_prefix_cache_budget(entry, boot_free);
+        let (budget, requested, clamp) = derived_prefix_cache_budget(entry, boot_free, None);
         assert_eq!(requested, 15_883_042_816);
         assert_eq!(clamp, boot_free - SPEC_SHRINK_RESERVE);
         assert_eq!(budget, 15_883_042_816);
 
         // The clamp is unchanged: a small card still keeps the serving-transient reserve.
         let small_free = 16_029_908_992;
-        let (budget, requested, clamp) = derived_prefix_cache_budget(entry, small_free);
+        let (budget, requested, clamp) = derived_prefix_cache_budget(entry, small_free, None);
         assert_eq!(clamp, small_free - SPEC_SHRINK_RESERVE);
         assert_eq!(budget, clamp);
         assert!(budget < requested);
@@ -42827,6 +42912,57 @@ mod tests {
             !prod.contains("PREFIX_CACHE_CTX_FALLBACK"),
             "no literal context fallback remains in the budget derivation"
         );
+    }
+
+    /// GB10 (DGX Spark) unified memory, Qwen3.8-27B at 262,144 tokens: the two-entry rule
+    /// (15.9 GB) held ~20 of a 48-prompt agentic working set; the unified share gives the cache
+    /// half of the system pool left after the reserves. The first Spark run read ~70 GB free
+    /// after weights and needed 32768 MB by hand; the share lands there. Discrete cards with the
+    /// same free reading keep the two-entry request exactly.
+    #[test]
+    fn unified_memory_prefix_budget_takes_half_the_post_load_pool_and_discrete_is_unchanged() {
+        let entry = prefix_entry_geometry_bytes(29_696, 156_893_184, 262_144);
+        assert_eq!(entry, 7_941_521_408);
+        let boot_free: usize = 70 << 30;
+        let terms = UnifiedPrefixTerms {
+            driver_headroom_bytes: 2048 << 20,
+            host_tier_bytes: 0,
+        };
+
+        let (budget, requested, clamp) = derived_prefix_cache_budget(entry, boot_free, Some(terms));
+        assert_eq!(clamp, boot_free - SPEC_SHRINK_RESERVE - (2048 << 20));
+        assert_eq!(requested, clamp / UNIFIED_PREFIX_CACHE_SHARE_DIV);
+        assert_eq!(budget, requested);
+        // (71,680 - 1,536 - 2,048) / 2 = 34,048 MiB: the hand-set 32,768 MiB of the first Spark
+        // run plus 1,280 MiB.
+        assert_eq!(budget, 34_048usize << 20);
+        assert!(budget >= 32_768 << 20);
+
+        // The same reading on a discrete card: two entries, as before.
+        let (budget, requested, _) = derived_prefix_cache_budget(entry, boot_free, None);
+        assert_eq!((budget, requested), (2 * entry, 2 * entry));
+
+        // A host KV tier lives in the same DRAM, so the share shrinks by its budget.
+        let with_host = UnifiedPrefixTerms {
+            host_tier_bytes: 8 << 30,
+            ..terms
+        };
+        let (budget_host, _, clamp_host) =
+            derived_prefix_cache_budget(entry, boot_free, Some(with_host));
+        assert_eq!(clamp_host, clamp - (8 << 30));
+        assert_eq!(budget_host, clamp_host / UNIFIED_PREFIX_CACHE_SHARE_DIV);
+
+        // A tight unified box never goes below the two-entry floor, and never past the clamp.
+        let tight_free = SPEC_SHRINK_RESERVE + (2048 << 20) + 3 * entry;
+        let (budget, requested, clamp) =
+            derived_prefix_cache_budget(entry, tight_free, Some(terms));
+        assert_eq!(requested, 2 * entry);
+        assert_eq!(clamp, 3 * entry);
+        assert_eq!(budget, 2 * entry);
+        let tighter_free = SPEC_SHRINK_RESERVE + (2048 << 20) + entry;
+        let (budget, _, clamp) = derived_prefix_cache_budget(entry, tighter_free, Some(terms));
+        assert_eq!(budget, clamp);
+        assert_eq!(budget, entry);
     }
 
     #[test]
