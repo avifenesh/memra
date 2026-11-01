@@ -1,8 +1,9 @@
 # GB10 (DGX Spark) builds sm_121a, a 120a-family target (2026-11-01)
 
 **Status:** decided and landed as a build target. Compile-covered in CI (the `121a` cell of the
-arch matrix in `ci.yml` and `ci-public.yml`); not yet hardware-qualified. No model gains a support
-state from this record.
+arch matrix in `ci.yml` and `ci-public.yml`); not yet hardware-qualified. Support is per machine: GB10 is a new
+machine with no model supported until it is measured there ([card](../rigs/dgx-spark.md);
+Qwen3.8-27B first, Qwen3.8-Flash-Next not planned).
 
 ## Question
 
@@ -45,7 +46,9 @@ CUDA 13.1 assembles the block-scale MMA translation unit (`cu/mmq_nvfp4_w4a8.cu`
 ## What the change proves, and what it does not
 
 Proved on the build host (CUDA 13.1, x86_64, no GPU used): `MEMRA_CUDA_ARCH=121a` builds
-`memra-server`; the `120a` build's fatbins and MMQ archive are byte-identical to `origin/main`'s.
+`memra-server`. The `120a` (RTX 5090, RTX PRO 6000) and `90a` (H100) builds compile the same
+sources with the same flags as `origin/main`, and their SASS matches `origin/main`'s instruction for
+instruction; their policy family equals their target, so kernel selection is unchanged.
 Unit tests pin the capability-to-target map, the family map and the guard
 (`cuda_arch::tests`).
 
