@@ -7412,6 +7412,83 @@ fn seed_booking_cap(pending: usize, budget: usize, resident: usize) -> usize {
     pending.min(budget.saturating_sub(resident))
 }
 
+/// Whether the primary device shares system memory (GB10). Read once: the device never changes.
+fn device_is_unified(engine: &Engine) -> bool {
+    static UNIFIED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *UNIFIED.get_or_init(|| memra_engine::unified_memory::is_unified(engine.ctx()))
+}
+
+/// UNIFIED-MEMORY ADMISSION BOOKING (GB10, 2026-11-02). On a unified-memory device the prefix
+/// cache and every session draw from the same DRAM, and the cache may grow up to its budget after
+/// a session was admitted (each long prime publishes a multi-GB entry). The first Spark quality
+/// panel admitted eight 131k-token sessions at ~9.1 GB each while the cache grew by 4 GB per
+/// session underneath them, and MemAvailable fell to 1.5 GB. Admission therefore books the
+/// cache's allowed growth (budget minus resident) as committed, so overload queues or refuses
+/// instead of running the host out of memory. Discrete cards book nothing here (their separate
+/// pending-seed booking is unchanged).
+fn unified_prefix_growth_booking(unified: bool, budget: usize, resident: usize) -> usize {
+    if unified {
+        budget.saturating_sub(resident)
+    } else {
+        0
+    }
+}
+
+/// UNIFIED-MEMORY INSERT GUARD (GB10, 2026-11-02): the byte budget a prefix-cache insert may fill
+/// on a unified-memory device, from the live allocatable reading. The cache may hold what it
+/// holds now (`resident`, plus `allocated`: the new entry's bytes when its snapshot already
+/// exists) plus whatever live free memory exceeds `headroom` (driver headroom + the admission
+/// reserve); never more than the configured budget. The insert loop then evicts LRU entries down
+/// to this budget, or refuses the insert when the entry alone does not fit, logging either way.
+fn unified_insert_budget(
+    configured: usize,
+    resident: usize,
+    allocated: usize,
+    live_free: usize,
+    headroom: usize,
+) -> usize {
+    // Everything the cache holds plus the live free memory, less the headroom that must stay
+    // free: below the headroom this sits under what the cache holds, so the insert loop evicts.
+    configured.min(
+        resident
+            .saturating_add(allocated)
+            .saturating_add(live_free)
+            .saturating_sub(headroom),
+    )
+}
+
+/// The insert budget the production wrappers use: unchanged on a discrete card; on unified
+/// memory clamped by [`unified_insert_budget`] against the live reading, with a log line when the
+/// clamp binds.
+fn prefix_insert_budget(
+    engine: &Engine,
+    configured: usize,
+    resident: usize,
+    allocated: usize,
+) -> usize {
+    if configured == 0 || !device_is_unified(engine) {
+        return configured;
+    }
+    let Some((live_free, _)) = effective_free_bytes(engine) else {
+        return configured;
+    };
+    let headroom = admit_driver_headroom_bytes().saturating_add(SPEC_SHRINK_RESERVE);
+    let budget = unified_insert_budget(configured, resident, allocated, live_free, headroom);
+    if budget < configured {
+        eprintln!(
+            "[prefix-cache] unified memory: insert budget {:.0}MB (configured {:.0}MB; live \
+             free {:.0}MB, headroom {:.0}MB, resident {:.0}MB, new entry {:.0}MB)",
+            budget as f64 / 1e6,
+            configured as f64 / 1e6,
+            live_free as f64 / 1e6,
+            headroom as f64 / 1e6,
+            resident as f64 / 1e6,
+            allocated as f64 / 1e6,
+        );
+    }
+    budget
+}
+
 fn pending_seed_bytes(active: &[Session]) -> usize {
     if prefix_cache_budget_bytes() == 0 {
         return 0;
@@ -9331,13 +9408,20 @@ impl PrefixCache {
         engine: &Engine,
         host: &mut HostPrefixCache,
     ) {
+        // Floor + flex grant (lane/kv-flex-20260831); with MEMRA_KV_FLEX off the grant is 0 by
+        // construction and this is exactly prefix_cache_budget_bytes(). On unified memory the
+        // live-free guard clamps it (prefix_insert_budget).
+        let budget = prefix_insert_budget(
+            engine,
+            kv_flex_effective_budget(),
+            self.total_bytes,
+            e.bytes,
+        );
         let _ = self.insert_with_budget_pins(
             key,
             e,
             why,
-            // Floor + flex grant (lane/kv-flex-20260831); with MEMRA_KV_FLEX off the grant
-            // is 0 by construction and this is exactly prefix_cache_budget_bytes().
-            kv_flex_effective_budget(),
+            budget,
             0,
             Some(&mut |dead| host_demote_prefix_entry(engine, host, dead)),
         );
@@ -9356,12 +9440,19 @@ impl PrefixCache {
         engine: &Engine,
         host: &mut HostPrefixCache,
     ) -> Option<PrefixPin> {
+        // Floor + flex grant (lane/kv-flex-20260831); grant is 0 with the flag off. On unified
+        // memory the live-free guard clamps it (prefix_insert_budget).
+        let budget = prefix_insert_budget(
+            engine,
+            kv_flex_effective_budget(),
+            self.total_bytes,
+            e.bytes,
+        );
         let id = self.insert_with_budget_pins(
             key,
             e,
             why,
-            // Floor + flex grant (lane/kv-flex-20260831); grant is 0 with the flag off.
-            kv_flex_effective_budget(),
+            budget,
             pins,
             Some(&mut |dead| host_demote_prefix_entry(engine, host, dead)),
         )?;
@@ -24412,10 +24503,13 @@ fn prefix_insert_from_session(
         return;
     }
     let mut demote = |dead| host_demote_prefix_entry(engine, hpx, dead);
+    // The snapshot is not allocated yet: on unified memory the guard reserves its room from the
+    // live reading (allocated = 0).
+    let budget = prefix_insert_budget(engine, prefix_cache_budget_bytes(), px.total_bytes, 0);
     if !px.prepare_snapshot(
         &pool_key,
         prefix_snapshot_bytes(cache),
-        prefix_cache_budget_bytes(),
+        budget,
         Some(&mut demote),
     ) {
         // The preflight printed its typed `[prefix-cache] insert refused:` line in bytes
@@ -29020,7 +29114,16 @@ pub fn run(
                     0
                 };
                 let primary_device = engine.ctx().ordinal();
+                // On unified memory the cache's whole allowed growth is booked (it covers any
+                // pending seed, which can only grow the cache inside that budget).
+                let unified_growth = unified_prefix_growth_booking(
+                    device_is_unified(&engine),
+                    prefix_cache_budget_bytes(),
+                    px.total_bytes,
+                );
                 let pending_booked = pending_prime.saturating_add(pending_seed);
+                let pending_booked =
+                    pending_booked.saturating_add(unified_growth.saturating_sub(pending_seed));
                 // OWED GROWTH (WP-B day 37, MEMRA_KV_ALLOCATOR=vmm, DAY37 1.4): an admitted
                 // on-demand session backs only the rows it has reached, so the live reading does
                 // not see the rest of the context the pooled allocator would already hold. Armed,
@@ -43814,6 +43917,103 @@ mod tests {
             SPEC_SHRINK_RESERVE
         );
         assert!(SPEC_SHRINK_RESERVE < big_cost);
+    }
+
+    #[test]
+    fn unified_memory_prefix_inserts_yield_to_live_free_memory() {
+        use super::{PREFIX_ENTRY_LAYOUT_VERSION, PrefixCache, PrefixEntry, unified_insert_budget};
+        const MB: usize = 1_000_000;
+        let headroom = 2048 * 1024 * 1024 + super::SPEC_SHRINK_RESERVE;
+        // The GB10 quality-panel failure: a 52,253 MB derived budget, 47,268 MB resident, a
+        // 4,067 MB lcp-split entry already allocated, and live free down to 1.5 GB. The cache
+        // may keep only what leaves the headroom free, so it must shrink below what it holds.
+        let configured = 52_253 * MB;
+        let resident = 47_268 * MB;
+        let entry = 4_067 * MB;
+        let live_free = 1_511 * MB;
+        let budget = unified_insert_budget(configured, resident, entry, live_free, headroom);
+        assert_eq!(budget, resident + entry + live_free - headroom);
+        assert!(budget < resident + entry);
+        // Exactly at the headroom the cache may keep what it holds and nothing more.
+        assert_eq!(
+            unified_insert_budget(configured, resident, entry, headroom, headroom),
+            resident + entry
+        );
+        // Above the headroom the room is usable, capped by the configured budget.
+        assert_eq!(
+            unified_insert_budget(configured, 10_000 * MB, 0, 20_000 * MB, headroom),
+            10_000 * MB + 20_000 * MB - headroom
+        );
+        assert_eq!(
+            unified_insert_budget(configured, 10_000 * MB, 0, 200_000 * MB, headroom),
+            configured
+        );
+        // A pre-allocation reservation (prepare_snapshot) has nothing allocated yet.
+        assert_eq!(
+            unified_insert_budget(configured, resident, 0, headroom, headroom),
+            resident
+        );
+        // Nothing to give: the budget floors at zero, so every insert is refused.
+        assert_eq!(unified_insert_budget(configured, 0, 0, 0, headroom), 0);
+        // The insert loop evicts LRU entries down to the clamped budget (the existing policy).
+        let entry = |k: &super::PoolKey, first: u32| PrefixEntry {
+            _tier_charge: None,
+            layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
+            dspark_draft: None,
+            pool_key: k.clone(),
+            toks: (first..first + 64).collect(),
+            kv: Vec::new(),
+            conv: Vec::new(),
+            ssm: Vec::new(),
+            latent: Vec::new(),
+            tp: None,
+            pos: 0,
+            last_logits: vec![0.0],
+            draft: None,
+            last_h: Vec::new(),
+            bytes: 10,
+            last_use: std::time::Instant::now(),
+            id: 0,
+            pins: 0,
+        };
+        let mut px = PrefixCache::default();
+        let k = (String::from("q38"), String::new());
+        for i in 0..4u32 {
+            px.insert_with_budget(&k, entry(&k, 1000 * (i + 1)), "t", 40);
+        }
+        assert_eq!(px.total_bytes, 40);
+        px.insert_with_budget(&k, entry(&k, 9000), "t", 30);
+        assert!(px.total_bytes <= 30, "{}", px.total_bytes);
+    }
+
+    #[test]
+    fn unified_memory_admission_books_the_prefix_caches_allowed_growth() {
+        // Unified memory: the cache may grow from resident up to its budget after admission, in
+        // the same DRAM the sessions use, so that growth is booked as committed.
+        use super::unified_prefix_growth_booking;
+        assert_eq!(
+            unified_prefix_growth_booking(true, 52_253, 47_268),
+            52_253 - 47_268
+        );
+        assert_eq!(unified_prefix_growth_booking(true, 52_253, 0), 52_253);
+        // A cache above its budget (a budget shrink) books nothing, never underflows.
+        assert_eq!(unified_prefix_growth_booking(true, 100, 150), 0);
+        // Discrete cards book nothing here: their pending-seed booking is unchanged.
+        assert_eq!(unified_prefix_growth_booking(false, 52_253, 0), 0);
+        // The admission site books pending seed plus the growth above it (= the larger of the two): a seed can only grow the cache
+        // inside its budget, so on unified memory the growth covers it.
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let squashed = production.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(squashed.contains(
+            "let pending_booked = pending_booked.saturating_add(unified_growth.saturating_sub(pending_seed));"
+        ));
+        // Every production insert path takes the unified guard.
+        assert_eq!(
+            squashed.matches("prefix_insert_budget( engine,").count()
+                + squashed.matches("prefix_insert_budget(engine,").count(),
+            3
+        );
     }
 
     #[test]
