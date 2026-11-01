@@ -1842,6 +1842,13 @@ impl SpecSession {
     /// (never bursted). Callers must not force it: a half-committed cache handed to the batched
     /// path would silently skip a token.
     ///
+    /// SAMPLED sessions (lane/batch-spec, 2026-11-01): `next_pred` is the boundary DRAW from
+    /// the session's Philox stream (`sample_boundary_token*`), not yet emitted, so handing it
+    /// over emits exactly what the next burst would have. The caller reads `sctr` BEFORE this
+    /// call and starts the row's plain device draws there (the worker's
+    /// `demoted_philox_base`): plain draws share this Philox space, and reusing an event the
+    /// spec prefix consumed would not be an exact sample.
+    ///
     /// The MTP draft scratch, the persistent draft-graph context and the turn checkpoint are
     /// DROPPED here (freeing their VRAM): the batched path never drafts, and this handoff is
     /// one-way by design — there is no cheap symmetric re-promotion (rebuilding the draft KV

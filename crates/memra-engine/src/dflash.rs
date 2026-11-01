@@ -5044,11 +5044,20 @@ impl DsparkSpecSession {
     /// demote). The draft KV, snapshot buffers and philox counters are DROPPED here
     /// (freeing their VRAM): the batched path never drafts, and the handoff is one-way.
     ///
-    /// Sampled sessions must not be demoted (the caller excludes them, mirroring the MTP
-    /// gate): their committed stream depends on the session-owned philox counters, and the
-    /// plain batched sampler is a different random program mid-request.
+    /// SAMPLED sessions (lane/batch-spec, 2026-11-01): `last` is the round's DRAWN
+    /// bonus/residual token, not yet emitted, so emitting it next is what the spec stream
+    /// would do. The plain sampler then draws from the same Philox space, so the caller must
+    /// read [`Self::philox_event_ctr`] BEFORE this call and start the row's plain draws there
+    /// (the worker's `demoted_philox_base` states the rule and why reusing the spec events'
+    /// counters would not be an exact sample).
     pub fn into_demoted(self) -> (crate::cache::Cache, u32) {
         (self.cache, self.last)
+    }
+
+    /// The first device sampling event (`sctr`) this session has NOT consumed. A demoted
+    /// sampled row continues its plain draws from here so no gumbel noise vector is reused.
+    pub fn philox_event_ctr(&self) -> u32 {
+        self.sctr
     }
 }
 

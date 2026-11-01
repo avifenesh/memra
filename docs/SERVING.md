@@ -115,15 +115,13 @@ resident heads retain the existing graph default. See [the capture receipt](../r
   byte-identical to one batched from the start. Measured q9 on the 5090, N=5 interleaved: the
   gated curve tracks spec at c=1-2 (251.2 tok/s, 1.81x over batched) and batched at c=4-8
   (504.7 tok/s, 2.03x over always-spec), with per-stream p50 at c=8 equal to batched's 1.963s
-  rather than spec's 3.973s. Sampled and constrained spec sessions do not demote and stay on
-  the serial path, bounded by the admit ceiling. The stated reason for excluding SAMPLED
-  sessions — "its `next_pred` is a greedy argmax, so the handoff would inject a greedy token
-  into a sampled stream" — **stopped being true on 2026-08-19** (`MEMRA_SPEC_SAMPLED_BOUNDARY`
-  draws it from the request's target instead). Sampled demotion is therefore unblocked in
-  principle and is a follow-up lane, NOT lifted with the boundary fix: it needs its own
-  handoff-exactness cell (the batched row would continue a session whose Philox stream lives
-  on the SpecSession) and mixing the two claims in one diff is how an untested handoff ships.
-  Constrained sessions still never demote (unmasked argmax). One residual, disclosed: a first-wave TTFT p95 transient (0.423s vs never-spec's
+  rather than spec's 3.973s. Constrained spec sessions do not demote (unmasked argmax) and stay on
+  the serial path, bounded by the admit ceiling. Sampled sessions demote since 2026-11-01. The
+  handed token is already a draw (the MTP boundary draw since 2026-08-19, the DFlash2 round's
+  bonus/residual draw) and the penalty window is the worker sampler's own history. The one seam
+  was the Philox counter: plain draws use stream_pos = token index in the same space the spec
+  events consumed, so a demoted sampled row starts its plain draws at the spec session's first
+  unused event (`demoted_philox_base` in `worker.rs`). GLM5 sessions still demote greedy only. One residual, disclosed: a first-wave TTFT p95 transient (0.423s vs never-spec's
   0.017s at c=4) confined to the at-most-`LOW` sessions admitted before a load ramp — p50
   matches never-spec; set `MEMRA_SPEC_GATE_LOW=0` to never admit spec if cold-ramp p95
   outweighs c=1 throughput. Flags: `MEMRA_SPEC_GATE` (rollback seam),

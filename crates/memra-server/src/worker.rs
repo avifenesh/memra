@@ -25345,6 +25345,13 @@ struct Session {
     /// rows: penalties/top-k/top-p/min-p configs; non-batched paths). Dropped un-consumed
     /// when a session finishes — same semantics as an unsampled last_logits.
     device_next: Option<u32>,
+    /// Philox counter origin for this row's plain device draws: generated token `i` is drawn
+    /// at stream_pos `i + philox_base` (wrapping, see `plain_draw_ctr`). 0 for every session
+    /// that never left a sampled spec route, which is the pre-existing `ctr = generated.len()`
+    /// rule bit for bit. A SAMPLED spec session demoted to batched decode sets it with
+    /// `demoted_philox_base`, so its plain draws continue on the spec session's unused event
+    /// counters instead of reusing gumbel noise the spec prefix already consumed.
+    philox_base: u32,
     /// Default-OFF GLM TP-2 plain sampler, owned by this request. Decode retains
     /// its root-stream logits in cache.last_logits_dev until the next sample.
     glm5_device_sampler: Option<memra_engine::glm5_tp_sampler::Glm5TpDeviceSampler>,
@@ -30433,23 +30440,25 @@ pub fn run(
             // `spec_flush_pending` is that commit, and it is byte-identical to the pre-carry
             // tail. It costs one T=1 trunk pass, once per demotion (never per burst).
             //
+            // SAMPLED sessions demote too (lane/batch-spec, 2026-11-01). The handed token is a
+            // proper draw: the MTP sampled tail draws `next_pred` from the boundary logits
+            // (lane/sampled-spec-quality, 2026-08-19) and the DFlash2 round draws its `last`
+            // bonus/residual token; neither is emitted yet, so emitting it next is exactly what
+            // the spec stream would do. The penalty window is the worker's own `Sampler`
+            // history, which every spec burst already feeds through `accept`. The one real
+            // seam was the Philox counter: plain draws use stream_pos = token index, inside the
+            // same space the spec events used, so the row's counter origin moves past the spec
+            // session's last event (`demoted_philox_base`, which states the proof).
+            //
             // WHO IS EXCLUDED, and why (stated, not hidden):
-            //   * SAMPLED sessions — the stated reason was "`next_pred` on the sampled tail is
-            //     the commit pass's ARGMAX, so handing it over would inject a greedy token into
-            //     a sampled stream". THAT REASON IS GONE (lane/sampled-spec-quality,
-            //     2026-08-19): the sampled tail DRAWS `next_pred` from the boundary logits
-            //     through the session's Philox stream, so the token handed over is a proper
-            //     sample. The exclusion STAYS anyway, and deliberately: the handoff would move
-            //     generation to a batched row whose sampler is the worker's own `Sampler` with
-            //     its own history and RNG, while the session's Philox counters live on the
-            //     SpecSession — a distributional seam nobody has measured. Sampled demotion is a
-            //     follow-up lane with its own handoff-exactness cell, not a ride-along on the
-            //     boundary fix. Sampled spec sessions stay on spec until they end.
             //   * CONSTRAINED sessions — `next_pred` is the UNMASKED verify argmax; emitting it
             //     could produce a grammar-illegal token.
-            // Both residuals are BOUNDED by the admit gate: at most `spec_gate_low()` sessions
+            // That residual is BOUNDED by the admit gate: at most `spec_gate_low()` sessions
             // can be on the spec path at any time, so the worst case is that many serial bursts,
             // not a full concurrency ladder's worth.
+            //
+            // GLM5 keeps its greedy-only exclusion: its handoff flushes the carried pending
+            // through a plain step and hands that step's ARGMAX over.
             //
             // ONE-WAY BY DESIGN (v1). Demotion drops the MTP draft scratch and the persistent
             // draft-graph context; re-promoting on drain-down would mean an `mtp_kv_fill` over
@@ -30535,11 +30544,12 @@ pub fn run(
                         // the MTP gate's c>=HIGH measurement priced as a LOSS (measured
                         // again on the dspark route: PRO 6000 agentic c=8 268 agg vs 429
                         // shed-to-plain, research/dflash2-pro6000-20260824). Same policy,
-                        // same thresholds, same greedy-only exclusion; the handoff proof
-                        // lives on DsparkSpecSession::into_demoted.
+                        // same thresholds, same exclusion (constrained only, sampled demotes
+                        // since lane/batch-spec); the handoff proof lives on
+                        // DsparkSpecSession::into_demoted.
                         if active[i].dspark.is_some() {
                             let s = &mut active[i];
-                            if !s.sampler.is_greedy() || s.constraint.is_some() {
+                            if !spec_demote_eligible(s.constraint.is_some()) {
                                 continue;
                             }
                             if let Some(n) = demote_at {
@@ -30586,9 +30596,14 @@ pub fn run(
                             }
                             let sess = s.dspark.take().unwrap();
                             let committed = sess.pos();
+                            let spec_event_ctr = sess.philox_event_ctr();
                             let (cache, next) = sess.into_demoted();
                             s.cache = Some(cache);
                             s.device_next = Some(next);
+                            if !s.sampler.is_greedy() {
+                                s.philox_base =
+                                    demoted_philox_base(spec_event_ctr, s.generated.len());
+                            }
                             s.dspark_on = false;
                             s.spec_k = 0;
                             s.prefill_done = true;
@@ -30600,9 +30615,10 @@ pub fn run(
                             };
                             eprintln!(
                                 "[spec-gate] demoted dspark session to batched decode: {why} \
-                                 (model {}, cache rows {committed}, generated {})",
+                                 (model {}, cache rows {committed}, generated {}, {})",
                                 s.model,
-                                s.generated.len()
+                                s.generated.len(),
+                                demote_sampling_note(&s.sampler, spec_event_ctr)
                             );
                             continue;
                         }
@@ -30709,8 +30725,8 @@ pub fn run(
                         if s.spec.is_none() {
                             continue;
                         }
-                        // exclusions above: sampled + constrained keep the spec path.
-                        if !s.sampler.is_greedy() || s.constraint.is_some() {
+                        // exclusion above: constrained keeps the spec path.
+                        if !spec_demote_eligible(s.constraint.is_some()) {
                             continue;
                         }
                         // forced mode (test door): only the session past the pinned token count,
@@ -30745,8 +30761,16 @@ pub fn run(
                         }
                         let mut sess = s.spec.take().unwrap();
                         let lm = &loaded[&s.model];
+                        // A pending only exists on the greedy tail today; a sampled session that
+                        // ever carried one must get a DRAWN next_pred from the flush, never an
+                        // argmax, so the flush takes the request's own sampling config
+                        // (`None` for greedy, as before).
                         if sess.has_pending()
-                            && let Err(err) = lm.model.spec_flush_pending(&engine, &mut sess, None)
+                            && let Err(err) = lm.model.spec_flush_pending(
+                                &engine,
+                                &mut sess,
+                                spec_sampling_for(&s.sampler),
+                            )
                         {
                             // UNRECOVERABLE, and said so honestly: the flush consumed the
                             // pending before failing, so the session holds neither a pending
@@ -30775,6 +30799,7 @@ pub fn run(
                             continue;
                         }
                         let committed = sess.committed_len();
+                        let spec_event_ctr = sess.sctr;
                         let Some((cache, next)) = sess.into_demoted() else {
                             continue;
                         };
@@ -30785,6 +30810,9 @@ pub fn run(
                         );
                         s.cache = Some(cache);
                         s.device_next = Some(next);
+                        if !s.sampler.is_greedy() {
+                            s.philox_base = demoted_philox_base(spec_event_ctr, s.generated.len());
+                        }
                         s.spec_k = 0;
                         s.prefill_done = true;
                         s.last_logits.clear();
@@ -30795,9 +30823,10 @@ pub fn run(
                         };
                         eprintln!(
                             "[spec-gate] demoted session to batched decode: {why} \
-                                   (model {}, committed {committed}, generated {})",
+                                   (model {}, committed {committed}, generated {}, {})",
                             s.model,
-                            s.generated.len()
+                            s.generated.len(),
+                            demote_sampling_note(&s.sampler, spec_event_ctr)
                         );
                     }
                 }
@@ -37815,6 +37844,7 @@ fn admit(
         spec_rounds: 0,
         last_logits: seed_logits,
         device_next: None,
+        philox_base: 0,
         glm5_device_sampler: None,
         gspec: None,
         gspec_k,
@@ -39412,6 +39442,59 @@ fn constrain_host() -> bool {
 /// staged -> host masked sample, staging agreement preserved). Counter = generated.len()
 /// — a session-progress function, independent of batch composition (the isolation
 /// contract, gate3).
+/// The Philox stream position of a plain device draw for generated token `generated_len`
+/// (the batched tick builds the meta after `advance_sample_emit`, so `generated.len()` IS the
+/// index of the token being drawn). `base == 0` is the original rule, unchanged.
+fn plain_draw_ctr(generated_len: usize, base: u32) -> u32 {
+    (generated_len as u32).wrapping_add(base)
+}
+
+/// Which live spec sessions the tick demotion may hand to batched decode (MTP and DFlash2
+/// routes). Only CONSTRAINED sessions stay: their carried token is the UNMASKED verify
+/// argmax or draw and could be grammar-illegal. Sampled sessions demote since
+/// lane/batch-spec (2026-11-01); the handoff rule is `demoted_philox_base`.
+fn spec_demote_eligible(constrained: bool) -> bool {
+    !constrained
+}
+
+/// SAMPLED DEMOTION, THE COUNTER RULE (lane/batch-spec, 2026-11-01).
+///
+/// Plain sampled decode draws token `i` as `argmax(filter(logits_i)/T + G(seed, i))`: one
+/// gumbel event per token, the event's stream_pos = the token index. The sampled spec routes
+/// draw from the SAME Philox space (same kernels, same `seed`, `philox4(seed, lane_block,
+/// stream_pos)`) but number their events with a session counter `sctr` that counts every
+/// draft, residual, bonus and boundary draw, so after `g` emitted tokens it sits at some
+/// `S >= g`, usually well above it (each round drafts K and keeps fewer).
+///
+/// Continuing the demoted row on the plain rule as-is (`stream_pos = i`) would draw tokens
+/// `g+1..S` with noise vectors the spec prefix already used, some of them on draft rows whose
+/// outcome the client has seen. Those vectors are no longer independent of the emitted
+/// prefix, so the continuation would not be an exact sample of the target. That is the
+/// "distributional seam" the old exclusion named.
+///
+/// The exact handoff keeps everything about the plain program (logits, penalties from the
+/// worker's own `Sampler` history, filter stats, kernels, one event per token) and moves only
+/// the counter origin: the handed token (`next_pred` / dspark `last`, already drawn by the
+/// spec stream and not yet emitted) becomes generated index `g`, and the first plain draw,
+/// index `g+1`, lands on `S`, the spec session's first unused event. Every later plain draw
+/// takes the next counter, so no event is ever reused and each draw is fresh noise, exactly
+/// as a never-speculated plain session would have it.
+fn demoted_philox_base(spec_event_ctr: u32, generated_before_handoff: usize) -> u32 {
+    spec_event_ctr
+        .wrapping_sub(generated_before_handoff as u32)
+        .wrapping_sub(1)
+}
+
+/// The demote log line's sampling clause: `greedy`, or `sampled, plain draws from philox
+/// event N` so a gate can check the counter handoff from the server log alone.
+fn demote_sampling_note(sampler: &Sampler, spec_event_ctr: u32) -> String {
+    if sampler.is_greedy() {
+        "greedy".to_string()
+    } else {
+        format!("sampled, plain draws from philox event {spec_event_ctr}")
+    }
+}
+
 fn devsample_meta(s: &Session) -> Option<DevSamp> {
     let sm = &s.sampler;
     let penalized = sm.penalty_last_n() > 0
@@ -39432,7 +39515,7 @@ fn devsample_meta(s: &Session) -> Option<DevSamp> {
         DevSamp::new(
             sm.temperature(),
             sm.seed(),
-            s.generated.len() as u32,
+            plain_draw_ctr(s.generated.len(), s.philox_base),
             sm.top_k() as i32,
             sm.top_p(),
             sm.min_p(),
@@ -42421,6 +42504,77 @@ pub fn spawn(
 
 #[cfg(test)]
 mod tests {
+    /// lane/batch-spec: sampled spec sessions are demotable; only constrained ones stay.
+    #[test]
+    fn sampled_spec_sessions_are_demotable_and_constrained_are_not() {
+        assert!(super::spec_demote_eligible(false));
+        assert!(!super::spec_demote_eligible(true));
+    }
+
+    /// A session that never left a sampled spec route keeps the original counter rule:
+    /// stream_pos == generated index.
+    #[test]
+    fn plain_draw_ctr_with_zero_base_is_the_generated_index() {
+        for g in [0usize, 1, 7, 4096, 1 << 20] {
+            assert_eq!(super::plain_draw_ctr(g, 0), g as u32);
+        }
+    }
+
+    /// The sampled demotion handoff: the handed token takes generated index `g`, the first
+    /// plain draw (index g+1) lands on the spec session's first unused event `S`, and every
+    /// later draw takes the next counter, so no plain draw reuses an event in `[0, S)`.
+    /// The naive rule (base 0) reuses spec events whenever `S > g + 1`, which is the common
+    /// case (each round drafts K and keeps fewer); the second half pins that, so this test
+    /// fails against the pre-lane rule.
+    #[test]
+    fn demoted_sampled_rows_draw_from_fresh_philox_events() {
+        for (spec_events, g) in [
+            (1u32, 0usize),
+            (9, 3),
+            (37, 12),
+            (5000, 1200),
+            (u32::MAX, 3),
+        ] {
+            let base = super::demoted_philox_base(spec_events, g);
+            assert_eq!(super::plain_draw_ctr(g + 1, base), spec_events);
+            for k in 1..64usize {
+                let ctr = super::plain_draw_ctr(g + k, base);
+                assert_eq!(ctr, spec_events.wrapping_add(k as u32 - 1));
+                if spec_events < u32::MAX - 64 {
+                    assert!(ctr >= spec_events, "plain draw {k} reuses spec event {ctr}");
+                }
+            }
+        }
+        let (spec_events, g) = (37u32, 12usize);
+        let reused = (g + 1..g + 64)
+            .filter(|&i| super::plain_draw_ctr(i, 0) < spec_events)
+            .count();
+        assert_eq!(
+            reused,
+            37 - 13,
+            "the naive rule reuses exactly the events in [g+1, S)"
+        );
+    }
+
+    #[test]
+    fn the_demote_line_states_the_sampled_counter_handoff() {
+        use memra_engine::sampler::{Sampler, SamplerConfig};
+        let sampled = Sampler::new(SamplerConfig {
+            temperature: 0.8,
+            seed: 7,
+            ..SamplerConfig::default()
+        });
+        assert_eq!(
+            super::demote_sampling_note(&sampled, 41),
+            "sampled, plain draws from philox event 41"
+        );
+        let greedy = Sampler::new(SamplerConfig {
+            temperature: 0.0,
+            ..SamplerConfig::default()
+        });
+        assert_eq!(super::demote_sampling_note(&greedy, 41), "greedy");
+    }
+
     /// memra #478: a drafter path with the route off refuses by name; the armed pairing and a
     /// boot with neither stay quiet.
     #[test]
