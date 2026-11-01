@@ -18,7 +18,7 @@
 use crate::Engine;
 use cudarc::driver::{CudaContext, CudaSlice};
 use memra_gguf::dequant::bf16_to_f32;
-use memra_gguf::safetensors::StShard;
+use memra_gguf::safetensors::StModel;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -399,7 +399,7 @@ pub struct VisionTower {
     merger_fc2: Lin,
 }
 
-fn read_f32(sh: &StShard, name: &str) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+fn read_f32(sh: &StModel, name: &str) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
     let (info, raw) = sh
         .raw(name)
         .ok_or_else(|| format!("vision tensor missing: {name}"))?;
@@ -418,7 +418,7 @@ fn read_f32(sh: &StShard, name: &str) -> Result<Vec<f32>, Box<dyn std::error::Er
 
 fn load_lin(
     e: &Engine,
-    sh: &StShard,
+    sh: &StModel,
     stem: &str,
     in_f: usize,
     out_f: usize,
@@ -436,9 +436,17 @@ fn load_lin(
 }
 
 impl VisionTower {
-    /// Load the tower from a directory containing `outside.safetensors`.
+    /// Load the tower from a directory containing `outside.safetensors` (the official
+    /// checkpoint's unquantized shard), or else from the directory's own safetensors
+    /// checkpoint: NVIDIA's NVFP4 export of Qwen3.8-27B bundles the BF16 tower in its trunk
+    /// shards, so `MEMRA_VISION_DIR` can name the served checkpoint itself.
     pub fn load(e: &Engine, dir: &Path) -> Result<Self, Box<dyn std::error::Error>> {
-        let sh = StShard::open(dir.join("outside.safetensors"))?;
+        let outside = dir.join("outside.safetensors");
+        let sh = StModel::open(if outside.exists() {
+            outside.as_path()
+        } else {
+            dir
+        })?;
         let p = "model.visual";
         let patch = {
             // conv [1152, 3, 2, 16, 16] flattens to Linear 1536 -> 1152 (HF patchify order:

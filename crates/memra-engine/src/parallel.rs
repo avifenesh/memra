@@ -1687,6 +1687,7 @@ mod tests {
             dsv4: None,
             mimo: None,
             qwen4exp: None,
+            qwen35_vision: None,
             rope_yarn: None,
             glm5: None,
             step35: Some(Step35Config {
