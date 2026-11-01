@@ -212,6 +212,8 @@ pub mod tp;
 pub mod tp_ar;
 pub mod tp_expert_split;
 pub mod tp_transport;
+/// Unified-memory (integrated GPU) detection and the allocatable free reading sizing uses.
+pub mod unified_memory;
 pub use memra_sampling as sampler;
 
 /// In-house MoE router GEMV on the spec-verify small-t path (DEFAULT ON since 2026-07-10:
