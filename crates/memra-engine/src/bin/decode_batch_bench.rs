@@ -100,6 +100,65 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         model.layers.len()
     );
 
+    // `--verify-t 1,2,..,16` (lane/batch-spec, 2026-11-01): the cost C(R) of ONE target
+    // verify forward over R rows at a fixed depth (`--ctx`, default 512), the same
+    // `decode_step_t` kernel chain the spec routes run, synced by a one-token device argmax
+    // readback. Each rep restores the primed cache first, so every rep sees the same depth.
+    // Paired with the plain `--batches` curve on one load, this prices a pooled cross-session
+    // verify (R = sum of the sessions' T) against plain batching at B rows.
+    let verify_t: Option<Vec<usize>> = rest
+        .iter()
+        .position(|a| a == "--verify-t")
+        .and_then(|i| rest.get(i + 1))
+        .map(|v| v.split(',').filter_map(|s| s.parse().ok()).collect());
+    if let Some(ts) = verify_t {
+        let prompt_t: usize = rest
+            .iter()
+            .position(|a| a == "--ctx")
+            .and_then(|i| rest.get(i + 1))
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(512);
+        let t_max = ts.iter().copied().max().unwrap_or(1);
+        let vocab = model.cfg.n_vocab.max(64) - 16;
+        let prompt: Vec<u32> = (0..prompt_t as u32)
+            .map(|j| (55 + j * 31) % vocab)
+            .collect();
+        let mut c = new_cache(&e, &model.cfg, prompt_t + t_max + 64)?;
+        let _ = model.prime_cache(&e, &prompt, &mut c, 0)?;
+        let snap = c.snapshot(&e)?;
+        let n_vocab = model.cfg.n_vocab as usize;
+        let mut base_ms = None;
+        for &t in &ts {
+            let toks: Vec<u32> = (0..t as u32).map(|j| (977 + j * 131) % vocab).collect();
+            let mut ms: Vec<f64> = Vec::new();
+            for rep in 0..=reps {
+                c.rollback(&e, &snap, 0)?;
+                let t0 = std::time::Instant::now();
+                let (logits, _h) =
+                    model.decode_step_t_h_emb_dev(&e, &toks, prompt_t, &mut c, None)?;
+                // column 0 is enough: the stream is ordered, so this readback waits for the
+                // whole forward.
+                let am = e.argmax_token_device(&logits, n_vocab)?;
+                let _ = e.dtoh_u32_one(&am)?;
+                if rep > 0 {
+                    ms.push(t0.elapsed().as_secs_f64() * 1e3);
+                }
+            }
+            ms.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let med = ms[ms.len() / 2];
+            let base = *base_ms.get_or_insert(med);
+            println!(
+                "VERIFY T={t} depth={prompt_t}: {med:.3} ms (median of {reps}, p10 {:.3} p90 {:.3}) \
+                 = {:.3}x T=first, {:.3} ms/row",
+                ms[ms.len() / 10],
+                ms[ms.len() * 9 / 10],
+                med / base,
+                med / t as f64
+            );
+        }
+        return Ok(());
+    }
+
     if let Some(n_seqs) = seqs {
         let prompt_t: usize = rest
             .iter()
