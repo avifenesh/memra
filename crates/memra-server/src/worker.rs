@@ -25588,6 +25588,57 @@ fn drain_dspark_prefix_capture(
     publish_dspark_prefix_capture(engine, px, hpx, s, cap);
 }
 
+/// MTP spec boundary publication: drain this session's prime-boundary captures into the prefix
+/// cache. Two callers: the tick-top sweep, and the pre-retire drain for sessions that finish in
+/// the tick their prime completed (max_tokens=1, EOS at token 1). Before the second caller those
+/// captures were dropped with the session at retirement, so an identical prompt sent later
+/// re-primed from scratch (the memra#298 gap, which the dspark route already closed). The capture
+/// is the same one the next tick's sweep would publish, at the same grid position, so publishing
+/// it earlier changes no request's output.
+fn drain_mtp_prefix_captures(
+    engine: &Engine,
+    px: &mut PrefixCache,
+    hpx: &mut HostPrefixCache,
+    s: &mut Session,
+) {
+    // A saved prime is not a committed decode/park boundary. Its adapter owns the partial
+    // captures until finalization succeeds.
+    if s.prime_service.pending {
+        return;
+    }
+    let mtp_captures = s
+        .spec
+        .as_mut()
+        .map(|sp| std::mem::take(&mut sp.boundary_captures))
+        .unwrap_or_default();
+    if mtp_captures.is_empty() {
+        return;
+    }
+    let pool_key = s.pool_key();
+    let sp = s.spec.as_ref().expect("captures came from this session");
+    // MTP can produce one capture per prime stop (miss-LCP split + the stable pre-generation
+    // boundary, lane/frspec-multiturn-cache).
+    for cap in mtp_captures {
+        let end = cap.pos.min(sp.committed.len());
+        if end == 0 || px.has_key(&pool_key, &sp.committed[..end]) {
+            continue;
+        }
+        prefix_insert_from_spec_boundary(
+            engine,
+            px,
+            hpx,
+            &pool_key,
+            &sp.committed,
+            sp.cache_ref(),
+            sp.draft_plane_ref(),
+            None, // MTP publisher: its draft state rides `draft`, not the dspark tail
+            cap,
+            "spec-boundary",
+            &s.request_id,
+        );
+    }
+}
+
 /// GLM5 SPEC boundary publication (lane/glm5-prefix-latent2, 2026-09-01): the glm5 twin of
 /// the dspark drain above, with one timing difference — glm5 defers the prompt's drafter
 /// ingest to round 1, so the drain waits for `prefix_capture_ready` (drafter KV covers the
@@ -30355,36 +30406,7 @@ pub fn run(
                 if s.prime_service.pending {
                     continue;
                 }
-                let mtp_captures = s
-                    .spec
-                    .as_mut()
-                    .map(|sp| std::mem::take(&mut sp.boundary_captures))
-                    .unwrap_or_default();
-                if !mtp_captures.is_empty() {
-                    let pool_key = s.pool_key();
-                    let sp = s.spec.as_ref().expect("captures came from this session");
-                    // MTP can produce one capture per prime stop (miss-LCP split + the stable
-                    // pre-generation boundary, lane/frspec-multiturn-cache).
-                    for cap in mtp_captures {
-                        let end = cap.pos.min(sp.committed.len());
-                        if end == 0 || px.has_key(&pool_key, &sp.committed[..end]) {
-                            continue;
-                        }
-                        prefix_insert_from_spec_boundary(
-                            &engine,
-                            &mut px,
-                            &mut hpx,
-                            &pool_key,
-                            &sp.committed,
-                            sp.cache_ref(),
-                            sp.draft_plane_ref(),
-                            None, // MTP publisher: its draft state rides `draft`, not the dspark tail
-                            cap,
-                            "spec-boundary",
-                            &s.request_id,
-                        );
-                    }
-                }
+                drain_mtp_prefix_captures(&engine, &mut px, &mut hpx, s);
 
                 // DFlash publishes trunk state PLUS its drafter's readable KV tail
                 // (lane/dspark-draft-plane-20260827), so a later hit can re-arm a dspark
@@ -32001,6 +32023,18 @@ pub fn run(
             // admission pass.
             for s in active.iter_mut() {
                 drain_dspark_prefix_capture(&engine, &mut px, &mut hpx, s);
+            }
+            // The MTP twin of memra#298: a session that finished in the tick its prime
+            // completed (max_tokens=1, EOS at token 1) never reaches the next tick's sweep, so
+            // its prompt-boundary captures were dropped at retirement and an identical prompt
+            // sent later re-primed in full. Publish them before retirement. A faulted session's
+            // planes are not publishable.
+            for &i in &finished {
+                let s = &mut active[i];
+                if s.errored || s.oom_teardown {
+                    continue;
+                }
+                drain_mtp_prefix_captures(&engine, &mut px, &mut hpx, s);
             }
         }
         // retire finished sessions (reverse order so indices stay valid). Long-enough sessions
@@ -54031,6 +54065,45 @@ mod tests {
     /// the retire pass computes the source test from both identities and settles only then; no
     /// other capture settle site changes.
     #[test]
+    fn mtp_prime_terminated_session_publishes_its_boundary_before_retirement() {
+        // A spec session that finishes in the tick its prime completed (max_tokens=1, EOS at
+        // token 1) used to drop its MTP boundary captures at retirement: only the NEXT tick's
+        // sweep published them, and the session was gone by then, so an identical prompt sent
+        // later re-primed in full (GB10 agent bench, 2026-11-01: 48 primes, zero inserts). The
+        // drain must run for finished sessions, skip faulted ones, and sit before retirement.
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        // Exactly one publisher body, shared by the tick-top sweep and the pre-retire drain.
+        assert_eq!(production.matches("\"spec-boundary\",").count(), 1);
+        assert_eq!(
+            production
+                .matches("drain_mtp_prefix_captures(&engine, &mut px, &mut hpx, s);")
+                .count(),
+            2
+        );
+        let dspark_drain = production
+            .find("// The MTP twin of memra#298")
+            .expect("pre-retire MTP drain present");
+        let drain = &production[dspark_drain..];
+        let retire = drain
+            .find("finished.sort_unstable();")
+            .expect("retirement follows the drain");
+        let block = &drain[..retire];
+        assert!(block.contains("for &i in &finished {"), "{block}");
+        assert!(
+            block.contains("if s.errored || s.oom_teardown {"),
+            "{block}"
+        );
+        assert!(block.contains("drain_mtp_prefix_captures("), "{block}");
+        // The helper keeps the sweep's guards: a pending (saved) prime is not publishable, and an
+        // entry already keyed is not re-inserted.
+        let helper = &production[production.find("fn drain_mtp_prefix_captures(").unwrap()..];
+        let helper = &helper[..helper.find("\n}\n").unwrap()];
+        assert!(helper.contains("if s.prime_service.pending {"));
+        assert!(helper.contains("px.has_key(&pool_key, &sp.committed[..end])"));
+    }
+
+    #[test]
     fn day62_r1_every_capture_names_its_source_and_only_the_retire_settle_changes() {
         let worker = include_str!("worker.rs");
         let production = &worker[..worker.find("\nmod tests {").unwrap()];
@@ -54050,7 +54123,7 @@ mod tests {
         for publisher in [
             "\"dspark-boundary\",\n        &s.request_id,",
             "\"glm5-boundary\",\n        &s.request_id,",
-            "\"spec-boundary\",\n                            &s.request_id,",
+            "\"spec-boundary\",\n            &s.request_id,",
             "        why,\n        &s.request_id,\n    ) {",
         ] {
             assert!(
