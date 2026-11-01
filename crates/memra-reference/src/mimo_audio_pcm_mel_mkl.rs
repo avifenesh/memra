@@ -55,7 +55,7 @@ impl OneMklFft960 {
             let version: Version = *library
                 .get(b"mkl_get_version_string\0")
                 .map_err(|error| format!("oneMKL version symbol: {error}"))?;
-            let mut buffer = [0_i8; 256];
+            let mut buffer = [0 as c_char; 256];
             version(buffer.as_mut_ptr(), buffer.len() as i32);
             let found = CStr::from_ptr(buffer.as_ptr()).to_string_lossy();
             if !found.contains(PINNED_MKL_BUILD) {
