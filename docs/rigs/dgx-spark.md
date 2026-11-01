@@ -35,6 +35,7 @@ the 120a family, and take these values here with no flags
 | `MEMRA_PREFIX_CACHE_MB` | larger of 2 full-context entries and half of (boot free - 1.5 GiB - 2 GiB headroom - host tier): 34,048 MiB at 70 GiB free | 2 entries: 15.9 GB for Qwen3.8-27B at 262,144 tokens |
 | `MEMRA_STREAM_TTFT_MS_MAX` | 997,311 ms at 262,144 tokens (served ctx / (4118 x 48 / 188 / 4) tok/s) | 90,000 ms |
 | `MEMRA_SSE_PREFILL_COMMIT_MS` | 60,000 ms | off |
+| non-streaming `timeout_ms` default/max | 3,045,311 ms at 262,144 tokens (streaming value + 8192 tokens at 4 tok/s) | 90,000 ms |
 
 Both boot lines state them: `[prefix-cache] on: ... unified memory: ...` and
 `[deadline] unified memory (48 SMs, served ctx N): ...`. Not yet measured on the GB10 itself.
