@@ -32035,6 +32035,12 @@ pub fn run(
                     continue;
                 }
                 drain_mtp_prefix_captures(&engine, &mut px, &mut hpx, s);
+                // The glm5 route has the same gap: its capture drains from the tick-top sweep
+                // only. The drain self-gates on `prefix_capture_ready` (the DFlash2 drafter KV
+                // covers the boundary, which the default eager ingest at session creation
+                // guarantees), so under MEMRA_GLM5_DRAFT_PRIME_LAZY=1 a token-1 finish still
+                // publishes nothing rather than a trunk-only entry.
+                drain_glm5_prefix_capture(&engine, &mut px, &mut hpx, s);
             }
         }
         // retire finished sessions (reverse order so indices stay valid). Long-enough sessions
@@ -54064,6 +54070,43 @@ mod tests {
     /// seed route from its session, the spec-boundary route from each of its three publishers);
     /// the retire pass computes the source test from both identities and settles only then; no
     /// other capture settle site changes.
+    #[test]
+    fn glm5_prime_terminated_session_publishes_its_boundary_before_retirement() {
+        // The glm5 spec route publishes its prompt-boundary capture from the tick-top sweep
+        // only, so a glm5 request that finished in the tick its prime completed (max_tokens=1,
+        // EOS at token 1) dropped the capture at retirement, the same gap the MTP route had.
+        // The pre-retire drain must call the glm5 drain for finished, non-faulted sessions,
+        // and the drain must keep its readiness gate (no trunk-only entry before the drafter
+        // KV covers the boundary).
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        assert_eq!(
+            production
+                .matches("drain_glm5_prefix_capture(&engine, &mut px, &mut hpx, s);")
+                .count(),
+            2,
+            "tick-top sweep + pre-retire drain"
+        );
+        let drain = &production[production
+            .find("// The MTP twin of memra#298")
+            .expect("pre-retire drain present")..];
+        let block = &drain[..drain
+            .find("finished.sort_unstable();")
+            .expect("retirement follows the drain")];
+        assert!(block.contains("for &i in &finished {"), "{block}");
+        assert!(
+            block.contains("if s.errored || s.oom_teardown {"),
+            "{block}"
+        );
+        assert!(
+            block.contains("drain_glm5_prefix_capture(&engine, &mut px, &mut hpx, s);"),
+            "{block}"
+        );
+        let helper = &production[production.find("fn drain_glm5_prefix_capture(").unwrap()..];
+        let helper = &helper[..helper.find("\n}\n").unwrap()];
+        assert!(helper.contains("g.prefix_capture_ready()"), "{helper}");
+    }
+
     #[test]
     fn mtp_prime_terminated_session_publishes_its_boundary_before_retirement() {
         // A spec session that finishes in the tick its prime completed (max_tokens=1, EOS at
