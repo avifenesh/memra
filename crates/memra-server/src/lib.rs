@@ -2483,17 +2483,83 @@ fn unified_stream_ttft_default() -> Option<u64> {
     )
 }
 
+// ---- unified-memory non-streaming deadline (GB10 / DGX Spark, 2026-11-01) ----------------------
+//
+// A non-streaming deadline bounds the WHOLE response: no headers or keepalive can go out before it
+// completes, so on a discrete fleet card it stays at the shipped 90 s (a fronting proxy's response
+// timeout). On a unified-memory device the same 90 s refuses work the device would serve: one
+// 131k-token prompt, or four concurrent 32k prompts, cannot prefill inside it at GB10's measured
+// rate (32,768 cold tokens in 45.2 s alone). vLLM and SGLang have no such deadline. The derived
+// bound therefore covers the full prefill (the streaming TTFT derivation above) plus a generation
+// budget: the open-output allowance admission already charges for a request without max_tokens
+// (`admit_memory::DEFAULT_OPEN_OUTPUT_TOKENS`, 8192) at a per-stream decode floor measured on the
+// device under concurrent prefill (GB10 Qwen3.8-27B, agentic c4 cell, 2026-11-01: per-user
+// median 4.59 tok/s; floored to 4).
+
+/// Per-stream decode floor (tok/s) used for the non-streaming generation budget.
+const UNIFIED_NONSTREAM_DECODE_FLOOR_TOK_S: u64 = 4;
+
+/// The unified-memory non-streaming deadline: full-context prefill ([`unified_stream_ttft_ms`])
+/// plus [`admit_memory::DEFAULT_OPEN_OUTPUT_TOKENS`] at [`UNIFIED_NONSTREAM_DECODE_FLOOR_TOK_S`].
+pub(crate) fn unified_nonstream_timeout_ms(max_served_ctx: usize, sm_count: u32) -> u64 {
+    let generation_ms = (admit_memory::DEFAULT_OPEN_OUTPUT_TOKENS as u64)
+        .saturating_mul(1000)
+        .div_ceil(UNIFIED_NONSTREAM_DECODE_FLOOR_TOK_S);
+    unified_stream_ttft_ms(max_served_ctx, sm_count).saturating_add(generation_ms)
+}
+
+/// Pure half of [`unified_nonstream_timeout_default`]: derived only on a unified-memory device
+/// and only when the operator named neither non-streaming door (`MEMRA_TIMEOUT_MS_MAX`, or the
+/// shared rollback `MEMRA_SSE_PREFILL_COMMIT_MS=0`, which restores every shipped window).
+fn unified_nonstream_timeout_default_for(
+    device: Option<&serving_device::ServingDevice>,
+    timeout_env_set: bool,
+    commit_env: Option<u64>,
+) -> Option<u64> {
+    let device = device.filter(|d| d.unified_memory && d.max_served_ctx > 0)?;
+    if timeout_env_set || commit_env == Some(0) {
+        return None;
+    }
+    Some(unified_nonstream_timeout_ms(
+        device.max_served_ctx,
+        device.sm_count,
+    ))
+}
+
+/// The derived unified-memory non-streaming deadline, or `None` (discrete card, nothing
+/// published yet, or an explicit operator door).
+fn unified_nonstream_timeout_default() -> Option<u64> {
+    unified_nonstream_timeout_default_for(
+        serving_device::get(),
+        std::env::var_os("MEMRA_TIMEOUT_MS_MAX").is_some(),
+        sse_prefill_commit_env(),
+    )
+}
+
+/// Maximum and default `timeout_ms` for NON-streaming requests: `MEMRA_TIMEOUT_MS_MAX`, else the
+/// derived unified-memory bound, else the shipped 90 s.
+pub(crate) fn nonstream_timeout_ms_max() -> u64 {
+    if std::env::var_os("MEMRA_TIMEOUT_MS_MAX").is_some() {
+        return timeout_ms_max();
+    }
+    unified_nonstream_timeout_default().unwrap_or_else(timeout_ms_max)
+}
+
 /// The boot line that states the streaming deadline pair a unified-memory device resolved to.
 pub(crate) fn stream_deadline_boot_line() -> String {
     let device = serving_device::get();
     match unified_stream_ttft_default() {
         Some(ms) => format!(
             "[deadline] unified memory ({} SMs, served ctx {}): streaming TTFT default/max {ms} ms \
-             (derived), SSE prefill commit {} ms; non-streaming stays {TIMEOUT_MS_MAX} ms. \
-             MEMRA_SSE_PREFILL_COMMIT_MS=0 restores the shipped 90 s window",
+             (derived), SSE prefill commit {} ms; non-streaming default/max {} ms (derived: \
+             full-context prefill + {} open output tokens at {} tok/s). \
+             MEMRA_SSE_PREFILL_COMMIT_MS=0 restores the shipped 90 s windows",
             device.map_or(0, |d| d.sm_count),
             device.map_or(0, |d| d.max_served_ctx),
             sse_prefill_commit_ms().unwrap_or(0),
+            nonstream_timeout_ms_max(),
+            admit_memory::DEFAULT_OPEN_OUTPUT_TOKENS,
+            UNIFIED_NONSTREAM_DECODE_FLOOR_TOK_S,
         ),
         None => format!(
             "[deadline] unified memory: operator deadline doors set; streaming TTFT max {} ms, \
@@ -2508,7 +2574,7 @@ fn timeout_ms_default(stream: bool) -> u64 {
     if stream {
         stream_ttft_ms_max()
     } else {
-        timeout_ms_max()
+        nonstream_timeout_ms_max()
     }
 }
 
@@ -2811,10 +2877,11 @@ pub(crate) fn nonstream_deadline_gate(
     Err(format!(
         "a non-streaming request for {max_new} tokens on a ~{prompt_tokens}-token prompt \
          needs an estimated ~{}s, which does not fit the {remaining_ms} ms timeout_ms \
-         deadline (max {TIMEOUT_MS_MAX} ms — a platform ceiling: the fronting proxy fails \
+         deadline (max {} ms — a platform ceiling: the fronting proxy fails \
          a non-streaming response whose headers take ~100 s). Refused before any GPU work \
          rather than after the deadline: {advice}",
         est_ms / 1_000,
+        nonstream_timeout_ms_max(),
     ))
 }
 
@@ -19259,6 +19326,58 @@ default_reasoning_effort = "always"
             )
             .is_ok()
         );
+    }
+
+    #[test]
+    fn unified_memory_nonstream_deadline_covers_full_prefill_plus_open_generation() {
+        // A non-streaming deadline bounds the whole response. On GB10 (48 SMs, 262,144 served
+        // context) it is the derived full-context prefill (997,311 ms) plus 8192 open output
+        // tokens at the 4 tok/s per-stream floor (2,048,000 ms).
+        assert_eq!(
+            unified_nonstream_timeout_ms(262_144, 48),
+            997_311 + 2_048_000
+        );
+        // It always exceeds the streaming TTFT window it contains, and the shipped 90 s.
+        assert!(unified_nonstream_timeout_ms(8_192, 48) > TIMEOUT_MS_MAX);
+        assert!(unified_nonstream_timeout_ms(131_072, 48) > unified_stream_ttft_ms(131_072, 48));
+        let spark = serving_device::ServingDevice {
+            unified_memory: true,
+            sm_count: 48,
+            max_served_ctx: 262_144,
+        };
+        let discrete = serving_device::ServingDevice {
+            unified_memory: false,
+            sm_count: 170,
+            max_served_ctx: 262_144,
+        };
+        assert_eq!(
+            unified_nonstream_timeout_default_for(Some(&spark), false, None),
+            Some(3_045_311)
+        );
+        // Discrete cards and an unpublished device keep the shipped 90 s ceiling.
+        assert_eq!(
+            unified_nonstream_timeout_default_for(Some(&discrete), false, None),
+            None
+        );
+        assert_eq!(
+            unified_nonstream_timeout_default_for(None, false, None),
+            None
+        );
+        // Operator doors win: the measurement-cell override, or the shared commit-0 rollback.
+        assert_eq!(
+            unified_nonstream_timeout_default_for(Some(&spark), true, None),
+            None
+        );
+        assert_eq!(
+            unified_nonstream_timeout_default_for(Some(&spark), false, Some(0)),
+            None
+        );
+        assert_eq!(
+            unified_nonstream_timeout_default_for(Some(&spark), false, Some(30_000)),
+            Some(3_045_311)
+        );
+        // With no device published (this test process), the non-streaming default is unchanged.
+        assert_eq!(parse_timeout_ms(None, false).unwrap(), TIMEOUT_MS_DEFAULT);
     }
 
     #[test]

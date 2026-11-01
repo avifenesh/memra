@@ -49,3 +49,14 @@ for c in (262_144, 131_072, 65_536, 32_768, 8_192):
     print(f"served ctx {c}: streaming TTFT default {ms} ms ({ms / 1000:.0f} s)")
 # The failing cell: 4 prompts of up to 42k tokens at the per-prefill rate.
 print(f"42k-token prompt in the c4 cell: {42_000 / rate:.0f} s (> 90 s shipped window)")
+
+# Non-streaming deadline (whole response): streaming TTFT + 8192 open output tokens at 4 tok/s.
+# 4 tok/s floors the measured per-stream decode under concurrent prefill (GB10 agentic c4 cell,
+# 2026-11-01, per-user median 4.59 tok/s); 8192 is admission's open-output charge.
+open_tokens, floor_tok_s = 8192, 4
+gen_ms = -(-open_tokens * 1000 // floor_tok_s)
+for c in (262_144, 131_072, 32_768, 8_192):
+    num = c * 1000 * ref_sms * concurrent
+    den = ref_tok_s * sms
+    ttft = max(-(-num // den), 90_000)
+    print(f"served ctx {c}: non-streaming default {ttft + gen_ms} ms ({(ttft + gen_ms) / 1000:.0f} s)")
