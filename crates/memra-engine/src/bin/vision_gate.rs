@@ -7,7 +7,7 @@
 //!                                             per-token cosine, gate PASS iff min cosine > 0.999
 //!
 //! `MEMRA_VISION_DIR` must point at a directory carrying `outside.safetensors` with the
-//! `model.visual.*` tensors. The reference dump comes from tools/hf_vision_ref.py (HF
+//! `model.visual.*` tensors, or at a safetensors checkpoint whose shards carry them. The reference dump comes from tools/hf_vision_ref.py (HF
 //! transformers merger output for the same image, row-major merged-grid order).
 
 use memra_engine::Engine;

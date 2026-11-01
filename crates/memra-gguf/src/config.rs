@@ -1276,6 +1276,10 @@ pub struct ModelConfig {
     pub mimo: Option<MiMoV2Config>,
     // Qwen3.8-Flash-Next extras — `qwen4_exp` only (None for every other arch)
     pub qwen4exp: Option<Qwen4ExpConfig>,
+    /// qwen3_5 ViT geometry from the HF `vision_config` (None on GGUF and on configs without
+    /// a tower). The tower is side-loaded at serving (`MEMRA_VISION_DIR`); the geometry only
+    /// lets the qwen35 tensor contract census a tower bundled in the trunk shards.
+    pub qwen35_vision: Option<Qwen4ExpVisionConfig>,
     /// YaRN rope scaling on the full-attention rope. Populated ONLY by the qwen4_exp HF
     /// arm today (scope: that family's long-context lane) — other arches keep their own
     /// rope-scaling handling (dsv4 flattens into DeepSeekV4Config, llama3 synthesizes
@@ -1758,6 +1762,7 @@ impl ModelConfig {
             dsv4: None, // safetensors-first arch: no GGUF artifact exists (loader lane)
             mimo: None, // MiMo-V2.6 is safetensors-first and has no GGUF pack.
             qwen4exp: None, // safetensors-first arch: no GGUF artifact exists (loader lane)
+            qwen35_vision: None, // GGUF qwen35 trunks carry no tower
             rope_yarn: None,
             glm5: None, // safetensors-first arch: no GGUF artifact exists (bring-up lane)
             geometry,
@@ -2584,6 +2589,7 @@ impl ModelConfig {
             dsv4,
             mimo,
             qwen4exp,
+            qwen35_vision: c.qwen35_vision.clone(),
             rope_yarn,
             glm5,
             geometry,
@@ -3120,6 +3126,9 @@ pub struct HfConfig {
     /// Parsed in `parse()` when vision_config.model_type == "qwen4_exp" (the generic
     /// VisionConfig parse reads gemma key names and does not speak this file).
     pub qwen4exp_vision: Option<Qwen4ExpVisionConfig>,
+    /// Parsed in `parse()` when vision_config.model_type == "qwen3_5_vision" (Qwen3.5/3.6/
+    /// 3.8 dense and MoE). Same tower geometry keys as qwen4_exp.
+    pub qwen35_vision: Option<Qwen4ExpVisionConfig>,
     // ---- Step-3.5 / Step-3.7-Flash (`step3p5` text config) ----
     pub attention_other_num_heads: Option<u32>,
     pub attention_other_num_groups: Option<u32>,
@@ -3297,6 +3306,7 @@ impl Default for HfConfig {
             qwen4exp_mtp_num_hidden_layers: None,
             qwen4exp_mtp_rope_theta: None,
             qwen4exp_vision: None,
+            qwen35_vision: None,
             attention_other_num_heads: None,
             attention_other_num_groups: None,
             layer_types: None,
@@ -3457,13 +3467,14 @@ impl HfConfig {
                     )?,
                     window_size: req_u("window_size")?,
                 });
-            } else if vision_type.as_deref() == Some("qwen4_exp") {
+            } else if matches!(vision_type.as_deref(), Some("qwen4_exp" | "qwen3_5_vision")) {
+                let family = vision_type.as_deref().unwrap_or_default();
                 let req = |key: &str| -> Result<u32, String> {
                     vision.u32(key)?.ok_or_else(|| {
-                        format!("qwen4_exp vision_config missing required field {key}")
+                        format!("{family} vision_config missing required field {key}")
                     })
                 };
-                cfg.qwen4exp_vision = Some(Qwen4ExpVisionConfig {
+                let geometry = Some(Qwen4ExpVisionConfig {
                     depth: req("depth")?,
                     hidden_size: req("hidden_size")?,
                     intermediate_size: req("intermediate_size")?,
@@ -3475,6 +3486,11 @@ impl HfConfig {
                     temporal_patch_size: req("temporal_patch_size")?,
                     in_channels: req("in_channels")?,
                 });
+                if family == "qwen4_exp" {
+                    cfg.qwen4exp_vision = geometry;
+                } else {
+                    cfg.qwen35_vision = geometry;
+                }
             }
             if vision_type.as_deref() == Some("glm5_next_vision") {
                 let req_u = |key: &str| {
