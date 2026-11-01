@@ -1,0 +1,20 @@
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+loaded qwen35 (64 layers); steps=128 reps=9 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 202752 ml_len 0 -> 792 (retired kept, zero=false)
+VERIFY T=1 depth=2048: 75.158 ms (median of 9, p10 75.119 p90 75.930) = 1.000x T=first, 75.158 ms/row
+[fa-pool] grow #1 dev=0 o_len 202752 -> 405504 ml_len 792 -> 1584 (retired kept, zero=false)
+VERIFY T=2 depth=2048: 74.337 ms (median of 9, p10 74.298 p90 75.026) = 0.989x T=first, 37.168 ms/row
+[fa-pool] grow #2 dev=0 o_len 405504 -> 811008 ml_len 1584 -> 3168 (retired kept, zero=false)
+VERIFY T=3 depth=2048: 74.464 ms (median of 9, p10 74.397 p90 75.071) = 0.991x T=first, 24.821 ms/row
+VERIFY T=4 depth=2048: 75.535 ms (median of 9, p10 75.438 p90 76.178) = 1.005x T=first, 18.884 ms/row
+[fa-pool] grow #3 dev=0 o_len 811008 -> 1622016 ml_len 3168 -> 6336 (retired kept, zero=false)
+VERIFY T=5 depth=2048: 76.175 ms (median of 9, p10 76.047 p90 76.241) = 1.014x T=first, 15.235 ms/row
+VERIFY T=6 depth=2048: 77.283 ms (median of 9, p10 77.155 p90 77.631) = 1.028x T=first, 12.881 ms/row
+VERIFY T=8 depth=2048: 80.715 ms (median of 9, p10 80.596 p90 81.505) = 1.074x T=first, 10.089 ms/row
+[fa-pool] grow #4 dev=0 o_len 1622016 -> 3244032 ml_len 6336 -> 12672 (retired kept, zero=false)
+VERIFY T=10 depth=2048: 94.883 ms (median of 9, p10 94.357 p90 95.686) = 1.262x T=first, 9.488 ms/row
+VERIFY T=12 depth=2048: 107.808 ms (median of 9, p10 107.682 p90 108.566) = 1.434x T=first, 8.984 ms/row
+VERIFY T=14 depth=2048: 121.983 ms (median of 9, p10 121.765 p90 122.586) = 1.623x T=first, 8.713 ms/row
+VERIFY T=16 depth=2048: 135.965 ms (median of 9, p10 135.397 p90 137.346) = 1.809x T=first, 8.498 ms/row
+VERIFY T=17 depth=2048: 1184.483 ms (median of 9, p10 1183.153 p90 1187.447) = 15.760x T=first, 69.675 ms/row
+gguf-verify-d2048 rc=0
