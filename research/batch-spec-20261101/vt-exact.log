@@ -1,0 +1,17 @@
+gpulock: 5090 leased as claude-code-20261102T000559-2487017 for 10m
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers); steps=128 reps=7 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 135168 ml_len 0 -> 528 (retired kept, zero=false)
+VERIFY T=1 depth=2048: 11.848 ms (median of 7, p10 11.816 p90 11.880) = 1.000x T=first, 11.848 ms/row
+[fa-pool] grow #1 dev=0 o_len 135168 -> 270336 ml_len 528 -> 1056 (retired kept, zero=false)
+VERIFY T=2 depth=2048: 13.421 ms (median of 7, p10 13.374 p90 13.433) = 1.133x T=first, 6.710 ms/row
+[fa-pool] grow #2 dev=0 o_len 270336 -> 540672 ml_len 1056 -> 2112 (retired kept, zero=false)
+VERIFY T=4 depth=2048: 16.252 ms (median of 7, p10 16.179 p90 16.416) = 1.372x T=first, 4.063 ms/row
+[fa-pool] grow #3 dev=0 o_len 540672 -> 1081344 ml_len 2112 -> 4224 (retired kept, zero=false)
+VERIFY T=8 depth=2048: 23.647 ms (median of 7, p10 23.587 p90 23.720) = 1.996x T=first, 2.956 ms/row
+[fa-pool] grow #4 dev=0 o_len 1081344 -> 2162688 ml_len 4224 -> 8448 (retired kept, zero=false)
+VERIFY T=12 depth=2048: 38.524 ms (median of 7, p10 38.348 p90 38.584) = 3.251x T=first, 3.210 ms/row
+VERIFY T=15 depth=2048: 46.899 ms (median of 7, p10 46.805 p90 46.992) = 3.958x T=first, 3.127 ms/row
+VERIFY T=16 depth=2048: 49.154 ms (median of 7, p10 49.042 p90 49.188) = 4.149x T=first, 3.072 ms/row
+VERIFY T=17 depth=2048: 204.479 ms (median of 7, p10 204.249 p90 205.589) = 17.258x T=first, 12.028 ms/row

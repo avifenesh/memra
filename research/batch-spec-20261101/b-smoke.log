@@ -1,0 +1,23 @@
+gpulock: 5090 leased as claude-code-20261102T000125-2202630 for 15m
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers); steps=32 reps=3 batches=[1, 2, 4, 8, 12, 16] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 135168 ml_len 0 -> 528 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 135168 -> 270336 ml_len 528 -> 1056 (retired kept, zero=false)
+B=1: aggregate 83.1 tok/s, per-seq 83.1 tok/s (median of 3)
+[fa-pool] grow #2 dev=0 o_len 270336 -> 540672 ml_len 1056 -> 2112 (retired kept, zero=false)
+B=2: aggregate 136.6 tok/s, per-seq 68.3 tok/s (median of 3)
+[fa-pool] grow #3 dev=0 o_len 540672 -> 1081344 ml_len 2112 -> 4224 (retired kept, zero=false)
+B=4: aggregate 207.3 tok/s, per-seq 51.8 tok/s (median of 3)
+[fa-pool] grow #4 dev=0 o_len 1081344 -> 2162688 ml_len 4224 -> 8448 (retired kept, zero=false)
+B=8: aggregate 283.4 tok/s, per-seq 35.4 tok/s (median of 3)
+B=12: aggregate 265.2 tok/s, per-seq 22.1 tok/s (median of 3)
+[fa-pool] grow #5 dev=0 o_len 2162688 -> 4325376 ml_len 8448 -> 16896 (retired kept, zero=false)
+B=16: aggregate 276.1 tok/s, per-seq 17.3 tok/s (median of 3)
+scale B=1: 1.00x aggregate vs B=1
+scale B=2: 1.64x aggregate vs B=1
+scale B=4: 2.50x aggregate vs B=1
+scale B=8: 3.41x aggregate vs B=1
+scale B=12: 3.19x aggregate vs B=1
+scale B=16: 3.32x aggregate vs B=1
+[host-sample] n_vocab=248320 greedy argmax 246 us/row | temp0.7 sample 996 us/row | x B=16 rows/tick = 3.94 ms (greedy) / 15.93 ms (temp) [sink 12622041]

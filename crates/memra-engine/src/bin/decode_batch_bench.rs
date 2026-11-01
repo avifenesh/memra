@@ -111,6 +111,148 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .position(|a| a == "--verify-t")
         .and_then(|i| rest.get(i + 1))
         .map(|v| v.split(',').filter_map(|s| s.parse().ok()).collect());
+    // `--pooled 4,4,4,4` (lane/batch-spec): one session per entry, entry = its verify rows T_i,
+    // each primed to its own depth (`--ctx` + 37*i). Pins the pooled cross-session verify
+    // BITWISE against the per-session verify funnel (every logit row, plus one follow-up
+    // T=1 step per session that reads the state both paths wrote), then times pooled vs the
+    // serial sum of per-session verifies.
+    let pooled: Option<Vec<usize>> = rest
+        .iter()
+        .position(|a| a == "--pooled")
+        .and_then(|i| rest.get(i + 1))
+        .map(|v| v.split(',').filter_map(|s| s.parse().ok()).collect());
+    if let Some(ts) = pooled {
+        let depth: usize = rest
+            .iter()
+            .position(|a| a == "--ctx")
+            .and_then(|i| rest.get(i + 1))
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(512);
+        let vocab = model.cfg.n_vocab.max(64) - 16;
+        let n_vocab = model.cfg.n_vocab as usize;
+        let mut caches: Vec<Cache> = Vec::new();
+        let mut snaps = Vec::new();
+        let mut toks: Vec<Vec<u32>> = Vec::new();
+        let mut pos0s: Vec<usize> = Vec::new();
+        for (i, &t) in ts.iter().enumerate() {
+            let d = depth + 37 * i;
+            let prompt: Vec<u32> = (0..d as u32)
+                .map(|j| (55 + i as u32 * 97 + j * 31) % vocab)
+                .collect();
+            let mut c = new_cache(&e, &model.cfg, d + 64)?;
+            let _ = model.prime_cache(&e, &prompt, &mut c, 0)?;
+            snaps.push(c.snapshot(&e)?);
+            toks.push(
+                (0..t as u32)
+                    .map(|j| (977 + i as u32 * 61 + j * 131) % vocab)
+                    .collect(),
+            );
+            pos0s.push(c.pos);
+            caches.push(c);
+        }
+        let _exact = e.exact_scope(true);
+        let follow = |c: &mut Cache, i: usize| -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+            let p = c.pos;
+            model.decode_step_t(&e, &[(4242 + i as u32 * 7) % vocab], p, c)
+        };
+        // Reference: per-session verify, then one follow-up step.
+        let mut ref_rows: Vec<Vec<f32>> = Vec::new();
+        let mut ref_follow: Vec<Vec<f32>> = Vec::new();
+        for i in 0..ts.len() {
+            caches[i].rollback(&e, &snaps[i], 0)?;
+            let (l, _) =
+                model.decode_step_t_h_emb_dev(&e, &toks[i], pos0s[i], &mut caches[i], None)?;
+            ref_rows.push(e.dtoh(&l)?);
+            ref_follow.push(follow(&mut caches[i], i)?);
+        }
+        for i in 0..ts.len() {
+            caches[i].rollback(&e, &snaps[i], 0)?;
+        }
+        let tok_refs: Vec<&[u32]> = toks.iter().map(|v| v.as_slice()).collect();
+        let pooled_logits = {
+            let mut refs: Vec<&mut Cache> = caches.iter_mut().collect();
+            model.verify_pooled(&e, &mut refs, &tok_refs)?
+        };
+        let Some(pl) = pooled_logits else {
+            println!("POOLED {ts:?}: NOT POOLABLE (shape refused)");
+            return Ok(());
+        };
+        let pl = e.dtoh(&pl)?;
+        let (mut row_mismatch, mut follow_mismatch, mut r0) = (0usize, 0usize, 0usize);
+        for i in 0..ts.len() {
+            let n = ts[i] * n_vocab;
+            if pl[r0 * n_vocab..r0 * n_vocab + n] != ref_rows[i][..n] {
+                row_mismatch += 1;
+                let md = pl[r0 * n_vocab..r0 * n_vocab + n]
+                    .iter()
+                    .zip(&ref_rows[i][..n])
+                    .map(|(a, b)| (a - b).abs())
+                    .fold(0.0f32, f32::max);
+                println!("  session {i}: verify rows DIFFER (max abs {md:e})");
+            }
+            let f = follow(&mut caches[i], i)?;
+            if f != ref_follow[i] {
+                follow_mismatch += 1;
+                println!("  session {i}: follow-up step after the verify DIFFERS");
+            }
+            r0 += ts[i];
+        }
+        println!(
+            "POOLED {ts:?} R={r0}: verify rows {} / follow-up steps {} ({} sessions)",
+            if row_mismatch == 0 {
+                "BITWISE EQUAL"
+            } else {
+                "MISMATCH"
+            },
+            if follow_mismatch == 0 {
+                "BITWISE EQUAL"
+            } else {
+                "MISMATCH"
+            },
+            ts.len()
+        );
+        // Timing: serial per-session verifies vs one pooled verify, same restored states.
+        let mut serial: Vec<f64> = Vec::new();
+        let mut pooled_ms: Vec<f64> = Vec::new();
+        for rep in 0..=reps {
+            for i in 0..ts.len() {
+                caches[i].rollback(&e, &snaps[i], 0)?;
+            }
+            let t0 = std::time::Instant::now();
+            for i in 0..ts.len() {
+                let (l, _) =
+                    model.decode_step_t_h_emb_dev(&e, &toks[i], pos0s[i], &mut caches[i], None)?;
+                let am = e.argmax_token_device(&l, n_vocab)?;
+                let _ = e.dtoh_u32_one(&am)?;
+            }
+            let s_ms = t0.elapsed().as_secs_f64() * 1e3;
+            for i in 0..ts.len() {
+                caches[i].rollback(&e, &snaps[i], 0)?;
+            }
+            let t0 = std::time::Instant::now();
+            let l = {
+                let mut refs: Vec<&mut Cache> = caches.iter_mut().collect();
+                model.verify_pooled(&e, &mut refs, &tok_refs)?.unwrap()
+            };
+            let am = e.argmax_token_device(&l, n_vocab)?;
+            let _ = e.dtoh_u32_one(&am)?;
+            let p_ms = t0.elapsed().as_secs_f64() * 1e3;
+            if rep > 0 {
+                serial.push(s_ms);
+                pooled_ms.push(p_ms);
+            }
+        }
+        serial.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        pooled_ms.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let (sm, pm) = (serial[serial.len() / 2], pooled_ms[pooled_ms.len() / 2]);
+        println!(
+            "POOLED-TIME {ts:?} depth={depth}: serial {sm:.3} ms, pooled {pm:.3} ms, \
+             {:.2}x (median of {reps})",
+            sm / pm
+        );
+        return Ok(());
+    }
+
     if let Some(ts) = verify_t {
         let prompt_t: usize = rest
             .iter()
