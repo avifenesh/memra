@@ -1,0 +1,53 @@
+gpulock: 5090 leased as claude-code-20261102T001146-2599916 for 20m
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers); steps=128 reps=7 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 540672 ml_len 0 -> 2112 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 540672 -> 1081344 ml_len 2112 -> 4224 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 1081344 -> 2228224 ml_len 4224 -> 8704 (retired kept, zero=false)
+POOLED [4, 4, 4, 4] R=16: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (4 sessions)
+POOLED-TIME [4, 4, 4, 4] depth=2048: serial 64.261 ms, pooled 50.067 ms, 1.28x (median of 7)
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers); steps=128 reps=7 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 135168 ml_len 0 -> 528 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 135168 -> 270336 ml_len 528 -> 1056 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 270336 -> 540672 ml_len 1056 -> 2112 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 540672 -> 1081344 ml_len 2112 -> 4224 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 1081344 -> 2162688 ml_len 4224 -> 8448 (retired kept, zero=false)
+POOLED [1, 2, 3, 4, 5] R=15: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (5 sessions)
+POOLED-TIME [1, 2, 3, 4, 5] depth=2048: serial 73.400 ms, pooled 48.373 ms, 1.52x (median of 7)
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers); steps=128 reps=7 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 1081344 ml_len 0 -> 4224 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 1081344 -> 2162688 ml_len 4224 -> 8448 (retired kept, zero=false)
+POOLED [8, 8] R=16: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (2 sessions)
+POOLED-TIME [8, 8] depth=2048: serial 47.050 ms, pooled 49.422 ms, 0.95x (median of 7)
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers); steps=128 reps=7 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 270336 ml_len 0 -> 1056 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 270336 -> 540672 ml_len 1056 -> 2112 (retired kept, zero=false)
+POOLED [2, 2] R=4: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (2 sessions)
+POOLED-TIME [2, 2] depth=2048: serial 26.768 ms, pooled 16.438 ms, 1.63x (median of 7)
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers); steps=128 reps=7 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 540672 ml_len 0 -> 2112 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 540672 -> 1081344 ml_len 2112 -> 4224 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 1081344 -> 2162688 ml_len 4224 -> 8448 (retired kept, zero=false)
+POOLED [4, 4, 4, 3] R=15: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (4 sessions)
+POOLED-TIME [4, 4, 4, 3] depth=2048: serial 63.223 ms, pooled 47.865 ms, 1.32x (median of 7)
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers); steps=128 reps=7 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 2162688 ml_len 0 -> 8448 (retired kept, zero=false)
+POOLED [16] R=16: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (1 sessions)
+POOLED-TIME [16] depth=2048: serial 48.873 ms, pooled 48.870 ms, 1.00x (median of 7)
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers); steps=128 reps=7 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 540672 ml_len 0 -> 2112 (retired kept, zero=false)
+POOLED [4] R=4: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (1 sessions)
+POOLED-TIME [4] depth=2048: serial 16.205 ms, pooled 16.237 ms, 1.00x (median of 7)

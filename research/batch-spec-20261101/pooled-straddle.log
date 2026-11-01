@@ -1,0 +1,16 @@
+gpulock: 5090 leased as claude-code-20261102T001233-2603252 for 10m
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 262144 ml_len 0 -> 1024 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 262144 -> 786432 ml_len 1024 -> 3072 (retired kept, zero=false)
+POOLED [4, 4, 4, 4] R=16: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (4 sessions)
+POOLED-TIME [4, 4, 4, 4] depth=509: serial 62.069 ms, pooled 47.985 ms, 1.29x (median of 5)
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 983040 ml_len 0 -> 3840 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 983040 -> 1966080 ml_len 3840 -> 7680 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 1966080 -> 3932160 ml_len 7680 -> 15360 (retired kept, zero=false)
+POOLED [4, 4, 4, 4] R=16: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (4 sessions)
+POOLED-TIME [4, 4, 4, 4] depth=470: serial 61.288 ms, pooled 48.358 ms, 1.27x (median of 5)
