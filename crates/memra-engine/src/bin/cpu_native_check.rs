@@ -218,7 +218,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .zip(reference_input)
                 .fold(0.0f32, |sum, (weight, input)| sum + weight * input);
             let mut actual = 0.0f32;
-            let mut error = vec![0i8; 512];
+            let mut error = vec![0 as c_char; 512];
             let status = unsafe {
                 dot(
                     qtype(ty),
@@ -291,7 +291,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|index| 0.01 * ((index as f32) * 0.07).sin())
         .collect();
     let mut smoke_output = vec![f32::NAN; 256];
-    let mut error = vec![0i8; 512];
+    let mut error = vec![0 as c_char; 512];
     let status = unsafe {
         moe(
             &expert,
@@ -477,7 +477,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let run_with_input =
             |experts: &[Expert], input: &[f32]| -> Result<Vec<f32>, Box<dyn std::error::Error>> {
                 let mut output = vec![f32::NAN; 256];
-                let mut error = vec![0i8; 512];
+                let mut error = vec![0 as c_char; 512];
                 let status = unsafe {
                     moe(
                         experts.as_ptr(),
@@ -516,7 +516,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Detached speculative prefetch (optional symbol; older companions skip): prefetch a
         // never-touched file-backed expert, poll cache stats until its bytes land, then the
         // MoE call over it must still be bit-identical to the in-memory result.
-        type PrefetchFn = unsafe extern "C" fn(*const Projection, i32, *mut i8, usize) -> i32;
+        type PrefetchFn = unsafe extern "C" fn(*const Projection, i32, *mut c_char, usize) -> i32;
         let prefetch: Option<PrefetchFn> = unsafe {
             let symbol = libc::dlsym(handle, c"memra_cpu_expert_prefetch_v2".as_ptr());
             if symbol.is_null() {
@@ -552,7 +552,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let projections: Vec<Projection> = (0..3)
                 .map(|i| projection(std::ptr::null(), fd, extra_offsets[i], scales[i]))
                 .collect();
-            let mut error = vec![0i8; 512];
+            let mut error = vec![0 as c_char; 512];
             let submitted =
                 unsafe { prefetch(projections.as_ptr(), 3, error.as_mut_ptr(), error.len()) };
             if submitted != 3 {
@@ -639,7 +639,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             *const f32,
             *mut f32,
             i32,
-            *mut i8,
+            *mut c_char,
             usize,
         ) -> i32;
         let rows_fn: Option<RowsFn> = unsafe {
@@ -686,7 +686,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 let weights_r = [0.5f32, -0.25, 0.125];
                 let mut rows_out = vec![f32::NAN; m_r * 256];
-                let mut error = vec![0i8; 512];
+                let mut error = vec![0 as c_char; 512];
                 let status = unsafe {
                     rows_fn(
                         &expert,
@@ -744,7 +744,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 i32,
                 *mut f32,
                 i32,
-                *mut i8,
+                *mut c_char,
                 usize,
             ) -> i32;
             let rows_raw_fn: Option<RowsRawFn> = unsafe {
@@ -803,7 +803,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                m_r: usize|
                      -> Result<Vec<f32>, Box<dyn std::error::Error>> {
                         let mut out = vec![f32::NAN; m_r * 256];
-                        let mut error = vec![0i8; 512];
+                        let mut error = vec![0 as c_char; 512];
                         let status = unsafe {
                             rows_raw_fn(
                                 expert,
@@ -923,7 +923,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map(|index| 0.1 + 1.7 * ((index as f32) * 0.31).cos())
             .collect();
         let mut output = vec![0.0f32; 4096];
-        let mut error = vec![0i8; 512];
+        let mut error = vec![0 as c_char; 512];
         let threads = std::env::var("MEMRA_CPU_NATIVE_BENCH_THREADS")
             .ok()
             .and_then(|value| value.parse::<i32>().ok())
