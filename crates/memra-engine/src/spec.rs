@@ -1842,6 +1842,13 @@ impl SpecSession {
     /// (never bursted). Callers must not force it: a half-committed cache handed to the batched
     /// path would silently skip a token.
     ///
+    /// SAMPLED sessions (lane/batch-spec, 2026-11-01): `next_pred` is the boundary DRAW from
+    /// the session's Philox stream (`sample_boundary_token*`), not yet emitted, so handing it
+    /// over emits exactly what the next burst would have. The caller reads `sctr` BEFORE this
+    /// call and starts the row's plain device draws there (the worker's
+    /// `demoted_philox_base`): plain draws share this Philox space, and reusing an event the
+    /// spec prefix consumed would not be an exact sample.
+    ///
     /// The MTP draft scratch, the persistent draft-graph context and the turn checkpoint are
     /// DROPPED here (freeing their VRAM): the batched path never drafts, and this handoff is
     /// one-way by design — there is no cheap symmetric re-promotion (rebuilding the draft KV
@@ -2735,6 +2742,21 @@ struct GdnStash {
     g_log: CudaSlice<f32>,
     beta: CudaSlice<f32>, // [t, num_v]
 }
+/// One session's slice of a pooled cross-session verify (`verify_pooled_dev`): its cache, the
+/// rows it verifies this round (positions continue at `cache.pos`), and its optional
+/// checkpoint for the partial-accept commit.
+pub(crate) struct PooledVerifySeg<'a> {
+    pub(crate) cache: &'a mut Cache,
+    pub(crate) tokens: &'a [u32],
+    pub(crate) ckpt: Option<&'a mut VerifyCkpt>,
+}
+
+/// Row positions of a pooled verify, host and device copies.
+pub(crate) struct PooledPos<'a> {
+    host: &'a [i32],
+    dev: &'a CudaSlice<i32>,
+}
+
 pub(crate) struct VerifyCkpt {
     gdn: Vec<Option<GdnStash>>, // [n_layer], Some iff batched linear path ran
     #[allow(clippy::type_complexity)]
@@ -7040,6 +7062,536 @@ impl HybridModel {
         let act = __pqs.unwrap_or(act);
         let (aq, ad) = e.quantize_q8_1(&act, t, n_ff)?;
         e.matmul_pre(ffn_down, &aq, &ad, &act, t)
+    }
+
+    /// POOLED CROSS-SESSION VERIFY, v1 (lane/batch-spec, 2026-11-01): ONE target forward over
+    /// the stacked verify rows of several sessions, `R = sum(t_i) <= 16` rows. Every weight is
+    /// read once for all R rows; each session's state stays its own.
+    ///
+    /// Per layer, mirroring the t-parallel walk (`qwen35_tparallel_linear_layer` /
+    /// `qwen35_tparallel_fa_layer`) at m=R:
+    /// - norms, q8_1 quantize, group projections, gated norm, out-projection, FFN: row-wise
+    ///   ops and the exact batched matmul tier, whose per-row result does not depend on m
+    ///   (the "per-row == m=1" tier the verify==decode identity already rests on);
+    /// - GDN state: the packed conv/scan kernels per session over that session's row views
+    ///   (`*_rows` twins, same kernels), with the session's own [conv, ssm, alt] table,
+    ///   checkpoint columns and parity swap;
+    /// - full attention: the z-batched seqs append/attend twins, which already take one KV
+    ///   pointer pair and one position per row, so rows of different sessions simply point at
+    ///   different caches; launches split only where the fa split rung changes.
+    ///
+    /// Byte identity with per-session verify is the contract; `decode-batch-bench --pooled`
+    /// pins it bitwise against the per-session funnel. Returns `None` (nothing mutated) for a
+    /// shape v1 does not pool: another family, PP cuts, R > 16, a drafter tap armed, or a row
+    /// outside the seqs attention window. The caller then verifies per session.
+    pub(crate) fn verify_pooled_dev(
+        &self,
+        e: &Engine,
+        segs: &mut [PooledVerifySeg<'_>],
+        embd_dev: Option<(&CudaSlice<u8>, i32, usize)>,
+    ) -> Result<Option<(CudaSlice<f32>, CudaSlice<f32>)>, Box<dyn std::error::Error>> {
+        let cfg = &self.cfg;
+        let n_embd = cfg.n_embd as usize;
+        let eps = cfg.rms_eps;
+        let r_total: usize = segs.iter().map(|s| s.tokens.len()).sum();
+        let fa_layers: Vec<usize> = (0..self.layers.len())
+            .filter(|&il| matches!(self.layers[il].mixer, Mixer::Full(_)))
+            .collect();
+        let poolable = self.batched_serving_numeric_class()
+            && !self.sliding_gated_moe_batch_program()
+            && !self.gemma_batch_program()
+            && crate::pp::pp_cuts(self.layers.len()).is_none()
+            && spec_gdn_packed()
+            && dspark_fa_rows_on()
+            && self.cfg.m3.is_none()
+            && (1..=16).contains(&r_total)
+            && segs.iter().all(|s| {
+                !s.tokens.is_empty()
+                    && s.cache.dflash_taps.is_none()
+                    && s.cache.pos + s.tokens.len() <= s.cache.max_ctx
+            })
+            && self.layers.iter().all(|l| match &l.mixer {
+                Mixer::Linear(la) => {
+                    la.wqkv.out_features() == {
+                        let g = la.geometry;
+                        (g.key_head_dim * g.key_heads) as usize * 2
+                            + (g.value_head_dim * g.value_heads) as usize
+                    }
+                }
+                Mixer::Full(_) => true,
+                _ => false,
+            });
+        if !poolable {
+            return Ok(None);
+        }
+        // Attention window: every row of every session must take the seqs arm (the rung split
+        // below handles different rungs; rows below the vec floor are not pooled in v1).
+        let head_dim_global = cfg.head_dim_k as usize;
+        for s in segs.iter() {
+            for &il in &fa_layers {
+                let kvl = s.cache.kv[il].as_ref().ok_or("pooled verify: missing kv")?;
+                let geometry = cfg.full_attention_geometry_at(il as u32);
+                let kv_dim = geometry.n_head_kv as usize * geometry.head_dim_k as usize;
+                if kvl.kv_dim_k != kv_dim || kvl.kv_dim_v != kv_dim {
+                    return Ok(None);
+                }
+                let (first, last) = (kvl.len + 1, kvl.len + s.tokens.len());
+                if !crate::fa_seqs_eligible(first, head_dim_global)
+                    || !crate::fa_seqs_eligible(last, head_dim_global)
+                {
+                    return Ok(None);
+                }
+            }
+        }
+        // R = 16 needs the exact tier (verify scope); below 16 the scope changes no dispatch.
+        let _exact = e.exact_scope(true);
+        let toks: Vec<u32> = segs.iter().flat_map(|s| s.tokens.iter().copied()).collect();
+        let pos_host: Vec<i32> = segs
+            .iter()
+            .flat_map(|s| (0..s.tokens.len()).map(move |r| (s.cache.pos + r) as i32))
+            .collect();
+        let pos_d = e.htod_i32(&pos_host)?;
+        let mut x = match embd_dev {
+            Some((g, qt, rb)) => e.embed_gather_device_t(g, &toks, n_embd, qt, rb)?,
+            None => e.htod(&self.embd.try_gather(n_embd, &toks)?)?,
+        };
+        for il in 0..self.layers.len() {
+            x = match &self.layers[il].mixer {
+                Mixer::Linear(_) => self.pooled_linear_layer(e, il, &x, r_total, segs)?,
+                _ => {
+                    let pos = PooledPos {
+                        host: &pos_host,
+                        dev: &pos_d,
+                    };
+                    self.pooled_fa_layer(e, il, &x, r_total, &pos, segs)?
+                }
+            };
+        }
+        let mut hn = vbuf(e, r_total * n_embd)?;
+        e.rms_norm(
+            &x,
+            self.output_norm.float_data(),
+            &mut hn,
+            n_embd,
+            r_total,
+            eps,
+        )?;
+        let logits = e.matmul(&self.output, &hn, r_total)?;
+        for s in segs.iter_mut() {
+            s.cache.pos += s.tokens.len();
+        }
+        Ok(Some((logits, if spec_hpost() { hn } else { x })))
+    }
+
+    /// Public pooled verify without checkpoints (benches and gates): sessions' caches and
+    /// their verify rows. `Ok(None)` = not poolable, nothing mutated.
+    pub fn verify_pooled(
+        &self,
+        e: &Engine,
+        caches: &mut [&mut Cache],
+        tokens: &[&[u32]],
+    ) -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        assert_eq!(caches.len(), tokens.len(), "one token slice per cache");
+        let mut segs: Vec<PooledVerifySeg<'_>> = caches
+            .iter_mut()
+            .zip(tokens)
+            .map(|(c, t)| PooledVerifySeg {
+                cache: &mut **c,
+                tokens: t,
+                ckpt: None,
+            })
+            .collect();
+        Ok(self.verify_pooled_dev(e, &mut segs, None)?.map(|(l, _)| l))
+    }
+
+    /// The pooled walk's LINEAR layer: `qwen35_tparallel_linear_layer`'s packed arm at m=R,
+    /// with the state chain run per session on its row views.
+    fn pooled_linear_layer(
+        &self,
+        e: &Engine,
+        il: usize,
+        x: &CudaSlice<f32>,
+        t: usize,
+        segs: &mut [PooledVerifySeg<'_>],
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        use cudarc::driver::DevicePtr;
+        let cfg = &self.cfg;
+        let n_embd = cfg.n_embd as usize;
+        let eps = cfg.rms_eps;
+        let layer = &self.layers[il];
+        let Mixer::Linear(la) = &layer.mixer else {
+            return Err("pooled_linear_layer on a non-linear layer".into());
+        };
+        let anorm = layer.attn_norm.float_data();
+        let mut xn = e.uninit(t * n_embd)?;
+        e.rms_norm(x, anorm, &mut xn, n_embd, t, eps)?;
+        let (hq, hd) = e.quantize_q8_1(&xn, t, n_embd)?;
+        let geometry = la.geometry;
+        let d_state = geometry.key_head_dim as usize;
+        let num_k = geometry.key_heads as usize;
+        let num_v = geometry.value_heads as usize;
+        let d_conv = geometry.conv_kernel as usize;
+        let key_dim = d_state * num_k;
+        let value_dim = geometry.value_head_dim as usize * num_v;
+        let conv_dim = key_dim * 2 + value_dim;
+        let gdn_scale = 1.0 / (d_state as f32).sqrt();
+        let (qkv_mixed, z, beta_raw, alpha) = match e.matmul_decode_exact_group4_pre(
+            [&la.wqkv, &la.wqkv_gate, &la.ssm_beta, &la.ssm_alpha],
+            &hq,
+            &hd,
+            t,
+        )? {
+            Some(mut g4) => {
+                let alpha = g4.pop().unwrap();
+                let beta_raw = g4.pop().unwrap();
+                let z = g4.pop().unwrap();
+                let qkv_mixed = g4.pop().unwrap();
+                (qkv_mixed, z, beta_raw, alpha)
+            }
+            None => (
+                e.matmul_pre(&la.wqkv, &hq, &hd, &xn, t)?,
+                e.matmul_pre(&la.wqkv_gate, &hq, &hd, &xn, t)?,
+                e.matmul_pre(&la.ssm_beta, &hq, &hd, &xn, t)?,
+                e.matmul_pre(&la.ssm_alpha, &hq, &hd, &xn, t)?,
+            ),
+        };
+        let conv_words = conv_dim * (d_conv - 1);
+        let ssm_words = d_state * d_state * num_v;
+        let mut conv_outs = e.uninit(t * conv_dim)?;
+        let mut q_l2 = e.uninit(t * value_dim)?;
+        let mut k_l2 = e.uninit(t * value_dim)?;
+        let mut v_gd = e.uninit(t * value_dim)?;
+        let mut beta_b = e.uninit(t * num_v)?;
+        let mut g_log = e.uninit(t * num_v)?;
+        let mut o_all = e.uninit(t * value_dim)?;
+        // Per-session [conv, ssm, alt] tables, built once for this layer.
+        let mut tables = Vec::with_capacity(segs.len());
+        for s in segs.iter() {
+            let rl = s.cache.recur[il]
+                .as_ref()
+                .ok_or("pooled verify: linear layer has no recurrent state")?;
+            let st = &e.gpu.stream();
+            let (pc, _g0) = rl.conv_state.device_ptr(st);
+            let (p0, _g1) = rl.ssm_state.device_ptr(st);
+            let (p1, _g2) = rl.ssm_state_alt.device_ptr(st);
+            tables.push(e.htod_u64(&[pc, p0, p1])?);
+        }
+        let mut snaps: Vec<Option<(CudaSlice<f32>, CudaSlice<f32>)>> = Vec::new();
+        let mut r0 = 0usize;
+        for (si, s) in segs.iter().enumerate() {
+            let ts = s.tokens.len();
+            let mut snap = if s.ckpt.is_some() && ts >= 2 {
+                Some((
+                    e.uninit((ts - 1) * conv_words)?,
+                    e.uninit((ts - 1) * ssm_words)?,
+                ))
+            } else {
+                None
+            };
+            let mut co = conv_outs.slice_mut(r0 * conv_dim..(r0 + ts) * conv_dim);
+            e.ssm_conv1d_fused_decode_tloop_rows(
+                &qkv_mixed.slice(r0 * conv_dim..(r0 + ts) * conv_dim),
+                &tables[si].slice(0..3),
+                la.ssm_conv1d.float_data(),
+                &mut co,
+                snap.as_mut().map(|(c, _)| c),
+                conv_dim,
+                d_conv,
+                ts,
+            )?;
+            snaps.push(snap);
+            r0 += ts;
+        }
+        // Row-wise prep over all R rows at once (per-row program, rows independent).
+        e.gdn_prep_decode_b(
+            &conv_outs,
+            &beta_raw,
+            &alpha,
+            la.ssm_dt.float_data(),
+            la.ssm_a.float_data(),
+            &mut q_l2,
+            &mut k_l2,
+            &mut v_gd,
+            &mut beta_b,
+            &mut g_log,
+            d_state,
+            num_v,
+            num_k,
+            key_dim,
+            eps,
+            conv_dim,
+            t,
+        )?;
+        let mut r0 = 0usize;
+        for (si, s) in segs.iter_mut().enumerate() {
+            let ts = s.tokens.len();
+            let (vr, hr) = (
+                r0 * value_dim..(r0 + ts) * value_dim,
+                r0 * num_v..(r0 + ts) * num_v,
+            );
+            let mut o_rows = o_all.slice_mut(vr.clone());
+            e.gdn_scan_s128_tsnap_rows(
+                &q_l2.slice(vr.clone()),
+                &k_l2.slice(vr.clone()),
+                &v_gd.slice(vr.clone()),
+                &g_log.slice(hr.clone()),
+                &beta_b.slice(hr),
+                &tables[si].slice(0..3),
+                &mut o_rows,
+                num_v,
+                ts,
+                gdn_scale,
+                snaps[si].as_mut().map(|(_, sst)| sst),
+            )?;
+            if let (Some(ck), Some((ct, st))) = (s.ckpt.as_deref_mut(), snaps[si].as_ref()) {
+                let mut states = Vec::with_capacity(ts - 1);
+                for r in 0..ts - 1 {
+                    let mut c = e.uninit(conv_words)?;
+                    e.dtod_copy_view(&ct.slice(r * conv_words..(r + 1) * conv_words), &mut c)?;
+                    let mut sst = e.uninit(ssm_words)?;
+                    e.dtod_copy_view(&st.slice(r * ssm_words..(r + 1) * ssm_words), &mut sst)?;
+                    states.push((c, sst));
+                }
+                ck.cols[il] = Some(states);
+            }
+            if ts % 2 == 1 {
+                let rl = s.cache.recur[il].as_mut().unwrap();
+                std::mem::swap(&mut rl.ssm_state, &mut rl.ssm_state_alt);
+            }
+            r0 += ts;
+        }
+        let mixed = if e.uses_q8_1_fast(&la.ssm_out) {
+            let (gq, gd) = e.gated_rmsnorm_q8_1(
+                &o_all,
+                la.ssm_norm.float_data(),
+                &z,
+                d_state,
+                t * num_v,
+                eps,
+            )?;
+            let g0 = e.zeros(0)?;
+            e.matmul_pre(&la.ssm_out, &gq, &gd, &g0, t)?
+        } else {
+            let mut gn = e.uninit(t * value_dim)?;
+            e.gated_rmsnorm(
+                &o_all,
+                la.ssm_norm.float_data(),
+                &z,
+                &mut gn,
+                d_state,
+                t * num_v,
+                eps,
+            )?;
+            e.matmul(&la.ssm_out, &gn, t)?
+        };
+        self.pooled_ffn_tail(e, il, x, &mixed, t)
+    }
+
+    /// The pooled walk's FULL-ATTENTION layer: `qwen35_tparallel_fa_layer`'s seqs arm at m=R,
+    /// each row's KV pointer pair naming its own session's cache.
+    fn pooled_fa_layer(
+        &self,
+        e: &Engine,
+        il: usize,
+        x: &CudaSlice<f32>,
+        t: usize,
+        pos: &PooledPos<'_>,
+        segs: &mut [PooledVerifySeg<'_>],
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        use cudarc::driver::DevicePtr;
+        let cfg = &self.cfg;
+        let n_embd = cfg.n_embd as usize;
+        let eps = cfg.rms_eps;
+        let layer = &self.layers[il];
+        let Mixer::Full(fa) = &layer.mixer else {
+            return Err("pooled verify: unsupported mixer".into());
+        };
+        let anorm = layer.attn_norm.float_data();
+        let mut xn = e.uninit(t * n_embd)?;
+        e.rms_norm(x, anorm, &mut xn, n_embd, t, eps)?;
+        let (hq, hd) = e.quantize_q8_1(&xn, t, n_embd)?;
+        let geometry = cfg.full_attention_geometry_at(il as u32);
+        let n_head = geometry.n_head as usize;
+        let n_head_kv = geometry.n_head_kv as usize;
+        let head_dim = geometry.head_dim_k as usize;
+        let rope_dims = geometry.n_rot as usize;
+        let rope_base = geometry.rope_base;
+        let scale = geometry.attention_scale();
+        let (qf, k, v) =
+            match e.matmul_decode_exact_group3_pre([&fa.wq, &fa.wk, &fa.wv], &hq, &hd, t)? {
+                Some(mut g3) => {
+                    let v = g3.pop().unwrap();
+                    let k = g3.pop().unwrap();
+                    let qf = g3.pop().unwrap();
+                    (qf, k, v)
+                }
+                None => (
+                    e.matmul_pre(&fa.wq, &hq, &hd, &xn, t)?,
+                    e.matmul_pre(&fa.wk, &hq, &hd, &xn, t)?,
+                    e.matmul_pre(&fa.wv, &hq, &hd, &xn, t)?,
+                ),
+            };
+        let gated = geometry.attention_gate == memra_gguf::config::AttentionGateKind::FusedQ;
+        let (q, gate) = if gated {
+            let mut qs = e.uninit(t * n_head * head_dim)?;
+            let mut gs = e.uninit(t * n_head * head_dim)?;
+            e.q_gate_split(&qf, &mut qs, &mut gs, head_dim, n_head, t)?;
+            (qs, Some(gs))
+        } else {
+            (qf, None)
+        };
+        let mut q_n = e.uninit(t * n_head * head_dim)?;
+        e.rms_norm_opt(&q, fa.q_norm_w(), &mut q_n, head_dim, t * n_head, eps)?;
+        let mut k_n = e.uninit(t * n_head_kv * head_dim)?;
+        e.rms_norm_opt(&k, fa.k_norm_w(), &mut k_n, head_dim, t * n_head_kv, eps)?;
+        e.rope_neox(
+            &mut q_n, pos.dev, head_dim, rope_dims, n_head, t, rope_base, 1.0,
+        )?;
+        e.rope_neox(
+            &mut k_n, pos.dev, head_dim, rope_dims, n_head_kv, t, rope_base, 1.0,
+        )?;
+        let q_dim = n_head * head_dim;
+        // Per-row KV pointer pairs and t_kv: row r of session s sits at len_s + r + 1.
+        let mut tbl: Vec<u64> = Vec::with_capacity(2 * t);
+        let mut t_kv_rows: Vec<usize> = Vec::with_capacity(t);
+        let (mut kdk, mut kdv, mut ktb, mut vtb) = (0, 0, 0, 0);
+        {
+            let st = &e.gpu.stream();
+            for s in segs.iter() {
+                let kvl = s.cache.kv[il].as_ref().ok_or("pooled verify: missing kv")?;
+                let (pk, _g) = kvl.k.device_ptr(st);
+                let (pv, _g2) = kvl.v.device_ptr(st);
+                for r in 0..s.tokens.len() {
+                    tbl.push(pk);
+                    tbl.push(pv);
+                    t_kv_rows.push(kvl.len + r + 1);
+                }
+                (kdk, kdv, ktb, vtb) =
+                    (kvl.kv_dim_k, kvl.kv_dim_v, kvl.k_tok_bytes, kvl.v_tok_bytes);
+            }
+        }
+        let tbl_d = e.htod_u64(&tbl)?;
+        e.append_kv_quantized_seqs(
+            &k_n,
+            &v,
+            &tbl_d.slice(0..2 * t),
+            pos.dev,
+            t,
+            kdk,
+            kdv,
+            ktb,
+            vtb,
+        )?;
+        for s in segs.iter_mut() {
+            s.cache.kv[il].as_mut().unwrap().len += s.tokens.len();
+        }
+        let mut attn = e.uninit(t * q_dim)?;
+        // One launch per maximal run of rows on the same fa split rung (one rung for the
+        // common case). A run that is not the whole stack attends through staged copies.
+        let sp_of = |tk: usize| crate::fa_split_keys(tk, cfg.n_head_kv as usize);
+        let mut a = 0usize;
+        while a < t {
+            let sp = sp_of(t_kv_rows[a]);
+            let mut b = a + 1;
+            while b < t && sp_of(t_kv_rows[b]) == sp {
+                b += 1;
+            }
+            let n = b - a;
+            let t_kv_max = *t_kv_rows[a..b].iter().max().unwrap();
+            if n == t {
+                e.fa_decode_batch_seqs_v4(
+                    &q_n,
+                    &tbl_d.slice(0..2 * t),
+                    pos.dev,
+                    &mut attn,
+                    head_dim,
+                    n_head,
+                    n_head_kv,
+                    t,
+                    t_kv_max,
+                    scale,
+                    sp,
+                    ktb,
+                    vtb,
+                )?;
+            } else {
+                let mut q_run = e.uninit(n * q_dim)?;
+                e.dtod_copy_view(&q_n.slice(a * q_dim..b * q_dim), &mut q_run)?;
+                let pos_run = e.htod_i32(&pos.host[a..b])?;
+                let mut a_run = e.uninit(n * q_dim)?;
+                e.fa_decode_batch_seqs_v4(
+                    &q_run,
+                    &tbl_d.slice(2 * a..2 * b),
+                    &pos_run,
+                    &mut a_run,
+                    head_dim,
+                    n_head,
+                    n_head_kv,
+                    n,
+                    t_kv_max,
+                    scale,
+                    sp,
+                    ktb,
+                    vtb,
+                )?;
+                e.dtod_copy_into(&a_run, &mut attn, a * q_dim)?;
+            }
+            a = b;
+        }
+        let attn_g = match &gate {
+            Some(g) => {
+                let n = t * q_dim;
+                let mut gsig = e.uninit(n)?;
+                e.sigmoid(g, &mut gsig, n)?;
+                let mut ag = e.uninit(n)?;
+                e.mul(&attn, &gsig, &mut ag, n)?;
+                ag
+            }
+            None => attn,
+        };
+        let wpqs = e.pre_quant_scaled(&attn_g, fa.wo_pqs.as_ref(), fa.wo.in_features(), t)?;
+        let mixed = e.matmul(&fa.wo, wpqs.as_ref().unwrap_or(&attn_g), t)?;
+        self.pooled_ffn_tail(e, il, x, &mixed, t)
+    }
+
+    /// Residual add + post_attn_norm + FFN + residual at m=R — the tail both t-parallel layer
+    /// bodies run verbatim.
+    fn pooled_ffn_tail(
+        &self,
+        e: &Engine,
+        il: usize,
+        x: &CudaSlice<f32>,
+        mixed: &CudaSlice<f32>,
+        t: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let n_embd = self.cfg.n_embd as usize;
+        let eps = self.cfg.rms_eps;
+        let layer = &self.layers[il];
+        let pnorm = layer.post_attn_norm.float_data();
+        let mut x1 = e.uninit(t * n_embd)?;
+        let mut zn = e.uninit(t * n_embd)?;
+        e.add_rms_norm(x, mixed, pnorm, &mut x1, &mut zn, n_embd, t, eps)?;
+        let ffn_out = match &layer.ffn {
+            crate::hybrid::Ffn::Dense {
+                ffn_gate,
+                ffn_up,
+                ffn_down,
+                ffn_down_pqs,
+            } => self.qwen35_tparallel_dense_ffn(
+                e,
+                ffn_gate,
+                ffn_up,
+                ffn_down,
+                ffn_down_pqs.as_ref(),
+                &zn,
+                t,
+                n_embd,
+            )?,
+            crate::hybrid::Ffn::Moe(m) => self.moe_ffn_il_zq8(e, m, &zn, None, t, il as u16)?,
+        };
+        let mut x2 = e.uninit(t * n_embd)?;
+        e.add(&x1, &ffn_out, &mut x2, t * n_embd)?;
+        Ok(x2)
     }
 
     /// ONE t-parallel FULL-ATTENTION layer (attn_norm + fa mixer + post_attn_norm + FFN +

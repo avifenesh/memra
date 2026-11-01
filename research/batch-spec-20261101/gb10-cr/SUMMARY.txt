@@ -1,0 +1,98 @@
+  Downloaded cpufeatures v0.2.17
+  Downloaded byteorder-lite v0.1.0
+  Downloaded cfg-if v1.0.4
+  Downloaded color_quant v1.1.0
+  Downloaded itoa v1.0.18
+  Downloaded block-buffer v0.10.4
+  Downloaded crypto-common v0.1.7
+  Downloaded quick-error v2.0.1
+  Downloaded version_check v0.9.5
+  Downloaded generic-array v0.14.7
+  Downloaded adler2 v2.0.1
+  Downloaded quote v1.0.46
+  Downloaded fdeflate v0.3.7
+  Downloaded autocfg v1.5.1
+  Downloaded sha2 v0.10.9
+  Downloaded digest v0.10.7
+  Downloaded zune-core v0.5.3
+  Downloaded simd-adler32 v0.3.10
+  Downloaded zmij v1.0.21
+  Downloaded memmap2 v0.9.11
+  Downloaded smallvec v1.15.2
+  Downloaded weezl v0.1.12
+  Downloaded gif v0.14.2
+  Downloaded libloading v0.9.0
+  Downloaded crc32fast v1.5.0
+  Downloaded unicode-ident v1.0.24
+  Downloaded serde_core v1.0.228
+  Downloaded num-traits v0.2.19
+  Downloaded proc-macro2 v1.0.106
+  Downloaded bitflags v2.13.1
+  Downloaded serde_derive v1.0.228
+  Downloaded bytemuck v1.25.2
+  Downloaded miniz_oxide v0.8.9
+  Downloaded base64 v0.22.1
+  Downloaded serde v1.0.228
+  Downloaded unicode-normalization-alignments v0.1.12
+  Downloaded image-webp v0.2.4
+  Downloaded flate2 v1.1.9
+  Downloaded zune-jpeg v0.5.15
+  Downloaded memchr v2.8.2
+  Downloaded typenum v1.20.1
+  Downloaded png v0.18.1
+  Downloaded serde_json v1.0.150
+  Downloaded aho-corasick v1.1.4
+  Downloaded moxcms v0.8.1
+  Downloaded image v0.25.10
+  Downloaded syn v2.0.118
+  Downloaded regex-syntax v0.8.11
+  Downloaded cudarc v0.19.8
+  Downloaded libc v0.2.186
+  Downloaded pxfm v0.1.30
+loaded qwen35 (64 layers); steps=24 reps=3 batches=[1, 2, 4, 8, 12, 16] primary_dev=0
+B=1: aggregate 13.5 tok/s, per-seq 13.5 tok/s (median of 3)
+B=2: aggregate 25.9 tok/s, per-seq 13.0 tok/s (median of 3)
+B=4: aggregate 48.9 tok/s, per-seq 12.2 tok/s (median of 3)
+B=8: aggregate 84.9 tok/s, per-seq 10.6 tok/s (median of 3)
+loaded qwen35 (64 layers); steps=128 reps=7 batches=[1, 2, 4, 8] primary_dev=0
+POOLED [1, 2, 3, 4, 5] R=15: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (5 sessions)
+POOLED-TIME [1, 2, 3, 4, 5] depth=2048: serial 379.363 ms, pooled 143.649 ms, 2.64x (median of 7)
+gguf-pooled-1,2,3,4,5 rc=0
+loaded qwen35 (64 layers); steps=128 reps=7 batches=[1, 2, 4, 8] primary_dev=0
+POOLED [2, 2, 2, 2, 2, 2, 2, 2] R=16: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (8 sessions)
+POOLED-TIME [2, 2, 2, 2, 2, 2, 2, 2] depth=2048: serial 600.024 ms, pooled 160.718 ms, 3.73x (median of 7)
+gguf-pooled-2,2,2,2,2,2,2,2 rc=0
+loaded qwen35 (64 layers); steps=128 reps=7 batches=[1, 2, 4, 8] primary_dev=0
+POOLED [2, 2] R=4: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (2 sessions)
+POOLED-TIME [2, 2] depth=2048: serial 148.864 ms, pooled 78.997 ms, 1.88x (median of 7)
+gguf-pooled-2,2 rc=0
+loaded qwen35 (64 layers); steps=128 reps=7 batches=[1, 2, 4, 8] primary_dev=0
+POOLED [3, 3, 3, 3, 3] R=15: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (5 sessions)
+POOLED-TIME [3, 3, 3, 3, 3] depth=2048: serial 375.642 ms, pooled 142.450 ms, 2.64x (median of 7)
+gguf-pooled-3,3,3,3,3 rc=0
+loaded qwen35 (64 layers); steps=128 reps=7 batches=[1, 2, 4, 8] primary_dev=0
+POOLED [4, 4, 4, 4] R=16: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (4 sessions)
+POOLED-TIME [4, 4, 4, 4] depth=2048: serial 303.953 ms, pooled 145.952 ms, 2.08x (median of 7)
+gguf-pooled-4,4,4,4 rc=0
+loaded qwen35 (64 layers); steps=128 reps=7 batches=[1, 2, 4, 8] primary_dev=0
+POOLED [8, 8] R=16: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (2 sessions)
+POOLED-TIME [8, 8] depth=2048: serial 161.827 ms, pooled 138.124 ms, 1.17x (median of 7)
+gguf-pooled-8,8 rc=0
+loaded qwen35 (64 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+POOLED [4, 4, 4, 4] R=16: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (4 sessions)
+POOLED-TIME [4, 4, 4, 4] depth=16380: serial 367.563 ms, pooled 208.275 ms, 1.76x (median of 5)
+gguf-pooled-d16k-4x4 rc=0
+loaded qwen35 (64 layers); steps=128 reps=9 batches=[1, 2, 4, 8] primary_dev=0
+VERIFY T=1 depth=2048: 75.158 ms (median of 9, p10 75.119 p90 75.930) = 1.000x T=first, 75.158 ms/row
+VERIFY T=2 depth=2048: 74.337 ms (median of 9, p10 74.298 p90 75.026) = 0.989x T=first, 37.168 ms/row
+VERIFY T=3 depth=2048: 74.464 ms (median of 9, p10 74.397 p90 75.071) = 0.991x T=first, 24.821 ms/row
+VERIFY T=4 depth=2048: 75.535 ms (median of 9, p10 75.438 p90 76.178) = 1.005x T=first, 18.884 ms/row
+VERIFY T=5 depth=2048: 76.175 ms (median of 9, p10 76.047 p90 76.241) = 1.014x T=first, 15.235 ms/row
+VERIFY T=6 depth=2048: 77.283 ms (median of 9, p10 77.155 p90 77.631) = 1.028x T=first, 12.881 ms/row
+VERIFY T=8 depth=2048: 80.715 ms (median of 9, p10 80.596 p90 81.505) = 1.074x T=first, 10.089 ms/row
+VERIFY T=10 depth=2048: 94.883 ms (median of 9, p10 94.357 p90 95.686) = 1.262x T=first, 9.488 ms/row
+VERIFY T=12 depth=2048: 107.808 ms (median of 9, p10 107.682 p90 108.566) = 1.434x T=first, 8.984 ms/row
+VERIFY T=14 depth=2048: 121.983 ms (median of 9, p10 121.765 p90 122.586) = 1.623x T=first, 8.713 ms/row
+VERIFY T=16 depth=2048: 135.965 ms (median of 9, p10 135.397 p90 137.346) = 1.809x T=first, 8.498 ms/row
+VERIFY T=17 depth=2048: 1184.483 ms (median of 9, p10 1183.153 p90 1187.447) = 15.760x T=first, 69.675 ms/row
+gguf-verify-d2048 rc=0

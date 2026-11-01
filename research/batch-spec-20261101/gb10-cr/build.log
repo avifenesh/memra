@@ -1,0 +1,130 @@
+info: syncing channel updates for 1.97.1-aarch64-unknown-linux-gnu
+info: latest update on 2026-07-16 for version 1.97.1 (8bab26f4f 2026-07-14)
+info: component rustfmt is up to date
+info: downloading component clippy
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded cpufeatures v0.2.17
+  Downloaded byteorder-lite v0.1.0
+  Downloaded cfg-if v1.0.4
+  Downloaded color_quant v1.1.0
+  Downloaded itoa v1.0.18
+  Downloaded block-buffer v0.10.4
+  Downloaded crypto-common v0.1.7
+  Downloaded quick-error v2.0.1
+  Downloaded version_check v0.9.5
+  Downloaded generic-array v0.14.7
+  Downloaded adler2 v2.0.1
+  Downloaded quote v1.0.46
+  Downloaded fdeflate v0.3.7
+  Downloaded autocfg v1.5.1
+  Downloaded sha2 v0.10.9
+  Downloaded digest v0.10.7
+  Downloaded zune-core v0.5.3
+  Downloaded simd-adler32 v0.3.10
+  Downloaded zmij v1.0.21
+  Downloaded memmap2 v0.9.11
+  Downloaded smallvec v1.15.2
+  Downloaded weezl v0.1.12
+  Downloaded gif v0.14.2
+  Downloaded libloading v0.9.0
+  Downloaded crc32fast v1.5.0
+  Downloaded unicode-ident v1.0.24
+  Downloaded serde_core v1.0.228
+  Downloaded num-traits v0.2.19
+  Downloaded proc-macro2 v1.0.106
+  Downloaded bitflags v2.13.1
+  Downloaded serde_derive v1.0.228
+  Downloaded bytemuck v1.25.2
+  Downloaded miniz_oxide v0.8.9
+  Downloaded base64 v0.22.1
+  Downloaded serde v1.0.228
+  Downloaded unicode-normalization-alignments v0.1.12
+  Downloaded image-webp v0.2.4
+  Downloaded flate2 v1.1.9
+  Downloaded zune-jpeg v0.5.15
+  Downloaded memchr v2.8.2
+  Downloaded typenum v1.20.1
+  Downloaded png v0.18.1
+  Downloaded serde_json v1.0.150
+  Downloaded aho-corasick v1.1.4
+  Downloaded moxcms v0.8.1
+  Downloaded image v0.25.10
+  Downloaded syn v2.0.118
+  Downloaded regex-syntax v0.8.11
+  Downloaded cudarc v0.19.8
+  Downloaded libc v0.2.186
+  Downloaded pxfm v0.1.30
+   Compiling cfg-if v1.0.4
+   Compiling version_check v0.9.5
+   Compiling proc-macro2 v1.0.106
+   Compiling unicode-ident v1.0.24
+   Compiling libc v0.2.186
+   Compiling typenum v1.20.1
+   Compiling quote v1.0.46
+   Compiling serde_core v1.0.228
+   Compiling zmij v1.0.21
+   Compiling serde v1.0.228
+   Compiling memchr v2.8.2
+   Compiling serde_json v1.0.150
+   Compiling itoa v1.0.18
+   Compiling autocfg v1.5.1
+   Compiling crc32fast v1.5.0
+   Compiling simd-adler32 v0.3.10
+   Compiling libloading v0.9.0
+   Compiling cudarc v0.19.8
+   Compiling adler2 v2.0.1
+   Compiling smallvec v1.15.2
+   Compiling generic-array v0.14.7
+   Compiling miniz_oxide v0.8.9
+   Compiling aho-corasick v1.1.4
+   Compiling fdeflate v0.3.7
+   Compiling regex-syntax v0.8.11
+   Compiling pxfm v0.1.30
+   Compiling num-traits v0.2.19
+   Compiling zune-core v0.5.3
+   Compiling unicode-normalization-alignments v0.1.12
+   Compiling bitflags v2.13.1
+   Compiling color_quant v1.1.0
+   Compiling weezl v0.1.12
+   Compiling block-buffer v0.10.4
+   Compiling syn v2.0.118
+   Compiling crypto-common v0.1.7
+   Compiling flate2 v1.1.9
+   Compiling quick-error v2.0.1
+   Compiling cpufeatures v0.2.17
+   Compiling memmap2 v0.9.11
+   Compiling digest v0.10.7
+   Compiling byteorder-lite v0.1.0
+   Compiling gif v0.14.2
+   Compiling zune-jpeg v0.5.15
+   Compiling sha2 v0.10.9
+   Compiling bytemuck v1.25.2
+   Compiling memra-engine v0.138.0 (~/projects/memra-batchspec/crates/memra-engine)
+   Compiling png v0.18.1
+   Compiling image-webp v0.2.4
+   Compiling base64 v0.22.1
+   Compiling memra-validate v0.138.0 (~/projects/memra-batchspec/crates/memra-validate)
+   Compiling memra-sampling v0.138.0 (~/projects/memra-batchspec/crates/memra-sampling)
+   Compiling moxcms v0.8.1
+   Compiling serde_derive v1.0.228
+   Compiling image v0.25.10
+   Compiling memra-gguf v0.138.0 (~/projects/memra-batchspec/crates/memra-gguf)
+   Compiling memra-tier v0.138.0 (~/projects/memra-batchspec/crates/memra-tier)
+   Compiling memra-tokenizer v0.138.0 (~/projects/memra-batchspec/crates/memra-tokenizer)
+   Compiling memra-kv v0.138.0 (~/projects/memra-batchspec/crates/memra-kv)
+   Compiling memra-runtime v0.138.0 (~/projects/memra-batchspec/crates/memra-runtime)
+   Compiling memra-reference v0.138.0 (~/projects/memra-batchspec/crates/memra-reference)
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 121a (compute_cap 12.1); set MEMRA_CUDA_ARCH to override
+warning: function `chain` is never used
+  --> crates/memra-engine/src/cpu_probe.rs:51:4
+   |
+51 | fn chain(steps: u64) -> u64 {
+   |    ^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-engine` (lib) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 3m 14s
+BUILD_EXIT=0 after 198s

@@ -33676,6 +33676,98 @@ impl Engine {
         Ok(())
     }
 
+    /// Row-view twin of [`Self::ssm_conv1d_fused_decode_tloop`] (lane/batch-spec): the same
+    /// kernel over rows `[r0, r0+t)` of a pooled cross-session `[R, conv_dim]` stack. Only the
+    /// base pointers move, so each session's rows run the identical per-row program.
+    #[allow(clippy::too_many_arguments)]
+    pub fn ssm_conv1d_fused_decode_tloop_rows(
+        &self,
+        qkv_cols: &cudarc::driver::CudaView<f32>,
+        state_ptrs: &cudarc::driver::CudaView<u64>,
+        w: &CudaSlice<f32>,
+        conv_outs: &mut cudarc::driver::CudaViewMut<f32>,
+        snap: Option<&mut CudaSlice<f32>>,
+        conv_dim: usize,
+        d_conv: usize,
+        t: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use cudarc::driver::DevicePtr;
+        let f = self.func("ssm_conv1d_fused_decode_tloop_f32");
+        let cfg = LaunchConfig {
+            grid_dim: (conv_dim.div_ceil(256) as u32, 1, 1),
+            block_dim: (256, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let (cd, dc, ti) = (conv_dim as i32, d_conv as i32, t as i32);
+        let __s_b = self.gpu.stream();
+        let snap_guard = snap.map(|sn| sn.device_ptr(&__s_b));
+        let snap_ptr: u64 = snap_guard.as_ref().map(|(p, _)| *p).unwrap_or(0);
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(qkv_cols)
+            .arg(state_ptrs)
+            .arg(w)
+            .arg(conv_outs)
+            .arg(&snap_ptr)
+            .arg(&cd)
+            .arg(&dc)
+            .arg(&ti);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        drop(snap_guard);
+        Ok(())
+    }
+
+    /// Row-view twin of [`Self::gdn_scan_s128_tsnap`] (lane/batch-spec): one session's rows of
+    /// a pooled stack, same kernel, same launch geometry.
+    #[allow(clippy::too_many_arguments)]
+    pub fn gdn_scan_s128_tsnap_rows(
+        &self,
+        q: &cudarc::driver::CudaView<f32>,
+        k: &cudarc::driver::CudaView<f32>,
+        v: &cudarc::driver::CudaView<f32>,
+        g: &cudarc::driver::CudaView<f32>,
+        beta: &cudarc::driver::CudaView<f32>,
+        state_ptrs: &cudarc::driver::CudaView<u64>,
+        o: &mut cudarc::driver::CudaViewMut<f32>,
+        n_head: usize,
+        t: usize,
+        scale: f32,
+        snap: Option<&mut CudaSlice<f32>>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use cudarc::driver::DevicePtr;
+        let f = self.func("gdn_scan_s128_tsnap");
+        const S_V: u32 = 128;
+        const WARP: u32 = 32;
+        const COLS_PER_BLOCK: u32 = 4;
+        let cfg = LaunchConfig {
+            grid_dim: (n_head as u32, 1, S_V / COLS_PER_BLOCK),
+            block_dim: (WARP, COLS_PER_BLOCK, 1),
+            shared_mem_bytes: 0,
+        };
+        let (h, ti) = (n_head as i32, t as i32);
+        let __s_b = self.gpu.stream();
+        let snap_guard = snap.map(|sn| sn.device_ptr(&__s_b));
+        let snap_ptr: u64 = snap_guard.as_ref().map(|(p, _)| *p).unwrap_or(0);
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(q)
+            .arg(k)
+            .arg(v)
+            .arg(g)
+            .arg(beta)
+            .arg(state_ptrs)
+            .arg(o)
+            .arg(&h)
+            .arg(&ti)
+            .arg(&scale)
+            .arg(&snap_ptr);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        drop(snap_guard);
+        Ok(())
+    }
+
     /// PACKED scan twin (lane/dspark-gdn-packed): `gdn_scan_s128` over T rows of ONE sequence
     /// (state resident across the rows, the template's own t-loop) that also writes the state
     /// after each row < T-1 to `snap` (`[T-1, H, S_v, S_v]`, the checkpoint slab layout).
