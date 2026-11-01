@@ -28476,6 +28476,7 @@ pub fn run(
             let peer_probe_allows_spec = health.peer_probe_allows_spec_admission();
             let estimate_spec = admission_request_may_spec(
                 &loaded[&model_key],
+                dspark_drafts.contains_key(&model_key),
                 &req,
                 // WAVE projection, not live-only active+1 — must match the serve-time
                 // K decision in `admit` or the estimate reserves a spec session the
@@ -28752,7 +28753,9 @@ pub fn run(
                 // backstops the floor was gated against.
                 let reserve = admission_reserve(
                     peer_probe_spec_admission(serve_spec_enabled(), peer_probe_allows_spec)
-                        && loaded.get(&req.model).is_some_and(mtp_spec_capable),
+                        && loaded.get(&req.model).is_some_and(|lm| {
+                            served_spec_route_capable(lm, dspark_drafts.contains_key(&model_key))
+                        }),
                     cost,
                     admission_costs
                         .get(&model_key)
@@ -33738,12 +33741,16 @@ fn prepare_request(
 /// a program that never runs).
 fn admission_request_may_spec(
     lm: &LoadedModel,
+    dspark_armed: bool,
     req: &Request,
     projected_active: usize,
     prompt_len: usize,
     peer_probe_allows_spec: bool,
 ) -> bool {
-    if confidence_trace_enabled() || !mtp_spec_capable(lm) || !serve_spec_enabled() {
+    if confidence_trace_enabled()
+        || !served_spec_route_capable(lm, dspark_armed)
+        || !serve_spec_enabled()
+    {
         return false;
     }
     let candidate = req.spec_k_replay.unwrap_or_else(|| {
@@ -33759,6 +33766,17 @@ fn admission_request_may_spec(
         .k
     }) > 0;
     peer_probe_spec_admission(candidate, peer_probe_allows_spec)
+}
+
+/// Whether the model serves ANY speculation route: the embedded MTP head, or an armed DFlash2
+/// drafter. Admission keys its spec estimate (the per-session draft-plane charge) and its
+/// reserve (the full transient floor) on the SERVED route, not on the MTP head being loaded:
+/// under `MEMRA_MTP_SKIP=1` a dspark model has no MTP head but still speculates, and keying on
+/// `mtp_spec_capable` charged its draft plane at 0 and its reserve at `min(cost, floor)`, so
+/// admission could take more sessions than fit (an OOM on a unified-memory device, not a
+/// refusal).
+fn served_spec_route_capable(lm: &LoadedModel, dspark_armed: bool) -> bool {
+    dspark_armed || mtp_spec_capable(lm)
 }
 
 fn mtp_spec_capable(lm: &LoadedModel) -> bool {
@@ -37640,7 +37658,7 @@ fn admit(
         );
     }
     let (spec_k, resume_floor) = resumed_carrier_spec_k_floor(spec.is_some(), spec_k_decision.k);
-    if mtp_spec_capable(lm) {
+    if served_spec_route_capable(lm, dspark_draft_ready) {
         let source = if resume_floor {
             "resume-floor(k=0->1)"
         } else if spec_k == spec_k_decision.k {
@@ -43796,6 +43814,57 @@ mod tests {
             SPEC_SHRINK_RESERVE
         );
         assert!(SPEC_SHRINK_RESERVE < big_cost);
+    }
+
+    #[test]
+    fn admission_spec_estimate_and_reserve_follow_the_served_route_not_the_mtp_head() {
+        // Under MEMRA_MTP_SKIP=1 a DFlash2-armed model has no MTP head but still speculates.
+        // Admission keyed its spec estimate (which carries the per-session DFlash draft-plane
+        // charge, memra#302) and its reserve (the full transient floor vs min(cost, floor)) on
+        // `mtp_spec_capable`, so that model was admitted at the plain price and could take more
+        // sessions than fit. Both must key on the served route.
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let route = &production[production
+            .find("fn served_spec_route_capable(")
+            .expect("route predicate exists")..];
+        let route = &route[..route.find("\n}\n").unwrap()];
+        assert!(
+            route.contains("dspark_armed || mtp_spec_capable(lm)"),
+            "{route}"
+        );
+        let may_spec = &production[production.find("fn admission_request_may_spec(").unwrap()..];
+        let may_spec = &may_spec[..may_spec.find("\n}\n").unwrap()];
+        assert!(
+            may_spec.contains("!served_spec_route_capable(lm, dspark_armed)"),
+            "{may_spec}"
+        );
+        assert!(!may_spec.contains("!mtp_spec_capable(lm)"), "{may_spec}");
+        let call = &production[production
+            .find("let estimate_spec = admission_request_may_spec(")
+            .unwrap()..];
+        assert!(
+            call[..300].contains("dspark_drafts.contains_key(&model_key)"),
+            "{}",
+            &call[..300]
+        );
+        let reserve = &production[production.find("let reserve = admission_reserve(").unwrap()..];
+        let reserve = &reserve[..reserve.find("admit_reserve_override()").unwrap()];
+        assert!(
+            reserve
+                .contains("served_spec_route_capable(lm, dspark_drafts.contains_key(&model_key))"),
+            "{reserve}"
+        );
+        assert!(
+            !reserve.contains("is_some_and(mtp_spec_capable)"),
+            "{reserve}"
+        );
+        // The draft-plane charge itself keys on the armed drafter once the estimate is spec.
+        assert!(
+            production.contains("(true, Some(draft)) => draft.resident_kv_bytes(admission_cap),")
+        );
+        // The [spec-k] admit receipt prints on the DFlash route too.
+        assert!(production.contains("if served_spec_route_capable(lm, dspark_draft_ready) {"));
     }
 
     #[test]
