@@ -59,6 +59,7 @@ pub use memra_gguf;
 pub use memra_runtime;
 
 pub mod cpu_probe;
+pub mod cuda_arch;
 
 /// DAY82 (`research/spill-c-20260919/DAY82.md`): a counting wrapper around the system allocator in
 /// the library's test build only (never in a binary): allocations and bytes, read by the day-61
@@ -3318,11 +3319,18 @@ pub fn hc_pre_v4_on_from(v: Option<&str>, built_arch: &str) -> bool {
     }
 }
 
-/// The CUDA arch this binary's kernels were compiled for (`120a`, `100a`, `90a`, `89`),
-/// as written by memra-engine's build script. `env!` only reaches the crate whose build
-/// script emitted it, so downstream crates that key a default on the board class read this
-/// const instead of re-deriving the arch at runtime.
+/// The CUDA arch FAMILY this binary's kernel choices and arch-keyed defaults follow (`120a`,
+/// `100a`, `90a`, `89`), as written by memra-engine's build script. A `121a` (GB10, DGX Spark)
+/// build reports `120a` here: it compiles the same sources and takes every 120a policy
+/// ([`cuda_arch::family`]). `env!` only reaches the crate whose build script emitted it, so
+/// downstream crates that key a default on the board class read this const instead of
+/// re-deriving the arch at runtime.
 pub const BUILT_CUDA_ARCH: &str = env!("MEMRA_BUILT_CUDA_ARCH");
+
+/// The exact SASS target the fatbins were compiled for (`120a`, `121a`, `100a`, `90a`, `89`).
+/// Only the device-vs-binary guard in [`Engine::new`] and diagnostics read it; policy reads
+/// [`BUILT_CUDA_ARCH`].
+pub const BUILT_CUDA_TARGET: &str = env!("MEMRA_BUILT_CUDA_TARGET");
 
 /// The B200 composed-posture doors' shared default (2026-09-06): `MEMRA_HC_MIXES_KERNEL`,
 /// `MEMRA_MLA_SEG_WS`, `MEMRA_GLM5_GRAPH_MLA`, `MEMRA_F32_GEMV_KERNEL`, `MEMRA_KDA_ONORM_ZQ8`
@@ -3733,6 +3741,8 @@ impl Engine {
         // ARCH GUARD (unified dual-arch engine): the fatbins carry single-arch SASS, so a
         // binary/device mismatch otherwise dies at first module load with an opaque CUDA
         // error. Fail early with the rebuild hint instead. MEMRA_ARCH_CHECK=0 skips.
+        // Keyed on the exact TARGET, not the policy family: a 120a build used to pass on a
+        // 12.1 GB10, whose driver cannot load sm_120a SASS (cuda_arch::target_runs_on).
         if std::env::var("MEMRA_ARCH_CHECK").as_deref() != Ok("0") {
             use cudarc::driver::sys::CUdevice_attribute_enum as A;
             let (maj, min) = cudarc::driver::result::device::get(ordinal as i32)
@@ -3749,16 +3759,17 @@ impl Engine {
                     ))
                 })
                 .unwrap_or((0, 0));
-            let built = env!("MEMRA_BUILT_CUDA_ARCH");
-            let ok = matches!(
-                (built, maj, min),
-                ("120a", 12, 0) | ("120a", 12, 1) | ("100a", 10, 0) | ("90a", 9, 0) | ("89", 8, 9)
-            );
-            if !ok {
+            let built = BUILT_CUDA_TARGET;
+            if !cuda_arch::target_runs_on(built, maj, min) {
+                let hint = match cuda_arch::target_for_compute_cap(&format!("{maj}.{min}")) {
+                    Some(t) => format!("MEMRA_CUDA_ARCH={t}"),
+                    None => "no MEMRA_CUDA_ARCH target covers this device".to_string(),
+                };
                 return Err(format!(
                     "memra was built for sm_{built} but device {ordinal} reports compute \
-                     capability {maj}.{min}. Rebuild on this machine (MEMRA_CUDA_ARCH \
-                     auto-detects the GPU) or set MEMRA_ARCH_CHECK=0 to bypass."
+                     capability {maj}.{min}, and sm_{built} SASS does not load there. Rebuild \
+                     on this machine (MEMRA_CUDA_ARCH auto-detects the GPU; {hint}) or set \
+                     MEMRA_ARCH_CHECK=0 to bypass."
                 )
                 .into());
             }

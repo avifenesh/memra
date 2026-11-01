@@ -779,8 +779,8 @@ every call site byte-identical to pre-lane behaviour. See
 | flag | default | what it does |
 |---|---|---|
 | `MEMRA_NVCC` | `nvcc` on PATH | nvcc binary override |
-| `MEMRA_CUDA_ARCH` | auto-detected | build target: `120a` (Blackwell consumer), `100a` (B200), `90a` (Hopper), `89` (portable eval). Unset probes `nvidia-smi compute_cap`: 12.x→120a, 10.0→100a, 9.0→90a, 8.9→89; GPU-less/unknown falls back to 120a. B200 auto-detection was enabled only after the 2026-09-01 sealed runtime/model/serving battery; it does not make every model or optional kernel `NativeQualified`. <!-- support: none; not NativeQualified --> Explicit values always win. `89` builds the secondary correctness-first eval lane: native-FP4 prefill compiled off, tiled GDN on its generic fallback, prompt attention through f32 SDPA |
-| `MEMRA_ARCH_CHECK` | on | `=0` skips the Engine::new device-vs-binary compute-capability guard (fatbins are single-arch SASS; the guard fails early with a rebuild hint on mismatch) |
+| `MEMRA_CUDA_ARCH` | auto-detected | build target: `120a` (RTX 50-series, RTX PRO 6000 Blackwell), `121a` (GB10, DGX Spark), `100a` (B200), `90a` (Hopper), `89` (portable eval). Unset probes `nvidia-smi compute_cap`: 12.0→120a, 12.1→121a, 10.0→100a, 9.0→90a, 8.9→89; GPU-less/unknown falls back to 120a. `121a` is a 120a-family target: the same sources, stubs and arch-keyed defaults, its own SASS, because sm_120a SASS does not load on 12.1 (`docs/decisions/SM121-SPARK-TARGET.md`); it is compile-covered in CI and not yet hardware-qualified. B200 auto-detection was enabled only after the 2026-09-01 sealed runtime/model/serving battery; it does not make every model or optional kernel `NativeQualified`. <!-- support: none; not NativeQualified --> Explicit values always win. `89` builds the secondary correctness-first eval lane: native-FP4 prefill compiled off, tiled GDN on its generic fallback, prompt attention through f32 SDPA |
+| `MEMRA_ARCH_CHECK` | on | `=0` skips the Engine::new device-vs-binary compute-capability guard (fatbins are single-arch SASS; the guard fails early with a rebuild hint on mismatch). The guard keys on the exact target: a 120a build refuses a 12.1 device and a 121a build refuses 12.0 |
 | `MEMRA_CUTLASS` | off | set = compile the CUTLASS sm120 NVFP4 GEMM (`cutlass_smoke`, `MEMRA_FP4_CUTLASS` door) |
 | `MEMRA_CUTLASS_ROOT` | flashinfer venv tree | CUTLASS header tree location |
 | `MEMRA_MMQ_X_Q45K` | 64 | k-quant MMQ X-tile (compile-time sweep seam) |
@@ -806,8 +806,10 @@ Delta Attention kernels, added with the kernel lane 2026-08-28), `MEMRA_TIER_REC
 host-tier D2D receipt digest and fault delay of `cu/tier_receipt.cu`, WP-A day 22, loaded only by the
 copy-stream transfer engine under `MEMRA_KV_HOST_CONTRACTS=1`), and `MEMRA_FATBIN` (memra-probe's
 own module). The same class covers the four build-identity vars below and
-`MEMRA_BUILT_CUDA_ARCH` (memra-engine build.rs → the
-`MEMRA_ARCH_CHECK` device-vs-binary guard's compiled-arch side). `MEMRA_KV_KFMT`/`MEMRA_KV_VFMT`
+`MEMRA_BUILT_CUDA_ARCH` (memra-engine build.rs → the policy family every arch-keyed default
+reads; `121a` reports `120a`), `MEMRA_BUILT_CUDA_TARGET` (the exact SASS target, the
+`MEMRA_ARCH_CHECK` device-vs-binary guard's compiled-arch side) and `MEMRA_PROBE_CUDA_TARGET`
+(memra-probe's twin of it). `MEMRA_KV_KFMT`/`MEMRA_KV_VFMT`
 are the `-D` defines build.rs sets for the kf8vf8 flash fatbin.
 `MEMRA_MMVQ_ROWS` is a compile-time `#define` in qmatvec.cu, not an env var.
 

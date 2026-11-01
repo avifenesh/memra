@@ -2,6 +2,10 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+// Target table shared with the engine's startup guard (src/cuda_arch.rs).
+#[path = "src/cuda_arch.rs"]
+mod arch_table;
+
 /// `nvcc --version`'s reported release, as `(major, minor)`. `None` when the binary cannot
 /// be run or the line cannot be parsed — such a candidate is unusable and gets skipped.
 /// Parses the canonical last line: `Cuda compilation tools, release 13.2, V13.2.68`.
@@ -133,8 +137,10 @@ fn resolve_nvcc() -> String {
 }
 
 /// Arch auto-detection (MEMRA_CUDA_ARCH unset): probe the first GPU's compute capability
-/// via nvidia-smi and pick the matching build arch. GPU-less machines (CI compile gate)
-/// and unrecognized caps fall back to 120a — the naked build stays the sm_120a build.
+/// via nvidia-smi and pick the matching build arch (`arch_table::target_for_compute_cap`:
+/// 12.0 -> 120a, 12.1 -> 121a, 10.0 -> 100a, 9.0 -> 90a, 8.9 -> 89). GPU-less machines (CI
+/// compile gate) and unrecognized caps fall back to 120a, so the naked build stays the sm_120a
+/// build.
 /// An explicit MEMRA_CUDA_ARCH always wins (this fn is not called then).
 fn detect_arch() -> String {
     let cap = Command::new("nvidia-smi")
@@ -170,13 +176,15 @@ fn detect_arch() -> String {
     // a pinned official Qwen3.8-27B-FP8 checkpoint, but measured 0.173x its established fallback
     // with worse teacher-forced NLL, so `MEMRA_FP8_MMQ=1` stays explicit on this architecture.
     // Receipts: research/b200-kernel-twins-dry-20260901/receipts/.
-    let arch = match cap.as_deref() {
-        Some("12.0") | Some("12.1") => "120a",
-        Some("10.0") => "100a",
-        Some("9.0") => "90a",
-        Some("8.9") => "89",
-        _ => "120a",
-    };
+    //
+    // GB10 (DGX Spark, compute capability 12.1) used to map to 120a here. sm_120a SASS does not
+    // load on 12.1 (arch-specific SASS is tied to one capability and the fatbins carry no PTX),
+    // so 12.1 now builds sm_121a: the same 120a-family sources and policy, its own SASS
+    // (docs/decisions/SM121-SPARK-TARGET.md).
+    let arch = cap
+        .as_deref()
+        .and_then(arch_table::target_for_compute_cap)
+        .unwrap_or("120a");
     match cap.as_deref() {
         Some(c) => println!(
             "cargo:warning=MEMRA_CUDA_ARCH auto-detected {arch} (compute_cap {c}); set MEMRA_CUDA_ARCH to override"
@@ -243,6 +251,7 @@ fn main() {
         println!("cargo:rustc-check-cfg=cfg(memra_sm100_tcgen05)");
         println!("cargo:rustc-check-cfg=cfg(memra_cutlass)");
         println!("cargo:rustc-env=MEMRA_BUILT_CUDA_ARCH=120a");
+        println!("cargo:rustc-env=MEMRA_BUILT_CUDA_TARGET=120a");
         // `MMQ_ARCHIVE_HASH` is `env!`-bound in lib.rs; the docs-only build has no archive.
         println!("cargo:rustc-env=MEMRA_MMQ_ARCHIVE_HASH=docs-rs-stub");
         return;
@@ -255,11 +264,16 @@ fn main() {
     println!("cargo:rustc-check-cfg=cfg(memra_hopper_mma)");
     println!("cargo:rustc-check-cfg=cfg(memra_sm100_tcgen05)");
     println!("cargo:rustc-check-cfg=cfg(memra_cutlass)");
-    let cuda_arch = std::env::var("MEMRA_CUDA_ARCH").unwrap_or_else(|_| detect_arch());
+    // `target` is the exact -gencode value; `cuda_arch` is its policy family (src/cuda_arch.rs).
+    // Every source-selection, stub and -D choice below keys on the family, so a 121a (GB10, DGX
+    // Spark) build compiles exactly the 120a source set; only the gencode uses the target.
+    let target = std::env::var("MEMRA_CUDA_ARCH").unwrap_or_else(|_| detect_arch());
     assert!(
-        matches!(cuda_arch.as_str(), "120a" | "100a" | "90a" | "89"),
-        "MEMRA_CUDA_ARCH must be 120a (default), 100a (B200), 90a (Hopper), or 89 (portable eval)"
+        matches!(target.as_str(), "120a" | "121a" | "100a" | "90a" | "89"),
+        "MEMRA_CUDA_ARCH must be 120a (default), 121a (GB10 / DGX Spark), 100a (B200), \
+         90a (Hopper), or 89 (portable eval)"
     );
+    let cuda_arch = arch_table::family(&target).to_string();
     // Hopper boot arch rides the portable-CUDA correctness path: sm_90a SASS, no
     // sm_120a/sm_100a MMA kinds. Tuned wgmma paths are a separate later lane.
     // Phase A (ARCHITECTURE-H100.md): 90a additionally re-enables the portable-PTX
@@ -269,11 +283,17 @@ fn main() {
     // launchers remain fail-closed stubs on this arch.
     let portable = matches!(cuda_arch.as_str(), "89" | "90a");
     let hopper_mma = cuda_arch == "90a";
+    // The two CUTLASS archives below compile with a fixed sm_120a gencode, so they key on the
+    // exact TARGET: linked into any other build they would carry SASS the device cannot load.
     assert!(
-        !(cuda_arch != "120a" && std::env::var_os("MEMRA_CUTLASS").is_some()),
+        !(target != "120a" && std::env::var_os("MEMRA_CUTLASS").is_some()),
         "MEMRA_CUTLASS is sm_120a-only and cannot be enabled for this CUDA architecture"
     );
-    let gencode = format!("arch=compute_{cuda_arch},code=sm_{cuda_arch}");
+    assert!(
+        !(target != "120a" && std::env::var_os("MEMRA_DSV4_CUTLASS").is_some()),
+        "MEMRA_DSV4_CUTLASS is sm_120a-only and cannot be enabled for this CUDA architecture"
+    );
+    let gencode = format!("arch=compute_{target},code=sm_{target}");
     if portable {
         println!("cargo:rustc-cfg=memra_portable_cuda");
     }
@@ -283,9 +303,11 @@ fn main() {
     if cuda_arch == "100a" {
         println!("cargo:rustc-cfg=memra_sm100_tcgen05");
     }
-    // Runtime arch guard reads this (Engine::new): fatbins are single-arch SASS, so the
-    // engine verifies the device's compute capability matches the built arch at init.
+    // MEMRA_BUILT_CUDA_ARCH is the policy family every arch-keyed default reads.
+    // MEMRA_BUILT_CUDA_TARGET is the exact SASS target: the runtime arch guard (Engine::new)
+    // reads it, because the fatbins are single-arch SASS and load on one compute capability.
     println!("cargo:rustc-env=MEMRA_BUILT_CUDA_ARCH={cuda_arch}");
+    println!("cargo:rustc-env=MEMRA_BUILT_CUDA_TARGET={target}");
 
     for (src, env) in [
         ("cu/kernels.cu", "MEMRA_ENGINE_FATBIN"),

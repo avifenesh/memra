@@ -1,6 +1,6 @@
 // memra Phase-0 spine probe.
 // Proves the entire tech-stack assumption end-to-end on this exact box:
-//   cargo -> build.rs -> nvcc (-gencode compute_120a,sm_120a) -> fatbin
+//   cargo -> build.rs -> nvcc (-gencode compute_120a,sm_120a, or 121a on a GB10) -> fatbin
 //   -> cudarc loads module -> launches custom kernels -> correct readback.
 // Green here = the Rust + cudarc + raw-.cu kernel stack is validated empirically, not on faith.
 
@@ -18,7 +18,13 @@ fn main() -> Result<(), DriverError> {
     let sms = ctx.attribute(A::CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT)?;
     println!("device: {}", ctx.name()?);
     println!("compute capability: {cc_major}.{cc_minor}  SMs: {sms}");
-    assert_eq!((cc_major, cc_minor), (12, 0), "expected sm_120");
+    let target = env!("MEMRA_PROBE_CUDA_TARGET");
+    let expected = if target == "121a" { (12, 1) } else { (12, 0) };
+    assert_eq!(
+        (cc_major, cc_minor),
+        expected,
+        "this probe was built for sm_{target}; rebuild with MEMRA_CUDA_ARCH matching the device"
+    );
 
     // --- Load the fatbin module built by build.rs (File variant -> cuModuleLoad accepts fatbin) ---
     let module = ctx.load_module(Ptx::from_file(env!("MEMRA_FATBIN")))?;
