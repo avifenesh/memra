@@ -1,0 +1,7 @@
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+loaded qwen35 (64 layers); steps=128 reps=7 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 1622016 ml_len 0 -> 6336 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 1622016 -> 3244032 ml_len 6336 -> 12672 (retired kept, zero=false)
+POOLED [8, 8] R=16: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (2 sessions)
+POOLED-TIME [8, 8] depth=2048: serial 161.827 ms, pooled 138.124 ms, 1.17x (median of 7)
+gguf-pooled-8,8 rc=0
