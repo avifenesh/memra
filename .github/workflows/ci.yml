@@ -25,6 +25,15 @@ concurrency:
   group: ci-full-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+env:
+  # CI compiles and tests with Cargo's default release optimization (thin-local LTO,
+  # 16 codegen units). The workspace release profile is fat LTO with one codegen unit;
+  # those bytes are built and checked by release qualification (tools/qualify-release.py
+  # admits no CARGO_PROFILE_* variable). Fat LTO tripled the hosted build job for no
+  # change in any result: docs/decisions/RELEASE-PROFILE.md.
+  CARGO_PROFILE_RELEASE_LTO: "false"
+  CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+
 jobs:
   # ── change class ────────────────────────────────────────────────────────────────────────────
   changes:
