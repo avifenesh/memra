@@ -1,0 +1,8 @@
+21:37:54 start q27-memra-gguf-mtpmask-k2-gb10-b base=http://127.0.0.1:8091 model=q38 node=gb10-b
+21:39:18 warm {"size": 8192, "users": 1, "cold_max_s": 11.4, "turn256": [0.47, 0.47]} {"size": 32768, "users": 1, "cold_max_s": 49.36, "turn256": [0.64, 0.64]} 
+22:03:52 cell c4 {"arm": "q27-memra-gguf-mtpmask-k2-gb10-b", "users": 4, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 18582, "wall_s": 4
+22:09:11 cell c8 {"arm": "q27-memra-gguf-mtpmask-k2-gb10-b", "users": 8, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 18582, "wall_s": 3
+22:14:00 cell c16 {"arm": "q27-memra-gguf-mtpmask-k2-gb10-b", "users": 16, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 18582, "wall_s": 
+22:18:44 cell c32 {"arm": "q27-memra-gguf-mtpmask-k2-gb10-b", "users": 32, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 18582, "wall_s": 
+MemAvailable min 34.40 GiB, median 56.91 GiB over 2438 s
+22:18:44 end

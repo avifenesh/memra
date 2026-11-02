@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs ON spark-cb33: W4A8 (default) vs F8F4 (MEMRA_MMQ_F8F4=1) prefill rate on GB10, both orders,
+# Runs ON gb10-b: W4A8 (default) vs F8F4 (MEMRA_MMQ_F8F4=1) prefill rate on GB10, both orders,
 # plus last-row logits for each arm. Usage: BIN=... TOKENS=8192 f8f4-pp.sh
 set -u
 BIN=${BIN:?bin}; TOK=${TOKENS:-8192}
