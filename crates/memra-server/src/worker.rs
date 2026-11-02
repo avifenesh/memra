@@ -31213,30 +31213,44 @@ pub fn run(
             }
             let mut dspark_phase_captures: Vec<(usize, memra_engine::spec::SpecBoundaryCapture)> =
                 Vec::new();
-            // POOLED MTP COHORTS (lane/batch-spec): same-model continuation-burst MTP sessions
-            // run their bursts in lockstep with one shared verify forward per round. Their
-            // results feed the per-session handling below exactly as a serial step's would.
+            // POOLED COHORTS (lane/batch-spec): same-model continuation-burst MTP sessions, and
+            // same-model DFlash2 (dspark) sessions, run their bursts in lockstep with shared
+            // verify forwards per round. Their results feed the per-session handling below
+            // exactly as a serial step's would.
             let mut pooled_steps: HashMap<usize, (SpecStepResult, f32)> = HashMap::new();
             {
-                let mut cohorts: Vec<(String, Vec<usize>)> = Vec::new();
+                // (model, dspark cohort?, members)
+                let mut cohorts: Vec<(String, bool, Vec<usize>)> = Vec::new();
                 for &i in &spec_order {
                     let s = &active[i];
-                    if finished.contains(&i) || !spec_pool_candidate(s, &loaded[&s.model]) {
+                    if finished.contains(&i) {
                         continue;
                     }
-                    match cohorts.iter_mut().find(|(m, _)| *m == s.model) {
-                        Some((_, v)) => v.push(i),
-                        None => cohorts.push((s.model.clone(), vec![i])),
+                    let lm = &loaded[&s.model];
+                    let dspark = dspark_pool_candidate(s, lm, &dspark_drafts);
+                    if !dspark && !spec_pool_candidate(s, lm) {
+                        continue;
+                    }
+                    match cohorts
+                        .iter_mut()
+                        .find(|(m, k, _)| *m == s.model && *k == dspark)
+                    {
+                        Some((_, _, v)) => v.push(i),
+                        None => cohorts.push((s.model.clone(), dspark, vec![i])),
                     }
                 }
-                for (_, cohort) in cohorts.into_iter().filter(|(_, v)| v.len() >= 2) {
-                    // Engagement receipt, once per cohort size (the dead-arm lesson).
+                for (_, dspark, cohort) in cohorts.into_iter().filter(|(_, _, v)| v.len() >= 2) {
+                    // Engagement receipt, once per route and cohort size (the dead-arm lesson).
                     static SEEN: std::sync::atomic::AtomicU64 =
                         std::sync::atomic::AtomicU64::new(0);
+                    static SEEN_DSPARK: std::sync::atomic::AtomicU64 =
+                        std::sync::atomic::AtomicU64::new(0);
                     let bit = 1u64 << cohort.len().min(63);
-                    if SEEN.fetch_or(bit, std::sync::atomic::Ordering::Relaxed) & bit == 0 {
+                    let seen = if dspark { &SEEN_DSPARK } else { &SEEN };
+                    if seen.fetch_or(bit, std::sync::atomic::Ordering::Relaxed) & bit == 0 {
                         eprintln!(
-                            "[spec-pool] pooled MTP cohort engaged: {} sessions (model {})",
+                            "[spec-pool] pooled {} cohort engaged: {} sessions (model {})",
+                            if dspark { "DFlash2" } else { "MTP" },
                             cohort.len(),
                             active[cohort[0]].model
                         );
@@ -31250,13 +31264,23 @@ pub fn run(
                     let mut out = Vec::new();
                     let guarded =
                         guard_request(&engine, &ids.join(","), &route, "pooled spec step", || {
-                            out = step_spec_pooled(
-                                &engine,
-                                &loaded,
-                                &mut active,
-                                &cohort,
-                                &mut spec_metrics,
-                            );
+                            out = if dspark {
+                                step_dspark_pooled(
+                                    &engine,
+                                    &loaded,
+                                    &dspark_drafts,
+                                    &mut active,
+                                    &cohort,
+                                )
+                            } else {
+                                step_spec_pooled(
+                                    &engine,
+                                    &loaded,
+                                    &mut active,
+                                    &cohort,
+                                    &mut spec_metrics,
+                                )
+                            };
                             Ok(())
                         });
                     let ms = started.elapsed().as_secs_f32() * 1000.0;
@@ -41982,6 +42006,120 @@ fn dspark_burst_post(
         return Ok(false);
     }
     Ok(true)
+}
+
+/// A session that may join this tick's pooled dspark cohort: a DFlash2 session on a
+/// CONTINUATION burst (prompt and any resume suffix fully primed, no prime walker in flight,
+/// room left in its request). Prime and resume bursts keep the serial per-session step.
+fn dspark_pool_candidate(
+    s: &Session,
+    lm: &LoadedModel,
+    dspark_drafts: &std::collections::HashMap<String, memra_engine::dflash::DflashDraft>,
+) -> bool {
+    s.dspark_on
+        && s.dspark.is_some()
+        && s.dspark_prime.is_none()
+        && s.prefill_done
+        && s.prefill_queue.is_empty()
+        && !s.prime_service.pending
+        && s.constraint.is_none()
+        && s.vision.is_none()
+        && !choice_waiting(s)
+        && s.budget > s.generated.len()
+        && dspark_drafts
+            .get(&s.model)
+            .is_some_and(|d| d.dflash2.is_some())
+        && lm.model.dspark_pool_capable()
+}
+
+/// POOLED DSPARK COHORT (lane/batch-spec step 5): run the continuation bursts of several
+/// same-model DFlash2 sessions in LOCKSTEP so each round's verifies share pooled target
+/// forwards (`dspark_spec_sessions_pooled`). Each member runs the exact burst plan, emission
+/// and post-burst accounting `step_dspark_spec` runs for it alone (`dspark_burst_plan` /
+/// `DsparkBurstEmit` / `dspark_burst_post`), so per-session streams are byte-identical to the
+/// serial path; only the verify forward is shared. Returns `(active index, step result)` for
+/// every member, in member order.
+fn step_dspark_pooled(
+    engine: &Engine,
+    loaded: &HashMap<String, LoadedModel>,
+    dspark_drafts: &std::collections::HashMap<String, memra_engine::dflash::DflashDraft>,
+    active: &mut [Session],
+    cohort: &[usize],
+) -> Vec<(usize, SpecStepResult)> {
+    let model = active[cohort[0]].model.clone();
+    let lm = &loaded[&model];
+    let mut results: Vec<(usize, SpecStepResult)> = Vec::new();
+    let Some(d) = dspark_drafts.get(&model) else {
+        for &i in cohort {
+            results.push((
+                i,
+                Err("dspark spec session with no attached drafter (admission gate failed)".into()),
+            ));
+        }
+        return results;
+    };
+    let mut members: Vec<(usize, &mut Session)> = active
+        .iter_mut()
+        .enumerate()
+        .filter(|(i, _)| cohort.contains(i))
+        .collect();
+    let mut plans: Vec<(usize, usize, usize)> = Vec::with_capacity(members.len());
+    let mut emits: Vec<DsparkBurstEmit<'_>> = Vec::with_capacity(members.len());
+    for (_, s) in members.iter_mut() {
+        let (burst_target, request_room) = dspark_burst_plan(s, s.budget - s.generated.len());
+        let rounds_before = s
+            .dspark
+            .as_ref()
+            .expect("pool candidates hold a session")
+            .rounds;
+        plans.push((burst_target, request_room, rounds_before));
+        emits.push(DsparkBurstEmit::new(lm, s, request_room));
+    }
+    let outcomes = {
+        let mut reqs: Vec<memra_engine::dflash::DsparkPooledReq<'_>> = Vec::new();
+        for (((_, s), emit), &(burst_target, request_room, _)) in
+            members.iter_mut().zip(emits.iter_mut()).zip(&plans)
+        {
+            let Session {
+                dspark,
+                params,
+                model,
+                lane,
+                emission_clock,
+                tokens_emitted,
+                ..
+            } = &mut **s;
+            let lane = *lane;
+            let on_commit: Option<memra_engine::dflash::DsparkPooledHook<'_>> =
+                if emit.eager_first_token {
+                    Some(Box::new(move |slice: &[u32]| {
+                        emit.flush(slice, model, lane, emission_clock, tokens_emitted)
+                    }))
+                } else {
+                    None
+                };
+            reqs.push(memra_engine::dflash::DsparkPooledReq {
+                sess: dspark.as_mut().expect("pool candidates hold a session"),
+                burst_target,
+                request_room,
+                eos: &params.eos,
+                on_commit,
+            });
+        }
+        lm.model.dspark_spec_sessions_pooled(engine, d, reqs)
+    };
+    for ((((i, s), emit), (_, request_room, rounds_before)), outcome) in
+        members.iter_mut().zip(emits).zip(plans).zip(outcomes)
+    {
+        let r = match outcome {
+            Ok((burst, dr, ac)) => {
+                dspark_burst_post(s, emit, request_room, rounds_before, burst, dr, ac)
+            }
+            Err(err) => Err(err),
+        };
+        results.push((*i, r));
+    }
+    results
 }
 
 /// GLM5 SPEC per-tick step (lane/glm5-spec-routing, 2026-08-30): the glm5_next twin of

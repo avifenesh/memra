@@ -684,6 +684,21 @@ pub(crate) fn graph_launch_headroom_ok(e: &Engine) -> bool {
     }
 }
 
+/// Allocatable device bytes left above the admission's one-round transient floor
+/// (`CAPTURE_HEADROOM_FLOOR`, the same measured class): what a pooled dspark verify forward may
+/// spend beyond one serial round's needs. Admission charges each session's planes and ONE
+/// round's transients; the extra members of a pooled forward hold their checkpoints at the same
+/// time, which admission never charged. An unreadable device reads as no headroom (pool
+/// nothing; serial is the same bytes).
+pub(crate) fn pooled_verify_headroom(e: &Engine) -> usize {
+    match e.ctx().mem_get_info() {
+        Ok((free, _total)) => free
+            .saturating_add(e.pool_cached_bytes())
+            .saturating_sub(CAPTURE_HEADROOM_FLOOR),
+        Err(_) => 0,
+    }
+}
+
 /// One grep-stable suspension line per ROUTE (each call site holds its own
 /// process-lifetime `Once`): every captured-graph launch route below the floor names
 /// itself in the tag while keeping the same `graph replay suspended:` key the step37
@@ -2749,6 +2764,14 @@ pub(crate) struct PooledVerifySeg<'a> {
     pub(crate) cache: &'a mut Cache,
     pub(crate) tokens: &'a [u32],
     pub(crate) ckpt: Option<&'a mut VerifyCkpt>,
+}
+
+/// One dspark round's slice of a pooled verify (`dspark_verify_pooled`): its cache (with the
+/// round's tap sink armed), its verify rows, and whether to fill a stash checkpoint.
+pub(crate) struct DsparkPooledSeg<'a> {
+    pub(crate) cache: &'a mut Cache,
+    pub(crate) tokens: &'a [u32],
+    pub(crate) ckpt: bool,
 }
 
 /// A pooled verify's `[R, n_vocab]` logits and `[R, n_embd]` hidden stack (the
@@ -7388,10 +7411,15 @@ impl HybridModel {
     ///   pointer pair and one position per row, so rows of different sessions simply point at
     ///   different caches; launches split only where the fa split rung changes.
     ///
+    /// - DFlash drafter taps: a session with an armed `cache.dflash_taps` sink gets its rows'
+    ///   post-layer residuals copied into it after every tapped layer, as `dflash_tap` does in
+    ///   the per-session walk.
+    ///
     /// Byte identity with per-session verify is the contract; `decode-batch-bench --pooled`
     /// pins it bitwise against the per-session funnel. Returns `None` (nothing mutated) for a
-    /// shape v1 does not pool: another family, PP cuts, R > 16, a drafter tap armed, or a row
-    /// outside the seqs attention window. The caller then verifies per session.
+    /// shape v1 does not pool: another family, PP cuts, R > 16, a tap sink with a foreign
+    /// geometry, or a row outside the seqs attention window. The caller then verifies per
+    /// session.
     pub(crate) fn verify_pooled_dev(
         &self,
         e: &Engine,
@@ -7415,7 +7443,14 @@ impl HybridModel {
             && (1..=16).contains(&r_total)
             && segs.iter().all(|s| {
                 !s.tokens.is_empty()
-                    && s.cache.dflash_taps.is_none()
+                    && s.cache.dflash_taps.as_ref().is_none_or(|taps| {
+                        // An armed drafter sink takes this session's rows at its own row
+                        // offset, `dflash_tap`'s per-row copy form (never the prime's
+                        // table or 2-D arms).
+                        taps.hidden == n_embd
+                            && taps.base + s.tokens.len() <= taps.t
+                            && crate::qwen_prime_graph::current().is_none()
+                    })
                     && s.cache.pos + s.tokens.len() <= s.cache.max_ctx
             })
             && self.layers.iter().all(|l| match &l.mixer {
@@ -7467,6 +7502,7 @@ impl HybridModel {
                     self.pooled_fa_layer(e, il, &x, r_total, &pos, segs)?
                 }
             };
+            self.pooled_dflash_taps(e, il, &x, segs)?;
         }
         let mut hn = vbuf(e, r_total * n_embd)?;
         e.rms_norm(
@@ -7482,6 +7518,121 @@ impl HybridModel {
             s.cache.pos += s.tokens.len();
         }
         Ok(Some((logits, if spec_hpost() { hn } else { x })))
+    }
+
+    /// The pooled walk's drafter-tap write after layer `il`: each session's rows of the
+    /// stacked residual `x` land in its own armed sink, row by row, at the slot and row offset
+    /// `dflash_tap` uses in the per-session walk (the same copy of the same bytes).
+    fn pooled_dflash_taps(
+        &self,
+        e: &Engine,
+        il: usize,
+        x: &CudaSlice<f32>,
+        segs: &mut [PooledVerifySeg<'_>],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let r_total: usize = segs.iter().map(|s| s.tokens.len()).sum();
+        let mut r0 = 0usize;
+        for s in segs.iter_mut() {
+            let ts = s.tokens.len();
+            if let Some(taps) = s.cache.dflash_taps.as_mut()
+                && let Some(slot) = taps.layer_ids.iter().position(|&l| l == il)
+            {
+                let h = taps.hidden;
+                let n_taps = taps.layer_ids.len();
+                let base = taps.base;
+                let xv = e.view(x, r_total * h);
+                for r in 0..ts {
+                    let row = xv.slice((r0 + r) * h..(r0 + r + 1) * h);
+                    e.copy_view_into(&mut taps.buf, (base + r) * n_taps * h + slot * h, &row, h)?;
+                }
+            }
+            r0 += ts;
+        }
+        Ok(())
+    }
+
+    /// DSPARK POOLED VERIFY (lane/batch-spec step 5): one `verify_pooled_dev` forward over the
+    /// verify rows of several dspark rounds, each session's armed tap sink filled and, when
+    /// `ckpt` is set, its stash checkpoint filled for `dspark_commit_prefix`. Returns each
+    /// session's own `[t_i, n_vocab]` logits rows (bitwise the per-session
+    /// `dspark_verify_t_*` forward's) and checkpoint, or `None` (nothing mutated) when the
+    /// shape does not pool.
+    #[allow(clippy::type_complexity)] // allow: per-session (logits, checkpoint) pairs
+    pub(crate) fn dspark_verify_pooled(
+        &self,
+        e: &Engine,
+        segs: &mut [DsparkPooledSeg<'_>],
+    ) -> Result<Option<Vec<(CudaSlice<f32>, Option<DsparkVerifyCkpt>)>>, Box<dyn std::error::Error>>
+    {
+        let mut cks: Vec<Option<VerifyCkpt>> = segs
+            .iter()
+            .map(|s| s.ckpt.then(|| VerifyCkpt::new(self.layers.len())))
+            .collect();
+        let pooled = {
+            let mut psegs: Vec<PooledVerifySeg<'_>> = segs
+                .iter_mut()
+                .zip(cks.iter_mut())
+                .map(|(s, ck)| PooledVerifySeg {
+                    cache: &mut *s.cache,
+                    tokens: s.tokens,
+                    ckpt: ck.as_mut(),
+                })
+                .collect();
+            // The dspark verify embeds its host tokens through the host gather
+            // (`decode_step_t_core_stream` with no resident table).
+            self.verify_pooled_dev(e, &mut psegs, None)?
+        };
+        let Some((logits, _x)) = pooled else {
+            return Ok(None);
+        };
+        let n_vocab = self.output.out_features();
+        let mut out = Vec::with_capacity(segs.len());
+        let mut r0 = 0usize;
+        for (s, ck) in segs.iter().zip(cks) {
+            let t = s.tokens.len();
+            let mut l = e.uninit(t * n_vocab)?;
+            e.dtod_copy_view(&logits.slice(r0 * n_vocab..(r0 + t) * n_vocab), &mut l)?;
+            out.push((l, ck.map(DsparkVerifyCkpt)));
+            r0 += t;
+        }
+        Ok(Some(out))
+    }
+
+    /// Bytes one verify column adds to a `VerifyCkpt`: the (conv, ssm) state copy of every
+    /// linear layer (`pooled_linear_layer` / the t-parallel walk keep `t - 1` of them).
+    pub(crate) fn dspark_verify_ckpt_col_bytes(&self) -> usize {
+        self.layers
+            .iter()
+            .filter_map(|l| match &l.mixer {
+                Mixer::Linear(la) => {
+                    let g = la.geometry;
+                    let (d_state, num_k, num_v) = (
+                        g.key_head_dim as usize,
+                        g.key_heads as usize,
+                        g.value_heads as usize,
+                    );
+                    let conv_dim = d_state * num_k * 2 + g.value_head_dim as usize * num_v;
+                    let conv_words = conv_dim * (g.conv_kernel as usize - 1);
+                    Some((conv_words + d_state * d_state * num_v) * std::mem::size_of::<f32>())
+                }
+                _ => None,
+            })
+            .sum()
+    }
+
+    /// Whether this model's dspark serving rounds may share pooled verify forwards
+    /// (`dspark_spec_sessions_pooled`): the qwen35 t-parallel verify family that
+    /// `verify_pooled_dev` mirrors, no PP cuts, and not the rowwise verify rollback seam (the
+    /// pooled walk mirrors the t-parallel arm).
+    pub fn dspark_pool_capable(&self) -> bool {
+        self.batched_serving_numeric_class()
+            && !self.sliding_gated_moe_batch_program()
+            && !self.gemma_batch_program()
+            && crate::pp::pp_cuts(self.layers.len()).is_none()
+            && spec_gdn_packed()
+            && dspark_fa_rows_on()
+            && self.cfg.m3.is_none()
+            && std::env::var("MEMRA_SPEC_VERIFY_ROWWISE").as_deref() != Ok("1")
     }
 
     /// Public pooled verify without checkpoints (benches and gates): sessions' caches and

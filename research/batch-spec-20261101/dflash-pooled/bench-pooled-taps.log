@@ -1,0 +1,75 @@
+== depth=40 shape=8,8
+loaded qwen35 (64 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+POOLED [8, 8] R=16: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (2 sessions)
+POOLED-TAPS [8, 8] layers=[5, 19, 33, 47, 61]: tap rows BITWISE EQUAL
+POOLED-TIME [8, 8] depth=40: serial 88.104 ms, pooled 78.390 ms, 1.12x (median of 5)
+== depth=40 shape=4,4,4,4
+loaded qwen35 (64 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+POOLED [4, 4, 4, 4] R=16: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (4 sessions)
+POOLED-TAPS [4, 4, 4, 4] layers=[5, 19, 33, 47, 61]: tap rows BITWISE EQUAL
+POOLED-TIME [4, 4, 4, 4] depth=40: serial 103.990 ms, pooled 80.359 ms, 1.29x (median of 5)
+== depth=40 shape=3,5,8
+loaded qwen35 (64 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+POOLED [3, 5, 8] R=16: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (3 sessions)
+POOLED-TAPS [3, 5, 8] layers=[5, 19, 33, 47, 61]: tap rows BITWISE EQUAL
+POOLED-TIME [3, 5, 8] depth=40: serial 97.069 ms, pooled 76.937 ms, 1.26x (median of 5)
+== depth=40 shape=2,6
+loaded qwen35 (64 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+POOLED [2, 6] R=8: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (2 sessions)
+POOLED-TAPS [2, 6] layers=[5, 19, 33, 47, 61]: tap rows BITWISE EQUAL
+POOLED-TIME [2, 6] depth=40: serial 61.106 ms, pooled 45.907 ms, 1.33x (median of 5)
+== depth=40 shape=1,7,8
+loaded qwen35 (64 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+POOLED [1, 7, 8] R=16: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (3 sessions)
+POOLED-TAPS [1, 7, 8] layers=[5, 19, 33, 47, 61]: tap rows BITWISE EQUAL
+POOLED-TIME [1, 7, 8] depth=40: serial 101.115 ms, pooled 77.923 ms, 1.30x (median of 5)
+== depth=200 shape=8,8
+loaded qwen35 (64 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+POOLED [8, 8] R=16: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (2 sessions)
+POOLED-TAPS [8, 8] layers=[5, 19, 33, 47, 61]: tap rows BITWISE EQUAL
+POOLED-TIME [8, 8] depth=200: serial 78.172 ms, pooled 70.379 ms, 1.11x (median of 5)
+== depth=200 shape=4,4,4,4
+loaded qwen35 (64 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+POOLED [4, 4, 4, 4] R=16: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (4 sessions)
+POOLED-TAPS [4, 4, 4, 4] layers=[5, 19, 33, 47, 61]: tap rows BITWISE EQUAL
+POOLED-TIME [4, 4, 4, 4] depth=200: serial 100.594 ms, pooled 75.296 ms, 1.34x (median of 5)
+== depth=200 shape=3,5,8
+loaded qwen35 (64 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+POOLED [3, 5, 8] R=16: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (3 sessions)
+POOLED-TAPS [3, 5, 8] layers=[5, 19, 33, 47, 61]: tap rows BITWISE EQUAL
+POOLED-TIME [3, 5, 8] depth=200: serial 91.927 ms, pooled 71.279 ms, 1.29x (median of 5)
+== depth=200 shape=2,6
+loaded qwen35 (64 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+POOLED [2, 6] R=8: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (2 sessions)
+POOLED-TAPS [2, 6] layers=[5, 19, 33, 47, 61]: tap rows BITWISE EQUAL
+POOLED-TIME [2, 6] depth=200: serial 55.033 ms, pooled 40.801 ms, 1.35x (median of 5)
+== depth=200 shape=1,7,8
+loaded qwen35 (64 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+POOLED [1, 7, 8] R=16: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (3 sessions)
+POOLED-TAPS [1, 7, 8] layers=[5, 19, 33, 47, 61]: tap rows BITWISE EQUAL
+POOLED-TIME [1, 7, 8] depth=200: serial 96.149 ms, pooled 70.961 ms, 1.35x (median of 5)
+== depth=2048 shape=8,8
+loaded qwen35 (64 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+POOLED [8, 8] R=16: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (2 sessions)
+POOLED-TAPS [8, 8] layers=[5, 19, 33, 47, 61]: tap rows BITWISE EQUAL
+POOLED-TIME [8, 8] depth=2048: serial 81.819 ms, pooled 76.766 ms, 1.07x (median of 5)
+== depth=2048 shape=4,4,4,4
+loaded qwen35 (64 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+POOLED [4, 4, 4, 4] R=16: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (4 sessions)
+POOLED-TAPS [4, 4, 4, 4] layers=[5, 19, 33, 47, 61]: tap rows BITWISE EQUAL
+POOLED-TIME [4, 4, 4, 4] depth=2048: serial 107.024 ms, pooled 79.770 ms, 1.34x (median of 5)
+== depth=2048 shape=3,5,8
+loaded qwen35 (64 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+POOLED [3, 5, 8] R=16: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (3 sessions)
+POOLED-TAPS [3, 5, 8] layers=[5, 19, 33, 47, 61]: tap rows BITWISE EQUAL
+POOLED-TIME [3, 5, 8] depth=2048: serial 97.797 ms, pooled 77.120 ms, 1.27x (median of 5)
+== depth=2048 shape=2,6
+loaded qwen35 (64 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+POOLED [2, 6] R=8: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (2 sessions)
+POOLED-TAPS [2, 6] layers=[5, 19, 33, 47, 61]: tap rows BITWISE EQUAL
+POOLED-TIME [2, 6] depth=2048: serial 57.952 ms, pooled 42.679 ms, 1.36x (median of 5)
+== depth=2048 shape=1,7,8
+loaded qwen35 (64 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+POOLED [1, 7, 8] R=16: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (3 sessions)
+POOLED-TAPS [1, 7, 8] layers=[5, 19, 33, 47, 61]: tap rows BITWISE EQUAL
+POOLED-TIME [1, 7, 8] depth=2048: serial 104.159 ms, pooled 79.798 ms, 1.31x (median of 5)

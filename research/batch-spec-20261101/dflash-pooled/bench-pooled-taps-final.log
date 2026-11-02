@@ -1,0 +1,30 @@
+== depth=40 shape=8,8
+loaded qwen35 (64 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+POOLED [8, 8] R=16: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (2 sessions)
+POOLED-TAPS [8, 8] layers=[5, 19, 33, 47, 61]: tap rows BITWISE EQUAL
+POOLED-TIME [8, 8] depth=40: serial 88.224 ms, pooled 79.574 ms, 1.11x (median of 5)
+== depth=40 shape=4,4,4,4
+loaded qwen35 (64 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+POOLED [4, 4, 4, 4] R=16: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (4 sessions)
+POOLED-TAPS [4, 4, 4, 4] layers=[5, 19, 33, 47, 61]: tap rows BITWISE EQUAL
+POOLED-TIME [4, 4, 4, 4] depth=40: serial 104.561 ms, pooled 81.125 ms, 1.29x (median of 5)
+== depth=40 shape=3,5,8
+loaded qwen35 (64 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+POOLED [3, 5, 8] R=16: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (3 sessions)
+POOLED-TAPS [3, 5, 8] layers=[5, 19, 33, 47, 61]: tap rows BITWISE EQUAL
+POOLED-TIME [3, 5, 8] depth=40: serial 97.410 ms, pooled 77.400 ms, 1.26x (median of 5)
+== depth=2048 shape=8,8
+loaded qwen35 (64 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+POOLED [8, 8] R=16: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (2 sessions)
+POOLED-TAPS [8, 8] layers=[5, 19, 33, 47, 61]: tap rows BITWISE EQUAL
+POOLED-TIME [8, 8] depth=2048: serial 83.389 ms, pooled 76.860 ms, 1.08x (median of 5)
+== depth=2048 shape=4,4,4,4
+loaded qwen35 (64 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+POOLED [4, 4, 4, 4] R=16: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (4 sessions)
+POOLED-TAPS [4, 4, 4, 4] layers=[5, 19, 33, 47, 61]: tap rows BITWISE EQUAL
+POOLED-TIME [4, 4, 4, 4] depth=2048: serial 112.302 ms, pooled 85.950 ms, 1.31x (median of 5)
+== depth=2048 shape=3,5,8
+loaded qwen35 (64 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+POOLED [3, 5, 8] R=16: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (3 sessions)
+POOLED-TAPS [3, 5, 8] layers=[5, 19, 33, 47, 61]: tap rows BITWISE EQUAL
+POOLED-TIME [3, 5, 8] depth=2048: serial 102.190 ms, pooled 82.408 ms, 1.24x (median of 5)
