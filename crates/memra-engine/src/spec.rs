@@ -3706,6 +3706,84 @@ struct SpecRoundOutcome {
     keep_going: bool,
 }
 
+/// Buffers an MTP burst's round state borrows that no session owns: the single-shot call's
+/// cache and draft scratch, and the device d2t map. It lives in the driver's frame, next to
+/// the `SpecBurst` that borrows it, and drops after it.
+#[derive(Default)]
+struct SpecBurstStore {
+    cache: Option<Cache>,
+    scratch: Option<MtpScratch>,
+    d2t_dev: Option<CudaSlice<u32>>,
+}
+
+/// A burst's sse-cadence sink: takes the newly committed tokens, returns whether to continue.
+type SpecCommitSink<'f> = &'f mut (dyn FnMut(&[u32]) -> bool + 'f);
+
+/// The session slots the burst tail writes: (committed, last_h, next_pred, sctr, uctr).
+type SpecSessTail<'a> = (
+    &'a mut Vec<u32>,
+    &'a mut Option<CudaSlice<f32>>,
+    &'a mut Option<u32>,
+    &'a mut u32,
+    &'a mut u32,
+);
+
+/// One MTP spec burst between its setup and its tail. `spec_burst_begin` builds it,
+/// `spec_burst_round` runs one round of it, `spec_burst_end` runs the tail and returns
+/// `generate_spec_inner2`'s value.
+///
+/// Lockstep contract, for a driver that holds several bursts at once:
+/// - Run a round only while `live()` holds, and stop driving a burst after a round returns
+///   false. `live()` is checked before the first round, so a burst can run zero rounds.
+/// - Call `spec_burst_end` exactly once per burst, after its last round. A round that
+///   returns `Err` abandons the burst: drop it without the tail, as the serial `?` does.
+/// - A burst's loop-carried state lives in the burst, its session and its store, so rounds
+///   of different bursts may interleave at round boundaries, driven from one thread; each
+///   burst's own device work keeps its serial order. The verify-graph pool is the
+///   exception: an armed burst (`rs.vg_guard`) holds the model's pool lock until it drops,
+///   so a second burst on the same model cannot begin meanwhile.
+/// - The pooled verify replaces only the verify between `spec_round_prepare` and
+///   `spec_round_finish`; the gate, the ROUND-STREAM arm and the rest of the round stay as
+///   `spec_burst_round` runs them. `rs.cfg` holds the fixed inputs (`max_new`, `vg_t_cap`,
+///   `embd_dev`, ...).
+struct SpecBurst<'a, 'c, 'f> {
+    rs: SpecRoundState<'a, 'c>,
+    /// sse-cadence sink; its verdict is `keep_going`.
+    on_commit: Option<SpecCommitSink<'f>>,
+    /// on_commit's last continue-verdict (admission yield): false ends the burst.
+    keep_going: bool,
+    // ROUND-STREAM arm (single-shot greedy only; inert buffers otherwise).
+    stream_graph: Option<cudarc::driver::CudaGraph>,
+    stream_ptrs: Option<CudaSlice<u64>>,
+    g_tokp2k: CudaSlice<u32>,
+    sb: crate::round_stream::StreamBufs,
+    t_v_s: usize,
+    // Session tail slots and the burst facts the tail reads.
+    sess_tail: Option<SpecSessTail<'a>>,
+    sess_draft_slot: Option<&'a mut Option<DraftGraphCtx>>,
+    sess_pending_slot: Option<&'a mut Option<u32>>,
+    prompt: &'a [u32],
+    carried_pending: Option<u32>,
+    continuation: bool,
+    // MEMRA_SPEC_SETUP_TRACE marks.
+    setup_trace: bool,
+    t_ent: std::time::Instant,
+    t_init: std::time::Duration,
+    t_cap: std::time::Duration,
+    t_fill: std::time::Duration,
+    // Setup device buffers the rounds never read. Held to the tail, as the single-function
+    // burst held them, so the rounds run against the same device memory.
+    _prompt_h: Option<CudaSlice<f32>>,
+    _h_seed0: CudaSlice<f32>,
+}
+
+impl SpecBurst<'_, '_, '_> {
+    /// The round loop's condition: on_commit said continue and `out` is short of max_new.
+    fn live(&self) -> bool {
+        self.keep_going && self.rs.out.len() < self.rs.cfg.max_new
+    }
+}
+
 /// Phase-timer mark (MEMRA_SPEC_PHASE): adds the wall since the last mark to `acc`.
 fn ph_mark(ph_t: &mut std::time::Instant, acc: &mut f64, on: bool) {
     if on {
@@ -12324,6 +12402,7 @@ impl HybridModel {
         })
     }
 
+    /// One MTP spec burst, serially: the setup, rounds while the burst is live, the tail.
     #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn generate_spec_inner2(
@@ -12333,19 +12412,63 @@ impl HybridModel {
         max_new: usize,
         k: usize,
         graph_draft: bool,
-        mut sess: Option<&mut SpecSession>,
+        sess: Option<&mut SpecSession>,
         sampling: Option<SpecSampling>,
-        mut constraint: Option<&mut dyn SpecConstraint>,
-        mut on_commit: Option<&mut dyn FnMut(&[u32]) -> bool>,
+        constraint: Option<&mut dyn SpecConstraint>,
+        on_commit: Option<&mut dyn FnMut(&[u32]) -> bool>,
         prime_split: Option<usize>,
     ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
+        let mut store = SpecBurstStore::default();
+        let mut burst = self.spec_burst_begin(
+            e,
+            prompt,
+            max_new,
+            k,
+            graph_draft,
+            sess,
+            sampling,
+            constraint,
+            on_commit,
+            prime_split,
+            &mut store,
+        )?;
+        // The loop condition is checked before the first round: a burst whose setup already
+        // filled max_new (or whose post-prime flush said stop) runs zero rounds.
+        let mut live = burst.live();
+        while live {
+            live = self.spec_burst_round(e, &mut burst)?;
+        }
+        self.spec_burst_end(e, burst)
+    }
+
+    /// The burst SETUP of `generate_spec_inner2`: prime, boundary token, init feed, draft
+    /// setup, draft-KV fill, round-stream and verify-graph arms, and the round state. Every
+    /// early exit is an error; a burst that has nothing to round is returned not-live.
+    /// `store` holds the buffers the round state borrows that no session owns.
+    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
+    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
+    fn spec_burst_begin<'a, 'c, 'f>(
+        &'a self,
+        e: &Engine,
+        prompt: &'a [u32],
+        max_new: usize,
+        k: usize,
+        graph_draft: bool,
+        mut sess: Option<&'a mut SpecSession>,
+        sampling: Option<SpecSampling>,
+        mut constraint: Option<&'a mut (dyn SpecConstraint + 'c)>,
+        mut on_commit: Option<&'f mut (dyn FnMut(&[u32]) -> bool + 'f)>,
+        prime_split: Option<usize>,
+        store: &'a mut SpecBurstStore,
+    ) -> Result<SpecBurst<'a, 'c, 'f>, Box<dyn std::error::Error>> {
         assert!(k >= 1, "k must be >= 1");
+        let SpecBurstStore {
+            cache: own_cache,
+            scratch: own_scratch,
+            d2t_dev: d2t_slot,
+        } = store;
         // sse-cadence flush cursor: everything in out[..flushed] has been handed to on_commit.
         let mut flushed = 0usize;
-        // admission yield (2026-08-06): on_commit's continue-verdict; false = end the burst
-        // at the next round boundary (same exit as max_new reached — the session tail runs).
-        // Initialized by the unconditional post-prime flush below.
-        let mut keep_going;
         let mtp = self
             .mtp
             .as_ref()
@@ -12409,8 +12532,6 @@ impl HybridModel {
         }) {
             return Err("prepared MTP prime does not match this suffix".into());
         }
-        let mut own_cache;
-        let mut own_scratch;
         // PREFIX-CACHE capture request threaded out of the session (lane/spec-prefix-cache):
         // (requested split, destination list). Single-shot per burst; fresh calls have none.
         let mut sess_capture: Option<(Option<usize>, &mut Vec<SpecBoundaryCapture>)> = None;
@@ -12427,7 +12548,7 @@ impl HybridModel {
         let (
             cache,
             scratch,
-            mut sess_tail,
+            sess_tail,
             mut sess_draft_slot,
             mut sess_pending_slot,
             sess_ckpt_slot,
@@ -12488,18 +12609,12 @@ impl HybridModel {
             None => {
                 // STAGE-OWNED KV (lane/pp2-spec 2026-08-06) — see `new_session`. Door shut =
                 // `Cache::new` verbatim.
-                own_cache = crate::pp::new_cache_planned(e, &self.cfg, &self.plan, max_ctx)?;
+                let own_cache = own_cache.insert(crate::pp::new_cache_planned(
+                    e, &self.cfg, &self.plan, max_ctx,
+                )?);
                 // Persistent scratch = max_ctx rows (~2KB/token quantized).
-                own_scratch = self.new_mtp_scratch(e, max_ctx)?;
-                (
-                    &mut own_cache,
-                    &mut own_scratch,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
+                let own_scratch = own_scratch.insert(self.new_mtp_scratch(e, max_ctx)?);
+                (own_cache, own_scratch, None, None, None, None, None)
             }
         };
         cache.ensure_usable("generate_spec")?;
@@ -12936,7 +13051,10 @@ impl HybridModel {
             // overhang so the chain's first append lands at slot base (== committed.len()).
             scratch.set_len(e, base)?;
         }
-        keep_going = flush_commit(&mut on_commit, &out, &mut flushed);
+        // admission yield (2026-08-06): on_commit's continue-verdict; false = end the burst
+        // at the next round boundary (same exit as max_new reached — the session tail runs).
+        // Set by this unconditional post-prime flush, then by every round.
+        let keep_going = flush_commit(&mut on_commit, &out, &mut flushed);
         // INVARIANT at loop top: `last_token` is the most-recently-committed/emitted token, its
         // KV+recur state IS in `cache` (cache.pos = position right AFTER last_token), `last_pred`
         // is the greedy ARGMAX of the logits that predict the token FOLLOWING last_token, and
@@ -12946,7 +13064,7 @@ impl HybridModel {
         // Trimmed heads: q lives on the trimmed vocab; accept gathers use the TRIMMED index and
         // the residual scatters q into target-id space (q=-inf off-trim — the head cannot propose
         // those, so their residual mass is p(x), correct by construction).
-        let d2t_dev: Option<CudaSlice<u32>> = if sampled || crate::spec::spec_stream() {
+        *d2t_slot = if sampled || crate::spec::spec_stream() {
             match &mtp.d2t {
                 Some(map) => Some(e.htod_u32_v(map)?),
                 None => None,
@@ -12954,6 +13072,7 @@ impl HybridModel {
         } else {
             None
         };
+        let d2t_dev: &Option<CudaSlice<u32>> = d2t_slot;
         let q_full_buf: Option<CudaSlice<f32>> = None;
         // host Philox4x32-10 accept-test uniforms: module fn `host_u01` (shared with the
         // dspark sampled-admission walk); byte-identical to the closure it replaces.
@@ -13381,23 +13500,11 @@ impl HybridModel {
         // ROUND-STREAM buffers + ptr tables now live in the model-generic round_stream
         // module (extracted 2026-07-12; the gemma burst reuses them).
         let sb = crate::round_stream::StreamBufs::new(e, k, crate::spec::spec_stream_m())?;
-        let crate::round_stream::StreamBufs {
-            mut vtok_d,
-            mut brk_d,
-            mut pend_d,
-            last_pred_d,
-            mut pos_ctr,
-            mut pos_start_d,
-            mut ring_d,
-            acc_d: mut stream_acc,
-            m_rounds,
-            k: _,
-        } = sb;
         let stream_ptrs: Option<CudaSlice<u64>> = if stream_active {
             Some(crate::round_stream::kv_len_ptr_table(
                 e,
                 cache,
-                Some(&pos_ctr),
+                Some(&sb.pos_ctr),
             )?)
         } else {
             None
@@ -13557,7 +13664,7 @@ impl HybridModel {
             .map(|g| g.t_capacity())
             .unwrap_or(0);
         let graph_guard_noted = false;
-        let mut rs = SpecRoundState {
+        let rs = SpecRoundState {
             cfg: SpecRoundCfg {
                 k,
                 max_new,
@@ -13647,167 +13754,255 @@ impl HybridModel {
             ph_t,
             graph_guard_noted,
         };
-        while keep_going && rs.out.len() < max_new {
-            let Some(gate) = self.spec_round_gate(e, &mut rs) else {
-                break;
-            };
-            // ROUND-STREAM BURST: from round 1 (pending guaranteed by every non-replay arm),
-            // issue M rounds with zero readbacks, then drain the ring + reconcile mirrors.
-            if let (true, Some(sg), Some(ptrs)) = (
-                stream_active
-                    && rs.round >= 1
-                    && rs.pending.is_some()
-                    && gate.graph_round_ok
-                    // memra#659: M rounds of up to k+1 rows each, plus the tail's row, must
-                    // land inside the cache; otherwise this round takes the eager arm, whose
-                    // own guard above bounds one round.
-                    && rs.cache.pos + m_rounds * t_v_s < rs.cache.max_ctx,
-                &stream_graph,
-                &stream_ptrs,
-            ) {
-                let SpecRoundState {
-                    cache,
-                    scratch,
-                    dctx,
-                    out,
-                    flushed,
-                    round,
-                    total_drafted,
-                    total_accepted,
-                    last_token,
-                    pending,
-                    h_seed_buf,
-                    fill_prev,
-                    preds_d,
-                    snap,
-                    ..
-                } = &mut rs;
-                if debug_spec {
-                    static ONCE: std::sync::Once = std::sync::Once::new();
-                    ONCE.call_once(|| {
-                        eprintln!("[memra] ROUND-STREAM burst engaged (M={m_rounds} k={k})")
-                    });
-                }
-                e.set_i32_one(&mut pos_ctr, cache.pos as i32)?;
-                e.set_u32_one(&mut pend_d, pending.unwrap())?;
-                e.set_u32_one(&mut ring_d, 0)?; // ring count = 0 (writes element 0)
-                for _mi in 0..m_rounds {
-                    e.i32_copy_add(&pos_ctr, &mut pos_start_d, 0)?;
-                    cache.snapshot_into(e, snap)?; // device D2Ds, stream-ordered
-                    e.i32_copy_add(&pos_ctr, &mut scratch.kv.len_d, 0)?; // draft-KV rollback
-                    e.i32_copy_add(&pos_ctr, &mut dctx.g_pos, 1)?; // rope pos = pos + base
-                    e.u32_copy(&pend_d, &mut dctx.g_tok)?;
-                    e.copy_into(&mut dctx.g_seed, 0, h_seed_buf, n_embd)?;
-                    sg.launch()?;
-                    e.spec_assemble_verify(
-                        &g_tokp2k,
-                        &pend_d,
-                        d2t_dev.as_ref(),
-                        &mut vtok_d,
-                        &mut brk_d,
-                        p_min,
-                        k,
-                        pmin0,
-                    )?;
-                    let mut ck = VerifyCkpt::new(self.layers.len());
-                    let dummy = vec![0u32; t_v_s];
-                    let (tl_d, vx) = self.decode_step_t_core_stream(
-                        e,
-                        &dummy,
-                        0,
-                        cache,
-                        embd_dev,
-                        Some(&mut ck),
-                        Some((&vtok_d, &pos_ctr)),
-                        None,
-                        None,
-                    )?;
-                    for j in 0..t_v_s {
-                        e.argmax_token_device_col(&tl_d, j, n_vocab, preds_d, j)?;
-                    }
-                    e.spec_accept_greedy_dc(
-                        preds_d,
-                        &vtok_d,
-                        &last_pred_d,
-                        &brk_d,
-                        &mut stream_acc,
-                    )?;
-                    e.spec_seed_gather(&vx, fill_prev, &stream_acc, h_seed_buf, 1, n_embd)?;
-                    e.copy_into(fill_prev, 0, h_seed_buf, n_embd)?;
-                    self.commit_verified_prefix_stream(e, cache, snap, &ck, &stream_acc, 1, t_v_s)?;
-                    e.spec_rollback_stream(
-                        ptrs,
-                        &pos_start_d,
-                        &stream_acc,
-                        1,
-                        self.layers.len() + 1,
-                    )?;
-                    e.spec_ring_commit(&vtok_d, &stream_acc, &brk_d, &mut ring_d, &mut pend_d)?;
-                }
-                e.stream().synchronize()?;
-                let ring_h = e.dtoh_u32(&ring_d)?;
-                let cnt = ring_h[0] as usize;
-                for i in 0..cnt {
-                    if out.len() < max_new {
-                        out.push(ring_h[1 + i]);
-                    }
-                }
-                let pos_h = e.dtoh_i32(&pos_ctr)?[0] as usize;
-                for il in 0..self.layers.len() {
-                    if let Some(kvl) = cache.kv[il].as_mut() {
-                        kvl.len = pos_h;
-                    }
-                }
-                cache.pos = pos_h;
-                scratch.kv.len = pos_h;
-                *pending = Some(ring_h[cnt]); // last drained token = the live bonus
-                *last_token = ring_h[cnt];
-                *total_drafted += k * m_rounds; // upper bound (p-min breaks uncounted)
-                *total_accepted += cnt.saturating_sub(m_rounds);
-                if let Some(t) = sess_telem {
-                    // totals only — the burst's per-round accept counts stayed on device
-                    // (that is the point of the round-stream arm). pos_* untouched.
-                    t.record_totals(m_rounds, k * m_rounds, cnt.saturating_sub(m_rounds));
-                }
-                *round += m_rounds;
-                // sse-cadence: the drained ring is committed — flush it at burst-drain cadence.
-                keep_going = flush_commit(&mut on_commit, out, flushed);
-                continue;
+        Ok(SpecBurst {
+            rs,
+            on_commit,
+            keep_going,
+            stream_graph,
+            stream_ptrs,
+            g_tokp2k,
+            sb,
+            t_v_s,
+            sess_tail,
+            sess_draft_slot,
+            sess_pending_slot,
+            prompt,
+            carried_pending,
+            continuation,
+            setup_trace,
+            t_ent,
+            t_init,
+            t_cap,
+            t_fill,
+            _prompt_h: prompt_h,
+            _h_seed0: h_seed0,
+        })
+    }
+
+    /// One round of the burst's loop: gate, then either the inline ROUND-STREAM arm or
+    /// prepare, the target verify and finish. Returns whether the burst is still live (the
+    /// gate passed, on_commit said continue, and out is short of max_new). Call it only on a
+    /// live burst.
+    fn spec_burst_round(
+        &self,
+        e: &Engine,
+        burst: &mut SpecBurst<'_, '_, '_>,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        let Some(gate) = self.spec_round_gate(e, &mut burst.rs) else {
+            return Ok(false);
+        };
+        let SpecBurst {
+            rs,
+            on_commit,
+            keep_going,
+            stream_graph,
+            stream_ptrs,
+            g_tokp2k,
+            sb,
+            t_v_s,
+            ..
+        } = &mut *burst;
+        let t_v_s = *t_v_s;
+        let m_rounds = sb.m_rounds;
+        let crate::round_stream::StreamBufs {
+            vtok_d,
+            brk_d,
+            pend_d,
+            last_pred_d,
+            pos_ctr,
+            pos_start_d,
+            ring_d,
+            acc_d: stream_acc,
+            ..
+        } = sb;
+        let SpecRoundCfg {
+            k,
+            max_new,
+            n_vocab,
+            n_embd,
+            embd_dev,
+            d2t_dev,
+            p_min,
+            pmin0,
+            stream_active,
+            vg_t_cap,
+            sess_telem,
+            debug_spec,
+            ..
+        } = rs.cfg;
+        // ROUND-STREAM BURST: from round 1 (pending guaranteed by every non-replay arm),
+        // issue M rounds with zero readbacks, then drain the ring + reconcile mirrors.
+        if let (true, Some(sg), Some(ptrs)) = (
+            stream_active
+                && rs.round >= 1
+                && rs.pending.is_some()
+                && gate.graph_round_ok
+                // memra#659: M rounds of up to k+1 rows each, plus the tail's row, must
+                // land inside the cache; otherwise this round takes the eager arm, whose
+                // own guard above bounds one round.
+                && rs.cache.pos + m_rounds * t_v_s < rs.cache.max_ctx,
+            &*stream_graph,
+            &*stream_ptrs,
+        ) {
+            let SpecRoundState {
+                cache,
+                scratch,
+                dctx,
+                out,
+                flushed,
+                round,
+                total_drafted,
+                total_accepted,
+                last_token,
+                pending,
+                h_seed_buf,
+                fill_prev,
+                preds_d,
+                snap,
+                ..
+            } = &mut *rs;
+            if debug_spec {
+                static ONCE: std::sync::Once = std::sync::Once::new();
+                ONCE.call_once(|| {
+                    eprintln!("[memra] ROUND-STREAM burst engaged (M={m_rounds} k={k})")
+                });
             }
-            let mut prep = self.spec_round_prepare(e, &mut rs, gate)?;
-            let (tlogits_d, vx) = {
-                // The serial verify every non-fork round takes — the MTP route's
-                // verify-graph door. The pool is None unless MEMRA_SPEC_VERIFY_GRAPH armed
-                // a pool above, and then the walk replays the captured trunk instead of
-                // re-issuing it launch by launch. `graph_round_ok` is the round's
-                // headroom snapshot (see GRAPH_LAUNCH_MIN_FREE): below the floor the
-                // round declines the pool exactly like an over-cap round and rides the
-                // byte-identical eager walk — the `[spec]` suspension line above
-                // already named the round.
-                let vg_round = if prep.verify_tokens.len() <= vg_t_cap && prep.graph_round_ok {
-                    rs.vg_guard.as_mut().and_then(|g| g.as_mut())
-                } else {
-                    if let Some(g) = rs.vg_guard.as_mut().and_then(|g| g.as_mut()) {
-                        // The commit reads this flag to pick its arm; a round that declines
-                        // the pool must not inherit a stale `true` from the round before it.
-                        g.round_slab = false;
-                    }
-                    None
-                };
-                self.decode_step_t_core_vg(
+            e.set_i32_one(pos_ctr, cache.pos as i32)?;
+            e.set_u32_one(pend_d, pending.unwrap())?;
+            e.set_u32_one(ring_d, 0)?; // ring count = 0 (writes element 0)
+            for _mi in 0..m_rounds {
+                e.i32_copy_add(pos_ctr, pos_start_d, 0)?;
+                cache.snapshot_into(e, snap)?; // device D2Ds, stream-ordered
+                e.i32_copy_add(pos_ctr, &mut scratch.kv.len_d, 0)?; // draft-KV rollback
+                e.i32_copy_add(pos_ctr, &mut dctx.g_pos, 1)?; // rope pos = pos + base
+                e.u32_copy(pend_d, &mut dctx.g_tok)?;
+                e.copy_into(&mut dctx.g_seed, 0, h_seed_buf, n_embd)?;
+                sg.launch()?;
+                e.spec_assemble_verify(g_tokp2k, pend_d, d2t_dev, vtok_d, brk_d, p_min, k, pmin0)?;
+                let mut ck = VerifyCkpt::new(self.layers.len());
+                let dummy = vec![0u32; t_v_s];
+                let (tl_d, vx) = self.decode_step_t_core_stream(
                     e,
-                    &prep.verify_tokens,
-                    prep.pos,
-                    &mut *rs.cache,
+                    &dummy,
+                    0,
+                    cache,
                     embd_dev,
-                    prep.ckpt.as_mut(),
-                    vg_round,
-                )?
-            };
-            keep_going = self
-                .spec_round_finish(e, &mut rs, prep, tlogits_d, vx, &mut on_commit)?
-                .keep_going;
+                    Some(&mut ck),
+                    Some((&*vtok_d, &*pos_ctr)),
+                    None,
+                    None,
+                )?;
+                for j in 0..t_v_s {
+                    e.argmax_token_device_col(&tl_d, j, n_vocab, preds_d, j)?;
+                }
+                e.spec_accept_greedy_dc(preds_d, vtok_d, last_pred_d, brk_d, stream_acc)?;
+                e.spec_seed_gather(&vx, fill_prev, stream_acc, h_seed_buf, 1, n_embd)?;
+                e.copy_into(fill_prev, 0, h_seed_buf, n_embd)?;
+                self.commit_verified_prefix_stream(e, cache, snap, &ck, stream_acc, 1, t_v_s)?;
+                e.spec_rollback_stream(ptrs, pos_start_d, stream_acc, 1, self.layers.len() + 1)?;
+                e.spec_ring_commit(vtok_d, stream_acc, brk_d, ring_d, pend_d)?;
+            }
+            e.stream().synchronize()?;
+            let ring_h = e.dtoh_u32(ring_d)?;
+            let cnt = ring_h[0] as usize;
+            for i in 0..cnt {
+                if out.len() < max_new {
+                    out.push(ring_h[1 + i]);
+                }
+            }
+            let pos_h = e.dtoh_i32(pos_ctr)?[0] as usize;
+            for il in 0..self.layers.len() {
+                if let Some(kvl) = cache.kv[il].as_mut() {
+                    kvl.len = pos_h;
+                }
+            }
+            cache.pos = pos_h;
+            scratch.kv.len = pos_h;
+            *pending = Some(ring_h[cnt]); // last drained token = the live bonus
+            *last_token = ring_h[cnt];
+            *total_drafted += k * m_rounds; // upper bound (p-min breaks uncounted)
+            *total_accepted += cnt.saturating_sub(m_rounds);
+            if let Some(t) = sess_telem {
+                // totals only — the burst's per-round accept counts stayed on device
+                // (that is the point of the round-stream arm). pos_* untouched.
+                t.record_totals(m_rounds, k * m_rounds, cnt.saturating_sub(m_rounds));
+            }
+            *round += m_rounds;
+            // sse-cadence: the drained ring is committed — flush it at burst-drain cadence.
+            *keep_going = flush_commit(on_commit, out, flushed);
+            return Ok(burst.live());
         }
+        let mut prep = self.spec_round_prepare(e, rs, gate)?;
+        let (tlogits_d, vx) = {
+            // The serial verify every non-fork round takes — the MTP route's
+            // verify-graph door. The pool is None unless MEMRA_SPEC_VERIFY_GRAPH armed
+            // a pool above, and then the walk replays the captured trunk instead of
+            // re-issuing it launch by launch. `graph_round_ok` is the round's
+            // headroom snapshot (see GRAPH_LAUNCH_MIN_FREE): below the floor the
+            // round declines the pool exactly like an over-cap round and rides the
+            // byte-identical eager walk — the `[spec]` suspension line above
+            // already named the round.
+            let vg_round = if prep.verify_tokens.len() <= vg_t_cap && prep.graph_round_ok {
+                rs.vg_guard.as_mut().and_then(|g| g.as_mut())
+            } else {
+                if let Some(g) = rs.vg_guard.as_mut().and_then(|g| g.as_mut()) {
+                    // The commit reads this flag to pick its arm; a round that declines
+                    // the pool must not inherit a stale `true` from the round before it.
+                    g.round_slab = false;
+                }
+                None
+            };
+            self.decode_step_t_core_vg(
+                e,
+                &prep.verify_tokens,
+                prep.pos,
+                &mut *rs.cache,
+                embd_dev,
+                prep.ckpt.as_mut(),
+                vg_round,
+            )?
+        };
+        *keep_going = self
+            .spec_round_finish(e, rs, prep, tlogits_d, vx, on_commit)?
+            .keep_going;
+        Ok(burst.live())
+    }
+
+    /// The burst TAIL of `generate_spec_inner2`: the final flush, the stats lines, and the
+    /// session tail that leaves the session in the invariant the next burst expects.
+    fn spec_burst_end(
+        &self,
+        e: &Engine,
+        burst: SpecBurst<'_, '_, '_>,
+    ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
+        let SpecBurst {
+            rs,
+            mut on_commit,
+            mut sess_tail,
+            mut sess_draft_slot,
+            mut sess_pending_slot,
+            prompt,
+            carried_pending,
+            continuation,
+            setup_trace,
+            t_ent,
+            t_init,
+            t_cap,
+            t_fill,
+            ..
+        } = burst;
+        let SpecRoundCfg {
+            k,
+            max_new,
+            n_vocab,
+            embd_dev,
+            sp,
+            sampled,
+            spec_stats,
+            phase_on,
+            anatomy_on,
+            ..
+        } = rs.cfg;
         let SpecRoundState {
             cache,
             scratch,
@@ -16950,15 +17145,31 @@ mod ctx_edge_659_census {
     fn the_qwen_round_loop_opens_with_the_room_guard() {
         let src = include_str!("spec.rs");
         let body = &src[..src.find("mod ctx_edge_659_census").unwrap()];
-        let head = "while keep_going && rs.out.len() < max_new {";
-        assert_eq!(body.matches(head).count(), 1, "one round loop");
-        // The loop's first statement is the round gate, and a refused gate ends the burst.
-        let tail = after(body, head);
+        // The serial driver checks the loop condition before every round, the first included.
+        let driver = after(body, "    fn generate_spec_inner2(");
+        let driver = &driver[..driver.find("\n    }\n").unwrap()];
+        let live = driver
+            .find("let mut live = burst.live();")
+            .expect("entry check");
+        let lp = driver.find("while live {").expect("the round loop");
+        assert!(live < lp, "the entry check precedes the first round");
+        assert_eq!(
+            first_code_line(after(driver, "while live {")),
+            "live = self.spec_burst_round(e, &mut burst)?;"
+        );
+        assert!(body.contains("self.keep_going && self.rs.out.len() < self.rs.cfg.max_new"));
+        // The round's first statement is the round gate, and a refused gate ends the burst.
+        let head = "    fn spec_burst_round(";
+        assert_eq!(body.matches(head).count(), 1, "one round body");
+        let tail = after(
+            after(body, head),
+            "-> Result<bool, Box<dyn std::error::Error>> {",
+        );
         assert_eq!(
             first_code_line(tail),
-            "let Some(gate) = self.spec_round_gate(e, &mut rs) else {"
+            "let Some(gate) = self.spec_round_gate(e, &mut burst.rs) else {"
         );
-        assert_eq!(first_code_line(after(tail, "else {")), "break;");
+        assert_eq!(first_code_line(after(tail, "else {")), "return Ok(false);");
         // The gate's first check is the room guard, and it refuses the round.
         let gate = after(body, "    fn spec_round_gate(");
         let gate = &gate[..gate.find("\n    }\n").unwrap()];
