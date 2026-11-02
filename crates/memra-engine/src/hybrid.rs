@@ -3920,6 +3920,10 @@ pub struct HybridModel {
     /// verify->commit inside each round); single-engine contract like the draft graphs.
     /// Size policy: `crate::spec::dspark_vg_cap`.
     pub(crate) dspark_vgraphs: std::sync::Mutex<Option<crate::spec::DsparkVerifyGraphs>>,
+    /// Captured pooled forwards (lane/batch-spec v2b), keyed on the row structure, with the
+    /// persistent tables and snapshot slabs their bodies read. One per model, engine-thread
+    /// use only, like `dspark_vgraphs`.
+    pub(crate) pooled_graphs: std::sync::Mutex<Option<crate::spec::PooledGraphs>>,
     /// One lazily-sized grouped routed-expert prefill executor shared by every Step layer.
     ///
     /// The executor owns no checkpoint weights; each call supplies the current layer's resident
@@ -6404,6 +6408,7 @@ impl HybridModel {
             step35_aux,
             prime_slabs: std::sync::Mutex::new(std::collections::HashMap::new()),
             dspark_vgraphs: std::sync::Mutex::new(None),
+            pooled_graphs: std::sync::Mutex::new(None),
             step_grouped_prefill: std::sync::Mutex::new(StepEpGroupedPrefill::default()),
             step35_token_graph: std::sync::Mutex::new(None),
             hyper,

@@ -1,0 +1,87 @@
+### decode-batch-bench --reps 9 --unified 4,4 --plain 4 --ctx 256
+UNIFIED spec [4, 4] + plain 4 (R=12): BITWISE EQUAL (spec logits+hidden rows, plain draws [Some(342), Some(69), Some(362), Some(89)], plain rows, parked logits, follow-up steps)
+UNIFIED-GRAPH capture+launch spec [4, 4] + plain 4: BITWISE EQUAL vs the eager walk (logits, hidden, plain draws+rows, checkpoint columns, parked logits, follow-ups; pool replays so far 1)
+UNIFIED-GRAPH replay spec [4, 4] + plain 4: BITWISE EQUAL vs the eager walk (logits, hidden, plain draws+rows, checkpoint columns, parked logits, follow-ups; pool replays so far 2)
+UNIFIED-TIME spec [4, 4] + plain 4: per-session verifies + plain step 30.429 ms, pooled spec forward + plain step 24.186 ms, unified forward 25.052 ms (1.21x / 0.97x, median of 9)
+UNIFIED-GRAPH-TIME spec [4, 4] + plain 4: eager walk 23.616 ms (p10 23.311 p90 24.043), graph replay 23.516 ms (p10 23.238 p90 23.864), 1.004x (medians of 36, ABBA)
+rc=0
+### decode-batch-bench --reps 9 --unified 4,4 --plain 8 --kinds gtfph --ctx 2048
+UNIFIED spec [4, 4] + plain 8 (R=16): BITWISE EQUAL (spec logits+hidden rows, plain draws [Some(1020), Some(72532), Some(362), Some(89), None, Some(248046), Some(17120), Some(1894)], plain rows, parked logits, follow-up steps)
+UNIFIED-GRAPH capture+launch spec [4, 4] + plain 8: BITWISE EQUAL vs the eager walk (logits, hidden, plain draws+rows, checkpoint columns, parked logits, follow-ups; pool replays so far 1)
+UNIFIED-GRAPH replay spec [4, 4] + plain 8: BITWISE EQUAL vs the eager walk (logits, hidden, plain draws+rows, checkpoint columns, parked logits, follow-ups; pool replays so far 2)
+UNIFIED-TIME spec [4, 4] + plain 8: per-session verifies + plain step 37.424 ms, pooled spec forward + plain step 30.213 ms, unified forward 33.640 ms (1.11x / 0.90x, median of 9)
+UNIFIED-GRAPH-TIME spec [4, 4] + plain 8: eager walk 31.910 ms (p10 31.179 p90 32.304), graph replay 31.650 ms (p10 31.094 p90 32.368), 1.008x (medians of 36, ABBA)
+rc=0
+### decode-batch-bench --reps 9 --unified 4 --plain 12 --ctx 2048
+UNIFIED spec [4] + plain 12 (R=16): BITWISE EQUAL (spec logits+hidden rows, plain draws [Some(428), Some(72532), Some(362), Some(89), Some(28106), Some(27070), Some(248046), Some(1894), Some(59), Some(1047), Some(355), Some(7511)], plain rows, parked logits, follow-up steps)
+UNIFIED-GRAPH capture+launch spec [4] + plain 12: BITWISE EQUAL vs the eager walk (logits, hidden, plain draws+rows, checkpoint columns, parked logits, follow-ups; pool replays so far 1)
+UNIFIED-GRAPH replay spec [4] + plain 12: BITWISE EQUAL vs the eager walk (logits, hidden, plain draws+rows, checkpoint columns, parked logits, follow-ups; pool replays so far 2)
+UNIFIED-TIME spec [4] + plain 12: per-session verifies + plain step 35.040 ms, pooled spec forward + plain step 34.462 ms, unified forward 32.671 ms (1.07x / 1.05x, median of 9)
+UNIFIED-GRAPH-TIME spec [4] + plain 12: eager walk 32.427 ms (p10 31.742 p90 33.444), graph replay 32.027 ms (p10 31.114 p90 32.948), 1.012x (medians of 36, ABBA)
+rc=0
+### decode-batch-bench --reps 9 --unified 3,2 --plain 6 --kinds gtfph --ctx 40
+UNIFIED spec [3, 2] + plain 6 (R=11): BITWISE EQUAL (spec logits+hidden rows, plain draws [Some(263), Some(69), Some(362), Some(89), None, Some(13)], plain rows, parked logits, follow-up steps)
+UNIFIED-GRAPH capture+launch spec [3, 2] + plain 6: BITWISE EQUAL vs the eager walk (logits, hidden, plain draws+rows, checkpoint columns, parked logits, follow-ups; pool replays so far 0)
+UNIFIED-GRAPH replay spec [3, 2] + plain 6: BITWISE EQUAL vs the eager walk (logits, hidden, plain draws+rows, checkpoint columns, parked logits, follow-ups; pool replays so far 0)
+UNIFIED-GRAPH: the pool declined the shape (eager both times)
+UNIFIED-TIME spec [3, 2] + plain 6: per-session verifies + plain step 32.298 ms, pooled spec forward + plain step 24.792 ms, unified forward 25.661 ms (1.26x / 0.97x, median of 9)
+UNIFIED-GRAPH-TIME spec [3, 2] + plain 6: eager walk 24.226 ms (p10 23.960 p90 24.632), graph replay 24.201 ms (p10 23.921 p90 24.649), 1.001x (medians of 36, ABBA)
+rc=0
+### decode-batch-bench --reps 9 --unified 2,2,2,2 --plain 8 --ctx 200
+UNIFIED spec [2, 2, 2, 2] + plain 8 (R=16): BITWISE EQUAL (spec logits+hidden rows, plain draws [Some(342), Some(72532), Some(362), Some(89), Some(722), Some(14081), Some(220), Some(1894)], plain rows, parked logits, follow-up steps)
+UNIFIED-GRAPH capture+launch spec [2, 2, 2, 2] + plain 8: BITWISE EQUAL vs the eager walk (logits, hidden, plain draws+rows, checkpoint columns, parked logits, follow-ups; pool replays so far 0)
+UNIFIED-GRAPH replay spec [2, 2, 2, 2] + plain 8: BITWISE EQUAL vs the eager walk (logits, hidden, plain draws+rows, checkpoint columns, parked logits, follow-ups; pool replays so far 0)
+UNIFIED-GRAPH: the pool declined the shape (eager both times)
+UNIFIED-TIME spec [2, 2, 2, 2] + plain 8: per-session verifies + plain step 49.811 ms, pooled spec forward + plain step 29.665 ms, unified forward 32.615 ms (1.53x / 0.91x, median of 9)
+UNIFIED-GRAPH-TIME spec [2, 2, 2, 2] + plain 8: eager walk 30.871 ms (p10 30.324 p90 31.617), graph replay 30.966 ms (p10 30.206 p90 31.501), 0.997x (medians of 36, ABBA)
+rc=0
+### decode-batch-bench --reps 9 --unified 1 --plain 1 --ctx 2048
+UNIFIED spec [1] + plain 1 (R=2): BITWISE EQUAL (spec logits+hidden rows, plain draws [Some(428)], plain rows, parked logits, follow-up steps)
+UNIFIED-GRAPH capture+launch spec [1] + plain 1: BITWISE EQUAL vs the eager walk (logits, hidden, plain draws+rows, checkpoint columns, parked logits, follow-ups; pool replays so far 1)
+UNIFIED-GRAPH replay spec [1] + plain 1: BITWISE EQUAL vs the eager walk (logits, hidden, plain draws+rows, checkpoint columns, parked logits, follow-ups; pool replays so far 2)
+UNIFIED-TIME spec [1] + plain 1: per-session verifies + plain step 15.297 ms, pooled spec forward + plain step 15.313 ms, unified forward 8.901 ms (1.72x / 1.72x, median of 9)
+UNIFIED-GRAPH-TIME spec [1] + plain 1: eager walk 9.331 ms (p10 9.078 p90 9.735), graph replay 9.142 ms (p10 8.893 p90 9.611), 1.021x (medians of 36, ABBA)
+rc=0
+### decode-batch-bench --reps 9 --unified 4 --plain 3 --ctx 256
+UNIFIED spec [4] + plain 3 (R=7): BITWISE EQUAL (spec logits+hidden rows, plain draws [Some(315), Some(69), Some(271)], plain rows, parked logits, follow-up steps)
+UNIFIED-GRAPH capture+launch spec [4] + plain 3: BITWISE EQUAL vs the eager walk (logits, hidden, plain draws+rows, checkpoint columns, parked logits, follow-ups; pool replays so far 1)
+UNIFIED-GRAPH replay spec [4] + plain 3: BITWISE EQUAL vs the eager walk (logits, hidden, plain draws+rows, checkpoint columns, parked logits, follow-ups; pool replays so far 2)
+UNIFIED-TIME spec [4] + plain 3: per-session verifies + plain step 20.095 ms, pooled spec forward + plain step 19.956 ms, unified forward 14.395 ms (1.40x / 1.39x, median of 9)
+UNIFIED-GRAPH-TIME spec [4] + plain 3: eager walk 14.289 ms (p10 14.106 p90 14.721), graph replay 14.143 ms (p10 13.969 p90 14.754), 1.010x (medians of 36, ABBA)
+rc=0
+### decode-batch-bench --reps 9 --unified 2,2 --plain 4 --ctx 256
+UNIFIED spec [2, 2] + plain 4 (R=8): BITWISE EQUAL (spec logits+hidden rows, plain draws [Some(342), Some(69), Some(362), Some(89)], plain rows, parked logits, follow-up steps)
+UNIFIED-GRAPH capture+launch spec [2, 2] + plain 4: BITWISE EQUAL vs the eager walk (logits, hidden, plain draws+rows, checkpoint columns, parked logits, follow-ups; pool replays so far 1)
+UNIFIED-GRAPH replay spec [2, 2] + plain 4: BITWISE EQUAL vs the eager walk (logits, hidden, plain draws+rows, checkpoint columns, parked logits, follow-ups; pool replays so far 2)
+UNIFIED-TIME spec [2, 2] + plain 4: per-session verifies + plain step 27.690 ms, pooled spec forward + plain step 20.865 ms, unified forward 16.056 ms (1.72x / 1.30x, median of 9)
+UNIFIED-GRAPH-TIME spec [2, 2] + plain 4: eager walk 16.032 ms (p10 15.818 p90 16.471), graph replay 15.734 ms (p10 15.477 p90 16.236), 1.019x (medians of 36, ABBA)
+rc=0
+### decode-batch-bench --reps 9 --unified 4,4 --plain 0 --ctx 256
+UNIFIED spec [4, 4] + plain 0 (R=8): BITWISE EQUAL (spec logits+hidden rows, plain draws [], plain rows, parked logits, follow-up steps)
+UNIFIED-GRAPH capture+launch spec [4, 4] + plain 0: BITWISE EQUAL vs the eager walk (logits, hidden, plain draws+rows, checkpoint columns, parked logits, follow-ups; pool replays so far 1)
+UNIFIED-GRAPH replay spec [4, 4] + plain 0: BITWISE EQUAL vs the eager walk (logits, hidden, plain draws+rows, checkpoint columns, parked logits, follow-ups; pool replays so far 2)
+UNIFIED-TIME spec [4, 4] + plain 0: per-session verifies + plain step 20.606 ms, pooled spec forward + plain step 15.335 ms, unified forward 15.426 ms (1.34x / 0.99x, median of 9)
+UNIFIED-GRAPH-TIME spec [4, 4] + plain 0: eager walk 15.369 ms (p10 15.133 p90 15.683), graph replay 15.501 ms (p10 15.301 p90 15.758), 0.991x (medians of 36, ABBA)
+rc=0
+### decode-batch-bench --reps 9 --unified 3,4,2 --plain 0 --ctx 1024
+UNIFIED spec [3, 4, 2] + plain 0 (R=9): BITWISE EQUAL (spec logits+hidden rows, plain draws [], plain rows, parked logits, follow-up steps)
+UNIFIED-GRAPH capture+launch spec [3, 4, 2] + plain 0: BITWISE EQUAL vs the eager walk (logits, hidden, plain draws+rows, checkpoint columns, parked logits, follow-ups; pool replays so far 1)
+UNIFIED-GRAPH replay spec [3, 4, 2] + plain 0: BITWISE EQUAL vs the eager walk (logits, hidden, plain draws+rows, checkpoint columns, parked logits, follow-ups; pool replays so far 2)
+UNIFIED-TIME spec [3, 4, 2] + plain 0: per-session verifies + plain step 27.741 ms, pooled spec forward + plain step 19.130 ms, unified forward 19.761 ms (1.40x / 0.97x, median of 9)
+UNIFIED-GRAPH-TIME spec [3, 4, 2] + plain 0: eager walk 19.384 ms (p10 19.127 p90 19.867), graph replay 19.462 ms (p10 19.243 p90 19.978), 0.996x (medians of 36, ABBA)
+rc=0
+### decode-batch-bench --reps 9 --unified 4,4,4,4 --plain 0 --ctx 2048
+UNIFIED spec [4, 4, 4, 4] + plain 0 (R=16): BITWISE EQUAL (spec logits+hidden rows, plain draws [], plain rows, parked logits, follow-up steps)
+UNIFIED-GRAPH capture+launch spec [4, 4, 4, 4] + plain 0: BITWISE EQUAL vs the eager walk (logits, hidden, plain draws+rows, checkpoint columns, parked logits, follow-ups; pool replays so far 1)
+UNIFIED-GRAPH replay spec [4, 4, 4, 4] + plain 0: BITWISE EQUAL vs the eager walk (logits, hidden, plain draws+rows, checkpoint columns, parked logits, follow-ups; pool replays so far 2)
+UNIFIED-TIME spec [4, 4, 4, 4] + plain 0: per-session verifies + plain step 41.745 ms, pooled spec forward + plain step 30.356 ms, unified forward 33.094 ms (1.26x / 0.92x, median of 9)
+UNIFIED-GRAPH-TIME spec [4, 4, 4, 4] + plain 0: eager walk 33.591 ms (p10 31.888 p90 33.680), graph replay 34.118 ms (p10 32.505 p90 34.187), 0.985x (medians of 36, ABBA)
+rc=0
+### decode-batch-bench --reps 9 --unified 4,4 --plain 2 --ctx 256
+UNIFIED spec [4, 4] + plain 2 (R=10): BITWISE EQUAL (spec logits+hidden rows, plain draws [Some(342), Some(69)], plain rows, parked logits, follow-up steps)
+UNIFIED-GRAPH capture+launch spec [4, 4] + plain 2: BITWISE EQUAL vs the eager walk (logits, hidden, plain draws+rows, checkpoint columns, parked logits, follow-ups; pool replays so far 1)
+UNIFIED-GRAPH replay spec [4, 4] + plain 2: BITWISE EQUAL vs the eager walk (logits, hidden, plain draws+rows, checkpoint columns, parked logits, follow-ups; pool replays so far 2)
+UNIFIED-TIME spec [4, 4] + plain 2: per-session verifies + plain step 29.064 ms, pooled spec forward + plain step 23.214 ms, unified forward 21.792 ms (1.33x / 1.07x, median of 9)
+UNIFIED-GRAPH-TIME spec [4, 4] + plain 2: eager walk 21.665 ms (p10 20.704 p90 22.020), graph replay 21.680 ms (p10 20.749 p90 22.077), 0.999x (medians of 36, ABBA)
+rc=0
+done

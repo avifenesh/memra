@@ -170,11 +170,98 @@ Median end-to-end seconds by request class:
   (GB10-CR.md), so there rider rows are close to free. No GB10 receipt here: the Sparks were out
   of scope for this step.
 
+## 3. v2b: captured pooled forwards
+
+### What runs
+
+- **Pool** (`PooledGraphs`, on `HybridModel::pooled_graphs`). One CUDA graph per row structure
+  (`PooledGraphKey`): each segment's row count and whether it keeps a checkpoint, in stack order,
+  plus the attention rung. A graph serves every forward of that shape, whatever sessions it
+  carries. Everything session-scoped that the captured body reads is device data at a baked
+  address, refreshed before each replay:
+  - the input residual and the row positions;
+  - per segment and linear layer, the `[conv, ssm, alt]` state pointers;
+  - per attention layer and row, the `(k, v)` cache pointers;
+  - per segment slot and linear layer, the checkpoint snapshot slabs the scans write.
+- **Body**. The eager walk's own layer functions in graph mode (`PooledGraphIo`): table slices
+  instead of per-layer uploads, slab snapshots instead of per-forward buffers, and one attention
+  launch over every row sized at the rung (the dspark full-verify graph's sizing argument: the rung
+  sets stride and grid only, and per-row T_kv derives in-kernel from the positions). The body
+  refuses what one launch cannot express, so the per-row fallback is never captured.
+- **Replay bookkeeping** (`pooled_graph_forward`). After the launch, the host does what the eager
+  walk does inline: per segment, the parity swap of every linear layer (odd row count), the KV
+  len bump of every attention layer, the checkpoint columns copied out of the slabs (the same
+  copies the eager walk makes) and the `pos` bump.
+- **Policy**:
+  - Shapes the body cannot express stay eager: a row below the fa vec floor, rows on two split
+    steps, drafter taps (every DFlash2 round), more than 16 segments.
+  - A shape is captured on its second sighting. The first eager walk has loaded its kernels, and
+    a one-off shape never pays a capture.
+  - The capture runs without warmups (`capture_graph_retained_nowarm`), so it executes nothing on
+    live state.
+  - Before a capture: `capture_headroom_refusal` with the slab growth plus the body's widest
+    transients. Before each launch: `graph_launch_headroom_ok`.
+  - The pool freezes at 256 graphs. A slab growth drains the stream and drops the graphs, which
+    bake the slab addresses.
+  - A failed capture leaves its shape eager.
+- **Door**: `MEMRA_POOLED_GRAPH=1`, default off (see the verdict below).
+
+### Exactness (RTX 5090 Laptop, q9; graphs forced on in every cell below)
+
+1. **Graph vs eager walk** (`decode-batch-bench --unified`, raw `unified/v2b/bench-graph-cells.log`).
+   Spec segments keep checkpoints as in serving. Each cell runs the captured graph twice from
+   the restored states: the capture's first launch, then a pure replay. Both are compared bitwise
+   against the eager unified walk on logits, hidden rows, plain draws and rows, every checkpoint
+   column, parked logits and follow-up steps.
+   - 10 graph shapes: **BITWISE EQUAL** on both passes. They are 4,4+4; 4,4+8 (with a
+     host-sampled row); 4+12; 1+1; 4+3; 2,2+4; 4,4+2; and spec-only 4,4, 3,4,2 and 4,4,4,4.
+   - 2 cells the pool declines: 3,2+6 at depth 40 (below the vec floor) and 2,2,2,2+8 at depth
+     200 (rows on two split steps). They stay eager, also bitwise equal.
+   - The eager unified rows also match per-session verify + the plain step in all 12 cells.
+2. **Serial battery** on the graph-default build (`MEMRA_SPEC_GATE_MODEL=0`):
+   **BYTE-IDENTICAL** to `int-band` (`unified/v2b/compare-battery-band.txt`).
+3. **Served A/B, the same six boots as the speed table**:
+   - pool cell **14/14** identical to `pool-int-a` on all six (`unified/v2b/served-ab/compare-pool-cell.txt`);
+   - mixed cell **21/21** identical to the v1 reference on all six (`compare-mixed-cell.txt`).
+   - The graph boots logged 1-4 captured shapes per boot: spec cohorts, and 1-spec-plus-rider
+     shapes such as `[(4, true), (1, false), (1, false)]`.
+
+### Speed
+
+Per forward: eager walk vs graph replay from the same restored states, ABBA order, 36 pairs
+per shape (`UNIFIED-GRAPH-TIME` lines). The ratio is **0.985x to 1.021x**, with overlapping
+p10/p90 on every shape. Examples: 4,4+4 23.62 vs 23.52 ms; 1+1 9.33 vs 9.14 ms; 2,2+4 16.03 vs
+15.73 ms; 4,4,4,4 33.59 vs 34.12 ms.
+
+Served, v2a (eager) vs v2b (graph default), interleaved in both orders (v2a, v2b, v2b, v2a,
+v2a, v2b), N=3, fresh boot per run, pool cell and mixed cell per boot. GPU 82-86 C, SM
+1575-1770 MHz at run boundaries (`unified/v2b/served-ab/summary.txt`):
+
+| cell | c | v2a median | v2b median | ratio |
+|---|---:|---:|---:|---:|
+| mixed | 3 | 168.9 | 166.9 | 0.99x |
+| mixed | 4 | 195.6 | 194.4 | 0.99x |
+| mixed | 6 | 243.3 | 240.9 | 0.99x |
+| mixed | 8 | 252.9 | 252.7 | 1.00x |
+| pool | 2 | 164.2 | 163.8 | 1.00x |
+| pool | 4 | 172.3 | 172.7 | 1.00x |
+| pool | 8 | 177.6 | 176.9 | 1.00x |
+
+**Verdict: exact, and flat on this card.** A q9 pooled forward on the 5090 is GPU-bound at every
+shape served here: the host enqueues the eager walk faster than the device runs it, so
+removing launches buys nothing. The door stays default-off with one named missing gate, a GB10
+served A/B (ARM host, 27B, longer forwards). If GB10 is flat too, the door, the pool and the
+graph-mode layer branches are deleted.
+
 ## Binaries
 
-sha256 in `unified/{refactor,v2a}/binaries.sha256`. Reference: the 3cd42279ee build in
-`~/.cache/memra-batchspec-bins/int` (`memra-server` `bc1269892e63e678`). The v2a tree adds the
-`MEMRA_UNIFIED_STEP` read over the measured v2a binary. Its default is the measured behavior.
+sha256 in `unified/{refactor,v2a,v2b}/binaries.sha256`. Reference: the 3cd42279ee build in
+`~/.cache/memra-batchspec-bins/int` (`memra-server` `bc1269892e63e678`).
+
+- The v2a tree adds the `MEMRA_UNIFIED_STEP` read over the measured v2a binary. Its default is
+  the measured behavior.
+- The v2b tree flips the measured binary's graph default to opt-in. Every v2b receipt above ran
+  with graphs on.
 
 ## Checks (v2a tree)
 
@@ -183,3 +270,15 @@ targets): clean. Lib tests: memra-engine 676 pass, memra-server 1144 pass. One m
 in between failed `darklane::tests::repeated_stop_resume_has_fresh_acknowledgements_and_stopped_shutdown`
 on its 30 s guard with the child in state D, while builds were loading the box (load 12.8). The
 rerun passed; nothing in this lane touches that path.
+
+## Checks (v2b tree)
+
+fmt `--check`, `git diff --check`, the flags census, clippy `-D warnings` (memra-engine,
+memra-server, all targets): clean. Lib tests: memra-engine 676 pass, memra-server 1144 pass.
+The tree differs from the measured v2b binary by the default flip and one clippy type alias in
+the bench probe.
+
+The binary built from this tree (`unified/v2b/final/binaries.sha256`) ran the mixed cell twice:
+at its defaults (unified step on, graphs off), and with `MEMRA_UNIFIED_STEP=0`. Both runs are
+21/21 identical to the v1 reference (`unified/v2b/final/compare-mixed-cell.txt`). The default
+run logs the unified cohorts and no graph capture. The seam run logs neither.
