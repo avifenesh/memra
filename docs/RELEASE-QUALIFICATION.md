@@ -38,16 +38,23 @@ structure paths alone cannot show: the `*_stub.cu` units compile only for the `9
 only for the `120a` target, `wgmma_common.cuh` only for `90a`. Rules that need no device:
 
 - docs, tests, research receipts, the qualification metadata namespace;
-- CPU-only crates (tokenizer, sampling, reference, CLI) and CPU tooling;
+- CPU-only crates (CLI, SSRF guard) and CPU tooling. Host crates linked into the served
+  binaries (tokenizer, sampling, reference) are `numeric`: `memra_sampling::spec_stop` is
+  the speculative-decode stop rule;
 - diagnostic binaries outside the release battery;
-- comment-only edits of `.rs`/`.cu` files (every changed line is a `//` comment);
+- comment-only edits of `.rs`/`.cu` files: every changed line is a `//` comment. Blank
+  lines and a `//` line ending in a backslash count as code;
 - a non-crate path counts as a crate input when the CI include census
   (`tools/validation_plan.py`) says a crate reads it, so `docs/FLAGS.md` is `numeric`.
 
-A pack-local change (`model_packs/<pack>/`, `dsv4_*`, `mimo_*`, `glm5_*`) reaches only
-that pack. When the device battery runs none of the pack's models, the gate names it
-**UNCOVERED**: the pack's own gate is the evidence, as for the scoped battery in
-`AGENTS.md`. Kernels are never pack-local.
+A change inside `model_packs/<pack>/` reaches only that pack. When the device battery runs
+none of the pack's models, the gate names it **UNCOVERED**: the pack's own gate is the
+evidence, as for the scoped battery in `AGENTS.md`. Kernels and engine files are never
+pack-local, even when named for one family: shared paths call into `glm5_*` and others.
+
+The rules in force are the push base's, so a change cannot relax its own requirements
+(`push_gate`, path rules, package classes). A build target that is new in the head takes
+the head's row with `push_gate` forced on. A change to the rules is itself a `gate` cell.
 
 Where paths cannot tell, a commit can narrow the targets with trailers:
 
@@ -56,24 +63,29 @@ Impact-Targets: 121a
 Impact-Reason: the GB10 unified-memory arm; the 120a build is byte-identical
 ```
 
-The narrowing applies only when every commit in the pushed range declares targets, and
-each one needs a reason. The gate prints the reasons. The daily regression still runs every
+The narrowing applies only when every commit in the pushed range declares targets (evidence
+commits are ignored), and each one needs a reason. It never narrows `build`, `gate` or
+unknown files. The gate prints the reasons. The daily regression still runs every
 device, so a wrong declaration fails there.
 
 Evidence per target (`tools/cell_evidence.py`):
 
 | cell scope | evidence |
 |---|---|
-| `kernel`, `build`, `numeric`, `defaults`, `gate` | device battery: `kernel-check`, calibrated `run-gen` argmax and `run-spec` K=1..8 on the device roster |
+| `kernel`, `build`, `numeric`, `defaults` | device battery: `kernel-check`, calibrated `run-gen` argmax and `run-spec` K=1..8 on the device roster |
 | `serving` | the battery plus `tools/serve-smoke.sh` |
-| `perf` | `run-gen` decode A/B against an ancestor, A B B A A B per roster model |
+| `perf` | `run-gen` decode A/B against the push base, A B B A A B for every roster model |
+| `gate` | all three: a changed gate has to run |
+| `defaults` on a line naming a card | battery and perf from that card's device class |
 
 A device counts for the target its compute capability maps to: the RTX 5090 and the RTX
-PRO 6000 both count for `sm_120a`. The perf verdict is REGRESSED when every candidate run
+PRO 6000 both count for `sm_120a`. A default keyed on a card name (`RTX PRO 6000`,
+`RTX 5090`, `GB10`) is the exception: that card has to run it. The perf verdict is REGRESSED when every candidate run
 is slower than every base run. With three runs per arm that complete separation has a
 one-sided exact probability of 1/20 under no difference. A reviewed, intended regression
-is recorded with `--accept-regression '<why>'`. A target the base cannot build has no
-baseline; its perf record carries absolute rates.
+is recorded with `--accept-regression '<why>'`. The baseline must be the push base
+itself, not an older ancestor or a commit inside the pushed range. A target the base cannot
+build has no baseline; its perf record carries absolute rates.
 
 Targets with `push_gate = false` (today `sm_100a`, `sm_90a`, `sm_89`: no owned device in
 reach on every push) are reported as DEFERRED to their device's daily run and the pre-tag

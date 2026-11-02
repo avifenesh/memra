@@ -19,15 +19,21 @@
 #   numeric   the model numeric program shared by served models (engine, plan, KV format)
 #   serving   scheduler, admission, routes and serving policy
 #   defaults  device-keyed defaults (detected from diff content, see [content])
-#   gate      the qualification battery, its coverage manifests and this classifier
+#   gate      the qualification battery, its helpers and manifests, the gate code and rules
 #   perf      performance evidence; added when a matched rule or content says perf = true
 # Classes that produce no cell: docs, tests, research, cpu, diagnostic, comment.
 #
 # Evidence per cell (tools/cell_evidence.py):
-#   any of kernel/build/numeric/defaults/gate -> device battery (kernel-check, run-gen
-#                                                argmax, run-spec K=1..8 on the roster)
-#   serving                                   -> device battery + serve-smoke
-#   perf                                      -> interleaved A/B against an ancestor
+#   any of kernel/build/numeric/defaults -> device battery (kernel-check, run-gen argmax,
+#                                           run-spec K=1..8 on the roster)
+#   serving                              -> device battery + serve-smoke
+#   perf                                 -> interleaved A/B against the push base
+#   gate                                 -> all three: a gate change runs the changed gate
+#   defaults naming a card               -> battery + perf from that card's device class
+#
+# Which rules apply: the push base's rules (the rules in force), so a change cannot relax
+# its own requirements. A target new in the head gets the head's row with push_gate forced
+# on. Impact-Targets trailers never narrow build, gate or unknown files.
 
 schema = "memra-change-impact-v1"
 
@@ -107,11 +113,13 @@ memra-gguf = "numeric"
 memra-server = "serving"
 memra-lanes = "serving"
 memra-tier = "serving"
-memra-tokenizer = "cpu"
-memra-sampling = "cpu"
+# Linked into the served binaries: device-independent code, but it changes served tokens
+# (memra_sampling::spec_stop is the speculative-decode stop rule), so the battery sees it.
+memra-tokenizer = "numeric"
+memra-sampling = "numeric"
+memra-reference = "numeric"
+memra-validate = "gate"
 memra-net-guard = "cpu"
-memra-validate = "cpu"
-memra-reference = "cpu"
 memra-cli = "cpu"
 memra-probe = "diagnostic"
 
@@ -120,9 +128,9 @@ perf_packages = ["memra-engine", "memra-runtime", "memra-kv", "memra-server", "m
 
 # ---- model packs ---------------------------------------------------------------------
 # A pack is COVERED when the device battery runs one of its models (by roster id).
-# A pack-local Rust change to an uncovered pack produces no device cell: the battery cannot
+# A change inside an uncovered pack's directory produces no device cell: the battery cannot
 # see it, so the gate names it as UNCOVERED and its own pack gate stays the evidence
-# (AGENTS.md scoped battery). Kernels are never pack-local: any .cu change needs the battery.
+# (AGENTS.md scoped battery). Kernels and engine code are never pack-local.
 
 [pack.qwen35]
 roster = ["qwen/qwen3.8-27b"]
@@ -149,9 +157,9 @@ why = "qualification metadata namespace (excluded from source inputs)"
 
 # --- the gate itself: a change to what is required needs the battery it requires -----
 [[rule]]
-pattern = '^tools/(change-impact\.toml|change_impact\.py|cell_evidence\.py|qualify-release\.py|release_qualification\.py|release-battery\.sh|release-coverage\.py|release-roster\.tsv|argmax-margin-gate\.sh|serve-smoke\.sh|resolve-physical-gpu\.py|kernel-check-[a-z0-9]+\.cells|hooks/pre-push)$'
+pattern = '^tools/(change-impact\.toml|change_impact\.py|cell_evidence\.py|qualify-release\.py|release_qualification\.py|release_inputs\.py|release_input_view\.py|check_hardware_gate\.py|validation_plan\.py|validation_inputs\.json|release-battery\.sh|release-coverage\.py|release-roster\.tsv|argmax-margin-gate\.sh|serve-smoke\.sh|cache-meter-gate\.py|q35-cold-mixed-gate\.py|port-guard\.sh|chunk-invariance-gate\.sh|qualify-model-device-memory\.py|resolve-physical-gpu\.py|kernel-check-[a-z0-9]+\.cells|hooks/pre-push)$'
 class = "gate"
-why = "qualification battery, its coverage or the impact rules"
+why = "qualification battery, its helpers and coverage, the impact rules or the gate code"
 
 [[rule]]
 pattern = '^crates/memra-engine/src/bin/(kernel_check|run_gen|run_spec|argmax_margin_probe|tok_parity)\.rs$'
@@ -252,31 +260,10 @@ class = "kernel"
 perf = true
 why = "kernel FFI shim"
 
-# --- engine numeric code local to one model pack -------------------------------------
-[[rule]]
-pattern = '^crates/memra-engine/src/dsv4_'
-class = "numeric"
-pack = "deepseek_v4"
-why = "DeepSeek-V4 engine path"
-
-[[rule]]
-pattern = '^crates/memra-engine/src/mimo_'
-class = "numeric"
-pack = "mimo_v2"
-why = "MiMo engine path"
-
-[[rule]]
-pattern = '^crates/memra-engine/src/(glm5_|vision_glm5\.rs)'
-class = "numeric"
-pack = "glm5_next"
-why = "GLM-5 engine path"
-
-[[rule]]
-pattern = '^crates/memra-engine/src/qwen4exp_'
-class = "numeric"
-pack = "qwen4_exp"
-why = "qwen4_exp engine path"
-
+# --- model packs ----------------------------------------------------------------------
+# Engine files named for one family (dsv4_*, mimo_*, glm5_*) are NOT pack-local: shared paths
+# call into them (hybrid.rs reads glm5_tp_armed() on every hybrid load), so they keep the
+# engine default. Only a pack directory is reached by its own aliases alone.
 [[rule]]
 pattern = '^crates/memra-gguf/src/model_packs/(?P<pack>[a-z0-9_]+)/'
 class = "numeric"
@@ -339,6 +326,7 @@ why = "registry data read by CPU census tools"
 # Added or removed lines in a numeric/serving/kernel file that name a device key make the
 # file reach the device-keyed defaults scope, which is performance-relevant.
 [content]
+# A device-key line that names a card (`name` of a [device] row) requires that device class.
 device_key = '''BUILT_CUDA_(ARCH|TARGET)|MEMRA_CUDA_ARCH|cuda_arch|compute_cap|memra_hopper_mma|"(120a|121a|100a|90a|89)"|__CUDA_ARCH__|multiProcessorCount|sm_count|total_?mem|vram|RTX PRO 6000|RTX 5090|GB10|B200|H100|card_class|device_name'''
 # File kinds whose comment-only edits compile to the same program.
 comment_only_suffixes = [".rs", ".cu", ".cuh", ".h", ".c", ".cc", ".cpp"]

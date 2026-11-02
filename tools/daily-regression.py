@@ -86,9 +86,9 @@ def bootstrap(args):
     git(repo, "fetch", "-q", "origin", "main")
     head = git(repo, "rev-parse", "origin/main")
     tools = work_dir(args.device) / "tools-checkout"
-    if tools.exists():
-        git(repo, "worktree", "remove", "--force", str(tools), check=False)
-        shutil.rmtree(tools, ignore_errors=True)
+    git(repo, "worktree", "remove", "--force", str(tools), check=False)
+    shutil.rmtree(tools, ignore_errors=True)
+    git(repo, "worktree", "prune")
     tools.parent.mkdir(parents=True, exist_ok=True)
     git(repo, "worktree", "add", "--detach", str(tools), head)
     command = [sys.executable, str(tools / "tools/daily-regression.py"), "run", "--repo", str(repo),
@@ -129,9 +129,10 @@ def publish(repo, device, run_dir, summary, tools, pusher=None):
     results commit; the orphan results worktree has no tools/ to run a hook from."""
     branch = f"regression/{device}"
     results = work_dir(device) / "results"
-    if results.exists():
-        git(repo, "worktree", "remove", "--force", str(results), check=False)
-        shutil.rmtree(results, ignore_errors=True)
+    git(repo, "worktree", "remove", "--force", str(results), check=False)
+    shutil.rmtree(results, ignore_errors=True)
+    # A worktree directory deleted outside git leaves a registration that blocks the branch.
+    git(repo, "worktree", "prune")
     local = f"daily-results/{device}"
     git(repo, "branch", "-D", local, check=False)
     if git(repo, "ls-remote", "--heads", "origin", branch):
@@ -230,9 +231,13 @@ def run(args):
     if state.get("last_commit") == head and not args.force:
         log(f"main is still {head[:12]}, tested {state.get('last_date')} ({state.get('last_status')}); nothing to run")
         return 0
-    arch = ci.arch_table_at(repo, head)
-    rules = ci.rules_at(repo, head, arch)
-    target = ci.device_target(rules, arch, args.device)
+    try:
+        arch = ci.arch_table_at(repo, head)
+        rules = ci.rules_at(repo, head, arch)
+        target = ci.device_target(rules, arch, args.device)
+    except ci.ImpactError as error:
+        log(f"daily regression: main {head[:12]} cannot be classified for {args.device}: {error}")
+        return 2
     target_name = ci.target_name(rules, target)
     # The perf baseline is the last head that PASSED here, so a regression stays failing
     # (and its issue open) until it is fixed or accepted, instead of passing the next day
@@ -244,7 +249,8 @@ def run(args):
     log(f"{args.device} ({target_name}): main {head[:12]}, perf base {base[:12] if base else 'none'}")
     try:
         record = ce.produce(repo, head, args.device, ["battery", "serving", "perf"], run_dir,
-                            base=base, work=work, accept_regression=args.accept_regression, log=log)
+                            base=base, work=work, accept_regression=args.accept_regression, log=log,
+                            reference_perf=base is None)
     except ce.DeviceBusy as error:
         log(f"{args.device}: {error}; not a regression, the next timer run retries")
         shutil.rmtree(run_dir, ignore_errors=True)
@@ -255,6 +261,16 @@ def run(args):
         (run_dir / "record.json").write_text(json.dumps(record, indent=1) + "\n")
     summary = summarize(record, head, args.device, target_name, run_dir)
     log(f"result: {summary['status']} {'; '.join(summary['failing'])}")
+    if not args.no_publish:
+        # Publish and update the issue before marking the head tested: if either fails, the
+        # next run retries this head instead of silently skipping a failing device.
+        link = publish(repo, args.device, run_dir, summary, HERE)
+        log(f"published {link}")
+        issue = update_issue(repo, args.device, target_name, summary, link)
+        if issue:
+            log(f"issue: {issue}")
+    else:
+        log(f"not published (--no-publish); record at {run_dir}")
     if record.get("kinds"):
         # A run that produced a record counts as tested; a build or setup failure retries tomorrow.
         state.update(last_commit=head, last_date=summary["date"], last_status=summary["status"])
@@ -262,14 +278,6 @@ def run(args):
             state["last_pass"] = head
         state_path.write_text(json.dumps(state, indent=1) + "\n")
         prune_bins(work, [head, state.get("last_pass") or head])
-    if args.no_publish:
-        log(f"not published (--no-publish); record at {run_dir}")
-        return 0 if record["status"] == "pass" else 1
-    link = publish(repo, args.device, run_dir, summary, HERE)
-    log(f"published {link}")
-    issue = update_issue(repo, args.device, target_name, summary, link)
-    if issue:
-        log(f"issue: {issue}")
     return 0 if record["status"] == "pass" else 1
 
 

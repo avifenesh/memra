@@ -52,9 +52,12 @@ TABLE = [
                                 change("research/INDEX.md")], set(), set(), MAIN, None),
     ("CPU tooling and CI", [change("tools/fast-gate/plan.py"), change(".github/workflows/ci.yml"),
                             change("docs/support-records.toml")], set(), set(), MAIN, None),
-    ("CPU-only crates", [change("crates/memra-tokenizer/src/chat.rs"), change("crates/memra-sampling/src/lib.rs"),
-                         change("crates/memra-reference/src/lib.rs"), change("crates/memra-cli/src/main.rs")],
+    ("CPU-only crates", [change("crates/memra-cli/src/main.rs"), change("crates/memra-net-guard/src/lib.rs")],
      set(), set(), MAIN, None),
+    ("host crates linked into the served binary", [change("crates/memra-tokenizer/src/chat.rs"),
+                                                   change("crates/memra-sampling/src/lib.rs"),
+                                                   change("crates/memra-reference/src/lib.rs")],
+     cells(("numeric", ALL)), set(), MAIN, None),
     ("HTTP-side server bookkeeping", [change("crates/memra-server/src/auth.rs")], set(), set(), MAIN, None),
     ("diagnostic binaries", [change("crates/memra-engine/src/bin/decode_bench.rs"),
                              change("crates/memra-probe/src/main.rs")], set(), set(), MAIN, None),
@@ -86,8 +89,8 @@ TABLE = [
      cells(("numeric", ALL)), set(), MAIN, None),
     ("uncovered model pack has no device cell", [change("crates/memra-gguf/src/model_packs/gemma4_dense/mod.rs")],
      set(), {"gemma4_dense"}, MAIN, None),
-    ("uncovered engine path", [change("crates/memra-engine/src/dsv4_graph.rs")],
-     set(), {"deepseek_v4"}, MAIN, None),
+    ("a family-named engine file is shared engine code", [change("crates/memra-engine/src/glm5_tp.rs")],
+     cells(("numeric", ALL), ("perf", ALL)), set(), MAIN, None),
     ("pack kernel is never pack-local", [change("crates/memra-engine/cu/dsv4_gpu.cu")],
      cells(("kernel", ALL), ("perf", ALL)), set(), MAIN, None),
     ("serving policy", [change("crates/memra-server/src/worker.rs")],
@@ -103,11 +106,17 @@ TABLE = [
     ("a docs file a crate reads", [change("docs/FLAGS.md")],
      cells(("numeric", ALL), ("perf", ALL)), set(), MAIN, {"docs/FLAGS.md": {"memra-engine"}}),
     ("a research fixture a CPU crate reads", [change("research/x/goldens/a.txt")],
-     set(), set(), MAIN, {"research/x/goldens/*.txt": {"memra-tokenizer"}}),
+     set(), set(), MAIN, {"research/x/goldens/*.txt": {"memra-cli"}}),
+    ("a research fixture a linked crate reads", [change("research/x/goldens/a.txt")],
+     cells(("numeric", ALL)), set(), MAIN, {"research/x/goldens/*.txt": {"memra-tokenizer"}}),
     ("unknown path reaches everything", [change("weird/new-input.bin")],
      cells(*((s, ALL) for s in ci.UNKNOWN_SCOPES)), set(), MAIN, None),
-    ("symlink reaches everything", [change("research/alias", old="000000", new="120000")],
+    ("research symlink is research", [change("research/alias", old="000000", new="120000")],
+     set(), set(), MAIN, None),
+    ("crate symlink reaches everything", [change("crates/memra-engine/src/alias.rs", old="000000", new="120000")],
      cells(*((s, ALL) for s in ci.UNKNOWN_SCOPES)), set(), MAIN, None),
+    ("serve-smoke helper is the gate", [change("tools/q35-cold-mixed-gate.py"), change("tools/validation_plan.py")],
+     cells(("gate", ALL)), set(), MAIN, None),
     ("unregistered workspace crate reaches everything", [change("crates/memra-newthing/src/lib.rs")],
      cells(*((s, ALL) for s in ci.UNKNOWN_SCOPES)), set(), MAIN, None),
 ]
@@ -135,6 +144,25 @@ class ClassifierTable(unittest.TestCase):
         self.assertEqual(set(stub), {"90a", "89"})
         self.assertEqual(stub["90a"]["kinds"], {"battery"})
 
+    def test_gate_change_needs_every_kind_and_card_keyed_default_names_its_device(self):
+        rules = ci.load_rules(RULES_TEXT, MAIN)
+        gate = ci.requirements(ci.classify([change("tools/serve-smoke.sh")], rules, MAIN))
+        self.assertEqual(gate["120a"]["kinds"], {"battery", "serving", "perf"})
+        keyed = ci.classify([change("crates/memra-server/src/kv_vmm.rs",
+                                    ('    if name.contains("RTX PRO 6000 Blackwell") { vmm = true }',))], rules, MAIN)
+        needs = ci.requirements(keyed)
+        self.assertEqual(needs["120a"]["devices"], {"rtxpro6000"})
+        self.assertEqual(needs["100a"]["devices"], set())
+        generic = ci.requirements(ci.classify([change("crates/memra-engine/src/lib.rs", DEVICE)], rules, MAIN))
+        self.assertEqual(generic["120a"]["devices"], set())
+
+    def test_comment_lines_that_are_not_comments(self):
+        rules = ci.load_rules(RULES_TEXT, MAIN)
+        for lines in ((r"    // continued \\",), ("",), ("    ",)):
+            with self.subTest(lines=lines):
+                impact = ci.classify([change("crates/memra-engine/cu/qmatvec.cu", lines)], rules, MAIN)
+                self.assertTrue(impact["cells"])
+
     def test_impact_targets_trailer(self):
         rules = ci.load_rules(SPLIT_RULES, SPLIT)
         kernel = [change("crates/memra-engine/cu/qmatvec.cu")]
@@ -145,6 +173,10 @@ class ClassifierTable(unittest.TestCase):
         self.assertEqual(len(reasons), 2)
         impact = ci.classify(kernel, rules, SPLIT, declared=declared)
         self.assertEqual({c["target"] for c in impact["cells"]}, {"121a"})
+        # Build, gate and unknown files are never narrowed.
+        for path in ("crates/memra-engine/build.rs", "tools/release-roster.tsv", "weird/file"):
+            impact = ci.classify([change(path)], rules, SPLIT, declared=declared)
+            self.assertIn("120a", {c["target"] for c in impact["cells"]}, path)
         # One undeclared commit keeps the full target set.
         declared, _, missing = ci.parse_trailers(
             [("a" * 40, "x\n\nImpact-Targets: 121a\nImpact-Reason: r\n"), ("b" * 40, "plain\n")], SPLIT)

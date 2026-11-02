@@ -207,7 +207,7 @@ class DirEvidence:
         return path.read_bytes()
 
 
-def verify_record(record, evidence, repo, candidate, rules, arch, candidate_inputs):
+def verify_record(record, evidence, repo, candidate, rules, arch, candidate_inputs, push_base=None):
     """Validate one record against the candidate. Returns (target, set(kinds)) it proves."""
     require(record.get("schema") == SCHEMA and record.get("status") == "pass", "record is not a passing cell record")
     payloads = record.get("payloads")
@@ -252,18 +252,24 @@ def verify_record(record, evidence, repo, candidate, rules, arch, candidate_inpu
         proved.add("serving")
     if "perf" in kinds:
         perf = kinds["perf"]
+        base = perf.get("base_commit")
+        # The baseline is the push base itself: an older ancestor or a commit inside the
+        # pushed range would compare against the wrong program.
+        require(isinstance(base, str) and COMMIT.fullmatch(base) and base == push_base,
+                f"perf base {str(base)[:12]} is not this push's base {str(push_base)[:12]}")
+        roster = {mid for _, mid in roster_ids(git(repo, "show", f"{candidate}:tools/release-roster.tsv").decode())}
+        arms = {"none": {"B": 3}}.get(perf.get("baseline"), {"A": PERF_ORDER.count("A"), "B": PERF_ORDER.count("B")})
+        counts = {}
+        for run in perf["runs"]:
+            counts[(run["model"], run["arm"])] = counts.get((run["model"], run["arm"]), 0) + 1
+        require(counts == {(m, a): n for m in roster for a, n in arms.items()},
+                "perf runs do not cover every roster model with every arm")
         if perf.get("baseline") == "none":
-            base = perf.get("base_commit")
-            require(isinstance(base, str) and COMMIT.fullmatch(base)
-                    and target not in ci.arch_table_at(repo, base).accepted,
+            require(target not in ci.arch_table_at(repo, base).accepted,
                     "perf without a baseline is admitted only when the base cannot build this target")
             for run in perf["runs"]:
                 decode_tps(payload(run["log"]))
         else:
-            base = perf["base_commit"]
-            require(isinstance(base, str) and COMMIT.fullmatch(base), "perf record has no base commit")
-            require(subprocess.run(["git", "-C", str(repo), "merge-base", "--is-ancestor", base, candidate],
-                                   capture_output=True).returncode == 0, "perf base is not an ancestor of the candidate")
             runs = [{"arm": r["arm"], "model": r["model"], "tps": decode_tps(payload(r["log"]))} for r in perf["runs"]]
             verdicts = judge_perf(runs)
             require(verdicts == perf["verdicts"], "perf verdicts differ from raw evidence")
@@ -288,10 +294,15 @@ def full_records_in_tree(repo, ref):
                   and not p.startswith(CELLS))
 
 
-def proven_full_records(repo, candidate, arch, log=print):
+def device_class_of(rules, name):
+    found = [cls for cls, row in rules.get("device", {}).items() if row["name"] in name]
+    return found[0] if len(found) == 1 else None
+
+
+def proven_full_records(repo, candidate, rules, arch, log=print):
     """A sealed full release record is the device battery for its card's target."""
     import release_qualification as q
-    proven = {}
+    proven, by_device = {}, {}
     for path in full_records_in_tree(repo, candidate):
         root = path.rsplit("/", 1)[0]
         try:
@@ -306,13 +317,18 @@ def proven_full_records(repo, candidate, arch, log=print):
             continue
         target = caps.pop()
         proven.setdefault(target, set()).add("battery")
+        for model in result["card_models"]:
+            if device_class_of(rules, model):
+                by_device.setdefault(device_class_of(rules, model), set()).add("battery")
         log(f"  full record {root}: battery on {', '.join(result['card_models'])}")
-    return proven
+    return proven, by_device
 
 
-def proven_cells(repo, candidate, rules, arch, log=print):
+def proven_cells(repo, candidate, rules, arch, log=print, push_base=None):
+    """-> ({target: kinds}, {device class: kinds}) proven for the candidate's exact inputs."""
+    import release_qualification as q
     candidate_inputs = inputs_digest(repo, candidate)
-    proven = proven_full_records(repo, candidate, arch, log)
+    proven, by_device = proven_full_records(repo, candidate, rules, arch, log)
     for path in records_in_tree(repo, candidate):
         root = path.rsplit("/", 1)[0]
         try:
@@ -320,14 +336,15 @@ def proven_cells(repo, candidate, rules, arch, log=print):
             if record.get("inputs_sha256") != candidate_inputs:
                 continue
             target, kinds = verify_record(record, TreeEvidence(repo, candidate, root), repo, candidate,
-                                          rules, arch, candidate_inputs)
-        except (EvidenceError, KeyError, TypeError, ValueError) as error:
+                                          rules, arch, candidate_inputs, push_base)
+        except (EvidenceError, q.GateError, KeyError, TypeError, ValueError, subprocess.SubprocessError) as error:
             log(f"  record {root}: not admitted: {error}")
             continue
         proven.setdefault(target, set()).update(kinds)
+        by_device.setdefault(record["device"]["class"], set()).update(kinds)
         log(f"  record {root}: {ci.target_name(rules, target)} {','.join(sorted(kinds))} "
             f"on {record['device']['class']}")
-    return proven
+    return proven, by_device
 
 
 # ------------------------------------------------------------------------------ gate
@@ -355,14 +372,19 @@ def gate(repo, base, oid, log=print):
     if not gated:
         log(f"NO PUSH-GATED CELL: {oid[:12]} needs no device evidence at push")
         return impact
-    proven = proven_cells(repo, oid, rules, arch, log)
+    proven, by_device = proven_cells(repo, oid, rules, arch, log, push_base=base)
     missing = []
     for target, need in sorted(gated.items()):
         lack = sorted(need["kinds"] - proven.get(target, set()))
+        cells = ",".join(sorted(set(need["cells"])))
         if lack:
-            cells = ",".join(sorted(set(need["cells"])))
             missing.append(f"{need['name']} [{cells}] needs {'+'.join(lack)} evidence from one of: "
                            f"{', '.join(devices_for(rules, arch, target)) or 'no registered device'}")
+        for device in sorted(need["devices"]):
+            lack = sorted({"battery", "perf"} - by_device.get(device, set()))
+            if lack:
+                missing.append(f"{need['name']} [defaults keyed on {device}] needs {'+'.join(lack)} "
+                               f"evidence from {device} itself")
     if missing:
         hint = (f"produce it: python3 tools/cell_evidence.py run --device <class> --commit {oid[:12]} "
                 f"--base {base[:12] if set(base) != {'0'} else 'origin/main'} --kinds <kinds> --out <dir>, "
@@ -391,35 +413,48 @@ def clean_env(extra=None):
     return env
 
 
-def checkout(repo, commit, path):
-    if path.exists():
-        git(repo, "worktree", "remove", "--force", str(path), check=False)
+def tree_at(repo, commit, path):
+    """A stable per-device worktree checked out clean at `commit`. Its in-tree target/ stays,
+    so builds are incremental and the battery and serve-smoke (which runs its own no-op
+    `cargo build`) use the very binaries that were hashed, at a fixed source path."""
+    if (path / ".git").exists():
+        git(path, "checkout", "-q", "--detach", "--force", commit)
+        git(path, "clean", "-qffdx", "-e", "/target")
+    else:
         if path.exists():
             shutil.rmtree(path)
-    git(repo, "worktree", "add", "--detach", str(path), commit)
+        git(repo, "worktree", "prune")
+        git(repo, "worktree", "add", "--detach", str(path), commit)
+    require(git(path, "rev-parse", "HEAD").decode().strip() == commit, f"{path} is not at {commit[:12]}")
+    require(not git(path, "status", "--porcelain", "--untracked-files=normal").strip(), f"{path} is not clean")
     return path
 
 
-def build(repo, commit, target, work, log):
-    """Build the six battery binaries for one commit and target; cached by commit."""
-    cache = work / "bins" / f"{commit}-{target}"
-    if all((cache / b).is_file() for b in BINARIES):
-        return cache
-    src = checkout(repo, commit, work / f"src-{commit[:12]}")
-    env = clean_env({**BUILD_ENV, "MEMRA_CUDA_ARCH": target,
-                     "CARGO_TARGET_DIR": str(work / f"target-{target}")})
+def build_env(target, tree):
+    return clean_env({**BUILD_ENV, "MEMRA_CUDA_ARCH": target, "CARGO_TARGET_DIR": str(tree / "target")})
+
+
+def binary_ids(directory):
+    return {n: {"bytes": (directory / n).stat().st_size, "sha256": digest((directory / n).read_bytes())}
+            for n in BINARIES}
+
+
+def build(repo, commit, target, work, log, role="tree"):
+    """Build the six battery binaries in work/<role>-<target> at `commit`; copy them to a
+    per-commit cache. Returns (tree, cache)."""
+    tree = tree_at(repo, commit, work / f"{role}-{target}")
     BUILD_LOCK.parent.mkdir(parents=True, exist_ok=True)
     command = ["flock", str(BUILD_LOCK), "nice", "-n", "15", *BUILD_COMMAND]
     with open(log, "ab") as out:
-        out.write(f"$ {' '.join(command)}  (commit {commit}, target {target})\n".encode())
+        out.write(f"$ {' '.join(command)}  (commit {commit}, target {target}, tree {tree.name})\n".encode())
         out.flush()
-        result = subprocess.run(command, cwd=src, env=env, stdout=out, stderr=subprocess.STDOUT)
+        result = subprocess.run(command, cwd=tree, env=build_env(target, tree), stdout=out, stderr=subprocess.STDOUT)
     require(result.returncode == 0, f"build failed for {commit[:12]} (see {log})")
+    cache = work / "bins" / f"{commit}-{target}"
     cache.mkdir(parents=True, exist_ok=True)
     for name in BINARIES:
-        shutil.copy2(work / f"target-{target}" / "release" / name, cache / name)
-    git(repo, "worktree", "remove", "--force", str(src), check=False)
-    return cache
+        shutil.copy2(tree / "target/release" / name, cache / name)
+    return tree, cache
 
 
 def toolchain():
@@ -432,15 +467,6 @@ def toolchain():
         except OSError:
             out[name] = "unavailable"
     return out
-
-
-def stage(repo, commit, bins, path):
-    src = checkout(repo, commit, path)
-    release = src / "target/release"
-    release.mkdir(parents=True)
-    for name in BINARIES:
-        shutil.copy2(bins / name, release / name)
-    return src
 
 
 def run_battery(src, roster, out, env):
@@ -458,24 +484,28 @@ def run_serving(src, row, out, env):
                               stdout=log, stderr=subprocess.STDOUT).returncode
 
 
-def run_perf(sources, roster_rows, out, env):
-    """sources: {"A": src or None, "B": src}. Interleaved per model in PERF_ORDER."""
+def run_perf(sources, roster_rows, out, env, cwd):
+    """sources: {"A": run-gen path or None, "B": run-gen path}. Interleaved per model."""
     (out / "perf").mkdir()
     prompt = out / "perf" / "prompt.txt"
-    prompt.write_text("The quick brown fox jumps over the lazy dog. " * 40)
+    # Ends mid-sentence so the next token is near-certain: run-gen asserts prefill == decode
+    # argmax at the last position, and an open-ended prompt can be a documented near-tie.
+    prompt.write_text("The quick brown fox jumps over the lazy dog. " * 40 + "The quick brown fox jumps over the lazy")
     runs, seq = [], 0
     arms = PERF_ORDER if sources.get("A") is not None else ("B", "B", "B")
     for _, model_id, path in roster_rows:
-        if not Path(path).is_file():
-            continue
         for arm in arms:
             seq += 1
             name = f"perf/{seq:02d}-{arm}-{re.sub(r'[^a-z0-9.-]+', '_', model_id.lower())}.log"
+            runs.append({"arm": arm, "model": model_id, "log": name})
+            if not Path(path).is_file():
+                # A missing roster model is a failed perf cell, never a silently shorter one.
+                (out / name).write_text(f"perf: roster model file absent: {path}\n")
+                continue
             with open(out / name, "wb") as log:
-                subprocess.run([str(sources[arm] / "target/release/run-gen"), path], cwd=sources[arm],
+                subprocess.run([str(sources[arm]), path], cwd=cwd,
                                env={**env, "MEMRA_NGEN": PERF_NGEN, "MEMRA_PROMPT_FILE": str(prompt)},
                                stdout=log, stderr=subprocess.STDOUT)
-            runs.append({"arm": arm, "model": model_id, "log": name})
     return runs
 
 
@@ -533,6 +563,7 @@ def seal(out, meta):
         except (EvidenceError, OSError) as error:
             failures.append(f"perf: {error}")
         kinds["perf"] = entry
+    failures.extend(meta.get("binary_drift", []))
     record = {"schema": SCHEMA, "status": "fail" if failures else "pass", "failures": failures,
               "tested_commit": meta["commit"], "inputs_sha256": meta["inputs"], "target": meta["target"],
               "device": {"class": meta["device_class"], **meta["device"]},
@@ -545,7 +576,7 @@ def seal(out, meta):
 
 
 def produce(repo, commit, device_class, kinds, out, *, base=None, work=None, accept_regression=None,
-            lock=True, log=print):
+            lock=True, log=print, reference_perf=False):
     """Build, run the requested kinds on this device under its lock, seal. Returns the record."""
     commit = resolve(repo, commit)
     arch = ci.arch_table_at(repo, commit)
@@ -554,6 +585,9 @@ def produce(repo, commit, device_class, kinds, out, *, base=None, work=None, acc
     require(row is not None, f"unknown device class {device_class}")
     target = arch.target_for_cap(row["compute_cap"])
     require(set(kinds) <= set(KINDS) and kinds, f"kinds must be a subset of {KINDS}")
+    # Push evidence compares against the push base; only the daily run's first day may
+    # record reference rates with no base (that record never satisfies the push gate).
+    require("perf" not in kinds or base or reference_perf, "perf evidence needs --base (the push base)")
     work = Path(work or Path.home() / ".cache/memra-cells" / device_class)
     work.mkdir(parents=True, exist_ok=True)
     out = Path(out)
@@ -562,18 +596,19 @@ def produce(repo, commit, device_class, kinds, out, *, base=None, work=None, acc
             "kinds": list(kinds), "started": dt.datetime.now(dt.timezone.utc).isoformat(),
             "accept_regression": accept_regression}
     log(f"cell evidence: {device_class} ({ci.target_name(rules, target)}) {','.join(kinds)} at {commit[:12]}")
-    bins = build(repo, commit, target, work, out / "build.log")
-    meta["binaries"] = {n: {"bytes": (bins / n).stat().st_size, "sha256": digest((bins / n).read_bytes())}
-                        for n in BINARIES}
+    tree, bins = build(repo, commit, target, work, out / "build.log")
+    meta["binaries"] = binary_ids(bins)
     meta["toolchain"] = toolchain()
     base_bins = None
     if "perf" in kinds and base:
         meta["base"] = resolve(repo, base)
         if target in ci.arch_table_at(repo, meta["base"]).accepted:
-            base_bins = build(repo, meta["base"], target, work, out / "build.log")
+            base_bins = work / "bins" / f"{meta['base']}-{target}"
+            if not all((base_bins / b).is_file() for b in BINARIES):
+                _, base_bins = build(repo, meta["base"], target, work, out / "build.log", role="base")
     plan = out / "gpu-phase.json"
-    plan.write_text(json.dumps({**meta, "repo": str(repo), "work": str(work), "row": row,
-                                "bins": str(bins), "base_bins": str(base_bins) if base_bins else None}))
+    plan.write_text(json.dumps({**meta, "repo": str(repo), "work": str(work), "row": row, "tree": str(tree),
+                                "base_bins": str(base_bins) if base_bins else None}))
     command = [sys.executable, str(Path(__file__).resolve()), "gpu-phase", "--plan", str(plan)]
     if lock:
         command = [*row["lock"], *command]
@@ -588,9 +623,6 @@ def produce(repo, commit, device_class, kinds, out, *, base=None, work=None, acc
     plan.unlink()
     require(result.returncode == 0 and "device" in meta, f"device phase did not finish (exit {result.returncode})")
     record = seal(out, meta)
-    for path in (meta.get("src"), meta.get("base_src")):
-        if path:
-            git(repo, "worktree", "remove", "--force", path, check=False)
     log(f"  record: {out / 'record.json'} status={record['status']} {'; '.join(record['failures'])}")
     return record
 
@@ -599,25 +631,36 @@ def gpu_phase(plan_path):
     """Runs under the device lock. Writes its observations back into the plan file."""
     plan = Path(plan_path)
     meta = json.loads(plan.read_text())
-    repo, work, out, row = Path(meta["repo"]), Path(meta["work"]), plan.parent, meta["row"]
+    out, row, tree = plan.parent, meta["row"], Path(meta["tree"])
     (out / "gpu-phase.started").write_text(dt.datetime.now(dt.timezone.utc).isoformat() + "\n")
     meta["device"] = observe_device(row)
-    env = clean_env(row.get("env"))
-    src = stage(repo, meta["commit"], Path(meta["bins"]), work / f"run-{meta['commit'][:12]}")
-    meta["src"] = str(src)
-    roster = src / row.get("roster", "tools/release-roster.tsv")
+    meta["src"] = str(tree)
+    require(git(tree, "rev-parse", "HEAD").decode().strip() == meta["commit"], "build tree moved")
+    release = tree / "target/release"
+    # Build settings stay in the environment, so serve-smoke's own `cargo build` is a no-op
+    # on the hashed binary (and nice/two-job if it ever is not).
+    env = {**build_env(meta["target"], tree), **row.get("env", {})}
+    drift = []
+
+    def unchanged(stage):
+        if binary_ids(release) != meta["binaries"]:
+            drift.append(f"binaries changed during {stage}; the tested bytes are not the hashed build")
+    unchanged("staging")
+    roster = tree / row.get("roster", "tools/release-roster.tsv")
     shutil.copy2(roster, out / "roster.tsv")
     if "battery" in meta["kinds"]:
-        meta["battery_exit"] = run_battery(src, roster, out, env)
+        meta["battery_exit"] = run_battery(tree, roster, out, env)
+        unchanged("battery")
     if "serving" in meta["kinds"]:
-        meta["serving_exit"] = run_serving(src, row, out, env)
+        meta["serving_exit"] = run_serving(tree, row, out, env)
+        unchanged("serve-smoke")
     if "perf" in meta["kinds"]:
-        sources = {"B": src, "A": None}
-        if meta.get("base_bins"):
-            sources["A"] = stage(repo, meta["base"], Path(meta["base_bins"]), work / f"run-{meta['base'][:12]}")
-            meta["base_src"] = str(sources["A"])
+        sources = {"B": release / "run-gen",
+                   "A": Path(meta["base_bins"]) / "run-gen" if meta.get("base_bins") else None}
         meta["perf_baseline"] = sources["A"] is not None
-        meta["perf_runs"] = run_perf(sources, roster_rows(roster), out, env)
+        meta["perf_runs"] = run_perf(sources, roster_rows(roster), out, env, tree)
+        unchanged("perf")
+    meta["binary_drift"] = drift
     after = observe_device(row)
     require(after == meta["device"], "device observation changed during the run")
     plan.write_text(json.dumps(meta))

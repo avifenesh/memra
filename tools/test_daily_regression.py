@@ -151,6 +151,25 @@ class RunDecisions(unittest.TestCase):
         with mock.patch.object(dr, "git", side_effect=AssertionError("must not touch git")):
             self.assertEqual(dr.run(self.args()), 0)
 
+    def test_publish_failure_does_not_mark_the_head_tested(self):
+        import cell_evidence as ce
+        import change_impact as ci
+        arch = ci.ArchTable(accepted=("120a",), caps={"12.0": "120a"})
+        rules = {"target": {"120a": {"name": "sm_120a"}}, "device": {"rtx5090": {"compute_cap": "12.0"}}}
+        record = {"status": "fail", "failures": ["battery: x"], "kinds": {"battery": {"exit_code": 1}}}
+        with mock.patch.object(ci, "arch_table_at", return_value=arch), \
+                mock.patch.object(ci, "rules_at", return_value=rules), \
+                mock.patch.object(ce, "produce", return_value=record), \
+                mock.patch.object(dr, "publish", side_effect=RuntimeError("push refused")):
+            with self.assertRaisesRegex(RuntimeError, "push refused"):
+                dr.run(self.publishing_args())
+        self.assertFalse(Path(self.tmp.name, "state.json").exists())
+
+    def publishing_args(self):
+        args = self.args()
+        args.no_publish = False
+        return args
+
     def test_busy_device_is_not_a_failure(self):
         import cell_evidence as ce
         import change_impact as ci

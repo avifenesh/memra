@@ -88,7 +88,7 @@ class Repo:
         return out.getvalue()
 
     def record(self, commit, kinds, *, device_class="rtx5090", device=DEVICE, target="120a", slower=False,
-               name=None, accept=None, serve_tail="serve-smoke: 0 failed"):
+               name=None, accept=None, serve_tail="serve-smoke: 0 failed", perf_base=None, models=("model-a", "model-b")):
         out = self.root / f"evidence-{len(list(self.root.glob('evidence-*')))}"
         (out / "battery").mkdir(parents=True)
         shutil.copy2(self.repo / "tools/release-roster.tsv", out / "roster.tsv")
@@ -117,13 +117,13 @@ class Repo:
         if "perf" in kinds:
             (out / "perf").mkdir()
             runs = []
-            for seq, arm in enumerate(ce.PERF_ORDER * 2, 1):
-                model = "model-a" if seq <= len(ce.PERF_ORDER) else "model-b"
+            for seq, arm in enumerate(ce.PERF_ORDER * len(models), 1):
+                model = models[(seq - 1) // len(ce.PERF_ORDER)]
                 rate = 100.0 + seq * 0.1 - (20.0 if slower and arm == "B" else 0.0)
                 log = f"perf/{seq:02d}-{arm}-{model}.log"
                 (out / log).write_text(f"generated 128 tokens in 1.000s = {rate:.2f} tok/s (ST decode)\n")
                 runs.append({"arm": arm, "model": model, "log": log})
-            meta.update({"base": self.base, "perf_baseline": True, "perf_runs": runs})
+            meta.update({"base": perf_base or self.base, "perf_baseline": True, "perf_runs": runs})
         record = ce.seal(out, meta)
         if record["status"] != "pass":
             return record
@@ -231,6 +231,41 @@ class CellGate(unittest.TestCase):
         with self.assertRaisesRegex(q.GateError, "needs perf evidence"):
             self.f.push()
         self.f.record(code, ["perf"], slower=True, accept="reviewed: correctness fix costs 20%")
+        self.assertIn("CELL-QUALIFIED", self.f.push())
+
+    def test_perf_must_compare_against_the_push_base_and_cover_the_roster(self):
+        self.f.write("crates/memra-engine/cu/qmatvec.cu", "__global__ void k() { int x = 10; }\n")
+        inside = self.f.commit("kernel step 1")
+        self.f.write("crates/memra-engine/cu/qmatvec.cu", "__global__ void k() { int x = 11; }\n")
+        code = self.f.commit("kernel step 2")
+        self.f.record(code, ["battery"])
+        self.f.record(code, ["perf"], perf_base=inside, name="inside")
+        self.f.record(code, ["perf"], models=("model-a",), name="short")
+        out = io.StringIO()
+        with self.assertRaisesRegex(q.GateError, "needs perf evidence"), contextlib.redirect_stdout(out):
+            q.check_push(self.f.repo, [f"refs/heads/x {self.f.head()} refs/heads/main {self.f.base}"], "qualified")
+        self.assertIn("is not this push's base", out.getvalue())
+        self.assertIn("do not cover every roster model", out.getvalue())
+        self.f.record(code, ["perf"])
+        self.assertIn("CELL-QUALIFIED", self.f.push())
+
+    def test_a_push_cannot_relax_its_own_rules(self):
+        rules = self.f.repo / "tools/change-impact.toml"
+        rules.write_text(rules.read_text().replace('name = "sm_120a"\npush_gate = true', 'name = "sm_120a"\npush_gate = false'))
+        self.f.write("crates/memra-engine/cu/qmatvec.cu", "__global__ void k() { int x = 12; }\n")
+        self.f.commit("turn the gate off and change a kernel")
+        with self.assertRaisesRegex(q.GateError, r"sm_120a \[gate,kernel,perf\] needs battery\+perf\+serving"):
+            self.f.push()
+
+    def test_card_keyed_default_needs_that_card(self):
+        self.f.write("crates/memra-server/src/worker.rs",
+                     'pub fn step(n: &str) { if n.contains("RTX PRO 6000 Blackwell") { vmm(); } }\n')
+        code = self.f.commit("PRO 6000 default")
+        self.f.record(code, ["battery", "serving", "perf"])
+        with self.assertRaisesRegex(q.GateError, r"defaults keyed on rtxpro6000\] needs battery\+perf evidence from rtxpro6000"):
+            self.f.push()
+        pro = {**DEVICE, "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition"}
+        self.f.record(code, ["battery", "perf"], device_class="rtxpro6000", device=pro)
         self.assertIn("CELL-QUALIFIED", self.f.push())
 
     def test_tags_still_need_the_full_record_and_development_is_unchanged(self):

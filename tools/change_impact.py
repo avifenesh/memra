@@ -36,6 +36,8 @@ CLASSES = SCOPES + NO_CELL + (UNKNOWN,)
 # Classes whose files compile into the served program: perf-relevant by package default and
 # subject to device-key content detection.
 PROGRAM = ("kernel", "build", "numeric", "serving")
+# An Impact-Targets trailer can narrow program code, never the build, the gate or the unknown.
+UNNARROWED = ("build", "gate", UNKNOWN)
 ZERO = "0" * 40
 PUBLICATION = "research/release-qualification/"
 # Weakest to strongest; a path read by several crates takes the strongest class.
@@ -175,8 +177,11 @@ def device_target(rules, arch, device):
 # --------------------------------------------------------------------- classifier
 
 def _comment_line(line):
+    """A `//` comment line. Blank lines and `//` lines ending in a backslash (a C/CUDA line
+    continuation splices the next line into the comment) do not count: a blank line can sit
+    inside a Rust multi-line string, and a continued line can hide code."""
     stripped = line.strip()
-    return not stripped or stripped.startswith("//")
+    return stripped.startswith("//") and not stripped.endswith("\\")
 
 
 def _package_of(path, owners):
@@ -206,12 +211,12 @@ def classify_file(change, rules, arch, *, owners=None, crate_inputs=None):
     """One path -> {class, targets, perf, defaults, pack, route, why}."""
     path = change.path
     result = {"path": path, "class": UNKNOWN, "targets": None, "perf": False, "defaults": False,
-              "pack": None, "route": None, "why": "no rule matches this path"}
+              "devices": [], "pack": None, "route": None, "why": "no rule matches this path"}
     if path.startswith(PUBLICATION) or path == "research/INDEX.md":
         return {**result, "class": "research", "why": "qualification metadata (excluded from source inputs)"}
-    if "120000" in (change.old_mode, change.new_mode):
-        return {**result, "why": "symlink: its target is a source input the diff does not show"}
     package = _package_of(path, owners)
+    if "120000" in (change.old_mode, change.new_mode) and (package is not None or not path.startswith(("research/", "docs/"))):
+        return {**result, "why": "symlink: its target is a source input the diff does not show"}
     consumers = set()
     if package is None and crate_inputs:
         consumers = set().union(*(pkgs for pattern, pkgs in crate_inputs.items() if _input_match(path, pattern)))
@@ -253,9 +258,13 @@ def classify_file(change, rules, arch, *, owners=None, crate_inputs=None):
             return {**result, "class": "comment", "perf": False,
                     "why": "comment-only edit: the compiled program is unchanged"}
     if result["class"] in PROGRAM:
-        code = [l for l in (*change.added, *change.removed) if not _comment_line(l)]
-        if any(rules["_device_key"].search(l) for l in code):
+        code = [l for l in (*change.added, *change.removed) if l.strip() and not _comment_line(l)]
+        keyed = [l for l in code if rules["_device_key"].search(l)]
+        if keyed:
             result.update({"defaults": True, "perf": True})
+            # A line that names a card keys a default on that card's device class.
+            result["devices"] = sorted(name for name, row in rules.get("device", {}).items()
+                                       if any(row["name"].lower() in l.lower() for l in keyed))
     return result
 
 
@@ -297,7 +306,7 @@ def classify(changes, rules, arch, *, owners=None, crate_inputs=None, declared=N
     for item in files:
         kind = item["class"]
         targets = set(arch.accepted if item["targets"] is None else item["targets"])
-        if declared is not None:
+        if declared is not None and kind not in UNNARROWED:
             targets &= declared
         item["targets"] = sorted(targets)
         if kind in NO_CELL or not targets:
@@ -309,8 +318,11 @@ def classify(changes, rules, arch, *, owners=None, crate_inputs=None, declared=N
         scopes = set(scopes) | ({"defaults"} if item["defaults"] else set()) | ({"perf"} if item["perf"] else set())
         for target in targets:
             for scope in scopes:
-                cell = cells.setdefault((target, scope), {"paths": [], "packs": set(), "routes": set()})
+                cell = cells.setdefault((target, scope), {"paths": [], "packs": set(), "routes": set(),
+                                                          "devices": set()})
                 cell["paths"].append(item["path"])
+                if scope == "defaults":
+                    cell["devices"].update(d for d in item["devices"] if device_target(rules, arch, d) == target)
                 if item["pack"]:
                     cell["packs"].add(item["pack"])
                 if item["route"]:
@@ -320,7 +332,8 @@ def classify(changes, rules, arch, *, owners=None, crate_inputs=None, declared=N
         cell = cells[(target, scope)]
         ordered.append({"target": target, "name": target_name(rules, target), "scope": scope,
                         "push_gate": push_gated(rules, target), "paths": sorted(set(cell["paths"])),
-                        "packs": sorted(cell["packs"]), "routes": sorted(cell["routes"])})
+                        "packs": sorted(cell["packs"]), "routes": sorted(cell["routes"]),
+                        "devices": sorted(cell["devices"])})
     return {"schema": SCHEMA, "targets": list(arch.accepted), "cells": ordered,
             "files": files, "uncovered": {k: sorted(v) for k, v in sorted(uncovered.items())},
             "declared_targets": None if declared is None else sorted(declared)}
@@ -329,11 +342,13 @@ def classify(changes, rules, arch, *, owners=None, crate_inputs=None, declared=N
 def requirements(impact):
     """Cells -> what evidence each target needs: {target: {"kinds": set, "cells": [...]}}.
 
-    battery: any correctness scope; serving adds serve-smoke; perf adds the A/B."""
+    battery: any correctness scope; serving adds serve-smoke; perf adds the A/B; a gate change
+    needs all three (the changed gate itself must run). `devices` lists device classes a
+    card-keyed default names; each needs its own battery + perf."""
     needs = {}
     for cell in impact["cells"]:
         entry = needs.setdefault(cell["target"], {"name": cell["name"], "push_gate": cell["push_gate"],
-                                                  "kinds": set(), "cells": []})
+                                                  "kinds": set(), "cells": [], "devices": set()})
         entry["cells"].append(cell["scope"])
         if cell["scope"] in CORRECTNESS:
             entry["kinds"].add("battery")
@@ -341,6 +356,9 @@ def requirements(impact):
             entry["kinds"].add("serving")
         if cell["scope"] == "perf":
             entry["kinds"].add("perf")
+        if cell["scope"] == "gate":
+            entry["kinds"].update(("battery", "serving", "perf"))
+        entry["devices"].update(cell.get("devices", ()))
     return needs
 
 
@@ -355,6 +373,8 @@ def render(impact):
             extra.append("packs=" + ",".join(cell["packs"]))
         if cell["routes"]:
             extra.append("routes=" + ",".join(cell["routes"]))
+        if cell.get("devices"):
+            extra.append("devices=" + ",".join(cell["devices"]))
         sample = ", ".join(cell["paths"][:3]) + (f" (+{len(cell['paths']) - 3})" if len(cell["paths"]) > 3 else "")
         lines.append(f"  cell {cell['name']}:{cell['scope']:<8} [{gate}] {' '.join(extra)} <- {sample}")
     for pack, paths in impact["uncovered"].items():
@@ -392,7 +412,7 @@ def rules_at(repo, ref, arch):
 
 
 def diff_changes(repo, base, head, suffixes=(".rs", ".cu", ".cuh", ".h", ".c", ".cc", ".cpp")):
-    raw = _git(repo, "diff", "--raw", "-z", "--no-renames", "--no-ext-diff", base, head).stdout.decode()
+    raw = _git(repo, "diff", "--raw", "-z", "--no-renames", "--no-ext-diff", base, head).stdout.decode(errors="replace")
     fields = raw.split("\0")[:-1]
     modes = {}
     for meta, path in zip(fields[0::2], fields[1::2]):
@@ -401,7 +421,8 @@ def diff_changes(repo, base, head, suffixes=(".rs", ".cu", ".cuh", ".h", ".c", "
     code = [p for p in modes if p.startswith("crates/") and p.endswith(suffixes)]
     hunks = {p: ([], []) for p in code}
     if code:
-        patch = _git(repo, "diff", "-U0", "--no-renames", "--no-color", "--no-ext-diff", base, head,
+        patch = _git(repo, "diff", "-U0", "--no-renames", "--no-color", "--no-ext-diff", "--no-textconv",
+                     "--src-prefix=a/", "--dst-prefix=b/", base, head,
                      "--", *code).stdout.decode(errors="replace")
         # Hunk bodies are read by their header counts, so a content line that happens to
         # look like a file header ("--- a/x") is still counted as content.
@@ -477,13 +498,15 @@ def literal_inputs(repo, ref, paths):
 def range_messages(repo, base, head):
     if set(base) == {"0"} or _git(repo, "cat-file", "-t", base, check=False).stdout.strip() != b"commit":
         return []
-    out = _git(repo, "log", "--format=%H%x00%B%x01", f"{base}..{head}").stdout.decode()
+    out = _git(repo, "log", "--format=%H%x00%B%x01", f"{base}..{head}").stdout.decode(errors="replace")
     messages = []
     for entry in out.split("\x01"):
         if not entry.strip():
             continue
         sha, message = entry.strip("\n").split("\0", 1)
-        touched = _git(repo, "diff-tree", "--no-commit-id", "--name-only", "-r", "-m", "--root", sha).stdout.decode().split()
+        touched = _git(repo, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", "-m", "--root",
+                       sha).stdout.decode(errors="replace").split("\0")
+        touched = [p for p in touched if p]
         # An evidence commit (qualification metadata only) declares nothing and narrows nothing.
         if touched and all(p.startswith(PUBLICATION) or p == "research/INDEX.md" for p in touched):
             continue
@@ -491,9 +514,40 @@ def range_messages(repo, base, head):
     return messages
 
 
+def rules_in_force(repo, base, head, arch):
+    """The push base's rules decide what a change needs, so a change cannot relax its own
+    requirements (push_gate, path rules, packages). A build target new in the head takes the
+    head's row with push_gate forced on, and devices of that new target come from the head.
+    With no rules at the base (the change that introduces them), the head's rules apply."""
+    head_text = read_blob(repo, head, RULES_PATH)
+    base_text = read_blob(repo, base, RULES_PATH) if _git(repo, "cat-file", "-t", base, check=False).stdout.strip() == b"commit" else None
+    if base_text is None:
+        if head_text is None:
+            raise ImpactError(f"{RULES_PATH} is missing at {head}")
+        return load_rules(head_text, arch)
+    rules = load_rules(base_text)
+    head_rules = load_rules(head_text) if head_text is not None else {}
+    for target in arch.accepted:
+        if target not in rules.get("target", {}):
+            row = dict(head_rules.get("target", {}).get(target, {"name": "sm_" + target}))
+            rules.setdefault("target", {})[target] = {**row, "push_gate": True}
+            for name, device in head_rules.get("device", {}).items():
+                if arch.target_for_cap(device.get("compute_cap", "")) == target:
+                    rules.setdefault("device", {}).setdefault(name, device)
+    rules["_from"] = "base"
+    return validate_rules(rules, arch)
+
+
+def validate_rules(rules, arch):
+    for name, device in rules.get("device", {}).items():
+        if arch.target_for_cap(device.get("compute_cap", "")) is None:
+            raise ImpactError(f"device {name}: compute capability {device.get('compute_cap')} maps to no build target")
+    return rules
+
+
 def impact_between(repo, base, head, rules_text=None):
     arch = arch_table_at(repo, head)
-    rules = load_rules(rules_text, arch) if rules_text is not None else rules_at(repo, head, arch)
+    rules = load_rules(rules_text, arch) if rules_text is not None else rules_in_force(repo, base, head, arch)
     changes = diff_changes(repo, base, head)
     inputs, owners = crate_inputs_at(repo, head, [c.path for c in changes])
     declared, reasons, _ = parse_trailers(range_messages(repo, base, head), arch)

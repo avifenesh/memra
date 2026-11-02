@@ -299,7 +299,7 @@ class QualificationTests(unittest.TestCase):
         f.refresh()
         f.publish()
         out = io.StringIO()
-        with self.assertRaisesRegex(q.GateError, r"sm_120a \[build,defaults,gate,kernel,perf\] needs perf evidence"), \
+        with self.assertRaisesRegex(q.GateError, r"sm_120a \[build,defaults,gate,kernel,perf\] needs perf\+serving evidence"), \
                 contextlib.redirect_stdout(out):
             q.check_push(f.repo, [f"refs/heads/x {q.commit(f.repo, 'HEAD')} refs/heads/main {base}"], "qualified")
         self.assertIn("battery on NVIDIA RTX PRO 6000 Blackwell Server Edition", out.getvalue())
