@@ -17,7 +17,9 @@ import public_ci as ci
 import validation_plan as vp
 
 ROOT = Path(__file__).resolve().parents[1]
-PUBLIC_CI_WITNESS_SECONDS = 660
+# Hang guard for the whole witness. Measured on GitHub-hosted runners (2026-11-02): 579 s of
+# command time for one PR and 633 s for another, so 660 s failed on runner variance alone.
+PUBLIC_CI_WITNESS_SECONDS = 900
 # Matched hosted prefix 402 s + projected tail 228 s + overhead 25 s.
 # Round 655 s up to 11 minutes. Children keep the 120-second bound.
 
