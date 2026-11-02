@@ -1,0 +1,24 @@
+SAME  run-spec/greedy                          5b632e4eae2308a4   5b632e4eae2308a4   8 K PASS
+SAME  run-spec/sampled                         cf8a4781083e37f1   cf8a4781083e37f1   8 K PASS
+SAME  run-spec/adapt                           b863d7a37da6aef1   b863d7a37da6aef1   1 K PASS
+SAME  run-spec/replay                          6049a6fcf324463d   6049a6fcf324463d   1 K PASS
+SAME  serve/demote_a/demote_lines              ['[spec-gate] demoted session to batched ['[spec-gate] demoted session to batched 
+SAME  serve/demote_a/g_demote                  8c5d86667e7157b7   8c5d86667e7157b7   160 tok length
+SAME  serve/demote_a/s_demote                  3332434dd72ea739   3332434dd72ea739   160 tok length
+SAME  serve/demote_b/demote_lines              ['[spec-gate] demoted session to batched ['[spec-gate] demoted session to batched 
+SAME  serve/demote_b/g_demote                  8c5d86667e7157b7   8c5d86667e7157b7   160 tok length
+SAME  serve/demote_b/s_demote                  3332434dd72ea739   3332434dd72ea739   160 tok length
+SAME  serve/demote_deterministic               True               True               
+SAME  serve/demote_fired                       True               True               
+SAME  serve/main/g_c2a                         172f3a95fe8203e4   172f3a95fe8203e4   200 tok length
+SAME  serve/main/g_c2b                         00d3fbe7d3ab6630   00d3fbe7d3ab6630   200 tok length
+SAME  serve/main/g_json                        5602b95df6cbe581   5602b95df6cbe581   94 tok stop
+SAME  serve/main/g_long                        e01ed29c546efe1f   e01ed29c546efe1f   320 tok length
+SAME  serve/main/g_short                       e42870ac20f55bfd   e42870ac20f55bfd   200 tok length
+SAME  serve/main/s_long                        f07e170053c9e561   f07e170053c9e561   320 tok length
+SAME  serve/main/s_pen                         44e3e3f3112b5492   44e3e3f3112b5492   200 tok length
+SAME  serve/main/s_short                       b3dc153989cbedab   b3dc153989cbedab   200 tok length
+DIFF  serve/main [spec-acc] lines              56                 56                 
+SAME  serve/demote_a [spec-acc] lines          4                  4                  
+SAME  serve/demote_b [spec-acc] lines          4                  4                  
+VERDICT: MISMATCH

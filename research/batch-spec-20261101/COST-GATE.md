@@ -72,3 +72,58 @@ Lib tests: memra-engine 675, memra-server 1143 pass. The cost-model unit tests c
 - on the GB10 table, speculation at c=1..4 and plain at c=16;
 - no verdict without acceptance history;
 - the restore-verdict law.
+
+## Realized-rate pricing (2026-11-02, follow-up)
+
+The tables are measured at depth 2048 in an engine-only burst. Serving adds token emission,
+admission and whatever depth the traffic has. A first follow-up also measured the per-session
+overhead on a pooled 4-session cohort (`pooled_overhead_ms`, 0.72 ms against 2.78 ms alone).
+With that number the model predicted pooled K=1 beating plain at c=4 on the 5090. Measured, that
+was **0.78x and 0.81x** of the band.
+
+Two fixes:
+
+- **Realized pricing.** Every pair of consecutive ticks in the same steady regime gives one
+  aggregate tok/s sample for (sessions, K) (`spec_cost_tick_regime`, `spec_cost_observe`). A
+  regime here means one model, everything live either plain or on MTP spec at one K. After 3
+  samples the realized EMA replaces the prediction. Until then, predictions for an unobserved
+  (n, K) are scaled by the realized/predicted ratio of the closest observation of the same kind:
+  first the same n, then the same K at the nearest n, then any K at the nearest n.
+- **A token-accounting bug found by that sampler.** Pooled cohort members counted their progress
+  from the length they had after the cohort ran. Their tokens never reached `n_tokens_out`, the
+  lane accounting or the tick traces. They now count from the length before the cohort.
+
+**Learning within one boot** (`battery/waves_once.py`, c=4 four times after a c=1 warm-up), in
+tok/s:
+
+| wave 1 | wave 2 | wave 3 | wave 4 |
+|---:|---:|---:|---:|
+| 300.5 | 326.6 | 326.0 | 325.9 |
+
+- Wave 1 explores pooled K=1 and realizes 293.5 tok/s against a plain prediction of 310.7, so the
+  session demotes mid-wave.
+- Plain then realizes 356.8 tok/s, and the model stays on plain from that point.
+
+**3-rep A/B, final binary** (`battery/gate-ab-final/summary.json`). Each c is the boot's first
+wave at that concurrency, so this is the worst case for learning:
+
+| c | band | model | ratio |
+|---:|---:|---:|---:|
+| 1 | 191.8 | 189.3 | 0.99x |
+| 2 | 234.0 | 247.3 | **1.06x** |
+| 4 | 323.8 | 292.9 | 0.90x (one exploring wave) |
+| 8 | 405.1 | 414.3 | 1.02x |
+
+The c=4 cost is the one exploring wave. A serving box that sees a concurrency repeatedly pays it
+once. On GB10 the agentic cells run 48 turns per concurrency, so the gate's prices settle inside
+each cell.
+
+**Battery on the final binary.**
+
+- With `MEMRA_SPEC_GATE_MODEL=0` (`battery/compare-int-band.txt`), every stream is byte-identical
+  to the round-split reference. The only difference is in the concurrent greedy pair's per-burst
+  acceptance lines: a prime burst with a live same-model peer now ends after one token (see
+  POOLED-ROUND.md), which shifts burst boundaries but not tokens.
+- With the model on (`compare-int-model.txt`), greedy streams are identical. Two sampled streams
+  differ: the model picks K=2 where the table says K=3, and K changes which Philox events a
+  sampled stream draws.

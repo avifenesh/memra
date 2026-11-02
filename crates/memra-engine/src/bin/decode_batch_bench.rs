@@ -127,6 +127,92 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .position(|a| a == "--verify-t")
         .and_then(|i| rest.get(i + 1))
         .map(|v| v.split(',').filter_map(|s| s.parse().ok()).collect());
+    // `--pooled-plain B` (lane/batch-spec v2 probe): can plain decode rows ride the pooled verify
+    // walk? B sessions at their own depths (`--ctx` + 37*i) each take ONE token; the serving
+    // plain step (`decode_step_batch_sampled_lean_masked`, greedy device sample, lean off so the
+    // logits come back) is the reference, and `verify_pooled` over B one-row segments is the
+    // candidate. Compares every logit row and a follow-up step bitwise, then times both.
+    if let Some(b_n) = rest
+        .iter()
+        .position(|a| a == "--pooled-plain")
+        .and_then(|i| rest.get(i + 1))
+        .and_then(|v| v.parse::<usize>().ok())
+    {
+        let depth: usize = rest
+            .iter()
+            .position(|a| a == "--ctx")
+            .and_then(|i| rest.get(i + 1))
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(512);
+        let vocab = model.cfg.n_vocab.max(64) - 16;
+        let mut caches: Vec<Cache> = Vec::new();
+        let mut snaps = Vec::new();
+        for i in 0..b_n {
+            let d = depth + 37 * i;
+            let prompt: Vec<u32> = (0..d as u32)
+                .map(|j| (55 + i as u32 * 97 + j * 31) % vocab)
+                .collect();
+            let mut c = new_cache(&e, &model.cfg, d + 64)?;
+            let _ = model.prime_cache(&e, &prompt, &mut c, 0)?;
+            snaps.push(c.snapshot(&e)?);
+            caches.push(c);
+        }
+        let toks: Vec<u32> = (0..b_n as u32).map(|i| (4242 + i * 7) % vocab).collect();
+        let samp = vec![Some(DevSamp::new(0.0, 0, 0, 0, 1.0, 0.0)); b_n];
+        let masks = vec![None; b_n];
+        let follow = |cs: &mut [Cache]| -> Result<Vec<Vec<f32>>, Box<dyn std::error::Error>> {
+            let mut refs: Vec<&mut Cache> = cs.iter_mut().collect();
+            let f: Vec<u32> = (0..refs.len() as u32).map(|i| (999 + i) % vocab).collect();
+            model.decode_step_batch(&e, &f, &mut refs)
+        };
+        let reference = {
+            let mut refs: Vec<&mut Cache> = caches.iter_mut().collect();
+            model
+                .decode_step_batch_sampled_lean_masked(&e, &toks, &mut refs, &samp, &masks, false)?
+                .0
+        };
+        let ref_follow = follow(&mut caches)?;
+        for (c, s) in caches.iter_mut().zip(&snaps) {
+            c.rollback(&e, s, 0)?;
+        }
+        let tok_rows: Vec<Vec<u32>> = toks.iter().map(|&t| vec![t]).collect();
+        let tok_refs: Vec<&[u32]> = tok_rows.iter().map(|v| v.as_slice()).collect();
+        let pooled = {
+            let mut refs: Vec<&mut Cache> = caches.iter_mut().collect();
+            model.verify_pooled(&e, &mut refs, &tok_refs)?
+        };
+        let Some(pl) = pooled else {
+            println!("POOLED-PLAIN B={b_n}: NOT POOLABLE");
+            return Ok(());
+        };
+        let pl = e.dtoh(&pl)?;
+        let n_vocab = model.cfg.n_vocab as usize;
+        let rows_eq = (0..b_n)
+            .filter(|&i| pl[i * n_vocab..(i + 1) * n_vocab] == reference[i][..n_vocab])
+            .count();
+        let max_abs = (0..b_n)
+            .flat_map(|i| {
+                pl[i * n_vocab..(i + 1) * n_vocab]
+                    .iter()
+                    .zip(&reference[i][..n_vocab])
+                    .map(|(a, b)| (a - b).abs())
+                    .collect::<Vec<_>>()
+            })
+            .fold(0.0f32, f32::max);
+        let argmax_eq = (0..b_n)
+            .filter(|&i| {
+                argmax(&pl[i * n_vocab..(i + 1) * n_vocab]) == argmax(&reference[i][..n_vocab])
+            })
+            .count();
+        let fol = follow(&mut caches)?;
+        let follow_eq = fol.iter().zip(&ref_follow).filter(|(a, b)| a == b).count();
+        println!(
+            "POOLED-PLAIN B={b_n} depth={depth}: logit rows bitwise {rows_eq}/{b_n} (max abs \
+             {max_abs:e}, argmax {argmax_eq}/{b_n}), follow-up steps bitwise {follow_eq}/{b_n}"
+        );
+        return Ok(());
+    }
+
     // `--pooled 4,4,4,4` (lane/batch-spec): one session per entry, entry = its verify rows T_i,
     // each primed to its own depth (`--ctx` + 37*i). Pins the pooled cross-session verify
     // BITWISE against the per-session verify funnel (every logit row, plus one follow-up

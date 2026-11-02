@@ -31,9 +31,31 @@ pub struct SpecCostTable {
     pub verify_ms: Vec<f64>,
     /// Plain batched decode step ms for B = 1..=16 sessions (index B-1).
     pub plain_ms: Vec<f64>,
-    /// Per-session, per-round speculative cost beyond the verify forward.
+    /// Per-session, per-round speculative cost beyond the verify forward (one session).
     pub round_overhead_ms: f64,
+    /// The same per-session cost measured on a pooled lockstep cohort of `.0` sessions
+    /// (batched draft, shared verify), when the model pools. Between 1 and `.0` sessions the
+    /// gate interpolates; past `.0` it holds the cohort figure.
+    pub pooled_overhead_ms: Option<(usize, f64)>,
 }
+
+impl SpecCostTable {
+    /// Per-session round overhead at `n` lockstep sessions.
+    pub fn overhead_at(&self, n: usize) -> f64 {
+        match self.pooled_overhead_ms {
+            Some((m, o)) if n >= m => o,
+            Some((m, o)) if n > 1 => {
+                self.round_overhead_ms
+                    + (o - self.round_overhead_ms) * (n - 1) as f64 / (m - 1) as f64
+            }
+            _ => self.round_overhead_ms,
+        }
+    }
+}
+
+/// Cohort size the pooled overhead is measured at: four sessions at K=3 fill exactly one
+/// 16-row pooled verify.
+pub const POOLED_OVERHEAD_COHORT: usize = 4;
 
 /// Rows and batch widths measured directly; the rest interpolate.
 const VERIFY_POINTS: [usize; 8] = [1, 2, 3, 4, 6, 8, 12, 16];
@@ -155,17 +177,84 @@ impl HybridModel {
         let wall = t0.elapsed().as_secs_f64() * 1e3;
         let rounds = sess.telemetry().delta_since(&before).rounds.max(1) as f64;
         let round_overhead_ms = (wall / rounds - verify_ms[k]).max(0.0);
+        // ---- the same on a pooled lockstep cohort ----
+        let pooled_overhead_ms = if self.spec_pool_capable() {
+            let m = POOLED_OVERHEAD_COHORT;
+            let mut sessions = Vec::with_capacity(m);
+            for i in 0..m {
+                let mut s = self.new_session(e, depth + 160)?;
+                let _ = self.generate_spec_session_sampled(
+                    e,
+                    &mut s,
+                    &prompt(200 + i as u32),
+                    8,
+                    k,
+                    None,
+                    None,
+                )?;
+                sessions.push(s);
+            }
+            let before: Vec<_> = sessions.iter().map(|s| s.telemetry()).collect();
+            let reqs = sessions
+                .iter_mut()
+                .map(|sess| crate::spec::PooledBurstReq {
+                    sess,
+                    max_new: 96,
+                    k,
+                    sampling: None,
+                    on_commit: None,
+                })
+                .collect();
+            let t0 = Instant::now();
+            for r in self.generate_spec_sessions_pooled(e, reqs) {
+                r?;
+            }
+            let wall = t0.elapsed().as_secs_f64() * 1e3;
+            let rounds = sessions
+                .iter()
+                .zip(&before)
+                .map(|(s, b)| s.telemetry().delta_since(b).rounds)
+                .max()
+                .unwrap_or(1)
+                .max(1) as f64;
+            let rows = (m * (k + 1)).min(16);
+            let per_session = (wall / rounds - verify_ms[rows - 1]) / m as f64;
+            Some((m, per_session.max(0.0)))
+        } else {
+            None
+        };
         Ok(SpecCostTable {
             depth,
             verify_ms,
             plain_ms,
             round_overhead_ms,
+            pooled_overhead_ms,
         })
     }
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn pooled_overhead_interpolates_from_one_session_to_the_cohort() {
+        let t = super::SpecCostTable {
+            depth: 2048,
+            verify_ms: vec![1.0; 16],
+            plain_ms: vec![1.0; 16],
+            round_overhead_ms: 4.0,
+            pooled_overhead_ms: Some((4, 1.0)),
+        };
+        assert_eq!(t.overhead_at(1), 4.0);
+        assert_eq!(t.overhead_at(2), 3.0);
+        assert_eq!(t.overhead_at(4), 1.0);
+        assert_eq!(t.overhead_at(9), 1.0);
+        let serial_only = super::SpecCostTable {
+            pooled_overhead_ms: None,
+            ..t
+        };
+        assert_eq!(serial_only.overhead_at(8), 4.0);
+    }
+
     #[test]
     fn interpolation_keeps_measured_points_and_fills_between() {
         let v = super::interpolate_16(&[(1, 10.0), (4, 16.0), (16, 40.0)]);

@@ -7674,6 +7674,48 @@ impl HybridModel {
             && !spec_verify_graph_env().unwrap_or_else(|| self.vgraph_family_default())
     }
 
+    /// One lockstep member's round tail: its verify (the pooled split when the chunk pooled,
+    /// the serial verify otherwise) then its finish. Called right after its chunk so a round
+    /// never holds more than one chunk's verify outputs and checkpoints at once.
+    fn pooled_finish_member(
+        &self,
+        e: &Engine,
+        burst: &mut Option<SpecBurst<'_, '_, '_>>,
+        mut prep: SpecRoundPrep,
+        verified: Option<PooledVerifyOut>,
+        failed: Option<String>,
+        outcome: &mut Option<PooledBurstResult>,
+    ) {
+        if let Some(msg) = failed {
+            *burst = None;
+            *outcome = Some(Err(msg.into()));
+            return;
+        }
+        let b = burst.as_mut().expect("prepared rounds have a live burst");
+        let pair = match verified {
+            Some(v) => Ok(v),
+            None => self.decode_step_t_core_vg(
+                e,
+                &prep.verify_tokens,
+                prep.pos,
+                &mut *b.rs.cache,
+                b.rs.cfg.embd_dev,
+                prep.ckpt.as_mut(),
+                None,
+            ),
+        };
+        let r = pair.and_then(|(logits, x)| {
+            self.spec_round_finish(e, &mut b.rs, prep, logits, x, &mut b.on_commit)
+        });
+        match r {
+            Ok(o) => b.keep_going = o.keep_going,
+            Err(err) => {
+                *burst = None;
+                *outcome = Some(Err(err));
+            }
+        }
+    }
+
     /// LOCKSTEP POOLED MTP BURSTS (lane/batch-spec). Runs one continuation burst (empty
     /// suffix, no prime split, no grammar) for every request, round by round: each session's
     /// round runs `spec_round_gate` and `spec_round_draft_begin` exactly as its serial burst
@@ -7859,6 +7901,16 @@ impl HybridModel {
             while j < n {
                 let ready = |p: &Option<SpecRoundPrep>, b: &Option<SpecBurst<'_, '_, '_>>| matches!((p, b), (Some(p), Some(b)) if p.poolable && p.pos == b.rs.cache.pos);
                 if !ready(&preps[j], &bursts[j]) {
+                    if let Some(prep) = preps[j].take() {
+                        self.pooled_finish_member(
+                            e,
+                            &mut bursts[j],
+                            prep,
+                            None,
+                            None,
+                            &mut outcomes[j],
+                        );
+                    }
                     j += 1;
                     continue;
                 }
@@ -7938,44 +7990,18 @@ impl HybridModel {
                         }
                     }
                 }
-                j = end.max(j + 1);
-            }
-            // Finish every prepared round, serial verify for rounds the pool did not take.
-            for j in 0..n {
-                let Some(mut prep) = preps[j].take() else {
-                    continue;
-                };
-                if let Some(msg) = failed[j].take() {
-                    bursts[j] = None;
-                    outcomes[j] = Some(Err(msg.into()));
-                    continue;
-                }
-                let b = bursts[j]
-                    .as_mut()
-                    .expect("prepared rounds have a live burst");
-                let pair = match verified[j].take() {
-                    Some(v) => Ok(v),
-                    None => self.decode_step_t_core_vg(
-                        e,
-                        &prep.verify_tokens,
-                        prep.pos,
-                        &mut *b.rs.cache,
-                        b.rs.cfg.embd_dev,
-                        prep.ckpt.as_mut(),
-                        None,
-                    ),
-                };
-                let r = pair.and_then(|(logits, x)| {
-                    self.spec_round_finish(e, &mut b.rs, prep, logits, x, &mut b.on_commit)
-                });
-                match r {
-                    Ok(o) => b.keep_going = o.keep_going,
-                    Err(err) => {
-                        bursts[j] = None;
-                        outcomes[j] = Some(Err(err));
+                // This chunk's rounds finish now (pooled split, or serial verify when the
+                // chunk did not pool), before the next chunk's verify allocates.
+                for m in j..end {
+                    if let Some(prep) = preps[m].take() {
+                        let (v, f) = (verified[m].take(), failed[m].take());
+                        self.pooled_finish_member(e, &mut bursts[m], prep, v, f, &mut outcomes[m]);
                     }
                 }
+                j = end.max(j + 1);
             }
+            // Every prepared round finished inside the chunk walk above.
+            debug_assert!(preps.iter().all(Option::is_none));
         }
         if graph_draft && was_tracking {
             unsafe {

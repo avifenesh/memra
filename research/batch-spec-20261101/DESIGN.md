@@ -88,3 +88,16 @@ Then, in order:
   depend on cohort size.
 - **v2**: plain rows join the ragged step as T=1 with no draft, giving one step per tick like
   vLLM/SGLang. Also a fused rows-by-seqs FA kernel and graph capture keyed on R.
+
+## v2 probe: plain rows through the pooled walk (2026-11-02)
+
+`decode-batch-bench --pooled-plain B` (`pooled-plain.log`, q9, RTX 5090) compares two paths over
+B one-row segments:
+
+- the serving plain step (`decode_step_batch_sampled_lean_masked`);
+- `verify_pooled` (the pooled verify walk).
+
+They are **bitwise equal**: every logit row and a follow-up step match at B = 2, 4, 8 and 16, at
+depths 64 and 2048. A plain decode row can therefore ride the same forward as speculative verify
+rows with no change to its output. This is the numeric precondition for the v2 unified ragged
+step.
