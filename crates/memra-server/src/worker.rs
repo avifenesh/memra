@@ -30976,6 +30976,69 @@ pub fn run(
             }
             let mut dspark_phase_captures: Vec<(usize, memra_engine::spec::SpecBoundaryCapture)> =
                 Vec::new();
+            // POOLED MTP COHORTS (lane/batch-spec): same-model continuation-burst MTP sessions
+            // run their bursts in lockstep with one shared verify forward per round. Their
+            // results feed the per-session handling below exactly as a serial step's would.
+            let mut pooled_steps: HashMap<usize, (SpecStepResult, f32)> = HashMap::new();
+            {
+                let mut cohorts: Vec<(String, Vec<usize>)> = Vec::new();
+                for &i in &spec_order {
+                    let s = &active[i];
+                    if finished.contains(&i) || !spec_pool_candidate(s, &loaded[&s.model]) {
+                        continue;
+                    }
+                    match cohorts.iter_mut().find(|(m, _)| *m == s.model) {
+                        Some((_, v)) => v.push(i),
+                        None => cohorts.push((s.model.clone(), vec![i])),
+                    }
+                }
+                for (_, cohort) in cohorts.into_iter().filter(|(_, v)| v.len() >= 2) {
+                    // Engagement receipt, once per cohort size (the dead-arm lesson).
+                    static SEEN: std::sync::atomic::AtomicU64 =
+                        std::sync::atomic::AtomicU64::new(0);
+                    let bit = 1u64 << cohort.len().min(63);
+                    if SEEN.fetch_or(bit, std::sync::atomic::Ordering::Relaxed) & bit == 0 {
+                        eprintln!(
+                            "[spec-pool] pooled MTP cohort engaged: {} sessions (model {})",
+                            cohort.len(),
+                            active[cohort[0]].model
+                        );
+                    }
+                    let started = Instant::now();
+                    let ids: Vec<String> = cohort
+                        .iter()
+                        .map(|&i| active[i].request_id.clone())
+                        .collect();
+                    let route = fault_route(&active[cohort[0]]);
+                    let mut out = Vec::new();
+                    let guarded =
+                        guard_request(&engine, &ids.join(","), &route, "pooled spec step", || {
+                            out = step_spec_pooled(
+                                &engine,
+                                &loaded,
+                                &mut active,
+                                &cohort,
+                                &mut spec_metrics,
+                            );
+                            Ok(())
+                        });
+                    let ms = started.elapsed().as_secs_f32() * 1000.0;
+                    match guarded {
+                        Ok(()) => {
+                            for (i, r) in out {
+                                pooled_steps.insert(i, (r, ms));
+                            }
+                        }
+                        // A fault inside the cohort leaves every member's device state as the
+                        // unwound frames left it: each member gets the quoted fault.
+                        Err(err) => {
+                            for &i in &cohort {
+                                pooled_steps.insert(i, (Err(err.to_string().into()), ms));
+                            }
+                        }
+                    }
+                }
+            }
             for i in spec_order {
                 if finished.contains(&i) {
                     continue;
@@ -31010,7 +31073,11 @@ pub fn run(
                 // batched decode chunk and the non-batching step (WP-B day 38 addendum A).
                 let (fault_id, fault_route) =
                     (active[i].request_id.clone(), fault_route(&active[i]));
-                let step_result =
+                let pooled_step = pooled_steps.remove(&i);
+                let pooled_ms = pooled_step.as_ref().map(|(_, ms)| *ms);
+                let step_result = if let Some((r, _)) = pooled_step {
+                    r
+                } else {
                     guard_request(&engine, &fault_id, &fault_route, "spec step", || {
                         if step_oom_fault_fire() {
                             eprintln!(
@@ -31031,8 +31098,10 @@ pub fn run(
                         } else {
                             step_session(&engine, &loaded, &mut active[i], &mut spec_metrics)
                         }
-                    });
-                let step_elapsed_ms = step_started.elapsed().as_secs_f32() * 1000.0;
+                    })
+                };
+                let step_elapsed_ms =
+                    pooled_ms.unwrap_or_else(|| step_started.elapsed().as_secs_f32() * 1000.0);
                 if let Some((
                     start_ms,
                     generated0,
@@ -40079,6 +40148,551 @@ fn step_session_async_chain(
     Ok(Some(true))
 }
 
+/// The MTP spec burst's preamble result: either the step already decided (`Return`, the
+/// bool `step_session` returns), or the plan the engine burst call and the post-burst
+/// accounting share. One definition for the serial burst and the pooled cohort.
+enum SpecBurstPre {
+    Return(bool),
+    Run(Box<SpecBurstPlan>),
+}
+
+struct SpecBurstPlan {
+    k: usize,
+    request_room: usize,
+    burst_target: usize,
+    suffix: Vec<u32>,
+    sampling: Option<memra_engine::spec::SpecSampling>,
+    prime_split: Option<usize>,
+    telem_before: memra_engine::spec::SpecTelemetry,
+}
+
+/// Everything `step_session`'s spec arm does before the engine burst call: burst sizing,
+/// the prompt suffix and its prime boundaries, the cooperative prime walk, telemetry and
+/// budget-clamp setup.
+fn spec_burst_pre(
+    engine: &Engine,
+    lm: &LoadedModel,
+    s: &mut Session,
+) -> Result<SpecBurstPre, Box<dyn std::error::Error>> {
+    let spec = s.spec.as_mut().expect("spec_burst_pre on a spec session");
+    if let Some(trace) = s.ttft.as_ref() {
+        trace.mark_prime_start();
+    }
+    // Burst size trades round-robin latency (other sessions wait a whole burst) against
+    // per-burst fixed cost. The dominant cost — the per-call draft-graph recapture,
+    // measured ~16ms/burst on H100 q27 — is gone since 2026-08-01: the captured graph
+    // persists on the SpecSession (spec.rs DraftGraphCtx) and later bursts replay it.
+    // MEMRA_SPEC_BURST overrides for measurement; 32 = latency-safe default.
+    let burst_t: usize = std::env::var("MEMRA_SPEC_BURST")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(32);
+    let k = s.spec_k;
+    debug_assert!(k > 0, "plain sessions must not enter the spec round");
+    let request_room = s.budget.saturating_sub(s.generated.len());
+    if request_room == 0 {
+        finish(s, StopReason::MaxNew);
+        return Ok(SpecBurstPre::Return(false));
+    }
+    // The engine target is a scheduler cadence, not a public-output cap. Session mode may
+    // return a cache-authoritative surplus token past this target; expose it when the request
+    // still has room so worker generated/sampler/fed state stays aligned with SpecSession.
+    let burst_target = s.prime_service.decode_target(request_room.min(burst_t));
+    let cooperative_prime =
+        memra_engine::prime_walker::prime_yield_enabled() && lm.model.mtp_prime_walk_supported();
+    let suffix: Vec<u32> = if cooperative_prime {
+        s.prefill_queue.iter().copied().collect()
+    } else {
+        s.prefill_queue.drain(..).collect()
+    };
+    if suffix.is_empty() && spec.next_pred.is_none() && spec.pending_tok.is_none() {
+        // nothing primed and nothing to prime — shouldn't happen (admit rejects empty prompts)
+        finish(s, StopReason::MaxNew);
+        return Ok(SpecBurstPre::Return(false));
+    }
+    let sampling = spec_sampling_for(&s.sampler);
+    // Cold speculative sessions must enter decode with the same prompt state as the plain
+    // policy they replace. Plain affinity stops at the stable live-turn boundary and primes
+    // a sub-floor tail tokenwise; a monolithic spec prime can select different Step35 bytes.
+    // Mirror that cold boundary — and, under the stable-boundary door
+    // (lane/frspec-multiturn-cache, 2026-08-21), the WARM one too: an affinity-rewound or
+    // pool-resumed session priming its own delta stops at the new turn's stable boundary
+    // exactly like a resumed plain session's prefill tick does (`ckpt_at` filter
+    // `b > seed_fed.len()`). Warm sessions skip the nominatable predicate — a session that
+    // was parked and resumed has already proven nomination, and the suffix alone
+    // undercounts the conversation's segments. Empty-suffix continuation bursts remain
+    // zero-prime, and MEMRA_AFFINITY=0 preserves the monolithic control arm.
+    let cold = spec.committed.is_empty();
+    // EXACT RESUME (MEMRA_RESUME_EXACT, WP-B day 44): the turn checkpoint is captured inside
+    // the MTP walker's trunk call that contains it, at the last grid point with the prime
+    // floor after it; no stop, no split. The resume point this suffix primes from is on the
+    // grid (a cold prime, a settled entry or a restored checkpoint), so the suffix-relative
+    // boundary is on the absolute grid.
+    if resume_exact_on()
+        && !suffix.is_empty()
+        && affinity_enabled()
+        && cooperative_prime
+        && s.mtp_prime.is_none()
+    {
+        spec.grid_capture_at =
+            grid_rewind_checkpoint_boundary(&suffix, 0, false, &|t| lm.tok.token_is_control(t))
+                .map(|b| spec.committed.len() + b);
+    }
+    let boundary = if !resume_exact_on()
+        && !suffix.is_empty()
+        && affinity_enabled()
+        && (cold
+            && (s.affinity.is_some()
+                || plain_ckpt_nominatable(&suffix, &|t| lm.tok.token_is_control(t))
+                || resume_grid_rewind_on())
+            || !cold)
+    {
+        if cold && resume_grid_rewind_on() {
+            // DAY41 addendum B (B1): a cold spec session arms the armed arm's rule.
+            let markers = s.affinity.is_some()
+                || plain_ckpt_nominatable(&suffix, &|t| lm.tok.token_is_control(t));
+            grid_rewind_checkpoint_boundary(&suffix, 0, markers, &|t| lm.tok.token_is_control(t))
+        } else {
+            plain_checkpoint_boundary(&suffix, &|t| lm.tok.token_is_control(t))
+        }
+    } else {
+        None
+    };
+    // SPEC-TIER TURN CHECKPOINT at the stable boundary (the plain tier's 2026-08-09 law,
+    // ported): the engine captures `turn_ckpt` at this stop instead of prompt-end, so the
+    // next re-rendered turn's byte diff lands ON the checkpoint instead of diverging
+    // inside the live generation header 2 tokens below it. Absolute position, `capture_at`
+    // convention.
+    spec.ckpt_at = boundary.map(|b| spec.committed.len() + b).or(spec.ckpt_at);
+    let prime_split = boundary;
+    // PREFIX-CACHE capture boundary (lane/spec-prefix-cache): a cold burst with an armed
+    // mid-prompt capture boundary must actually SPLIT the prime there, or the capture
+    // never fires (the engine compares capture_at == split). When affinity also wants a
+    // split, the EARLIER boundary wins — both are legal prime stops, and the engine's
+    // PRIME_MIN_T law vetoes sub-floor splits on its own. A seed boundary (== suffix
+    // length) is not a split; the engine's post-prime seed capture handles it. (Under the
+    // stable boundary the affinity stop is re-armed via `ckpt_at` above, so taking
+    // the min here no longer forfeits it — the engine stops at BOTH, exactly like the
+    // plain prefill tick's snapshot_at/ckpt_at pair.)
+    let prime_split = if cold {
+        // GRID-ALIGNED CAPTURE (memra#602, day 19): `capture_at` is the seed's grid
+        // boundary and may sit ABOVE the affinity boundary, so it is a prime stop of its
+        // own. `trunk_schedule` takes both `prime_split` and the checkpoint stop (the
+        // affinity boundary rides through `ckpt_at` above), and the engine captures where
+        // a chunk ends on `capture_at`; the old min() dropped whichever stop came later.
+        spec.capture_at
+            .filter(|&b| b < suffix.len())
+            .or(prime_split)
+    } else {
+        prime_split
+    };
+    if cooperative_prime && !suffix.is_empty() {
+        if s.mtp_prime.is_none() {
+            s.mtp_prime =
+                Some(
+                    lm.model
+                        .mtp_prime_start(engine, spec, &suffix, k, sampling, prime_split)?,
+                );
+        }
+        let mut grammar = s
+            .constraint
+            .as_mut()
+            .map(|c| crate::constrained::SpecGrammar::new(c, lm.eos_id));
+        let mut walker = lm.model.mtp_prime_walker(
+            engine,
+            spec,
+            &mut s.mtp_prime,
+            grammar
+                .as_mut()
+                .map(|g| g as &mut dyn memra_engine::spec::SpecConstraint),
+        );
+        if !s.prime_service.advance(&mut walker)? {
+            return Ok(SpecBurstPre::Return(true));
+        }
+        s.prime_service.finish(walker)?;
+        s.prefill_queue.clear();
+    }
+    // Empty-suffix restores/continuations are already primed too. A pending
+    // walker returned above, so every path reaching decode has completed prefill.
+    s.prefill_done = true;
+    // SPEC x CONSTRAINED: greedy constrained bursts carry the grammar hook — verify-side
+    // truncation + masked-argmax cut slots (engine contract; sampled never gets here).
+    // Telemetry (lane/accept-telemetry): the session's counters are LIFETIME (a pool
+    // resume carries prior requests' counts), so stash a copy and diff after the burst —
+    // the delta is this burst's contribution, merged per-model for /metrics and summed
+    // per-request for usage.spec.
+    let telem_before = spec.telemetry();
+    // BUDGET CLAMP (MEMRA_SPEC_BUDGET_CLAMP, WP-B day 43): the request's remaining public
+    // budget, not the burst's cadence target; unset leaves the engine's field None.
+    if spec_budget_clamp_on() {
+        spec.budget_room = Some(request_room);
+    }
+    Ok(SpecBurstPre::Run(Box::new(SpecBurstPlan {
+        k,
+        request_room,
+        burst_target,
+        suffix,
+        sampling,
+        prime_split,
+        telem_before,
+    })))
+}
+
+/// The MTP spec burst's SSE emission state: one per burst, fed by the engine's round-cadence
+/// `on_commit` hook (`flush`) and settled by `spec_burst_post`.
+struct SpecBurstEmit<'t> {
+    per_burst_emit: bool,
+    admit_yield: bool,
+    tok: &'t memra_tokenizer::Tokenizer,
+    decoded_visible: Vec<u8>,
+    cursor: usize,
+    emit_remaining: usize,
+    eos_seen: bool,
+    send_ok: bool,
+    token_events: usize,
+    flush_tx: EventSender,
+    eos_ids: Vec<u32>,
+    stop_ids: Vec<u32>,
+}
+
+impl<'t> SpecBurstEmit<'t> {
+    fn new(lm: &'t LoadedModel, s: &mut Session, request_room: usize) -> Self {
+        let per_burst_emit = std::env::var("MEMRA_SSE_PER_BURST").as_deref() == Ok("1");
+        // ADMISSION YIELD (lane/admission-latency, 2026-08-06): a request that arrives while
+        // a burst is in flight used to wait the WHOLE burst out before the worker's tick-top
+        // admission phase could even see it — contended first-text scaled with
+        // MEMRA_SPEC_BURST (0.57s at B32, 1.67s at B128; sse-cadence VERDICT). The round-
+        // boundary flush below now returns a continue-verdict: `false` (a request is waiting
+        // in the cmd channel, PENDING_ADMITS > 0) ends the burst at the current round exactly
+        // as if burst-count had been reached — burst size is content-neutral (spec-levers
+        // battery), so this moves WHEN control returns, never what tokens say.
+        // MEMRA_ADMIT_YIELD=0 = rollback seam (restores full-burst holds).
+        let admit_yield = std::env::var("MEMRA_ADMIT_YIELD").as_deref() != Ok("0");
+        let tok = &lm.tok;
+        let decoded_visible = std::mem::take(&mut s.decoded_bytes);
+        let cursor = s.emitted_bytes;
+        let emit_remaining = request_room;
+        let eos_seen = false;
+        let send_ok = true;
+        let token_events = 0usize;
+        let flush_tx = s.tx.clone();
+        let eos_ids = s.params.eos.clone();
+        let stop_ids = s.stop_token_ids.clone();
+        SpecBurstEmit {
+            per_burst_emit,
+            admit_yield,
+            tok,
+            decoded_visible,
+            cursor,
+            emit_remaining,
+            eos_seen,
+            send_ok,
+            token_events,
+            flush_tx,
+            eos_ids,
+            stop_ids,
+        }
+    }
+
+    /// The round-cadence flush (`on_commit`): returns the admission-yield continue-verdict.
+    fn flush(
+        &mut self,
+        slice: &[u32],
+        ttft: Option<&Arc<crate::ttft::Trace>>,
+        model: &str,
+        lane: crate::lanes::Lane,
+        emission_clock: &mut crate::hybrid_telemetry::EmissionClock,
+        tokens_emitted: &mut usize,
+    ) -> bool {
+        let (tok, flush_tx) = (self.tok, &self.flush_tx);
+        // Continue-verdict polled at EVERY round boundary (even empty/post-EOS flushes).
+        let keep =
+            !self.admit_yield || PENDING_ADMITS.load(std::sync::atomic::Ordering::Acquire) == 0;
+        if self.per_burst_emit || self.eos_seen || self.emit_remaining == 0 || slice.is_empty() {
+            // poll-only boundary: rollback seam / post-EOS (tokens never visible;
+            // accounting happens post-burst) / nothing new committed this round.
+            return keep;
+        }
+        if let Some(trace) = ttft {
+            trace.mark_prime_end();
+            trace.mark_first_decode();
+        }
+        if !self.send_ok {
+            return keep; // client already gone — keep the cursor honest, stop sending
+        }
+        let emitted = emit_spec_token_events(
+            slice,
+            &mut self.emit_remaining,
+            &mut self.decoded_visible,
+            &mut self.cursor,
+            &self.eos_ids,
+            &self.stop_ids,
+            &mut self.eos_seen,
+            |id| tok.decode_bytes_special(&[id], true),
+            |event| send_observed_event(flush_tx, model, lane, emission_clock, event),
+        );
+        self.token_events += emitted.sent;
+        // STREAMED MARKER (PR #93 review): the step-OOM park guard reads
+        // `tokens_emitted`; advance it at the send so a post-flush OOM never replays.
+        *tokens_emitted += emitted.sent;
+        self.send_ok = emitted.send_ok;
+        keep
+    }
+}
+
+/// Everything `step_session`'s spec arm does after the engine burst call: telemetry, the
+/// fed/sampler/generated mirrors, public emission settle, stop battery. Returns the bool
+/// `step_session` returns.
+#[allow(clippy::too_many_arguments)]
+// allow: the burst's three engine outputs plus its plan and emission state are its inputs
+fn spec_burst_post(
+    s: &mut Session,
+    spec_metrics: &mut SpecMetricState,
+    plan: SpecBurstPlan,
+    emit: SpecBurstEmit<'_>,
+    burst: Vec<u32>,
+    d: usize,
+    a: usize,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let SpecBurstPlan {
+        k,
+        request_room,
+        suffix,
+        telem_before,
+        ..
+    } = plan;
+    let SpecBurstEmit {
+        per_burst_emit,
+        tok: tok_ref,
+        mut decoded_visible,
+        mut cursor,
+        mut emit_remaining,
+        mut eos_seen,
+        mut send_ok,
+        mut token_events,
+        eos_ids,
+        stop_ids,
+        ..
+    } = emit;
+    let spec = s.spec.as_mut().expect("spec_burst_post on a spec session");
+    if let Some(trace) = s.ttft.as_ref() {
+        trace.mark_prime_end();
+        if !burst.is_empty() {
+            trace.mark_first_decode();
+        }
+    }
+    if let Some((na, n_acc, room)) = spec.budget_clamp_fired.take() {
+        eprintln!(
+            "[spec] budget clamp: round truncated at {na} of {n_acc} accepted ({room} of the \
+             request's budget left; model {})",
+            s.model
+        );
+    }
+    let telem_delta = spec.telemetry().delta_since(&telem_before);
+    spec_metrics.record(&s.model, telem_delta);
+    s.spec_rounds += telem_delta.rounds;
+    s.spec_drafted += d;
+    s.spec_accepted += a;
+    if d > 0 {
+        eprintln!(
+            "[spec-acc] ctx={} burst={}/{} cum={}/{}={:.3}",
+            s.fed.len() + suffix.len(),
+            a,
+            d,
+            s.spec_accepted,
+            s.spec_drafted,
+            s.spec_accepted as f64 / s.spec_drafted.max(1) as f64
+        );
+    }
+    for &tok in &suffix {
+        s.fed.push(tok);
+        s.sampler.accept(tok);
+    }
+    let (public_len, mut stop) = spec_visible_prefix(&burst, request_room, &eos_ids, &stop_ids);
+    let public_burst = &burst[..public_len];
+    if per_burst_emit {
+        let emitted = emit_spec_token_events(
+            public_burst,
+            &mut emit_remaining,
+            &mut decoded_visible,
+            &mut cursor,
+            &eos_ids,
+            &stop_ids,
+            &mut eos_seen,
+            |id| tok_ref.decode_bytes_special(&[id], true),
+            |event| send_observed_event(&s.tx, &s.model, s.lane, &mut s.emission_clock, event),
+        );
+        token_events += emitted.sent;
+        s.tokens_emitted += emitted.sent;
+        send_ok = emitted.send_ok;
+    }
+    if send_ok {
+        debug_assert_eq!(
+            token_events, public_len,
+            "one token event per public spec token"
+        );
+    }
+    for &tok in public_burst {
+        s.sampler.accept(tok);
+        push_generated(&mut s.generated, &s.model, s.t0, tok);
+        s.fed.push(tok);
+        if s.params.eos.contains(&tok) {
+            stop = Some(StopReason::Eos);
+            break;
+        }
+    }
+    // EOS text is never streamed (serve-compat, 2026-08-03), but its empty-text token event
+    // keeps the id/event/generated receipt 1:1. Engine-committed budget surplus remains only
+    // in SpecSession committed/pending state; it never enters these public worker vectors.
+    // `tokens_emitted` was advanced at each send site above (the round-cadence hook
+    // and the per-burst arm), never here — the park guard reads it mid-burst.
+    s.emitted_bytes = cursor;
+    s.decoded_bytes = decoded_visible;
+    if !send_ok {
+        // DISCONNECT ABORT (gap-scan F8): an in-burst flush hit a closed channel —
+        // client gone, retire at the abort point (state consistent post-burst).
+        abort_log(s);
+        return Ok(false);
+    }
+    if stop.is_none() && contains_stop_string(&s.decoded_bytes, &s.stop_strings) {
+        stop = Some(StopReason::Callback);
+    }
+    if stop.is_none() && s.generated.len() >= s.budget {
+        stop = Some(StopReason::MaxNew);
+    }
+    // +3 (was +2): committed excludes a carried pending token (pending-carry, 2026-08-01).
+    if stop.is_none() && spec.committed.len() + k + 3 >= spec.cache_max_ctx() {
+        stop = Some(StopReason::ContextFull);
+    }
+    if let Some(r) = stop {
+        finish(s, r);
+        return Ok(false);
+    }
+    Ok(true)
+}
+
+/// One spec step's result as `step_session` returns it.
+type SpecStepResult = Result<bool, Box<dyn std::error::Error>>;
+
+/// A session that may join this tick's pooled MTP cohort: an unconstrained MTP spec session on
+/// a CONTINUATION burst (prompt fully primed, no prime walker in flight). Prime bursts,
+/// constrained sessions and the other spec routes keep the serial per-session step.
+fn spec_pool_candidate(s: &Session, lm: &LoadedModel) -> bool {
+    s.spec.is_some()
+        && s.spec_k > 0
+        && !s.dspark_on
+        && !s.glm5_on
+        && s.gspec_k == 0
+        && s.constraint.is_none()
+        && s.vision.is_none()
+        && s.prefill_done
+        && s.prefill_queue.is_empty()
+        && s.mtp_prime.is_none()
+        && !s.prime_service.pending
+        && !choice_waiting(s)
+        && lm.model.spec_pool_capable()
+}
+
+/// POOLED MTP COHORT (lane/batch-spec): run the continuation bursts of several same-model MTP
+/// sessions in LOCKSTEP so each round's verifies share one target forward
+/// (`generate_spec_sessions_pooled`). Each session runs the exact preamble, round-cadence
+/// emission and post-burst accounting `step_session` runs for it alone
+/// (`spec_burst_pre` / `SpecBurstEmit` / `spec_burst_post`), so per-session streams are
+/// byte-identical to the serial path; only the verify forward is shared.
+/// Returns `(active index, step result)` for every member, in member order.
+fn step_spec_pooled(
+    engine: &Engine,
+    loaded: &HashMap<String, LoadedModel>,
+    active: &mut [Session],
+    cohort: &[usize],
+    spec_metrics: &mut SpecMetricState,
+) -> Vec<(usize, SpecStepResult)> {
+    let lm = &loaded[&active[cohort[0]].model];
+    let mut members: Vec<(usize, &mut Session)> = active
+        .iter_mut()
+        .enumerate()
+        .filter(|(i, _)| cohort.contains(i))
+        .collect();
+    let mut results: Vec<(usize, SpecStepResult)> = Vec::new();
+    // Preambles, each exactly as the serial step runs it.
+    let mut plans: Vec<Option<SpecBurstPlan>> = Vec::with_capacity(members.len());
+    for (i, s) in members.iter_mut() {
+        match spec_burst_pre(engine, lm, s) {
+            Ok(SpecBurstPre::Run(plan)) => plans.push(Some(*plan)),
+            Ok(SpecBurstPre::Return(r)) => {
+                results.push((*i, Ok(r)));
+                plans.push(None);
+            }
+            Err(err) => {
+                results.push((*i, Err(err)));
+                plans.push(None);
+            }
+        }
+    }
+    let mut emits: Vec<Option<SpecBurstEmit<'_>>> = members
+        .iter_mut()
+        .zip(&plans)
+        .map(|((_, s), plan)| {
+            plan.as_ref()
+                .map(|p| SpecBurstEmit::new(lm, s, p.request_room))
+        })
+        .collect();
+    let outcomes = {
+        let mut reqs: Vec<memra_engine::spec::PooledBurstReq<'_>> = Vec::new();
+        for (((_, s), emit), plan) in members.iter_mut().zip(emits.iter_mut()).zip(&plans) {
+            let (Some(emit), Some(plan)) = (emit.as_mut(), plan.as_ref()) else {
+                continue;
+            };
+            let no_round_hook = emit.per_burst_emit && !emit.admit_yield;
+            let Session {
+                spec,
+                ttft,
+                model,
+                lane,
+                emission_clock,
+                tokens_emitted,
+                ..
+            } = &mut **s;
+            let lane = *lane;
+            let on_commit: Option<memra_engine::spec::PooledCommitHook<'_>> = if no_round_hook {
+                None
+            } else {
+                Some(Box::new(move |slice: &[u32]| {
+                    emit.flush(
+                        slice,
+                        ttft.as_ref(),
+                        model,
+                        lane,
+                        emission_clock,
+                        tokens_emitted,
+                    )
+                }))
+            };
+            reqs.push(memra_engine::spec::PooledBurstReq {
+                sess: spec.as_mut().expect("pool candidates hold a spec session"),
+                max_new: plan.burst_target,
+                k: plan.k,
+                sampling: plan.sampling,
+                on_commit,
+            });
+        }
+        lm.model.generate_spec_sessions_pooled(engine, reqs)
+    };
+    let mut outcomes = outcomes.into_iter();
+    for (((i, s), emit), plan) in members.iter_mut().zip(emits.iter_mut()).zip(plans) {
+        let Some(plan) = plan else {
+            continue;
+        };
+        let emit = emit.take().expect("emission state built with the plan");
+        let r = match outcomes.next().expect("one outcome per pooled request") {
+            Ok((burst, d, a)) => spec_burst_post(s, spec_metrics, plan, emit, burst, d, a),
+            Err(err) => Err(err),
+        };
+        results.push((*i, r));
+    }
+    results
+}
+
 fn step_session(
     engine: &Engine,
     loaded: &HashMap<String, LoadedModel>,
@@ -40132,229 +40746,32 @@ fn step_session(
         // (a text-only model answering "blind" — the failure is invisible in the API).
         return Err("vision session entered the spec round (admit gate failed)".into());
     }
-    if let Some(spec) = s.spec.as_mut() {
-        if let Some(trace) = s.ttft.as_ref() {
-            trace.mark_prime_start();
-        }
-        // Burst size trades round-robin latency (other sessions wait a whole burst) against
-        // per-burst fixed cost. The dominant cost — the per-call draft-graph recapture,
-        // measured ~16ms/burst on H100 q27 — is gone since 2026-08-01: the captured graph
-        // persists on the SpecSession (spec.rs DraftGraphCtx) and later bursts replay it.
-        // MEMRA_SPEC_BURST overrides for measurement; 32 = latency-safe default.
-        let burst_t: usize = std::env::var("MEMRA_SPEC_BURST")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(32);
-        let k = s.spec_k;
-        debug_assert!(k > 0, "plain sessions must not enter the spec round");
-        let request_room = s.budget.saturating_sub(s.generated.len());
-        if request_room == 0 {
-            finish(s, StopReason::MaxNew);
-            return Ok(false);
-        }
-        // The engine target is a scheduler cadence, not a public-output cap. Session mode may
-        // return a cache-authoritative surplus token past this target; expose it when the request
-        // still has room so worker generated/sampler/fed state stays aligned with SpecSession.
-        let burst_target = s.prime_service.decode_target(request_room.min(burst_t));
-        let cooperative_prime = memra_engine::prime_walker::prime_yield_enabled()
-            && lm.model.mtp_prime_walk_supported();
-        let suffix: Vec<u32> = if cooperative_prime {
-            s.prefill_queue.iter().copied().collect()
-        } else {
-            s.prefill_queue.drain(..).collect()
+    if s.spec.is_some() {
+        let plan = match spec_burst_pre(engine, lm, s)? {
+            SpecBurstPre::Return(r) => return Ok(r),
+            SpecBurstPre::Run(plan) => *plan,
         };
-        if suffix.is_empty() && spec.next_pred.is_none() && spec.pending_tok.is_none() {
-            // nothing primed and nothing to prime — shouldn't happen (admit rejects empty prompts)
-            finish(s, StopReason::MaxNew);
-            return Ok(false);
-        }
-        let sampling = spec_sampling_for(&s.sampler);
-        // Cold speculative sessions must enter decode with the same prompt state as the plain
-        // policy they replace. Plain affinity stops at the stable live-turn boundary and primes
-        // a sub-floor tail tokenwise; a monolithic spec prime can select different Step35 bytes.
-        // Mirror that cold boundary — and, under the stable-boundary door
-        // (lane/frspec-multiturn-cache, 2026-08-21), the WARM one too: an affinity-rewound or
-        // pool-resumed session priming its own delta stops at the new turn's stable boundary
-        // exactly like a resumed plain session's prefill tick does (`ckpt_at` filter
-        // `b > seed_fed.len()`). Warm sessions skip the nominatable predicate — a session that
-        // was parked and resumed has already proven nomination, and the suffix alone
-        // undercounts the conversation's segments. Empty-suffix continuation bursts remain
-        // zero-prime, and MEMRA_AFFINITY=0 preserves the monolithic control arm.
-        let cold = spec.committed.is_empty();
-        // EXACT RESUME (MEMRA_RESUME_EXACT, WP-B day 44): the turn checkpoint is captured inside
-        // the MTP walker's trunk call that contains it, at the last grid point with the prime
-        // floor after it; no stop, no split. The resume point this suffix primes from is on the
-        // grid (a cold prime, a settled entry or a restored checkpoint), so the suffix-relative
-        // boundary is on the absolute grid.
-        if resume_exact_on()
-            && !suffix.is_empty()
-            && affinity_enabled()
-            && cooperative_prime
-            && s.mtp_prime.is_none()
-        {
-            spec.grid_capture_at =
-                grid_rewind_checkpoint_boundary(&suffix, 0, false, &|t| lm.tok.token_is_control(t))
-                    .map(|b| spec.committed.len() + b);
-        }
-        let boundary = if !resume_exact_on()
-            && !suffix.is_empty()
-            && affinity_enabled()
-            && (cold
-                && (s.affinity.is_some()
-                    || plain_ckpt_nominatable(&suffix, &|t| lm.tok.token_is_control(t))
-                    || resume_grid_rewind_on())
-                || !cold)
-        {
-            if cold && resume_grid_rewind_on() {
-                // DAY41 addendum B (B1): a cold spec session arms the armed arm's rule.
-                let markers = s.affinity.is_some()
-                    || plain_ckpt_nominatable(&suffix, &|t| lm.tok.token_is_control(t));
-                grid_rewind_checkpoint_boundary(&suffix, 0, markers, &|t| {
-                    lm.tok.token_is_control(t)
-                })
-            } else {
-                plain_checkpoint_boundary(&suffix, &|t| lm.tok.token_is_control(t))
-            }
-        } else {
-            None
-        };
-        // SPEC-TIER TURN CHECKPOINT at the stable boundary (the plain tier's 2026-08-09 law,
-        // ported): the engine captures `turn_ckpt` at this stop instead of prompt-end, so the
-        // next re-rendered turn's byte diff lands ON the checkpoint instead of diverging
-        // inside the live generation header 2 tokens below it. Absolute position, `capture_at`
-        // convention.
-        spec.ckpt_at = boundary.map(|b| spec.committed.len() + b).or(spec.ckpt_at);
-        let prime_split = boundary;
-        // PREFIX-CACHE capture boundary (lane/spec-prefix-cache): a cold burst with an armed
-        // mid-prompt capture boundary must actually SPLIT the prime there, or the capture
-        // never fires (the engine compares capture_at == split). When affinity also wants a
-        // split, the EARLIER boundary wins — both are legal prime stops, and the engine's
-        // PRIME_MIN_T law vetoes sub-floor splits on its own. A seed boundary (== suffix
-        // length) is not a split; the engine's post-prime seed capture handles it. (Under the
-        // stable boundary the affinity stop is re-armed via `ckpt_at` above, so taking
-        // the min here no longer forfeits it — the engine stops at BOTH, exactly like the
-        // plain prefill tick's snapshot_at/ckpt_at pair.)
-        let prime_split = if cold {
-            // GRID-ALIGNED CAPTURE (memra#602, day 19): `capture_at` is the seed's grid
-            // boundary and may sit ABOVE the affinity boundary, so it is a prime stop of its
-            // own. `trunk_schedule` takes both `prime_split` and the checkpoint stop (the
-            // affinity boundary rides through `ckpt_at` above), and the engine captures where
-            // a chunk ends on `capture_at`; the old min() dropped whichever stop came later.
-            spec.capture_at
-                .filter(|&b| b < suffix.len())
-                .or(prime_split)
-        } else {
-            prime_split
-        };
-        if cooperative_prime && !suffix.is_empty() {
-            if s.mtp_prime.is_none() {
-                s.mtp_prime = Some(lm.model.mtp_prime_start(
-                    engine,
-                    spec,
-                    &suffix,
-                    k,
-                    sampling,
-                    prime_split,
-                )?);
-            }
-            let mut grammar = s
-                .constraint
-                .as_mut()
-                .map(|c| crate::constrained::SpecGrammar::new(c, lm.eos_id));
-            let mut walker = lm.model.mtp_prime_walker(
-                engine,
-                spec,
-                &mut s.mtp_prime,
-                grammar
-                    .as_mut()
-                    .map(|g| g as &mut dyn memra_engine::spec::SpecConstraint),
-            );
-            if !s.prime_service.advance(&mut walker)? {
-                return Ok(true);
-            }
-            s.prime_service.finish(walker)?;
-            s.prefill_queue.clear();
-        }
-        // Empty-suffix restores/continuations are already primed too. A pending
-        // walker returned above, so every path reaching decode has completed prefill.
-        s.prefill_done = true;
-        // SPEC x CONSTRAINED: greedy constrained bursts carry the grammar hook — verify-side
-        // truncation + masked-argmax cut slots (engine contract; sampled never gets here).
-        // Telemetry (lane/accept-telemetry): the session's counters are LIFETIME (a pool
-        // resume carries prior requests' counts), so stash a copy and diff after the burst —
-        // the delta is this burst's contribution, merged per-model for /metrics and summed
-        // per-request for usage.spec.
-        let telem_before = spec.telemetry();
-        // BUDGET CLAMP (MEMRA_SPEC_BUDGET_CLAMP, WP-B day 43): the request's remaining public
-        // budget, not the burst's cadence target; unset leaves the engine's field None.
-        if spec_budget_clamp_on() {
-            spec.budget_room = Some(request_room);
-        }
         // SSE CADENCE (lane/sse-cadence, 2026-08-05): publish at ROUND cadence, not burst
         // cadence. Every committed id in the request-owned budget gets its own Event::Token;
         // UTF-8 fragments may make an individual event's text empty, but ids are never coalesced.
         // MEMRA_SSE_PER_BURST=1 retains the timing rollback (events wait for burst end), not the
         // old broken one-id-for-many-tokens event shape.
-        let per_burst_emit = std::env::var("MEMRA_SSE_PER_BURST").as_deref() == Ok("1");
-        // ADMISSION YIELD (lane/admission-latency, 2026-08-06): a request that arrives while
-        // a burst is in flight used to wait the WHOLE burst out before the worker's tick-top
-        // admission phase could even see it — contended first-text scaled with
-        // MEMRA_SPEC_BURST (0.57s at B32, 1.67s at B128; sse-cadence VERDICT). The round-
-        // boundary flush below now returns a continue-verdict: `false` (a request is waiting
-        // in the cmd channel, PENDING_ADMITS > 0) ends the burst at the current round exactly
-        // as if burst-count had been reached — burst size is content-neutral (spec-levers
-        // battery), so this moves WHEN control returns, never what tokens say.
-        // MEMRA_ADMIT_YIELD=0 = rollback seam (restores full-burst holds).
-        let admit_yield = std::env::var("MEMRA_ADMIT_YIELD").as_deref() != Ok("0");
-        let tok_ref = &lm.tok;
-        let mut decoded_visible = std::mem::take(&mut s.decoded_bytes);
-        let mut cursor = s.emitted_bytes;
-        let mut emit_remaining = request_room;
-        let mut eos_seen = false;
-        let mut send_ok = true;
-        let mut token_events = 0usize;
-        let flush_tx = s.tx.clone();
-        let eos_ids = s.params.eos.clone();
-        let stop_ids = s.stop_token_ids.clone();
+        let mut emit = SpecBurstEmit::new(lm, s, plan.request_room);
+        let no_round_hook = emit.per_burst_emit && !emit.admit_yield;
+        let spec = s.spec.as_mut().expect("checked above");
         let mut flush_cb = |slice: &[u32]| -> bool {
-            // Continue-verdict polled at EVERY round boundary (even empty/post-EOS flushes).
-            let keep =
-                !admit_yield || PENDING_ADMITS.load(std::sync::atomic::Ordering::Acquire) == 0;
-            if per_burst_emit || eos_seen || emit_remaining == 0 || slice.is_empty() {
-                // poll-only boundary: rollback seam / post-EOS (tokens never visible;
-                // accounting happens post-burst) / nothing new committed this round.
-                return keep;
-            }
-            if let Some(trace) = s.ttft.as_ref() {
-                trace.mark_prime_end();
-                trace.mark_first_decode();
-            }
-            if !send_ok {
-                return keep; // client already gone — keep the cursor honest, stop sending
-            }
-            let emitted = emit_spec_token_events(
+            emit.flush(
                 slice,
-                &mut emit_remaining,
-                &mut decoded_visible,
-                &mut cursor,
-                &eos_ids,
-                &stop_ids,
-                &mut eos_seen,
-                |id| tok_ref.decode_bytes_special(&[id], true),
-                |event| {
-                    send_observed_event(&flush_tx, &s.model, s.lane, &mut s.emission_clock, event)
-                },
-            );
-            token_events += emitted.sent;
-            // STREAMED MARKER (PR #93 review): the step-OOM park guard reads
-            // `tokens_emitted`; advance it at the send so a post-flush OOM never replays.
-            s.tokens_emitted += emitted.sent;
-            send_ok = emitted.send_ok;
-            keep
+                s.ttft.as_ref(),
+                &s.model,
+                s.lane,
+                &mut s.emission_clock,
+                &mut s.tokens_emitted,
+            )
         };
         #[allow(clippy::type_complexity)]
         // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-        let on_commit: Option<&mut dyn FnMut(&[u32]) -> bool> = if per_burst_emit && !admit_yield {
+        let on_commit: Option<&mut dyn FnMut(&[u32]) -> bool> = if no_round_hook {
             None
         } else {
             Some(&mut flush_cb)
@@ -40365,123 +40782,30 @@ fn step_session(
                 lm.model.generate_spec_session_constrained_prime_split(
                     engine,
                     spec,
-                    &suffix,
-                    burst_target,
-                    k,
-                    sampling,
+                    &plan.suffix,
+                    plan.burst_target,
+                    plan.k,
+                    plan.sampling,
                     Some(&mut g),
-                    prime_split,
+                    plan.prime_split,
                     on_commit,
                 )?
             }
             None => lm.model.generate_spec_session_sampled_prime_split(
                 engine,
                 spec,
-                &suffix,
-                burst_target,
-                k,
-                sampling,
-                prime_split,
+                &plan.suffix,
+                plan.burst_target,
+                plan.k,
+                plan.sampling,
+                plan.prime_split,
                 on_commit,
             )?,
         };
         #[allow(clippy::drop_non_drop)]
         // allow: ends flush_cb's captures of the session before s is read below
         drop(flush_cb);
-        if let Some(trace) = s.ttft.as_ref() {
-            trace.mark_prime_end();
-            if !burst.is_empty() {
-                trace.mark_first_decode();
-            }
-        }
-        if let Some((na, n_acc, room)) = spec.budget_clamp_fired.take() {
-            eprintln!(
-                "[spec] budget clamp: round truncated at {na} of {n_acc} accepted ({room} of the \
-                 request's budget left; model {})",
-                s.model
-            );
-        }
-        let telem_delta = spec.telemetry().delta_since(&telem_before);
-        spec_metrics.record(&s.model, telem_delta);
-        s.spec_rounds += telem_delta.rounds;
-        s.spec_drafted += d;
-        s.spec_accepted += a;
-        if d > 0 {
-            eprintln!(
-                "[spec-acc] ctx={} burst={}/{} cum={}/{}={:.3}",
-                s.fed.len() + suffix.len(),
-                a,
-                d,
-                s.spec_accepted,
-                s.spec_drafted,
-                s.spec_accepted as f64 / s.spec_drafted.max(1) as f64
-            );
-        }
-        for &tok in &suffix {
-            s.fed.push(tok);
-            s.sampler.accept(tok);
-        }
-        let (public_len, mut stop) = spec_visible_prefix(&burst, request_room, &eos_ids, &stop_ids);
-        let public_burst = &burst[..public_len];
-        if per_burst_emit {
-            let emitted = emit_spec_token_events(
-                public_burst,
-                &mut emit_remaining,
-                &mut decoded_visible,
-                &mut cursor,
-                &eos_ids,
-                &stop_ids,
-                &mut eos_seen,
-                |id| tok_ref.decode_bytes_special(&[id], true),
-                |event| send_observed_event(&s.tx, &s.model, s.lane, &mut s.emission_clock, event),
-            );
-            token_events += emitted.sent;
-            s.tokens_emitted += emitted.sent;
-            send_ok = emitted.send_ok;
-        }
-        if send_ok {
-            debug_assert_eq!(
-                token_events, public_len,
-                "one token event per public spec token"
-            );
-        }
-        for &tok in public_burst {
-            s.sampler.accept(tok);
-            push_generated(&mut s.generated, &s.model, s.t0, tok);
-            s.fed.push(tok);
-            if s.params.eos.contains(&tok) {
-                stop = Some(StopReason::Eos);
-                break;
-            }
-        }
-        // EOS text is never streamed (serve-compat, 2026-08-03), but its empty-text token event
-        // keeps the id/event/generated receipt 1:1. Engine-committed budget surplus remains only
-        // in SpecSession committed/pending state; it never enters these public worker vectors.
-        // `tokens_emitted` was advanced at each send site above (the round-cadence hook
-        // and the per-burst arm), never here — the park guard reads it mid-burst.
-        s.emitted_bytes = cursor;
-        s.decoded_bytes = decoded_visible;
-        if !send_ok {
-            // DISCONNECT ABORT (gap-scan F8): an in-burst flush hit a closed channel —
-            // client gone, retire at the abort point (state consistent post-burst).
-            abort_log(s);
-            return Ok(false);
-        }
-        if stop.is_none() && contains_stop_string(&s.decoded_bytes, &s.stop_strings) {
-            stop = Some(StopReason::Callback);
-        }
-        if stop.is_none() && s.generated.len() >= s.budget {
-            stop = Some(StopReason::MaxNew);
-        }
-        // +3 (was +2): committed excludes a carried pending token (pending-carry, 2026-08-01).
-        if stop.is_none() && spec.committed.len() + k + 3 >= spec.cache_max_ctx() {
-            stop = Some(StopReason::ContextFull);
-        }
-        if let Some(r) = stop {
-            finish(s, r);
-            return Ok(false);
-        }
-        return Ok(true);
+        return spec_burst_post(s, spec_metrics, plan, emit, burst, d, a);
     }
 
     // ---- prefill phase: BATCHED chunk prime (2026-07-05). prime_cache now supports
@@ -61240,7 +61564,9 @@ mod tests {
         assert_eq!(live.matches(call.as_str()).count(), 9);
         assert!(live.contains("if resume_grid_rewind_on() { // DAY41 addendum B (B1, B2): the armed arm's own boundary rule. let markers = req.affinity.is_some() || plain_ckpt_nominatable(&prompt, &|t| lm.tok.token_is_control(t)); grid_rewind_checkpoint_boundary(&prompt, seed_fed.len(), markers, &|t| { lm.tok.token_is_control(t) }) } else { plain_checkpoint_boundary(&prompt, &|t| lm.tok.token_is_control(t)) .filter(|&b| b > seed_fed.len()) }"));
         assert!(live.contains("if cold && resume_grid_rewind_on() {"));
-        assert!(live.contains("grid_rewind_checkpoint_boundary(&suffix, 0, markers, &|t| {"));
+        assert!(live.contains(
+            "grid_rewind_checkpoint_boundary(&suffix, 0, markers, &|t| lm.tok.token_is_control(t))"
+        ));
         // B3: unset, the exact key is the whole committed stream (today's probe).
         assert!(live.contains("if resume_grid_rewind_on() || resume_exact_on() { e.public_len.min(e.sess.committed.len()) } else { e.sess.committed.len() }"));
         assert!(live.contains("&& prompt.starts_with(&e.sess.committed[..exact_key(e)])"));
@@ -61527,11 +61853,35 @@ mod tests {
             1,
             "only the qwen arm sets it"
         );
+        // The read is the tail of the shared burst preamble, and both burst entries (the
+        // serial step and the pooled cohort) run that preamble right before their burst.
         let set = live.find("spec.budget_room = Some(request_room);").unwrap();
-        let burst = live[set..]
-            .find("generate_spec_session_sampled_prime_split(")
-            .unwrap();
-        assert!(burst < 4000, "the budget is set right before the burst");
+        let pre = live[..set]
+            .rfind("fn spec_burst_pre(")
+            .expect("set inside the preamble");
+        assert!(
+            !live[pre..set].contains("\nfn "),
+            "the set is inside spec_burst_pre"
+        );
+        assert!(
+            live[set..].find("Ok(SpecBurstPre::Run(").unwrap() < 600,
+            "the set ends the preamble"
+        );
+        for (caller, burst) in [
+            (
+                "fn step_session(",
+                "generate_spec_session_sampled_prime_split(",
+            ),
+            ("fn step_spec_pooled(", "generate_spec_sessions_pooled("),
+        ] {
+            let body = &live[live.find(caller).unwrap()..];
+            let pre_call = body.find("spec_burst_pre(engine, lm, s)").unwrap();
+            let call = body.find(burst).unwrap();
+            assert!(
+                pre_call < call && call - pre_call < 6000,
+                "{caller} runs the preamble first"
+            );
+        }
         assert!(live.contains("if let Some((na, n_acc, room)) = spec.budget_clamp_fired.take() {"));
     }
 
@@ -61933,17 +62283,21 @@ mod tests {
         );
         // 3. The qwen sse-cadence hook: same marker at the send; the per-burst arm adds
         //    its own; no unconditional post-burst add remains.
-        let qwen_start = live
-            .find("let mut flush_cb = |slice: &[u32]| -> bool {")
-            .expect("the qwen flush closure exists");
-        let qwen_end = live[qwen_start..]
-            .find("let on_commit: Option<&mut dyn FnMut(&[u32]) -> bool>")
-            .map(|i| qwen_start + i)
-            .expect("on_commit follows the closure");
+        //    The hook is `SpecBurstEmit::flush`, shared by the serial burst and the pooled
+        //    cohort; both pass the session's own marker.
+        let flush = live
+            .split("fn flush(")
+            .nth(1)
+            .expect("SpecBurstEmit::flush exists");
+        let flush = &flush[..flush.find("\n    }\n").unwrap()];
         assert!(
-            live[qwen_start..qwen_end].contains("s.tokens_emitted += emitted.sent;"),
-            "the qwen flush closure must advance tokens_emitted at the send"
+            flush.contains("*tokens_emitted += emitted.sent;"),
+            "the qwen flush hook must advance tokens_emitted at the send"
         );
+        assert!(live_sq.contains("emit.flush( slice, s.ttft.as_ref(), &s.model, s.lane, &mut s.emission_clock, &mut s.tokens_emitted, )"));
+        assert!(live_sq.contains(
+            "emit.flush( slice, ttft.as_ref(), model, lane, emission_clock, tokens_emitted, )"
+        ));
         assert!(
             !live.contains("s.tokens_emitted += token_events;"),
             "no post-burst add from the accumulated count may remain (it would double \

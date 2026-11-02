@@ -2755,6 +2755,23 @@ pub(crate) struct PooledVerifySeg<'a> {
 /// `decode_step_t_core_stream` output pair, rows in session order).
 pub(crate) type PooledVerifyOut = (CudaSlice<f32>, CudaSlice<f32>);
 
+/// A pooled burst's sse-cadence hook, owned by its request.
+pub type PooledCommitHook<'a> = Box<dyn FnMut(&[u32]) -> bool + 'a>;
+
+/// One pooled burst's outcome: the serial burst's `(committed tokens, drafted, accepted)`.
+pub type PooledBurstResult = Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>>;
+
+/// One session's continuation burst in a pooled lockstep cohort
+/// (`HybridModel::generate_spec_sessions_pooled`): the serial
+/// `generate_spec_session_sampled` arguments for an empty suffix.
+pub struct PooledBurstReq<'a> {
+    pub sess: &'a mut SpecSession,
+    pub max_new: usize,
+    pub k: usize,
+    pub sampling: Option<SpecSampling>,
+    pub on_commit: Option<PooledCommitHook<'a>>,
+}
+
 /// Row positions of a pooled verify, host and device copies.
 pub(crate) struct PooledPos<'a> {
     host: &'a [i32],
@@ -7377,21 +7394,14 @@ impl HybridModel {
         if !poolable {
             return Ok(None);
         }
-        // Attention window: every row of every session must take the seqs arm (the rung split
-        // below handles different rungs; rows below the vec floor are not pooled in v1).
-        let head_dim_global = cfg.head_dim_k as usize;
+        // Attention: every full-attention cache must store rows at the projection's kv stride
+        // (the seqs twins read stacked rows at the cache's kv dims).
         for s in segs.iter() {
             for &il in &fa_layers {
                 let kvl = s.cache.kv[il].as_ref().ok_or("pooled verify: missing kv")?;
                 let geometry = cfg.full_attention_geometry_at(il as u32);
                 let kv_dim = geometry.n_head_kv as usize * geometry.head_dim_k as usize;
                 if kvl.kv_dim_k != kv_dim || kvl.kv_dim_v != kv_dim {
-                    return Ok(None);
-                }
-                let (first, last) = (kvl.len + 1, kvl.len + s.tokens.len());
-                if !crate::fa_seqs_eligible(first, head_dim_global)
-                    || !crate::fa_seqs_eligible(last, head_dim_global)
-                {
                     return Ok(None);
                 }
             }
@@ -7455,6 +7465,273 @@ impl HybridModel {
             })
             .collect();
         Ok(self.verify_pooled_dev(e, &mut segs, None)?.map(|(l, _)| l))
+    }
+
+    /// Whether this model's MTP serving bursts may run as a pooled lockstep cohort
+    /// (`generate_spec_sessions_pooled`): the qwen35 t-parallel verify family that
+    /// `verify_pooled_dev` mirrors, an MTP head, no PP cuts, no ROUND-STREAM, and no MTP
+    /// verify-graph pool (the pool is one model-owned mutex a burst holds for its whole run, so
+    /// two lockstep bursts cannot both hold it).
+    pub fn spec_pool_capable(&self) -> bool {
+        self.mtp.is_some()
+            && self.batched_serving_numeric_class()
+            && !self.sliding_gated_moe_batch_program()
+            && !self.gemma_batch_program()
+            && crate::pp::pp_cuts(self.layers.len()).is_none()
+            && spec_gdn_packed()
+            && dspark_fa_rows_on()
+            && self.cfg.m3.is_none()
+            && !spec_stream()
+            && !spec_verify_graph_env().unwrap_or_else(|| self.vgraph_family_default())
+    }
+
+    /// LOCKSTEP POOLED MTP BURSTS (lane/batch-spec). Runs one continuation burst (empty
+    /// suffix, no prime split, no grammar) for every request, round by round: each session's
+    /// round runs `spec_round_gate` and `spec_round_prepare` exactly as its serial burst
+    /// would, then the round's verifies run as pooled forwards over chunks of at most 16 rows
+    /// (`verify_pooled_dev`, bitwise equal to per-session verify), then each session's
+    /// `spec_round_finish`. A session leaves the lockstep when its own loop condition ends;
+    /// its tail runs at once. Per-session outputs are therefore the serial burst's outputs:
+    /// every session-visible computation is its own, and the shared forward is bitwise equal
+    /// to the per-session one.
+    ///
+    /// Outcomes come back in request order. An error in one session's round ends only that
+    /// session (as its serial burst would have returned it); a pooled verify error ends every
+    /// session of that chunk.
+    pub fn generate_spec_sessions_pooled<'a>(
+        &self,
+        e: &Engine,
+        reqs: Vec<PooledBurstReq<'a>>,
+    ) -> Vec<PooledBurstResult> {
+        let n = reqs.len();
+        let mut outcomes: Vec<Option<PooledBurstResult>> = (0..n).map(|_| None).collect();
+        // The wrapper's draft-graph eligibility and event-tracking scope, once for the cohort
+        // (every member shares the model and its k bound).
+        let k_max = reqs.iter().map(|r| r.k).max().unwrap_or(1);
+        let graph_draft = std::env::var("MEMRA_SPEC_NOGRAPH").is_err()
+            && !spec_host_embd()
+            && self.mtp_graph_capturable()
+            && k_max + 2 < 96
+            && !crate::model::full_prec_enabled();
+        let was_tracking = e.ctx().is_event_tracking();
+        if graph_draft && was_tracking {
+            unsafe {
+                e.ctx().disable_event_tracking();
+            }
+        }
+        // The buffers each burst's round state borrows (`SpecBurstStore`) and its commit hook
+        // live in this frame for the whole lockstep.
+        let mut stores: Vec<SpecBurstStore> = (0..n).map(|_| SpecBurstStore::default()).collect();
+        let mut hooks: Vec<Option<PooledCommitHook<'a>>> = Vec::with_capacity(n);
+        let mut args: Vec<(&'a mut SpecSession, usize, usize, Option<SpecSampling>)> =
+            Vec::with_capacity(n);
+        for r in reqs {
+            hooks.push(r.on_commit);
+            args.push((r.sess, r.max_new, r.k, r.sampling));
+        }
+        let mut bursts: Vec<Option<SpecBurst<'_, '_, '_>>> = Vec::with_capacity(n);
+        for (j, (((sess, max_new, k, sampling), store), hook)) in args
+            .into_iter()
+            .zip(stores.iter_mut())
+            .zip(hooks.iter_mut())
+            .enumerate()
+        {
+            // The wrapper's pending-carry entry flush (sampled bursts never carry; this only
+            // mirrors the serial entry for completeness).
+            if sess.pending_tok.is_some()
+                && sampling.is_some_and(|s| s.temp > 0.0)
+                && let Err(err) = self.spec_flush_pending(e, sess, sampling)
+            {
+                outcomes[j] = Some(Err(err));
+                bursts.push(None);
+                continue;
+            }
+            let on_commit: Option<SpecCommitSink<'_>> = match hook {
+                Some(h) => Some(&mut **h),
+                None => None,
+            };
+            match self.spec_burst_begin(
+                e,
+                &[],
+                max_new,
+                k,
+                graph_draft,
+                Some(sess),
+                sampling,
+                None,
+                on_commit,
+                None,
+                store,
+            ) {
+                Ok(b) => bursts.push(Some(b)),
+                Err(err) => {
+                    outcomes[j] = Some(Err(err));
+                    bursts.push(None);
+                }
+            }
+        }
+        loop {
+            // Gate + prepare every live session (its own loop condition first).
+            let mut preps: Vec<Option<SpecRoundPrep>> = (0..n).map(|_| None).collect();
+            for j in 0..n {
+                let Some(b) = bursts[j].as_mut() else {
+                    continue;
+                };
+                let gate = if b.live() {
+                    self.spec_round_gate(e, &mut b.rs)
+                } else {
+                    None
+                };
+                let Some(gate) = gate else {
+                    let b = bursts[j].take().unwrap();
+                    outcomes[j] = Some(self.spec_burst_end(e, b));
+                    continue;
+                };
+                match self.spec_round_prepare(e, &mut b.rs, gate) {
+                    Ok(p) => preps[j] = Some(p),
+                    Err(err) => {
+                        bursts[j] = None;
+                        outcomes[j] = Some(Err(err));
+                    }
+                }
+            }
+            if preps.iter().all(Option::is_none) {
+                break;
+            }
+            // Verify: chunks of consecutive pool-ready rounds, at most 16 rows each.
+            let mut verified: Vec<Option<PooledVerifyOut>> = (0..n).map(|_| None).collect();
+            let mut failed: Vec<Option<String>> = (0..n).map(|_| None).collect();
+            let mut j = 0;
+            while j < n {
+                let ready = |p: &Option<SpecRoundPrep>, b: &Option<SpecBurst<'_, '_, '_>>| matches!((p, b), (Some(p), Some(b)) if p.poolable && p.pos == b.rs.cache.pos);
+                if !ready(&preps[j], &bursts[j]) {
+                    j += 1;
+                    continue;
+                }
+                let mut end = j;
+                let mut rows = 0;
+                while end < n {
+                    if preps[end].is_none() {
+                        end += 1;
+                        continue;
+                    }
+                    let t = preps[end].as_ref().unwrap().verify_tokens.len();
+                    if !ready(&preps[end], &bursts[end]) || rows + t > 16 {
+                        break;
+                    }
+                    rows += t;
+                    end += 1;
+                }
+                let members: Vec<usize> = (j..end).filter(|&m| preps[m].is_some()).collect();
+                if members.len() >= 2 {
+                    let embd_dev = bursts[j..end]
+                        .iter()
+                        .flatten()
+                        .next()
+                        .and_then(|b| b.rs.cfg.embd_dev);
+                    let mut segs: Vec<PooledVerifySeg<'_>> = Vec::with_capacity(members.len());
+                    for ((p, b), m) in preps[j..end]
+                        .iter_mut()
+                        .zip(bursts[j..end].iter_mut())
+                        .zip(j..end)
+                    {
+                        let (Some(p), Some(b)) = (p.as_mut(), b.as_mut()) else {
+                            continue;
+                        };
+                        debug_assert!(members.contains(&m));
+                        segs.push(PooledVerifySeg {
+                            cache: &mut *b.rs.cache,
+                            tokens: &p.verify_tokens,
+                            ckpt: p.ckpt.as_mut(),
+                        });
+                    }
+                    match self.verify_pooled_dev(e, &mut segs, embd_dev) {
+                        Ok(Some((logits, x))) => {
+                            drop(segs);
+                            let n_vocab = self.output.out_features();
+                            let n_embd = self.cfg.n_embd as usize;
+                            let mut r0 = 0usize;
+                            for &m in &members {
+                                let t = preps[m].as_ref().unwrap().verify_tokens.len();
+                                let split =
+                                    (|| -> Result<PooledVerifyOut, Box<dyn std::error::Error>> {
+                                        let mut l = e.uninit(t * n_vocab)?;
+                                        e.dtod_copy_view(
+                                            &logits.slice(r0 * n_vocab..(r0 + t) * n_vocab),
+                                            &mut l,
+                                        )?;
+                                        let mut h = e.uninit(t * n_embd)?;
+                                        e.dtod_copy_view(
+                                            &x.slice(r0 * n_embd..(r0 + t) * n_embd),
+                                            &mut h,
+                                        )?;
+                                        Ok((l, h))
+                                    })();
+                                match split {
+                                    Ok(v) => verified[m] = Some(v),
+                                    Err(err) => failed[m] = Some(err.to_string()),
+                                }
+                                r0 += t;
+                            }
+                        }
+                        // Not poolable after all (a row outside the attention window): the
+                        // members verify serially below, nothing was mutated.
+                        Ok(None) => {}
+                        Err(err) => {
+                            for &m in &members {
+                                failed[m] = Some(format!("pooled verify: {err}"));
+                            }
+                        }
+                    }
+                }
+                j = end.max(j + 1);
+            }
+            // Finish every prepared round, serial verify for rounds the pool did not take.
+            for j in 0..n {
+                let Some(mut prep) = preps[j].take() else {
+                    continue;
+                };
+                if let Some(msg) = failed[j].take() {
+                    bursts[j] = None;
+                    outcomes[j] = Some(Err(msg.into()));
+                    continue;
+                }
+                let b = bursts[j]
+                    .as_mut()
+                    .expect("prepared rounds have a live burst");
+                let pair = match verified[j].take() {
+                    Some(v) => Ok(v),
+                    None => self.decode_step_t_core_vg(
+                        e,
+                        &prep.verify_tokens,
+                        prep.pos,
+                        &mut *b.rs.cache,
+                        b.rs.cfg.embd_dev,
+                        prep.ckpt.as_mut(),
+                        None,
+                    ),
+                };
+                let r = pair.and_then(|(logits, x)| {
+                    self.spec_round_finish(e, &mut b.rs, prep, logits, x, &mut b.on_commit)
+                });
+                match r {
+                    Ok(o) => b.keep_going = o.keep_going,
+                    Err(err) => {
+                        bursts[j] = None;
+                        outcomes[j] = Some(Err(err));
+                    }
+                }
+            }
+        }
+        if graph_draft && was_tracking {
+            unsafe {
+                e.ctx().enable_event_tracking();
+            }
+        }
+        outcomes
+            .into_iter()
+            .map(|o| o.expect("every pooled burst reaches an outcome"))
+            .collect()
     }
 
     /// The pooled walk's LINEAR layer: `qwen35_tparallel_linear_layer`'s packed arm at m=R,
@@ -7707,10 +7984,11 @@ impl HybridModel {
         // Per-row KV pointer pairs and t_kv: row r of session s sits at len_s + r + 1.
         let mut tbl: Vec<u64> = Vec::with_capacity(2 * t);
         let mut t_kv_rows: Vec<usize> = Vec::with_capacity(t);
+        let mut row_seg: Vec<usize> = Vec::with_capacity(t);
         let (mut kdk, mut kdv, mut ktb, mut vtb) = (0, 0, 0, 0);
         {
             let st = &e.gpu.stream();
-            for s in segs.iter() {
+            for (si, s) in segs.iter().enumerate() {
                 let kvl = s.cache.kv[il].as_ref().ok_or("pooled verify: missing kv")?;
                 let (pk, _g) = kvl.k.device_ptr(st);
                 let (pv, _g2) = kvl.v.device_ptr(st);
@@ -7718,6 +7996,7 @@ impl HybridModel {
                     tbl.push(pk);
                     tbl.push(pv);
                     t_kv_rows.push(kvl.len + r + 1);
+                    row_seg.push(si);
                 }
                 (kdk, kdv, ktb, vtb) =
                     (kvl.kv_dim_k, kvl.kv_dim_v, kvl.k_tok_bytes, kvl.v_tok_bytes);
@@ -7739,14 +8018,46 @@ impl HybridModel {
             s.cache.kv[il].as_mut().unwrap().len += s.tokens.len();
         }
         let mut attn = e.uninit(t * q_dim)?;
-        // One launch per maximal run of rows on the same fa split rung (one rung for the
-        // common case). A run that is not the whole stack attends through staged copies.
+        // Rows on the seqs arm: one launch per maximal run on the same fa split rung (one rung
+        // for the common case); a run that is not the whole stack attends through staged
+        // copies. Rows below the vec floor take the serial walk's per-row arm
+        // (`fa_decode_kvmod_view` over that session's cache) — every row of the stack is
+        // already appended, and row r's view stops at its own t_kv.
+        let head_dim_global = cfg.head_dim_k as usize;
+        let elig = |tk: usize| crate::fa_seqs_eligible(tk, head_dim_global);
         let sp_of = |tk: usize| crate::fa_split_keys(tk, cfg.n_head_kv as usize);
         let mut a = 0usize;
         while a < t {
+            if !elig(t_kv_rows[a]) {
+                let t_kv = t_kv_rows[a];
+                let kvl = segs[row_seg[a]].cache.kv[il].as_ref().unwrap();
+                let k_view = e.view_u8(&kvl.k, t_kv * kvl.k_tok_bytes);
+                let v_view = e.view_u8(&kvl.v, t_kv * kvl.v_tok_bytes);
+                let mut q_row = e.uninit(q_dim)?;
+                e.dtod_copy_view(&q_n.slice(a * q_dim..(a + 1) * q_dim), &mut q_row)?;
+                let mut a_row = e.uninit(q_dim)?;
+                let mut a_view = a_row.slice_mut(0..q_dim);
+                e.fa_decode_kvmod_view(
+                    &q_row.slice(0..q_dim),
+                    &k_view,
+                    &v_view,
+                    &mut a_view,
+                    head_dim,
+                    n_head,
+                    n_head_kv,
+                    t_kv,
+                    scale,
+                    kvl.k_tok_bytes,
+                    kvl.v_tok_bytes,
+                    false,
+                )?;
+                e.dtod_copy_into(&a_row, &mut attn, a * q_dim)?;
+                a += 1;
+                continue;
+            }
             let sp = sp_of(t_kv_rows[a]);
             let mut b = a + 1;
-            while b < t && sp_of(t_kv_rows[b]) == sp {
+            while b < t && elig(t_kv_rows[b]) && sp_of(t_kv_rows[b]) == sp {
                 b += 1;
             }
             let n = b - a;
