@@ -31372,6 +31372,14 @@ pub fn run(
             }
             // (result, cohort wall ms, the member's generated length before the cohort ran)
             let mut pooled_steps: HashMap<usize, (SpecStepResult, f32, usize)> = HashMap::new();
+            // PLAIN RIDERS (lane/batch-spec v2, the unified step): same-model plain decoding
+            // sessions on the device-sampled batched path ride the model's pooled MTP cohort,
+            // one row per lockstep round in the round's pooled forwards. Their stream is their
+            // phase (c) stream (one-row pooled segments are bitwise the batched step's rows);
+            // phase (c) skips every rider served here.
+            let mut rider_ledger = RiderLedger::default();
+            // (active index, generated length before its cohort ran)
+            let mut rider_before: Vec<(usize, usize)> = Vec::new();
             {
                 // (model, dspark cohort?, members)
                 let mut cohorts: Vec<(String, bool, Vec<usize>)> = Vec::new();
@@ -31393,7 +31401,25 @@ pub fn run(
                         None => cohorts.push((s.model.clone(), dspark, vec![i])),
                     }
                 }
-                for (_, dspark, cohort) in cohorts.into_iter().filter(|(_, _, v)| v.len() >= 2) {
+                let mut riders_of: HashMap<String, Vec<usize>> = HashMap::new();
+                for (i, s) in active.iter().enumerate() {
+                    if unified_step_on()
+                        && !finished.contains(&i)
+                        && plain_rider_candidate(s, &loaded[&s.model], &eager_decode)
+                    {
+                        riders_of.entry(s.model.clone()).or_default().push(i);
+                    }
+                }
+                // A cohort of two or more, or one MTP member carrying riders.
+                cohorts.retain(|(m, d, v)| {
+                    v.len() >= 2 || (!*d && !v.is_empty() && riders_of.contains_key(m))
+                });
+                for (model, dspark, cohort) in cohorts {
+                    let riders: Vec<usize> = if dspark {
+                        Vec::new()
+                    } else {
+                        riders_of.remove(&model).unwrap_or_default()
+                    };
                     // Engagement receipt, once per route and cohort size (the dead-arm lesson).
                     static SEEN: std::sync::atomic::AtomicU64 =
                         std::sync::atomic::AtomicU64::new(0);
@@ -31409,13 +31435,31 @@ pub fn run(
                             active[cohort[0]].model
                         );
                     }
+                    if !riders.is_empty() {
+                        static SEEN_UNIFIED: std::sync::Mutex<Vec<(usize, usize)>> =
+                            std::sync::Mutex::new(Vec::new());
+                        let shape = (cohort.len(), riders.len());
+                        let mut seen = SEEN_UNIFIED.lock().unwrap_or_else(|p| p.into_inner());
+                        if !seen.contains(&shape) {
+                            seen.push(shape);
+                            eprintln!(
+                                "[spec-pool] unified step engaged: {} spec + {} plain sessions \
+                                 (model {})",
+                                shape.0, shape.1, model
+                            );
+                        }
+                    }
                     let gen_before: HashMap<usize, usize> = cohort
                         .iter()
                         .map(|&i| (i, active[i].generated.len()))
                         .collect();
+                    for &i in &riders {
+                        rider_before.push((i, active[i].generated.len()));
+                    }
                     let started = Instant::now();
                     let ids: Vec<String> = cohort
                         .iter()
+                        .chain(&riders)
                         .map(|&i| active[i].request_id.clone())
                         .collect();
                     let route = fault_route(&active[cohort[0]]);
@@ -31436,6 +31480,8 @@ pub fn run(
                                     &loaded,
                                     &mut active,
                                     &cohort,
+                                    &riders,
+                                    &mut rider_ledger,
                                     &mut spec_metrics,
                                 )
                             };
@@ -31455,8 +31501,42 @@ pub fn run(
                                 pooled_steps
                                     .insert(i, (Err(err.to_string().into()), ms, gen_before[&i]));
                             }
+                            // Riders still in the lockstep get the batched step's error arm.
+                            for &i in &riders {
+                                rider_ledger.served.insert(i);
+                                if rider_ledger.finished.contains(&i) {
+                                    continue;
+                                }
+                                quarantine_request_fault(&mut active[i], err.as_ref());
+                                active[i].aborted = true;
+                                active[i].errored = true;
+                                let _ = active[i].tx.send(Event::Error(EngineError::engine(
+                                    format!("batch step: {err}"),
+                                )));
+                                rider_ledger.finished.push(i);
+                            }
                         }
                     }
+                }
+            }
+            let mut rider_interactive = false;
+            for &(i, before) in &rider_before {
+                let lane = active[i].lane;
+                let emitted = record_output_tokens(
+                    before,
+                    active[i].generated.len(),
+                    lane,
+                    &mut n_tokens_out,
+                    &mut lane_tokens,
+                );
+                if emitted > 0 && lane == crate::lanes::Lane::Interactive {
+                    rider_interactive = true;
+                    last_interactive_decode = Instant::now();
+                }
+            }
+            for &i in &rider_ledger.finished {
+                if !finished.contains(&i) {
+                    finished.push(i);
                 }
             }
             for i in spec_order {
@@ -32229,10 +32309,11 @@ pub fn run(
                         && active[i].prefill_done
                         && active[i].cache.is_some()
                         && !eager_decode.contains(&active[i].model)
+                        && !rider_ledger.served.contains(&i)
                 })
                 .collect();
             decoding.sort_by_key(|&i| active[i].lane.idx());
-            let mut had_interactive = false;
+            let mut had_interactive = rider_interactive;
             // sample + emit + stop checks (host); survivors carry their next token
             let mut ready: Vec<(usize, u32)> = Vec::new();
             for &i in &decoding {
@@ -32465,7 +32546,7 @@ pub fn run(
             if had_interactive {
                 last_interactive_decode = Instant::now();
             }
-            last_batch = ready.len();
+            last_batch = ready.len() + rider_before.len();
             // MEMRA_TICK_TRACE=1: per-tick phase timing to stderr (diagnosis only).
             if tick_trace {
                 let n_int = active
@@ -41037,6 +41118,139 @@ fn spec_pool_candidate(s: &Session, lm: &LoadedModel) -> bool {
         && lm.model.spec_pool_capable()
 }
 
+/// `MEMRA_UNIFIED_STEP=0` keeps every plain session in phase (c), the v1 tick (rollback seam
+/// of the lane/batch-spec v2 unified step).
+fn unified_step_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_UNIFIED_STEP").as_deref() != Ok("0"))
+}
+
+/// A plain decoding session that may ride this tick's pooled MTP cohort of its model (the
+/// lane/batch-spec v2 unified step): one that phase (c) would serve through the batched step
+/// with a device sample, unconstrained (no grammar mask), with no vision input and no fork,
+/// on a model whose plain rows the pooled walk reproduces bitwise (`plain_rider_capable`).
+/// Constrained, host-sampled, vision, eager-only and other-model sessions keep phase (c).
+fn plain_rider_candidate(
+    s: &Session,
+    lm: &LoadedModel,
+    eager_decode: &std::collections::HashSet<String>,
+) -> bool {
+    s.spec.is_none()
+        && s.gspec_k == 0
+        && !s.dspark_on
+        && !s.glm5_on
+        && s.prefill_done
+        && s.cache.is_some()
+        && !eager_decode.contains(&s.model)
+        && s.constraint.is_none()
+        && s.vision.is_none()
+        && s.choice.is_none()
+        && devsample_meta(s).is_some()
+        && lm.model.plain_rider_capable()
+}
+
+/// What the riders of a pooled cohort did this tick: every rider whose emission step ran at
+/// least once (phase (c) skips them, so no session is served twice in one tick), and the
+/// riders that stopped or failed (they go to the tick's `finished` list).
+#[derive(Default)]
+struct RiderLedger {
+    served: std::collections::HashSet<usize>,
+    finished: Vec<usize>,
+}
+
+/// The worker half of the unified step: plain sessions riding a pooled MTP cohort. Each round
+/// runs the batched tick's per-session program for every live rider: `advance_sample_emit`
+/// (emit the previous step's token, stop battery), then the row's step and, on its result,
+/// exactly the batched tick's bookkeeping (`last_logits`, `device_next`, `fed`), or its error
+/// arm.
+struct PlainRiderSet<'s, 'l> {
+    loaded: &'l HashMap<String, LoadedModel>,
+    rows: Vec<(usize, &'s mut Session)>,
+    live: Vec<bool>,
+    feeding: Vec<Option<u32>>,
+    ledger: &'l mut RiderLedger,
+}
+
+impl memra_engine::spec::PooledPlainRiders for PlainRiderSet<'_, '_> {
+    fn round_begin(&mut self) -> Vec<memra_engine::spec::PlainRiderRow> {
+        let mut out = Vec::new();
+        for (k, (i, s)) in self.rows.iter_mut().enumerate() {
+            if !self.live[k] {
+                continue;
+            }
+            self.ledger.served.insert(*i);
+            match advance_sample_emit(self.loaded, s) {
+                (false, _) => {
+                    self.live[k] = false;
+                    self.ledger.finished.push(*i);
+                }
+                (true, None) => self.live[k] = false,
+                (true, Some(t)) => {
+                    // The batched tick's mask staging leaves an unconstrained row unmasked.
+                    s.mask_words = 0;
+                    if let Err(err) = s
+                        .cache
+                        .as_ref()
+                        .ok_or_else(|| "rider has no cache".into())
+                        .and_then(|c| c.ensure_usable("decode_step_batch"))
+                    {
+                        // The batched step's own entry check, and its error arm.
+                        s.aborted = true;
+                        s.errored = true;
+                        let _ = s.tx.send(Event::Error(EngineError::engine(format!(
+                            "batch step: {err}"
+                        ))));
+                        self.live[k] = false;
+                        self.ledger.finished.push(*i);
+                        continue;
+                    }
+                    self.feeding[k] = Some(t);
+                    out.push(memra_engine::spec::PlainRiderRow {
+                        id: k,
+                        token: t,
+                        samp: devsample_meta(s),
+                    });
+                }
+            }
+        }
+        out
+    }
+
+    fn caches(&mut self, ids: &[usize]) -> Vec<&mut Cache> {
+        let mut slots: Vec<Option<&mut Cache>> = self
+            .rows
+            .iter_mut()
+            .map(|(_, s)| s.cache.as_mut())
+            .collect();
+        ids.iter()
+            .map(|&k| slots[k].take().expect("one cache per live rider"))
+            .collect()
+    }
+
+    fn round_end(&mut self, id: usize, step: memra_engine::spec::PlainRiderStep) {
+        let (i, s) = &mut self.rows[id];
+        let tok = self.feeding[id]
+            .take()
+            .expect("a stepped rider fed a token this round");
+        match step {
+            Ok((row, next)) => {
+                s.last_logits = row;
+                s.device_next = next;
+                s.fed.push(tok);
+            }
+            Err(err) => {
+                s.aborted = true;
+                s.errored = true;
+                let _ = s.tx.send(Event::Error(EngineError::engine(format!(
+                    "batch step: {err}"
+                ))));
+                self.live[id] = false;
+                self.ledger.finished.push(*i);
+            }
+        }
+    }
+}
+
 /// POOLED MTP COHORT (lane/batch-spec): run the continuation bursts of several same-model MTP
 /// sessions in LOCKSTEP so each round's verifies share one target forward
 /// (`generate_spec_sessions_pooled`). Each session runs the exact preamble, round-cadence
@@ -41044,19 +41258,37 @@ fn spec_pool_candidate(s: &Session, lm: &LoadedModel) -> bool {
 /// (`spec_burst_pre` / `SpecBurstEmit` / `spec_burst_post`), so per-session streams are
 /// byte-identical to the serial path; only the verify forward is shared.
 /// Returns `(active index, step result)` for every member, in member order.
+///
+/// `riders` (the v2 unified step) are same-model plain decoding sessions that ride the
+/// cohort's lockstep forwards, one row per round (`PlainRiderSet`); `ledger` records which of
+/// them were served and which stopped.
 fn step_spec_pooled(
     engine: &Engine,
     loaded: &HashMap<String, LoadedModel>,
     active: &mut [Session],
     cohort: &[usize],
+    riders: &[usize],
+    ledger: &mut RiderLedger,
     spec_metrics: &mut SpecMetricState,
 ) -> Vec<(usize, SpecStepResult)> {
     let lm = &loaded[&active[cohort[0]].model];
-    let mut members: Vec<(usize, &mut Session)> = active
-        .iter_mut()
-        .enumerate()
-        .filter(|(i, _)| cohort.contains(i))
-        .collect();
+    let mut members: Vec<(usize, &mut Session)> = Vec::new();
+    let mut rider_rows: Vec<(usize, &mut Session)> = Vec::new();
+    for (i, s) in active.iter_mut().enumerate() {
+        if cohort.contains(&i) {
+            members.push((i, s));
+        } else if riders.contains(&i) {
+            rider_rows.push((i, s));
+        }
+    }
+    let n_riders = rider_rows.len();
+    let mut rider_set = (n_riders > 0).then(|| PlainRiderSet {
+        loaded,
+        rows: rider_rows,
+        live: vec![true; n_riders],
+        feeding: vec![None; n_riders],
+        ledger,
+    });
     let mut results: Vec<(usize, SpecStepResult)> = Vec::new();
     // Preambles, each exactly as the serial step runs it.
     let mut plans: Vec<Option<SpecBurstPlan>> = Vec::with_capacity(members.len());
@@ -41120,7 +41352,13 @@ fn step_spec_pooled(
                 on_commit,
             });
         }
-        lm.model.generate_spec_sessions_pooled(engine, reqs)
+        lm.model.generate_spec_sessions_unified(
+            engine,
+            reqs,
+            rider_set
+                .as_mut()
+                .map(|r| r as &mut dyn memra_engine::spec::PooledPlainRiders),
+        )
     };
     let mut outcomes = outcomes.into_iter();
     for (((i, s), emit), plan) in members.iter_mut().zip(emits.iter_mut()).zip(plans) {
@@ -62765,7 +63003,7 @@ mod tests {
                 "fn step_session(",
                 "generate_spec_session_sampled_prime_split(",
             ),
-            ("fn step_spec_pooled(", "generate_spec_sessions_pooled("),
+            ("fn step_spec_pooled(", "generate_spec_sessions_unified("),
         ] {
             let body = &live[live.find(caller).unwrap()..];
             let pre_call = body.find("spec_burst_pre(engine, lm, s)").unwrap();

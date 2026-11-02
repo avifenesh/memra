@@ -1,0 +1,10 @@
+aggregate tok/s
+  c=3: int 148.6 / 152.5 / 153.2 (median 152.5); v2a 171.3 / 164.0 / 165.7 (median 165.7); v2a/int 1.086x
+  c=4: int 183.7 / 183.5 / 184.5 (median 183.7); v2a 202.4 / 189.9 / 192.8 (median 192.8); v2a/int 1.049x
+  c=6: int 241.2 / 242.5 / 242.5 (median 242.5); v2a 248.9 / 239.7 / 235.3 (median 239.7); v2a/int 0.989x
+  c=8: int 269.1 / 269.2 / 272.4 (median 269.2); v2a 253.2 / 257.3 / 250.8 (median 253.2); v2a/int 0.940x
+median end-to-end s by request class
+  c=3: spec: int 2.16, v2a 2.40; riders: int 3.43, v2a 3.12
+  c=4: spec: int 2.19, v2a 2.44; riders: int 3.72, v2a 3.43
+  c=6: spec: int 2.27, v2a 2.76; riders: int 4.08, v2a 3.94
+  c=8: spec: int 2.30, v2a 2.94; riders: int 4.50, v2a 4.43; phase-c: int 2.93, v2a 3.34

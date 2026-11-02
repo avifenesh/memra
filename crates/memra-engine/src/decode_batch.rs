@@ -4728,6 +4728,27 @@ impl HybridModel {
         Ok((rows, staged.next))
     }
 
+    /// The batched tick's SAMPLING EPILOGUE over any `[b_n, n_vocab]` logits stack, with no
+    /// `pos` bump: pristine parks, device penalties, grammar masks, device sampling and the lean
+    /// logits rows, exactly as `decode_batch_epilogue` runs them for a batched step. The unified
+    /// ragged step (lane/batch-spec v2) calls it on the plain rows of a pooled forward, whose
+    /// walk already advanced each cache.
+    #[allow(clippy::type_complexity)] // allow: the batched step's own (rows, next) result shape
+    pub(crate) fn decode_batch_sample_logits(
+        &self,
+        e: &Engine,
+        caches: &mut [&mut Cache],
+        samp: &[Option<DevSamp>],
+        lean: bool,
+        logits: CudaSlice<f32>,
+        b_n: usize,
+    ) -> Result<(Vec<Vec<f32>>, Vec<Option<u32>>), Box<dyn std::error::Error>> {
+        let staged =
+            self.decode_batch_sample_stage(e, caches, samp, &[], lean, logits, b_n, false)?;
+        let rows = self.decode_batch_sample_rows(e, caches, samp, &[], lean, &staged, b_n)?;
+        Ok((rows, staged.next))
+    }
+
     /// The epilogue's device half: pristine parks, penalties, masks and the device draws
     /// (with the `[B]` token readback unless `pending`).
     #[allow(clippy::too_many_arguments)]
