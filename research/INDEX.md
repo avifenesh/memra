@@ -743,3 +743,5 @@ support-source-doc-copy-inputs-20261003 | 97 exact source/docs omissions repaire
 
 | release-profile-20261102 | Fat LTO + one codegen unit vs Cargo defaults on the RTX 5090 rig: tokenize -6.3%, other serving cells flat; tokenizer ids, greedy and seeded streams, fatbins and device ELFs byte-identical; binary -17%; cold server build flat, relinks 1.5-2.8x, `--workspace --bins` 6.7x. Adopted. | [LANE.md](release-profile-20261102/LANE.md) |
 | gb10-tuning-20261102 | GB10 prefill census (W4A8 MMQ 61%, element-wise kernels ~3x the laptop 5090 per call); grouped MMQ rasterization flat (773-778 tok/s, deleted); F8F4 route +15.4% prefill on GB10, not adopted pending its acceptance receipt. |
+
+| release-qualification/pro6000-maxq-gpu2-02edcac2-20261102-unsealed | Unsealed: all five generic battery cells PASS on one RTX PRO 6000 Max-Q (physical GPU 2) for 02edcac2; capture refuses non-GPU0, so no record.json and current.json unchanged. | [RESULTS](release-qualification/pro6000-maxq-gpu2-02edcac2-20261102-unsealed/RESULTS.md) |
