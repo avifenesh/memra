@@ -1,0 +1,14 @@
+gpulock: 5090 leased as claude-code-20261102T165014-2388471 for 40m
+    Finished `release` profile [optimized] target(s) in 3m 43s
+d4119341d5 test: pinned MiMo source gates skip by protocol without their source
+ 3 files changed, 36 insertions(+), 5 deletions(-)
+NVIDIA GeForce RTX 5090 Laptop GPU, 70, 180 MHz, 11.34 W
+arm swz=0: pp-only MEDIAN: 8788 tok in 7.2675s = 1209.2 tok/s (pp8788, 3 reps)
+arm swz=8: pp-only MEDIAN: 8788 tok in 7.6421s = 1149.9 tok/s (pp8788, 3 reps)
+arm swz=8: pp-only MEDIAN: 8788 tok in 7.6176s = 1153.6 tok/s (pp8788, 3 reps)
+arm swz=0: pp-only MEDIAN: 8788 tok in 7.7694s = 1131.1 tok/s (pp8788, 3 reps)
+arm swz=0: pp-only MEDIAN: 8788 tok in 7.8053s = 1125.9 tok/s (pp8788, 3 reps)
+arm swz=8: pp-only MEDIAN: 8788 tok in 7.8391s = 1121.0 tok/s (pp8788, 3 reps)
+BIT-IDENTICAL logits swz0 vs swz8
+56de5bebf5b2e611c4c658133bea59e349e7d1b59d9cb02b0e6755aecc9c6e7c  ~/prof/logits-swz0.bin
+56de5bebf5b2e611c4c658133bea59e349e7d1b59d9cb02b0e6755aecc9c6e7c  ~/prof/logits-swz8.bin
