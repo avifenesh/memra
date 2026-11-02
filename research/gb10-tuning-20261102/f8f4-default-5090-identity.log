@@ -1,0 +1,12 @@
+gpulock: 5090 leased as claude-code-20261103T073506-627773 for 60m
+    Finished `release` profile [optimized] target(s) in 2m 08s
+d82f0d0183 perf: F8F4 prefill route by default on GB10
+balanced
+pp-only MEDIAN: 8788 tok in 6.8439s = 1284.1 tok/s (pp8788, 1 reps)
+pp-only MEDIAN: 8788 tok in 7.3363s = 1197.9 tok/s (pp8788, 1 reps)
+pp-only MEDIAN: 8788 tok in 6.1924s = 1419.2 tok/s (pp8788, 1 reps)
+unset == 0 (W4A8): IDENTICAL
+unset vs 1: DIFFER (expected)
+56de5bebf5b2e611c4c658133bea59e349e7d1b59d9cb02b0e6755aecc9c6e7c  ~/.cache/memra-1025/prof/f8f4-unset.bin
+56de5bebf5b2e611c4c658133bea59e349e7d1b59d9cb02b0e6755aecc9c6e7c  ~/.cache/memra-1025/prof/f8f4-0.bin
+124681e61c06dd143e787558ef021e41f62a27ce9cc8be4c3991eb31f9c8310b  ~/.cache/memra-1025/prof/f8f4-1.bin

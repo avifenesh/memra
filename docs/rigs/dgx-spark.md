@@ -69,10 +69,10 @@ at or above 17.0 GiB (the bench's own 3 GiB MemAvailable watchdog never fired). 
 request with a 150,413-token prompt answered HTTP 200 in 317 s under the derived deadline (GGUF
 DFlash2 boot with the MTP head loaded; 5 output tokens, so it tests the prefill allowance only).
 
-Prefill: the W4A8 NVFP4 MMQ is 61% of an 8,788-token prefill (776.6 tok/s monolithic). The
-opt-in F8F4 route (`MEMRA_MMQ_F8F4=1`) is 15.4% faster in the monolithic `run-gen` prefill and
-takes 11.4% less served cold-prefill time (43.7 s against 49.3 s at 32,768 tokens); one
-greedy acceptance run per arm on three prompts read 0.702 against 0.672 (one prompt down 0.7 points); it changes the activation program, so the quality panel decides whether it becomes the
-GB10 default
-([research/gb10-tuning-20261102](../../research/gb10-tuning-20261102/)).
+Prefill: the W4A8 NVFP4 MMQ is 61% of an 8,788-token prefill (776.6 tok/s monolithic). GB10 now
+takes the F8F4 route (`MEMRA_MMQ_F8F4`, e4m3 activations) by default: 15.4% faster in the
+monolithic `run-gen` prefill, 43.5 s against 49.3 s of served cold prefill at 32,768 tokens, one
+greedy acceptance run per arm on three prompts at 0.702 against 0.672, c32 68.21 against 66.45
+tok/s, and the quality panel at 158/164 and 97/100 (W4A8: 158/164 and 98/100). `MEMRA_MMQ_F8F4=0`
+restores W4A8 ([research/gb10-tuning-20261102](../../research/gb10-tuning-20261102/)).
 

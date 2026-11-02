@@ -71,3 +71,14 @@ one run per cell, no HTTP error and no `[shed]` line in any arm:
   against 258/384 = 0.672 off (p2 0.615 vs 0.622, p1 0.781 vs 0.715, p3 0.725 vs 0.683);
   faster on every prompt; a 23,476-token prompt prefilled in 30.4 s against 34.4 s. Served cold
   prefill with F8F4: 10.02 s at 8,192 tokens (11.30 off) and 43.72 s at 32,768 (49.32 off).
+
+## F8F4 quality panel and GB10 default (2026-11-03, `f8f4-quality/`)
+
+Same build (`b014549cb9`) and serve config as the masked-MTP arm, `MEMRA_MMQ_F8F4=1`: c32
+68.21 tok/s (W4A8 66.45), 131,550-token prime 240.3 s (262.7 s), quality panel 158/164 and
+97/100 (158/164 and 98/100), MemAvailable at or above 18.7 GiB. In band, so F8F4 becomes the
+default on a unified-memory 120a-family device; discrete cards keep W4A8.
+
+RTX 5090 Laptop at `d82f0d0183` (`f8f4-default-5090-identity.log`): with `MEMRA_MMQ_F8F4` unset the last-row
+prefill logits are byte-identical to `=0` and to the pre-change W4A8 logits (sha256 `56de5beb...`),
+and differ from `=1`: discrete cards keep W4A8.
