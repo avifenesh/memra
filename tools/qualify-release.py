@@ -214,22 +214,32 @@ def live_lease():
 
 def observe_hardware(ids):
     raw = subprocess.check_output(["nvidia-smi", "-i", ",".join(ids),
-        "--query-gpu=index,uuid,name,compute_cap,driver_version,pci.bus_id,memory.total", "--format=csv,noheader,nounits"], text=True)
+        "--query-gpu=index,uuid,name,compute_cap,driver_version,pci.bus_id,memory.total,pci.device_id,"
+        "pci.sub_device_id,power.max_limit", "--format=csv,noheader,nounits"], text=True)
     rows = list(csv.reader(io.StringIO(raw), skipinitialspace=True))
-    devices = [dict(zip(("index", "uuid", "name", "compute_cap", "driver_version", "pci_bus_id", "memory_mib"), row)) for row in rows]
+    fields = ("index", "uuid", "name", "compute_cap", "driver_version", "pci_bus_id", "memory_mib",
+              "pci_device_id", "pci_sub_device_id", "power_max_limit_w")
+    devices = [dict(zip(fields, row)) for row in rows]
     by_uuid = {d["uuid"]: d for d in devices}
     q.require(set(by_uuid) == set(ids), "cannot observe every leased GPU")
-    # release-battery.sh currently queries physical NVML index 0 for headroom.
-    # Refuse another CUDA-visible card; do not reinterpret CUDA ordinals as NVML indices.
-    headroom_uuid = subprocess.check_output(["nvidia-smi", "-i", "0", "--query-gpu=uuid",
-                                            "--format=csv,noheader,nounits"], text=True).strip()
-    q.require(ids == [headroom_uuid] and by_uuid[headroom_uuid]["index"] == "0",
-              "battery headroom queries NVML GPU0; leased CUDA UUID differs")
+    # release-battery.sh resolves CUDA's logical device 0 to its physical UUID
+    # (tools/resolve-physical-gpu.py) and keys every headroom and tenant query on that UUID,
+    # so the leased card may sit at any NVML index. Resolve it the same way the battery does
+    # and refuse any disagreement; never reinterpret a CUDA ordinal as an NVML index.
+    resolved = subprocess.run([sys.executable, str(Path(__file__).resolve().parent / "resolve-physical-gpu.py")],
+                              env={**os.environ, "CUDA_VISIBLE_DEVICES": ",".join(ids),
+                                   "CUDA_DEVICE_ORDER": "PCI_BUS_ID"},
+                              capture_output=True, text=True)
+    q.require(resolved.returncode == 0, "battery GPU resolution refused: " + resolved.stderr.strip())
+    answer = dict(line.split("=", 1) for line in resolved.stdout.split() if "=" in line)
+    q.require(ids == [answer.get("uuid")] and by_uuid[ids[0]]["index"] == answer.get("index"),
+              "battery headroom card and leased CUDA UUID differ")
     q.require(all("RTX PRO 6000 Blackwell" in d["name"] and d["compute_cap"] == "12.0"
                   for d in devices), "capture requires the designated PRO 6000 Blackwell hardware class")
     topology = subprocess.check_output(["nvidia-smi", "topo", "-m"])
     return {"devices": [by_uuid[x] for x in ids], "topology_sha256": q.digest(topology),
-            "headroom_query": {"nvml_index": 0, "uuid": headroom_uuid},
+            "headroom_query": {"selector": "cuda-visible-uuid", "uuid": ids[0],
+                               "nvml_index": int(by_uuid[ids[0]]["index"])},
             "runtime_platform": platform_identity()}, topology
 
 
@@ -340,6 +350,8 @@ def seal(args):
     source, run = evidence.obj(record["source"]), evidence.obj(record["run"])
     verdicts = q.cell_verdicts(run, evidence, args.repo, "HEAD")
     record["verdicts"] = verdicts
+    # The exact card model (Max-Q Workstation vs Server Edition differ in power and clocks).
+    record["card_models"] = [d["name"] for d in run["hardware"]["devices"]]
     record["identity_sha256"] = q.object_digest({"source": source["inputs_sha256"],
         "build": record["build"]["sha256"], "models": run["models_before"],
         "numeric": run["numeric_environment"], "hardware": run["hardware"], "verdicts": verdicts})

@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -85,7 +86,7 @@ class Fixture:
             manifests[name] = self.ref(Path(name).name)
         self.hardware = {"devices": [{"index": "0", "uuid": UUID, "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
                                       "compute_cap": "12.0", "driver_version": "CPU MOCK"}],
-                         "headroom_query": {"nvml_index": 0, "uuid": UUID},
+                         "headroom_query": {"selector": "cuda-visible-uuid", "uuid": UUID, "nvml_index": 0},
                          "topology_sha256": self.ref("topology.txt")["sha256"]}
         self.lease = {"wrapper_pid": 10, "child_pid": 11, "requested_uuids": [UUID], "lock_order": [UUID],
                       "lock_files": {UUID: f"/tmp/memra-gpu-locks/{UUID}.lock"},
@@ -144,7 +145,8 @@ class Fixture:
             self.verdicts = q.cell_verdicts(self.run, q.Evidence(self.out), self.repo, "HEAD")
         self.record = {"schema": "memra-release-qualification-v1", "status": "qualified",
                        **{key: self.ref(key + ".json") for key in ("source", "build", "run", "lease")},
-                       "verdicts": self.verdicts}
+                       "verdicts": self.verdicts,
+                       "card_models": [d["name"] for d in self.run["hardware"]["devices"]]}
         self.record["identity_sha256"] = q.object_digest({"source": self.source["inputs_sha256"],
             "build": self.record["build"]["sha256"], "models": self.run["models_before"],
             "numeric": self.run["numeric_environment"], "hardware": self.run["hardware"], "verdicts": self.verdicts})
@@ -260,10 +262,67 @@ class QualificationTests(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("qualification_capture", ROOT / "tools/qualify-release.py")
         capture = importlib.util.module_from_spec(spec); spec.loader.exec_module(capture)
         other = "GPU-00000000-0000-0000-0000-000000000002"
-        observations = [f"1, {other}, NVIDIA RTX PRO 6000 Blackwell Server Edition, 12.0, 595.58, pci, 97887\n", UUID + "\n"]
-        with patch.object(capture.subprocess, "check_output", side_effect=observations):
-            with self.assertRaisesRegex(q.GateError, "headroom queries NVML GPU0"):
-                capture.observe_hardware([other])
+        maxq = "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition"
+        def observe(resolved_uuid, resolved_index="2"):
+            observations = [f"2, {other}, {maxq}, 12.0, 615.71, pci, 97887, 0x2BB410DE, 0x204B10DE, 300.00\n",
+                            b"GPU0 X\n"]
+            resolver = subprocess.CompletedProcess([], 0, f"index={resolved_index}\nuuid={resolved_uuid}\n", "")
+            with patch.object(capture.subprocess, "check_output", side_effect=observations), \
+                    patch.object(capture.subprocess, "run", return_value=resolver):
+                return capture.observe_hardware([other])
+        # The leased card at NVML index 2 qualifies when the battery resolves to the same UUID.
+        hardware, _ = observe(other)
+        self.assertEqual(hardware["headroom_query"], {"selector": "cuda-visible-uuid", "uuid": other, "nvml_index": 2})
+        self.assertEqual(hardware["devices"][0]["name"], maxq)
+        self.assertEqual(hardware["devices"][0]["power_max_limit_w"], "300.00")
+        for uuid, index in ((UUID, "2"), (other, "0")):
+            with self.assertRaisesRegex(q.GateError, "battery headroom card and leased CUDA UUID differ"):
+                observe(uuid, index)
+
+    def test_sealed_full_record_is_battery_evidence_for_the_cell_gate(self):
+        import contextlib, io
+        sys.path.insert(0, str(ROOT / "tools"))
+        import test_cell_gate
+        f = self.f
+        base = q.commit(f.repo, "HEAD")
+        (f.repo / "crates/memra-engine/build.rs").write_text(test_cell_gate.BUILD_RS)
+        (f.repo / "crates/memra-engine/cu").mkdir()
+        (f.repo / "crates/memra-engine/cu/qmatvec.cu").write_text("__global__ void k() {}\n")
+        shutil.copy2(ROOT / "tools/change-impact.toml", f.repo / "tools/change-impact.toml")
+        f.commit("kernel change")
+        f.source = q.source_snapshot(f.repo)
+        f.put("source.json", f.source)
+        f.build.update(source=f.ref("source.json"), source_before=f.source["inputs_sha256"],
+                       source_after=f.source["inputs_sha256"], input_view_before=view.identity(f.source),
+                       input_view_after=view.identity(f.source))
+        f.run.update(source_before=f.source["inputs_sha256"], source_after=f.source["inputs_sha256"])
+        f.refresh()
+        f.publish()
+        out = io.StringIO()
+        with self.assertRaisesRegex(q.GateError, r"sm_120a \[build,defaults,gate,kernel,perf\] needs perf evidence"), \
+                contextlib.redirect_stdout(out):
+            q.check_push(f.repo, [f"refs/heads/x {q.commit(f.repo, 'HEAD')} refs/heads/main {base}"], "qualified")
+        self.assertIn("battery on NVIDIA RTX PRO 6000 Blackwell Server Edition", out.getvalue())
+
+    def test_leased_card_at_any_nvml_index_validates_and_names_its_model(self):
+        f = self.f
+        maxq = "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition"
+        for hardware in (f.run["hardware"], f.run["hardware_after"]):
+            hardware["devices"][0].update(index="2", name=maxq)
+            hardware["headroom_query"]["nvml_index"] = 2
+        f.lease["devices"][0].update(index=2, name=maxq)
+        f.refresh()
+        self.assertEqual(f.verify()["card_models"], [maxq])
+        f.lease["devices"][0]["index"] = 0
+        f.refresh()
+        with self.assertRaisesRegex(q.GateError, "battery headroom card and leased CUDA UUID differ"):
+            f.verify()
+        f.lease["devices"][0]["index"] = 2
+        f.refresh()
+        f.record.pop("card_models")
+        f.put("record.json", f.record)
+        with self.assertRaisesRegex(q.GateError, "exact card model"):
+            f.verify()
 
     def test_missing_failed_duplicated_cells_and_skip_ceiling(self):
         for mutation in ("missing", "failed", "duplicate", "single-k", "skip-budget"):
@@ -316,6 +375,9 @@ class QualificationTests(unittest.TestCase):
 
     def test_docs_only_fast_forward_needs_no_qualification_but_tags_do(self):
         f, unqualified = self.f, "no committed native qualification pointer"
+        # Branch pushes go through the per-cell gate; this fixture has no CUDA target table,
+        # so any non-docs change refuses as unclassifiable. Tags keep the full record.
+        unclassified = "change impact cannot be classified"
         (f.repo / "crates/memra-engine/build.rs").write_text('fn main() { read("../../docs/FLAGS.md"); }\n')
         (f.repo / "docs").mkdir(); (f.repo / "docs/FLAGS.md").write_text("# Flags\n")
         f.commit("unqualified main")
@@ -331,8 +393,8 @@ class QualificationTests(unittest.TestCase):
                      lambda: (f.repo / "crates/memra-kv/README.md").write_text("# kv\n"),
                      lambda: (readme(), (f.repo / "Cargo.lock").write_text("# changed\n")),
                      lambda: (f.repo / "run.md").symlink_to("Cargo.lock")):
-            with self.assertRaisesRegex(q.GateError, unqualified): push(edit)
-        with self.assertRaisesRegex(q.GateError, unqualified):
+            with self.assertRaisesRegex(q.GateError, unclassified): push(edit)
+        with self.assertRaisesRegex(q.GateError, unclassified):
             f.git("reset", "-q", "--hard", base); readme(); f.commit("candidate")
             q.check_push(f.repo, [f"refs/heads/main {q.commit(f.repo, 'HEAD')} refs/heads/main {'0'*40}"],
                          "qualified")
@@ -345,7 +407,7 @@ class QualificationTests(unittest.TestCase):
         with self.assertRaisesRegex(q.GateError, "append-only"): self.f.verify()
 
     def test_real_hook_missing_models_never_grant_qualification(self):
-        for name in ("release_qualification.py", "check_hardware_gate.py"):
+        for name in ("release_qualification.py", "check_hardware_gate.py", "change_impact.py", "cell_evidence.py"):
             shutil.copy2(ROOT / "tools" / name, self.f.repo / "tools" / name)
         for name in ("update-perf-board.py", "check-public-boundary.py"):
             (self.f.repo / "tools" / name).write_text("import sys\nsys.exit(0)\n")

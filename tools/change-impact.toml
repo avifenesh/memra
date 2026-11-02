@@ -1,0 +1,344 @@
+# change-impact.toml: what a change can affect, per CUDA build target.
+#
+# Read by tools/change_impact.py (the classifier) and tools/cell_evidence.py (the push gate
+# and the daily regression). docs/RELEASE-QUALIFICATION.md "Change impact" explains the model.
+#
+# A CELL is (build target, scope). The classifier turns a diff into the set of cells it can
+# reach. The push gate then requires evidence only for those cells, and only on targets
+# whose `push_gate` is true. Every other affected target is covered by its device's daily
+# regression run (tools/daily-regression.py) and its per-device issue.
+#
+# The build targets themselves are NOT listed here as facts: the classifier parses the
+# accepted set and the compute-capability map from crates/memra-engine/build.rs (and
+# src/cuda_arch.rs when it exists). A target that build.rs accepts and this file has no
+# row for refuses classification, so adding a target forces a policy decision here.
+#
+# Scopes (cells):
+#   kernel    .cu/.cuh sources, FFI shims, kernel dispatch
+#   build     build scripts, the arch table, Cargo manifests/lock, toolchain, profile
+#   numeric   the model numeric program shared by served models (engine, plan, KV format)
+#   serving   scheduler, admission, routes and serving policy
+#   defaults  device-keyed defaults (detected from diff content, see [content])
+#   gate      the qualification battery, its coverage manifests and this classifier
+#   perf      performance evidence; added when a matched rule or content says perf = true
+# Classes that produce no cell: docs, tests, research, cpu, diagnostic, comment.
+#
+# Evidence per cell (tools/cell_evidence.py):
+#   any of kernel/build/numeric/defaults/gate -> device battery (kernel-check, run-gen
+#                                                argmax, run-spec K=1..8 on the roster)
+#   serving                                   -> device battery + serve-smoke
+#   perf                                      -> interleaved A/B against an ancestor
+
+schema = "memra-change-impact-v1"
+
+# ---- build targets -------------------------------------------------------------------
+# push_gate = true: a push that reaches this target needs evidence from one of its devices.
+# push_gate = false: no device in reach for every push; the daily run of a device of this
+# target (when one exists) and the pre-tag full battery cover it. Flip it when the family
+# gets an owned device and a support claim.
+
+[target."120a"]
+name = "sm_120a"
+push_gate = true
+note = "RTX 50-series and RTX PRO 6000 Blackwell. The primary optimized target."
+
+[target."100a"]
+name = "sm_100a"
+push_gate = false
+note = "B200. Compile-only CI cell; device runs only on a rented box."
+
+[target."90a"]
+name = "sm_90a"
+push_gate = false
+note = "H100. The Hopper CI lane is retired; run its battery on Hopper hardware directly."
+
+[target."89"]
+name = "sm_89"
+push_gate = false
+note = "Portable eval build. Compile-only CI cell."
+
+# ---- devices -------------------------------------------------------------------------
+# A device counts for the target its compute capability maps to in the arch table, so the
+# RTX 5090 and the RTX PRO 6000 both count for sm_120a. `name` must appear in nvidia-smi's
+# reported name. `roster` is the release roster this device runs (paths differ per box;
+# the model ids must equal tools/release-roster.tsv). `serve_model` / `serve_draft` feed
+# tools/serve-smoke.sh; empty means its default pair. `lock` is the command prefix that
+# takes the device; it must hold for the whole battery.
+
+[device.rtx5090]
+name = "RTX 5090"
+compute_cap = "12.0"
+roster = "tools/release-roster.tsv"
+lock = ["gpulock", "run", "--ttl", "6h", "--for", "memra cell evidence", "--wait", "2h", "--"]
+
+[device.rtxpro6000]
+name = "RTX PRO 6000 Blackwell"
+compute_cap = "12.0"
+roster = "tools/release-roster.tsv"
+lock = ["flock", "-w", "7200", "/tmp/memra-gpu.lock"]
+
+[device.gb10]
+name = "GB10"
+compute_cap = "12.1"
+roster = "tools/release-roster.tsv"
+lock = ["flock", "-w", "7200", "/tmp/memra-gpu.lock"]
+
+[device.h100]
+name = "H100"
+compute_cap = "9.0"
+roster = "tools/release-roster.tsv"
+lock = ["flock", "-w", "7200", "/tmp/memra-gpu.lock"]
+
+[device.b200]
+name = "B200"
+compute_cap = "10.0"
+roster = "tools/release-roster.tsv"
+lock = ["flock", "-w", "7200", "/tmp/memra-gpu.lock"]
+
+# ---- packages ------------------------------------------------------------------------
+# The default class of every file a workspace package owns. Path rules below refine it.
+# A workspace package with no row here classifies as unknown (every scope, every target).
+
+[package]
+memra-engine = "numeric"
+memra-runtime = "numeric"
+memra-kv = "numeric"
+memra-gguf = "numeric"
+memra-server = "serving"
+memra-lanes = "serving"
+memra-tier = "serving"
+memra-tokenizer = "cpu"
+memra-sampling = "cpu"
+memra-net-guard = "cpu"
+memra-validate = "cpu"
+memra-reference = "cpu"
+memra-cli = "cpu"
+memra-probe = "diagnostic"
+
+# Package classes that are performance-relevant by default.
+perf_packages = ["memra-engine", "memra-runtime", "memra-kv", "memra-server", "memra-lanes", "memra-tier"]
+
+# ---- model packs ---------------------------------------------------------------------
+# A pack is COVERED when the device battery runs one of its models (by roster id).
+# A pack-local Rust change to an uncovered pack produces no device cell: the battery cannot
+# see it, so the gate names it as UNCOVERED and its own pack gate stays the evidence
+# (AGENTS.md scoped battery). Kernels are never pack-local: any .cu change needs the battery.
+
+[pack.qwen35]
+roster = ["qwen/qwen3.8-27b"]
+
+[pack.qwen35_moe]
+roster = ["ornith-ai/ornith-1.5-35b-a3b"]
+
+# ---- path rules ----------------------------------------------------------------------
+# Ordered; the first matching rule decides a path's class. Fields:
+#   pattern   Python regex, matched with re.search against the repo-relative path
+#   class     a scope (kernel, build, numeric, serving, gate) or a no-cell class
+#             (docs, tests, research, cpu, diagnostic)
+#   targets   exact build targets the path reaches (default: every accepted target)
+#   families  policy families the path reaches (a target reaches when its family is listed)
+#   pack      the model pack a numeric path is local to
+#   route     the serving route a path belongs to (reported, not gated separately)
+#   perf      true adds the perf cell; false removes the package default
+#   why       one line; printed in the gate report
+
+[[rule]]
+pattern = '^research/release-qualification/|^research/INDEX\.md$'
+class = "research"
+why = "qualification metadata namespace (excluded from source inputs)"
+
+# --- the gate itself: a change to what is required needs the battery it requires -----
+[[rule]]
+pattern = '^tools/(change-impact\.toml|change_impact\.py|cell_evidence\.py|qualify-release\.py|release_qualification\.py|release-battery\.sh|release-coverage\.py|release-roster\.tsv|argmax-margin-gate\.sh|serve-smoke\.sh|resolve-physical-gpu\.py|kernel-check-[a-z0-9]+\.cells|hooks/pre-push)$'
+class = "gate"
+why = "qualification battery, its coverage or the impact rules"
+
+[[rule]]
+pattern = '^crates/memra-engine/src/bin/(kernel_check|run_gen|run_spec|argmax_margin_probe|tok_parity)\.rs$'
+class = "gate"
+why = "a release battery binary"
+
+# --- tests and diagnostics ------------------------------------------------------------
+[[rule]]
+pattern = '^crates/[^/]+/(tests|benches)/'
+class = "tests"
+why = "integration test or bench target"
+
+[[rule]]
+pattern = '^tools/(test_[^/]*|.*/test_[^/]*)$'
+class = "tests"
+why = "tool test"
+
+[[rule]]
+pattern = '^crates/memra-engine/src/bin/'
+class = "diagnostic"
+why = "diagnostic or bench binary outside the release battery"
+
+[[rule]]
+pattern = '^crates/memra-server/src/bin/'
+class = "diagnostic"
+why = "server-side diagnostic binary"
+
+# --- build ----------------------------------------------------------------------------
+[[rule]]
+pattern = '^(Cargo\.toml|Cargo\.lock|rust-toolchain(\.toml)?|\.cargo/.*)$'
+class = "build"
+perf = true
+why = "workspace manifest, lock, toolchain or cargo config"
+
+[[rule]]
+pattern = '^crates/memra-(engine|server|runtime)/(build\.rs|Cargo\.toml)$|^crates/memra-engine/src/cuda_arch\.rs$'
+class = "build"
+perf = true
+why = "GPU build script, manifest or CUDA target table"
+
+[[rule]]
+pattern = '^crates/memra-probe/'
+class = "diagnostic"
+why = "memra-probe is a diagnostic binary, not a served path"
+
+# --- kernels --------------------------------------------------------------------------
+# Arch-specific translation units, read from build.rs:
+#   cutlass_fp4_sm120.cu / dsv4_dense_cutlass.cu compile only with MEMRA_CUTLASS /
+#   MEMRA_DSV4_CUTLASS and only for the 120a target.
+#   *_stub.cu replace mmq_fp4.cu, mmq_nvfp4_w4a8.cu and mmq_fp8_blk.cu on every family
+#   except 120a and 100a; the real files compile only there.
+#   wgmma_common.cuh device code is guarded by __CUDA_ARCH__ == 900.
+#   sm100_blockscale_layout.cuh is the sm_100a tcgen05 layout.
+[[rule]]
+pattern = '^crates/memra-engine/cu/(cutlass_fp4_sm120|dsv4_dense_cutlass)\.cu$'
+class = "kernel"
+targets = ["120a"]
+perf = true
+why = "opt-in CUTLASS unit, compiled for the 120a target only"
+
+[[rule]]
+pattern = '^crates/memra-engine/cu/(mmq_fp4|mmq_nvfp4_w4a8|mmq_fp8_blk)_stub\.cu$'
+class = "kernel"
+families = ["90a", "89"]
+perf = false
+why = "fail-closed stub, compiled only where the block-scale MMA does not exist"
+
+[[rule]]
+pattern = '^crates/memra-engine/cu/(mmq_fp4|mmq_nvfp4_w4a8|mmq_fp8_blk)\.cu$'
+class = "kernel"
+families = ["120a", "100a"]
+perf = true
+why = "block-scale MMA unit, real only on the 120a and 100a families"
+
+[[rule]]
+pattern = '^crates/memra-engine/cu/wgmma_common\.cuh$'
+class = "kernel"
+families = ["90a"]
+perf = true
+why = "wgmma device code, guarded by __CUDA_ARCH__ == 900"
+
+[[rule]]
+pattern = '^crates/memra-engine/cu/sm100_blockscale_layout\.cuh$'
+class = "kernel"
+families = ["100a"]
+perf = true
+why = "sm_100a tcgen05 block-scale layout"
+
+[[rule]]
+pattern = '^crates/memra-engine/cu/'
+class = "kernel"
+perf = true
+why = "CUDA kernel source"
+
+[[rule]]
+pattern = '^crates/memra-engine/src/[a-z0-9_]+_ffi\.rs$'
+class = "kernel"
+perf = true
+why = "kernel FFI shim"
+
+# --- engine numeric code local to one model pack -------------------------------------
+[[rule]]
+pattern = '^crates/memra-engine/src/dsv4_'
+class = "numeric"
+pack = "deepseek_v4"
+why = "DeepSeek-V4 engine path"
+
+[[rule]]
+pattern = '^crates/memra-engine/src/mimo_'
+class = "numeric"
+pack = "mimo_v2"
+why = "MiMo engine path"
+
+[[rule]]
+pattern = '^crates/memra-engine/src/(glm5_|vision_glm5\.rs)'
+class = "numeric"
+pack = "glm5_next"
+why = "GLM-5 engine path"
+
+[[rule]]
+pattern = '^crates/memra-engine/src/qwen4exp_'
+class = "numeric"
+pack = "qwen4_exp"
+why = "qwen4_exp engine path"
+
+[[rule]]
+pattern = '^crates/memra-gguf/src/model_packs/(?P<pack>[a-z0-9_]+)/'
+class = "numeric"
+pack = "{pack}"
+perf = false
+why = "model pack: aliases, config, tensor schema, plan construction"
+
+# --- engine files that never run per token --------------------------------------------
+[[rule]]
+pattern = '^crates/memra-engine/src/(env_audit|progress|prime_receipt|model_memory_fixture|parity_geometry|sigrouter_contract)\.(rs|json)$'
+class = "numeric"
+perf = false
+why = "engine bookkeeping off the per-token path"
+
+# --- serving --------------------------------------------------------------------------
+[[rule]]
+pattern = '^crates/memra-server/src/(dsv4_serve|dsv4_admit)\.rs$'
+class = "serving"
+route = "deepseek_v4"
+why = "DeepSeek-V4 serving route"
+
+[[rule]]
+pattern = '^crates/memra-server/src/(audio_api|embed_api)\.rs$'
+class = "serving"
+route = "{stem}"
+why = "audio or embedding route"
+
+[[rule]]
+pattern = '^crates/memra-server/src/(auth|metering|http_metrics|histogram|request_metrics|capacity_metrics|job_store|job_publication|health|argv|build_id)\.rs$'
+class = "cpu"
+why = "HTTP-side bookkeeping: device-independent, covered by server unit tests"
+
+# --- repository plumbing --------------------------------------------------------------
+[[rule]]
+pattern = '^\.github/'
+class = "cpu"
+why = "CI workflow"
+
+[[rule]]
+pattern = '^tools/'
+class = "cpu"
+why = "CPU tooling (its own CPU contract and failure-injection tests)"
+
+[[rule]]
+pattern = '^research/'
+class = "research"
+why = "research receipt or data not read by any crate"
+
+[[rule]]
+pattern = '^(docs/.*|[^/]+)\.md$|^(LICENSE[^/]*|NOTICE|\.gitignore|\.ignore|\.gitattributes)$'
+class = "docs"
+why = "documentation"
+
+[[rule]]
+pattern = '^docs/'
+class = "cpu"
+why = "registry data read by CPU census tools"
+
+# ---- content -------------------------------------------------------------------------
+# Added or removed lines in a numeric/serving/kernel file that name a device key make the
+# file reach the device-keyed defaults scope, which is performance-relevant.
+[content]
+device_key = '''BUILT_CUDA_(ARCH|TARGET)|MEMRA_CUDA_ARCH|cuda_arch|compute_cap|memra_hopper_mma|"(120a|121a|100a|90a|89)"|__CUDA_ARCH__|multiProcessorCount|sm_count|total_?mem|vram|RTX PRO 6000|RTX 5090|GB10|B200|H100|card_class|device_name'''
+# File kinds whose comment-only edits compile to the same program.
+comment_only_suffixes = [".rs", ".cu", ".cuh", ".h", ".c", ".cc", ".cpp"]

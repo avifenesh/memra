@@ -261,9 +261,12 @@ def validate_lease(lease, run):
     devices = run["hardware"]["devices"]
     require([d["uuid"] for d in devices] == ids, "hardware differs from leased GPU set")
     require(len(ids) == 1, "generic release battery currently qualifies one physical card; use a separate Step gate for topology claims")
-    require(run["hardware"]["headroom_query"] == {"nvml_index": 0, "uuid": ids[0]}
-            and devices[0]["index"] == "0" and lease["devices"][0]["index"] == 0,
-            "CUDA UUID and battery NVML GPU0 headroom selection differ")
+    # The battery resolves CUDA device 0 to its physical UUID and queries that card, so the
+    # leased card may sit at any NVML index; the index, lease and headroom card must agree.
+    require(run["hardware"]["headroom_query"] == {"selector": "cuda-visible-uuid", "uuid": ids[0],
+                                                  "nvml_index": int(devices[0]["index"])}
+            and lease["devices"][0]["index"] == int(devices[0]["index"]),
+            "battery headroom card and leased CUDA UUID differ")
     require(run["numeric_environment"].get("CUDA_VISIBLE_DEVICES") == digest(ids[0].encode()),
             "CUDA visibility does not bind the leased physical UUID")
     require(all("RTX PRO 6000 Blackwell" in d["name"] and d["compute_cap"] == "12.0"
@@ -355,6 +358,8 @@ def validate_record(record, evidence, repo, head, binaries=None, models=None, ha
             "telemetry does not identify the leased physical GPU")
     verdicts = cell_verdicts(run, evidence, repo, head)
     require(record["verdicts"] == verdicts, "record verdict/cell/skip summary differs from raw evidence")
+    require(record.get("card_models") == [d["name"] for d in run["hardware"]["devices"]],
+            "record does not name the exact card model it ran on")
     identity = {"source": source["inputs_sha256"], "build": record["build"]["sha256"],
                 "models": run["models_before"], "numeric": run["numeric_environment"],
                 "hardware": run["hardware"], "verdicts": verdicts}
@@ -368,6 +373,7 @@ def validate_record(record, evidence, repo, head, binaries=None, models=None, ha
     if hardware is not None:
         require(hardware == run["hardware"], "stale rig/topology")
     return {**proof, "identity_sha256": record["identity_sha256"], "verdicts": verdicts,
+            "card_models": record["card_models"],
             "binaries": build["binaries"], "build_profile": build["platform"]["profile"],
             "qualification": "native-evidence-validated"}
 
@@ -480,6 +486,19 @@ def docs_only_paths(repo, base, oid):
     return paths or None
 
 
+EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+
+def impact_base(repo, base, oid):
+    """What a pushed ref is compared against: the remote's old value, or for a new ref its
+    merge base with origin/main. With neither, the empty tree: every path is new."""
+    if set(base) != {"0"}:
+        return base
+    found = subprocess.run(["git", "-C", str(repo), "merge-base", oid, "refs/remotes/origin/main"],
+                           capture_output=True, text=True)
+    return found.stdout.strip() if found.returncode == 0 and found.stdout.strip() else EMPTY_TREE
+
+
 def check_push(repo, refs, mode):
     require(mode in ("qualified", "development"), "unknown qualification mode")
     for line in refs:
@@ -495,6 +514,17 @@ def check_push(repo, refs, mode):
         elif remote.startswith("refs/heads/") and (docs := docs_only_paths(repo, base, oid)):
             # A docs-only fast-forward neither adds nor removes native evidence; tags still need it.
             print(f"DOCS ONLY: {remote} at {oid}; no qualification claimed or needed ({', '.join(docs)})")
+        elif remote.startswith("refs/heads/"):
+            # Branch pushes need evidence only for the (build target, scope) cells the change
+            # reaches, on push-gated targets (tools/change-impact.toml). Tags keep the full record.
+            try:
+                import cell_evidence
+            except ImportError as error:
+                raise GateError(f"cell gate unavailable ({error}); refusing rather than skipping it") from error
+            try:
+                cell_evidence.gate(repo, impact_base(repo, base, oid), oid)
+            except cell_evidence.EvidenceError as error:
+                raise GateError(f"{remote} at {oid[:12]}: {error}") from error
         else:
             result = verify_published(repo, oid)
             print(f"QUALIFIED SOURCE: {remote} at {result['candidate_commit']} tested={result['tested_commit']}")

@@ -306,10 +306,14 @@ else
     fi
 fi
 
-# ---- content-bound native release qualification (#547) ----
-# A topic may be explicitly pushed as unqualified development. Main and tag refs
-# always require committed native evidence. File mtimes and model-directory presence
-# are not evidence, and the retired perf skip cannot authorize qualification.
+# ---- native qualification: per-cell for branches, full record for tags ----
+# A topic may be explicitly pushed as unqualified development. Main and every other branch
+# in qualified mode need evidence only for the (build target, scope) cells the change
+# reaches (tools/change_impact.py, rules in tools/change-impact.toml), from a device of each
+# push-gated target, for the exact source inputs (tools/cell_evidence.py). A missing cell
+# refuses and is named. Tags always require the full content-bound record (#547). File
+# mtimes and model-directory presence are not evidence, and the retired perf skip cannot
+# authorize qualification. docs/RELEASE-QUALIFICATION.md has the whole model.
 if [ "${MEMRA_SKIP_PERF_CI:-0}" = "1" ]; then
     echo "pre-push: MEMRA_SKIP_PERF_CI is retired; it cannot waive GPU qualification." >&2
     exit 1

@@ -1,0 +1,14 @@
+# Once a day per device. Override the hour per instance with
+# `daily-regression.py install --device <class> --at HH:MM` (writes a drop-in).
+# Persistent=false: a laptop that was asleep at the hour skips that day rather than
+# starting a build the moment it wakes.
+[Unit]
+Description=memra daily regression on %i
+
+[Timer]
+OnCalendar=*-*-* 05:30:00
+RandomizedDelaySec=10min
+Persistent=false
+
+[Install]
+WantedBy=timers.target

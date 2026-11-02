@@ -1,16 +1,108 @@
 # Content-bound release qualification
 
-A successful build is not GPU qualification. `tools/release_qualification.py` validates
-native release evidence for the exact source inputs, built executable bytes, roster and
-kernel-oracle artifacts, launch configuration, hardware/topology, raw cells and verdicts.
-It reuses `release-coverage.py`: every greedy K=1..8 must pass once, both required-cell
+A successful build is not GPU qualification. Two gates use native evidence:
+
+- **Branch pushes, main included**, need evidence only for the cells the change reaches
+  ([Change impact](#change-impact-and-per-cell-evidence)): a correctness battery on a device
+  of each affected, push-gated build target for the exact source inputs, plus performance
+  evidence when the change is performance-relevant. Docs, tests, research data, CPU tooling
+  and changes provably gated to other targets need none.
+- **Tags** need the full content-bound record below. `tools/release_qualification.py`
+  validates native release evidence for the exact source inputs, built executable bytes,
+  roster and kernel-oracle artifacts, launch configuration, hardware/topology, raw cells
+  and verdicts.
+
+Both reuse `release-coverage.py`: every greedy K=1..8 must pass once, both required-cell
 manifests remain mandatory, and the kernel skip ceiling remains 11. Calibrated argmax
-uses the existing gate; no tolerance, predicate or skip budget is widened.
+uses the existing gate; no tolerance, predicate or skip budget is widened. Regressions on
+targets a push does not gate are caught by the [daily regression](#daily-regression) of
+each device and fixed per hardware.
+
+## Change impact and per-cell evidence
+
+`tools/change_impact.py` classifies a diff by what it can affect. A **cell** is a
+(build target, scope) pair. The build targets are not a list in the policy file: the
+classifier parses the accepted `MEMRA_CUDA_ARCH` set and the compute-capability map from
+`crates/memra-engine/build.rs` (and `src/cuda_arch.rs` when present). A target build.rs
+accepts with no row in `tools/change-impact.toml` refuses classification, so a new target
+lands with its push-gate decision.
+
+Scopes: `kernel` (`.cu`/`.cuh`, FFI shims), `build` (build scripts, the arch table, Cargo
+manifests and lock, toolchain), `numeric` (engine, plans, KV format), `serving`
+(scheduler, admission, routes), `defaults` (a code line that names a device key such as
+`BUILT_CUDA_ARCH`, a compute capability or a card name), `gate` (the battery, its
+manifests and roster, the hook and the impact rules) and `perf`. Path rules in
+`tools/change-impact.toml` decide each file; the first match wins. They carry the
+structure paths alone cannot show: the `*_stub.cu` units compile only for the `90a` and
+`89` families, the block-scale MMA units only for `120a` and `100a`, the CUTLASS units
+only for the `120a` target, `wgmma_common.cuh` only for `90a`. Rules that need no device:
+
+- docs, tests, research receipts, the qualification metadata namespace;
+- CPU-only crates (tokenizer, sampling, reference, CLI) and CPU tooling;
+- diagnostic binaries outside the release battery;
+- comment-only edits of `.rs`/`.cu` files (every changed line is a `//` comment);
+- a non-crate path counts as a crate input when the CI include census
+  (`tools/validation_plan.py`) says a crate reads it, so `docs/FLAGS.md` is `numeric`.
+
+A pack-local change (`model_packs/<pack>/`, `dsv4_*`, `mimo_*`, `glm5_*`) reaches only
+that pack. When the device battery runs none of the pack's models, the gate names it
+**UNCOVERED**: the pack's own gate is the evidence, as for the scoped battery in
+`AGENTS.md`. Kernels are never pack-local.
+
+Where paths cannot tell, a commit can narrow the targets with trailers:
+
+```text
+Impact-Targets: 121a
+Impact-Reason: the GB10 unified-memory arm; the 120a build is byte-identical
+```
+
+The narrowing applies only when every commit in the pushed range declares targets, and
+each one needs a reason. The gate prints the reasons. The daily regression still runs every
+device, so a wrong declaration fails there.
+
+Evidence per target (`tools/cell_evidence.py`):
+
+| cell scope | evidence |
+|---|---|
+| `kernel`, `build`, `numeric`, `defaults`, `gate` | device battery: `kernel-check`, calibrated `run-gen` argmax and `run-spec` K=1..8 on the device roster |
+| `serving` | the battery plus `tools/serve-smoke.sh` |
+| `perf` | `run-gen` decode A/B against an ancestor, A B B A A B per roster model |
+
+A device counts for the target its compute capability maps to: the RTX 5090 and the RTX
+PRO 6000 both count for `sm_120a`. The perf verdict is REGRESSED when every candidate run
+is slower than every base run. With three runs per arm that complete separation has a
+one-sided exact probability of 1/20 under no difference. A reviewed, intended regression
+is recorded with `--accept-regression '<why>'`. A target the base cannot build has no
+baseline; its perf record carries absolute rates.
+
+Targets with `push_gate = false` (today `sm_100a`, `sm_90a`, `sm_89`: no owned device in
+reach on every push) are reported as DEFERRED to their device's daily run and the pre-tag
+battery. Flip the column when a target gets an owned device and a support claim.
+
+Produce and bank a record for the exact final commit:
+
+```sh
+python3 tools/cell_evidence.py need --base origin/main --head HEAD     # which cells
+python3 tools/cell_evidence.py run --device rtx5090 --commit HEAD \
+    --kinds battery,perf --base origin/main --out ~/.cache/memra-cells/run-1
+python3 tools/cell_evidence.py bank --out ~/.cache/memra-cells/run-1
+git add research/release-qualification/cells && git commit -m "data: bank cell evidence"
+python3 tools/cell_evidence.py check --base origin/main --head HEAD    # the hook's decision
+```
+
+`run` builds the six battery binaries for the device's target under
+`flock ~/.cache/memra-rig-build.lock nice -n 15` with `CARGO_BUILD_JOBS=2`, one codegen unit
+and fat LTO, then runs the battery from a detached checkout of the tested commit under the
+device's lock (`gpulock` on the 5090, the rig flock elsewhere). The record binds the tested
+commit, the source-input digest, the device class and observation (GPU UUID hashed), the
+binary digests and every raw log. The gate re-judges the raw logs; it never trusts a
+verdict field. Records live under `research/release-qualification/cells/`, which is
+excluded from the source-input digest, so committing one does not change what it
+qualifies. A rebase changes the inputs and needs a new record.
 
 ## Development and publication
 
-The pre-push hook defaults to qualification enforcement for every pushed ref. To publish
-unfinished work on a topic branch, explicitly use:
+To publish unfinished work on a topic branch without evidence, explicitly use:
 
 ```sh
 MEMRA_RELEASE_QUALIFICATION_MODE=development git push origin HEAD
@@ -20,9 +112,8 @@ The hook prints **UNQUALIFIED DEVELOPMENT** and records the ref/commit in the lo
 skip ledger. This does not grant qualification, even if model files happen to exist.
 Development mode refuses main/master and every tag. A branch push that fast-forwards the
 remote ref and changes only Markdown files needs no record: the hook prints **DOCS ONLY**
-and claims no qualification. It refuses any change under `crates/`, any Markdown a crate
-reads as `../<path>` (build.rs compiles `docs/FLAGS.md`), any symlink or mode change,
-and every tag. `MEMRA_SKIP_PERF_CI=1` is retired
+and claims no qualification. Every other branch push goes through the per-cell gate above.
+Tags always need the full record. `MEMRA_SKIP_PERF_CI=1` is retired
 and refuses rather than bypassing the gate. `step-pro` remains an additional Step model
 and topology gate; its older partial source manifest cannot substitute for this record.
 That additional checker now requires hashes for every changed crate/build/tool input,
@@ -156,14 +247,20 @@ The coordinator supplies the existing non-serving rig and physical-card wrapper.
 requires the live wrapper/child ancestry, canonical exclusive per-UUID FLOCK and exact
 CUDA-visible UUID. It never acquires locks, rents a rig or evicts another process.
 
-**Current generic battery scope is physical GPU0 on RTX PRO 6000 Blackwell.** The battery's
-headroom query still uses NVML `-i 0`. Capture/validation compare that observed UUID with
-CUDA visibility and the lease, refusing any disagreement. Other-card selection is the
-separate #264 follow-up, not support inferred from a CUDA ordinal. Step/multi-card topology
-qualification stays with its existing gates.
+**The generic battery qualifies one leased RTX PRO 6000 Blackwell at any NVML index.**
+`release-battery.sh` resolves CUDA device 0 to its physical UUID
+(`tools/resolve-physical-gpu.py`) and keys every headroom and tenant query on it. Capture
+resolves the card the same way and refuses unless that UUID equals the leased CUDA-visible
+UUID and its NVML index equals the lease's; telemetry samples the same UUID. The record
+names the exact card model it ran on (`card_models`, for example Max-Q Workstation Edition
+vs Server Edition, whose power limits differ), along with the PCI device ids and the power
+limit. Step/multi-card topology qualification stays with its existing gates.
+
+A sealed full record also counts as the device battery for its card's target in the
+per-cell push gate. It does not supply serving or perf evidence.
 
 ```sh
-memra-gpu-run --gpus "$GPU0_UUID" --receipt "$LEASE" -- \
+memra-gpu-run --gpus "$GPU_UUID" --receipt "$LEASE" -- \
   python3 tools/qualify-release.py capture --expected-head "$COMMIT" --build "$BUILD" --out "$RUN" \
   --oracles /data/models/kernel-oracles
 ```
@@ -198,3 +295,29 @@ reviewer must verify provenance; hashing cannot turn invented observations into 
 CPU fixtures in `tools/test_release_qualification.py` are temporary fabricated records for
 checker tests only. They do not qualify a model, binary, driver, GPU or release. Full HTTP,
 model support, performance and other-hardware claims require their own applicable gates.
+
+## Daily regression
+
+`tools/daily-regression.py` runs once a day on each device that has it installed. It tests
+main's head with the device's full cell set (battery, serve-smoke, perf A/B against the last
+head that passed on that device), commits the raw record and a `summary.json` to the
+device's results branch `regression/<device>` under `research/daily-regression/<device>/`,
+and keeps one GitHub issue per device, labelled `daily-regression`: opened or updated with
+the failing cells while the device fails, closed with a comment when it passes again. A
+head that was already tested is skipped. A run that cannot take the device lock is not a
+failure and opens nothing.
+
+Install it per device; the timer is installed disabled:
+
+```sh
+python3 tools/daily-regression.py install --device rtx5090 --at 05:30
+systemctl --user enable --now memra-daily-regression@rtx5090.timer   # owner's decision
+python3 tools/daily-regression.py run --device rtx5090 --no-publish  # a local dry run
+```
+
+The unit templates are `tools/daily-regression/memra-daily-regression@.{service,timer}`.
+The instance name is the device class (`rtx5090`, `rtxpro6000`, `gb10`), so a Spark or a
+PRO 6000 box installs the same templates with its own class. Per-box overrides
+(`MEMRA_REPO`, `MEMRA_DAILY_WORK`) go in `~/.config/memra-daily/<class>.env`. The service
+runs at `Nice=15`, `CPUWeight=20`, `IOWeight=20`, and the build keeps the rig build policy
+above. The timer is not persistent: a laptop asleep at the hour skips that day.

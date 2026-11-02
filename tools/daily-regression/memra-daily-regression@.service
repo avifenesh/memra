@@ -1,0 +1,23 @@
+# Daily per-device memra regression (tools/daily-regression.py). Instance = device class
+# from tools/change-impact.toml: memra-daily-regression@rtx5090, @gb10, @rtxpro6000.
+# Installed by `python3 tools/daily-regression.py install --device <class>`; the timer is
+# installed disabled. Per-box overrides (MEMRA_REPO, MEMRA_DAILY_WORK) live in
+# ~/.config/memra-daily/<class>.env.
+[Unit]
+Description=memra daily regression on %i (main's head)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-%h/.config/memra-daily/%i.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+# Modest CPU: the build runs nice 15 with two jobs under the rig build lock
+# (tools/cell_evidence.py BUILD_ENV); the unit also yields CPU and I/O to the desktop.
+Environment=CARGO_BUILD_JOBS=2
+Nice=15
+CPUWeight=20
+IOWeight=20
+ExecStart=/usr/bin/python3 %h/.local/share/memra-daily/daily-regression.py run --device %i --bootstrap
+# Build, battery, serve-smoke and the perf A/B, including the device-lock wait.
+TimeoutStartSec=8h

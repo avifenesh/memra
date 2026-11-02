@@ -3,11 +3,15 @@
 **The GPU battery follows what a change touches.** A native execution change runs the
 cells it can reach: its own cells and red arms, the serving gates when it is on a serving
 path, and `run-gen` argmax plus `run-spec` K=1..8 on each family whose numeric program it
-reaches. The full battery (tier 2 on a non-serving 2x RTX PRO 6000 pair) gates `.cu` kernel,
-FFI and dispatch changes, numeric paths several families share, compiler/build defaults,
-tolerance or gate-coverage changes, unknown impact, and tags (owner, 2026-09-27; the rule
-lives in AGENTS.md). Fast-gate accelerates development between those checkpoints. A fast-gate green is a
-*keep going* signal, never model or serving qualification.
+reaches. At push, `tools/change_impact.py` names the (build target, scope) cells a change
+reaches and the hook requires a passing device record for each push-gated target: the
+device battery, serve-smoke for serving cells, the perf A/B for performance-relevant ones
+([per-cell evidence](RELEASE-QUALIFICATION.md#change-impact-and-per-cell-evidence)). A local
+RTX 5090 carries `sm_120a`. Each device also runs main's head once a day and keeps one issue
+per failing device ([daily regression](RELEASE-QUALIFICATION.md#daily-regression)). The full
+battery (tier 2 on a non-serving 2x RTX PRO 6000 pair) gates tags (owner, 2026-09-27 and
+2026-11-02; the rule lives in AGENTS.md). Fast-gate accelerates development between those
+checkpoints. A fast-gate green is a *keep going* signal, never model or serving qualification.
 
 Documentation changes use text and link checks. CPU-only tooling can merge on
 relevant CPU contract, failure-injection and
@@ -19,7 +23,8 @@ not establish that scope. Unknown impact expands to the native battery.
 
 Changing runtime code requires the model- and hardware-specific cells that code
 reaches. Changing the gate set itself (a narrower default selection, a removed
-cell) is a coverage change and takes the full battery. CPU tooling admission
+cell, the impact rules) is a coverage change: the classifier marks it `gate` on every
+target. CPU tooling admission
 cannot promote fast-gate's GPU selection out of shadow mode or qualify a model or
 serving binary.
 

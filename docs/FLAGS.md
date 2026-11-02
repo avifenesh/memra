@@ -2705,7 +2705,7 @@ These configure release tooling, not model dispatch. CPU development is explicit
 
 | Variable | Meaning |
 | --- | --- |
-| `MEMRA_RELEASE_QUALIFICATION_MODE` | Hook default `qualified` validates committed content-bound native records for every pushed ref. `development` permits only topic refs, prints UNQUALIFIED and records the exact ref/commit in the Git skip ledger. Main/master and tags always refuse development mode. |
+| `MEMRA_RELEASE_QUALIFICATION_MODE` | Hook default `qualified`: branch refs need passing per-cell device records for the cells the change reaches on push-gated targets (`tools/cell_evidence.py`), tags need the full content-bound record. `development` permits only topic refs, prints UNQUALIFIED and records the exact ref/commit in the Git skip ledger. Main/master and tags always refuse development mode. |
 | `MEMRA_SKIP_PERF_CI` | Retired input: `=1` now refuses the push. It cannot skip content-bound qualification. Historical perf data remains research evidence. |
 | `MEMRA_HARDWARE_GATE` | `generic` uses content-bound release qualification. `step-pro` additionally requires the existing Step-specific source/model/topology receipt; development mode cannot claim it. |
 | `MEMRA_STEP_PRO_RECEIPT` | Path to the existing additional Step PRO receipt; never a replacement for the generic full input/build record. |
