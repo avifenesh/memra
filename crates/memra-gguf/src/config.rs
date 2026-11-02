@@ -3474,22 +3474,28 @@ impl HfConfig {
                         format!("{family} vision_config missing required field {key}")
                     })
                 };
-                let geometry = Some(Qwen4ExpVisionConfig {
-                    depth: req("depth")?,
-                    hidden_size: req("hidden_size")?,
-                    intermediate_size: req("intermediate_size")?,
-                    num_heads: req("num_heads")?,
-                    num_position_embeddings: req("num_position_embeddings")?,
-                    out_hidden_size: req("out_hidden_size")?,
-                    patch_size: req("patch_size")?,
-                    spatial_merge_size: req("spatial_merge_size")?,
-                    temporal_patch_size: req("temporal_patch_size")?,
-                    in_channels: req("in_channels")?,
-                });
+                let geometry = (|| {
+                    Ok::<_, String>(Qwen4ExpVisionConfig {
+                        depth: req("depth")?,
+                        hidden_size: req("hidden_size")?,
+                        intermediate_size: req("intermediate_size")?,
+                        num_heads: req("num_heads")?,
+                        num_position_embeddings: req("num_position_embeddings")?,
+                        out_hidden_size: req("out_hidden_size")?,
+                        patch_size: req("patch_size")?,
+                        spatial_merge_size: req("spatial_merge_size")?,
+                        temporal_patch_size: req("temporal_patch_size")?,
+                        in_channels: req("in_channels")?,
+                    })
+                })();
                 if family == "qwen4_exp" {
-                    cfg.qwen4exp_vision = geometry;
+                    cfg.qwen4exp_vision = Some(geometry?);
                 } else {
-                    cfg.qwen35_vision = geometry;
+                    // The qwen3_5 tower geometry only lets the tensor contract census a tower
+                    // bundled in the trunk shards; the text trunk never needs it. An incomplete
+                    // vision_config leaves it unset (a bundled tower then refuses at bind as
+                    // undeclared tensors) instead of refusing the text model.
+                    cfg.qwen35_vision = geometry.ok();
                 }
             }
             if vision_type.as_deref() == Some("glm5_next_vision") {
@@ -4633,6 +4639,42 @@ pub(crate) mod hf_tests {
       "torch_dtype": "bfloat16",
       "vocab_size": 151936
     }"#;
+
+    /// The vision_config of NVIDIA's NVFP4 Qwen3.8-27B export (tower bundled in the trunk
+    /// shards) parses into the tower geometry; an incomplete one leaves the geometry unset and
+    /// still parses the text model.
+    #[test]
+    fn qwen35_vision_geometry_is_parsed_and_optional() {
+        let vision = r#"{"deepstack_visual_indexes": [], "depth": 27, "dtype": "bfloat16",
+            "hidden_act": "gelu_pytorch_tanh", "hidden_size": 1152, "in_channels": 3,
+            "initializer_range": 0.02, "intermediate_size": 4304,
+            "model_type": "qwen3_5_vision", "num_heads": 16, "num_position_embeddings": 2304,
+            "out_hidden_size": 5120, "patch_size": 16, "spatial_merge_size": 2,
+            "temporal_patch_size": 2}"#;
+        let with = |vision: &str| {
+            QWEN3_17B.replacen(
+                "\"vocab_size\": 151936",
+                &format!("\"vocab_size\": 151936,\n      \"vision_config\": {vision}"),
+                1,
+            )
+        };
+        let full = HfConfig::try_parse(&with(vision)).unwrap();
+        let g = full
+            .qwen35_vision
+            .as_ref()
+            .expect("complete tower geometry");
+        assert_eq!(
+            (g.depth, g.hidden_size, g.out_hidden_size),
+            (27, 1152, 5120)
+        );
+        assert_eq!(
+            (g.patch_size, g.spatial_merge_size, g.in_channels),
+            (16, 2, 3)
+        );
+        let partial = HfConfig::try_parse(&with(&vision.replace("\"depth\": 27, ", ""))).unwrap();
+        assert!(partial.qwen35_vision.is_none());
+        assert_eq!(partial.hidden_size, 2048, "the text model still parses");
+    }
 
     #[test]
     fn parse_qwen3_dense() {
